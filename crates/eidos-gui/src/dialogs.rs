@@ -33,13 +33,13 @@ pub(crate) fn backups_dialog<'a>(state: &BackupsDialogState) -> Element<'a, Mess
             .push(text(title).size(sz(13)))
             .push(text(what).size(sz(11)))
             .push(
-                button(text("Back up now").size(sz(12)))
+                button(text(t("backups_back_up_now")).size(sz(12)))
                     .padding([4, 10])
                     .style(button::primary)
                     .on_press(Message::CreateBackup(kind)),
             );
         if list.is_empty() {
-            col = col.push(text("No restore points yet.").size(sz(11)));
+            col = col.push(text(t("backups_none_yet")).size(sz(11)));
         } else {
             let mut rows = Column::new().spacing(3);
             for b in list {
@@ -49,7 +49,7 @@ pub(crate) fn backups_dialog<'a>(state: &BackupsDialogState) -> Element<'a, Mess
                         .align_y(iced::Alignment::Center)
                         .push(text(b.when()).size(sz(12)).width(Length::Fill))
                         .push(
-                            button(text("Restore").size(sz(11)))
+                            button(text(t("backups_restore")).size(sz(11)))
                                 .padding([3, 8])
                                 .style(button::secondary)
                                 .on_press(Message::RestoreBackup(kind, b.stamp)),
@@ -64,14 +64,14 @@ pub(crate) fn backups_dialog<'a>(state: &BackupsDialogState) -> Element<'a, Mess
     let body = Row::new()
         .spacing(24)
         .push(column(
-            "Mod list",
-            "Order and enabled state of every mod.",
+            t("backups_mod_list"),
+            t("backups_mod_list_desc"),
             BackupKind::ModList,
             &state.mods,
         ))
         .push(column(
-            "Load order",
-            "plugins.txt and loadorder.txt together.",
+            t("backups_load_order"),
+            t("backups_load_order_desc"),
             BackupKind::LoadOrder,
             &state.order,
         ));
@@ -81,9 +81,9 @@ pub(crate) fn backups_dialog<'a>(state: &BackupsDialogState) -> Element<'a, Mess
         .push(
             Row::new()
                 .align_y(iced::Alignment::Center)
-                .push(text("Backups").size(sz(18)).width(Length::Fill))
+                .push(text(t("backups_title")).size(sz(18)).width(Length::Fill))
                 .push(
-                    button(text("Close").size(sz(12)))
+                    button(text(t("common_close")).size(sz(12)))
                         .padding([4, 12])
                         .style(button::secondary)
                         .on_press(Message::CloseBackupsDialog),
@@ -91,7 +91,7 @@ pub(crate) fn backups_dialog<'a>(state: &BackupsDialogState) -> Element<'a, Mess
         )
         .push(body)
         .push(
-            text("Restoring backs up the current state first, so a wrong pick can be undone.")
+            text(t("backups_restore_note"))
                 .size(sz(11)),
         );
 
@@ -108,7 +108,7 @@ pub(crate) fn executables_dialog<'a>(
 ) -> Element<'a, Message> {
     let header = Row::new()
         .spacing(6)
-        .push(text("Executables").size(sz(16)).width(Length::Fill))
+        .push(text(t("exe_title")).size(sz(16)).width(Length::Fill))
         .push(
             button(text("x").size(sz(14)))
                 .padding([1, 8])
@@ -123,17 +123,17 @@ pub(crate) fn executables_dialog<'a>(
     let mut list = Column::new();
     for (i, t) in state.merged.iter().enumerate() {
         if i == state.user_len && i < state.merged.len() {
-            list = list.push(text("Defaults (read-only)").size(sz(10)));
+            list = list.push(text(crate::i18n::t("exe_defaults")).size(sz(10)));
         }
         let selected = state.selected == Some(i);
         let label = if t.title.trim().is_empty() {
-            "(unnamed)"
+            crate::i18n::t("exe_unnamed")
         } else {
             t.title.trim()
         };
         let is_default = i >= state.user_len;
         let display = if is_default {
-            format!("{label}  (default)")
+            crate::i18n::tf("exe_default_suffix", &[("name", &label)])
         } else {
             label.to_string()
         };
@@ -150,7 +150,7 @@ pub(crate) fn executables_dialog<'a>(
         );
     }
     if state.merged.is_empty() {
-        list = list.push(text("No tools yet. Click Add to create one.").size(sz(11)));
+        list = list.push(text(t("exe_none_yet")).size(sz(11)));
     }
     let list_pane = container(scrollable(list).height(Length::Fill))
         .width(Length::Fixed(200.0))
@@ -160,15 +160,15 @@ pub(crate) fn executables_dialog<'a>(
 
     let list_actions = Row::new()
         .spacing(4)
-        .push(tool_btn("Add", Message::AddExecutableTool))
+        .push(tool_btn(t("exe_add"), Message::AddExecutableTool))
         .push(del_button(state))
         .push(move_button(
-            "Up",
+            t("exe_up"),
             Message::MoveExecutableUp,
             can_move_up(state),
         ))
         .push(move_button(
-            "Down",
+            t("exe_down"),
             Message::MoveExecutableDown,
             can_move_down(state),
         ));
@@ -179,15 +179,15 @@ pub(crate) fn executables_dialog<'a>(
     let editor: Element<'a, Message> = if state.selected_is_user() {
         Column::new()
             .spacing(8)
-            .push(exe_field("Title", &state.title, Message::ToolTitleChanged))
+            .push(exe_field(t("exe_field_title"), &state.title, Message::ToolTitleChanged))
             .push(exe_field_browse(
-                "Executable (path)",
+                t("exe_field_path"),
                 &state.exe,
                 Message::ToolExeChanged,
                 Message::BrowseToolExe,
             ))
             .push(exe_field_browse(
-                "Working dir (optional)",
+                t("exe_field_workdir"),
                 &state.workdir,
                 Message::ToolWorkdirChanged,
                 Message::BrowseToolWorkdir,
@@ -196,7 +196,7 @@ pub(crate) fn executables_dialog<'a>(
             // newline: a `text_input` drops them, so the label promised
             // something the field refused, and a tool needing two arguments
             // could not be created through this dialog at all.
-            .push(text("Arguments (one per line)").size(sz(11)))
+            .push(text(t("exe_field_args")).size(sz(11)))
             .push(
                 iced::widget::text_editor::TextEditor::new(&state.args_editor)
                     .on_action(Message::ToolArgsAction)
@@ -204,14 +204,14 @@ pub(crate) fn executables_dialog<'a>(
                     .height(Length::Fixed(72.0)),
             )
             .push(exe_field(
-                "Prereqs (comma-separated)",
+                t("exe_field_prereqs"),
                 &state.prereqs,
                 Message::ToolPrereqsChanged,
             ))
             .push(prereq_status_rows(app, &state.prereqs))
             .push(output_mod_field(state))
             .push(exe_field(
-                "Steam AppID (blank = the game's)",
+                t("exe_field_appid"),
                 &state.app_id,
                 Message::ExecAppIdChanged,
             ))
@@ -223,14 +223,14 @@ pub(crate) fn executables_dialog<'a>(
         // list of eight defaults is exactly what somebody wants to prune.
         Column::new()
             .spacing(8)
-            .push(text("This is a per-game default and cannot be edited.").size(sz(12)))
-            .push(text("Add a user tool with the same title to override it.").size(sz(10)))
+            .push(text(t("exe_default_readonly")).size(sz(12)))
+            .push(text(t("exe_default_override")).size(sz(10)))
             .push(tool_flags_row(state))
             .into()
     } else {
         Column::new()
             .spacing(8)
-            .push(text("Select a tool to edit, or click Add to create one.").size(sz(12)))
+            .push(text(t("exe_select_hint")).size(sz(12)))
             .into()
     };
     let right = container(editor).width(Length::Fill).padding(4);
@@ -240,9 +240,9 @@ pub(crate) fn executables_dialog<'a>(
     let footer = Row::new()
         .spacing(8)
         .push(Space::new().width(Length::Fill))
-        .push(tool_btn("Cancel", Message::CloseExecutablesDialog))
+        .push(tool_btn(t("common_cancel"), Message::CloseExecutablesDialog))
         .push(
-            button(text("Save").size(sz(12)))
+            button(text(t("common_save")).size(sz(12)))
                 .padding([5, 14])
                 .on_press(Message::SaveExecutablesDialog)
                 .style(button::primary),
@@ -297,7 +297,7 @@ pub(crate) fn exe_field_browse<'a>(
                 .width(Length::Fill),
         )
         .push(
-            button(text("Browse...").size(sz(11)))
+            button(text(t("common_browse_ellipsis")).size(sz(11)))
                 .padding([5, 8])
                 .on_press(browse)
                 .style(button::secondary),
@@ -311,7 +311,7 @@ pub(crate) fn exe_field_browse<'a>(
 
 /// The Delete button: active only when a user tool is selected.
 pub(crate) fn del_button<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
-    let mut b = button(text("Delete").size(sz(12)))
+    let mut b = button(text(t("common_delete")).size(sz(12)))
         .padding(6)
         .style(button::danger);
     if state.selected_is_user() {
@@ -348,22 +348,22 @@ fn prereq_state(verb: &str, done: &std::collections::HashSet<String>) -> (&'stat
         let ok =
             eidos_gamefeatures::runtime(verb).is_some_and(eidos_gamefeatures::runtime_is_installed);
         if ok {
-            ("downloaded", false)
+            (t("prereq_downloaded"), false)
         } else {
-            ("NOT FOUND - click to download", true)
+            (t("prereq_missing_download"), true)
         }
     } else if eidos_gamefeatures::is_tier2_verb(verb) {
         if done.contains(verb) {
-            ("installed", false)
+            (t("prereq_installed"), false)
         } else {
-            ("NOT FOUND - click to install", true)
+            (t("prereq_missing_install"), true)
         }
     } else {
         // Neither a runtime nor a winetricks verb: almost always a
         // typo. Saying so beats a tool that fails later for a reason that names
         // nothing the user recognises. Not offered as a click - there is nothing
         // to install.
-        ("unknown - check the spelling", false)
+        (t("prereq_unknown"), false)
     }
 }
 
@@ -398,7 +398,7 @@ pub(crate) fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Me
 
     let mut col = Column::new()
         .spacing(2)
-        .push(text("Status").size(sz(11)).color(fomod_ink_faint()));
+        .push(text(t("prereq_status")).size(sz(11)).color(fomod_ink_faint()));
     let mut any_missing = false;
     for v in verbs {
         let (label, missing) = prereq_state(&v, &done);
@@ -425,7 +425,7 @@ pub(crate) fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Me
     }
     if any_missing {
         col = col.push(
-            text("Downloads run in the background; the status bar reports when they finish.")
+            text(t("prereq_downloads_note"))
                 .size(sz(10))
                 .color(fomod_ink_faint()),
         );
@@ -441,18 +441,18 @@ pub(crate) fn about_dialog<'a>() -> Element<'a, Message> {
         .push(text("Eidos").size(sz(20)))
         .push(text(format!("Version {}", env!("CARGO_PKG_VERSION"))).size(sz(12)))
         .push(
-            text("A Linux-native mod manager modelled on Mod Organizer 2: isolated instances, a virtual file system over the game, FOMOD installs, LOOT sorting, and Nexus integration.")
+            text(t("about_blurb"))
                 .size(sz(12)),
         )
         .push(Space::new().height(Length::Fixed(6.0)))
-        .push(text("Shortcuts").size(sz(13)))
+        .push(text(t("about_shortcuts")).size(sz(13)))
         .push(
-            text("Ctrl+R run   ·   F5 refresh   ·   Ctrl+click multi-select   ·   Shift+click range   ·   Esc clear   ·   drag a row to reorder")
+            text(t("about_shortcut_list"))
                 .size(sz(11)),
         )
         .push(Space::new().height(Length::Fixed(6.0)))
         .push(
-            button(text("Close").size(sz(12)))
+            button(text(t("common_close")).size(sz(12)))
                 .padding([5, 14])
                 .on_press(Message::CloseAbout)
                 .style(button::primary),
@@ -487,7 +487,7 @@ pub(crate) fn cap_warning_banner<'a>() -> Element<'a, Message> {
     let row = Row::new()
         .spacing(10)
         .align_y(iced::Alignment::Center)
-        .push(text("Passthrough was requested but the launch binary has no CAP_SYS_ADMIN (a rebuild wipes it), so reads go through the daemon. Fix, then press F5:").size(sz(11)))
+        .push(text(t("passthrough_missing_cap")).size(sz(11)))
         .push(
             container(text(cmd).size(sz(11)))
                 .padding([2, 8])
@@ -502,7 +502,7 @@ pub(crate) fn cap_warning_banner<'a>() -> Element<'a, Message> {
                 }),
         )
         .push(Space::new().width(Length::Fill))
-        .push(flat_btn("Re-check (F5)", Message::Refresh));
+        .push(flat_btn(t("passthrough_recheck"), Message::Refresh));
     container(row)
         .width(Length::Fill)
         .padding([4, 8])
@@ -526,21 +526,21 @@ pub(crate) fn running_lock_card<'a>(run: &RunningState) -> Element<'a, Message> 
     let card = Column::new()
         .spacing(10)
         .align_x(iced::alignment::Horizontal::Center)
-        .push(text("Eidos is locked while the application runs").size(sz(18)))
-        .push(text(format!("{}  (pid {})", run.title, run.pid)).size(sz(13)))
+        .push(text(t("lock_title")).size(sz(18)))
+        .push(text(tf("lock_running", &[("title", &run.title), ("pid", &run.pid)])).size(sz(13)))
         .push(
-            text("It is being run through the merged mod view. Loading a save or starting a new game writes the load order; Eidos refreshes when it exits.")
+            text(t("lock_body"))
                 .size(sz(11)),
         )
         .push(Space::new().height(Length::Fixed(6.0)))
         .push(
-            button(text("Unlock").size(sz(13)))
+            button(text(t("lock_unlock")).size(sz(13)))
                 .padding([6, 22])
                 .on_press(Message::ForceUnlock)
                 .style(button::primary),
         )
         .push(
-            text("Unlock re-enables the GUI but leaves the game running.")
+            text(t("lock_unlock_note"))
                 .size(sz(10))
                 .color(text_muted()),
         );
@@ -594,8 +594,8 @@ pub(crate) fn split_markdown_links(text: &str) -> Vec<(String, Option<String>)> 
 pub(crate) fn loot_message_row<'a>(m: &eidos_loot::LootMessage) -> Element<'a, Message> {
     use eidos_loot::MessageType;
     let (prefix, color) = match m.kind {
-        MessageType::Error => ("Error: ", pal().error),
-        MessageType::Warn => ("Warning: ", pal().warning),
+        MessageType::Error => (t("loot_prefix_error"), pal().error),
+        MessageType::Warn => (t("loot_prefix_warning"), pal().warning),
         MessageType::Say => ("", pal().text_secondary),
     };
     let parts = split_markdown_links(&m.text);
@@ -629,26 +629,26 @@ pub(crate) fn loot_message_row<'a>(m: &eidos_loot::LootMessage) -> Element<'a, M
 /// cleaning advice). Shown after every sort, like MO2's LOOT dialog.
 pub(crate) fn loot_report_dialog<'a>(report: &eidos_loot::LootReport) -> Element<'a, Message> {
     let summary = if report.is_empty() {
-        "LOOT found no issues - your load order is clean.".to_string()
+        t("loot_clean").to_string()
     } else {
         let mut parts: Vec<String> = Vec::new();
         if report.error_count() > 0 {
-            parts.push(format!("{} error(s)", report.error_count()));
+            parts.push(tf("loot_n_errors", &[("n", &report.error_count())]));
         }
         if report.warning_count() > 0 {
-            parts.push(format!("{} warning(s)", report.warning_count()));
+            parts.push(tf("loot_n_warnings", &[("n", &report.warning_count())]));
         }
         if report.missing_master_count() > 0 {
-            parts.push(format!(
-                "{} with missing masters",
-                report.missing_master_count()
+            parts.push(tf(
+                "loot_n_missing_masters",
+                &[("n", &report.missing_master_count())],
             ));
         }
         if report.dirty_count() > 0 {
-            parts.push(format!("{} need cleaning", report.dirty_count()));
+            parts.push(tf("loot_n_dirty", &[("n", &report.dirty_count())]));
         }
         if parts.is_empty() {
-            "LOOT messages".to_string()
+            t("loot_messages").to_string()
         } else {
             parts.join(", ")
         }
@@ -659,7 +659,7 @@ pub(crate) fn loot_report_dialog<'a>(report: &eidos_loot::LootReport) -> Element
     if !report.general.is_empty() {
         let mut sec = Column::new()
             .spacing(3)
-            .push(text("General messages").size(sz(14)));
+            .push(text(t("loot_general")).size(sz(14)));
         for m in &report.general {
             sec = sec.push(loot_message_row(m));
         }
@@ -672,7 +672,7 @@ pub(crate) fn loot_report_dialog<'a>(report: &eidos_loot::LootReport) -> Element
             .push(text(p.name.clone()).size(sz(13)));
         if !p.missing_masters.is_empty() {
             sec = sec.push(
-                text(format!("Missing masters: {}", p.missing_masters.join(", ")))
+                text(tf("loot_missing_masters", &[("list", &p.missing_masters.join(", "))]))
                     .size(sz(11))
                     .color(pal().error),
             );
@@ -687,9 +687,14 @@ pub(crate) fn loot_report_dialog<'a>(report: &eidos_loot::LootReport) -> Element
                 d.cleaning_utility.as_str()
             };
             sec = sec.push(
-                text(format!(
-                    "Dirty - {util} found {} ITM, {} deleted refs, {} deleted navmeshes (clean with xEdit)",
-                    d.itm_count, d.deleted_reference_count, d.deleted_navmesh_count
+                text(tf(
+                    "loot_dirty",
+                    &[
+                        ("util", &util),
+                        ("itm", &d.itm_count),
+                        ("refs", &d.deleted_reference_count),
+                        ("navmeshes", &d.deleted_navmesh_count),
+                    ],
                 ))
                 .size(sz(11))
                 .color(pal().warning),
@@ -700,14 +705,14 @@ pub(crate) fn loot_report_dialog<'a>(report: &eidos_loot::LootReport) -> Element
 
     let card = Column::new()
         .spacing(10)
-        .push(text("LOOT report").size(sz(20)))
+        .push(text(t("loot_report")).size(sz(20)))
         .push(text(summary).size(sz(12)))
         .push(scrollable(body).height(Length::Fixed(360.0)))
         .push(
             Row::new()
                 .spacing(8)
                 .push(
-                    button(text("Close").size(sz(12)))
+                    button(text(t("common_close")).size(sz(12)))
                         .padding([5, 14])
                         .on_press(Message::CloseLootReport)
                         .style(button::primary),
@@ -718,7 +723,7 @@ pub(crate) fn loot_report_dialog<'a>(report: &eidos_loot::LootReport) -> Element
                 // thing in one press - which is what the Ctrl+A/Ctrl+C people are
                 // really after anyway. Ctrl+C does the same while this is open.
                 .push(
-                    button(text("Copy report").size(sz(12)))
+                    button(text(t("loot_copy_report")).size(sz(12)))
                         .padding([5, 14])
                         .on_press(Message::CopyLootReport)
                         .style(button::secondary),
@@ -736,13 +741,13 @@ pub(crate) fn loot_report_dialog<'a>(report: &eidos_loot::LootReport) -> Element
 /// Deliberately not the on-screen layout: colour carries the severity there, and
 /// a paste into a text editor would lose it silently. Each line says what it is.
 pub(crate) fn loot_report_text(report: &eidos_loot::LootReport) -> String {
-    let mut out = String::from("LOOT report\n");
+    let mut out = format!("{}\n", t("loot_report"));
     if report.is_empty() {
-        out.push_str("\nNo issues - the load order is clean.\n");
+        out.push_str(&format!("\n{}\n", t("loot_report_clean")));
         return out;
     }
     if !report.general.is_empty() {
-        out.push_str("\nGeneral messages\n");
+        out.push_str(&format!("\n{}\n", t("loot_general")));
         for m in &report.general {
             out.push_str(&format!("  [{}] {}\n", loot_severity_label(m.kind), m.text));
         }
@@ -751,8 +756,8 @@ pub(crate) fn loot_report_text(report: &eidos_loot::LootReport) -> String {
         out.push_str(&format!("\n{}\n", p.name));
         if !p.missing_masters.is_empty() {
             out.push_str(&format!(
-                "  Missing masters: {}\n",
-                p.missing_masters.join(", ")
+                "  {}\n",
+                tf("loot_missing_masters", &[("list", &p.missing_masters.join(", "))])
             ));
         }
         for m in &p.messages {
@@ -764,10 +769,16 @@ pub(crate) fn loot_report_text(report: &eidos_loot::LootReport) -> String {
             } else {
                 d.cleaning_utility.as_str()
             };
-            out.push_str(&format!(
-                "  Dirty - {util} found {} ITM, {} deleted refs, {} deleted navmeshes (clean with xEdit)\n",
-                d.itm_count, d.deleted_reference_count, d.deleted_navmesh_count
-            ));
+            let line = tf(
+                "loot_dirty",
+                &[
+                    ("util", &util),
+                    ("itm", &d.itm_count),
+                    ("refs", &d.deleted_reference_count),
+                    ("navmeshes", &d.deleted_navmesh_count),
+                ],
+            );
+            out.push_str(&format!("  {line}\n"));
         }
     }
     out
@@ -775,9 +786,9 @@ pub(crate) fn loot_report_text(report: &eidos_loot::LootReport) -> String {
 
 pub(crate) fn loot_severity_label(kind: eidos_loot::MessageType) -> &'static str {
     match kind {
-        eidos_loot::MessageType::Error => "error",
-        eidos_loot::MessageType::Warn => "warning",
-        eidos_loot::MessageType::Say => "note",
+        eidos_loot::MessageType::Error => t("loot_sev_error"),
+        eidos_loot::MessageType::Warn => t("loot_sev_warning"),
+        eidos_loot::MessageType::Say => t("loot_sev_note"),
     }
 }
 
@@ -789,9 +800,9 @@ pub(crate) fn loot_severity_label(kind: eidos_loot::MessageType) -> &'static str
 /// mod again to do it.
 pub(crate) fn categories_dialog<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
     let title = if state.names.len() == 1 {
-        format!("Categories - {}", state.names[0])
+        tf("cat_title_one", &[("name", &state.names[0])])
     } else {
-        format!("Categories - {} mods", state.names.len())
+        tf("cat_title_many", &[("n", &state.names.len())])
     };
 
     let header = Row::new()
@@ -801,9 +812,9 @@ pub(crate) fn categories_dialog<'a>(state: &CategoriesDialogState) -> Element<'a
         .push(
             button(
                 text(if state.editing {
-                    "Done editing"
+                    t("cat_done_editing")
                 } else {
-                    "Edit list..."
+                    t("cat_edit_list")
                 })
                 .size(sz(12)),
             )
@@ -812,7 +823,7 @@ pub(crate) fn categories_dialog<'a>(state: &CategoriesDialogState) -> Element<'a
             .on_press(Message::ToggleCategoryEditor),
         )
         .push(
-            button(text("Close").size(sz(12)))
+            button(text(t("common_close")).size(sz(12)))
                 .padding([4, 12])
                 .style(button::secondary)
                 .on_press(Message::CloseCategoriesDialog),
@@ -828,20 +839,20 @@ pub(crate) fn categories_dialog<'a>(state: &CategoriesDialogState) -> Element<'a
     // What Apply will actually write, spelled out - the pending pick is invisible
     // otherwise once the tree is scrolled away from the checked rows.
     let summary = match state.chosen.split_first() {
-        None => "No category (clears it)".to_string(),
+        None => t("cat_none_clears").to_string(),
         Some((p, rest)) => {
             let primary = state.catalog.name_for_id(*p).unwrap_or("?").to_string();
             if rest.is_empty() {
                 primary
             } else {
-                format!("{primary} (+{} more)", rest.len())
+                tf("cat_primary_more", &[("name", &primary), ("n", &rest.len())])
             }
         }
     };
     foot = foot
         .push(text(summary).size(sz(12)).width(Length::Fill))
         .push(
-            button(text("Apply").size(sz(12)))
+            button(text(t("cat_apply")).size(sz(12)))
                 .padding([4, 14])
                 .style(button::primary)
                 .on_press(Message::ApplyCategories),
@@ -851,7 +862,7 @@ pub(crate) fn categories_dialog<'a>(state: &CategoriesDialogState) -> Element<'a
     if state.names.len() > 1 {
         card = card.push(
             text(
-                "Applying sets the same categories on every selected mod, replacing what they had.",
+                t("cat_apply_note"),
             )
             .size(sz(11)),
         );
@@ -900,7 +911,7 @@ fn category_picker<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
             row = row.push(text("primary").size(sz(10)));
         } else if checked {
             row = row.push(
-                button(text("make primary").size(sz(10)))
+                button(text(t("cat_make_primary")).size(sz(10)))
                     .padding([2, 6])
                     .style(button::text)
                     .on_press(Message::SetPrimaryCategory(id)),
@@ -909,19 +920,19 @@ fn category_picker<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
         rows = rows.push(row);
     }
     if shown == 0 {
-        rows = rows.push(text("No category matches.").size(sz(12)));
+        rows = rows.push(text(t("cat_no_match")).size(sz(12)));
     }
 
-    let search = text_input("Filter categories", &state.query)
+    let search = text_input(t("cat_filter"), &state.query)
         .on_input(Message::CategoryQueryChanged)
         .padding(5)
         .size(sz(12));
 
     let nexus = Row::new()
         .spacing(6)
-        .push(tool_btn("Fetch from Nexus", Message::FetchNexusCategories))
+        .push(tool_btn(t("cat_fetch_nexus"), Message::FetchNexusCategories))
         .push(tool_btn(
-            "Use Nexus category",
+            t("cat_use_nexus"),
             Message::AssignCategoriesFromNexus,
         ));
 
@@ -932,8 +943,7 @@ fn category_picker<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
         .push(nexus)
         .push(
             text(
-                "Fetch pulls this game's official category list; Use Nexus sets the pick from what \
-                 the download recorded.",
+                t("cat_fetch_note"),
             )
             .size(sz(10)),
         )
@@ -953,14 +963,14 @@ fn catalog_editor<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
                         .align_y(iced::Alignment::Center)
                         .push(Space::new().width(Length::Fixed(14.0 * depth as f32)))
                         .push(
-                            text_input("Name", pending)
+                            text_input(t("cat_name"), pending)
                                 .on_input(Message::RenameCategoryChanged)
                                 .on_submit(Message::RenameCategoryCommit)
                                 .padding(4)
                                 .size(sz(12)),
                         )
                         .push(
-                            button(text("Save").size(sz(11)))
+                            button(text(t("common_save")).size(sz(11)))
                                 .padding([2, 8])
                                 .style(button::primary)
                                 .on_press(Message::RenameCategoryCommit),
@@ -978,13 +988,13 @@ fn catalog_editor<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
                 .push(text(name).size(sz(12)).width(Length::Fill))
                 .push(text(format!("#{id}")).size(sz(10)))
                 .push(
-                    button(text("Rename").size(sz(10)))
+                    button(text(t("common_rename")).size(sz(10)))
                         .padding([2, 6])
                         .style(button::text)
                         .on_press(Message::RenameCategoryStart(id)),
                 )
                 .push(
-                    button(text(if armed { "Confirm?" } else { "Delete" }).size(sz(10)))
+                    button(text(if armed { t("common_confirm") } else { t("common_delete") }).size(sz(10)))
                         .padding([2, 6])
                         .style(if armed { button::danger } else { button::text })
                         .on_press(Message::DeleteCategory(id)),
@@ -995,7 +1005,7 @@ fn catalog_editor<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
     // Adding: name + a parent picked from the same tree.
     let parents: Vec<CategoryChoice> = std::iter::once(CategoryChoice {
         id: 0,
-        label: "(top level)".to_string(),
+        label: t("cat_top_level").to_string(),
     })
     .chain(
         state
@@ -1013,7 +1023,7 @@ fn catalog_editor<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
         .spacing(6)
         .align_y(iced::Alignment::Center)
         .push(
-            text_input("New category name", &state.new_name)
+            text_input(t("cat_new_name"), &state.new_name)
                 .on_input(Message::NewCategoryNameChanged)
                 .on_submit(Message::AddCategory)
                 .padding(5)
@@ -1027,7 +1037,7 @@ fn catalog_editor<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
             .padding(4),
         )
         .push(
-            button(text("Add").size(sz(12)))
+            button(text(t("cat_add")).size(sz(12)))
                 .padding([4, 12])
                 .style(button::primary)
                 .on_press(Message::AddCategory),
@@ -1039,8 +1049,7 @@ fn catalog_editor<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
         .push(add)
         .push(
             text(
-                "Deleting a category lifts its children onto its parent and leaves the mods using \
-                 it alone - they show a bare id until re-categorised. Nothing is written until Apply.",
+                t("cat_delete_note"),
             )
             .size(sz(10)),
         )
@@ -1076,7 +1085,7 @@ fn tool_flags_row<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
         .spacing(8)
         .align_y(iced::Alignment::Center)
         .push(
-            button(text(if pinned { "Unpin" } else { "Pin to top" }).size(sz(11)))
+            button(text(if pinned { t("exe_unpin") } else { t("exe_pin") }).size(sz(11)))
                 .padding([4, 10])
                 .style(if pinned {
                     button::primary
@@ -1088,9 +1097,9 @@ fn tool_flags_row<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
         .push(
             button(
                 text(if hidden {
-                    "Show in picker"
+                    t("exe_show_in_picker")
                 } else {
-                    "Hide from picker"
+                    t("exe_hide_from_picker")
                 })
                 .size(sz(11)),
             )
@@ -1103,7 +1112,7 @@ fn tool_flags_row<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
             .on_press(Message::ExecToggleHidden),
         )
         .push(
-            button(text("Desktop shortcut").size(sz(11)))
+            button(text(t("exe_desktop_shortcut")).size(sz(11)))
                 .padding([4, 10])
                 .style(button::secondary)
                 .on_press(Message::ExecMakeShortcut),
@@ -1112,20 +1121,20 @@ fn tool_flags_row<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
 }
 
 fn output_mod_field<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
-    const NONE: &str = "(none - leave it in the Overwrite)";
-    let mut choices: Vec<String> = vec![NONE.to_string()];
+    let none = t("exe_output_none");
+    let mut choices: Vec<String> = vec![none.to_string()];
     choices.extend(state.mod_names.iter().cloned());
     let selected = if state.output_mod.trim().is_empty() {
-        Some(NONE.to_string())
+        Some(none.to_string())
     } else {
         Some(state.output_mod.clone())
     };
     Column::new()
         .spacing(4)
-        .push(text("Capture output into").size(sz(11)))
+        .push(text(t("exe_capture_output")).size(sz(11)))
         .push(
-            pick_list(choices, selected, |c: String| {
-                Message::ToolOutputModChanged(if c == NONE { String::new() } else { c })
+            pick_list(choices, selected, move |c: String| {
+                Message::ToolOutputModChanged(if c == none { String::new() } else { c })
             })
             .text_size(sz(12))
             .padding(5)
@@ -1133,8 +1142,7 @@ fn output_mod_field<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> 
         )
         .push(
             text(
-                "What this run writes goes into that mod instead of the Overwrite. Only the files \
-                 THIS run produced move - anything already in the Overwrite stays put.",
+                t("exe_capture_note"),
             )
             .size(sz(10)),
         )
@@ -1174,12 +1182,12 @@ pub(crate) fn ini_editor_dialog<'a>(app: &App, state: &'a IniEditorState) -> Ele
         .align_y(iced::Alignment::Center)
         .spacing(8)
         .push(
-            text(format!("INI editor - profile '{profile}'"))
+            text(tf("ini_title", &[("profile", &profile)]))
                 .size(sz(18))
                 .width(Length::Fill),
         )
         .push(
-            button(text("Close").size(sz(12)))
+            button(text(t("common_close")).size(sz(12)))
                 .padding([4, 12])
                 .style(button::secondary)
                 .on_press(Message::CloseIniEditor),
@@ -1195,35 +1203,25 @@ pub(crate) fn ini_editor_dialog<'a>(app: &App, state: &'a IniEditorState) -> Ele
     // Say what this file IS before the user changes it: which one, whether it
     // exists yet, and that the game reads a deployed copy rather than this path.
     let note = if state.unreadable {
-        format!(
-            "{} exists but could not be read. Saving is refused - it would replace the file with \
-             an empty one. Check its permissions.",
-            state.current
-        )
+        tf("ini_unreadable", &[("file", &state.current)])
     } else if state.missing {
-        format!(
-            "{} is not in this profile yet. Saving creates it; until then the game uses whatever \
-             is already in the prefix.",
-            state.current
-        )
+        tf("ini_missing", &[("file", &state.current)])
     } else {
-        "Edits the profile's copy. It is deployed into the Proton prefix at launch, and what \
-         the game writes back is captured into the profile when it exits."
-            .to_string()
+        t("ini_note").to_string()
     };
 
     let mut actions = Row::new().spacing(8).align_y(iced::Alignment::Center);
     actions = actions
         .push(
-            text(if state.dirty { "Unsaved changes" } else { "" })
+            text(if state.dirty { t("ini_unsaved") } else { "" })
                 .size(sz(11))
                 .width(Length::Fill),
         )
-        .push(tool_btn("Open externally", Message::IniEditorOpenExternal));
+        .push(tool_btn(t("ini_open_externally"), Message::IniEditorOpenExternal));
     if state.dirty {
-        actions = actions.push(tool_btn("Revert", Message::IniEditorRevert));
+        actions = actions.push(tool_btn(t("ini_revert"), Message::IniEditorRevert));
     }
-    let save = button(text("Save").size(sz(12)))
+    let save = button(text(t("common_save")).size(sz(12)))
         .padding([4, 14])
         .style(if state.dirty {
             button::primary
@@ -1261,12 +1259,12 @@ pub(crate) fn log_pane_dialog<'a>(state: &LogPaneState) -> Element<'a, Message> 
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
-        .push(text("Log").size(sz(18)).width(Length::Fill))
-        .push(tool_btn("Open folder", Message::LogOpenFolder))
-        .push(tool_btn("Copy", Message::LogCopy))
-        .push(tool_btn("Refresh", Message::LogRefresh))
+        .push(text(t("log_title")).size(sz(18)).width(Length::Fill))
+        .push(tool_btn(t("common_open_folder"), Message::LogOpenFolder))
+        .push(tool_btn(t("log_copy"), Message::LogCopy))
+        .push(tool_btn(t("log_refresh"), Message::LogRefresh))
         .push(
-            button(text("Close").size(sz(12)))
+            button(text(t("common_close")).size(sz(12)))
                 .padding([4, 12])
                 .style(button::secondary)
                 .on_press(Message::CloseLogPane),
@@ -1275,7 +1273,7 @@ pub(crate) fn log_pane_dialog<'a>(state: &LogPaneState) -> Element<'a, Message> 
     // The level floor. Four buttons rather than a dropdown: the whole point is
     // to flip between them while reading, which a dropdown costs two clicks.
     let mut levels = Row::new().spacing(4).align_y(iced::Alignment::Center);
-    levels = levels.push(text("Show").size(sz(11)));
+    levels = levels.push(text(t("log_show")).size(sz(11)));
     for lvl in [Level::Debug, Level::Info, Level::Warn, Level::Error] {
         levels = levels.push(
             button(text(lvl.as_str()).size(sz(11)))
@@ -1289,10 +1287,9 @@ pub(crate) fn log_pane_dialog<'a>(state: &LogPaneState) -> Element<'a, Message> 
         );
     }
     levels = levels.push(
-        text(format!(
-            "{} of {} record(s)",
-            state.lines.len(),
-            state.total
+        text(tf(
+            "log_n_of_total",
+            &[("shown", &state.lines.len()), ("total", &state.total)],
         ))
         .size(sz(10))
         .width(Length::Fill),
@@ -1321,14 +1318,14 @@ pub(crate) fn log_pane_dialog<'a>(state: &LogPaneState) -> Element<'a, Message> 
 
     let mut body = Column::new().spacing(1);
     if state.truncated {
-        body = body.push(text("(showing the end of the file)").size(sz(10)));
+        body = body.push(text(t("log_truncated")).size(sz(10)));
     }
     if state.lines.is_empty() {
         body = body.push(
             text(if state.total == 0 {
-                "This session logged nothing."
+                t("log_empty")
             } else {
-                "Nothing at this level. Lower it to see more."
+                t("log_none_at_level")
             })
             .size(sz(12)),
         );
@@ -1381,21 +1378,21 @@ pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
-        .push(text("Extensions").size(sz(18)).width(Length::Fill))
+        .push(text(t("ext_title")).size(sz(18)).width(Length::Fill))
         .push(
-            button(text("Preview file").size(sz(11))).on_press(Message::ChooseExtensionFile(
+            button(text(t("ext_preview_file")).size(sz(11))).on_press(Message::ChooseExtensionFile(
                 eidos_addons::protocol::Operation::Preview,
             )),
         )
         .push(
-            button(text("Read save file").size(sz(11))).on_press(Message::ChooseExtensionFile(
+            button(text(t("ext_read_save")).size(sz(11))).on_press(Message::ChooseExtensionFile(
                 eidos_addons::protocol::Operation::SaveInfo,
             )),
         )
-        .push(tool_btn("Open folder", Message::OpenAddonsFolder))
-        .push(tool_btn("Reload", Message::ReloadAddons))
+        .push(tool_btn(t("common_open_folder"), Message::OpenAddonsFolder))
+        .push(tool_btn(t("ext_reload"), Message::ReloadAddons))
         .push(
-            button(text("Close").size(sz(12)))
+            button(text(t("common_close")).size(sz(12)))
                 .padding([4, 12])
                 .style(button::secondary)
                 .on_press(Message::CloseAddons),
@@ -1418,25 +1415,24 @@ pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
                     .size(sz(13))
                     .color(conflict_loses_fg()),
                 )
-                .push(text(format!("refused: {why}")).size(sz(11))),
+                .push(text(tf("ext_refused", &[("reason", &why)])).size(sz(11))),
         );
     }
     if app.addons.is_empty() && app.addon_rejected.is_empty() {
         rows = rows.push(
             text(
-                "No extensions yet. Drop a .toml manifest into the folder above; the format is in \
-                 docs/guide/extensions.md.",
+                t("ext_none_yet"),
             )
             .size(sz(12)),
         );
     }
     for a in &app.addons {
         let kind = match a.kind {
-            AddonKind::Tool => "tool",
-            AddonKind::Diagnose => "check",
-            AddonKind::Installer => "installer",
-            AddonKind::Preview => "preview",
-            AddonKind::SaveInfo => "save information",
+            AddonKind::Tool => t("ext_kind_tool"),
+            AddonKind::Diagnose => t("ext_kind_check"),
+            AddonKind::Installer => t("ext_kind_installer"),
+            AddonKind::Preview => t("ext_kind_preview"),
+            AddonKind::SaveInfo => t("ext_kind_save_info"),
         };
         let mut title = Row::new()
             .spacing(6)
@@ -1454,23 +1450,23 @@ pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
             game_id
                 .as_deref()
                 .filter(|g| !a.applies_to(g))
-                .map(|_| "not for this game".to_string())
+                .map(|_| t("ext_not_for_game").to_string())
         });
         match (&blocked, a.kind) {
             (Some(why), _) => title = title.push(text(why.clone()).size(sz(10))),
             (None, AddonKind::Tool) => {
                 title = title.push(
-                    button(text("Run").size(sz(11)))
+                    button(text(t("ext_run")).size(sz(11)))
                         .padding([3, 10])
                         .style(button::primary)
                         .on_press(Message::RunAddon(a.id.clone())),
                 );
             }
             (None, AddonKind::Diagnose) => {
-                title = title.push(text("runs on refresh").size(sz(10)));
+                title = title.push(text(t("ext_runs_on_refresh")).size(sz(10)));
             }
             (None, _) => {
-                title = title.push(text("runs for matching files").size(sz(10)));
+                title = title.push(text(t("ext_runs_for_files")).size(sz(10)));
             }
         }
 
@@ -1497,9 +1493,7 @@ pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
         )
         .push(
             text(
-                "An extension is a manifest and a program Eidos runs - nothing is loaded into \
-                 Eidos itself. A 'tool' gets a Run button; a 'check' runs on every refresh and \
-                 its output appears in Health, under its own name.",
+                t("ext_explainer"),
             )
             .size(sz(10)),
         );
@@ -1519,9 +1513,9 @@ pub(crate) fn export_dialog<'a>(app: &App, state: &ExportDialogState) -> Element
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
-        .push(text("Export the mod list").size(sz(18)).width(Length::Fill))
+        .push(text(t("export_title")).size(sz(18)).width(Length::Fill))
         .push(
-            button(text("Close").size(sz(12)))
+            button(text(t("common_close")).size(sz(12)))
                 .padding([4, 12])
                 .style(button::secondary)
                 .on_press(Message::CloseExportDialog),
@@ -1538,9 +1532,9 @@ pub(crate) fn export_dialog<'a>(app: &App, state: &ExportDialogState) -> Element
     let scope = Row::new()
         .spacing(6)
         .align_y(iced::Alignment::Center)
-        .push(text("Rows").size(sz(11)))
+        .push(text(t("export_rows")).size(sz(11)))
         .push(
-            button(text(format!("All ({total})")).size(sz(12)))
+            button(text(tf("export_all", &[("n", &total)])).size(sz(12)))
                 .padding([3, 10])
                 .style(if state.scope == ExportScope::All {
                     button::primary
@@ -1550,7 +1544,7 @@ pub(crate) fn export_dialog<'a>(app: &App, state: &ExportDialogState) -> Element
                 .on_press(Message::ExportScopeChanged(ExportScope::All)),
         )
         .push(
-            button(text(format!("Enabled only ({active})")).size(sz(12)))
+            button(text(tf("export_enabled_only", &[("n", &active)])).size(sz(12)))
                 .padding([3, 10])
                 .style(if state.scope == ExportScope::Active {
                     button::primary
@@ -1588,13 +1582,13 @@ pub(crate) fn export_dialog<'a>(app: &App, state: &ExportDialogState) -> Element
     );
     if state.picked().is_empty() {
         cols = cols.push(
-            text("Tick at least one column.")
+            text(t("export_tick_column"))
                 .size(sz(11))
                 .color(conflict_loses_fg()),
         );
     }
 
-    let run = button(text("Export...").size(sz(12)))
+    let run = button(text(t("export_run")).size(sz(12)))
         .padding([4, 14])
         .style(button::primary);
     let footer = Row::new()
@@ -1602,8 +1596,7 @@ pub(crate) fn export_dialog<'a>(app: &App, state: &ExportDialogState) -> Element
         .align_y(iced::Alignment::Center)
         .push(
             text(
-                "MO2's own CSV format: CRLF line endings, every string quoted, the Nexus id bare - \
-                 so a sheet or a script written for MO2 reads it unchanged.",
+                t("export_note"),
             )
             .size(sz(10))
             .width(Length::Fill),
@@ -1634,9 +1627,9 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
-        .push(text("Instances").size(sz(18)).width(Length::Fill))
+        .push(text(t("instances_title")).size(sz(18)).width(Length::Fill))
         .push(
-            button(text("Close").size(sz(12)))
+            button(text(t("common_close")).size(sz(12)))
                 .padding([4, 12])
                 .style(button::secondary)
                 .on_press(Message::CloseInstanceManager),
@@ -1644,7 +1637,7 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
 
     let mut rows = Column::new().spacing(6);
     if app.known.is_empty() {
-        rows = rows.push(text("No instances found yet.").size(sz(12)));
+        rows = rows.push(text(t("instances_none")).size(sz(12)));
     }
     for (i, k) in app.known.iter().enumerate() {
         // Rename takes over the row while it is armed, exactly as the profile
@@ -1656,14 +1649,14 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
                         .spacing(6)
                         .align_y(iced::Alignment::Center)
                         .push(
-                            text_input("Folder name", typed)
+                            text_input(t("instances_folder_name"), typed)
                                 .on_input(Message::InstanceRenameChanged)
                                 .on_submit(Message::InstanceRenameCommit)
                                 .padding(5)
                                 .size(sz(12)),
                         )
                         .push(
-                            button(text("Save").size(sz(11)))
+                            button(text(t("common_save")).size(sz(11)))
                                 .padding([3, 10])
                                 .style(button::primary)
                                 .on_press(Message::InstanceRenameCommit),
@@ -1682,7 +1675,7 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
             title = title.push(text("open").size(sz(10)));
         } else {
             title = title.push(
-                button(text("Open").size(sz(11)))
+                button(text(t("common_open")).size(sz(11)))
                     .padding([3, 10])
                     .style(button::primary)
                     .on_press(Message::InstanceOpen(i)),
@@ -1693,14 +1686,14 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
         // the registry to drop.
         if k.portable && !open_now {
             title = title.push(
-                button(text("Rename").size(sz(11)))
+                button(text(t("common_rename")).size(sz(11)))
                     .padding([3, 8])
                     .style(button::secondary)
                     .on_press(Message::InstanceRenameStart(i)),
             );
             let armed = app.confirm_forget == Some(i);
             title = title.push(
-                button(text(if armed { "Confirm?" } else { "Forget" }).size(sz(11)))
+                button(text(if armed { t("common_confirm") } else { t("instances_forget") }).size(sz(11)))
                     .padding([3, 8])
                     .style(if armed {
                         button::danger
@@ -1711,7 +1704,7 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
             );
         }
         title = title.push(
-            button(text("Folder").size(sz(11)))
+            button(text(t("common_folder")).size(sz(11)))
                 .padding([3, 8])
                 .style(button::text)
                 .on_press(Message::OpenFolder(k.inst.root.clone())),
@@ -1725,9 +1718,7 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
         .push(scrollable(rows).height(Length::Fixed(300.0)))
         .push(
             text(
-                "Forget removes an instance from this list and touches nothing on disk. There is \
-                 no Delete: an instance holds your whole mod pool, and that is not something to \
-                 lose to one confirmation - use Folder and delete it yourself if you mean it.",
+                t("instances_forget_note"),
             )
             .size(sz(10)),
         );
@@ -1762,7 +1753,7 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
         .align_y(iced::Alignment::Center)
         .spacing(8)
         .push(text(name).size(sz(15)).width(Length::Fill))
-        .push(button(text("Extension").size(sz(11))).on_press_maybe(
+        .push(button(text(t("preview_extension")).size(sz(11))).on_press_maybe(
             (!matches!(p, Preview::Archive { .. })).then(|| {
                 Message::RunFileExtension(
                     eidos_addons::protocol::Operation::Preview,
@@ -1771,13 +1762,13 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
             }),
         ))
         .push(
-            button(text("Reveal").size(sz(11)))
+            button(text(t("preview_reveal")).size(sz(11)))
                 .padding([4, 10])
                 .style(button::secondary)
                 .on_press(Message::DataReveal(p.path().to_path_buf())),
         )
         .push(
-            button(text("Close").size(sz(12)))
+            button(text(t("common_close")).size(sz(12)))
                 .padding([4, 12])
                 .style(button::secondary)
                 .on_press(Message::ClosePreview),
@@ -1787,7 +1778,7 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
         _ => p,
     };
     let body: Element<'a, Message> = match content {
-        Preview::Archive { .. } => text("Nested archive previews are unsupported").into(),
+        Preview::Archive { .. } => text(t("preview_nested_archive")).into(),
         Preview::Dds {
             info,
             selection,
@@ -1796,10 +1787,10 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
         } => {
             let selection = *selection;
             let mut controls = Row::new().spacing(8).align_y(iced::Alignment::Center);
-            for (label, value, count) in [
-                ("Mip", selection.mip, info.mips),
-                ("Layer", selection.layer, info.layers),
-                ("Face", selection.face, info.faces),
+            for (label, shown, value, count) in [
+                ("Mip", t("preview_mip"), selection.mip, info.mips),
+                ("Layer", t("preview_layer"), selection.layer, info.layers),
+                ("Face", t("preview_face"), selection.face, info.faces),
             ] {
                 let change = |value| {
                     let mut selected = selection;
@@ -1812,7 +1803,7 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
                 };
                 controls = controls
                     .push(button(text("−")).on_press_maybe(value.checked_sub(1).map(change)))
-                    .push(text(format!("{label} {value}/{}", count - 1)).size(sz(11)))
+                    .push(text(format!("{shown} {value}/{}", count - 1)).size(sz(11)))
                     .push(
                         button(text("+"))
                             .on_press_maybe((value + 1 < count).then(|| change(value + 1))),
@@ -1845,7 +1836,7 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
                 Err(error) => container(text(error.clone())).center(Length::Fill).into(),
             };
             let note = if info.hdr {
-                " · HDR display uses Reinhard/sRGB; negative values are clipped"
+                t("preview_hdr_note")
             } else {
                 ""
             };
@@ -1867,7 +1858,7 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
             let orbit = Row::new()
                 .spacing(8)
                 .align_y(iced::Alignment::Center)
-                .push(text("Orbit").size(sz(11)))
+                .push(text(t("preview_orbit")).size(sz(11)))
                 .push(
                     slider(
                         -std::f32::consts::PI..=std::f32::consts::PI,
@@ -1877,7 +1868,7 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
                     .step(0.03_f32)
                     .width(Length::Fill),
                 )
-                .push(text("Tilt").size(sz(11)))
+                .push(text(t("preview_tilt")).size(sz(11)))
                 .push(
                     slider(-1.5..=1.5, view.pitch, move |pitch| {
                         Message::PreviewNifView(crate::nif_render::View { pitch, ..view })
@@ -1888,7 +1879,7 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
             let controls = Row::new()
                 .spacing(8)
                 .align_y(iced::Alignment::Center)
-                .push(text("Zoom").size(sz(11)))
+                .push(text(t("preview_zoom")).size(sz(11)))
                 .push(
                     slider(0.1..=10.0, view.zoom, move |zoom| {
                         Message::PreviewNifView(crate::nif_render::View { zoom, ..view })
@@ -1898,12 +1889,12 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
                 )
                 .push(
                     checkbox(view.wireframe)
-                        .label("Wireframe")
+                        .label(t("preview_wireframe"))
                         .on_toggle(move |wireframe| {
                             Message::PreviewNifView(crate::nif_render::View { wireframe, ..view })
                         }),
                 )
-                .push(button(text("Reset")).on_press(Message::PreviewNifView(Default::default())));
+                .push(button(text(t("preview_reset"))).on_press(Message::PreviewNifView(Default::default())));
             let image: Element<'a, Message> = match &model.image {
                 Some(Ok(handle)) => container(
                     iced::widget::image(handle.clone()).content_fit(iced::ContentFit::Contain),
@@ -1911,12 +1902,12 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
                 .center(Length::Fill)
                 .into(),
                 Some(Err(error)) => container(text(error.clone())).center(Length::Fill).into(),
-                None => container(text("Loading model textures…"))
+                None => container(text(t("preview_loading_textures")))
                     .center(Length::Fill)
                     .into(),
             };
             let mut body = Column::new().spacing(8).push(orbit).push(controls)
-                .push(text(format!("{} static shapes · orthographic view · diffuse textures and approximate lighting", model.scene.meshes.len())).size(sz(10)))
+                .push(text(tf("preview_model_note", &[("n", &model.scene.meshes.len())])).size(sz(10)))
                 .push(image);
             if !model.warnings.is_empty() {
                 body = body.push(
@@ -1941,9 +1932,9 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
             );
             if *truncated {
                 col = col.push(
-                    text(format!(
-                        "Showing the first {} KB. The rest is there, just not here.",
-                        PREVIEW_TEXT_CAP / 1024
+                    text(tf(
+                        "preview_text_truncated",
+                        &[("kb", &(PREVIEW_TEXT_CAP / 1024))],
                     ))
                     .size(sz(10)),
                 );
@@ -1966,9 +1957,9 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
-        .push(text("Nexus collection").size(sz(18)).width(Length::Fill))
+        .push(text(t("collection_title")).size(sz(18)).width(Length::Fill))
         .push(
-            button(text("Close").size(sz(12)))
+            button(text(t("common_close")).size(sz(12)))
                 .padding([4, 12])
                 .style(button::secondary)
                 .on_press(Message::CloseCollection),
@@ -1988,7 +1979,7 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
             .size(sz(12)),
         )
         .push(
-            button(text(if state.loading { "..." } else { "Look up" }).size(sz(12)))
+            button(text(if state.loading { "..." } else { t("collection_look_up") }).size(sz(12)))
                 .padding([4, 12])
                 .style(button::primary)
                 .on_press_maybe((!state.loading).then_some(Message::CollectionFetch)),
@@ -2040,9 +2031,9 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
 
         let mut title = Column::new()
             .spacing(2)
-            .push(text(format!("{}  ·  revision {}", rev.name, rev.revision_number)).size(sz(15)));
+            .push(text(tf("collection_revision", &[("name", &rev.name), ("n", &rev.revision_number)])).size(sz(15)));
         if !rev.author.is_empty() {
-            title = title.push(text(format!("by {}", rev.author)).size(sz(11)));
+            title = title.push(text(tf("collection_by", &[("author", &rev.author)])).size(sz(11)));
         }
         if !rev.summary.is_empty() {
             title = title.push(text(rev.summary.clone()).size(sz(11)));
@@ -2053,7 +2044,16 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
             .spacing(10)
             .align_y(iced::Alignment::Center)
             .push(
-                text(format!("{installed} installed  ·  {other_version} other file/version  ·  {unverified} unverified  ·  {downloaded} downloaded  ·  {missing} missing"))
+                text(tf(
+                    "collection_counts",
+                    &[
+                        ("installed", &installed),
+                        ("other", &other_version),
+                        ("unverified", &unverified),
+                        ("downloaded", &downloaded),
+                        ("missing", &missing),
+                    ],
+                ))
                 .size(sz(12))
                 .width(Length::Fill),
             );
@@ -2062,9 +2062,9 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
         summary = summary.push(
             button(
                 text(if state.runtime.is_some() {
-                    "Continue despite this version mismatch"
+                    t("collection_continue_mismatch")
                 } else {
-                    "Install this collection"
+                    t("collection_install")
                 })
                 .size(sz(11)),
             )
@@ -2074,9 +2074,9 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
         );
         if missing > 0 {
             let label = if state.confirm_fetch {
-                "Click again to start them".to_string()
+                t("collection_fetch_confirm").to_string()
             } else {
-                format!("Try to fetch {missing} missing")
+                tf("collection_fetch_missing", &[("n", &missing)])
             };
             summary = summary.push(
                 button(text(label).size(sz(11)))
@@ -2098,7 +2098,7 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
                 container(
                     Column::new()
                         .spacing(3)
-                        .push(text("The collection's own instructions").size(sz(10)))
+                        .push(text(t("collection_instructions")).size(sz(10)))
                         .push(text(rev.instructions.clone()).size(sz(11))),
                 )
                 .padding(8)
@@ -2109,13 +2109,13 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
         let mut rows = Column::new().spacing(1);
         for (i, (m, st)) in rev.mods.iter().zip(&state.states).enumerate() {
             let (label, colour) = match st {
-                MemberState::Installed => ("installed", Some(conflict_wins_fg())),
-                MemberState::Unverified => ("file unverified", Some(pal().warning)),
+                MemberState::Installed => (t("collection_member_installed"), Some(conflict_wins_fg())),
+                MemberState::Unverified => (t("collection_member_unverified"), Some(pal().warning)),
                 // Its own word, and its own colour: the mod is there but not the
                 // version the collection was built against.
-                MemberState::OtherVersion => ("other file/version", Some(pal().warning)),
-                MemberState::Downloaded => ("downloaded", None),
-                MemberState::Missing => ("missing", Some(conflict_loses_fg())),
+                MemberState::OtherVersion => (t("collection_member_other"), Some(pal().warning)),
+                MemberState::Downloaded => (t("collection_member_downloaded"), None),
+                MemberState::Missing => (t("collection_member_missing"), Some(conflict_loses_fg())),
             };
             let mut status = text(label.to_string())
                 .size(sz(11))
@@ -2124,7 +2124,7 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
                 status = status.color(c);
             }
             let name = if m.optional {
-                format!("{}  (optional)", m.name)
+                tf("collection_optional", &[("name", &m.name)])
             } else {
                 m.name.clone()
             };
@@ -2139,7 +2139,7 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
                 )
                 .push(status)
                 .push(
-                    button(text("Open").size(sz(10)))
+                    button(text(t("common_open")).size(sz(10)))
                         .padding([2, 8])
                         .style(button::text)
                         .on_press(Message::CollectionOpenMod(i)),
@@ -2151,10 +2151,12 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
         // disagreeing is information rather than an error.
         if rev.mods.len() < rev.mod_count as usize {
             rows = rows.push(
-                text(format!(
-                    "{} of the {} members are no longer on Nexus and cannot be listed.",
-                    rev.mod_count as usize - rev.mods.len(),
-                    rev.mod_count
+                text(tf(
+                    "collection_members_gone",
+                    &[
+                        ("n", &(rev.mod_count as usize - rev.mods.len())),
+                        ("total", &rev.mod_count),
+                    ],
                 ))
                 .size(sz(11)),
             );
@@ -2164,14 +2166,7 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
 
     card = card.push(
         text(
-            "Installing reads the collection's own recipe - the install order, the answers its \
-             author gave each mod's installer, the deployment order and its LOOT rules - and \
-             applies them. What it cannot do for you is fetch the member mods on a free Nexus \
-             account: those need the site's own download button, and the report names each one \
-             with its page - fetch them and install again, and it picks them up. Binary \
-             patches, file overrides and bundled members are not applied yet, and the report \
-             says so rather than passing over it. Open takes you to the exact file the \
-             collection pins.",
+            t("collection_explainer"),
         )
         .size(sz(10)),
     );
@@ -2213,9 +2208,9 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
-        .push(text("Pack this instance").size(sz(18)).width(Length::Fill))
+        .push(text(t("pack_title")).size(sz(18)).width(Length::Fill))
         .push(
-            button(text("Close").size(sz(12)))
+            button(text(t("common_close")).size(sz(12)))
                 .padding([4, 12])
                 .style(button::secondary)
                 .on_press(Message::ClosePackDialog),
@@ -2226,18 +2221,14 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
         .as_ref()
         .map(|i| i.root.display().to_string())
         .unwrap_or_default();
-    let blurb = text(format!(
-        "Everything in {root} goes into one file: every mod, the load order, all \
-         profiles, the Overwrite with your saves in it, and the archives they were \
-         installed from. Move that file to the other machine and unpack it there."
-    ))
+    let blurb = text(tf("pack_blurb", &[("root", &root)]))
     .size(sz(11))
     .color(text_muted());
 
     let dest = Row::new()
         .spacing(6)
         .align_y(iced::Alignment::Center)
-        .push(text("File").size(sz(11)).width(Length::Fixed(46.0)))
+        .push(text(t("pack_file")).size(sz(11)).width(Length::Fixed(scaled(56.0))))
         .push(
             text_input("/home/you/skyrimse.eidos", &state.dest)
                 .on_input(Message::PackDestChanged)
@@ -2245,7 +2236,7 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
                 .size(sz(12)),
         )
         .push(
-            button(text("Browse").size(sz(11)))
+            button(text(t("common_browse")).size(sz(11)))
                 .padding([4, 10])
                 .style(button::secondary)
                 .on_press(Message::PackBrowse),
@@ -2263,9 +2254,9 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
         )
     };
     let downloads = checkbox(state.downloads)
-        .label(format!(
-            "Include downloads/ ({})",
-            eidos_transfer::human_bytes(state.plan.downloads_bytes)
+        .label(tf(
+            "pack_include_downloads",
+            &[("size", &eidos_transfer::human_bytes(state.plan.downloads_bytes))],
         ))
         .on_toggle(|_| Message::PackToggleDownloads)
         .size(sz(13))
@@ -2274,7 +2265,7 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
     let mut levels = Row::new()
         .spacing(4)
         .align_y(iced::Alignment::Center)
-        .push(text("Compression").size(sz(11)).width(Length::Fixed(76.0)));
+        .push(text(t("pack_compression")).size(sz(11)).width(Length::Fixed(scaled(76.0))));
     for n in eidos_transfer::LEVELS {
         levels = levels.push(
             button(text(n.to_string()).size(sz(11)))
@@ -2289,11 +2280,11 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
     }
     levels = levels.push(
         text(if state.level == eidos_transfer::DEFAULT_LEVEL {
-            "  smaller costs far more time than it saves".to_string()
+            format!("  {}", t("pack_level_default"))
         } else if state.level == 0 {
-            "  stored, not compressed".to_string()
+            format!("  {}", t("pack_level_stored"))
         } else {
-            "  slower".to_string()
+            format!("  {}", t("pack_level_slower"))
         })
         .size(sz(10))
         .color(text_muted()),
@@ -2303,18 +2294,21 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
     let preview = Column::new()
         .spacing(3)
         .push(
-            text(format!(
-                "{files} file(s), {} folder(s) ({} empty), {}",
-                state.plan.dirs,
-                state.plan.empty_dirs,
-                eidos_transfer::human_bytes(bytes)
+            text(tf(
+                "pack_plan",
+                &[
+                    ("files", &files),
+                    ("dirs", &state.plan.dirs),
+                    ("empty", &state.plan.empty_dirs),
+                    ("size", &eidos_transfer::human_bytes(bytes)),
+                ],
             ))
             .size(sz(12)),
         )
         .push(
-            text(format!(
-                "expect roughly {}",
-                eidos_transfer::human_bytes(expect)
+            text(tf(
+                "pack_expect",
+                &[("size", &eidos_transfer::human_bytes(expect))],
             ))
             .size(sz(11))
             .color(text_muted()),
@@ -2322,25 +2316,28 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
 
     let mut notes = Column::new().spacing(3).push(
         text(
-            "Left out: the Proton prefix (rebuilt in a minute over there), the game \
-             itself, tools that live outside the instance, and this machine's own logs \
-             and caches. The file lists every one of them with its reason.",
+            t("pack_left_out"),
         )
         .size(sz(10))
         .color(text_muted()),
     );
     if !state.plan.tools_outside.is_empty() {
         notes = notes.push(
-            text(format!(
-                "{} tool(s) are named in the backup but not carried: {}.",
-                state.plan.tools_outside.len(),
-                state
-                    .plan
-                    .tools_outside
-                    .iter()
-                    .map(|t| t.title.clone())
-                    .collect::<Vec<_>>()
-                    .join(", ")
+            text(tf(
+                "pack_tools_outside",
+                &[
+                    ("n", &state.plan.tools_outside.len()),
+                    (
+                        "tools",
+                        &state
+                            .plan
+                            .tools_outside
+                            .iter()
+                            .map(|tool| tool.title.clone())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    ),
+                ],
             ))
             .size(sz(10))
             .color(text_muted()),
@@ -2350,20 +2347,20 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
     let ready = !state.dest.trim().is_empty();
     if ready && path.is_file() {
         notes = notes.push(
-            text("That file already exists and will be replaced.")
+            text(t("pack_file_exists"))
                 .size(sz(10))
                 .color(pal().warning),
         );
     }
 
-    let run = button(text("Pack").size(sz(12)))
+    let run = button(text(t("pack_run")).size(sz(12)))
         .padding([4, 16])
         .style(button::primary);
     let footer = Row::new()
         .spacing(8)
         .align_y(iced::Alignment::Center)
         .push(
-            text("The instance is locked while this runs, and it takes a while.")
+            text(t("pack_locked_note"))
                 .size(sz(10))
                 .color(text_muted())
                 .width(Length::Fill),
@@ -2396,9 +2393,9 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
-        .push(text("Unpack a backup").size(sz(18)).width(Length::Fill))
+        .push(text(t("unpack_title")).size(sz(18)).width(Length::Fill))
         .push(
-            button(text("Close").size(sz(12)))
+            button(text(t("common_close")).size(sz(12)))
                 .padding([4, 12])
                 .style(button::secondary)
                 .on_press(Message::CloseUnpackDialog),
@@ -2407,14 +2404,14 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
     let archive = Row::new()
         .spacing(6)
         .align_y(iced::Alignment::Center)
-        .push(text("Backup").size(sz(11)).width(Length::Fixed(scaled(52.0))))
+        .push(text(t("unpack_backup")).size(sz(11)).width(Length::Fixed(scaled(52.0))))
         .push(
             text_input("/home/you/skyrimse.eidos", &state.archive)
                 .padding(5)
                 .size(sz(12)),
         )
         .push(
-            button(text("Choose...").size(sz(11)))
+            button(text(t("common_choose")).size(sz(11)))
                 .padding([4, 10])
                 .style(button::secondary)
                 .on_press(Message::UnpackBrowseArchive),
@@ -2430,30 +2427,32 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
     if let Some(m) = &state.manifest {
         about = about
             .push(
-                text(format!(
-                    "{} instance, made {} by Eidos {}",
-                    m.game_id, m.created, m.eidos_version
+                text(tf(
+                    "unpack_made_by",
+                    &[("game", &m.game_id), ("date", &m.created), ("version", &m.eidos_version)],
                 ))
                 .size(sz(11)),
             )
             .push(
-                text(format!(
-                    "{} file(s), {} unpacked, profile(s): {}",
-                    m.files,
-                    eidos_transfer::human_bytes(m.bytes),
-                    m.profiles.join(", ")
+                text(tf(
+                    "unpack_contents",
+                    &[
+                        ("files", &m.files),
+                        ("size", &eidos_transfer::human_bytes(m.bytes)),
+                        ("profiles", &m.profiles.join(", ")),
+                    ],
                 ))
                 .size(sz(11))
                 .color(text_muted()),
             )
             .push(
-                text(format!("was at {}", m.source_root))
+                text(tf("unpack_was_at", &[("path", &m.source_root)]))
                     .size(sz(10))
                     .color(text_muted()),
             );
         if !m.downloads {
             about = about.push(
-                text("downloads/ was left out of this backup")
+                text(t("unpack_no_downloads"))
                     .size(sz(10))
                     .color(text_muted()),
             );
@@ -2466,10 +2465,7 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
             .collect();
         if !missing.is_empty() {
             about = about.push(
-                text(format!(
-                    "Tools it uses that are not on this machine: {}.",
-                    missing.join(", ")
-                ))
+                text(tf("unpack_tools_missing", &[("tools", &missing.join(", "))]))
                 .size(sz(10))
                 .color(pal().warning),
             );
@@ -2479,7 +2475,7 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
     let dest = Row::new()
         .spacing(6)
         .align_y(iced::Alignment::Center)
-        .push(text("Folder").size(sz(11)).width(Length::Fixed(scaled(52.0))))
+        .push(text(t("common_folder")).size(sz(11)).width(Length::Fixed(scaled(52.0))))
         .push(
             text_input("/mnt/games/EidosSkyrim", &state.dest)
                 .on_input(Message::UnpackDestChanged)
@@ -2487,20 +2483,20 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
                 .size(sz(12)),
         )
         .push(
-            button(text("Choose...").size(sz(11)))
+            button(text(t("common_choose")).size(sz(11)))
                 .padding([4, 10])
                 .style(button::secondary)
                 .on_press(Message::UnpackBrowseDest),
         );
 
     let force = checkbox(state.force)
-        .label("Unpack into a folder that is not empty".to_string())
+        .label(t("unpack_force").to_string())
         .on_toggle(|_| Message::UnpackToggleForce)
         .size(sz(13))
         .text_size(sz(12));
 
     let ready = state.manifest.is_some() && !state.dest.trim().is_empty();
-    let run = button(text("Unpack").size(sz(12)))
+    let run = button(text(t("unpack_run")).size(sz(12)))
         .padding([4, 16])
         .style(button::primary);
     let footer = Row::new()
@@ -2508,8 +2504,7 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
         .align_y(iced::Alignment::Center)
         .push(
             text(
-                "The Proton prefix is rebuilt afterwards; the game itself comes from \
-                 Steam.",
+                t("unpack_prefix_note"),
             )
             .size(sz(10))
             .color(text_muted())
@@ -2560,7 +2555,7 @@ pub(crate) fn transfer_dialog<'a>(job: &crate::TransferJob) -> Element<'a, Messa
                 )
                 .push(
                     text(if pct >= 100 {
-                        "Finishing up...".to_string()
+                        t("transfer_finishing").to_string()
                     } else {
                         format!("{pct}%")
                     })
@@ -2568,9 +2563,7 @@ pub(crate) fn transfer_dialog<'a>(job: &crate::TransferJob) -> Element<'a, Messa
                 )
                 .push(
                     text(
-                        "This takes a while on a big instance. The window stays \
-                         responsive, and nothing else may touch the instance until it \
-                         is done.",
+                        t("transfer_note"),
                     )
                     .size(sz(10))
                     .color(text_muted()),
@@ -2589,7 +2582,7 @@ pub(crate) fn transfer_dialog<'a>(job: &crate::TransferJob) -> Element<'a, Messa
                 .push(scrollable(line).height(Length::Fixed(180.0)))
                 .push(
                     Row::new().push(Space::new().width(Length::Fill)).push(
-                        button(text("Close").size(sz(12)))
+                        button(text(t("common_close")).size(sz(12)))
                             .padding([4, 16])
                             .style(button::primary)
                             .on_press(Message::CloseTransferResult),
