@@ -49,13 +49,13 @@ pub(crate) fn right_pane<'a>(app: &App) -> Element<'a, Message> {
     // the order tools.ini has, which the user controls.
     let mut listed: Vec<&Tool> = app.tools.iter().filter(|t| !t.hidden).collect();
     listed.sort_by_key(|t| !t.pinned);
-    let run_options: Vec<String> = std::iter::once(RUN_GAME.to_string())
+    let run_options: Vec<String> = std::iter::once(run_game_label().to_string())
         .chain(listed.iter().map(|t| t.title.clone()))
         .collect();
     let run_choice = app
         .tool_choice
         .clone()
-        .unwrap_or_else(|| RUN_GAME.to_string());
+        .unwrap_or_else(|| run_game_label().to_string());
 
     let top = Row::new()
         .spacing(8)

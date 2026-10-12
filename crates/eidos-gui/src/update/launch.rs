@@ -8,7 +8,7 @@ use super::*;
 pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
     match message {
         Message::ToolPicked(choice) => {
-            app.tool_choice = (choice != RUN_GAME).then_some(choice);
+            app.tool_choice = (choice != run_game_label()).then_some(choice);
         }
         Message::Run => {
             if app.running.is_some() {

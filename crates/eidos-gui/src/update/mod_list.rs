@@ -65,9 +65,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let Some(&dest) = dest else {
                 app.status = Some(
                     if first {
-                        "This mod overrides nothing."
+                        t("status_overrides_nothing")
                     } else {
-                        "Nothing overrides this mod."
+                        t("status_nothing_overrides")
                     }
                     .to_string(),
                 );
@@ -112,7 +112,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             };
             let Ok(dest) = text.trim().parse::<usize>() else {
-                app.status = Some("Enter a priority number.".to_string());
+                app.status = Some(t("status_enter_priority").to_string());
                 return Task::none();
             };
             let targets = selection_or(app, i);
@@ -129,7 +129,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.menu_mod = None;
             // The toast quotes the same 1-based numbering the column shows.
             if mods_changed(app) {
-                app.status = Some(format!("Moved to priority {}.", at + 1));
+                app.status = Some(tf("status_moved_to_priority", &[("n", &(at + 1))]));
             }
         }
         Message::SendToSeparatorStart(i) => {
@@ -346,7 +346,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.menu_mod = None;
             if let Some(m) = app.mods.get(i) {
                 let _ = std::process::Command::new("xdg-open").arg(&m.path).spawn();
-                app.status = Some(format!("Opened '{}' in your file manager.", m.name));
+                app.status = Some(tf("status_opened_in_file_manager", &[("name", &m.name)]));
             }
         }
         Message::ModVisitNexus(i) => {
@@ -363,11 +363,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 (Some(domain), Some(id)) => {
                     let url = format!("https://www.nexusmods.com/{domain}/mods/{id}");
                     let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
-                    app.status = Some(format!("Opening {url}"));
+                    app.status = Some(tf("status_opening", &[("url", &url)]));
                 }
                 _ => {
                     app.status =
-                        Some("No Nexus mod id on record for this mod (install it from Nexus to link it).".to_string());
+                        Some(t("status_no_nexus_id").to_string());
                 }
             }
         }
@@ -381,7 +381,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 .as_ref()
                 .is_some_and(|inst| inst.mod_meta(&m.name).collection_owner().is_some())
             {
-                app.status = Some("Reopen the collection installer and choose Start choices again so its recipe remains attached.".into());
+                app.status = Some(t("status_reinstall_collection_member").into());
                 return Task::none();
             }
             return pick_mod_archive(app, Some(m.name.clone()), true);
@@ -431,7 +431,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 let _lock = match inst.try_lock("the Eidos window") {
                     Ok(l) => l,
                     Err(e) => {
-                        app.status = Some(format!("Cannot remove a mod now: {e}."));
+                        app.status = Some(tf("status_cannot_remove_now", &[("error", &e)]));
                         return Task::none();
                     }
                 };
@@ -455,24 +455,21 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             // and enough of them wedge it (see ConfirmBatchRemove).
                             let forgot = forget_removed_mods(app, std::slice::from_ref(&m.name));
                             app.status = Some(match forgot {
-                                Some(Err(e)) => format!(
-                                    "Removed '{}'. The mod list could not be updated: {e}.",
-                                    m.name
+                                Some(Err(e)) => tf(
+                                    "status_removed_list_failed",
+                                    &[("name", &m.name), ("error", &e)],
                                 ),
-                                _ => format!("Removed '{}'.", m.name),
+                                _ => tf("status_removed", &[("name", &m.name)]),
                             });
                             mods_changed(app);
                         }
-                        Err(e) => app.status = Some(format!("Remove failed: {e}")),
+                        Err(e) => app.status = Some(tf("status_remove_failed", &[("error", &e)])),
                     }
                 }
             } else {
                 app.confirm_remove = Some(i);
                 if let Some(m) = app.mods.get(i) {
-                    app.status = Some(format!(
-                        "Click Remove again to permanently delete '{}' from disk.",
-                        m.name
-                    ));
+                    app.status = Some(tf("status_click_remove_again", &[("name", &m.name)]));
                 }
             }
         }
@@ -507,14 +504,14 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         typed.clone()
                     };
                     if typed.is_empty() || typed.contains('/') || typed.contains('\\') {
-                        app.status = Some("Invalid name.".to_string());
+                        app.status = Some(t("status_invalid_name").to_string());
                     } else if new_name == old.name {
                         // no-op
                     } else if let Some(mods_dir) = app.created.as_ref().map(|inst| inst.mods_dir())
                     {
                         let dest = mods_dir.join(&new_name);
                         if dest.exists() {
-                            app.status = Some(format!("'{typed}' already exists."));
+                            app.status = Some(tf("status_name_exists", &[("name", &typed)]));
                         } else {
                             // Same flock as every sibling mutation: renaming the
                             // folder moves a live union layer out from under a
@@ -531,7 +528,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             let _lock = match inst.try_lock("the Eidos window") {
                                 Ok(l) => l,
                                 Err(e) => {
-                                    app.status = Some(format!("Cannot rename a mod now: {e}."));
+                                    app.status = Some(tf("status_cannot_rename_now", &[("error", &e)]));
                                     return Task::none();
                                 }
                             };
@@ -567,14 +564,15 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                                     // Before mods_changed, which replaces it with
                                     // the reason if the save is refused.
                                     app.status = Some(match renamed {
-                                        Some(Err(e)) => format!(
-                                            "Renamed to '{typed}'. The other profiles could not be updated: {e}."
+                                        Some(Err(e)) => tf(
+                                            "status_renamed_profiles_failed",
+                                            &[("name", &typed), ("error", &e)],
                                         ),
-                                        _ => format!("Renamed to '{typed}'."),
+                                        _ => tf("status_renamed", &[("name", &typed)]),
                                     });
                                     mods_changed(app);
                                 }
-                                Err(e) => app.status = Some(format!("Rename failed: {e}")),
+                                Err(e) => app.status = Some(tf("status_rename_failed", &[("error", &e)])),
                             }
                         }
                     }
@@ -593,7 +591,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let _lock = match inst.try_lock("the Eidos window") {
                 Ok(l) => l,
                 Err(e) => {
-                    app.status = Some(format!("Cannot add a separator now: {e}."));
+                    app.status = Some(tf("status_cannot_add_separator_now", &[("error", &e)]));
                     return Task::none();
                 }
             };
@@ -604,10 +602,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             if let Some(mods_dir) = mods_dir {
                 // A unique "Separator N" display name -> folder "<name>_separator".
                 let mut n = 1usize;
-                let mut display = "Separator".to_string();
+                let mut display = t("new_separator_name").to_string();
                 while mods_dir.join(format!("{display}_separator")).exists() {
                     n += 1;
-                    display = format!("Separator {n}");
+                    display = format!("{} {n}", t("new_separator_name"));
                 }
                 let folder = format!("{display}_separator");
                 let dest = mods_dir.join(&folder);
@@ -637,7 +635,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             app.menu_mod = Some(idx);
                         }
                     }
-                    Err(e) => app.status = Some(format!("Could not create separator: {e}")),
+                    Err(e) => app.status = Some(tf("status_separator_failed", &[("error", &e)])),
                 }
             }
         }
@@ -656,10 +654,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 // Refused, and said out loud: a menu entry that does nothing at
                 // all reads as a bug, not as a rule.
                 (Some(m), _) if m.is_unmanaged() => {
-                    app.status = Some(format!(
-                        "'{}' is the game's own content - Eidos never writes into its Data.",
-                        m.display_name()
-                    ));
+                    app.status = Some(tf("status_game_content", &[("name", &m.display_name())]));
                     None
                 }
                 _ => None,
@@ -671,9 +666,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         // the refresh below recomputes exactly that one.
                         invalidate_meta(app, &changed);
                         refresh_meta_cache(app);
-                        app.status = Some(format!("Set the colour for '{display}'."));
+                        app.status = Some(tf("status_colour_set", &[("name", &display)]));
                     }
-                    Err(e) => app.status = Some(format!("Could not set colour: {e}")),
+                    Err(e) => app.status = Some(tf("status_colour_failed", &[("error", &e)])),
                 }
             }
         }
@@ -722,14 +717,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     let now = match result {
                         Ok(now) => now,
                         Err(e) => {
-                            app.status = Some(format!("Could not save mod metadata: {e}"));
+                            app.status = Some(tf("status_meta_save_failed", &[("error", &e)]));
                             return Task::none();
                         }
                     };
-                    app.status = Some(format!(
-                        "{} '{}'.",
-                        if now { "Tracking" } else { "Untracked" },
-                        m.display_name()
+                    app.status = Some(tf(
+                        if now { "status_tracking" } else { "status_untracked" },
+                        &[("name", &m.display_name())],
                     ));
                 }
             }
@@ -746,14 +740,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     let now = match result {
                         Ok(now) => now,
                         Err(e) => {
-                            app.status = Some(format!("Could not save mod metadata: {e}"));
+                            app.status = Some(tf("status_meta_save_failed", &[("error", &e)]));
                             return Task::none();
                         }
                     };
-                    app.status = Some(format!(
-                        "{} updates for '{}'.",
-                        if now { "Ignoring" } else { "Checking" },
-                        m.display_name()
+                    app.status = Some(tf(
+                        if now { "status_ignoring_updates" } else { "status_checking_updates" },
+                        &[("name", &m.display_name())],
                     ));
                     // The ignore flag lives in this mod's meta.ini.
                     let changed = m.name.clone();
@@ -775,7 +768,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let _lock = match inst.try_lock("the Eidos window") {
                 Ok(l) => l,
                 Err(e) => {
-                    app.status = Some(format!("Cannot create a mod now: {e}."));
+                    app.status = Some(tf("status_cannot_create_now", &[("error", &e)]));
                     return Task::none();
                 }
             };
@@ -785,10 +778,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             if let Some(inst) = &app.created {
                 // A unique "New Mod N" name, never colliding on disk.
                 let mut n = 1usize;
-                let mut name = "New Mod".to_string();
+                let mut name = t("new_mod_name").to_string();
                 while inst.mods_dir().join(&name).exists() {
                     n += 1;
-                    name = format!("New Mod {n}");
+                    name = format!("{} {n}", t("new_mod_name"));
                 }
                 match inst.create_empty_mod(&name) {
                     Ok(entry) => {
@@ -818,7 +811,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             app.menu_mod = Some(idx);
                         }
                     }
-                    Err(e) => app.status = Some(format!("Could not create mod: {e}")),
+                    Err(e) => app.status = Some(tf("status_create_mod_failed", &[("error", &e)])),
                 }
             }
         }
@@ -827,7 +820,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // Pick an already-unpacked mod directory off-thread.
             return Task::perform(
                 rfd::AsyncFileDialog::new()
-                    .set_title("Select an unpacked mod folder to install")
+                    .set_title(t("dialog_pick_mod_folder"))
                     .pick_folder(),
                 |handle| Message::FolderPicked(handle.map(|h| h.path().to_path_buf())),
             );
@@ -846,7 +839,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_default();
             let base =
-                eidos_install::fix_directory_name(&raw).unwrap_or_else(|| "New Mod".to_string());
+                eidos_install::fix_directory_name(&raw).unwrap_or_else(|| t("new_mod_name").to_string());
             let name = suggest_free_name(&mods_dir, &base);
             let dest = mods_dir.join(&name);
             // Copy the folder's CONTENTS into mods/<name>/ (not the folder itself),
@@ -855,7 +848,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 Ok(()) => after_install(app, &name, dest, false, None),
                 Err(e) => {
                     let _ = fs::remove_dir_all(&dest);
-                    app.status = Some(format!("Install from folder failed: {e}"));
+                    app.status = Some(tf("status_install_folder_failed", &[("error", &e)]));
                 }
             }
         }
@@ -864,7 +857,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.file_menu_open = false;
             app.view_menu_open = false;
             if app.created.is_none() {
-                app.status = Some("Open a game instance first.".to_string());
+                app.status = Some(t("status_open_instance_first").to_string());
                 return Task::none();
             }
             app.export = Some(ExportDialogState {
@@ -892,7 +885,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             };
             if d.picked().is_empty() {
-                app.status = Some("Tick at least one column.".to_string());
+                app.status = Some(t("export_tick_column").to_string());
                 return Task::none();
             }
             let name = app
@@ -904,7 +897,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 rfd::AsyncFileDialog::new()
                     .add_filter("CSV", &["csv"])
                     .set_file_name(format!("{name}.csv"))
-                    .set_title("Export the mod list")
+                    .set_title(t("export_title"))
                     .save_file(),
                 |handle| Message::ExportPicked(handle.map(|h| h.path().to_path_buf())),
             );
@@ -923,7 +916,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // window keeps handling events while the native save dialog is up,
             // so the ticks can be cleared in between.
             if d.picked().is_empty() {
-                app.status = Some("Nothing was exported: no columns were ticked.".to_string());
+                app.status = Some(t("status_export_no_columns").to_string());
                 return Task::none();
             }
             let domain = selected_game(app).map(|g| g.def.nexus_game).unwrap_or("");
@@ -934,9 +927,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 eidos_instance::mod_list_csv(&inst, &app.mods, d.scope, &d.picked(), domain);
             match std::fs::write(&path, csv) {
                 Ok(()) => {
-                    app.status = Some(format!("Exported {count} mod(s) to {}.", path.display()))
+                    app.status = Some(tf("status_exported", &[("n", &count), ("path", &path.display())]))
                 }
-                Err(e) => app.status = Some(format!("Could not write {}: {e}", path.display())),
+                Err(e) => app.status = Some(tf("status_write_failed", &[("path", &path.display()), ("error", &e)])),
             }
         }
         Message::SetAllModsEnabled(enable) => {
@@ -949,7 +942,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.confirm_set_all = None;
             let targets = mods_visible_for_bulk(app);
             if targets.is_empty() {
-                app.status = Some("Nothing on screen to change.".to_string());
+                app.status = Some(t("status_nothing_on_screen").to_string());
                 return Task::none();
             }
             let mut changed = 0usize;
@@ -962,10 +955,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 }
             }
             if changed == 0 {
-                app.status = Some(format!(
-                    "Already {}: all {} mod(s) on screen.",
-                    if enable { "enabled" } else { "disabled" },
-                    targets.len()
+                app.status = Some(tf(
+                    if enable { "status_already_enabled" } else { "status_already_disabled" },
+                    &[("n", &targets.len())],
                 ));
                 return Task::none();
             }
@@ -983,15 +975,18 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 .filter(|m| !m.is_separator() && !m.is_unmanaged())
                 .count();
             let narrowed = targets.len() < total;
-            app.status = Some(format!(
-                "{} {changed} mod(s){}.",
-                if enable { "Enabled" } else { "Disabled" },
-                if narrowed {
-                    format!(" - only the {} on screen, of {total}", targets.len())
-                } else {
-                    String::new()
-                }
-            ));
+            app.status = Some(match (enable, narrowed) {
+                (true, false) => tf("status_enabled_n", &[("n", &changed)]),
+                (false, false) => tf("status_disabled_n", &[("n", &changed)]),
+                (true, true) => tf(
+                    "status_enabled_n_on_screen",
+                    &[("n", &changed), ("shown", &targets.len()), ("total", &total)],
+                ),
+                (false, true) => tf(
+                    "status_disabled_n_on_screen",
+                    &[("n", &changed), ("shown", &targets.len()), ("total", &total)],
+                ),
+            });
         }
         Message::BatchToggleMods => {
             // MO2-style batch enable/disable: if any selected real mod is enabled,
@@ -1003,7 +998,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 .filter(|&i| app.mods.get(i).is_some_and(|m| !m.is_backup()))
                 .collect();
             if targets.is_empty() {
-                app.status = Some("Select one or more mods first.".to_string());
+                app.status = Some(t("status_select_mods_first").to_string());
                 return Task::none();
             }
             let any_on = targets
@@ -1017,23 +1012,20 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
             app.menu_mod = None;
             if mods_changed(app) {
-                app.status = Some(format!(
-                    "{} {} mod(s).",
-                    if new_state { "Enabled" } else { "Disabled" },
-                    targets.len()
+                app.status = Some(tf(
+                    if new_state { "status_enabled_n" } else { "status_disabled_n" },
+                    &[("n", &targets.len())],
                 ));
             }
         }
         Message::BatchRemoveMods => {
             let n = real_selection(app).len();
             if n == 0 {
-                app.status = Some("Select one or more mods first.".to_string());
+                app.status = Some(t("status_select_mods_first").to_string());
                 return Task::none();
             }
             app.confirm_batch_remove = true;
-            app.status = Some(format!(
-                "Click Remove again to permanently delete {n} mod(s) from disk."
-            ));
+            app.status = Some(tf("status_click_remove_again_n", &[("n", &n)]));
         }
         Message::ConfirmBatchRemove => {
             app.confirm_batch_remove = false;
@@ -1047,7 +1039,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let _lock = match inst.try_lock("the Eidos window") {
                 Ok(l) => l,
                 Err(e) => {
-                    app.status = Some(format!("Cannot remove mods now: {e}."));
+                    app.status = Some(tf("status_cannot_remove_mods_now", &[("error", &e)]));
                     return Task::none();
                 }
             };
@@ -1076,9 +1068,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.selected_mod = None;
             let removed = gone.len();
             let mut status = if failed == 0 {
-                format!("Removed {removed} mod(s).")
+                tf("status_removed_n", &[("n", &removed)])
             } else {
-                format!("Removed {removed} mod(s); {failed} could not be deleted.")
+                tf("status_removed_n_failed", &[("n", &removed), ("failed", &failed)])
             };
             // Before the save: every profile's modlist.txt still lists the deleted
             // folders, and a big enough batch of listed-but-missing mods is exactly
@@ -1087,7 +1079,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // one that failed keeps its line, its slot and its enabled state.
             let forgot = forget_removed_mods(app, &gone);
             if let Some(Err(e)) = forgot {
-                status = format!("{status} The mod list could not be updated: {e}.");
+                status = format!("{status} {}", tf("status_list_update_failed", &[("error", &e)]));
             }
             // Set BEFORE mods_changed, which replaces it with the reason if the
             // save is refused; set after, it hid that refusal behind "Removed".
@@ -1218,9 +1210,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     refresh_meta_cache(app);
                     bump_views(app);
                     app.conflicts = compute_conflicts(app);
-                    app.status = Some(format!("Saved a copy at {}.", dest.display()));
+                    app.status = Some(tf("status_backup_saved", &[("path", &dest.display())]));
                 }
-                Err(error) => app.error = Some(format!("Could not back up {name}: {error}")),
+                Err(error) => app.error = Some(tf("status_backup_failed", &[("name", &name), ("error", &error)])),
             }
         }
         Message::ModRestoreBackup(i) => {
@@ -1244,14 +1236,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // from `X`.
             let stem = m.name.trim_end_matches(|c: char| c.is_ascii_digit());
             let Some(orig) = stem.strip_suffix("_backup").filter(|s| !s.is_empty()) else {
-                app.error = Some("That backup's name does not say what it came from.".to_string());
+                app.error = Some(t("status_backup_unnamed").to_string());
                 return Task::none();
             };
             let target = inst.mods_dir().join(orig);
             if !target.is_dir() {
-                app.error = Some(format!(
-                    "{orig} is not in this instance any more - nothing to restore over."
-                ));
+                app.error = Some(tf("status_backup_original_gone", &[("name", &orig)]));
                 return Task::none();
             }
             let src = m.path.clone();
@@ -1266,13 +1256,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 let _lock = match inst.try_lock("the Eidos window") {
                     Ok(l) => l,
                     Err(e) => {
-                        app.status = Some(format!("Busy: {e}."));
+                        app.status = Some(tf("status_busy", &[("error", &e)]));
                         return Task::none();
                     }
                 };
                 let _ = std::fs::remove_dir_all(&stash);
                 if let Err(e) = std::fs::rename(&target, &stash) {
-                    app.error = Some(format!("Could not restore {orig}: {e}"));
+                    app.error = Some(tf("status_restore_failed", &[("name", &orig), ("error", &e)]));
                     return Task::none();
                 }
                 match copy_dir_contents(&src, &target) {
@@ -1285,7 +1275,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         let _ = std::fs::remove_dir_all(&target);
                         let _ = std::fs::rename(&stash, &target);
                         app.error =
-                            Some(format!("Could not restore {orig}: {e} - nothing changed."));
+                            Some(tf("status_restore_failed_unchanged", &[("name", &orig), ("error", &e)]));
                         false
                     }
                 }
@@ -1294,7 +1284,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 reload_mods(app);
                 refresh_meta_cache(app);
                 refresh_after_tree_change(app);
-                app.status = Some(format!("{orig} restored from its backup."));
+                app.status = Some(tf("status_restored", &[("name", &orig)]));
             }
         }
         Message::ClearListOrder => {
@@ -1346,7 +1336,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     .collect(),
             );
             if let Err(e) = app.prefs.save() {
-                app.error = Some(format!("Could not save settings: {e}"));
+                app.error = Some(tf("status_settings_save_failed", &[("error", &e)]));
             }
             app.view_menu_open = false;
         }
@@ -1381,9 +1371,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 Ok(()) => {
                     invalidate_meta(app, &name);
                     refresh_meta_cache(app);
-                    app.status = Some(format!("{name}: warnings marked as checked."));
+                    app.status = Some(tf("status_marked_valid", &[("name", &name)]));
                 }
-                Err(e) => app.error = Some(format!("Could not write meta.ini: {e}")),
+                Err(e) => app.error = Some(tf("status_meta_ini_failed", &[("error", &e)])),
             }
         }
         Message::FocusFilter => {

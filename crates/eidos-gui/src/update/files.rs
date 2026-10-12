@@ -10,14 +10,14 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         Message::OverwriteToModStart => {
             if app.created.as_ref().is_some_and(|i| i.overwrite_is_empty()) {
                 app.status =
-                    Some("The Overwrite is empty - nothing to turn into a mod.".to_string());
+                    Some(t("status_overwrite_empty").to_string());
             } else {
                 // Default to a fresh, non-colliding name, like the installer does.
                 let suggestion = app
                     .created
                     .as_ref()
-                    .map(|i| suggest_free_name(&i.mods_dir(), "Overwrite output"))
-                    .unwrap_or_else(|| "Overwrite output".to_string());
+                    .map(|i| suggest_free_name(&i.mods_dir(), t("overwrite_output_name")))
+                    .unwrap_or_else(|| t("overwrite_output_name").to_string());
                 app.overwrite_to_mod = Some(suggestion);
             }
         }
@@ -50,7 +50,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let _guard = match inst.try_lock("the Eidos window") {
                 Ok(g) => g,
                 Err(e) => {
-                    app.status = Some(format!("Cannot turn the Overwrite into a mod: {e}."));
+                    app.status = Some(tf("status_overwrite_to_mod_busy", &[("error", &e)]));
                     return Task::none();
                 }
             };
@@ -76,14 +76,14 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     // Before mods_changed, which replaces it with the reason if
                     // the save is refused.
                     app.status = Some(if existing {
-                        format!("Moved the Overwrite into '{name}'.")
+                        tf("status_overwrite_moved_into", &[("name", &name)])
                     } else {
-                        format!("Created mod '{name}' from the Overwrite.")
+                        tf("status_overwrite_created_mod", &[("name", &name)])
                     });
                     mods_changed(app);
                 }
                 Err(e) => {
-                    app.status = Some(format!("Could not create the mod: {e}"));
+                    app.status = Some(tf("status_create_the_mod_failed", &[("error", &e)]));
                     // Keep the prompt open so the name can be fixed.
                     app.overwrite_to_mod = Some(name);
                 }
@@ -102,10 +102,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     // refusal is reported once, on the click that would act.
                     let held = inst.try_lock("the Eidos window");
                     app.status = Some(match held {
-                        Err(e) => format!("Cannot clear the Overwrite: {e}."),
+                        Err(e) => tf("status_overwrite_clear_busy", &[("error", &e)]),
                         Ok(_guard) => match clear_dir_contents(&dir) {
-                            Ok(()) => "Overwrite cleared.".to_string(),
-                            Err(e) => format!("Clear failed: {e}"),
+                            Ok(()) => t("status_overwrite_cleared").to_string(),
+                            Err(e) => tf("status_clear_failed", &[("error", &e)]),
                         },
                     });
                     drop_files_cache(app, Some("Overwrite"));
@@ -113,8 +113,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 } else {
                     app.confirm_clear = true;
                     app.status = Some(
-                        "Click Clear again to confirm - this permanently deletes everything the game wrote to the Overwrite (configs, new saves, generated files)."
-                            .to_string(),
+                        t("status_overwrite_clear_confirm").to_string(),
                     );
                 }
             }
@@ -149,9 +148,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     break;
                 }
             }
-            app.status = Some(format!(
-                "Expanded to the first {DATA_TREE_ROWS} entries. Filter to narrow it down."
-            ));
+            app.status = Some(tf("status_expanded_first_n", &[("n", &DATA_TREE_ROWS)]));
         }
         Message::DataCollapseAll => app.data_expanded.clear(),
         Message::DataReveal(path) => {
@@ -166,7 +163,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     .unwrap_or(path.clone())
             };
             let _ = std::process::Command::new("xdg-open").arg(&target).spawn();
-            app.status = Some(format!("Opened {}", target.display()));
+            app.status = Some(tf("status_opened", &[("path", &target.display())]));
         }
         Message::OverwriteToggleDir(rel) => {
             if !app.overwrite_expanded.remove(&rel) {
@@ -200,7 +197,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // The path came from a listing that may be a redraw old; a stale row
             // must report a miss, not act on whatever now sits at that path.
             if target.symlink_metadata().is_err() {
-                app.status = Some(format!("'{rel}' is no longer there."));
+                app.status = Some(tf("status_gone", &[("path", &rel)]));
                 return Task::none();
             }
             // Hiding renames a file INSIDE a mod directory, which is a layer of
@@ -215,14 +212,16 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let _lock = match inst.try_lock("the Eidos window") {
                 Ok(l) => l,
                 Err(e) => {
-                    app.status = Some(format!("Cannot change hidden files: {e}."));
+                    app.status = Some(tf("status_hidden_busy", &[("error", &e)]));
                     return Task::none();
                 }
             };
             match set_hidden(&target, hide) {
                 Ok(_) => {
-                    let verb = if hide { "Hid" } else { "Unhid" };
-                    app.status = Some(format!("{verb} '{subject}' in '{}'.", m.name));
+                    app.status = Some(tf(
+                        if hide { "status_hid" } else { "status_unhid" },
+                        &[("file", &subject), ("name", &m.name)],
+                    ));
                     // A directory unhide brings back EVERYTHING under it, plugin
                     // files included, whatever leaf the click came from - so
                     // assume the worst, exactly as RestoreHiddenFiles does.
@@ -233,8 +232,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     }
                 }
                 Err(e) => {
-                    let verb = if hide { "hide" } else { "unhide" };
-                    app.status = Some(format!("Could not {verb} '{subject}': {e}"));
+                    app.status = Some(tf(
+                        if hide { "status_hide_failed" } else { "status_unhide_failed" },
+                        &[("file", &subject), ("error", &e)],
+                    ));
                 }
             }
         }
@@ -255,11 +256,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             });
             match result {
                 Ok(was_on) => {
-                    let verb = if was_on { "Disabled" } else { "Enabled" };
-                    app.status = Some(format!("{verb} INI tweak '{name}' for '{}'.", m.name));
+                    app.status = Some(tf(
+                        if was_on { "status_tweak_disabled" } else { "status_tweak_enabled" },
+                        &[("tweak", &name), ("name", &m.name)],
+                    ));
                     bump_views(app);
                 }
-                Err(e) => app.status = Some(format!("Could not save the tweak list: {e}")),
+                Err(e) => app.status = Some(tf("status_tweaks_save_failed", &[("error", &e)])),
             }
         }
 
@@ -278,20 +281,20 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let _lock = match inst.try_lock("the Eidos window") {
                 Ok(l) => l,
                 Err(e) => {
-                    app.status = Some(format!("Cannot change hidden files: {e}."));
+                    app.status = Some(tf("status_hidden_busy", &[("error", &e)]));
                     return Task::none();
                 }
             };
             match restore_hidden_files(&m.path) {
-                Ok(0) => app.status = Some(format!("'{}' has no hidden files.", m.name)),
+                Ok(0) => app.status = Some(tf("status_no_hidden_files", &[("name", &m.name)])),
                 Ok(n) => {
-                    app.status = Some(format!("Unhid {n} file(s) in '{}'.", m.name));
+                    app.status = Some(tf("status_unhid_n", &[("n", &n), ("name", &m.name)]));
                     // No single path to key the plugin refresh on, so assume the
                     // worst: a restored .esp changes the load order.
                     after_hidden_change(app, &m.name, "restored.esp");
                 }
                 Err(e) => {
-                    app.status = Some(format!("Could not unhide files: {e}"));
+                    app.status = Some(tf("status_unhide_files_failed", &[("error", &e)]));
                     after_hidden_change(app, &m.name, "restored.esp");
                 }
             }
@@ -310,22 +313,19 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let _lock = match inst.try_lock("the Eidos window") {
                 Ok(l) => l,
                 Err(e) => {
-                    app.status = Some(format!("Cannot sync now: {e}."));
+                    app.status = Some(tf("status_sync_busy", &[("error", &e)]));
                     return Task::none();
                 }
             };
             let Some(owners) = overwrite_owners(app) else {
                 app.status = Some(
-                    "Open the Conflicts tab once so Eidos knows which mod provides what."
-                        .to_string(),
+                    t("status_sync_needs_conflicts").to_string(),
                 );
                 return Task::none();
             };
             if owners.is_empty() {
                 app.status = Some(
-                    "Nothing in the Overwrite is provided by a mod - there is nowhere to send it \
-                     back to. Use Create mod... instead."
-                        .to_string(),
+                    t("status_sync_nowhere").to_string(),
                 );
                 return Task::none();
             }
@@ -338,15 +338,15 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     reload_mods(app);
                     app.conflicts = compute_conflicts(app);
                     app.status = Some(match (moved, failures.len()) {
-                        (0, 0) => "Nothing to send back.".to_string(),
-                        (n, 0) => format!("Sent {n} file(s) back to the mods that provide them."),
-                        (n, f) => format!(
-                            "Sent {n} file(s) back; {f} could not be moved, e.g. {}",
-                            failures[0]
+                        (0, 0) => t("status_sync_nothing").to_string(),
+                        (n, 0) => tf("status_sync_sent", &[("n", &n)]),
+                        (n, f) => tf(
+                            "status_sync_partial",
+                            &[("n", &n), ("failed", &f), ("example", &failures[0])],
                         ),
                     });
                 }
-                Err(e) => app.status = Some(format!("Sync failed: {e}")),
+                Err(e) => app.status = Some(tf("status_sync_failed", &[("error", &e)])),
             }
         }
         Message::PreviewFile(path) => {
@@ -381,7 +381,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let epoch = app.archive_epoch.get();
             return Task::perform(
                 rfd::AsyncFileDialog::new()
-                    .set_title("Choose a file for an extension")
+                    .set_title(t("dialog_pick_extension_file"))
                     .pick_file(),
                 move |file| Message::ExtensionFilePicked {
                     request,
@@ -446,9 +446,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             };
             let Some(path) = resolve_in_mod(&base, &rel) else {
-                app.error = Some(format!(
-                    "Refused to open {rel}: not a path inside this mod."
-                ));
+                app.error = Some(tf("status_refused_open", &[("path", &rel)]));
                 return Task::none();
             };
             return update(app, Message::OpenFolder(path));
@@ -496,7 +494,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 resolve_in_mod(&base, &rel),
                 resolve_in_mod(&base, &dest_rel),
             ) else {
-                app.error = Some(format!("Refused to rename to {name}: not a name."));
+                app.error = Some(tf("status_refused_rename", &[("name", &name)]));
                 return Task::none();
             };
             if from == to {
@@ -505,7 +503,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // Never over something that is already there. `fs::rename` would
             // replace a file silently, and this is a mod's own contents.
             if to.symlink_metadata().is_ok() {
-                app.error = Some(format!("{name} already exists in that folder."));
+                app.error = Some(tf("status_exists_in_folder", &[("name", &name)]));
                 return Task::none();
             }
             let done = {
@@ -517,21 +515,21 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 {
                     Ok(l) => l,
                     Err(e) => {
-                        app.status = Some(format!("Busy: {e}."));
+                        app.status = Some(tf("status_busy", &[("error", &e)]));
                         return Task::none();
                     }
                 };
                 match std::fs::rename(&from, &to) {
                     Ok(()) => true,
                     Err(e) => {
-                        app.error = Some(format!("Could not rename: {e}"));
+                        app.error = Some(tf("status_rename_failed", &[("error", &e)]));
                         false
                     }
                 }
             };
             if done {
                 refresh_after_tree_change(app);
-                app.status = Some(format!("Renamed to {name}."));
+                app.status = Some(tf("status_renamed_plain", &[("name", &name)]));
             }
         }
         Message::FiletreeDelete(i, rel) => {
@@ -552,9 +550,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             };
             let Some(path) = resolve_in_mod(&base, &rel) else {
-                app.error = Some(format!(
-                    "Refused to delete {rel}: not a path inside this mod."
-                ));
+                app.error = Some(tf("status_refused_delete", &[("path", &rel)]));
                 return Task::none();
             };
             // The instance lock spans the delete and nothing else - see
@@ -568,7 +564,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 {
                     Ok(l) => l,
                     Err(e) => {
-                        app.status = Some(format!("Busy: {e}."));
+                        app.status = Some(tf("status_busy", &[("error", &e)]));
                         return Task::none();
                     }
                 };
@@ -576,7 +572,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 let md = match path.symlink_metadata() {
                     Ok(md) => md,
                     Err(e) => {
-                        app.error = Some(format!("Could not delete {rel}: {e}"));
+                        app.error = Some(tf("status_delete_failed", &[("path", &rel), ("error", &e)]));
                         return Task::none();
                     }
                 };
@@ -589,9 +585,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             match r {
                 Ok(()) => {
                     refresh_after_tree_change(app);
-                    app.status = Some(format!("Deleted {rel}."));
+                    app.status = Some(tf("status_deleted", &[("path", &rel)]));
                 }
-                Err(e) => app.error = Some(format!("Could not delete {rel}: {e}")),
+                Err(e) => app.error = Some(tf("status_delete_failed", &[("path", &rel), ("error", &e)])),
             }
         }
         Message::FiletreeNewFolderStart(i) => {
@@ -625,7 +621,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             };
             let Some(path) = resolve_in_mod(&base, &name) else {
-                app.error = Some(format!("Refused to create {name}: not a folder name."));
+                app.error = Some(tf("status_refused_create", &[("name", &name)]));
                 return Task::none();
             };
             let r = {
@@ -637,7 +633,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 {
                     Ok(l) => l,
                     Err(e) => {
-                        app.status = Some(format!("Busy: {e}."));
+                        app.status = Some(tf("status_busy", &[("error", &e)]));
                         return Task::none();
                     }
                 };
@@ -646,9 +642,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             match r {
                 Ok(()) => {
                     refresh_after_tree_change(app);
-                    app.status = Some(format!("Created {name}/."));
+                    app.status = Some(tf("status_created_folder", &[("name", &name)]));
                 }
-                Err(e) => app.error = Some(format!("Could not create {name}: {e}")),
+                Err(e) => app.error = Some(tf("status_create_folder_failed", &[("name", &name), ("error", &e)])),
             }
         }
         // Nothing to store. Every animated value is a function of the instant

@@ -207,7 +207,7 @@ fn work(app: &mut App, install: bool) -> Task<Message> {
     };
     if current.as_ref() != Some(&w.target) {
         w.error =
-            Some("The installation or profile changed; close and reopen this installer.".into());
+            Some(t("installer_target_changed_reopen").into());
         return Task::none();
     }
     let Some(mut session) = w.session.take() else {
@@ -236,9 +236,9 @@ fn work(app: &mut App, install: bool) -> Task<Message> {
         crate::background_work::run(move || {
             let inst = Instance::portable(target.instance.clone());
             let outcome = (|| {
-            if cancel.load(Ordering::Relaxed) { return Err(invalid("Installer cancelled")); }
+            if cancel.load(Ordering::Relaxed) { return Err(invalid(t("installer_cancelled"))); }
             let _guard = inst.try_lock("running scripted installer")?;
-            if crate::update::collection_target_for(&inst, &game, &candidates).as_ref() != Some(&target) { return Err(invalid("The installation or profile changed")); }
+            if crate::update::collection_target_for(&inst, &game, &candidates).as_ref() != Some(&target) { return Err(invalid(t("installer_target_changed"))); }
             let context = if matches!(session, Session::Custom { .. }) {
                 custom::context_for_instance(&inst, game.def.id, &game.install_path, &game.data_path, game.prefix().as_deref(), &control_dirs(&game), &cancel)?
             } else { eidos_addons::Context::default() };
@@ -248,7 +248,7 @@ fn work(app: &mut App, install: bool) -> Task<Message> {
                     *receipt = if let Some((folder, owner)) = &collection {
                         match eidos_collections::installer_answers::read(folder, owner).map_err(invalid)? {
                             Some(eidos_collections::installer_answers::InstallerAnswers::Omod { receipt, .. }) => Some(receipt),
-                            _ => return Err(invalid("Collection installer receipt changed or is missing")),
+                            _ => return Err(invalid(t("installer_receipt_changed"))),
                         }
                     } else { scripted::read_installed_receipt(&inst.mods_dir().join(&name))? };
                 }
@@ -262,7 +262,7 @@ fn work(app: &mut App, install: bool) -> Task<Message> {
                         receipt: receipt.clone(), prompt: None, apply_profile_effects: approval.apply_profile_effects, allow_incomplete: approval.allow_incomplete,
                     },
                     Session::Custom { session, .. } if matches!(session.state, custom::CustomEvaluation::Ready(_)) => InstallerAnswers::Custom { receipt: session.receipt(), prompt: None },
-                    _ => return Err(invalid("The collection installer still requires an answer")),
+                    _ => return Err(invalid(t("installer_collection_needs_answer"))),
                 };
                 installer_answers::write(folder, owner, &answers).map_err(invalid)?;
                 return Ok(Outcome::ChoicesSaved);
@@ -272,17 +272,17 @@ fn work(app: &mut App, install: bool) -> Task<Message> {
                 Session::Omod { session, context: Some(ctx), evaluation: Some(scripted::ScriptedEvaluation::Review(review)), .. } => {
                     let result = scripted::install_scripted_omod(session, ctx, review, &name, policy, approval, &cancel)?;
                     warnings.extend(result.warnings);
-                    if result.pending_effects { warnings.push(format!("Approved profile effects remain pending. Retry with eidos install \"{}\" --retry-omod-effects \"{}\".", target.instance.display(), result.install.name)); }
+                    if result.pending_effects { warnings.push(tf("installer_effects_pending", &[("instance", &target.instance.display()), ("name", &result.install.name)])); }
                     result.install
                 }
                 Session::Custom { session, .. } => {
                     if let custom::CustomEvaluation::Ready(plan) = &session.state { warnings.extend(plan.warnings.clone()); }
                     custom::finish_custom(session, &inst.mods_dir(), &name, policy, &addons, &context, &cancel)?
                 },
-                _ => return Err(invalid("Installer still requires an answer")),
+                _ => return Err(invalid(t("installer_needs_answer"))),
             };
             if let Err(error) = inst.register_installed_mod(&report.name) {
-                warnings.push(format!("Payload installed; profile registration failed: {error}"));
+                warnings.push(tf("installer_registration_failed", &[("error", &error)]));
             }
             Ok(Outcome::Installed(report, warnings))
         })().map_err(|e: eidos_install::InstallError| e.to_string());
@@ -341,24 +341,26 @@ fn set_page(w: &mut Wizard) {
             evaluation: Some(scripted::ScriptedEvaluation::Review(r)),
             ..
         }) => {
-            lines.push(format!(
-                "{} files; {} file effects; {} profile effects",
-                r.plan.files.len() + r.generated_files.len(),
-                r.plan.effects.len(),
-                r.profile_effects.len()
+            lines.push(tf(
+                "installer_review_counts",
+                &[
+                    ("files", &(r.plan.files.len() + r.generated_files.len())),
+                    ("file_effects", &r.plan.effects.len()),
+                    ("profile_effects", &r.profile_effects.len()),
+                ],
             ));
             lines.extend(
                 r.generated_files
                     .iter()
-                    .map(|path| format!("Generated file: {path}")),
+                    .map(|path| tf("installer_generated_file", &[("path", path)])),
             );
-            lines.push("Profile changes:".into());
+            lines.push(t("installer_profile_changes").into());
             lines.extend(
                 r.profile_effects
                     .iter()
                     .map(|e| format!("{} {:?}", e.command, e.arguments)),
             );
-            lines.push("File transformations:".into());
+            lines.push(t("installer_file_transformations").into());
             lines.extend(
                 r.plan
                     .effects
@@ -366,7 +368,7 @@ fn set_page(w: &mut Wizard) {
                     .map(|e| format!("{} {:?}", e.command, e.arguments)),
             );
             lines.extend(r.plan.warnings.iter().chain(&r.unsupported).cloned());
-            lines.push("Selected files:".into());
+            lines.push(t("installer_selected_files").into());
             lines.extend(
                 r.plan
                     .files
@@ -375,15 +377,15 @@ fn set_page(w: &mut Wizard) {
                     .map(|f| format!("{} → {}", f.source, f.destination)),
             );
             if r.plan.files.len() > 500 {
-                lines.push(format!(
-                    "… {} more files; the full file plan is retained in the receipt.",
-                    r.plan.files.len() - 500
+                lines.push(tf(
+                    "installer_more_files",
+                    &[("n", &(r.plan.files.len() - 500))],
                 ));
             }
         }
         Some(Session::Custom { session, .. }) => match &session.state {
             custom::CustomEvaluation::Ready(plan) => {
-                lines.push(format!("{} files", plan.files.len()));
+                lines.push(tf("installer_n_files", &[("n", &plan.files.len())]));
                 lines.extend(plan.warnings.clone());
                 lines.extend(
                     plan.files
@@ -392,17 +394,17 @@ fn set_page(w: &mut Wizard) {
                         .map(|f| format!("{} → {}", f.source, f.destination)),
                 );
                 if plan.files.len() > 500 {
-                    lines.push(format!(
-                        "… {} more files; the full file plan is retained in the receipt.",
-                        plan.files.len() - 500
+                    lines.push(tf(
+                        "installer_more_files",
+                        &[("n", &(plan.files.len() - 500))],
                     ));
                 }
             }
-            custom::CustomEvaluation::Manual(reason) => lines.push(format!(
-                "{reason}\nThis installer requests manual selection."
-            )),
+            custom::CustomEvaluation::Manual(reason) => {
+                lines.push(format!("{reason}\n{}", t("installer_requests_manual")))
+            }
             custom::CustomEvaluation::Cancelled => {
-                lines.push("The installer cancelled this operation.".into())
+                lines.push(t("installer_cancelled_operation").into())
             }
             _ => {}
         },
@@ -412,7 +414,7 @@ fn set_page(w: &mut Wizard) {
 }
 
 fn answer(w: &mut Wizard, yes: Option<bool>) -> Result<(), String> {
-    let p = prompt(w).ok_or("No pending prompt")?;
+    let p = prompt(w).ok_or(t("installer_no_prompt"))?;
     let answer = match p {
         ObmmPromptKind::Select {
             many, min_choices, ..
@@ -424,14 +426,14 @@ fn answer(w: &mut Wizard, yes: Option<bool>) -> Result<(), String> {
                 .filter_map(|(i, yes)| yes.then_some(i))
                 .collect();
             if selected.len() < min_choices || !many && selected.len() > 1 {
-                return Err("Choose the required number of options.".into());
+                return Err(t("installer_choose_required").into());
             }
             ObmmAnswer::Select(selected)
         }
-        ObmmPromptKind::YesNo { .. } => ObmmAnswer::YesNo(yes.ok_or("Choose Yes or No")?),
+        ObmmPromptKind::YesNo { .. } => ObmmAnswer::YesNo(yes.ok_or(t("installer_choose_yes_no"))?),
         ObmmPromptKind::Input { max_length, .. } => {
             if w.input.chars().count() > max_length.unwrap_or(65_536) {
-                return Err("The entered text is too long.".into());
+                return Err(t("installer_text_too_long").into());
             }
             ObmmAnswer::Text(w.input.clone())
         }
@@ -448,17 +450,17 @@ fn answer(w: &mut Wizard, yes: Option<bool>) -> Result<(), String> {
         }),
         Session::Custom { session, receipt } => {
             let custom::CustomEvaluation::Prompt(prompt) = &session.state else {
-                return Err("Prompt changed".into());
+                return Err(t("installer_prompt_changed").into());
             };
             let ObmmAnswer::Select(selected) = answer else {
-                return Err("Expected a selection".into());
+                return Err(t("installer_expected_selection").into());
             };
             receipt.answers.push(custom::CustomRecordedAnswer {
                 prompt: prompt.clone(),
                 selected,
             });
         }
-        _ => return Err("Prompt changed".into()),
+        _ => return Err(t("installer_prompt_changed").into()),
     }
     Ok(())
 }
@@ -469,7 +471,7 @@ pub(crate) fn update(app: &mut App, action: Action) -> Task<Message> {
         app.preview_pending = None;
         app.preview = None;
         app.status = Some(
-            "Installer closed. Any published payload and pending effects remain recorded.".into(),
+            t("installer_closed").into(),
         );
         return Task::none();
     }
@@ -486,7 +488,7 @@ pub(crate) fn update(app: &mut App, action: Action) -> Task<Message> {
             .take()
             .and_then(|slot| slot.lock().ok().and_then(|mut s| s.take()));
         let Some(reply) = reply else {
-            w.error = Some("Installer worker stopped without a result.".into());
+            w.error = Some(t("installer_worker_stopped").into());
             return Task::none();
         };
         w.session = Some(reply.session);
@@ -502,13 +504,13 @@ pub(crate) fn update(app: &mut App, action: Action) -> Task<Message> {
                             .push_str(&format!("\n{}", warnings.join("\n")));
                     }
                 } else {
-                    w.error = Some(format!("Installed {} in the original instance. The current view changed and was not refreshed.", report.name));
+                    w.error = Some(tf("installer_installed_elsewhere", &[("name", &report.name)]));
                 }
             }
             Ok(Outcome::Reviewed) => set_page(w),
             Ok(Outcome::ChoicesSaved) => {
                 app.installer = None;
-                app.status = Some("Installer choices saved. Resume the collection to validate its recipe and publish the mod.".into());
+                app.status = Some(t("installer_choices_saved").into());
             }
             Err(error) => w.error = Some(error),
         }
@@ -518,7 +520,7 @@ pub(crate) fn update(app: &mut App, action: Action) -> Task<Message> {
         return Task::none();
     }
     if current.as_ref() != Some(&w.target) {
-        w.error = Some("The installation or profile changed; reopen the installer.".into());
+        w.error = Some(t("installer_target_changed_reopen_short").into());
         return Task::none();
     }
     match action {
@@ -592,7 +594,7 @@ pub(crate) fn update(app: &mut App, action: Action) -> Task<Message> {
         Action::Manual => {
             if w.collection.is_some() {
                 w.error = Some(
-                    "Resume the collection so its recipe is applied before publication.".into(),
+                    t("installer_resume_collection").into(),
                 );
                 return Task::none();
             }
@@ -622,7 +624,7 @@ pub(crate) fn update(app: &mut App, action: Action) -> Task<Message> {
                     let path = session.data_root().join(&entry.path);
                     return crate::file_preview::start(app, path, None, None, None);
                 }
-                w.error = Some("Preview member is absent from the decoded OMOD payload.".into());
+                w.error = Some(t("installer_preview_missing").into());
             }
         }
         Action::Cancel | Action::Ready(_) => {}
@@ -635,7 +637,7 @@ fn msg(a: Action) -> Message {
 
 pub(crate) fn view(w: &Wizard) -> Element<'_, Message> {
     let mut body = column![
-        text("Mod installer").size(sz(24)),
+        text(t("installer_title")).size(sz(24)),
         text(
             w.archive
                 .file_name()
@@ -646,7 +648,7 @@ pub(crate) fn view(w: &Wizard) -> Element<'_, Message> {
     ]
     .spacing(10);
     if w.pending.is_some() {
-        body = body.push(text("Preparing and validating the installation…"));
+        body = body.push(text(t("installer_preparing")));
     } else if let Some(p) = prompt(w) {
         match p {
             ObmmPromptKind::Select {
@@ -655,10 +657,13 @@ pub(crate) fn view(w: &Wizard) -> Element<'_, Message> {
                 min_choices,
                 options,
             } => {
-                body = body.push(text(title)).push(text(format!(
-                    "Choose {}{} option(s)",
-                    if many { "at least " } else { "" },
-                    min_choices
+                body = body.push(text(title)).push(text(tf(
+                    if many {
+                        "installer_choose_at_least"
+                    } else {
+                        "installer_choose_n"
+                    },
+                    &[("n", &min_choices)],
                 )));
                 for (i, option) in options.into_iter().enumerate() {
                     let selected = w.selected.get(i).copied().unwrap_or(false);
@@ -671,8 +676,8 @@ pub(crate) fn view(w: &Wizard) -> Element<'_, Message> {
                         body = body.push(text(description));
                     }
                     for (label, path) in [
-                        ("Read description", option.description_file),
-                        ("Preview", option.preview),
+                        (t("installer_read_description"), option.description_file),
+                        (t("installer_preview"), option.preview),
                     ] {
                         if let Some(path) = path {
                             body =
@@ -680,13 +685,13 @@ pub(crate) fn view(w: &Wizard) -> Element<'_, Message> {
                         }
                     }
                 }
-                body = body.push(button("Continue").on_press(msg(Action::Answer(None))));
+                body = body.push(button(text(t("installer_continue"))).on_press(msg(Action::Answer(None))));
             }
             ObmmPromptKind::YesNo { title, message } => {
                 body = body.push(text(title)).push(text(message)).push(
                     row![
-                        button("Yes").on_press(msg(Action::Answer(Some(true)))),
-                        button("No").on_press(msg(Action::Answer(Some(false))))
+                        button(text(t("installer_yes"))).on_press(msg(Action::Answer(Some(true)))),
+                        button(text(t("installer_no"))).on_press(msg(Action::Answer(Some(false))))
                     ]
                     .spacing(10),
                 )
@@ -694,26 +699,26 @@ pub(crate) fn view(w: &Wizard) -> Element<'_, Message> {
             ObmmPromptKind::Input { title, .. } => {
                 body = body
                     .push(text(title))
-                    .push(text_input("Answer", &w.input).on_input(|s| msg(Action::Text(s))))
-                    .push(button("Continue").on_press(msg(Action::Answer(None))))
+                    .push(text_input(t("installer_answer"), &w.input).on_input(|s| msg(Action::Text(s))))
+                    .push(button(text(t("installer_continue"))).on_press(msg(Action::Answer(None))))
             }
             ObmmPromptKind::Message { title, message } => {
                 body = body
                     .push(text(title))
                     .push(text(message))
-                    .push(button("Continue").on_press(msg(Action::Answer(None))))
+                    .push(button(text(t("installer_continue"))).on_press(msg(Action::Answer(None))))
             }
             ObmmPromptKind::Preview { title, path, .. } => {
                 body = body
                     .push(text(title))
-                    .push(button("Open preview").on_press(msg(Action::Preview(path))))
-                    .push(button("Continue").on_press(msg(Action::Answer(None))))
+                    .push(button(text(t("installer_open_preview"))).on_press(msg(Action::Preview(path))))
+                    .push(button(text(t("installer_continue"))).on_press(msg(Action::Answer(None))))
             }
         }
-        body = body.push(button("Back").on_press(msg(Action::Back)));
+        body = body.push(button(text(t("installer_back"))).on_press(msg(Action::Back)));
     } else {
         body = body
-            .push(button("Back").on_press(msg(Action::Back)))
+            .push(button(text(t("installer_back"))).on_press(msg(Action::Back)))
             .push(text(&w.review));
         let ready = matches!(
             w.session.as_ref(),
@@ -725,15 +730,15 @@ pub(crate) fn view(w: &Wizard) -> Element<'_, Message> {
         if ready {
             if w.collection.is_none() {
                 body = body
-                    .push(text_input("Mod folder name", &w.name).on_input(|v| msg(Action::Name(v))))
+                    .push(text_input(t("installer_folder_name"), &w.name).on_input(|v| msg(Action::Name(v))))
                     .push(
                         checkbox(w.replace)
-                            .label("Replace this mod if the folder already exists")
+                            .label(t("installer_replace"))
                             .on_toggle(|v| msg(Action::Replace(v))),
                     )
                     .push(
                         checkbox(w.backup)
-                            .label("Retain a backup when replacing")
+                            .label(t("installer_keep_backup"))
                             .on_toggle(|v| msg(Action::Backup(v))),
                     );
             }
@@ -741,33 +746,33 @@ pub(crate) fn view(w: &Wizard) -> Element<'_, Message> {
                 body = body
                     .push(
                         checkbox(w.approval.apply_profile_effects)
-                            .label("Apply the listed profile INI and plugin changes")
+                            .label(t("installer_apply_profile_effects"))
                             .on_toggle(|v| msg(Action::Profile(v))),
                     )
                     .push(
                         checkbox(w.approval.allow_incomplete)
-                            .label("Accept installation with the listed unapplied effects")
+                            .label(t("installer_allow_incomplete"))
                             .on_toggle(|v| msg(Action::Incomplete(v))),
                     );
             }
             body = body.push(
-                button(if w.collection.is_some() {
-                    "Save choices for the collection"
+                button(text(if w.collection.is_some() {
+                    t("installer_save_choices")
                 } else {
-                    "Install reviewed files"
-                })
+                    t("installer_install_reviewed")
+                }))
                 .on_press(msg(Action::Install)),
             );
         }
         if w.collection.is_none() && matches!(w.session, Some(Session::Custom { .. })) {
-            body = body.push(button("Choose files manually").on_press(msg(Action::Manual)));
+            body = body.push(button(text(t("installer_choose_manually"))).on_press(msg(Action::Manual)));
         }
-        body = body.push(button("Start choices again").on_press(msg(Action::Restart)));
+        body = body.push(button(text(t("installer_restart"))).on_press(msg(Action::Restart)));
     }
     if let Some(error) = &w.error {
         body = body.push(text(error));
     }
-    body = body.push(button("Close installer").on_press(msg(Action::Cancel)));
+    body = body.push(button(text(t("installer_close"))).on_press(msg(Action::Cancel)));
     container(scrollable(body).height(Length::Fill))
         .padding(24)
         .width(Length::Fill)

@@ -109,7 +109,9 @@ pub(crate) fn invalidate_meta(app: &mut App, name: &str) {
 }
 
 /// The run-target picker entry meaning "the game itself".
-pub(crate) const RUN_GAME: &str = "Game (Steam command)";
+pub(crate) fn run_game_label() -> &'static str {
+    t("run_game")
+}
 
 /// An instance the welcome screen can offer to OPEN: something that exists on
 /// disk and whose game is detected on this machine. Built from the registry
@@ -178,7 +180,7 @@ pub(crate) fn known_instances_from(
         let label = if portable {
             format!("{name}  -  {}", inst.root.display())
         } else {
-            format!("{name}  -  global")
+            tf("instance_global", &[("name", &name)])
         };
         out.push(KnownInstance {
             label,
@@ -533,7 +535,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         open_existing(&mut app, i, inst);
         if auto.is_some() {
             app.status =
-                Some("Launched from Steam. Click Run to start the game through Eidos.".to_string());
+                Some(t("status_launched_from_steam").to_string());
         }
     } else if let Some(i) = auto {
         app.selected = Some(i);
@@ -546,7 +548,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         if let Some(inst) = found {
             open_existing(&mut app, i, inst);
             app.status =
-                Some("Launched from Steam. Click Run to start the game through Eidos.".to_string());
+                Some(t("status_launched_from_steam").to_string());
         }
     } else if let Some(k) = app.known.first() {
         // Standalone: open the last-used instance if it still exists, else the
@@ -648,11 +650,7 @@ pub(crate) fn load_tools(app: &mut App) {
 /// overrides it for testing against another registration.
 pub(crate) fn nexus_sign_in() -> Result<eidos_nexus::Account, String> {
     use eidos_nexus::oauth;
-    let cfg = oauth::Config::from_env().ok_or_else(|| {
-        "EIDOS_NEXUS_CLIENT_ID is set but empty: unset it to use Eidos's own \
-         registration, or give it the client id you want to sign in with"
-            .to_string()
-    })?;
+    let cfg = oauth::Config::from_env().ok_or_else(|| t("nexus_client_id_empty").to_string())?;
     let pkce = oauth::Pkce::new().map_err(|e| e.to_string())?;
     let state = oauth::random_token(32).map_err(|e| e.to_string())?;
     let url = oauth::authorize_url(&cfg, &pkce, &state);
@@ -661,7 +659,7 @@ pub(crate) fn nexus_sign_in() -> Result<eidos_nexus::Account, String> {
     std::process::Command::new("xdg-open")
         .arg(&url)
         .spawn()
-        .map_err(|e| format!("could not open your browser: {e}"))?;
+        .map_err(|e| tf("nexus_browser_failed", &[("error", &e)]))?;
     let code = oauth::wait_for_code(
         cfg.redirect_port,
         &state,
@@ -673,7 +671,7 @@ pub(crate) fn nexus_sign_in() -> Result<eidos_nexus::Account, String> {
     creds.refresh_token = Some(tokens.refresh_token);
     creds.expires_at = tokens.expires_at;
     eidos_instance::settings::save_nexus_creds(&creds)
-        .map_err(|e| format!("signed in, but could not store the session: {e}"))?;
+        .map_err(|e| tf("nexus_store_failed", &[("error", &e)]))?;
     // The account comes from the token, NOT from `users/validate`. That endpoint
     // belongs to the personal-API-key era and answers 401 to a Bearer, so calling
     // it here failed every OAuth sign-in at the last step - after the browser had
@@ -1068,9 +1066,7 @@ pub(crate) fn eidos_command() -> std::process::Command {
 pub(crate) fn setcap_hint() -> String {
     match find_eidos_binary() {
         (bin, None) => format!("sudo setcap cap_sys_admin+ep {}", bin.display()),
-        (_, Some(_)) => "install eidos-linux-bundle.tar.gz and run: sudo setcap \
-                         cap_sys_admin+ep <its eidos binary>"
-            .to_string(),
+        (_, Some(_)) => t("setcap_install_bundle").to_string(),
     }
 }
 
@@ -1114,17 +1110,17 @@ pub(crate) fn play_command(
                     // Falling back past the script extender is worth saying out
                     // loud: the game will start, and every SKSE mod will be inert.
                     if Some(to) != prefer.first().copied() {
-                        warning = Some(format!(
-                            "{} is not installed - launching {to} directly, so script-extender mods will not load.",
-                            prefer[0]
+                        warning = Some(tf(
+                            "launch_no_script_extender",
+                            &[("loader", &prefer[0]), ("binary", &to)],
                         ));
                     }
                     *a = candidate;
                 }
                 None => {
-                    warning = Some(format!(
-                        "Neither {} nor the game binary was found in the active root view; launching it unchanged.",
-                        prefer.join(" nor ")
+                    warning = Some(tf(
+                        "launch_none_found",
+                        &[("names", &prefer.join(t("launch_nor")))],
                     ));
                 }
             }
@@ -1207,7 +1203,7 @@ pub(crate) fn start_run(app: &mut App, title: String, mut cmd: std::process::Com
     let child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
-            app.status = Some(format!("Launch failed: {e}"));
+            app.status = Some(tf("status_launch_failed", &[("error", &e)]));
             return;
         }
     };
@@ -1233,9 +1229,9 @@ pub(crate) fn start_run(app: &mut App, title: String, mut cmd: std::process::Com
         lock,
     });
     app.status = Some(if lock {
-        format!("Running {title} - Eidos is locked until it exits (or click Unlock).")
+        tf("status_running_locked", &[("title", &title)])
     } else {
-        format!("Running {title}...")
+        tf("status_running", &[("title", &title)])
     });
 }
 
@@ -1269,7 +1265,7 @@ pub(crate) fn finish_run(app: &mut App) {
     // the warning banner is current for the next run.
     app.cap_missing = !eidos_launch::binary_has_cap_sys_admin(&find_eidos_binary().0);
     let Some(run) = run else {
-        app.status = Some("Application exited. Refreshed plugins and load order.".to_string());
+        app.status = Some(t("status_app_exited").to_string());
         return;
     };
     let status = run.outcome.lock().ok().and_then(|s| *s);
@@ -1298,15 +1294,14 @@ pub(crate) fn finish_run(app: &mut App) {
     }
     app.status = Some(if failed {
         match &run.log {
-            Some(p) => format!(
-                "{} exited with an error - see the log: {}",
-                run.title,
-                p.display()
+            Some(p) => tf(
+                "status_exited_error_log",
+                &[("title", &run.title), ("log", &p.display())],
             ),
-            None => format!("{} exited with an error.", run.title),
+            None => tf("status_exited_error", &[("title", &run.title)]),
         }
     } else {
-        format!("{} exited. Refreshed plugins and load order.", run.title)
+        tf("status_exited", &[("title", &run.title)])
     });
 }
 
@@ -1567,9 +1562,7 @@ pub(crate) fn settle_folds_after_move(
     let swallowed = hidden_by_folds(app);
     let n = swallowed.difference(hidden_before).count();
     if n > 0 {
-        app.status = Some(format!(
-            "{n} mod(s) are now inside a folded group. Unfold it to see them."
-        ));
+        app.status = Some(tf("status_folded_away", &[("n", &n)]));
     }
 }
 
@@ -1626,7 +1619,7 @@ pub(crate) fn display_entries(app: &App) -> Vec<ListEntry> {
     // as mods are installed is not a grouping anybody can navigate. The
     // catch-all sinks to the bottom whatever it is called.
     groups.sort_by(|a, b| {
-        let sink = |l: &str| l == "Uncategorised" || l == "Installed by hand";
+        let sink = |l: &str| l == t("group_uncategorised") || l == t("group_by_hand");
         sink(&a.0)
             .cmp(&sink(&b.0))
             .then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase()))
@@ -1743,10 +1736,10 @@ pub(crate) fn group_label(app: &App, i: usize) -> String {
         Some(GroupBy::Category) => meta
             .and_then(|r| r.category_name.clone())
             .filter(|c| !c.trim().is_empty())
-            .unwrap_or_else(|| "Uncategorised".to_string()),
+            .unwrap_or_else(|| t("group_uncategorised").to_string()),
         Some(GroupBy::Source) => match meta.and_then(|r| r.mod_id) {
-            Some(_) => "From Nexus".to_string(),
-            None => "Installed by hand".to_string(),
+            Some(_) => t("group_from_nexus").to_string(),
+            None => t("group_by_hand").to_string(),
         },
         None => String::new(),
     }
@@ -1884,12 +1877,12 @@ impl ModFilters {
     /// One list so the panel and the count cannot drift apart.
     pub(crate) fn rows(self) -> [(&'static str, Criterion, FilterField); 5] {
         [
-            ("Active", self.active, FilterField::Active),
-            ("Conflicted", self.conflicted, FilterField::Conflicted),
-            ("Update available", self.update, FilterField::Update),
-            ("Has plugins", self.plugins, FilterField::Plugins),
+            (t("filter_active"), self.active, FilterField::Active),
+            (t("filter_conflicted"), self.conflicted, FilterField::Conflicted),
+            (t("filter_update"), self.update, FilterField::Update),
+            (t("filter_plugins"), self.plugins, FilterField::Plugins),
             (
-                "No category",
+                t("filter_no_category"),
                 self.uncategorised,
                 FilterField::Uncategorised,
             ),
@@ -2174,9 +2167,7 @@ pub(crate) fn key_nav(app: &mut App, nav: Nav) -> Task<Message> {
                     }
                     let name = app.mods[i].display_name().to_string();
                     app.confirm_remove = Some(i);
-                    app.status = Some(format!(
-                        "Press Delete again to remove '{name}', Escape to cancel."
-                    ));
+                    app.status = Some(tf("status_press_delete_again", &[("name", &name)]));
                     Task::none()
                 }
                 _ => Task::none(),
@@ -2341,8 +2332,6 @@ fn modlist_unchanged(app: &App, inst: &Instance) -> bool {
         .is_none_or(|seen| seen == modlist_fingerprint(inst))
 }
 
-const MODLIST_STALE: &str =
-    "Not saved: another Eidos process changed the mod list. It has been reloaded - redo the change.";
 
 /// For a handler that changes `mods/` itself (renames a folder, creates one)
 /// and then saves: the staleness check, made BEFORE the folder changes. Left
@@ -2356,7 +2345,7 @@ pub(crate) fn refuse_stale_modlist(app: &mut App) -> bool {
     }
     reload_mods(app);
     mod_views_changed(app);
-    app.status = Some(MODLIST_STALE.to_string());
+    app.status = Some(t("status_modlist_stale").to_string());
     true
 }
 
@@ -2370,17 +2359,17 @@ pub(crate) fn save_mods(app: &App) -> Option<String> {
     // of writing into files the live session owns.
     let _lock = match inst.try_lock("the Eidos window") {
         Ok(l) => l,
-        Err(e) => return Some(format!("Not saved: {e}.")),
+        Err(e) => return Some(tf("status_not_saved", &[("error", &e)])),
     };
     // The lock serialises the writes, not this list's read, which may be minutes
     // old: `eidos install` or a collection run since then rewrote the file, and
     // writing `app.mods` wholesale would erase what they added (their mods come
     // back DISABLED, the collection's order is gone). `mods_changed` reloads.
     if !modlist_unchanged(app, inst) {
-        return Some(MODLIST_STALE.to_string());
+        return Some(t("status_modlist_stale").to_string());
     }
     if let Err(e) = inst.save_modlist(&app.mods) {
-        return Some(format!("Could not save the mod list: {e}"));
+        return Some(tf("status_modlist_save_failed", &[("error", &e)]));
     }
     app.modlist_seen.set(Some(modlist_fingerprint(inst)));
     None
@@ -2513,8 +2502,8 @@ fn run_diagnose_addons(app: &mut App) {
                 a.name.clone(),
                 eidos_addons::Finding {
                     level: eidos_addons::FindingLevel::Problem,
-                    title: format!("The '{}' extension did not run", a.name),
-                    detail: format!("{why} It will not be retried until you press Reload."),
+                    title: tf("ext_did_not_run", &[("name", &a.name)]),
+                    detail: tf("ext_not_retried", &[("reason", &why)]),
                 },
             ));
             continue;
@@ -2531,7 +2520,7 @@ fn run_diagnose_addons(app: &mut App) {
                     a.name.clone(),
                     eidos_addons::Finding {
                         level: eidos_addons::FindingLevel::Problem,
-                        title: format!("The '{}' extension did not run", a.name),
+                        title: tf("ext_did_not_run", &[("name", &a.name)]),
                         detail: e,
                     },
                 ));
@@ -2551,8 +2540,8 @@ fn run_addon_capture_inner(
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     if !output.status.success() && stdout.is_empty() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        let why = stderr.lines().next().unwrap_or("no output").trim();
-        return Err(format!("it exited with {} ({why})", output.status));
+        let why = stderr.lines().next().unwrap_or(t("ext_no_output")).trim();
+        return Err(tf("ext_exited_with", &[("status", &output.status), ("reason", &why)]));
     }
     Ok(stdout)
 }

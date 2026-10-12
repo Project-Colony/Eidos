@@ -59,7 +59,7 @@ fn spawn_open(
     std::thread::spawn(move || {
         let r = (|| {
             let target = worker_target.ok_or_else(|| {
-                eidos_install::InstallError::BadSelection("No installation selected".into())
+                eidos_install::InstallError::BadSelection(t("install_no_target").into())
             })?;
             let inst = Instance::portable(target.instance);
             let cancel = worker_cancel;
@@ -87,7 +87,7 @@ fn spawn_open(
             })? {
                 if receipt.is_some() {
                     return Err(eidos_install::InstallError::BadSelection(
-                        "Recorded custom installer no longer matches the archive format".into(),
+                        t("install_custom_mismatch").into(),
                     ));
                 }
                 return Ok(eidos_install::Opened::Omod(Box::new(session)));
@@ -144,8 +144,8 @@ fn pick_mod_archive(app: &mut App, name: Option<String>, fresh: bool) -> Task<Me
     let target = collection_target(app);
     Task::perform(
         rfd::AsyncFileDialog::new()
-            .add_filter("Mod archives", &["7z", "zip", "rar", "omod"])
-            .set_title("Select a mod archive to install")
+            .add_filter(t("dialog_mod_archives"), &["7z", "zip", "rar", "omod"])
+            .set_title(t("dialog_pick_mod_archive"))
             .pick_file(),
         move |handle| Message::ModPickedFor {
             fresh,
@@ -193,12 +193,16 @@ fn spawn_pack(
     let outcome = Arc::new(Mutex::new(None));
     let done = Arc::new(AtomicBool::new(false));
     let (p, o, d) = (percent.clone(), outcome.clone(), done.clone());
-    let title = format!(
-        "Packing {}",
-        inst.root
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "this instance".to_string())
+    let title = tf(
+        "transfer_packing",
+        &[(
+            "name",
+            &inst
+                .root
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| t("transfer_this_instance").to_string()),
+        )],
     );
     let target = dest.clone();
     std::thread::spawn(move || {
@@ -239,7 +243,7 @@ fn pack_on_worker(
     // Eidos window.
     let _lock = inst
         .try_lock("the Eidos window (packing)")
-        .map_err(|e| format!("Cannot pack now: {e}."))?;
+        .map_err(|e| tf("status_cannot_pack_now", &[("error", &e)]))?;
     // Walked again, under the lock, rather than trusting the dialog's preview:
     // the window kept running the whole time the file picker was up.
     let plan = eidos_transfer::plan(inst, &opt);
@@ -258,18 +262,24 @@ fn pack_on_worker(
     let ratio = report
         .percent_of_source()
         .map(|p| {
-            format!(
-                ", {p:.0}% of {}",
-                eidos_transfer::human_bytes(report.source_bytes)
+            tf(
+                "transfer_ratio",
+                &[
+                    ("pct", &format!("{p:.0}")),
+                    ("size", &eidos_transfer::human_bytes(report.source_bytes)),
+                ],
             )
         })
         .unwrap_or_default();
-    let head = format!(
-        "Packed {} entries into {} ({}{ratio}) in {}.",
-        report.entries,
-        report.path.display(),
-        eidos_transfer::human_bytes(report.bytes),
-        eidos_transfer::human_secs(started.elapsed().as_secs())
+    let head = tf(
+        "transfer_packed",
+        &[
+            ("n", &report.entries),
+            ("path", &report.path.display()),
+            ("size", &eidos_transfer::human_bytes(report.bytes)),
+            ("ratio", &ratio),
+            ("time", &eidos_transfer::human_secs(started.elapsed().as_secs())),
+        ],
     );
     if report.warnings.is_empty() {
         return Ok(head);
@@ -278,8 +288,9 @@ fn pack_on_worker(
     // side is what the card draws as something to read rather than something to
     // dismiss - the same call `eidos pack` makes when it exits 1.
     Err(format!(
-        "{head}\n\n{}\n\nThe backup was written but it is NOT complete.",
-        report.warnings.join("\n")
+        "{head}\n\n{}\n\n{}",
+        report.warnings.join("\n"),
+        t("transfer_pack_incomplete")
     ))
 }
 
@@ -291,17 +302,17 @@ fn collection_runtime_on_worker(
     let nexus = eidos_nexus::Nexus::connect()?;
     let want = match eidos_nexus::NxmLink::parse(link) {
         Ok(eidos_nexus::NxmLink::Collection(value)) => value,
-        _ => return Err("That is not a collection link.".into()),
+        _ => return Err(t("collection_not_a_link").into()),
     };
     let revision = nexus.collection_revision(&want)?;
     if !revision.visible() {
-        return Err("This collection is not visible to this account.".into());
+        return Err(t("collection_not_visible").into());
     }
     if !revision
         .game_domain
         .eq_ignore_ascii_case(game.def.nexus_game)
     {
-        return Err("The collection belongs to another game.".into());
+        return Err(t("collection_other_game").into());
     }
     let _lock = inst
         .try_lock("checking a collection recipe")
@@ -376,7 +387,7 @@ fn spawn_collection(
     });
     crate::TransferJob {
         kind: crate::TransferKind::Collection,
-        title: "Installing a collection".to_string(),
+        title: t("transfer_installing_collection").to_string(),
         target,
         percent,
         outcome,
@@ -398,7 +409,7 @@ fn collection_on_worker(
     let nexus = eidos_nexus::Nexus::connect()?;
     let want = match eidos_nexus::NxmLink::parse(link) {
         Ok(eidos_nexus::NxmLink::Collection(c)) => c,
-        _ => return Err("that is not a collection link".to_string()),
+        _ => return Err(t("collection_not_a_link").to_string()),
     };
     let rev = nexus.collection_revision(&want)?;
     // The lock is taken HERE, on the thread that will drop it: it is keyed by
@@ -406,9 +417,9 @@ fn collection_on_worker(
     // wedge the instance for the rest of the session.
     let _lock = inst
         .try_lock("the Eidos window (installing a collection)")
-        .map_err(|e| format!("Cannot install now: {e}."))?;
+        .map_err(|e| tf("status_cannot_install_now", &[("error", &e)]))?;
     if inst.active_profile() != profile {
-        return Err("The active profile changed before collection installation started; retry from that profile.".into());
+        return Err(t("collection_profile_changed").into());
     }
     let dir = eidos_collections::state::revision_dir(&inst.root, &rev.slug, rev.revision_number);
     let manifest = eidos_collections::driver::fetch_manifest(&nexus, &rev, &dir)?;
@@ -570,12 +581,15 @@ fn spawn_unpack(
     let outcome = Arc::new(Mutex::new(None));
     let done = Arc::new(AtomicBool::new(false));
     let (p, o, d) = (percent.clone(), outcome.clone(), done.clone());
-    let title = format!(
-        "Unpacking {}",
-        archive
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "the backup".to_string())
+    let title = tf(
+        "transfer_unpacking",
+        &[(
+            "name",
+            &archive
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| t("transfer_the_backup").to_string()),
+        )],
     );
     let target = dest.clone();
     std::thread::spawn(move || {
@@ -613,7 +627,7 @@ fn unpack_on_worker(
         Some(
             Instance::portable(dest.to_path_buf())
                 .try_lock("the Eidos window (unpacking)")
-                .map_err(|e| format!("Cannot unpack there: {e}."))?,
+                .map_err(|e| tf("status_cannot_unpack_there", &[("error", &e)]))?,
         )
     } else {
         None
@@ -623,25 +637,32 @@ fn unpack_on_worker(
             percent.fetch_max(pct, Ordering::SeqCst);
         })
         .map_err(|e| e.to_string())?;
-    let mut lines = vec![format!(
-        "Unpacked {} entries into {} in {}.",
-        report.entries,
-        report.root.display(),
-        eidos_transfer::human_secs(started.elapsed().as_secs())
+    let mut lines = vec![tf(
+        "transfer_unpacked",
+        &[
+            ("n", &report.entries),
+            ("path", &report.root.display()),
+            ("time", &eidos_transfer::human_secs(started.elapsed().as_secs())),
+        ],
     )];
     if report.relocated.values > 0 {
-        lines.push(format!(
-            "{} path(s) in {} file(s) now point here instead of {}.",
-            report.relocated.values,
-            report.relocated.files.len(),
-            report.manifest.source_root
+        lines.push(tf(
+            "transfer_relocated",
+            &[
+                ("n", &report.relocated.values),
+                ("files", &report.relocated.files.len()),
+                ("path", &report.manifest.source_root),
+            ],
         ));
     }
     if !report.missing_tools.is_empty() {
         lines.push(String::new());
-        lines.push("Tools this instance uses that are not on this machine:".to_string());
-        for t in &report.missing_tools {
-            lines.push(format!("  {} - was at {}", t.title, t.exe));
+        lines.push(t("transfer_missing_tools").to_string());
+        for tool in &report.missing_tools {
+            lines.push(format!(
+                "  {}",
+                tf("transfer_missing_tool", &[("name", &tool.title), ("path", &tool.exe)])
+            ));
         }
     }
     for w in &report.warnings {
@@ -662,10 +683,7 @@ fn open_unpacked(app: &mut App, root: &std::path::Path) -> Option<String> {
     let inst = Instance::portable(root.to_path_buf());
     let gid = inst.game_id()?;
     let Some(idx) = instance_game_index(&app.games, &inst, &gid) else {
-        return Some(format!(
-            "\n{gid} is not installed on this machine yet, so Eidos cannot open the \
-             instance. Restore its selected game installation, then start Eidos again."
-        ));
+        return Some(format!("\n{}", tf("transfer_game_missing", &[("game", &gid)])));
     };
     app.selected = Some(idx);
     let id = app.games[idx].def.id;
@@ -680,11 +698,7 @@ fn open_unpacked(app: &mut App, root: &std::path::Path) -> Option<String> {
     // the one a Steam launch lands on. That is right when the restore IS the
     // move; it is a surprise when somebody only wanted a look inside a backup,
     // and they find out by launching the game into the wrong mod list.
-    Some(
-        "\nThis is now the instance Eidos opens, and the one a Steam launch will \
-         use. Switch with \"New instance\" if you meant to keep using another."
-            .to_string(),
-    )
+    Some(format!("\n{}", t("transfer_now_default_instance")))
 }
 
 /// Pin an ordinary install to its original target under the publication lock.
@@ -692,14 +706,14 @@ pub(crate) fn lock_install_target(
     app: &App,
     target: &CollectionTarget,
 ) -> Result<eidos_instance::InstanceLock, String> {
-    let changed = "The installation or profile changed; reopen the installer.";
+    let changed = t("installer_target_changed_reopen_short");
     let instance = app.created.as_ref().ok_or(changed)?;
     if instance.root != target.instance {
         return Err(changed.into());
     }
     let guard = instance
         .try_lock("installing a mod")
-        .map_err(|error| format!("Cannot install now: {error}"))?;
+        .map_err(|error| tf("status_cannot_install_now", &[("error", &error)]))?;
     if collection_target(app).as_ref() != Some(target) {
         return Err(changed.into());
     }
@@ -772,9 +786,9 @@ pub(crate) fn finish_open(
                         tree: None,
                         pick: None,
                     });
-                    app.status = Some(format!("'{name}' already exists - choose how to install."));
+                    app.status = Some(tf("status_already_exists_choose", &[("name", &name)]));
                 }
-                Err(error) => app.status = Some(format!("Cannot install OMOD: {error}")),
+                Err(error) => app.status = Some(tf("status_omod_failed", &[("error", &error)])),
             }
         }
         Ok(eidos_install::Opened::Fomod(session)) => {
@@ -783,7 +797,7 @@ pub(crate) fn finish_open(
             // MO2 refuses a FOMOD whose <moduleDependencies> are unmet before
             // showing the wizard - tell the user what is missing and stop.
             if let Some(req) = session.unmet_dependencies(&ctx) {
-                app.status = Some(format!("Cannot install: this mod requires {req}."));
+                app.status = Some(tf("status_unmet_dependency", &[("requirement", &req)]));
             } else {
                 let selection = eidos_fomod::default_selection(&session.config, &ctx);
                 // Open on the first step that is actually shown. Next/Back
@@ -806,7 +820,7 @@ pub(crate) fn finish_open(
                     hover: None,
                 });
                 app.status =
-                    Some("FOMOD installer: choose your options, then Install.".to_string());
+                    Some(t("status_fomod_choose").to_string());
             }
         }
         Ok(eidos_install::Opened::Simple(tree)) => {
@@ -837,9 +851,9 @@ pub(crate) fn finish_open(
                         tree: Some(tree),
                         pick: None,
                     });
-                    app.status = Some(format!("'{name}' already exists - choose how to install."));
+                    app.status = Some(tf("status_already_exists_choose", &[("name", &name)]));
                 }
-                Err(e) => app.status = Some(format!("Install failed: {e}")),
+                Err(e) => app.status = Some(tf("status_install_failed", &[("error", &e)])),
             }
         }
         // Wrye Bash complex package: let the user tick sub-packages. MO2
@@ -857,9 +871,9 @@ pub(crate) fn finish_open(
                 .unwrap_or_default();
             let picked = eidos_install::bain_default_selection(&subpackages, &previous);
             app.status = Some(if invalid > 0 {
-                format!("'{name}' may be a BAIN installer - {invalid} folder(s) do not look like sub-packages.")
+                tf("status_bain_maybe", &[("name", &name), ("n", &invalid)])
             } else {
-                format!("BAIN installer: choose the sub-packages to install for '{name}'.")
+                tf("status_bain_choose", &[("name", &name)])
             });
             let archive_tree = parsed_tree(&tree);
             app.picker = Some(InstallPicker {
@@ -881,9 +895,7 @@ pub(crate) fn finish_open(
         // No heuristic recognised the layout. Rather than refuse the
         // archive, show its tree and let the user point at the data root.
         Ok(eidos_install::Opened::Manual(tree)) => {
-            app.status = Some(format!(
-                "'{name}': pick the folder that holds the game data."
-            ));
+            app.status = Some(tf("status_pick_data_root", &[("name", &name)]));
             let archive_tree = parsed_tree(&tree);
             app.picker = Some(InstallPicker {
                 target: target.clone(),
@@ -898,7 +910,7 @@ pub(crate) fn finish_open(
                 },
             });
         }
-        Err(e) => app.status = Some(format!("Install failed: {e}")),
+        Err(e) => app.status = Some(tf("status_install_failed", &[("error", &e)])),
     }
     Task::none()
 }
@@ -1802,7 +1814,7 @@ fn seed_ini_from_game(app: &mut App, file: &str) -> Result<(), String> {
     let seeded = inst
         .try_lock("the Eidos window")
         .and_then(|_lock| prof.seed_plugin_state(&dir, &spec))
-        .map_err(|e| format!("Cannot open {file} now: {e}."))?;
+        .map_err(|e| tf("status_cannot_open_file_now", &[("file", &file), ("error", &e)]))?;
     if seeded > 0 {
         // The profile's plugin state changed under the cached load order and
         // the hash its next write is checked against.
