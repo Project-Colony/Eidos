@@ -285,12 +285,19 @@ pub fn run(mut args: Vec<String>) {
                 while let Some(arg) = rest.next() {
                     if arg == "--game-path" {
                         game_path = rest.next().map(String::as_str);
-                        if game_path.is_none() { eidos_log::info!("--game-path needs a folder"); exit(2); }
-                    } else if folder.is_none() && !arg.starts_with("--") { folder = Some(arg.as_str()); }
-                    else { eidos_log::info!("Unexpected init argument: {arg}"); exit(2); }
+                        if game_path.is_none() {
+                            eidos_log::info!("--game-path needs a folder");
+                            exit(2);
+                        }
+                    } else if folder.is_none() && !arg.starts_with("--") {
+                        folder = Some(arg.as_str());
+                    } else {
+                        eidos_log::info!("Unexpected init argument: {arg}");
+                        exit(2);
+                    }
                 }
                 cmd_init(id, folder, game_path)
-            },
+            }
             None => usage(),
         },
         Some("play") => cmd_play(&args[1..]),
@@ -337,7 +344,11 @@ mod bucket_tests {
         // `unpack` takes an ARCHIVE first, not an instance. Bucketing by it gives
         // every backup file a log of its own, which is the nxm defect above with
         // a different first argument.
-        let a = v(&["unpack", "/mnt/Jeux/skyrimse-2026-09-07-1340.eidos", "/mnt/x"]);
+        let a = v(&[
+            "unpack",
+            "/mnt/Jeux/skyrimse-2026-09-07-1340.eidos",
+            "/mnt/x",
+        ]);
         assert_eq!(log_bucket(&a), "unpack");
         // `pack` is the other way round: its first argument IS the instance, and
         // one log per instance is exactly what the retention wants.

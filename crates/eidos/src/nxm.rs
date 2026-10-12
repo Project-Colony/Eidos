@@ -92,7 +92,11 @@ pub(crate) fn cmd_nxm(args: &[String]) {
         }
         Some("--register") => {
             let (exe, needs_marker) = crate::this_exe();
-            let marker = if needs_marker { format!(" {}", crate::CLI_MARKER) } else { String::new() };
+            let marker = if needs_marker {
+                format!(" {}", crate::CLI_MARKER)
+            } else {
+                String::new()
+            };
             let apps = eidos_paths::desktop_entries_dir();
             let _ = std::fs::create_dir_all(&apps);
             let desktop = apps.join("eidos-nxm.desktop");
