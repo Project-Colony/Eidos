@@ -1395,6 +1395,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::NexusSignOut
         | Message::Preference(..)
         | Message::DismissToast
+        | Message::LanguageChanged(..)
         | Message::DragScrollSpeedChanged(..)
         | Message::SettingsToggleSection(..)
         | Message::ToggleRememberWindow(..)

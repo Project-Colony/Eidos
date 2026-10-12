@@ -46,8 +46,8 @@ impl SettingsTab {
             SettingsTab::General => colony_ui::i18n::t("settings_cat_general"),
             SettingsTab::Appearance => colony_ui::i18n::t("settings_cat_appearance"),
             SettingsTab::Accessibility => colony_ui::i18n::t("settings_cat_accessibility"),
-            SettingsTab::ModList => "Mod list",
-            SettingsTab::Nexus => "Nexus",
+            SettingsTab::ModList => crate::t("settings_cat_mod_list"),
+            SettingsTab::Nexus => crate::t("settings_cat_nexus"),
             SettingsTab::About => colony_ui::i18n::t(colony_ui::widgets::ABOUT_CATEGORY),
         }
     }
@@ -62,9 +62,9 @@ impl SettingsTab {
             SettingsTab::General => colony_ui::i18n::t("settings_general_desc"),
             SettingsTab::Appearance => colony_ui::i18n::t("settings_appearance_desc"),
             SettingsTab::Accessibility => colony_ui::i18n::t("settings_accessibility_desc"),
-            SettingsTab::ModList => "How the list of mods behaves under the pointer.",
-            SettingsTab::Nexus => "The account downloads are fetched with, and what is cached.",
-            SettingsTab::About => "Version, licence and where this instance lives.",
+            SettingsTab::ModList => crate::t("settings_mod_list_desc"),
+            SettingsTab::Nexus => crate::t("settings_nexus_desc"),
+            SettingsTab::About => crate::t("settings_about_desc"),
         }
     }
 }

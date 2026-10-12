@@ -17,7 +17,7 @@ use iced::{Alignment, Element, Length};
 
 use crate::preferences::UiPreferences;
 use crate::theme::{pal, text, text_muted};
-use crate::{App, Message, SettingsTab};
+use crate::{t, tf, App, Message, SettingsTab};
 
 /// The cached "show adult content" answer for the signed-in account: `Some(true)`
 /// shown, `Some(false)` turned off by the user, `None` not known.
@@ -51,6 +51,7 @@ pub(crate) fn preferences_page<'a>(app: &App) -> Element<'a, Message> {
         SettingsTab::General => kit
             .general()
             .push(s.startup())
+            .push(s.language())
             .push(s.tools())
             .push(s.running())
             .into(),
@@ -145,28 +146,48 @@ impl Sections<'_> {
 
     fn startup<'a>(&self) -> Element<'a, Message> {
         let (app, typo) = (self.app, &self.typo);
-        let games = std::iter::once((None, "(none)".to_string())).chain(
+        let games = std::iter::once((None, t("settings_none").to_string())).chain(
             eidos_games::catalog().iter().map(|g| (Some(g.id.to_string()), g.name.to_string())),
         );
         self.section(
             "startup",
-            "Startup",
-            "What Eidos opens, and at what size.",
+            t("settings_section_startup"),
+            t("settings_startup_desc"),
             [
                 setting_row(
                     typo,
-                    "Default game",
-                    "Opened when Eidos starts without being told which.",
+                    t("settings_default_game"),
+                    t("settings_default_game_desc"),
                     dropdown(typo, games, &app.prefs.default_game, Message::DefaultGameChanged),
                 ),
                 functional_toggle(
                     typo,
-                    "Remember the window size",
-                    "Restore the last size on launch instead of letting the compositor choose.",
+                    t("settings_remember_window"),
+                    t("settings_remember_window_desc"),
                     app.prefs.remember_window,
                     Message::ToggleRememberWindow(!app.prefs.remember_window),
                 ),
             ],
+        )
+    }
+
+    fn language<'a>(&self) -> Element<'a, Message> {
+        let typo = &self.typo;
+        let choices = crate::i18n::LANGUAGES.map(|l| (l, t(&format!("settings_language_{l}")).to_string()));
+        let current = crate::i18n::LANGUAGES
+            .into_iter()
+            .find(|l| *l == self.app.ui_prefs.language)
+            .unwrap_or("system");
+        self.section(
+            "language",
+            t("settings_section_language"),
+            t("settings_language_desc"),
+            [setting_row(
+                typo,
+                t("settings_language"),
+                t("settings_language_choice_desc"),
+                dropdown(typo, choices, &current, Message::LanguageChanged),
+            )],
         )
     }
 
@@ -184,21 +205,19 @@ impl Sections<'_> {
                     .width(Length::Fixed(260.0 * typo.scale)),
             )
             .push(
-                button(text("Browse").size(typo.sz(12)).font(typo.regular))
+                button(text(t("settings_browse")).size(typo.sz(12)).font(typo.regular))
                     .padding([4, 10])
                     .style(button::secondary)
                     .on_press(Message::BrowseToolsDir),
             );
         self.section(
             "tools",
-            "Tools",
-            "Where Eidos looks for xEdit, DynDOLOD and the like.",
+            t("settings_section_tools"),
+            t("settings_tools_desc"),
             [setting_row(
                 typo,
-                "Tools folder",
-                "Eidos already looks in the game folder and inside this instance's mods; this \
-                 is for the directory shared between instances. A tool found here is offered \
-                 with the runtimes its name calls for.",
+                t("settings_tools_folder"),
+                t("settings_tools_folder_desc"),
                 field,
             )],
         )
@@ -208,13 +227,12 @@ impl Sections<'_> {
         let app = self.app;
         self.section(
             "running",
-            "Running a game",
-            "What the window does while a game or a tool runs.",
+            t("settings_section_running"),
+            t("settings_running_desc"),
             [functional_toggle(
                 &self.typo,
-                "Lock the window while a game runs",
-                "Blocks the main window behind an overlay until the game exits, with an Unlock \
-                 escape hatch.",
+                t("settings_lock_gui"),
+                t("settings_lock_gui_desc"),
                 app.prefs.lock_gui,
                 Message::ToggleLockGui(!app.prefs.lock_gui),
             )],
@@ -240,13 +258,12 @@ impl Sections<'_> {
             );
         self.section(
             "dragging",
-            "Dragging",
-            "How the list moves while a mod is dragged.",
+            t("settings_section_dragging"),
+            t("settings_dragging_desc"),
             [setting_row(
                 typo,
-                "Auto-scroll speed",
-                "How fast the list moves when a dragged mod rests on its top or bottom edge. \
-                 Speed already rises the closer to the edge; this scales the whole range.",
+                t("settings_drag_speed"),
+                t("settings_drag_speed_desc"),
                 control,
             )],
         )
@@ -259,11 +276,11 @@ impl Sections<'_> {
         // client, not merely unused, so there is nothing here to enter.
         let signed_in = app.nexus_account.is_some();
         let label = if app.nexus_signing_in {
-            "Waiting for your browser..."
+            t("settings_sign_in_waiting")
         } else if signed_in {
-            "Sign in again"
+            t("settings_sign_in_again")
         } else {
-            "Sign in to Nexus Mods"
+            t("settings_sign_in")
         };
         let mut action = button(text(label).size(typo.sz(12)).font(typo.regular))
             .padding([5, 12])
@@ -274,7 +291,7 @@ impl Sections<'_> {
         let mut controls = Row::new().spacing(8).push(action);
         if signed_in {
             controls = controls.push(
-                button(text("Sign out").size(typo.sz(12)).font(typo.regular))
+                button(text(t("settings_sign_out")).size(typo.sz(12)).font(typo.regular))
                     .padding([5, 12])
                     .on_press(Message::NexusSignOut)
                     .style(button::secondary),
@@ -284,31 +301,32 @@ impl Sections<'_> {
         let mut rows: Vec<Element<'a, Message>> = vec![controls.into()];
         match &app.nexus_account {
             Some(a) => {
-                let tier = if a.is_premium { "Premium" } else { "free" };
-                rows.push(self.note(format!("Signed in as {} ({tier}).", a.name)));
+                let tier = t(if a.is_premium {
+                    "settings_tier_premium"
+                } else {
+                    "settings_tier_free"
+                });
+                rows.push(self.note(tf(
+                    "settings_signed_in_as",
+                    &[("name", &a.name), ("tier", &tier)],
+                )));
                 // Say what is being withheld and why. Adult mods coming back
                 // blank with no explanation reads as Eidos being broken, and
                 // "could not check" is the case the user can actually act on.
                 rows.push(self.note(
-                    match adult_content_state() {
-                        Some(true) => "Adult content: shown (enabled on your Nexus account).",
-                        Some(false) => {
-                            "Adult content: hidden. It is turned off on your Nexus account; \
-                             change it on nexusmods.com, then sign in again here."
-                        }
-                        None => {
-                            "Adult content: hidden. Eidos could not read your Nexus content \
-                             settings, so it withholds adult mods until it can."
-                        }
-                    }
+                    t(match adult_content_state() {
+                        Some(true) => "settings_adult_shown",
+                        Some(false) => "settings_adult_off",
+                        None => "settings_adult_unknown",
+                    })
                     .to_string(),
                 ));
             }
-            None => rows.push(self.note("Not signed in.".to_string())),
+            None => rows.push(self.note(t("settings_not_signed_in").to_string())),
         }
         if let Some(err) = &app.nexus_error {
             rows.push(
-                text(format!("Error: {err}"))
+                text(tf("settings_error", &[("error", err)]))
                     .size(typo.sz(12))
                     .font(typo.regular)
                     .color(pal().error)
@@ -317,9 +335,8 @@ impl Sections<'_> {
         }
         self.section(
             "account",
-            "Account",
-            "Signing in opens your browser. The session is stored in nexus.ini and shared with \
-             the CLI.",
+            t("settings_section_account"),
+            t("settings_account_desc"),
             rows,
         )
     }
@@ -334,27 +351,21 @@ impl Sections<'_> {
             .width(Length::Fixed(260.0 * typo.scale));
         self.section(
             "downloads",
-            "Downloads",
-            "Where downloads land and which servers they come from.",
+            t("settings_section_downloads"),
+            t("settings_downloads_desc"),
             [
                 self.info(
-                    "Folder",
+                    t("settings_downloads_folder"),
                     app.created
                         .as_ref()
                         .map(|i| i.downloads_dir().display().to_string())
-                        .unwrap_or_else(|| "(no instance open)".to_string()),
+                        .unwrap_or_else(|| t("settings_no_instance_open").to_string()),
                 ),
-                self.note(
-                    "The site's Mod Manager Download button lands here once the nxm:// handler \
-                     is registered (eidos nxm --register)."
-                        .to_string(),
-                ),
+                self.note(t("settings_nxm_note").to_string()),
                 setting_row(
                     typo,
-                    "Preferred servers",
-                    "Comma-separated CDN names, best first - a mod downloads from the first one \
-                     Nexus offers today. Only a premium account is given more than one to choose \
-                     between; for everyone else Nexus picks, and this changes nothing.",
+                    t("settings_preferred_servers"),
+                    t("settings_preferred_servers_desc"),
                     servers,
                 ),
             ],
@@ -365,13 +376,12 @@ impl Sections<'_> {
         let app = self.app;
         self.section(
             "offline",
-            "Offline",
-            "Whether Eidos talks to Nexus at all.",
+            t("settings_section_offline"),
+            t("settings_offline_section_desc"),
             [functional_toggle(
                 &self.typo,
-                "Offline mode",
-                "Stops Eidos contacting Nexus at all. Update checks, sign-in, downloads and \
-                 collections say so instead of failing with a connection error.",
+                t("settings_offline"),
+                t("settings_offline_desc"),
                 app.prefs.offline,
                 Message::ToggleOffline(!app.prefs.offline),
             )],
@@ -382,29 +392,32 @@ impl Sections<'_> {
         let app = self.app;
         self.section(
             "paths",
-            "Where things live",
-            "The files Eidos reads and writes for this window.",
+            t("settings_section_paths"),
+            t("settings_paths_desc"),
             [
                 self.info(
-                    "Instance",
+                    t("settings_path_instance"),
                     app.created
                         .as_ref()
                         .map(|i| i.root.display().to_string())
-                        .unwrap_or_else(|| "(none open)".to_string()),
+                        .unwrap_or_else(|| t("settings_none_open").to_string()),
                 ),
                 self.info(
-                    "Preferences file",
+                    t("settings_path_preferences"),
                     UiPreferences::default_path().display().to_string(),
                 ),
                 self.info(
-                    "Shared with the CLI",
+                    t("settings_path_shared"),
                     eidos_instance::settings::settings_path().display().to_string(),
                 ),
                 self.info(
-                    "Nexus session",
+                    t("settings_path_nexus"),
                     eidos_instance::settings::nexus_key_path().display().to_string(),
                 ),
-                self.info("Games", "~/.config/Colony/Eidos/games/*.toml".to_string()),
+                self.info(
+                    t("settings_path_games"),
+                    "~/.config/Colony/Eidos/games/*.toml".to_string(),
+                ),
             ],
         )
     }
@@ -412,15 +425,15 @@ impl Sections<'_> {
     fn shortcuts<'a>(&self) -> Element<'a, Message> {
         self.section(
             "shortcuts",
-            "Shortcuts",
-            "The keys the main window answers to.",
+            t("settings_section_shortcuts"),
+            t("settings_shortcuts_desc"),
             [
-                self.info("Run", "Ctrl+R".to_string()),
-                self.info("Refresh", "F5".to_string()),
-                self.info("Select", "Ctrl+click, Shift+click for a range".to_string()),
-                self.info("Select all", "Ctrl+A".to_string()),
-                self.info("Clear", "Esc".to_string()),
-                self.info("Reorder", "drag a row, or Ctrl+Up/Down".to_string()),
+                self.info(t("settings_key_run"), "Ctrl+R".to_string()),
+                self.info(t("settings_key_refresh"), "F5".to_string()),
+                self.info(t("settings_key_select"), t("settings_key_select_how").to_string()),
+                self.info(t("settings_key_select_all"), "Ctrl+A".to_string()),
+                self.info(t("settings_key_clear"), t("settings_key_esc").to_string()),
+                self.info(t("settings_key_reorder"), t("settings_key_reorder_how").to_string()),
             ],
         )
     }
@@ -428,10 +441,8 @@ impl Sections<'_> {
     fn version<'a>(&self) -> Element<'a, Message> {
         self.section(
             "version",
-            "Version",
-            "A Linux-native mod manager modelled on Mod Organizer 2: isolated instances, a \
-             virtual file system over the game, FOMOD installs, LOOT sorting, and Nexus \
-             integration.",
+            t("settings_section_version"),
+            t("settings_version_desc"),
             [self.info("Eidos", env!("CARGO_PKG_VERSION").to_string())],
         )
     }

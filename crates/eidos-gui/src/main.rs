@@ -44,6 +44,7 @@ mod fomod;
 #[cfg(test)]
 mod gui_verification;
 mod health;
+mod i18n;
 mod installers;
 mod message;
 mod modinfo;
@@ -64,6 +65,7 @@ mod wizard;
 use app::*;
 use archive_conflicts::*;
 use dialogs::*;
+use i18n::{t, tf};
 use file_preview::{Preview, PREVIEW_TEXT_CAP};
 use fomod::{fomod_ink_faint, fomod_ink_soft, fomod_wizard_view, FomodWizard};
 use message::Message;

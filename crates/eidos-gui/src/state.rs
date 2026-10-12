@@ -264,6 +264,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         crate::preferences::UiPreferences::default()
     } else {
         let ui_prefs = crate::preferences::UiPreferences::load();
+        crate::i18n::apply(&ui_prefs.language);
         // Before anything is drawn: the palette, fonts and sizes are globals
         // every style closure reads, so a window built before this call would
         // paint its first frame in the defaults. Not under test, where the

@@ -29,6 +29,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::DismissToast => app.toast = None,
+        Message::LanguageChanged(language) => {
+            app.ui_prefs.language = language.to_string();
+            crate::i18n::apply(language);
+            if let Err(e) = app.ui_prefs.save() {
+                app.status = Some(format!("Could not save preferences: {e}"));
+            }
+        }
         Message::NexusSignInStart => {
             if app.nexus_signing_in {
                 return Task::none();

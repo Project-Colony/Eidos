@@ -284,6 +284,8 @@ pub(crate) enum Message {
     Preference(colony_ui::preferences::Change),
     /// Dismiss the "Theme applied." toast.
     DismissToast,
+    /// Pick the interface language: one of [`crate::i18n::LANGUAGES`].
+    LanguageChanged(&'static str),
     /// Set the default game id to open (`None` = none).
     DefaultGameChanged(Option<String>),
     /// Toggle "lock the GUI while a game/tool runs" (MO2's `lock_gui`).

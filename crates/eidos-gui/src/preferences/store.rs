@@ -20,6 +20,9 @@ pub(crate) const DEFAULT_THEME: (&str, &str) = ("parchment", "light");
 pub(crate) struct UiPreferences {
     #[serde(flatten)]
     pub(crate) standard: StandardPreferences,
+    /// `system`, `en` or `fr`: see [`crate::i18n::resolve`].
+    #[serde(default = "system_language")]
+    pub(crate) language: String,
     /// The file these were read from and the only one [`UiPreferences::save`]
     /// writes. `None` for defaults, which is what a test gets, so no test can
     /// write the user's real file.
@@ -35,9 +38,14 @@ impl Default for UiPreferences {
                 selected_variant: DEFAULT_THEME.1.to_string(),
                 ..StandardPreferences::default()
             },
+            language: system_language(),
             path: None,
         }
     }
+}
+
+fn system_language() -> String {
+    "system".to_string()
 }
 
 impl UiPreferences {
@@ -202,6 +210,7 @@ mod tests {
         p.standard.text_size_a11y = TextSize::XLarge;
         p.standard.dyslexia_font = true;
         p.standard.animations = false;
+        p.language = "fr".to_string();
         p.save().unwrap();
         assert_eq!(UiPreferences::load_from(&json, &d.join("none.ini")), p);
 
@@ -210,6 +219,7 @@ mod tests {
         let back = UiPreferences::load_from(&json, &d.join("none.ini"));
         assert_eq!(back.standard.selected_theme, "nord");
         assert_eq!(back.standard.font_size, FontSize::Default);
+        assert_eq!(back.language, "system", "no language means the system's");
         let _ = std::fs::remove_dir_all(&d);
     }
 
