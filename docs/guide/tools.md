@@ -112,7 +112,7 @@ is a case-insensitive substring of the title.
 | `nemesis`, `loot` | `vcrun2022` |
 | anything else | nothing |
 
-So a tool registered as **`BodySlide`** gets its DirectX DLLs; the same
+So a tool registered as **`BodySlide`** asks for its DirectX DLLs; the same
 executable registered as **`BS`** gets nothing and may fail to start with an
 error that says nothing about DLLs. Name tools after the program.
 
@@ -125,23 +125,26 @@ nobody could guess: a title containing `pgpatcher` (or `parallaxgen`, its former
 name) is given `--ignore-mo2vfscheck`. Why, and why it is not optional, is
 [below](#why-pgpatcher-needs---ignore-mo2vfscheck).
 
-### Three kinds of prerequisite
+### Two kinds of prerequisite
 
-**Tier 1 - bundled DLLs** (`d3dx9_43`, `d3dcompiler_47`, `d3dx11_43`). Eidos
-ships them and copies them into the prefix at launch. Nothing to do, no network.
+**Winetricks verbs** (`d3dcompiler_47`, `d3dcompiler_43`, `d3dx9_43`,
+`d3dx11_43`, `vcrun2022`, `dotnet8`, `dotnetdesktop8`, `dotnet48`, `xact`...).
+Eidos does not ship any Microsoft binary, so the DirectX DLLs come from
+winetricks like the rest. Winetricks puts each DLL where the prefix's layout
+wants it (`system32` and `syswow64` for a 64-bit prefix), and the .NET and vcrun
+verbs write registry keys, the GAC and CLR hosts. They **download**: the DirectX
+DLLs from Microsoft's DirectX redistributable (`d3dcompiler_47` from the copy
+Mozilla publishes), unpacked with `cabextract`, and the rest from Microsoft. A
+DLL that is already in the prefix counts as installed, whoever put it there.
 
-**Tier 2 - winetricks verbs** (`vcrun2022`, `dotnet8`, `dotnetdesktop8`,
-`dotnet48`, `xact`...). These write registry keys, the GAC and CLR hosts, so they
-cannot be file-copied. They **download from Microsoft**.
-
-**Tier 3 - runtimes** (`dotnet10`). A modern .NET runtime is 193 files that live
-in their own directory and are found through `DOTNET_ROOT`: never registered,
-never installed into the prefix at all, so neither of the other tiers can carry
-it. Eidos downloads it itself, checks it against a checksum built into the
-binary, and caches it in `~/.local/share/Colony/Eidos/runtimes/` - **outside any
+**Runtimes** (`dotnet10`). A modern .NET runtime is 193 files that live in their
+own directory and are found through `DOTNET_ROOT`: never registered, never
+installed into the prefix at all, so a winetricks verb cannot carry it. Eidos
+downloads it itself, checks it against a checksum built into the binary, and
+caches it in `~/.local/share/Colony/Eidos/runtimes/` - **outside any
 instance**, because 78 MB is not per-game and not per-profile.
 
-Nothing in tiers 2 or 3 runs silently:
+Nothing here runs silently:
 
 ```sh
 eidos prereqs skyrimse            # show what the registered tools need, and their state
@@ -149,8 +152,15 @@ eidos prereqs skyrimse --install  # fetch what is missing (downloads)
 ```
 
 In the GUI the same states sit under the Prereqs field, and the missing ones are
-buttons. A verb that is neither bundled, nor a runtime, nor a known winetricks
-verb is reported as a probable typo rather than offered as a download.
+buttons. A verb that is neither a runtime nor a known winetricks verb is reported
+as a probable typo rather than offered as a download.
+
+`eidos prereqs` also lists `d3dcompiler_47` when an enabled mod imports it
+(Community Shaders, ENB and ReShade compile shaders with it). The Diagnostics
+tab flags the same case with an Install button. At launch Eidos forces every one
+of these DLLs native (`WINEDLLOVERRIDES=...=n,b`), but it never downloads
+anything then: a missing DLL gets a warning that names the command, and Wine's
+builtin stands in.
 
 ### Why DynDOLOD needs `dotnet10`
 
@@ -172,8 +182,8 @@ that declares it.
 
 Eidos runs the system `winetricks` against Proton's own `wine` and the game
 prefix, which sidesteps Steam's pressure-vessel container and the
-protontricks + Proton-GE mismatch. A tool that declares an uninstalled Tier-2
-verb still launches, with a warning naming the verb and the command to fix it -
+protontricks + Proton-GE mismatch. A tool that declares an uninstalled
+winetricks verb still launches, with a warning naming the verb and the command to fix it -
 the user may have it from elsewhere.
 
 ### Why PGPatcher needs `--ignore-mo2vfscheck`

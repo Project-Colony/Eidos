@@ -3,10 +3,12 @@
 //! Two files in the config directory, both our own minimal `key=value` INI dialect
 //! (not MO2's, distinct from the per-mod `meta.ini`):
 //!
-//! - `~/.config/Colony/Eidos/nexus.ini` holds only the personal Nexus API key.
-//!   It is kept separate, and at the path the CLI already uses, so the key the
-//!   user stored with `eidos nexus key` is the same one the GUI sees - the key
-//!   survives across sessions and across tools.
+//! - `~/.config/Colony/Eidos/nexus.ini` holds the Nexus OAuth session: the
+//!   access and refresh tokens, their expiry, and the cached adult-content
+//!   preference (see [`NexusCreds`]). It is kept separate, written with mode
+//!   0600, and shared by the CLI and the GUI, so a sign-in made in the GUI is
+//!   the one `eidos nexus status` sees. Personal API keys are not supported; an
+//!   `api_key=` line left by an older version is kept but never read.
 //! - `~/.config/Colony/Eidos/settings.ini` holds the rest of the app-global
 //!   preferences (theme, default game id, last window size), none of which is
 //!   secret.

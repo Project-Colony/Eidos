@@ -239,7 +239,7 @@ pub(crate) enum Message {
     /// Open the current game's Nexus page in the browser.
     OpenNexusGame,
     /// Install the modding tools' runtime prerequisites into the prefix
-    /// (`eidos prereqs <id> --install`); the Tier-2 verbs download from Microsoft.
+    /// (`eidos prereqs <id> --install`); the winetricks verbs and runtimes download.
     SetupPrereqs,
     // ---- manual / BAIN install picker (MO2 InstallDialog, BainComplexInstallerDialog) ----
     /// Tick or untick one BAIN sub-package.

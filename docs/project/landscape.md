@@ -42,7 +42,7 @@ lives**, and what the kernel does underneath it:
    falls back to the fully rootless `CLONE_NEWUSER | CLONE_NEWNS` with
    `uid_map` / `gid_map` / `setgroups` - and then remounts `/` as
    `MS_REC | MS_PRIVATE` so nothing propagates back
-   ([`crates/eidos-launch/src/lib.rs`](crates/eidos-launch/src/lib.rs)). The
+   ([`crates/eidos-launch/src/lib.rs`](../../crates/eidos-launch/src/lib.rs)). The
    merged view therefore exists *only* inside the game's process tree. Your file
    manager, a second Steam game, a backup job, another user: none of them can see
    it, and none of them need permission to. The corollary matters more than the

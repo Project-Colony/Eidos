@@ -1,6 +1,6 @@
 # Installation integrity, archive conflicts and generated output
 
-These checks describe the implementation on `codex/eidos-audit-completion`.
+These checks describe the current implementation on `main`.
 Automated tests and read-only inspection of real files do not establish that a
 mod or a game runtime works in a playthrough.
 

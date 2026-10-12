@@ -3,12 +3,16 @@
 The full done/remaining ledger, kept as the project's development history. The
 README carries only the short version; this is the receipts.
 
-The September 2026 audit adds replacement staging, exact collection ownership
-and Nexus file identity, bounded plugin/SKSE preflight checks, archive member
-conflicts, generated-output receipts, and filesystem/save regressions. See
+Releases 1.17 and 1.18 (September 2026) added replacement staging, exact
+collection ownership and Nexus file identity, bounded plugin/SKSE preflight
+checks, archive member conflicts, generated-output receipts, archive browsing,
+DDS and NIF previews, OMOD installs, trusted extensions and timestamp-ordered
+games. 1.18.3 and 1.18.4 (October 2026) fixed data-integrity and responsiveness
+defects found by a review of 1.18.2, and `main` has since moved every file
+Eidos keeps onto the Colony layout ([paths.md](../internals/paths.md)). See
 [integrity.md](../internals/integrity.md) for behavior and verification limits.
-The historical in-game claims below refer to the earlier builds they describe;
-they do not certify the audit branch in gameplay.
+The in-game claims below refer to the builds they describe; automated tests do
+not certify later releases in gameplay.
 
 ## Roadmap
 
@@ -134,15 +138,14 @@ they do not certify the audit branch in gameplay.
       Proton flavour ships Microsoft's native `d3dcompiler_47.dll` (they symlink
       Wine's builtin HLSL stub, which Community Shaders / ENB / ReShade reject), so
       Eidos scans enabled mods' DLL import tables (the `object` crate) and, when one
-      imports it, deploys the bundled genuine MS redistributable into the prefix's
-      `system32`/`syswow64` and forces it native - unlinking Proton's builtin symlink
-      first, backing up any displaced file, idempotent and best-effort
+      imports it, forces it native and offers to install Microsoft's DLL through
+      winetricks (Eidos stopped shipping the Microsoft binaries itself)
 - [x] Modding-tool prerequisites (`eidos prereqs`) - tools run in the game's shared
       Proton prefix through the merged view, so one prereq set covers them all.
-      Tier 1 (bundled, zero network): the DirectX helpers BodySlide / DynDOLOD / CAO
-      need (`d3dx9_43` / `d3dx11_43` / `d3dcompiler_43`), declared per-tool in
-      `tools.ini` and provisioned at launch. Tier 2 (consented download): the .NET /
-      vcrun verbs Synthesis / Pandora / FNIS need, installed via the system
+      Consented winetricks downloads: the DirectX helpers BodySlide / DynDOLOD /
+      CAO need (`d3dx9_43` / `d3dx11_43` / `d3dcompiler_43`, declared per-tool in
+      `tools.ini` and forced native at launch) and the .NET / vcrun verbs
+      Synthesis / Pandora / FNIS need, installed via the system
       winetricks pointed straight at Proton's own wine (bypassing the protontricks +
       Proton-GE mismatch), behind an explicit `eidos prereqs <id> --install` / GUI
       "Tool Setup" button, recorded in a per-instance sentinel
@@ -273,24 +276,30 @@ they do not certify the audit branch in gameplay.
       every run of the suite - which presented as "options revert after every
       rebuild"
 - [ ] Casing normalization at mod-import time
-- [ ] Packaging and distribution. Now unconstrained, since the launch capability
-      became optional: Eidos runs rootless and only the opt-in passthrough path
-      wants `CAP_SYS_ADMIN`. That matters because a file capability lives in the
+- [x] Packaging and distribution - each tagged release builds a tarball that
+      installs through the one tracked installer (`packaging/install.sh`:
+      rootless by default, the capability only with `--cap`), and
+      `packaging/PKGBUILD` builds an Arch package from git. See
+      [packaging.md](../internals/packaging.md)
+- [ ] Self-contained formats (AppImage, Flatpak): unimplemented and unverified.
+      They are possible in principle since the launch capability became
+      optional: Eidos runs rootless and only the opt-in passthrough path wants
+      `CAP_SYS_ADMIN`. That matters because a file capability lives in the
       `security.capability` xattr of the executable and the kernel ignores it on a
       `nosuid` mount, which is exactly what an unprivileged FUSE mount is forced
       to be (check any FUSE mount on your own machine:
       `findmnt -t fuse -o TARGET,OPTIONS` shows `nosuid,nodev`) - so a
       self-mounting bundle can never carry it, and a sandbox that sets
-      no-new-privs cannot gain it either. Self-contained formats (AppImage, and a
-      Flatpak modulo its own namespace nesting) are therefore back on the table;
-      only someone opting into passthrough needs the binary on a real filesystem
-      where `setcap` reaches it
+      no-new-privs cannot gain it either. Neither format is ruled out by that
+      any more (a Flatpak modulo its own namespace nesting); only someone opting
+      into passthrough needs the binary on a real filesystem where `setcap`
+      reaches it
 
 The manager layer above the VFS is complete per the MO2 + usvfs study that drove
-this work ([docs/master-pieces.md](master-pieces.md), all 6 master pieces
-done): the mod installer (Simple + FOMOD wizard), plugins, conflicts, profiles,
-`meta.ini`, the instance manifest, per-game Bethesda features (BSA invalidation +
-per-profile INIs/saves off a declarative `GameDef`), and tools through the VFS
+this work (all six of the subsystems it identified are done): the mod installer
+(Simple + FOMOD wizard), plugins, conflicts, profiles, `meta.ini`, the instance
+manifest, per-game Bethesda features (BSA invalidation + per-profile INIs/saves
+off a declarative `GameDef`), and tools through the VFS
 (`eidos tool`), plus Nexus integration beyond it (`eidos-nexus`: nxm:// downloads,
 update checks, the GUI Downloads tab). Since then: the GUI brought up to MO2
 daily-driver parity (separators, categories, diagnostics, Overwrite-to-mod, MO2
@@ -324,7 +333,7 @@ preflight checks and capture protections are documented in the usage guide and
 
 ## On reviewing this work
 
-The MO2-parity batches were each relidden adversarially: independent readers hunt
+The MO2-parity batches were each reread adversarially: independent readers hunt
 for defects, other readers try to refute them, and only what survives is fixed.
 Across the batches that is 154 confirmed findings, every one reproduced before
 being touched.

@@ -3,16 +3,16 @@
 These native implementations translate the finite inlined scripts in
 erri120/OMODFramework at commit `05b3d5629124cfa44308b3b78c38959b960b3730`:
 
-- `OMODFramework.Scripting/ScriptHandlers/CSharp/InlinedScripts/DarNifiedUI.cs`
-  — DarNified UI 1.3.2, Copyright 2007–2008 DarN; original mod
+- `OMODFramework.Scripting/ScriptHandlers/CSharp/InlinedScripts/DarNifiedUI.cs`:
+  DarNified UI 1.3.2, Copyright 2007-2008 DarN; original mod
   <https://www.nexusmods.com/oblivion/mods/10763>.
-- `OMODFramework.Scripting/ScriptHandlers/CSharp/InlinedScripts/DarkUIdDarN.cs`
-  — DarkUI'd DarN 1.6, made by DarN and modified by gothic251, Copyright
-  2007–2008 DarN; original mod <https://www.nexusmods.com/oblivion/mods/11280>.
-- `OMODFramework.Scripting/ScriptHandlers/CSharp/InlinedScripts/HorseArmorRevamped.cs`
-  — Horse Armor Revamped 1.8; original mod
+- `OMODFramework.Scripting/ScriptHandlers/CSharp/InlinedScripts/DarkUIdDarN.cs`:
+  DarkUI'd DarN 1.6, made by DarN and modified by gothic251, Copyright
+  2007-2008 DarN; original mod <https://www.nexusmods.com/oblivion/mods/11280>.
+- `OMODFramework.Scripting/ScriptHandlers/CSharp/InlinedScripts/HorseArmorRevamped.cs`:
+  Horse Armor Revamped 1.8; original mod
   <https://www.nexusmods.com/oblivion/mods/46657>.
-- `OMODFramework/Oblivion/BSA/BSACreator.cs` — Bethesda BSA name hashes and
+- `OMODFramework/Oblivion/BSA/BSACreator.cs`: Bethesda BSA name hashes and
   directory layout; the native writer checks bounds and constructs a complete
   uncompressed TES4 archive.
 

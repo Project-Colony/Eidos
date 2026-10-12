@@ -399,7 +399,7 @@ mod tests {
     #[test]
     fn shipped_helper_executes_preview_save_information_and_recorded_installer_choices() {
         let examples = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../docs/examples/extensions")
+            .join("../../docs/guide/examples/extensions")
             .canonicalize()
             .unwrap();
         let workspace = tempfile::tempdir().unwrap();

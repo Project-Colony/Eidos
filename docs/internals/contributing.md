@@ -30,32 +30,43 @@ it - read the suite's own `union integration result:` line instead.
 ## Repo layout
 
 ```
-crates/eidos            the unified CLI front end (games / init / play / install / tool / ...)
-crates/eidos-gui        the iced GUI (Colony parchment look)
-crates/eidos-core       the layer-resolution engine (pure, unit-tested)
-crates/eidos-fuse       the read-write FUSE union daemon
-crates/eidos-games      supported-game catalog + Steam install detection
-crates/eidos-launch     per-launch namespace wrapper: run a game through the view
-crates/eidos-instance   instance model: global/portable, profiles, per-mod meta.ini, manifest, load order
-crates/eidos-plugins    ESP/ESM/ESL plugin load order (via esplugin) + plugins.txt
-crates/eidos-loot       LOOT graph sorting (libloot) + masterlist fetch/cache
-crates/eidos-conflicts  per-file conflict analysis (winners / losers, per-mod state)
-crates/eidos-install    mod installer: 7-Zip extract + Simple wrapper-strip + Root split + meta.ini
-crates/eidos-fomod      FOMOD scripted-installer parser + condition/flag engine
-crates/eidos-gamefeatures  BSA/archive invalidation + per-profile INIs/saves at launch
-crates/eidos-gamedef    declarative per-game descriptor (one row per game; MO2 schema)
-crates/eidos-ini        shared low-level INI primitives (newline / section / key / edit)
-crates/eidos-nexus      Nexus Mods: v1 API client, nxm:// downloads, update checks,
-                        v2 GraphQL for collections
-crates/eidos-log        session logs: levels, rotation, home-path redaction
-crates/eidos-addons     user extensions, read as out-of-process TOML manifests
-crates/eidos-paths      where Eidos keeps its files: the Colony layout from
-                        colony_ui::paths, and the migration onto it (see
-                        docs/internals/paths.md)
-docs/internals/architecture.md  the design and the tradeoffs behind it
-scripts/poc-overlay.sh  runnable proof that the "virtualize under Wine" thesis
-                        holds with native primitives, no root required
+crates/eidos               the CLI front end (games / init / play / install / tool / ...)
+crates/eidos-gui           the iced GUI (Colony parchment look)
+crates/eidos-core          the layer-resolution engine (pure, unit-tested)
+crates/eidos-fuse          the read-write FUSE union daemon (+ a dev CLI)
+crates/eidos-launch        per-launch namespace wrapper: run a game through the view (+ a dev CLI)
+crates/eidos-paths         where Eidos keeps its files: the Colony layout from
+                           colony_ui::paths, and the migration onto it (see paths.md)
+crates/eidos-log           session logs: levels, rotation, home-path redaction
+crates/eidos-ini           shared low-level INI primitives (newline / section / key / edit)
+crates/eidos-gamedef       declarative per-game descriptor (one row per game; MO2 schema)
+crates/eidos-games         supported-game catalog + Steam / Heroic install detection
+crates/eidos-plugins       ESP/ESM/ESL plugin load order (via esplugin) + plugins.txt
+crates/eidos-loot          LOOT graph sorting (libloot) + masterlist fetch/cache
+crates/eidos-instance      instance model: global/portable, profiles, per-mod meta.ini,
+                           manifest, global settings and nexus.ini
+crates/eidos-conflicts     per-file and archive-member conflict analysis
+crates/eidos-sevenzip      the 7-Zip process seam: find it, drive it, read its progress
+crates/eidos-install       mod installers: Simple / Root / BAIN / OMOD / manual + staged publication
+crates/eidos-fomod         FOMOD scripted-installer parser + condition/flag engine
+crates/eidos-gamefeatures  archive invalidation, per-profile INIs/saves, prefix DLLs and prerequisites
+crates/eidos-nexus         Nexus Mods: OAuth, v1 API, nxm:// downloads, update checks,
+                           v2 GraphQL for collections
+crates/eidos-collections   Nexus collections: install one the way its author built it
+crates/eidos-transfer      eidos pack / unpack: one instance in one .eidos file
+crates/eidos-addons        user extensions, read as out-of-process TOML manifests
+native/eidos-nif-preview   the C++ NIF preview helper (CMake, vendored nifly)
+packaging/                 the tarball installer, its tests and the Arch PKGBUILD
+docs/                      user guide, internals and project pages (index: docs/README.md)
+scripts/                   CI helpers, and poc-overlay.sh: runnable proof that the
+                           "virtualize under Wine" thesis holds with native
+                           primitives, no root required
 ```
+
+That is all 22 workspace crates. What each one owns, and which process it runs
+in, is the [crate map in architecture.md](architecture.md#crate-map). A pull
+request that adds, removes or splits a crate updates both lists in the same pull
+request.
 
 ## Releasing
 
@@ -75,7 +86,13 @@ The prefixes that move the version: `feat:` bumps the minor, `fix:` and `perf:`
 the patch, and a `!` or a `BREAKING CHANGE:` footer bumps the major. `docs:`,
 `chore:`, `test:` and `ci:` ride along without moving anything.
 
-The workspace is a virtual manifest - one `[workspace.package]` version that all
-seventeen crates inherit - which is why the config uses the `cargo-workspace`
-plugin. `.release-please-manifest.json` records where the version currently
-stands; nothing else should edit it.
+The workspace is a virtual manifest: one `[workspace.package]` version that all
+22 crates inherit. So release-please runs with `release-type: simple` and bumps
+that one line through `extra-files` (`Cargo.toml`, the line marked
+`x-release-please-version`); no Cargo plugin is involved. The workflow then runs
+`cargo update --workspace` on the release branch, so the release pull request
+carries the matching `Cargo.lock` bump that `--locked` builds need.
+`.release-please-manifest.json` records where the version currently stands, and
+`CHANGELOG.md` is written by release-please from the commit messages. Nobody
+edits either by hand: a changelog entry is fixed by fixing the commit message
+or the pull request title it came from.
