@@ -457,7 +457,7 @@ pub fn default_args(title: &str) -> Vec<String> {
 /// The known runtime prerequisites for a well-known modding tool, by title (so a
 /// freshly-added SSEEdit/Synthesis/BodySlide gets the right verbs without the user
 /// typing them; a user-declared `prereqs=` in tools.ini always wins). Verbs match
-/// the bundled DirectX DLLs (Tier 1) and the winetricks installer verbs (Tier 2).
+/// the winetricks verbs (DirectX DLLs, vcrun, dotnet) and the runtimes.
 pub fn default_prereqs(title: &str) -> Vec<String> {
     let t = title.to_ascii_lowercase();
     let has = |needle: &str| t.contains(needle);

@@ -127,6 +127,8 @@ jobs:
           cp README.md LICENSE SECURITY.md "dist/${name}/"
           mkdir -p "dist/${name}/licenses/omod"
           cp crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md "dist/${name}/licenses/omod/"
+          # The Rust crates linked into the binaries carry their own notices.
+          bash scripts/third-party-licenses.sh "dist/${name}/licenses/crates"
           # Not stripped on purpose. Cargo's release profile emits no DWARF
           # anyway, so `--strip-all` would only remove the symbol table - which is
           # precisely what turns a user's panic backtrace into something we can

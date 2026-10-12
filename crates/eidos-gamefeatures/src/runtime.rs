@@ -1,11 +1,11 @@
 //! Self-contained runtimes a tool needs, fetched once and shared by every
 //! instance.
 //!
-//! The third tier of prerequisite, and it exists because the first two cannot
-//! carry this. Tier 1 copies ONE bundled DLL into `system32`; tier 2 runs a
-//! winetricks verb. A modern .NET runtime is neither: 193 files that live in
-//! their own directory and are found through `DOTNET_ROOT`, never registered,
-//! never installed into the prefix at all.
+//! The third tier of prerequisite, and it exists because a winetricks verb
+//! (tier 2) cannot carry this: a verb installs into the prefix. A modern .NET
+//! runtime does not: 193 files that live in their own directory and are found
+//! through `DOTNET_ROOT`, never registered, never installed into the prefix at
+//! all.
 //!
 //! # Why this is not bundled
 //!
