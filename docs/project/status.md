@@ -277,9 +277,10 @@ not certify later releases in gameplay.
       every run of the suite - which presented as "options revert after every
       rebuild"
 - [ ] Casing normalization at mod-import time
-- [x] Packaging and distribution - each tagged release builds a tarball that
-      installs through the one tracked installer (`packaging/install.sh`:
-      rootless by default, the capability only with `--cap`), and
+- [x] Packaging and distribution - each release ships `eidos-linux`, the one
+      file Colony installs, and a bundle that installs through the one tracked
+      installer (`packaging/install.sh`: rootless by default, the capability
+      only with `--cap`), both signed by the organisation's release key; and
       `packaging/PKGBUILD` builds an Arch package from git. See
       [packaging.md](../internals/packaging.md)
 - [ ] Self-contained formats (AppImage, Flatpak): unimplemented and unverified.

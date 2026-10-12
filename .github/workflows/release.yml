@@ -1,49 +1,158 @@
 name: Release
 
-# Builds the release tarball, and publishes it when (and only when) the run was
-# triggered by a version tag.
+# One workflow, one run per merge to main: release-please keeps the release PR
+# up to date, and merging that PR creates the tag and the release, which the
+# jobs below build, check and hand to the shared Colony signing workflow.
 #
-# The shape is deliberate: ONE build job, three ways in. A tag push releases; a
-# manual dispatch rehearses the exact same packaging without publishing; another
-# workflow can call this one and get the tarball as a run artifact. The failure
-# mode this avoids is the classic one where the release script is only ever
-# exercised by a tag, so it is discovered to be broken at the worst moment - the
-# packaging path you can run on demand is the packaging path that works.
+# Two release assets, following the Colony naming convention so Colony
+# auto-detects them and colony.json only needs a name and a category:
+#
+#   eidos-linux                 the whole product in one file: eidos-gui, which
+#                               also runs the eidos CLI (see startup.rs). This is
+#                               what Colony installs.
+#   eidos-linux-bundle.tar.gz   eidos, eidos-gui, the NIF preview helper, the
+#                               installer, icons and licence notices, for a
+#                               user-wide or system install with ./install.sh.
+#
+# The build job only builds, tests and uploads artifacts; it never sees a key.
+# The ed25519 signatures (.sig, .meta, .meta.sig), the final verification and
+# the publication happen in sign-and-publish.yml of Project-Colony-Resources,
+# in this same run, in a job that checks out nothing and builds nothing. See
+# design/releases.md there, section "Shared signing workflow".
+#
+# Action refs are pinned to commit SHAs on purpose: this workflow can publish
+# releases, and whoever can move a floating tag can change what it runs.
 on:
   push:
-    # Matches v1.2.3 and v1.2.3-rc1; the publish job below re-checks the ref, so
-    # a stray tag can never fall through into a release.
-    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+    branches: [main]
+  # Recovery path. release-please only ever reports `release_created` once per
+  # release, so once a tag exists "Re-run all jobs" makes it report nothing to
+  # do and every job below skip, while the run goes green. This input finishes
+  # an existing DRAFT release whose run failed. Start it from the tag:
+  # `gh workflow run release.yml --ref v1.19.0 -f tag=v1.19.0`.
   workflow_dispatch:
-  workflow_call:
+    inputs:
+      tag:
+        description: "Existing draft release to build, sign and publish (e.g. v1.19.0). Run from that same tag."
+        required: true
+        type: string
+
+permissions: {}
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-permissions:
-  contents: read
-
 env:
-  # Same pin as CI: the artifact users download is built by a known compiler, not
+  # Same pin as CI: the binary users download is built by a known compiler, not
   # by whatever stable happened to be current that morning.
   RUST_VERSION: "1.94.1"
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-    name: build tarball
-    # Pinned, not `ubuntu-latest`: the binaries link against the runner's glibc,
-    # so the runner image IS part of the compatibility contract. 24.04 means the
-    # tarball needs glibc >= 2.39. Moving to a newer image silently raises that
-    # floor and breaks users on older distros, so it must be a deliberate edit.
-    runs-on: ubuntu-24.04
+  # Assembles a release PR from the conventional commits since the last
+  # release. Merging that PR is what creates the tag. Push only: on a recovery
+  # dispatch the tag already exists, and running release-please would open or
+  # update a release PR as a side effect of repairing an old release.
+  release-please:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     outputs:
-      version: ${{ steps.meta.outputs.version }}
-      name: ${{ steps.meta.outputs.name }}
-      tarball: ${{ steps.meta.outputs.tarball }}
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
+      - name: Verify the release account
+        env:
+          GH_TOKEN: ${{ secrets.EIDOS_RELEASE_TOKEN }}
+        run: test "$(gh api user --jq .login)" = MotherSphere
+
+      # No `release-type` input: when it is set, the action ignores both files.
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: release
+        with:
+          # A user token, not GITHUB_TOKEN: a pull request opened or pushed with
+          # GITHUB_TOKEN triggers no workflow, so the release PR would never get
+          # the CI run its required checks wait for.
+          token: ${{ secrets.EIDOS_RELEASE_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      # release-please publishes the release, and moves /releases/latest,
+      # before any binary exists. Held as a draft; sign-and-publish refuses
+      # anything else and publishes it last. `-R` is not optional: this job has
+      # no checkout, so `gh` has no git remote to infer the repository from.
+      - name: Hold the release as a draft
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag_name }}
+        run: gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --draft=true
+
+      # Cargo.lock pins every workspace member by version, and every build runs
+      # with `--locked`. A release PR that bumped Cargo.toml alone would fail
+      # the moment it merged, so the lock is brought along here.
+      #
+      # The open release PR is found by release-please's own label, on every
+      # push, rather than only when this run touched it: release-please leaves an
+      # unchanged PR alone and reports nothing, so a sync that failed once would
+      # otherwise never be retried. No pending PR is the only quiet exit; a PR
+      # that exists and cannot be synced fails the job.
+      - name: Keep Cargo.lock in step with the version
+        env:
+          GH_TOKEN: ${{ secrets.EIDOS_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          branches=$(gh pr list -R "$GITHUB_REPOSITORY" --state open --label 'autorelease: pending' \
+            --json headRefName --jq '.[].headRefName')
+          if [ -z "$branches" ]; then
+            echo "no release PR open - nothing to sync"
+            exit 0
+          fi
+          gh auth setup-git
+          for branch in $branches; do
+            dir=$(mktemp -d)
+            git clone --branch "$branch" --depth 1 "https://github.com/${GITHUB_REPOSITORY}.git" "$dir"
+            # Rewrites the workspace members' versions in the lock and nothing
+            # else: no external dependency moves, and nothing is compiled.
+            (cd "$dir" && cargo update --workspace)
+            if git -C "$dir" diff --quiet Cargo.lock; then
+              echo "$branch: Cargo.lock already agrees with Cargo.toml"
+              continue
+            fi
+            git -C "$dir" -c user.name=MotherSphere -c user.email=mothersphere.colony@gmail.com \
+              commit -m "chore: sync Cargo.lock with the release version" Cargo.lock
+            git -C "$dir" push
+            echo "$branch: Cargo.lock synced"
+          done
+
+  build:
+    name: build eidos-linux
+    needs: release-please
+    # Runs on a merge that created a release, or on a recovery dispatch (when
+    # release-please is skipped). NOT `always()`: that would also build after
+    # release-please FAILED.
+    if: ${{ !cancelled() && !failure() && (needs.release-please.outputs.release_created || github.event_name == 'workflow_dispatch') }}
+    # Pinned, not `ubuntu-latest`: the binaries link against the runner's glibc,
+    # so the runner image IS part of the compatibility contract. 24.04 means
+    # glibc >= 2.39. Moving to a newer image silently raises that floor and
+    # breaks users on older distributions, so it must be a deliberate edit.
+    # GitHub-hosted on purpose too: SignPath rejects a signing request if any
+    # job leading to it ran on a self-hosted runner.
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ needs.release-please.outputs.tag_name || inputs.tag }}
+    steps:
+      # The tag, not the branch: a recovery dispatch must rebuild the tagged
+      # commit, since the .meta sidecar binds these bytes to that version.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
 
       - name: Install the pinned toolchain
         run: |
@@ -51,204 +160,157 @@ jobs:
           rustup default "$RUST_VERSION"
           rustc -vV
 
-      - name: Cache cargo registry and build artifacts
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            target
-          key: ${{ runner.os }}-release-${{ env.RUST_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-release-${{ env.RUST_VERSION }}-
-
-      - name: Work out the version and artifact names
-        id: meta
-        run: |
-          set -eu
-          # A tag names the release. A dispatch or a call is a rehearsal, so it
-          # gets a version that can never be mistaken for a shipped one.
-          case "${GITHUB_REF}" in
-            refs/tags/v*) version="${GITHUB_REF_NAME#v}" ;;
-            *)            version="0.0.0-dev.$(git rev-parse --short HEAD)" ;;
-          esac
-          name="eidos-${version}-x86_64-linux"
-          {
-            echo "version=${version}"
-            echo "name=${name}"
-            echo "tarball=${name}.tar.gz"
-          } >> "$GITHUB_OUTPUT"
-          echo "building ${name}"
+      # No build cache here: SignPath forbids release builds that reuse outputs
+      # of earlier, unverified builds.
 
       - name: Build
-        run: cargo build --workspace --release --locked
+        run: cargo build --release --locked -p eidos -p eidos-gui
 
       - name: Build and test the native NIF helper
         run: |
-          cmake -S native/eidos-nif-preview -B target/nif-preview -DCMAKE_BUILD_TYPE=Release
+          cmake -S crates/eidos-nif-preview -B target/nif-preview -DCMAKE_BUILD_TYPE=Release
           cmake --build target/nif-preview --parallel 2
           ctest --test-dir target/nif-preview --output-on-failure
           echo "$PWD/target/nif-preview" >> "$GITHUB_PATH"
 
-      # The release profile is already compiled, so this reuses those artifacts
-      # instead of building the whole tree a second time in dev. A tag that fails
-      # its own test suite must not become a download.
+      # A tag that fails its own test suite must not become a download. Release
+      # profile, so most of the tree compiled above is reused.
       - name: Prepare real FUSE tests
         run: bash scripts/ci-fuse.sh
 
       - name: Test the release build
         run: |
-          # The GUI suite runs serially: two of its tests race each other under
-          # the parallel runner and refuse the instance lock to our own process.
-          # It failed the 1.11.0 release build, with the tarball never attached.
-          # A workaround, not a fix - see the note in ci.yml.
+          # The GUI suite runs serially: see the note in ci.yml.
           cargo test --workspace --release --locked --exclude eidos-gui
           cargo test -p eidos-gui --release --locked -- --test-threads=1
 
       - name: Test transfers with colliding clock ticks
         run: python3 crates/eidos-transfer/tests/check_clock_resolution.py --release
 
-      - name: Stage the package
+      - name: Test the rootless installer
+        run: bash packaging/tests/install.sh
+
+      - name: Stage the assets
         run: |
           set -eu
-          name='${{ steps.meta.outputs.name }}'
-          mkdir -p "dist/${name}"
-          # Both binaries sit side by side at the top level, and that placement is
-          # load-bearing, not cosmetic: eidos-gui locates the launcher by looking
-          # for an `eidos` sibling of its own executable first. Keeping them
-          # together means the extracted directory works when run in place, before
-          # anything is installed.
-          cp target/release/eidos target/release/eidos-gui "dist/${name}/"
-          cp target/nif-preview/eidos-nif-preview "dist/${name}/"
+          cp target/release/eidos-gui eidos-linux
+          # The bundle's binaries sit side by side at its top level, and that is
+          # load-bearing: eidos-gui looks for an `eidos` beside its own
+          # executable first, so the extracted directory works when run in place.
+          b=eidos-linux-bundle
+          mkdir "$b"
+          cp target/release/eidos target/release/eidos-gui target/nif-preview/eidos-nif-preview "$b/"
+          install -m 0755 packaging/install.sh "$b/install.sh"
+          cp README.md LICENSE SECURITY.md "$b/"
+          mkdir -p "$b/assets/brand"
+          cp -r assets/brand/png "$b/assets/brand/"
           for notice in UPSTREAM.md VENDORED-SHA256SUMS vendor/nifly/LICENSE vendor/nifly/README.md vendor/nifly/external/half.hpp vendor/nifly/external/Miniball.hpp; do
-            install -Dm644 "native/eidos-nif-preview/${notice}" "dist/${name}/licenses/nifly/${notice}"
+            install -Dm644 "crates/eidos-nif-preview/${notice}" "$b/licenses/nifly/${notice}"
           done
-          cp README.md LICENSE SECURITY.md "dist/${name}/"
-          mkdir -p "dist/${name}/licenses/omod"
-          cp crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md "dist/${name}/licenses/omod/"
-          # Not stripped on purpose. Cargo's release profile emits no DWARF
-          # anyway, so `--strip-all` would only remove the symbol table - which is
-          # precisely what turns a user's panic backtrace into something we can
-          # act on. A few MB is a good trade for readable crash reports.
-          ls -l "dist/${name}"
-
-      # Reuse the source installer's rootless defaults and desktop integration.
-      - name: Stage the installer and icons
-        run: |
-          name='${{ steps.meta.outputs.name }}'
-          install -m 0755 packaging/install.sh "dist/${name}/install.sh"
-          mkdir -p "dist/${name}/assets/brand"
-          cp -r assets/brand/png "dist/${name}/assets/brand/"
-          bash -n "dist/${name}/install.sh"
-
-      - name: Pack
-        run: |
-          set -eu
-          name='${{ steps.meta.outputs.name }}'
-          tarball='${{ steps.meta.outputs.tarball }}'
+          install -Dm644 crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md "$b/licenses/omod/UPSTREAM.md"
+          bash -n "$b/install.sh"
           # Deterministic archive: fixed order, no uid/gid or mtime from the
           # runner, gzip without its timestamp header. Two builds of the same
-          # commit then produce the same bytes, which is what makes the published
-          # checksum worth anything.
+          # commit then produce the same bytes.
           stamp=$(git log -1 --format=%cI)
-          tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="$stamp" \
-              -C dist -cf - "$name" | gzip -9n > "dist/$tarball"
-          (cd dist && sha256sum "$tarball" > "$tarball.sha256")
-          cat "dist/$tarball.sha256"
+          tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="$stamp" -cf - "$b" \
+            | gzip -9n > eidos-linux-bundle.tar.gz
+          ls -l eidos-linux eidos-linux-bundle.tar.gz
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ${{ steps.meta.outputs.name }}
-          path: |
-            dist/${{ steps.meta.outputs.tarball }}
-            dist/${{ steps.meta.outputs.tarball }}.sha256
-          if-no-files-found: error
-
-  publish:
-    name: publish release
-    needs: build
-    # The single gate between "we built a tarball" and "we shipped one". A manual
-    # dispatch or a workflow_call runs everything above and stops here.
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ needs.build.outputs.name }}
-          path: dist
-
-      - name: Create the release
-        env:
-          # `gh` is preinstalled on the runner, so publishing needs no third-party
-          # action holding a write token.
-          GH_TOKEN: ${{ secrets.EIDOS_RELEASE_TOKEN }}
-          VERSION: ${{ needs.build.outputs.version }}
-          TARBALL: ${{ needs.build.outputs.tarball }}
+      # The signature proves provenance and says nothing about whether the
+      # binaries RUN, or carry the version they are published under. Each one
+      # must print `eidos <version of the tag>` and exit 0, through every way in.
+      - name: Smoke-test the assets
         run: |
           set -eu
-          test "$(gh api user --jq .login)" = MotherSphere
-          cat > notes.md <<NOTES
-          ## Install
+          want="eidos ${TAG#v}"
+          check() { got=$("$@"); [ "$got" = "$want" ] || { echo "::error::$* printed '$got', expected '$want'"; exit 1; }; }
+          d=$(mktemp -d)
+          cp eidos-linux "$d/" && chmod +x "$d/eidos-linux"
+          check "$d/eidos-linux" --version
+          check "$d/eidos-linux" --eidos-cli --version
+          # Called through a link named `eidos`, the single file is the CLI.
+          ln -s eidos-linux "$d/eidos"
+          check "$d/eidos" --version
+          tar -xzf eidos-linux-bundle.tar.gz -C "$d"
+          check "$d/eidos-linux-bundle/eidos" --version
+          check "$d/eidos-linux-bundle/eidos-gui" --version
+          test -x "$d/eidos-linux-bundle/eidos-nif-preview"
+          rm -rf "$d"
 
-          \`\`\`sh
-          tar xzf ${TARBALL}
-          cd eidos-${VERSION}-x86_64-linux
-          ./install.sh
-          \`\`\`
+      # A manifest can PARSE perfectly and still leave the program listed in
+      # Colony with no Download button, because none of its assets match a
+      # convention. `colony validate-manifest` given the asset names catches
+      # exactly that. The names are the same list as `assets` in the
+      # sign-and-publish job below.
+      #
+      # Nothing runs until it verifies, the way Colony checks its own updates:
+      # the signature over colony-linux, the signature over its .meta sidecar,
+      # and that sidecar naming colony-linux with these exact bytes.
+      - name: Validate colony.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Colony's ed25519 release public key: RELEASE_PUBLIC_KEYS in
+          # src/signing.rs of Project-Colony/Colony, as PEM. It is public.
+          # Change it here when Colony's releases are signed with a new key.
+          COLONY_RELEASE_PUB: |
+            -----BEGIN PUBLIC KEY-----
+            MCowBQYDK2VwAyEARNjg3Nn8H6/aBg1unwGjkUTcrdTxERNefVaqU8cFu0s=
+            -----END PUBLIC KEY-----
+        run: |
+          d=$(mktemp -d)
+          gh release download -R Project-Colony/Colony -D "$d" \
+            -p colony-linux -p colony-linux.sig -p colony-linux.meta -p colony-linux.meta.sig
+          printf '%s' "$COLONY_RELEASE_PUB" > "$d/release.pub"
+          openssl pkeyutl -verify -pubin -inkey "$d/release.pub" -rawin \
+            -in "$d/colony-linux" -sigfile "$d/colony-linux.sig"
+          openssl pkeyutl -verify -pubin -inkey "$d/release.pub" -rawin \
+            -in "$d/colony-linux.meta" -sigfile "$d/colony-linux.meta.sig"
+          digest=$(sha256sum "$d/colony-linux" | cut -d' ' -f1)
+          grep -qx 'asset=colony-linux' "$d/colony-linux.meta" \
+            && grep -qx "sha256=$digest" "$d/colony-linux.meta" \
+            || { echo "::error::colony-linux.meta does not describe the downloaded colony-linux"; exit 1; }
+          chmod +x "$d/colony-linux"
+          "$d/colony-linux" validate-manifest colony.json eidos-linux eidos-linux-bundle.tar.gz
+          rm -rf "$d"
 
-          The installer copies \`eidos\`, \`eidos-gui\` and the NIF preview helper into \`~/.local/bin\`
-          (override with \`--bindir DIR\`) and registers the desktop and Nexus
-          download handlers. The default user installation needs no sudo.
+      # Each file at its artifact's root, under its release name, and never to
+      # the release from here: nothing may reach the release before every byte
+      # is final. The name prefix is what `artifact-pattern` below matches.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: build-eidos-linux
+          path: eidos-linux
+          if-no-files-found: error
+          retention-days: 1
 
-          Eidos uses rootless FUSE by default. Kernel passthrough is an optional
-          diagnostic mode, disabled because of observed Skyrim/Proton failures.
-          Only use \`--cap\` if you deliberately need CAP_SYS_ADMIN for that mode;
-          setting the capability does not itself enable passthrough.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: build-eidos-linux-bundle.tar.gz
+          path: eidos-linux-bundle.tar.gz
+          if-no-files-found: error
+          retention-days: 1
 
-          Native packages and this tarball are the supported formats. Flatpak
-          and AppImage integration has not been implemented or verified.
-
-          ## Requirements
-
-          - x86_64 Linux, glibc 2.39 or newer (built on Ubuntu 24.04)
-          - A kernel with FUSE, and \`fusermount3\` available
-          - 7-Zip (\`7z\`, \`7zz\` or \`7za\`) for mod archives
-
-          ## Verify
-
-          \`\`\`sh
-          sha256sum -c ${TARBALL}.sha256
-          \`\`\`
-          NOTES
-          # A hyphen in the version is a pre-release (v1.2.3-rc1), and GitHub
-          # should label it as one rather than serve it as the latest download.
-          prerelease=""
-          case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
-          # shellcheck disable=SC2086
-          # release-please creates the release when it tags, so by the time this
-          # runs the release usually EXISTS and only wants its artifacts. A plain
-          # `gh release create` fails outright on that ("a release with the same
-          # tag name already exists"), which is how v1.0.1 shipped with none.
-          #
-          # So: attach to what is there, create it when it is not. The notes are
-          # left alone on an existing release - release-please wrote the changelog
-          # and it is better than this template.
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            echo "release $GITHUB_REF_NAME exists - attaching artifacts"
-            gh release upload "$GITHUB_REF_NAME" \
-              "dist/${TARBALL}" \
-              "dist/${TARBALL}.sha256" \
-              --clobber
-          else
-            gh release create "$GITHUB_REF_NAME" \
-              --title "Eidos $VERSION" \
-              --notes-file notes.md \
-              $prerelease \
-              "dist/${TARBALL}" \
-              "dist/${TARBALL}.sha256"
-          fi
+  # In the same run as the build, chained by `needs:` rather than
+  # `on: release`: a release created with the default GITHUB_TOKEN fires no
+  # release events, so a workflow written that way never runs. Pinned to the
+  # organisation's commit of the shared workflow; design/releases.md says when
+  # that pin moves.
+  sign-and-publish:
+    needs: [release-please, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    # The ceiling for every job in the called workflow.
+    permissions:
+      actions: read
+      contents: write
+    uses: Project-Colony/Project-Colony-Resources/.github/workflows/sign-and-publish.yml@619460ff4dc0049f129955f0988d368427b9eedb # organisation pin
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name || inputs.tag }}
+      assets: "eidos-linux eidos-linux-bundle.tar.gz"
+      artifact-pattern: build-*
+      # README.md has a "## Code signing policy" section, which the release
+      # notes link to (the default `code-signing-policy: true`).
+    # Named, not `inherit`: the called workflow gets these two and nothing else.
+    secrets:
+      COLONY_SIGNING_KEY_PEM: ${{ secrets.COLONY_SIGNING_KEY_PEM }}
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}

@@ -1,22 +1,65 @@
 # Packaging and distribution
 
-Eidos ships as a native Arch package, a release tarball, or a source build.
-Normal operation uses rootless FUSE and does not require a file capability.
+Eidos ships through Colony, as a release bundle, as a native Arch package, or as
+a source build. Normal operation uses rootless FUSE and does not require a file
+capability.
 
 ## Install
 
 | Channel | Command | Privileges |
 |---|---|---|
+| Colony | install **Eidos** in the launcher | None |
+| Release bundle | `./install.sh` in the extracted `eidos-linux-bundle/` | None for the default user installation |
 | Arch package | `cd packaging && makepkg -si` | Package installation uses pacman |
-| Tarball | `./install.sh` | None for the default user installation |
 | From source | `just build`, then `just install` | None for the default user installation |
 
 The installer keeps `eidos`, `eidos-gui` and the bundled `eidos-nif-preview`
 helper together, registers the Nexus download
 handler and desktop entry, and installs bundled icons. Use `--bindir DIR` for a
 custom destination or `--system` for `/usr/local/bin`. A system destination may
-require sudo. Release packaging copies this same tracked installer; there is no
-second generated implementation to drift out of date.
+require sudo. The release bundle carries this same tracked installer; there is
+no second generated implementation to drift out of date.
+
+## Release assets
+
+Every release carries two assets, named after the Colony convention so Colony
+finds the Linux one without any `releaseFiles` in `colony.json`:
+
+| Asset | Contents |
+|---|---|
+| `eidos-linux` | `eidos-gui` under the asset's name. It links the CLI too: called through a link named `eidos`, or with `--eidos-cli` first, it runs the CLI instead of a window, and with no `eidos` beside it the window launches games and tools through itself that way. This one file is what Colony installs. |
+| `eidos-linux-bundle.tar.gz` | `eidos-linux-bundle/` with `eidos`, `eidos-gui`, `eidos-nif-preview`, `install.sh`, the icons, `README.md`, `LICENSE`, `SECURITY.md` and the third-party notices under `licenses/`. Deterministic: fixed file order, owner and mtime. |
+
+Each one comes with `.sig`, `.meta` and `.meta.sig` (see the README's
+[Code signing policy](../../README.md#code-signing-policy)). No separate
+`.sha256` file is published: the `.meta` carries the sha256, and its signature
+is what makes that digest worth checking.
+
+## How a release is built
+
+`.github/workflows/release.yml` is the whole chain, in one run per merge to
+`main`:
+
+1. **release-please** keeps the release pull request up to date and, on the
+   merge of that pull request, tags the commit and creates the release. The
+   release is put back to draft at once, so `/releases/latest` never points at a
+   release without files. The same job brings the open release pull request's
+   `Cargo.lock` in line with the new version.
+2. **build** checks out the tag on `ubuntu-24.04` (the runner image sets the
+   glibc floor, 2.39), builds `eidos` and `eidos-gui` in release mode and the NIF
+   helper with CMake, runs the test suites, the real-mount FUSE tests and the
+   installer test, stages both assets and smoke-tests every way in: each binary
+   must print `eidos <version of the tag>` for `--version`. It then validates
+   `colony.json` against the asset names with a signature-checked `colony`
+   binary, and uploads the two files as `build-*` artifacts. It holds no key and
+   uses no build cache.
+3. **sign-and-publish** calls the organisation's shared workflow in
+   Project-Colony-Resources, pinned by commit. It signs each asset, verifies
+   every signature and `.meta` on the release, and publishes the draft.
+
+A failed run leaves the release a draft. To finish it once the cause is fixed,
+start the workflow from the tag: `gh workflow run release.yml --ref vX.Y.Z -f
+tag=vX.Y.Z`.
 
 ## The constraint
 
@@ -61,9 +104,10 @@ runs real mount tests when the environment permits; inspect their skip count.
 adding capabilities. Its checks reuse the release build and run GUI tests
 serially, matching CI. No `.deb` or `.rpm` package is maintained here.
 
-## The tarball installer
+## The bundle installer
 
-`packaging/install.sh` is the single installer used by source and release builds.
+`packaging/install.sh` is the single installer used by source builds and the
+release bundle.
 Re-running it replaces installed binaries. The default destination is
 `~/.local/bin` (or `XDG_BIN_HOME`); `--from DIR` selects the build output.
 
@@ -78,7 +122,8 @@ just install      # build and install for the current user
 ```
 
 The binaries must remain together because the GUI finds its CLI launcher beside
-its own executable before falling back to PATH.
+its own executable before falling back to `~/.cargo/bin/eidos` and then to
+running the CLI it links itself.
 
 Complete source builds require CMake 3.20+, a C++17 compiler and Python 3 for
 native tests. The NIF helper uses the vendored, pinned nifly source; no model
