@@ -125,18 +125,10 @@ pub(crate) fn loot_data_paths(app: &App) -> Vec<PathBuf> {
 /// and "of course, EX2 needs EX1".
 pub(crate) fn pinned_by(range: &MovableRange) -> String {
     match (&range.after, &range.before) {
-        (Some(a), Some(b)) => format!(
-            "Held in place: it must load after {a} (one of its masters) and before {b}, which lists it as a master."
-        ),
-        (Some(a), None) => {
-            format!("Held in place: it must load after {a}, which is one of its masters.")
-        }
-        (None, Some(b)) => {
-            format!("Held in place: it must load before {b}, which lists it as a master.")
-        }
-        (None, None) => {
-            "Held in place: the game loads this plugin itself, at a fixed position.".to_string()
-        }
+        (Some(a), Some(b)) => tf("plugin_held_between", &[("after", &a), ("before", &b)]),
+        (Some(a), None) => tf("plugin_held_after", &[("after", &a)]),
+        (None, Some(b)) => tf("plugin_held_before", &[("before", &b)]),
+        (None, None) => t("plugin_held_engine").to_string(),
     }
 }
 
@@ -153,7 +145,7 @@ pub(crate) fn commit_plugin_order(app: &mut App, spec: &GameSpec) {
         .map(|list| write_plugin_state(app, list, spec))
         .transpose();
     if let Err(e) = written {
-        app.status = Some(format!("Could not write the load order: {e}"));
+        app.status = Some(tf("status_load_order_write_failed", &[("error", &e)]));
         app.plugins = compute_plugins(app);
     }
 }
@@ -199,7 +191,7 @@ pub(crate) fn write_plugin_state(
             .is_none_or(|seen| seen == plugin_state_fingerprint(&prof, spec));
         if !unchanged {
             return Err(std::io::Error::other(
-                "another Eidos process changed the load order; it has been reloaded - redo the change",
+                t("plugin_order_changed_elsewhere"),
             ));
         }
         // Adopt the game's state first, as launch and sort do, failing closed.
@@ -234,8 +226,8 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     let Some(list) = &app.plugins else {
         return Column::new()
             .spacing(4)
-            .push(text("Plugins (ESP / ESM / ESL load order)").size(sz(13)))
-            .push(text("Open a game instance to compute the plugin load order.").size(sz(12)))
+            .push(text(t("plugins_heading")).size(sz(13)))
+            .push(text(t("plugins_open_instance")).size(sz(12)))
             .into();
     };
 
@@ -250,7 +242,7 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     let mut top = Row::new()
         .spacing(8)
         .align_y(iced::Alignment::Center)
-        .push(text(format!("{} plugins - {active} active", list.plugins.len())).size(sz(12)));
+        .push(text(tf("plugins_count", &[("n", &list.plugins.len()), ("active", &active)])).size(sz(12)));
     if loot_ok {
         // No `on_press` while a sort runs, nor while a run is tracked: the button
         // greys itself. That is the only sign of work a multi-second masterlist
@@ -259,11 +251,11 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         // live-looking button that answers with a status line reads as broken.
         let busy = app.sorting || app.running.is_some();
         let label = if app.sorting {
-            "Sorting..."
+            t("plugins_sorting")
         } else if app.running.is_some() {
-            "Sort with LOOT (game running)"
+            t("plugins_sort_running")
         } else {
-            "Sort with LOOT"
+            t("plugins_sort")
         };
         let mut b = button(text(label).size(sz(11)))
             .padding([3, 8])
@@ -282,15 +274,15 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     };
     if picked > 0 {
         top = top
-            .push(text(format!("{picked} selected")).size(sz(11)))
+            .push(text(tf("plugins_n_selected", &[("n", &picked)])).size(sz(11)))
             .push(
-                button(text("Enable").size(sz(11)))
+                button(text(t("mod_menu_enable")).size(sz(11)))
                     .padding([3, 8])
                     .on_press(Message::SetSelectedPluginsEnabled(true))
                     .style(button::secondary),
             )
             .push(
-                button(text("Disable").size(sz(11)))
+                button(text(t("mod_menu_disable")).size(sz(11)))
                     .padding([3, 8])
                     .on_press(Message::SetSelectedPluginsEnabled(false))
                     .style(button::secondary),
@@ -299,10 +291,7 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     let mut head = Column::new().spacing(2).push(top);
     if !missing.is_empty() {
         head = head.push(
-            text(format!(
-                "! {} missing master(s) - the game would crash",
-                missing.len()
-            ))
+            text(tf("plugins_missing_masters", &[("n", &missing.len())]))
             .size(sz(12)),
         );
     }
@@ -318,15 +307,14 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             .collect();
         let more = violated.len().saturating_sub(names.len());
         let tail = if more > 0 {
-            format!(" (+{more} more)")
+            format!(" {}", tf("plugins_and_more", &[("n", &more)]))
         } else {
             String::new()
         };
         head = head.push(
-            text(format!(
-                "{} pinned position(s) could not be kept - a plugin must load after its masters: {}{tail}",
-                violated.len(),
-                names.join(", ")
+            text(tf(
+                "plugins_pins_violated",
+                &[("n", &violated.len()), ("names", &names.join(", ")), ("tail", &tail)],
             ))
             .size(sz(11)),
         );
@@ -334,12 +322,12 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
 
     let header = Row::new()
         .spacing(6)
-        .push(text("Index").size(sz(11)).width(Length::Fixed(scaled(52.0))))
-        .push(text("On").size(sz(11)).width(Length::Fixed(scaled(28.0))))
-        .push(text("Plugin").size(sz(11)).width(Length::Fill))
-        .push(text("Type").size(sz(11)).width(Length::Fixed(scaled(36.0))))
+        .push(text(t("plugins_col_index")).size(sz(11)).width(Length::Fixed(scaled(52.0))))
+        .push(text(t("plugins_col_on")).size(sz(11)).width(Length::Fixed(scaled(28.0))))
+        .push(text(t("plugins_col_plugin")).size(sz(11)).width(Length::Fill))
+        .push(text(t("plugins_col_type")).size(sz(11)).width(Length::Fixed(scaled(36.0))))
         .push(text("LOOT").size(sz(11)).width(Length::Fixed(scaled(40.0))))
-        .push(text("Pin").size(sz(11)).width(Length::Fixed(scaled(26.0))));
+        .push(text(t("plugins_col_pin")).size(sz(11)).width(Length::Fixed(scaled(26.0))));
 
     // Base-game masters are implicit/always-on; show them as forced, not togglable.
     let spec = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id));
@@ -388,12 +376,10 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             pinned_by(&d.range)
         } else {
             match (&d.range.after, &d.range.before) {
-                (Some(a), Some(b)) => {
-                    format!("Can move between {a} and {b} - both are master ties.")
-                }
-                (Some(a), None) => format!("Must stay after {a}, one of its masters."),
-                (None, Some(b)) => format!("Must stay before {b}, which lists it as a master."),
-                (None, None) => "Free to move anywhere in its section.".to_string(),
+                (Some(a), Some(b)) => tf("plugin_drag_between", &[("after", &a), ("before", &b)]),
+                (Some(a), None) => tf("plugin_drag_after", &[("after", &a)]),
+                (None, Some(b)) => tf("plugin_drag_before", &[("before", &b)]),
+                (None, None) => t("plugin_drag_free").to_string(),
             }
         };
         head = head.push(text(msg).size(sz(11)));
@@ -452,12 +438,13 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         // why a plugin will not move, and it is far too wide to be a column -
         // these plugins carry five to nine masters each.
         let mut tip = if p.origin_mod.is_empty() {
-            "Origin: the game's own Data".to_string()
+            t("plugin_tip_origin_game").to_string()
         } else {
-            format!("Origin: {}", p.origin_mod)
+            tf("plugin_tip_origin", &[("name", &p.origin_mod)])
         };
         if engine_owned {
-            tip.push_str("\nThe game loads this plugin itself: it cannot be moved or disabled.");
+            tip.push('\n');
+            tip.push_str(t("plugin_tip_engine_owned"));
         }
         if !p.masters.is_empty() {
             let present: Vec<&str> = p
@@ -473,12 +460,15 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
                 .map(|m| m.as_str())
                 .collect();
             if !present.is_empty() {
-                tip.push_str(&format!("\nMasters: {}", present.join(", ")));
+                tip.push('\n');
+                tip.push_str(&tf("plugin_tip_masters", &[("list", &present.join(", "))]));
             }
             if !absent.is_empty() {
-                tip.push_str(&format!("\nMISSING masters: {}", absent.join(", ")));
+                tip.push('\n');
+                tip.push_str(&tf("plugin_tip_missing_masters", &[("list", &absent.join(", "))]));
             }
-            tip.push_str("\nThis plugin must load after all of them.");
+            tip.push('\n');
+            tip.push_str(t("plugin_tip_after_masters"));
         }
         // The LOOT verdicts from the last sort - MO2's plugin flags: a compact
         // badge in its own column, the detail folded into the hover the row
@@ -496,15 +486,18 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
                 ));
             }
             if b.messages.len() > 3 {
-                tip.push_str(&format!(
-                    "\n... {} more LOOT message(s) - see the sort report",
-                    b.messages.len() - 3
-                ));
+                tip.push('\n');
+                tip.push_str(&tf("plugin_tip_more_loot", &[("n", &(b.messages.len() - 3))]));
             }
             for d in &b.dirty_info {
-                tip.push_str(&format!(
-                    "\nLOOT: needs cleaning with {} ({} ITM, {} deleted reference(s))",
-                    d.cleaning_utility, d.itm_count, d.deleted_reference_count
+                tip.push('\n');
+                tip.push_str(&tf(
+                    "plugin_tip_dirty",
+                    &[
+                        ("util", &d.cleaning_utility),
+                        ("itm", &d.itm_count),
+                        ("refs", &d.deleted_reference_count),
+                    ],
                 ));
             }
             if !b.bash_tags.is_empty() {

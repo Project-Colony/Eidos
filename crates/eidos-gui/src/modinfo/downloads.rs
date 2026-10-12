@@ -6,12 +6,12 @@ use super::*;
 pub(crate) fn download_state_label(state: DownloadState) -> &'static str {
     match state {
         DownloadState::Untracked => "-",
-        DownloadState::Downloading => "Downloading",
-        DownloadState::Stalled => "Stalled",
-        DownloadState::Paused => "Paused",
-        DownloadState::Ready => "Ready",
-        DownloadState::Installed => "Installed",
-        DownloadState::Uninstalled => "Uninstalled",
+        DownloadState::Downloading => t("dl_state_downloading"),
+        DownloadState::Stalled => t("dl_state_stalled"),
+        DownloadState::Paused => t("dl_state_paused"),
+        DownloadState::Ready => t("dl_state_ready"),
+        DownloadState::Installed => t("dl_state_installed"),
+        DownloadState::Uninstalled => t("dl_state_uninstalled"),
     }
 }
 
@@ -66,22 +66,22 @@ pub(crate) const DL_READOUT_W: f32 = 54.0;
 
 pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
     let Some(inst) = &app.created else {
-        return text("No instance open.").into();
+        return text(t("panel_no_instance")).into();
     };
     let dir = inst.downloads_dir();
 
     let header = Row::new()
         .spacing(8)
         .align_y(iced::Alignment::Center)
-        .push(text("Downloads").size(sz(13)))
+        .push(text(t("tab_downloads")).size(sz(13)))
         .push(Space::new().width(Length::Fill))
         .push(
-            button(text("Open folder").size(sz(11)))
+            button(text(t("common_open_folder")).size(sz(11)))
                 .padding(4)
                 .on_press(Message::OpenFolder(dir.clone())),
         )
         .push(
-            button(text("Refresh").size(sz(11)))
+            button(text(t("toolbar_refresh")).size(sz(11)))
                 .padding(4)
                 .on_press(Message::RefreshDownloads),
         );
@@ -97,7 +97,7 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
         .spacing(6)
         .align_y(iced::Alignment::Center)
         .push(
-            text_input("Filter by name...", &app.dl_filter)
+            text_input(t("dl_filter"), &app.dl_filter)
                 .on_input(Message::DownloadFilterChanged)
                 .padding(4)
                 .size(sz(11))
@@ -115,9 +115,9 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
         .push(
             button(
                 text(if app.dl_show_hidden {
-                    "Hide hidden"
+                    t("dl_hide_hidden")
                 } else {
-                    "Show hidden"
+                    t("dl_show_hidden")
                 })
                 .size(sz(11)),
             )
@@ -132,9 +132,9 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
         tools = tools.push(
             button(
                 text(if armed {
-                    format!("Delete {installed_here}?")
+                    tf("dl_confirm_purge", &[("n", &installed_here)])
                 } else {
-                    format!("Remove {installed_here} installed")
+                    tf("dl_purge", &[("n", &installed_here)])
                 })
                 .size(sz(11)),
             )
@@ -154,20 +154,20 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
 
     let col_header = Row::new()
         .spacing(8)
-        .push(text("Name").size(sz(11)).width(Length::Fill))
+        .push(text(t("info_name")).size(sz(11)).width(Length::Fill))
         .push(
-            text("Version")
+            text(t("info_version"))
                 .size(sz(11))
                 .width(Length::Fixed(scaled(DL_C_VERSION))),
         )
-        .push(text("Size").size(sz(11)).width(Length::Fixed(scaled(DL_C_SIZE))))
-        .push(text("Status").size(sz(11)).width(Length::Fixed(scaled(DL_C_STATUS))))
+        .push(text(t("col_size")).size(sz(11)).width(Length::Fixed(scaled(DL_C_SIZE))))
+        .push(text(t("prereq_status")).size(sz(11)).width(Length::Fixed(scaled(DL_C_STATUS))))
         .push(Space::new().width(Length::Fixed(scaled(DL_C_ACTIONS))));
 
     let mut rows = Column::new().spacing(2);
     if app.downloads.is_empty() {
         rows = rows.push(
-            text("No downloads yet. On Nexus, use \"Mod Manager Download\" once the handler is registered (eidos nxm --register), or drop archives here.")
+            text(t("dl_none_yet"))
                 .size(sz(11)),
         );
     }
@@ -245,13 +245,13 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
             if stalled {
                 cell.push(readout)
                     .push(
-                        button(text("Resume").size(sz(10)))
+                        button(text(t("dl_resume")).size(sz(10)))
                             .padding(3)
                             .on_press(Message::ResumeDownload(row.name.clone()))
                             .style(button::primary),
                     )
                     .push(
-                        button(text(if armed { "Confirm?" } else { "Delete" }).size(sz(10)))
+                        button(text(if armed { t("common_confirm") } else { t("common_delete") }).size(sz(10)))
                             .padding(3)
                             .on_press(if armed {
                                 Message::ConfirmDeleteDownload(row.name.clone())
@@ -278,7 +278,7 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                 // deliberately absent - a partial cannot be installed, and the
                 // safe order is always pause first, then decide.
                 .push(
-                    button(text("Pause").size(sz(10)))
+                    button(text(t("dl_pause")).size(sz(10)))
                         .padding(3)
                         .on_press(Message::PauseDownload(row.name.clone()))
                         .style(button::secondary),
@@ -286,7 +286,7 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                 .into()
             }
         } else {
-            let install = button(text(if installed { "Reinstall" } else { "Install" }).size(sz(11)))
+            let install = button(text(if installed { t("dl_reinstall") } else { t("install_install") }).size(sz(11)))
                 .padding(4)
                 .on_press(Message::ModPicked(Some(row.path.clone())))
                 .style(if installed {
@@ -294,7 +294,7 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                 } else {
                     button::primary
                 });
-            let del = button(text(if armed { "Confirm?" } else { "Delete" }).size(sz(11)))
+            let del = button(text(if armed { t("common_confirm") } else { t("common_delete") }).size(sz(11)))
                 .padding(4)
                 .on_press(if armed {
                     Message::ConfirmDeleteDownload(row.name.clone())
@@ -321,7 +321,7 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
             // nobody has identified, which is exactly "no mod id".
             if row.mod_id.is_none() {
                 actions = actions.push(
-                    button(text(if identifying { "..." } else { "Identify" }).size(sz(11)))
+                    button(text(if identifying { "..." } else { t("dl_identify") }).size(sz(11)))
                         .padding(4)
                         .style(button::secondary)
                         .on_press_maybe(
@@ -349,7 +349,7 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
             // Hiding is not deleting, which is why both are offered: an archive
             // somebody is done with but does not want to lose is the common case
             // this list had no answer for.
-            let hide = button(text(if row.hidden { "Unhide" } else { "Hide" }).size(sz(11)))
+            let hide = button(text(if row.hidden { t("info_unhide") } else { t("info_hide") }).size(sz(11)))
                 .padding(4)
                 .style(button::text)
                 .on_press(Message::HideDownload(row.name.clone()));

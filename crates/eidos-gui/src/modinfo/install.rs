@@ -50,7 +50,7 @@ pub(crate) fn run_picker_install(app: &mut App) {
         .mods_dir();
     let name = p.name.trim().to_string();
     if name.is_empty() {
-        app.status = Some("Give the mod a name first.".to_string());
+        app.status = Some(t("status_mod_needs_name").to_string());
         return;
     }
     let choice = match &p.mode {
@@ -66,7 +66,7 @@ pub(crate) fn run_picker_install(app: &mut App) {
                 .map(|(s, _)| s.clone())
                 .collect();
             if chosen.is_empty() {
-                app.status = Some("Tick at least one sub-package.".to_string());
+                app.status = Some(t("status_tick_subpackage").to_string());
                 return;
             }
             PickerChoice::Bain(chosen)
@@ -105,9 +105,9 @@ pub(crate) fn run_picker_install(app: &mut App) {
                 tree: Some(p.tree),
                 pick: Some(choice),
             });
-            app.status = Some(format!("'{name}' already exists - choose how to install."));
+            app.status = Some(tf("status_already_exists_choose", &[("name", &name)]));
         }
-        Err(e) => app.status = Some(format!("Install failed: {e}")),
+        Err(e) => app.status = Some(tf("status_install_failed", &[("error", &e)])),
     }
 }
 
@@ -152,7 +152,8 @@ pub(crate) fn after_install_report(
     after_install(app, &report.name, report.dest, report.fomod, Some(archive));
     if let Some(backup) = report.backup {
         let status = app.status.get_or_insert_with(String::new);
-        status.push_str(&format!(" Backup retained at {}.", backup.display()));
+        status.push(' ');
+        status.push_str(&tf("status_backup_retained", &[("path", &backup.display())]));
     }
 }
 
@@ -188,7 +189,7 @@ pub(crate) fn run_collision_install(app: &mut App, policy: eidos_install::Overwr
         // session is consumed (its drop would delete the extracted tree).
         if let eidos_install::OverwritePolicy::Rename(new) = &policy {
             if eidos_install::collision_name(&mods_dir, new).is_some() {
-                app.status = Some("That name also exists - pick another.".to_string());
+                app.status = Some(t("status_name_taken").to_string());
                 app.collision = Some(c);
                 return;
             }
@@ -204,12 +205,12 @@ pub(crate) fn run_collision_install(app: &mut App, policy: eidos_install::Overwr
             policy,
         ) {
             Ok(r) => after_install_report(app, r, &archive),
-            Err(e) => app.status = Some(format!("Install failed: {e}")),
+            Err(e) => app.status = Some(tf("status_install_failed", &[("error", &e)])),
         }
         return;
     }
     let Some(inst) = app.created.as_ref() else {
-        app.status = Some("Open a game instance first.".to_string());
+        app.status = Some(t("status_open_instance_first").to_string());
         return;
     };
     let mods_dir = inst.mods_dir();
@@ -227,10 +228,10 @@ pub(crate) fn run_collision_install(app: &mut App, policy: eidos_install::Overwr
                 after_install_report(app, r, &archive);
             }
             Err(eidos_install::InstallError::Exists(_)) => {
-                app.status = Some("That name also exists - pick another.".to_string());
+                app.status = Some(t("status_name_taken").to_string());
                 app.collision = Some(c);
             }
-            Err(e) => app.status = Some(format!("Install failed: {e}")),
+            Err(e) => app.status = Some(tf("status_install_failed", &[("error", &e)])),
         }
         return;
     }
@@ -248,10 +249,10 @@ pub(crate) fn run_collision_install(app: &mut App, policy: eidos_install::Overwr
         Ok(r) => after_install_report(app, r, &archive),
         Err(eidos_install::InstallError::Exists(_)) => {
             // A Rename target that also exists: keep the prompt open for another try.
-            app.status = Some("That name also exists - pick another.".to_string());
+            app.status = Some(t("status_name_taken").to_string());
             app.collision = Some(c);
         }
-        Err(e) => app.status = Some(format!("Install failed: {e}")),
+        Err(e) => app.status = Some(tf("status_install_failed", &[("error", &e)])),
     }
 }
 
@@ -291,16 +292,15 @@ pub(crate) fn after_install(
         match inst.try_lock("the Eidos window") {
             Ok(_lock) => {
                 if let Err(error) = inst.register_installed_mod(name) {
-                    app.status = Some(format!(
-                        "Installed '{name}', but could not register it: {error}"
+                    app.status = Some(tf(
+                        "status_installed_unregistered",
+                        &[("name", &name), ("error", &error)],
                     ));
                     return;
                 }
             }
             Err(e) => {
-                registration_warning = Some(format!(
-                    "Could not register it now: {e}. Check its enabled state once the game closes."
-                ));
+                registration_warning = Some(tf("status_register_later", &[("error", &e)]));
             }
         }
     }
@@ -349,7 +349,7 @@ pub(crate) fn after_install(
             settle_folds_after_move(app, landed, 1, &hidden);
             if mods_changed(app) {
                 app.selected_mod = Some(landed);
-                where_to = format!(" at priority {landed}");
+                where_to = format!(" {}", tf("status_at_priority", &[("n", &landed)]));
             } else {
                 // The move was reverted; its reason rides along below instead
                 // of being replaced by "at priority N".
@@ -366,13 +366,20 @@ pub(crate) fn after_install(
         .unwrap_or_default();
     let warning = eidos_instance::ModMeta::read(&dest.join("meta.ini")).install_warning();
     app.status = Some(if fomod {
-        format!("Installed '{name}' via FOMOD{where_to}{note}.")
+        tf(
+            "status_installed_fomod",
+            &[("name", &name), ("where", &where_to), ("note", &note)],
+        )
     } else {
-        format!("Installed '{name}'{where_to}{note}.")
+        tf(
+            "status_installed",
+            &[("name", &name), ("where", &where_to), ("note", &note)],
+        )
     });
     for warning in [warning, registration_warning, move_refused].into_iter().flatten() {
         if let Some(status) = &mut app.status {
-            status.push_str(&format!(" Warning: {warning}"));
+            status.push(' ');
+            status.push_str(&tf("status_warning", &[("warning", &warning)]));
         }
     }
 }
@@ -393,7 +400,7 @@ pub(crate) fn install_progress_dialog<'a>(job: &crate::InstallJob) -> Element<'a
         .min(100);
     let card = Column::new()
         .spacing(10)
-        .push(text(format!("Extracting \"{}\"", job.name)).size(sz(15)))
+        .push(text(tf("install_extracting", &[("name", &job.name)])).size(sz(15)))
         .push(
             iced::widget::progress_bar(0.0..=100.0, pct as f32)
                 .length(Length::Fill)
@@ -401,14 +408,14 @@ pub(crate) fn install_progress_dialog<'a>(job: &crate::InstallJob) -> Element<'a
         )
         .push(
             text(if pct >= 100 {
-                "Finishing up...".to_string()
+                t("transfer_finishing").to_string()
             } else {
                 format!("{pct}%")
             })
             .size(sz(12)),
         )
         .push(
-            text("Large archives take a while. The window stays responsive.")
+            text(t("install_large_archives"))
                 .size(sz(10))
                 .color(text_muted()),
         );
@@ -423,13 +430,13 @@ pub(crate) fn collision_dialog<'a>(c: &CollisionPrompt) -> Element<'a, Message> 
     let buttons = Row::new()
         .spacing(8)
         .push(
-            button(text("Merge").size(sz(12)))
+            button(text(t("install_merge")).size(sz(12)))
                 .padding([4, 10])
                 .on_press(Message::CollisionMerge)
                 .style(button::secondary),
         )
         .push(
-            button(text("Replace").size(sz(12)))
+            button(text(t("install_replace")).size(sz(12)))
                 .padding([4, 10])
                 .on_press(Message::CollisionReplace)
                 .style(button::danger),
@@ -437,9 +444,9 @@ pub(crate) fn collision_dialog<'a>(c: &CollisionPrompt) -> Element<'a, Message> 
     let rename = Row::new()
         .spacing(6)
         .align_y(iced::Alignment::Center)
-        .push(text("Rename:").size(sz(12)))
+        .push(text(t("install_rename_label")).size(sz(12)))
         .push(
-            text_input("new name", &c.rename_to)
+            text_input(t("info_new_name"), &c.rename_to)
                 .on_input(Message::CollisionRenameChanged)
                 .on_submit(Message::CollisionRenameCommit)
                 .padding(5)
@@ -447,25 +454,25 @@ pub(crate) fn collision_dialog<'a>(c: &CollisionPrompt) -> Element<'a, Message> 
                 .width(Length::Fill),
         )
         .push(
-            button(text("Install").size(sz(12)))
+            button(text(t("install_install")).size(sz(12)))
                 .padding([4, 10])
                 .on_press(Message::CollisionRenameCommit)
                 .style(button::primary),
         );
     let card = Column::new()
         .spacing(10)
-        .push(text(format!("\"{}\" already exists", c.name)).size(sz(15)))
-        .push(text("A mod with this name is already installed. Choose how to install it:").size(sz(12)))
-        .push(checkbox(c.backup).label("Keep a backup of the existing mod")
+        .push(text(tf("install_exists_title", &[("name", &c.name)])).size(sz(15)))
+        .push(text(t("install_exists_body")).size(sz(12)))
+        .push(checkbox(c.backup).label(t("install_keep_backup"))
             .on_toggle(Message::CollisionBackupChanged).text_size(sz(12)))
         .push(buttons)
         .push(
-            text("Merge installs over the existing files. Replace wipes the mod and reinstalls (your endorsement and category are kept).")
+            text(t("install_merge_replace_note"))
                 .size(sz(10)),
         )
         .push(rename)
         .push(
-            button(text("Cancel").size(sz(12)))
+            button(text(t("common_cancel")).size(sz(12)))
                 .padding([4, 10])
                 .on_press(Message::CollisionCancel)
                 .style(button::text),
@@ -503,12 +510,9 @@ pub(crate) fn nested_archive_hint(rows: &[eidos_install::TreeRow]) -> Option<Str
     match n {
         0 => None,
         1 => Some(
-            "This archive contains another archive - the mod is probably inside it.".to_string(),
+            t("install_nested_one").to_string(),
         ),
-        n => Some(format!(
-            "This archive contains {n} archives - it is a set of variants, and the mod is inside \
-             the one you want."
-        )),
+        n => Some(tf("install_nested_many", &[("n", &n)])),
     }
 }
 
@@ -517,9 +521,9 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
     let name_row = Row::new()
         .spacing(6)
         .align_y(iced::Alignment::Center)
-        .push(text("Install as:").size(sz(12)))
+        .push(text(t("install_as")).size(sz(12)))
         .push(
-            text_input("mod name", &p.name)
+            text_input(t("install_mod_name"), &p.name)
                 .on_input(Message::PickerNameChanged)
                 .on_submit(Message::PickerInstall)
                 .padding(5)
@@ -535,28 +539,24 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
             subpackages,
             ..
         } => (
-            "May be a BAIN installer".to_string(),
+            t("install_maybe_bain").to_string(),
             Column::new()
                 .spacing(10)
                 .push(
-                    text(format!(
-                        "This archive has {} folder(s) that look like Wrye Bash sub-packages, \
-                         and others that do not. Install it as a BAIN package?",
-                        subpackages.len()
-                    ))
+                    text(tf("install_maybe_bain_body", &[("n", &subpackages.len())]))
                     .size(sz(12)),
                 )
                 .push(
                     Row::new()
                         .spacing(8)
                         .push(
-                            button(text("Yes, pick sub-packages").size(sz(12)))
+                            button(text(t("install_bain_yes")).size(sz(12)))
                                 .padding([4, 10])
                                 .on_press(Message::PickerBainConfirm(true))
                                 .style(button::primary),
                         )
                         .push(
-                            button(text("No, choose the data folder").size(sz(12)))
+                            button(text(t("install_bain_no")).size(sz(12)))
                                 .padding([4, 10])
                                 .on_press(Message::PickerBainConfirm(false))
                                 .style(button::secondary),
@@ -582,11 +582,11 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
                 );
             }
             (
-                "Choose sub-packages".to_string(),
+                t("install_choose_subpackages").to_string(),
                 Column::new()
                     .spacing(8)
                     .push(
-                        text("Ticked sub-packages are merged top to bottom, so a later one wins.")
+                        text(t("install_subpackages_note"))
                             .size(sz(11)),
                     )
                     .push(scrollable(list).height(Length::Fixed(240.0)))
@@ -599,13 +599,13 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
             let rules = eidos_install::LayoutRules::for_game(&p.game_id);
             let valid = p.archive_tree.root_looks_valid(root, rules);
             let chosen = if root.is_empty() {
-                "<archive root>"
+                t("install_archive_root")
             } else {
                 root.as_str()
             };
 
             let mut list = Column::new().spacing(1).push(
-                button(text("<archive root>").size(sz(12)))
+                button(text(t("install_archive_root")).size(sz(12)))
                     .padding([1, 4])
                     .on_press(Message::PickerSetRoot(String::new()))
                     .style(if root.is_empty() {
@@ -629,15 +629,15 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
                 );
             }
             (
-                "Choose the data folder".to_string(),
+                t("install_choose_data_folder").to_string(),
                 Column::new()
                     .spacing(6)
                     .push(scrollable(list).height(Length::Fixed(220.0)))
                     .push(
                         text(if valid {
-                            format!("The content of {chosen} looks valid.")
+                            tf("install_root_valid", &[("folder", &chosen)])
                         } else {
-                            format!("The content of {chosen} does NOT look valid.")
+                            tf("install_root_invalid", &[("folder", &chosen)])
                         })
                         .size(sz(11))
                         .color(if valid {
@@ -656,8 +656,7 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
                     // recognised ONLY by its `.pak`, never by a folder.
                     .push(
                         text(
-                            "You can install anyway - the check only recognises this game's \
-                             own folder names and file types.",
+                            t("install_root_hint"),
                         )
                         .size(sz(10)),
                     )
@@ -687,13 +686,13 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
             Row::new()
                 .spacing(8)
                 .push(
-                    button(text("Install").size(sz(12)))
+                    button(text(t("install_install")).size(sz(12)))
                         .padding([4, 10])
                         .on_press(Message::PickerInstall)
                         .style(button::primary),
                 )
                 .push(
-                    button(text("Cancel").size(sz(12)))
+                    button(text(t("common_cancel")).size(sz(12)))
                         .padding([4, 10])
                         .on_press(Message::PickerCancel)
                         .style(button::text),

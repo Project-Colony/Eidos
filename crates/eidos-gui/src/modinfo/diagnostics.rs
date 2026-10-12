@@ -70,11 +70,8 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
     {
         out.push(Diagnostic {
             level: DiagLevel::Problem,
-            title: "The mod list does not match the mods folder".to_string(),
-            detail: format!(
-                "{why} Eidos will not save the mod list until this is resolved, so the order and \
-                 enabled state on disk are safe. If a drive holds your mods, mount it and press F5."
-            ),
+            title: t("diag_modlist_mismatch").to_string(),
+            detail: tf("diag_modlist_mismatch_detail", &[("reason", &why)]),
             actions: Vec::new(),
         });
     }
@@ -86,27 +83,23 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         out.push(if app.cap_missing {
             Diagnostic {
                 level: DiagLevel::Problem,
-                title: "Passthrough requested but unavailable (launch capability missing)"
-                    .to_string(),
-                detail: format!(
-                    "EIDOS_FUSE_PASSTHROUGH is set, but the launch binary has no CAP_SYS_ADMIN, so reads go through the daemon anyway. Run:  {}  then press F5. Every rebuild of that binary wipes it.",
-                    setcap_hint()
-                ),
+                title: t("diag_passthrough_unavailable").to_string(),
+                detail: tf("diag_passthrough_unavailable_detail", &[("command", &setcap_hint())]),
                 actions: Vec::new(),
             }
         } else {
             Diagnostic {
                 level: DiagLevel::Advice,
-                title: "FUSE passthrough is ON (opt-in)".to_string(),
-                detail: "Reads go straight to the backing file. Measured on Skyrim SE, this makes the game fail to open its archives and plugins, so mods do not load. Unset EIDOS_FUSE_PASSTHROUGH if content goes missing in-game.".to_string(),
+                title: t("diag_passthrough_on").to_string(),
+                detail: t("diag_passthrough_on_detail").to_string(),
                 actions: Vec::new(),
             }
         });
     } else {
         out.push(Diagnostic {
             level: DiagLevel::Ok,
-            title: "FUSE passthrough is off".to_string(),
-            detail: "The daemon serves reads itself, which is what lets the game open its archives and plugins. The launch capability is not needed for this.".to_string(),
+            title: t("diag_passthrough_off").to_string(),
+            detail: t("diag_passthrough_off_detail").to_string(),
             actions: Vec::new(),
         });
     }
@@ -119,13 +112,8 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
     if on_wayland() {
         out.push(Diagnostic {
             level: DiagLevel::Advice,
-            title: "Dropping files from your file manager will not work here".to_string(),
-            detail: "This is a Wayland session, and winit - the windowing layer Eidos is built on \
-                     - implements file drops for X11 only. Nothing reaches Eidos when you drop an \
-                     archive on it, and it cannot tell that you tried. Two paths do work \
-                     everywhere: Install Mod, and dragging a row from the Downloads tab onto the \
-                     position in the mod list where you want it installed."
-                .to_string(),
+            title: t("diag_wayland_drops").to_string(),
+            detail: t("diag_wayland_drops_detail").to_string(),
             actions: Vec::new(),
         });
     }
@@ -165,7 +153,7 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                         continue;
                     }
                     let origin = if d.origin_mod.is_empty() {
-                        "Game"
+                        t("diag_origin_game")
                     } else {
                         &d.origin_mod
                     };
@@ -182,8 +170,18 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 if !unverified.is_empty() {
                     out.push(Diagnostic {
                         level: DiagLevel::Advice,
-                        title: format!("Unverified record limits for {} plugin(s)", unverified.len()),
-                        detail: format!("{}. Header scanning cannot validate new FormIDs in light, medium or update plugins. Run LOOT to read their full records.{}", unverified.iter().take(8).cloned().collect::<Vec<_>>().join(", "), if unverified.len() > 8 { " Additional plugins are also unverified." } else { "" }),
+                        title: tf("diag_unverified_limits", &[("n", &unverified.len())]),
+                        detail: tf(
+                            if unverified.len() > 8 {
+                                "diag_unverified_limits_detail_more"
+                            } else {
+                                "diag_unverified_limits_detail"
+                            },
+                            &[(
+                                "plugins",
+                                &unverified.iter().take(8).cloned().collect::<Vec<_>>().join(", "),
+                            )],
+                        ),
                         actions: Vec::new(),
                     });
                 }
@@ -208,7 +206,7 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                                     "{} ({}): {}",
                                     p.name,
                                     if p.origin_mod.is_empty() {
-                                        "Game"
+                                        t("diag_origin_game")
                                     } else {
                                         &p.origin_mod
                                     },
@@ -229,10 +227,10 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
             if missing.is_empty() && unreadable == 0 {
                 out.push(Diagnostic {
                     level: DiagLevel::Ok,
-                    title: "No missing masters".to_string(),
-                    detail: format!(
-                        "All {} active plugins have their masters enabled.",
-                        list.plugins.iter().filter(|p| p.enabled).count()
+                    title: t("diag_no_missing_masters").to_string(),
+                    detail: tf(
+                        "diag_no_missing_masters_detail",
+                        &[("n", &list.plugins.iter().filter(|p| p.enabled).count())],
                     ),
                     actions: Vec::new(),
                 });
@@ -240,25 +238,23 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 let mut detail = missing
                     .iter()
                     .take(8)
-                    .map(|(p, m)| format!("{p} needs {m}"))
+                    .map(|(p, m)| tf("diag_needs_master", &[("plugin", &p), ("master", &m)]))
                     .collect::<Vec<_>>()
                     .join("; ");
                 if missing.len() > 8 {
-                    detail.push_str(&format!("; and {} more", missing.len() - 8));
+                    detail.push_str(&tf("diag_and_n_more", &[("n", &(missing.len() - 8))]));
                 }
                 out.push(Diagnostic {
                     level: DiagLevel::Problem,
-                    title: format!("{} plugin(s) are missing a master", missing.len()),
-                    detail: format!(
-                        "{detail}. The game will crash on load - enable or install them."
-                    ),
+                    title: tf("diag_missing_masters", &[("n", &missing.len())]),
+                    detail: tf("diag_missing_masters_detail", &[("list", &detail)]),
                     actions: Vec::new(),
                 });
             } else {
                 out.push(Diagnostic {
                     level: DiagLevel::Advice,
-                    title: "Unverified masters".into(),
-                    detail: format!("{unreadable} active plugin header(s) could not be read. Missing-master checks are incomplete; see the header errors above."),
+                    title: t("diag_unverified_masters").into(),
+                    detail: tf("diag_unverified_masters_detail", &[("n", &unreadable)]),
                     actions: Vec::new(),
                 });
             }
@@ -271,10 +267,8 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         // does not exist for their game, which reads as something being broken.
         None if game_has_plugins(app) => out.push(Diagnostic {
             level: DiagLevel::Advice,
-            title: "Load order unavailable".to_string(),
-            detail: "No game is selected, or this game has no plugin load order \
-                     for Eidos to analyse."
-                .to_string(),
+            title: t("diag_load_order_unavailable").to_string(),
+            detail: t("diag_load_order_unavailable_detail").to_string(),
             actions: Vec::new(),
         }),
         None => {}
@@ -302,7 +296,10 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 } else {
                     DiagLevel::Advice
                 },
-                title: format!("{:?}: native plugin check [{}]", d.severity, d.code),
+                title: tf(
+                    "diag_native_check",
+                    &[("severity", &format!("{:?}", d.severity)), ("code", &d.code)],
+                ),
                 detail: format!("{} ({}): {}", d.path.display(), d.origin_mod, d.detail),
                 actions: Vec::new(),
             });
@@ -316,9 +313,8 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         if eidos_gamefeatures::enb_cs_conflict(&game.install_path, &cs_roots) {
             out.push(Diagnostic {
                 level: DiagLevel::Advice,
-                title: "ENB and Community Shaders are both active".to_string(),
-                detail: "They can run together, but if visuals look wrong disable one in its INI."
-                    .to_string(),
+                title: t("diag_enb_cs").to_string(),
+                detail: t("diag_enb_cs_detail").to_string(),
                 actions: Vec::new(),
             });
         }
@@ -333,14 +329,9 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         {
             out.push(Diagnostic {
                 level: DiagLevel::Problem,
-                title: "An enabled mod needs Microsoft's d3dcompiler_47".to_string(),
-                detail: "A mod's DLL imports d3dcompiler_47.dll (Community Shaders, ENB and ReShade \
-                         compile shaders with it), and the Wine prefix only has Wine's builtin, \
-                         which those mods reject. Install runs the prerequisite setup, which \
-                         downloads it, and any other missing tool prerequisite, through \
-                         winetricks."
-                    .to_string(),
-                actions: vec![("Install", Message::SetupPrereqs)],
+                title: t("diag_d3dcompiler").to_string(),
+                detail: t("diag_d3dcompiler_detail").to_string(),
+                actions: vec![(t("diag_action_install"), Message::SetupPrereqs)],
             });
         }
     }
@@ -359,7 +350,7 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                     } else {
                         DiagLevel::Advice
                     },
-                    title: format!("Incomplete installation: {}", m.name),
+                    title: tf("diag_incomplete_install", &[("name", &m.name)]),
                     detail: format!("{}: {warning}", m.name),
                     actions: Vec::new(),
                 });
@@ -370,15 +361,18 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 for run in runs {
                     out.push(Diagnostic {
                     level: DiagLevel::Advice,
-                    title: format!("Unverified output from unfinished tool: {}", run.tool),
-                    detail: format!("The run started at {} for profile '{}' has no completed output capture. Its generated files and provenance are unverified.", run.started_at, run.profile),
+                    title: tf("diag_unfinished_tool", &[("tool", &run.tool)]),
+                    detail: tf(
+                        "diag_unfinished_tool_detail",
+                        &[("started", &run.started_at), ("profile", &run.profile)],
+                    ),
                     actions: Vec::new(),
                 });
                 }
             }
             Err(e) => out.push(Diagnostic {
                 level: DiagLevel::Advice,
-                title: "Unverified tool-run history".into(),
+                title: t("diag_tool_history_unverified").into(),
                 detail: e.to_string(),
                 actions: Vec::new(),
             }),
@@ -404,11 +398,13 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                     let Some(active_plugins) = active_plugins.as_ref() else {
                         out.push(Diagnostic {
                             level: DiagLevel::Advice,
-                            title: "Unverified generated-output inputs".into(),
-                            detail: format!(
-                                "The current plugin set is unavailable for {} output in {}.",
-                                output.receipt.tool,
-                                owner.as_deref().unwrap_or("Overwrite")
+                            title: t("diag_generated_inputs_unverified").into(),
+                            detail: tf(
+                                "diag_generated_inputs_unverified_detail",
+                                &[
+                                    ("tool", &output.receipt.tool),
+                                    ("owner", &owner.as_deref().unwrap_or("Overwrite")),
+                                ],
                             ),
                             actions: Vec::new(),
                         });
@@ -417,8 +413,22 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                     if inst.generated_input_drift(&output.receipt, active_plugins) {
                         out.push(Diagnostic {
                         level: DiagLevel::Advice,
-                        title: "Generated output inputs changed".into(),
-                        detail: format!("{} output in {} was generated for different recorded inputs, plugin order, profile or tool executable. Review whether to rerun the tool. Files: {}{}", output.receipt.tool, owner.as_deref().unwrap_or("Overwrite"), output.paths.iter().take(8).map(|p| p.display().to_string()).collect::<Vec<_>>().join(", "), if output.paths.len() > 8 { ", …" } else { "" }),
+                        title: t("diag_generated_inputs_changed").into(),
+                        detail: tf(
+                            "diag_generated_inputs_changed_detail",
+                            &[
+                                ("tool", &output.receipt.tool),
+                                ("owner", &owner.as_deref().unwrap_or("Overwrite")),
+                                (
+                                    "files",
+                                    &format!(
+                                        "{}{}",
+                                        output.paths.iter().take(8).map(|p| p.display().to_string()).collect::<Vec<_>>().join(", "),
+                                        if output.paths.len() > 8 { ", …" } else { "" }
+                                    ),
+                                ),
+                            ],
+                        ),
                         actions: Vec::new(),
                     });
                     }
@@ -426,7 +436,7 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
             }
             Err(e) => out.push(Diagnostic {
                 level: DiagLevel::Advice,
-                title: "Unverified generated-output provenance".into(),
+                title: t("diag_generated_provenance_unverified").into(),
                 detail: e.to_string(),
                 actions: Vec::new(),
             }),
@@ -434,8 +444,8 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         if !inst.overwrite_is_empty() {
             out.push(Diagnostic {
                 level: DiagLevel::Advice,
-                title: "The Overwrite holds generated files".to_string(),
-                detail: "Tool output (xEdit, DynDOLOD, Nemesis) is sitting outside any mod. Turn it into one from the Overwrite tab so it can be ordered and disabled.".to_string(),
+                title: t("diag_overwrite_generated").to_string(),
+                detail: t("diag_overwrite_generated_detail").to_string(),
                 actions: Vec::new(),
             });
         }
@@ -450,18 +460,13 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         if !debris.is_empty() {
             out.push(Diagnostic {
                 level: DiagLevel::Advice,
-                title: format!("{} leftover extraction folder(s)", debris.len()),
-                detail: format!(
-                    "An install was interrupted. Eidos ignores them - they are hidden and are \
-                     never mounted - but they hold whatever had been unpacked before it stopped, \
-                     which for a body or texture mod can be gigabytes. In {}.",
-                    inst.mods_dir().display()
-                ),
+                title: tf("diag_debris", &[("n", &debris.len())]),
+                detail: tf("diag_debris_detail", &[("path", &inst.mods_dir().display())]),
                 // A check that knows the answer should not end by naming a
                 // directory and wishing the user luck. This one can only ever
                 // remove `mods/.eidos-install*`, which Eidos created itself and
                 // which nothing else reads.
-                actions: vec![("Delete them", Message::CleanInstallDebris)],
+                actions: vec![(t("diag_action_delete_them"), Message::CleanInstallDebris)],
             });
         }
     }
@@ -469,7 +474,7 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
     for warning in &app.archive_warnings {
         out.push(Diagnostic {
             level: DiagLevel::Advice,
-            title: "Unverified archive contents".into(),
+            title: t("diag_archive_contents_unverified").into(),
             detail: warning.clone(),
             actions: Vec::new(),
         });
@@ -487,18 +492,14 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         if let Some(reason) = prof.plugin_loss_since_snapshot(&spec) {
             out.push(Diagnostic {
                 level: DiagLevel::Problem,
-                title: "The last session damaged the plugin active set".to_string(),
-                detail: format!(
-                    "Compared to launch, plugins.txt now {reason}. If the game crashed, restore \
-                     the pre-session order below; if you disabled those plugins on purpose, \
-                     ignore this."
-                ),
+                title: t("diag_plugin_loss").to_string(),
+                detail: tf("diag_plugin_loss_detail", &[("reason", &reason)]),
                 actions: vec![
                     (
-                        "Restore the pre-session order",
+                        t("diag_action_restore_presession"),
                         Message::RestorePreSessionPlugins,
                     ),
-                    ("Keep the current set", Message::AcceptPluginState),
+                    (t("diag_action_keep_set"), Message::AcceptPluginState),
                 ],
             });
         }
@@ -511,8 +512,8 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         if !prof.has_plugin_state() {
             out.push(Diagnostic {
                 level: DiagLevel::Advice,
-                title: format!("Profile '{}' has no load order of its own yet", prof.name),
-                detail: "It will adopt the current one on the next launch, after which switching profiles switches load orders.".to_string(),
+                title: tf("diag_profile_no_load_order", &[("profile", &prof.name)]),
+                detail: t("diag_profile_no_load_order_detail").to_string(),
                 actions: Vec::new(),
             });
         }
@@ -527,8 +528,8 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         if game_has_plugins(app) && !eidos_loot::is_supported(game.def.id) {
             out.push(Diagnostic {
                 level: DiagLevel::Advice,
-                title: format!("LOOT cannot sort {}", game.def.name),
-                detail: "This game orders plugins by file timestamp; sort it by hand in the Plugins tab.".to_string(),
+                title: tf("diag_loot_cannot_sort", &[("game", &game.def.name)]),
+                detail: t("diag_loot_cannot_sort_detail").to_string(),
                 actions: Vec::new(),
             });
         }
@@ -543,8 +544,8 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
             if flatpak {
                 out.push(Diagnostic {
                     level: DiagLevel::Problem,
-                    title: "Proton comes from the Flatpak Steam install".to_string(),
-                    detail: "It ships its runtime and steamclient libraries inside the sandbox, so running it from the host may fail. Install a Proton in ~/.steam/root/compatibilitytools.d/ and select it for this game.".to_string(),
+                    title: t("diag_flatpak_proton").to_string(),
+                    detail: t("diag_flatpak_proton_detail").to_string(),
                     actions: Vec::new(),
                 });
             }
@@ -552,16 +553,16 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         if !game.is_steam() {
             out.push(Diagnostic {
                 level: DiagLevel::Advice,
-                title: format!("{} installation: manual launch", game.source_name()),
-                detail: "Use a native tool entry with the installation's runner and prefix, or eidos play <instance> -- <runner> <game>. Automatic Steam/Proton tool setup does not apply to this copy.".into(),
+                title: tf("diag_manual_launch", &[("source", &game.source_name())]),
+                detail: t("diag_manual_launch_detail").into(),
                 actions: Vec::new(),
             });
         }
         if game.prefix().is_none() && game.is_steam() {
             out.push(Diagnostic {
                 level: DiagLevel::Problem,
-                title: "No Proton prefix found".to_string(),
-                detail: "Launch the game once through Steam so its prefix exists; until then the load order and INIs cannot be deployed.".to_string(),
+                title: t("diag_no_prefix").to_string(),
+                detail: t("diag_no_prefix_detail").to_string(),
                 actions: Vec::new(),
             });
         }
@@ -602,11 +603,8 @@ pub(crate) fn script_extender_diagnostic(game: &DetectedGame) -> Option<Diagnost
     let Ok(raw) = fs::read(&path) else {
         return Some(Diagnostic {
             level: DiagLevel::Advice,
-            title: "No script-extender log yet".to_string(),
-            detail: format!(
-                "Launch the game once through Eidos and this will report whether each SKSE-style plugin DLL loaded. Expected at {}.",
-                path.display()
-            ),
+            title: t("diag_no_se_log").to_string(),
+            detail: tf("diag_no_se_log_detail", &[("path", &path.display())]),
             actions: Vec::new(),
         });
     };
@@ -627,8 +625,8 @@ pub(crate) fn script_extender_diagnostic(game: &DetectedGame) -> Option<Diagnost
     if failed.is_empty() {
         return Some(Diagnostic {
             level: DiagLevel::Ok,
-            title: format!("All {} script-extender plugins loaded", plugins.len()),
-            detail: format!("From the extender's own log, last written {when}."),
+            title: tf("diag_se_all_loaded", &[("n", &plugins.len())]),
+            detail: tf("diag_se_log_written", &[("when", &when)]),
             actions: Vec::new(),
         });
     }
@@ -639,20 +637,19 @@ pub(crate) fn script_extender_diagnostic(game: &DetectedGame) -> Option<Diagnost
         .collect();
     let more = failed.len().saturating_sub(lines.len());
     let tail = if more > 0 {
-        format!("  (and {more} more)")
+        format!("  {}", tf("diag_se_and_more", &[("n", &more)]))
     } else {
         String::new()
     };
     Some(Diagnostic {
         level: DiagLevel::Problem,
-        title: format!(
-            "{} of {} script-extender plugins did not load",
-            failed.len(),
-            plugins.len()
+        title: tf(
+            "diag_se_failed",
+            &[("n", &failed.len()), ("total", &plugins.len())],
         ),
-        detail: format!(
-            "{}{tail}  -  from the extender's own log, last written {when}.",
-            lines.join("   ")
+        detail: tf(
+            "diag_se_failed_detail",
+            &[("lines", &lines.join("   ")), ("tail", &tail), ("when", &when)],
         ),
         actions: Vec::new(),
     })
@@ -669,7 +666,7 @@ pub(crate) fn orphan_archive_diagnostics(app: &App, game_id: &str) -> Vec<Diagno
     if orphan.is_empty() {
         return Vec::new();
     }
-    vec![Diagnostic{level:DiagLevel::Advice,title:format!("{} archive(s) no active plugin loads",orphan.len()),detail:format!("{}. These archives match neither an enabled plugin's game-specific archive names nor the effective INI archive lists.",orphan.iter().take(8).map(|r|format!("{} ({})",r.archive,r.mod_name)).collect::<Vec<_>>().join(", ")),actions:Vec::new()}]
+    vec![Diagnostic{level:DiagLevel::Advice,title:tf("diag_orphan_archives",&[("n",&orphan.len())]),detail:tf("diag_orphan_archives_detail",&[("list",&orphan.iter().take(8).map(|r|format!("{} ({})",r.archive,r.mod_name)).collect::<Vec<_>>().join(", "))]),actions:Vec::new()}]
 }
 
 /// The Diagnostics tab label, carrying the count of things needing attention.
@@ -680,9 +677,9 @@ pub(crate) fn diagnostics_tab_label(app: &App) -> String {
         .filter(|d| d.level == DiagLevel::Problem)
         .count();
     if n > 0 {
-        format!("Diagnostics ({n})")
+        tf("diag_tab_n", &[("n", &n)])
     } else {
-        "Diagnostics".to_string()
+        t("diag_tab").to_string()
     }
 }
 
@@ -695,19 +692,19 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
         .filter(|d| d.level == DiagLevel::Problem)
         .count();
     let summary = if problems == 0 {
-        "No problems found.".to_string()
+        t("diag_no_problems").to_string()
     } else {
-        format!("{problems} problem(s) need attention.")
+        tf("diag_n_problems", &[("n", &problems)])
     };
     let mut col = Column::new()
         .spacing(8)
-        .push(text("Diagnostics").size(sz(13)))
+        .push(text(t("diag_tab")).size(sz(13)))
         .push(text(summary).size(sz(12)));
     for d in checks {
         let (tag, color) = match d.level {
-            DiagLevel::Problem => ("PROBLEM", pal().error),
-            DiagLevel::Advice => ("ADVICE", pal().warning),
-            DiagLevel::Ok => ("OK", pal().success),
+            DiagLevel::Problem => (t("diag_tag_problem"), pal().error),
+            DiagLevel::Advice => (t("diag_tag_advice"), pal().warning),
+            DiagLevel::Ok => (t("diag_tag_ok"), pal().success),
         };
         let mut card = Column::new()
             .spacing(2)

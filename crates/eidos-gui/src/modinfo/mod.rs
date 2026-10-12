@@ -58,40 +58,40 @@ pub(crate) fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> 
     let files = cached_entries(app, &m.path).len();
     let mut col = Column::new()
         .spacing(4)
-        .push(info_kv("Name", m.name.clone()));
+        .push(info_kv(t("info_name"), m.name.clone()));
     if let Some(meta) = &meta {
         if let Some(v) = meta.version() {
-            col = col.push(info_kv("Version", v));
+            col = col.push(info_kv(t("info_version"), v));
         }
         if let Some(nv) = meta.newest_version() {
-            col = col.push(info_kv("Newest", nv));
+            col = col.push(info_kv(t("info_newest"), nv));
         }
         if let Some(c) = app
             .meta_cache
             .get(&m.name)
             .and_then(|r| r.category_name.clone())
         {
-            col = col.push(info_kv("Category", c));
+            col = col.push(info_kv(t("info_category"), c));
         }
         if let Some(id) = meta.mod_id() {
-            col = col.push(info_kv("Nexus id", id.to_string()));
+            col = col.push(info_kv(t("info_nexus_id"), id.to_string()));
         }
         let sources = meta.installed_files();
         if !sources.is_empty() {
             col = col.push(info_kv(
-                "Nexus files",
+                t("info_nexus_files"),
                 sources
                     .iter()
-                    .map(|(m, f)| format!("mod {m} / file {f}"))
+                    .map(|(m, f)| tf("info_nexus_file", &[("mod", m), ("file", f)]))
                     .collect::<Vec<_>>()
                     .join("; "),
             ));
         }
         if let Some(warning) = meta.install_warning() {
-            col = col.push(info_kv("Install warning", warning));
+            col = col.push(info_kv(t("info_install_warning"), warning));
         }
         if let Some(a) = meta.author() {
-            col = col.push(info_kv("Author", a));
+            col = col.push(info_kv(t("info_author"), a));
         }
         // The uploader is shown only when it says something the Author line does
         // not: on most mods they are the same person, and a second identical row
@@ -100,31 +100,31 @@ pub(crate) fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> 
             .uploader()
             .filter(|u| Some(u) != meta.author().as_ref())
         {
-            col = col.push(info_kv("Uploaded by", u));
+            col = col.push(info_kv(t("info_uploaded_by"), u));
         }
         if let Some(src) = meta.installation_file() {
-            col = col.push(info_kv("Installed from", src));
+            col = col.push(info_kv(t("info_installed_from"), src));
         }
         col = col
             .push(info_kv(
-                "Endorsed",
+                t("info_endorsed"),
                 if meta.endorsed() {
-                    "yes".into()
+                    t("common_yes").into()
                 } else {
-                    "no".into()
+                    t("common_no").into()
                 },
             ))
             .push(info_kv(
-                "Tracked",
+                t("info_tracked"),
                 if meta.tracked() {
-                    "yes".into()
+                    t("common_yes").into()
                 } else {
-                    "no".into()
+                    t("common_no").into()
                 },
             ));
     }
     if !app.info_provenance.is_empty() {
-        col = col.push(info_kv("Generated output", app.info_provenance.clone()));
+        col = col.push(info_kv(t("info_generated_output"), app.info_provenance.clone()));
     }
     // A page for mods that are not on Nexus. Without it every such mod is a dead
     // end in the interface: "Visit on Nexus" only appears when a Nexus id
@@ -132,7 +132,7 @@ pub(crate) fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> 
     let url_row = Row::new()
         .spacing(6)
         .align_y(iced::Alignment::Center)
-        .push(text("Page").size(sz(11)).width(Length::Fixed(scaled(90.0))))
+        .push(text(t("info_page")).size(sz(11)).width(Length::Fixed(scaled(90.0))))
         .push(
             text_input("https://...", &app.url_edit)
                 .on_input(Message::ModUrlChanged)
@@ -141,18 +141,18 @@ pub(crate) fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> 
                 .size(sz(12)),
         )
         .push(
-            button(text("Save").size(sz(11)))
+            button(text(t("common_save")).size(sz(11)))
                 .padding([3, 8])
                 .style(button::secondary)
                 .on_press(Message::ModUrlSave),
         );
 
     col.push(info_kv(
-        "Enabled",
-        if m.enabled { "yes".into() } else { "no".into() },
+        t("info_enabled"),
+        if m.enabled { t("common_yes").into() } else { t("common_no").into() },
     ))
-    .push(info_kv("Files", files.to_string()))
-    .push(info_kv("Folder", m.path.display().to_string()))
+    .push(info_kv(t("info_files"), files.to_string()))
+    .push(info_kv(t("common_folder"), m.path.display().to_string()))
     .push(url_row)
     .into()
 }
@@ -164,7 +164,7 @@ pub(crate) fn generated_summary(app: &App, name: &str) -> String {
     };
     let outputs = match inst.generated_output(Some(name)) {
         Ok(outputs) => outputs,
-        Err(error) => return format!("Could not read generation receipts: {error}"),
+        Err(error) => return tf("info_receipts_failed", &[("error", &error)]),
     };
     if outputs.is_empty() {
         return String::new();
@@ -177,21 +177,45 @@ pub(crate) fn generated_summary(app: &App, name: &str) -> String {
         .collect();
     outputs.iter().map(|output| {
         let receipt = &output.receipt;
-        let state = if inst.generated_input_drift(receipt, &inputs) { "Inputs changed; review whether regeneration is needed" } else { "Recorded inputs unchanged" };
+        let state = if inst.generated_input_drift(receipt, &inputs) { t("info_inputs_changed") } else { t("info_inputs_unchanged") };
         let versions = receipt.inputs.iter().map(|input| {
             let sources = input.installed_files.iter().map(|(m, f)| format!("{m}/{f}")).collect::<Vec<_>>().join(", ");
-            format!("{}: {}{}", input.name, input.version.as_deref().unwrap_or("version unknown"), if sources.is_empty() { String::new() } else { format!(" [{sources}]") })
+            format!("{}: {}{}", input.name, input.version.as_deref().unwrap_or(t("info_version_unknown")), if sources.is_empty() { String::new() } else { format!(" [{sources}]") })
         }).collect::<Vec<_>>().join("; ");
-        format!("{} · {} UTC · profile {} · {} file(s)\n{}\nInputs: {}\nCommand: {}\nExecutable fingerprint: {}",
-            receipt.tool, eidos_instance::format_stamp(receipt.started_at), receipt.profile, output.paths.len(), state, versions, receipt.command.join(" "),
-            receipt.executable.as_ref().map(|exe| format!("{} ({} bytes; modified {})", exe.path.display(), exe.size, format_when(exe.modified))).unwrap_or_else(|| "unavailable".into()))
+        let fingerprint = receipt
+            .executable
+            .as_ref()
+            .map(|exe| {
+                tf(
+                    "info_fingerprint",
+                    &[
+                        ("path", &exe.path.display()),
+                        ("size", &exe.size),
+                        ("modified", &format_when(exe.modified)),
+                    ],
+                )
+            })
+            .unwrap_or_else(|| t("info_unavailable").into());
+        tf(
+            "info_receipt",
+            &[
+                ("tool", &receipt.tool),
+                ("when", &eidos_instance::format_stamp(receipt.started_at)),
+                ("profile", &receipt.profile),
+                ("n", &output.paths.len()),
+                ("state", &state),
+                ("inputs", &versions),
+                ("command", &receipt.command.join(" ")),
+                ("fingerprint", &fingerprint),
+            ],
+        )
     }).collect::<Vec<_>>().join("\n\n")
 }
 
 /// Conflicts tab: which files this mod overrides, and which it loses, by mod name.
 pub(crate) fn info_conflicts<'a>(app: &App, i: usize) -> Element<'a, Message> {
     let Some(cmap) = &app.conflicts else {
-        return text("Conflicts not computed yet.").size(sz(12)).into();
+        return text(t("info_conflicts_not_computed")).size(sz(12)).into();
     };
     let origin = (i + 1) as u32;
     // Only what will be DRAWN is materialised. This runs in view(), once per
@@ -226,18 +250,18 @@ pub(crate) fn info_conflicts<'a>(app: &App, i: usize) -> Element<'a, Message> {
         }
     }
     let mut col = Column::new().spacing(2);
-    col = col.push(text(format!("Overrides ({wins_n}):")).size(sz(13)));
+    col = col.push(text(tf("info_overrides", &[("n", &wins_n)])).size(sz(13)));
     if wins.is_empty() {
-        col = col.push(text("  (none)").size(sz(11)));
+        col = col.push(text(format!("  {}", t("info_none"))).size(sz(11)));
     }
     for (p, who) in &wins {
         col = col.push(text(format!("  {p}   >   {who}")).size(sz(11)));
     }
     col = col
         .push(Space::new().height(Length::Fixed(8.0)))
-        .push(text(format!("Overridden by ({loses_n}):")).size(sz(13)));
+        .push(text(tf("info_overridden_by", &[("n", &loses_n)])).size(sz(13)));
     if loses.is_empty() {
-        col = col.push(text("  (none)").size(sz(11)));
+        col = col.push(text(format!("  {}", t("info_none"))).size(sz(11)));
     }
     for (p, who) in &loses {
         col = col.push(text(format!("  {p}   <   {who}")).size(sz(11)));
@@ -253,16 +277,16 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
     let entries = cached_entries(app, &m.path);
     let hidden = entries.iter().filter(|e| path_is_hidden(e)).count();
     let summary = if hidden == 0 {
-        format!("{} file(s):", entries.len())
+        tf("info_n_files", &[("n", &entries.len())])
     } else {
-        format!("{} file(s), {hidden} hidden:", entries.len())
+        tf("info_n_files_hidden", &[("n", &entries.len()), ("hidden", &hidden)])
     };
     let mut col = Column::new().spacing(1).push(text(summary).size(sz(12)));
     let mut tools = Row::new().spacing(6).align_y(iced::Alignment::Center);
     if hidden > 0 {
-        tools = tools.push(tool_btn("Unhide all", Message::RestoreHiddenFiles(i)));
+        tools = tools.push(tool_btn(t("info_unhide_all"), Message::RestoreHiddenFiles(i)));
     }
-    tools = tools.push(tool_btn("New folder", Message::FiletreeNewFolderStart(i)));
+    tools = tools.push(tool_btn(t("info_new_folder"), Message::FiletreeNewFolderStart(i)));
     col = col.push(tools);
     if let Some((_, name)) = app.tree_new_folder.as_ref().filter(|(n, _)| *n == m.name) {
         col = col.push(
@@ -270,14 +294,14 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
                 .spacing(6)
                 .align_y(iced::Alignment::Center)
                 .push(
-                    text_input("folder name", name)
+                    text_input(t("info_folder_name"), name)
                         .on_input(Message::FiletreeNewFolderChanged)
                         .on_submit(Message::FiletreeNewFolderCommit)
                         .padding(4)
                         .size(sz(11)),
                 )
                 .push(
-                    button(text("Create").size(sz(10)))
+                    button(text(t("info_create")).size(sz(10)))
                         .padding([1, 5])
                         .style(button::primary)
                         .on_press(Message::FiletreeNewFolderCommit),
@@ -286,7 +310,7 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
     }
     for e in entries.iter().take(2000) {
         let is_hidden = path_is_hidden(e);
-        let label = if is_hidden { "Unhide" } else { "Hide" };
+        let label = if is_hidden { t("info_unhide") } else { t("info_hide") };
         // Renaming replaces the last component only, so the box holds the NAME.
         let renaming = app
             .tree_rename
@@ -297,7 +321,7 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
             .as_ref()
             .is_some_and(|(mn, r)| *mn == m.name && r == e);
         let name_cell: Element<'a, Message> = if renaming {
-            text_input("new name", &app.tree_rename_text)
+            text_input(t("info_new_name"), &app.tree_rename_text)
                 .on_input(Message::FiletreeRenameChanged)
                 .on_submit(Message::FiletreeRenameCommit)
                 .padding(2)
@@ -314,13 +338,13 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
         if renaming {
             row = row
                 .push(
-                    button(text("Rename").size(sz(10)))
+                    button(text(t("common_rename")).size(sz(10)))
                         .padding([1, 5])
                         .style(button::primary)
                         .on_press(Message::FiletreeRenameCommit),
                 )
                 .push(
-                    button(text("Cancel").size(sz(10)))
+                    button(text(t("common_cancel")).size(sz(10)))
                         .padding([1, 5])
                         .style(button::secondary)
                         .on_press(Message::FiletreeRenameCancel),
@@ -328,19 +352,19 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
         } else {
             row = row
                 .push(
-                    button(text("View").size(sz(10)))
+                    button(text(t("info_view")).size(sz(10)))
                         .padding([1, 5])
                         .style(button::text)
                         .on_press_maybe(resolve_in_mod(&m.path, e).map(Message::PreviewFile)),
                 )
                 .push(
-                    button(text("Open").size(sz(10)))
+                    button(text(t("common_open")).size(sz(10)))
                         .padding([1, 5])
                         .style(button::text)
                         .on_press(Message::FiletreeOpen(i, e.clone())),
                 )
                 .push(
-                    button(text("Rename").size(sz(10)))
+                    button(text(t("common_rename")).size(sz(10)))
                         .padding([1, 5])
                         .style(button::text)
                         .on_press(Message::FiletreeRenameStart(i, e.clone())),
@@ -359,7 +383,7 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
                 // be undone by clicking again - hiding renames, and renaming
                 // renames back. Two clicks, like everything else that removes.
                 .push(
-                    button(text(if armed { "Delete?" } else { "Delete" }).size(sz(10)))
+                    button(text(if armed { t("info_delete_confirm") } else { t("common_delete") }).size(sz(10)))
                         .padding([1, 5])
                         .style(if armed {
                             button::danger
@@ -380,10 +404,7 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
     // "the mod does not ship that file" to whoever scrolled looking for it.
     if entries.len() > 2000 {
         col = col.push(
-            text(format!(
-                "Showing the first 2000 of {} files - the rest exist but are not listed here.",
-                entries.len()
-            ))
+            text(tf("info_tree_truncated", &[("n", &entries.len())]))
             .size(sz(11)),
         );
     }
@@ -462,9 +483,9 @@ pub(crate) fn info_ini_tweaks<'a>(app: &App, i: usize, m: &ModEntry) -> Element<
     if available.is_empty() {
         return Column::new()
             .spacing(6)
-            .push(text("This mod ships no INI tweaks.").size(sz(12)))
+            .push(text(t("info_no_tweaks")).size(sz(12)))
             .push(
-                text("A mod with tweaks has an 'INI Tweaks' folder of small INI fragments.")
+                text(t("info_tweaks_hint"))
                     .size(sz(10)),
             )
             .into();
@@ -476,7 +497,7 @@ pub(crate) fn info_ini_tweaks<'a>(app: &App, i: usize, m: &ModEntry) -> Element<
         .unwrap_or_default();
 
     let mut col = Column::new().spacing(3).push(
-        text("Enabled fragments are merged into this profile's game INI at launch.").size(sz(11)),
+        text(t("info_tweaks_note")).size(sz(11)),
     );
     for name in available {
         let on = enabled.iter().any(|e| e.eq_ignore_ascii_case(&name));
@@ -496,15 +517,15 @@ pub(crate) fn info_ini_tweaks<'a>(app: &App, i: usize, m: &ModEntry) -> Element<
 pub(crate) fn info_notes<'a>(app: &App) -> Element<'a, Message> {
     Column::new()
         .spacing(8)
-        .push(text("Note (saved to the mod's meta.ini):").size(sz(12)))
+        .push(text(t("info_note_label")).size(sz(12)))
         .push(
-            text_input("Add a note...", &app.notes_edit)
+            text_input(t("info_note_placeholder"), &app.notes_edit)
                 .on_input(Message::NotesChanged)
                 .on_submit(Message::NotesSave)
                 .padding(6)
                 .size(sz(12)),
         )
-        .push(tool_btn("Save note", Message::NotesSave))
+        .push(tool_btn(t("info_save_note"), Message::NotesSave))
         .into()
 }
 
@@ -522,7 +543,7 @@ pub(crate) fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
         .spacing(8)
         .push(text(m.name.clone()).size(sz(16)).width(Length::Fill))
         .push(
-            button(text("Close").size(sz(12)))
+            button(text(t("common_close")).size(sz(12)))
                 .padding([3, 10])
                 .on_press(Message::CloseInfo)
                 .style(button::secondary),
@@ -531,27 +552,27 @@ pub(crate) fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
     let tabs = Row::new()
         .spacing(4)
         .push(info_tab_btn(
-            "General",
+            t("info_tab_general"),
             InfoTab::General,
             info_mix(app, InfoTab::General),
         ))
         .push(info_tab_btn(
-            "Conflicts",
+            t("info_tab_conflicts"),
             InfoTab::Conflicts,
             info_mix(app, InfoTab::Conflicts),
         ))
         .push(info_tab_btn(
-            "Filetree",
+            t("info_tab_filetree"),
             InfoTab::Filetree,
             info_mix(app, InfoTab::Filetree),
         ))
         .push(info_tab_btn(
-            "INI Tweaks",
+            t("info_tab_ini_tweaks"),
             InfoTab::IniTweaks,
             info_mix(app, InfoTab::IniTweaks),
         ))
         .push(info_tab_btn(
-            "Notes",
+            t("info_tab_notes"),
             InfoTab::Notes,
             info_mix(app, InfoTab::Notes),
         ));

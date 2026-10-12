@@ -21,14 +21,14 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
         .spacing(6)
         .align_y(iced::Alignment::Center)
         .push(
-            text_input("Filter files", &app.data_query)
+            text_input(t("data_filter"), &app.data_query)
                 .on_input(Message::DataQueryChanged)
                 .padding(5)
                 .size(sz(12))
                 .width(Length::Fill),
         )
         .push(
-            button(text("Conflicts only").size(sz(11)))
+            button(text(t("data_conflicts_only")).size(sz(11)))
                 .padding([3, 8])
                 .style(if app.data_conflicts_only {
                     button::primary
@@ -37,15 +37,15 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
                 })
                 .on_press(Message::DataToggleConflictsOnly),
         )
-        .push(tool_btn("Expand all", Message::DataExpandAll))
-        .push(tool_btn("Collapse all", Message::DataCollapseAll));
+        .push(tool_btn(t("data_expand_all"), Message::DataExpandAll))
+        .push(tool_btn(t("data_collapse_all"), Message::DataCollapseAll));
 
     let header = Row::new()
         .spacing(6)
-        .push(text("Name").size(sz(11)).width(Length::FillPortion(3)))
-        .push(text("Provided by").size(sz(11)).width(Length::FillPortion(2)))
-        .push(text("Size").size(sz(11)).width(Length::Fixed(scaled(C_SIZE))))
-        .push(text("Modified").size(sz(11)).width(Length::Fixed(scaled(C_DATE))))
+        .push(text(t("info_name")).size(sz(11)).width(Length::FillPortion(3)))
+        .push(text(t("data_provided_by")).size(sz(11)).width(Length::FillPortion(2)))
+        .push(text(t("col_size")).size(sz(11)).width(Length::Fixed(scaled(C_SIZE))))
+        .push(text(t("col_modified")).size(sz(11)).width(Length::Fixed(scaled(C_DATE))))
         .push(text("").size(sz(11)).width(Length::Fixed(scaled(C_ACTION))));
 
     // No spacing: the insertion strips below provide the separation, and they
@@ -56,9 +56,9 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
         list = list.push(
             text(
                 if app.data_query.trim().is_empty() && !app.data_conflicts_only {
-                    "(empty)"
+                    t("common_empty")
                 } else {
-                    "Nothing in the merged view matches."
+                    t("data_no_match")
                 },
             )
             .size(sz(12)),
@@ -113,14 +113,14 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
         // find out WHICH copy of a file the game gets, and the next question is
         // always "where is it".
         action = action.push(
-            button(text("Reveal").size(sz(10)))
+            button(text(t("preview_reveal")).size(sz(10)))
                 .padding([1, 5])
                 .on_press(Message::DataReveal(r.row.real.clone()))
                 .style(button::secondary),
         );
         if !r.row.is_dir {
             action = action.push(
-                button(text("View").size(sz(10)))
+                button(text(t("info_view")).size(sz(10)))
                     .padding([1, 5])
                     .on_press(Message::PreviewFile(r.row.real.clone()))
                     .style(button::text),
@@ -128,7 +128,7 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
         }
         if let Some(i) = owner {
             action = action.push(
-                button(text("Hide").size(sz(10)))
+                button(text(t("info_hide")).size(sz(10)))
                     .padding([1, 5])
                     .on_press(Message::ToggleFileHidden(i, r.rel.clone()))
                     .style(button::secondary),
@@ -160,9 +160,7 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
     }
     if truncated {
         list = list.push(
-            text(format!(
-                "Showing the first {DATA_TREE_ROWS} entries - collapse a folder to see more."
-            ))
+            text(tf("data_truncated", &[("n", &DATA_TREE_ROWS)]))
             .size(sz(11)),
         );
     }
@@ -194,27 +192,27 @@ pub(crate) fn format_when(t: std::time::SystemTime) -> String {
 
 pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
     let Some(inst) = &app.created else {
-        return text("No instance open.").into();
+        return text(t("panel_no_instance")).into();
     };
     let dir = inst.overwrite_dir();
     let actions = Row::new()
         .spacing(6)
         .push(
-            text("Everything the game writes (configs, new saves, generated files) lands here.")
+            text(t("overwrite_intro"))
                 .size(sz(12))
                 .width(Length::Fill),
         )
         // MO2's central Overwrite workflow: turn what the game/tools generated into
         // a real, orderable mod instead of only being able to delete it.
-        .push(tool_btn("Create mod...", Message::OverwriteToModStart))
+        .push(tool_btn(t("overwrite_create_mod"), Message::OverwriteToModStart))
         // MO2's "Sync to Mods": send each file back to the mod that already
         // provides that path, instead of bundling everything into a new one.
         .push(
             button(
                 text(if app.confirm_sync {
-                    "Confirm send back?"
+                    t("overwrite_confirm_send_back")
                 } else {
-                    "Send back to mods"
+                    t("overwrite_send_back")
                 })
                 .size(sz(12)),
             )
@@ -226,13 +224,13 @@ pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
                 button::secondary
             }),
         )
-        .push(tool_btn("Open folder", Message::OpenFolder(dir.clone())))
+        .push(tool_btn(t("common_open_folder"), Message::OpenFolder(dir.clone())))
         .push(
             button(
                 text(if app.confirm_clear {
-                    "Confirm clear?"
+                    t("overwrite_confirm_clear")
                 } else {
-                    "Clear"
+                    t("overwrite_clear")
                 })
                 .size(sz(12)),
             )
@@ -250,16 +248,16 @@ pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
     let prompt: Option<Element<'a, Message>> = app.overwrite_to_mod.as_ref().map(|name| {
         let exists = inst.mods_dir().join(name.trim()).exists();
         let hint = if exists {
-            "merges into that existing mod"
+            t("overwrite_hint_merge")
         } else {
-            "creates a new mod at the top of the priority order"
+            t("overwrite_hint_new")
         };
         Row::new()
             .spacing(6)
             .align_y(iced::Alignment::Center)
-            .push(text("Mod name").size(sz(12)))
+            .push(text(t("overwrite_mod_name")).size(sz(12)))
             .push(
-                text_input("Mod name", name)
+                text_input(t("overwrite_mod_name"), name)
                     .on_input(Message::OverwriteToModName)
                     .on_submit(Message::OverwriteToModCommit)
                     .padding(5)
@@ -268,12 +266,12 @@ pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
             )
             .push(text(hint).size(sz(10)).width(Length::Fill))
             .push(
-                button(text("Create").size(sz(12)))
+                button(text(t("info_create")).size(sz(12)))
                     .padding([4, 12])
                     .on_press(Message::OverwriteToModCommit)
                     .style(button::primary),
             )
-            .push(tool_btn("Cancel", Message::OverwriteToModCancel))
+            .push(tool_btn(t("common_cancel"), Message::OverwriteToModCancel))
             .into()
     });
 
@@ -282,9 +280,9 @@ pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
     let entries = cached_entries(app, &dir);
     let mut c = Column::new().spacing(2);
     if entries.is_empty() {
-        c = c.push(text("(empty)").size(sz(12)));
+        c = c.push(text(t("common_empty")).size(sz(12)));
     } else {
-        c = c.push(text(format!("{} file(s):", entries.len())).size(sz(11)));
+        c = c.push(text(tf("info_n_files", &[("n", &entries.len())])).size(sz(11)));
     }
     let rows = overwrite_tree_rows(app, &entries, DATA_TREE_ROWS);
     let truncated = rows.len() >= DATA_TREE_ROWS;
@@ -319,9 +317,7 @@ pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
     }
     if truncated {
         c = c.push(
-            text(format!(
-                "Showing the first {DATA_TREE_ROWS} rows - collapse a folder to see more."
-            ))
+            text(tf("overwrite_truncated", &[("n", &DATA_TREE_ROWS)]))
             .size(sz(11)),
         );
     }

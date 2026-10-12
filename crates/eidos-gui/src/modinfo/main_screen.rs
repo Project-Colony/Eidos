@@ -60,7 +60,7 @@ pub(crate) fn right_pane<'a>(app: &App) -> Element<'a, Message> {
     let top = Row::new()
         .spacing(8)
         .align_y(iced::Alignment::Center)
-        .push(text("Run:").size(sz(13)))
+        .push(text(t("main_run_label")).size(sz(13)))
         .push(
             pick_list(run_options, Some(run_choice), Message::ToolPicked)
                 .text_size(sz(13))
@@ -72,7 +72,7 @@ pub(crate) fn right_pane<'a>(app: &App) -> Element<'a, Message> {
                 Row::new()
                     .spacing(6)
                     .push(icon(IC_RUN, 18.0))
-                    .push(text("Run").size(sz(15))),
+                    .push(text(t("main_run")).size(sz(15))),
             )
             .padding(10)
             .on_press(Message::Run)
@@ -82,7 +82,7 @@ pub(crate) fn right_pane<'a>(app: &App) -> Element<'a, Message> {
     // The tab in force, which is not always `app.tab`: see `effective_tab`.
     let tab = effective_tab(app);
     let mut tabs = Row::new().spacing(4).push(tab_btn(
-        "Data".to_string(),
+        t("tab_data").to_string(),
         Tab::Data,
         main_mix(app, Tab::Data),
     ));
@@ -92,34 +92,34 @@ pub(crate) fn right_pane<'a>(app: &App) -> Element<'a, Message> {
     // shows an empty list for a game that will never have one.
     if game_manages_plugins(app) {
         tabs = tabs.push(tab_btn(
-            "Plugins".to_string(),
+            t("tab_plugins").to_string(),
             Tab::Plugins,
             main_mix(app, Tab::Plugins),
         ));
     }
     let tabs = tabs
         .push(tab_btn(
-            "Conflicts".to_string(),
+            t("tab_conflicts").to_string(),
             Tab::Conflicts,
             main_mix(app, Tab::Conflicts),
         ))
         .push(tab_btn(
-            "Overwrite".to_string(),
+            t("tab_overwrite").to_string(),
             Tab::Overwrite,
             main_mix(app, Tab::Overwrite),
         ))
         .push(tab_btn(
-            "Archives".to_string(),
+            t("tab_archives").to_string(),
             Tab::Archives,
             main_mix(app, Tab::Archives),
         ))
         .push(tab_btn(
-            "Saves".to_string(),
+            t("tab_saves").to_string(),
             Tab::Saves,
             main_mix(app, Tab::Saves),
         ))
         .push(tab_btn(
-            "Downloads".to_string(),
+            t("tab_downloads").to_string(),
             Tab::Downloads,
             main_mix(app, Tab::Downloads),
         ))
@@ -152,23 +152,23 @@ pub(crate) fn right_pane<'a>(app: &App) -> Element<'a, Message> {
 
 pub(crate) fn status_bar<'a>(app: &App) -> Element<'a, Message> {
     let kind = match app.kind {
-        InstanceKind::Global => "Global",
-        InstanceKind::Portable => "Portable",
+        InstanceKind::Global => t("instance_kind_global"),
+        InstanceKind::Portable => t("instance_kind_portable"),
     };
-    let game = selected_game(app).map(|g| g.def.name).unwrap_or("Instance");
+    let game = selected_game(app).map(|g| g.def.name).unwrap_or(t("status_bar_instance"));
     // A live multi-selection count takes the left slot (MO2's "N selected"), unless a
     // transient status message is showing; otherwise the instance summary.
     let showing_status = app.status.is_some();
     let left = if let Some(s) = app.status.clone() {
         s
     } else if app.selected_mods.len() > 1 {
-        format!("{} mods selected", app.selected_mods.len())
+        tf("mod_menu_n_selected", &[("n", &app.selected_mods.len())])
     } else {
         let profile = app
             .created
             .as_ref()
             .map(|i| i.active().name)
-            .unwrap_or_else(|| "Default".to_string());
+            .unwrap_or_else(|| t("profile_default").to_string());
         format!("{game} - {kind} - {profile}")
     };
     // The Nexus account, if connected this session (MO2's status-bar login state).
@@ -177,12 +177,21 @@ pub(crate) fn status_bar<'a>(app: &App) -> Element<'a, Message> {
     // and the difference is not cosmetic, since a free account cannot fetch a
     // download link without the key/expires pair from a fresh nxm:// link.
     let account = match &app.nexus_account {
-        Some(a) => format!(
-            "Nexus: {} ({})",
-            a.name,
-            if a.is_premium { "Premium" } else { "free" }
+        Some(a) => tf(
+            "status_bar_nexus",
+            &[
+                ("name", &a.name),
+                (
+                    "tier",
+                    &if a.is_premium {
+                        t("settings_tier_premium")
+                    } else {
+                        t("settings_tier_free")
+                    },
+                ),
+            ],
         ),
-        None => "not logged in".to_string(),
+        None => t("status_bar_not_logged_in").to_string(),
     };
     // The left slot fades in when its message changes, so a status that
     // replaces another is visibly a NEW one rather than a word that quietly
@@ -228,7 +237,7 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
             Message::TogglePreferences,
         ))
         .push(Space::new().width(Length::Fill))
-        .push(tool_btn("New instance", Message::Restart));
+        .push(tool_btn(t("main_new_instance"), Message::Restart));
 
     // A grabbable divider rather than a gap. The panes were a fixed 3:2, which is
     // a guess about somebody else's screen: on a narrow window the right pane's
@@ -470,7 +479,7 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
     // feedback at all - the user could not tell the window from any other.
     if app.files_hovering {
         let banner = container(
-            container(text("Drop to install").size(sz(15)))
+            container(text(t("main_drop_to_install")).size(sz(15)))
                 .padding([10, 20])
                 .style(|t: &Theme| container::Style {
                     background: Some(Background::Color(t.extended_palette().primary.base.color)),
@@ -653,7 +662,7 @@ pub(crate) fn send_to_targets<'a>(app: &App, i: usize) -> Element<'a, Message> {
     if let Some((row, text)) = app.send_priority.as_ref().filter(|(r, _)| *r == i) {
         let _ = row;
         col = col.push(
-            text_input("Priority", text)
+            text_input(t("send_priority"), text)
                 .on_input(Message::SendToPriorityChanged)
                 .on_submit(Message::SendToPriorityCommit)
                 .padding(5)
@@ -673,31 +682,31 @@ pub(crate) fn send_to_targets<'a>(app: &App, i: usize) -> Element<'a, Message> {
             list = list.push(menu_item_owned(label, Message::SendToSeparatorPick(idx)));
         }
         col = col
-            .push(text("Move into group:").size(sz(11)))
+            .push(text(t("send_move_into_group")).size(sz(11)))
             .push(scrollable(list).height(Length::Fixed(160.0)))
-            .push(menu_item("Cancel", Message::SendToTargetCancel));
+            .push(menu_item(t("common_cancel"), Message::SendToTargetCancel));
         return col.into();
     }
 
     if mc.is_some_and(|m| real(&m.overwrites)) {
         col = col.push(menu_item(
-            "Send above first conflict",
+            t("send_above_first_conflict"),
             Message::SendToFirstConflict(i),
         ));
     }
     if mc.is_some_and(|m| real(&m.overwritten_by)) {
         col = col.push(menu_item(
-            "Send below last conflict",
+            t("send_below_last_conflict"),
             Message::SendToLastConflict(i),
         ));
     }
     col = col
         .push(menu_item(
-            "Send to priority...",
+            t("view_send_to_priority"),
             Message::SendToPriorityStart(i),
         ))
         .push(menu_item(
-            "Send to separator...",
+            t("send_to_separator"),
             Message::SendToSeparatorStart(i),
         ));
     col.into()
@@ -709,7 +718,7 @@ pub(crate) fn profile_menu_card<'a>(app: &App, name: &str) -> Element<'a, Messag
     let title = Row::new()
         .spacing(6)
         .push(
-            text(format!("Profile: {name}"))
+            text(tf("profile_menu_title", &[("name", &name)]))
                 .size(sz(13))
                 .width(Length::Fill),
         )
@@ -725,7 +734,7 @@ pub(crate) fn profile_menu_card<'a>(app: &App, name: &str) -> Element<'a, Messag
     match &app.profile_rename {
         Some((orig, edited)) if orig == name => {
             col = col.push(
-                text_input("New name", edited)
+                text_input(t("mod_menu_new_name"), edited)
                     .on_input(Message::ProfileRenameChanged)
                     .on_submit(Message::ProfileRenameCommit)
                     .padding(5)
@@ -734,7 +743,7 @@ pub(crate) fn profile_menu_card<'a>(app: &App, name: &str) -> Element<'a, Messag
         }
         _ => {
             col = col.push(menu_item(
-                "Rename",
+                t("common_rename"),
                 Message::ProfileRenameStart(name.to_string()),
             ))
         }
@@ -744,7 +753,7 @@ pub(crate) fn profile_menu_card<'a>(app: &App, name: &str) -> Element<'a, Messag
     match &app.profile_copy {
         Some((src, edited)) if src == name => {
             col = col.push(
-                text_input("Copy name", edited)
+                text_input(t("profile_copy_name_field"), edited)
                     .on_input(Message::ProfileCopyChanged)
                     .on_submit(Message::ProfileCopyCommit)
                     .padding(5)
@@ -753,7 +762,7 @@ pub(crate) fn profile_menu_card<'a>(app: &App, name: &str) -> Element<'a, Messag
         }
         _ => {
             col = col.push(menu_item(
-                "Copy to new...",
+                t("profile_copy_to_new"),
                 Message::ProfileCopyStart(name.to_string()),
             ))
         }
@@ -762,19 +771,19 @@ pub(crate) fn profile_menu_card<'a>(app: &App, name: &str) -> Element<'a, Messag
     col = col.push(menu_sep());
     // Take over an existing MO2 profile's mod order + load order, so a migrating
     // user does not re-tick dozens of mods and plugins by hand.
-    col = col.push(menu_item("Import from MO2...", Message::ImportMo2Pick));
+    col = col.push(menu_item(t("profile_import_mo2"), Message::ImportMo2Pick));
 
     col = col.push(menu_sep());
     // Delete: two-click confirm (backend refuses the active / last profile).
     let delete: Element<'a, Message> = if app.profile_delete_confirm.as_deref() == Some(name) {
-        button(text("Click again to delete").size(sz(12)))
+        button(text(t("profile_click_again_delete")).size(sz(12)))
             .padding([2, 6])
             .width(Length::Fill)
             .on_press(Message::ProfileDeleteCommit(name.to_string()))
             .style(button::danger)
             .into()
     } else {
-        menu_item("Delete", Message::ProfileDeleteConfirm(name.to_string()))
+        menu_item(t("common_delete"), Message::ProfileDeleteConfirm(name.to_string()))
     };
     col = col.push(delete);
 

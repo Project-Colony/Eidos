@@ -6,42 +6,42 @@ use super::*;
 /// open-folder + per-save delete. MO2's savegame list.
 pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
     let Some(inst) = &app.created else {
-        return text("No instance open.").into();
+        return text(t("panel_no_instance")).into();
     };
     let dir = inst.active().saves_dir();
 
     let header = Row::new()
         .spacing(8)
         .align_y(iced::Alignment::Center)
-        .push(text("Save").size(sz(13)))
+        .push(text(t("saves_heading")).size(sz(13)))
         .push(Space::new().width(Length::Fill))
         .push(
-            button(text("Open folder").size(sz(11)))
+            button(text(t("common_open_folder")).size(sz(11)))
                 .padding(4)
                 .on_press(Message::OpenFolder(dir.clone())),
         )
         .push(
-            button(text("Refresh").size(sz(11)))
+            button(text(t("toolbar_refresh")).size(sz(11)))
                 .padding(4)
                 .on_press(Message::RefreshSaves),
         );
 
     let col_header = Row::new()
         .spacing(8)
-        .push(text("Name").size(sz(11)).width(Length::Fill))
-        .push(text("Date").size(sz(11)).width(Length::Fixed(scaled(130.0))))
-        .push(text("Size").size(sz(11)).width(Length::Fixed(scaled(80.0))))
+        .push(text(t("info_name")).size(sz(11)).width(Length::Fill))
+        .push(text(t("saves_col_date")).size(sz(11)).width(Length::Fixed(scaled(130.0))))
+        .push(text(t("col_size")).size(sz(11)).width(Length::Fixed(scaled(80.0))))
         .push(Space::new().width(Length::Fixed(scaled(80.0))));
 
     let mut rows = Column::new().spacing(2);
     if app.saves.is_empty() {
         rows = rows.push(
-            text("(no saves yet) Saves your game writes for this profile appear here.").size(sz(12)),
+            text(t("saves_none_yet")).size(sz(12)),
         );
     }
     for (i, save) in app.saves.iter().take(SAVES_LIST_CAP).enumerate() {
         let armed = app.confirm_delete_save == Some(i);
-        let del = button(text(if armed { "Confirm?" } else { "Delete" }).size(sz(11)))
+        let del = button(text(if armed { t("common_confirm") } else { t("common_delete") }).size(sz(11)))
             .padding(4)
             .on_press(if armed {
                 Message::ConfirmDeleteSave(i)
@@ -105,7 +105,7 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
         let mut bar = Row::new()
             .spacing(6)
             .align_y(iced::Alignment::Center)
-            .push(text(format!("{n} selected")).size(sz(11)));
+            .push(text(tf("plugins_n_selected", &[("n", &n)])).size(sz(11)));
         // Copy to another profile - MO2's Transfer Save Games. Only profiles
         // that are not this one: copying a save onto itself is not a thing.
         if app.created.is_some() {
@@ -114,7 +114,7 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
             let (names, here) = cached_profiles(app);
             for name in names.into_iter().filter(|p| *p != here) {
                 bar = bar.push(
-                    button(text(format!("Copy to {name}")).size(sz(11)))
+                    button(text(tf("saves_copy_to", &[("profile", &name)])).size(sz(11)))
                         .padding([3, 8])
                         .style(button::secondary)
                         .on_press(Message::SavesCopyToProfile(name)),
@@ -124,9 +124,9 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
         bar = bar.push(Space::new().width(Length::Fill)).push(
             button(
                 text(if app.confirm_saves_delete {
-                    format!("Confirm - delete {n}?")
+                    tf("saves_confirm_delete_n", &[("n", &n)])
                 } else {
-                    format!("Delete {n}")
+                    tf("saves_delete_n", &[("n", &n)])
                 })
                 .size(sz(11)),
             )
@@ -176,7 +176,7 @@ pub(crate) fn save_details<'a>(
         .spacing(4)
         .push(text(save.filename.clone()).size(sz(13)))
         .push(
-            button(text("Extension details").size(sz(11))).on_press(Message::RunFileExtension(
+            button(text(t("saves_extension_details")).size(sz(11))).on_press(Message::RunFileExtension(
                 eidos_addons::protocol::Operation::SaveInfo,
                 save.path.clone(),
             )),
@@ -186,14 +186,14 @@ pub(crate) fn save_details<'a>(
         Some((_, Ok(info))) => info,
         Some((_, Err(e))) => {
             return col
-                .push(text(format!("Cannot read this save: {e}")).size(sz(11)))
+                .push(text(tf("saves_unreadable", &[("error", &e)])).size(sz(11)))
                 .push(
-                    text("The list below is unavailable; the file itself is untouched.").size(sz(10)),
+                    text(t("saves_unreadable_note")).size(sz(10)),
                 )
                 .into();
         }
         // Parsed on selection, so this only shows for the frame in between.
-        None => return col.push(text("Reading...").size(sz(11))).into(),
+        None => return col.push(text(t("saves_reading")).size(sz(11))).into(),
     };
 
     // The save's own screenshot, above the facts: it is what identifies a save
@@ -209,28 +209,30 @@ pub(crate) fn save_details<'a>(
 
     let mut facts: Vec<(&'static str, String)> = vec![
         (
-            "Character",
-            format!("{} (level {})", info.player_name, info.level),
+            t("saves_character"),
+            tf(
+                "saves_character_level",
+                &[("name", &info.player_name), ("level", &info.level)],
+            ),
         ),
-        ("Location", info.location.clone()),
-        ("In-game date", info.game_date.clone()),
+        (t("saves_location"), info.location.clone()),
+        (t("saves_game_date"), info.game_date.clone()),
     ];
     if let Some((d, h, m)) = info.playtime() {
-        facts.push(("Played", format!("{d}d {h}h {m}m")));
+        facts.push((t("saves_played"), tf("saves_playtime", &[("d", &d), ("h", &h), ("m", &m)])));
     }
-    facts.push(("Save", format!("#{}", info.save_number)));
+    facts.push((t("saves_heading"), format!("#{}", info.save_number)));
     // Fallout writes the runtime it was saved by; Skyrim does not, and leaves this
     // empty. Worth a row of its own: "this save came from another game build" is
     // the answer to a whole class of "my DLL plugins stopped loading" sessions.
     if !info.game_version.is_empty() {
-        facts.push(("Game build", info.game_version.clone()));
+        facts.push((t("saves_game_build"), info.game_version.clone()));
     }
     facts.push((
-        "Plugins",
-        format!(
-            "{} + {} light",
-            info.plugins.len(),
-            info.light_plugins.len()
+        t("tab_plugins"),
+        tf(
+            "saves_plugin_counts",
+            &[("n", &info.plugins.len()), ("light", &info.light_plugins.len())],
         ),
     ));
     for (k, v) in facts {
@@ -241,10 +243,10 @@ pub(crate) fn save_details<'a>(
     col = col.push(Space::new().height(Length::Fixed(6.0)));
     if missing.is_empty() {
         return col
-            .push(text("Every plugin this save uses is active.").size(sz(11)))
+            .push(text(t("saves_all_plugins_active")).size(sz(11)))
             .push(
                 text(if info.truncated {
-                    "(the save's plugin list was truncated, so this is advisory)"
+                    t("saves_truncated_advisory")
                 } else {
                     ""
                 })
@@ -253,16 +255,16 @@ pub(crate) fn save_details<'a>(
             .into();
     }
 
-    col = col.push(text(format!("{} plugin(s) missing:", missing.len())).size(sz(12)));
+    col = col.push(text(tf("saves_n_missing", &[("n", &missing.len())])).size(sz(12)));
     for m in missing.iter().take(40) {
         let what = match m.state {
-            eidos_gamefeatures::SavePluginState::Inactive => "inactive",
-            eidos_gamefeatures::SavePluginState::Absent => "not installed",
+            eidos_gamefeatures::SavePluginState::Inactive => t("saves_plugin_inactive"),
+            eidos_gamefeatures::SavePluginState::Absent => t("saves_plugin_absent"),
         };
         let who = if m.providers.is_empty() {
-            "  no mod here provides it".to_string()
+            format!("  {}", t("saves_no_provider"))
         } else {
-            format!("  in: {}", m.providers.join(", "))
+            format!("  {}", tf("saves_provided_in", &[("mods", &m.providers.join(", "))]))
         };
         col = col
             .push(text(format!("{} ({what})", m.name)).size(sz(11)))
@@ -275,13 +277,13 @@ pub(crate) fn save_details<'a>(
         col = col
             .push(Space::new().height(Length::Fixed(4.0)))
             .push(tool_btn(
-                "Enable the mods this save needs",
+                t("saves_enable_needed"),
                 Message::FixSaveMods,
             ));
     }
     if info.truncated {
         col = col.push(
-            text("The save's plugin list was truncated, so treat this as advisory.").size(sz(10)),
+            text(t("saves_truncated_note")).size(sz(10)),
         );
     }
     col.into()
@@ -389,7 +391,7 @@ pub(crate) fn load_save_details(app: &mut App) {
             let data = selected_game(app).map(|g| g.data_path.clone());
             if let Some(d) = data.as_deref() {
                 mods.push(eidos_gamefeatures::ModFolder {
-                    name: "(game data)",
+                    name: t("saves_game_data"),
                     path: d,
                 });
             }

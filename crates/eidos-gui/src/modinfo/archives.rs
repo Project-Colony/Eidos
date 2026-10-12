@@ -147,18 +147,14 @@ pub(crate) fn archive_rows(app: &App, game_id: &str) -> Option<Vec<ArchiveRow>> 
 /// the INI registers it, or not loaded at all.
 pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
     let Some(game) = selected_game(app) else {
-        return text("Open a game instance to see its archives.").into();
+        return text(t("archives_open_instance")).into();
     };
     let Some(rows) = cached_archive_rows(app, game.def.id) else {
         return Column::new()
             .spacing(6)
-            .push(text("Archives").size(sz(13)))
+            .push(text(t("tab_archives")).size(sz(13)))
             .push(
-                text(
-                    "The active plugin list is not known yet, and without it Eidos cannot say \
-                     which archives load - every one would look dead. Open the Plugins tab once, \
-                     or launch the game, and come back.",
-                )
+                text(t("archives_plugins_unknown"))
                 .size(sz(12)),
             )
             .into();
@@ -172,18 +168,15 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
         .align_y(iced::Alignment::Center)
         .spacing(8)
         .push(
-            text(format!(
-                "{} archive(s) across your enabled mods",
-                rows.len()
-            ))
+            text(tf("archives_count", &[("n", &rows.len())]))
             .size(sz(13)),
         )
         .push(Space::new().width(Length::Fill))
         .push(
             text(if orphans == 0 {
-                "all of them load".to_string()
+                t("archives_all_load").to_string()
             } else {
-                format!("{orphans} will not load")
+                tf("archives_n_will_not_load", &[("n", &orphans)])
             })
             .size(sz(11))
             .color(if orphans == 0 {
@@ -195,28 +188,28 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
 
     let col_header = Row::new()
         .spacing(8)
-        .push(text("Archive").size(sz(11)).width(Length::FillPortion(3)))
-        .push(text("From mod").size(sz(11)).width(Length::FillPortion(2)))
+        .push(text(t("archives_col_archive")).size(sz(11)).width(Length::FillPortion(3)))
+        .push(text(t("archives_col_from_mod")).size(sz(11)).width(Length::FillPortion(2)))
         .push(
-            text("Loaded because")
+            text(t("archives_col_loaded_because"))
                 .size(sz(11))
                 .width(Length::FillPortion(3)),
         );
 
     let mut list = Column::new();
     if rows.is_empty() {
-        list = list.push(text("None of your enabled mods ships a BSA or BA2.").size(sz(12)));
+        list = list.push(text(t("archives_none")).size(sz(12)));
     }
     for (i, r) in rows.iter().enumerate() {
         let why: Element<'a, Message> = if let Some(winner) = &r.overridden_by {
-            text(format!("Physical archive overridden by {winner}"))
+            text(tf("archives_overridden", &[("winner", &winner)]))
                 .size(sz(11))
                 .into()
         } else {
             match (&r.by_plugin, r.registered) {
-                (_, true) => text("the INI registers it").size(sz(11)).into(),
-                (Some(p), _) => text(format!("{p} is active")).size(sz(11)).into(),
-                (None, false) => text("nothing loads it - it is dead weight")
+                (_, true) => text(t("archives_ini_registers")).size(sz(11)).into(),
+                (Some(p), _) => text(tf("archives_plugin_active", &[("plugin", &p)])).size(sz(11)).into(),
+                (None, false) => text(t("archives_dead_weight"))
                     .size(sz(11))
                     .color(conflict_loses_fg())
                     .into(),
@@ -251,11 +244,7 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
         .push(col_header)
         .push(scrollable(list).height(Length::Fill))
         .push(
-            text(
-                "An engine loads an archive named after an ACTIVE plugin (<plugin>.bsa, or \
-                 \"<plugin> - Textures.bsa\"), or one the INI registers explicitly. Anything else \
-                 is on disk and never read.",
-            )
+            text(t("archives_explainer"))
             .size(sz(10)),
         )
         .into()

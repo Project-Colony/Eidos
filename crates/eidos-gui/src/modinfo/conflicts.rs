@@ -76,9 +76,9 @@ pub(crate) fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
     let Some(map) = &app.conflicts else {
         return Column::new()
             .spacing(4)
-            .push(text("Conflicts").size(sz(13)))
+            .push(text(t("tab_conflicts")).size(sz(13)))
             .push(
-                text("Open a game instance to analyse file conflicts across your mods.").size(sz(12)),
+                text(t("conflicts_open_instance")).size(sz(12)),
             )
             .into();
     };
@@ -90,25 +90,25 @@ pub(crate) fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
         let tag = match map.state(origin) {
             ConflictState::Overwrites => {
                 counts.0 += 1;
-                "overwrites others"
+                t("conflicts_tag_overwrites")
             }
             ConflictState::Overwritten => {
                 counts.1 += 1;
-                "overwritten"
+                t("conflicts_tag_overwritten")
             }
             ConflictState::Mixed => {
                 counts.2 += 1;
-                "mixed"
+                t("conflicts_tag_mixed")
             }
             ConflictState::Redundant => {
                 counts.3 += 1;
-                "redundant - wins nothing"
+                t("conflicts_tag_redundant")
             }
             ConflictState::None => continue,
         };
         let detail = map
             .mod_conflicts(origin)
-            .map(|c| format!("{}/{} won", c.won, c.total))
+            .map(|c| tf("conflicts_won", &[("won", &c.won), ("total", &c.total)]))
             .unwrap_or_default();
         let row = Row::new()
             .spacing(6)
@@ -118,25 +118,30 @@ pub(crate) fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
         rows = rows.push(striped(row.into(), i % 2 == 0));
     }
 
-    let summary = format!(
-        "{} overwrite - {} overwritten - {} mixed - {} redundant",
-        counts.0, counts.1, counts.2, counts.3
+    let summary = tf(
+        "conflicts_summary",
+        &[
+            ("overwrite", &counts.0),
+            ("overwritten", &counts.1),
+            ("mixed", &counts.2),
+            ("redundant", &counts.3),
+        ],
     );
     Column::new()
         .spacing(6)
         .push(
-            text(format!(
-                "Conflicts: {summary}{}",
+            text(tf(
                 if app.archive_job.is_some() {
-                    " (archive analysis running)"
+                    "conflicts_heading_running"
                 } else {
-                    ""
-                }
+                    "conflicts_heading"
+                },
+                &[("summary", &summary)],
             ))
             .size(sz(12)),
         )
         .push(text(app.archive_warnings.join("\n")).size(sz(11)))
-        .push(text("(only conflicting mods shown; flags also appear in the mod list)").size(sz(10)))
+        .push(text(t("conflicts_only_conflicting")).size(sz(10)))
         .push(scrollable(rows).height(Length::FillPortion(2)))
         .push(conflicting_files(app, map))
         .into()
@@ -155,7 +160,7 @@ pub(crate) fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
 pub(crate) fn conflicting_files<'a>(app: &App, map: &ConflictMap) -> Element<'a, Message> {
     const SHOWN: usize = 40;
     let Some(focus) = app.selected_mod else {
-        return text("Select a mod to see which files it contests.")
+        return text(t("conflicts_select_mod"))
             .size(sz(11))
             .into();
     };
@@ -186,9 +191,9 @@ pub(crate) fn conflicting_files<'a>(app: &App, map: &ConflictMap) -> Element<'a,
         let wins = node.winner == origin;
         // Who this file actually comes from, when it is not us.
         let verdict = if wins {
-            "wins it".to_string()
+            t("conflicts_wins_it").to_string()
         } else {
-            format!("loses to {}", map.name(node.winner))
+            tf("conflicts_loses_to", &[("name", &map.name(node.winner))])
         };
         let row = Row::new()
             .spacing(6)
@@ -211,11 +216,14 @@ pub(crate) fn conflicting_files<'a>(app: &App, map: &ConflictMap) -> Element<'a,
     }
 
     let head = if n == 0 {
-        format!("{name} contests no files.")
+        tf("conflicts_none_contested", &[("name", &name)])
     } else if n > SHOWN {
-        format!("{name}: {n} contested file(s), showing the first {SHOWN}")
+        tf(
+            "conflicts_contested_truncated",
+            &[("name", &name), ("n", &n), ("shown", &SHOWN)],
+        )
     } else {
-        format!("{name}: {n} contested file(s)")
+        tf("conflicts_contested", &[("name", &name), ("n", &n)])
     };
     Column::new()
         .spacing(4)
