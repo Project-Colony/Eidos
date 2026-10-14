@@ -158,17 +158,12 @@ jobs:
           cargo check --workspace --locked --all-targets
 
   fmt:
-    name: rustfmt (advisory)
+    name: rustfmt
     runs-on: ubuntu-24.04
-    # The tree is NOT rustfmt-clean today: it is written to a wider column budget
-    # than rustfmt's default, so `cargo fmt --check` reports a diff in most files
-    # (hundreds of hunks at any max_width). Making that a hard gate now would
-    # redden every PR for something no PR author did, and the alternative - a
-    # one-shot `cargo fmt --all` - rewrites nearly every source file and buries
-    # the history of a young codebase. So this job REPORTS the diff without
-    # blocking. Flip `continue-on-error` to false in the same commit that lands
-    # the mass reformat and pins the width in a rustfmt.toml.
-    continue-on-error: true
+    # A hard gate: the tree is formatted with rustfmt's defaults (no
+    # rustfmt.toml, the same as the rest of Project-Colony), so a red run here
+    # means the PR itself left code unformatted. Run `cargo fmt --all` and push.
+    continue-on-error: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
