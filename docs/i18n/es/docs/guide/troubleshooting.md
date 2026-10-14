@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=427084e50a9961f690747ca6fe98c2f1725defe9 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
 
 # Solución de problemas y diagnóstico
 
@@ -76,9 +76,10 @@ en:
 eidos play skyrimse -- %command%
 ```
 
-Antepón `WINEDLLOVERRIDES="d3dcompiler_47=n"` si Proton necesita el d3dcompiler
-nativo para compilar sombreadores; Eidos lo fusiona con cualquier anulación de DLL
-que traiga un mod (cargadores ENB/ReShade/`.asi`).
+No hace falta ningún prefijo `WINEDLLOVERRIDES`. Cuando un mod activado importa
+`d3dcompiler_47`, Eidos despliega su copia incluida en el prefijo, la fuerza como
+nativa y lo fusiona con cualquier anulación de DLL que traiga un mod (cargadores
+ENB/ReShade/`.asi`).
 
 ### ¿Se está usando de verdad el índice de capas?
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=13248970bb8989b15a41910dd3f9c6564a833325 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f10a5437abda242ca6654c18a34358e156c71a93 -->
 
 # Herramientas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -20,7 +20,7 @@ en:
   activados;
 - **el `mods/` de esta instancia**, que es donde los usuarios de MO2 instalan
   herramientas;
-- la **carpeta de herramientas** que fijas en Settings (Tools -> Tools folder),
+- la **carpeta de herramientas** que fijas en Preferences (General -> Tools),
   para el directorio compartido entre instancias - `/mnt/Games/Tools` y similares.
 
 `PGPatcher.exe` se encuentra de la misma manera en los juegos Creation Engine, y llega con un argumento sin el cual no puede funcionar - vea [mas abajo](#por-que-pgpatcher-necesita---ignore-mo2vfscheck).
@@ -139,8 +139,9 @@ herramienta que necesita uno que nadie podria adivinar: un titulo que contenga
 
 ### Tres clases de prerrequisito
 
-**Nivel 1 - DLL empaquetadas** (`d3dx9_43`, `d3dcompiler_47`, `d3dx11_43`). Eidos
-las trae y las copia en el prefijo al lanzar. Nada que hacer, sin red.
+**Nivel 1 - DLL empaquetadas** (`d3dx9_43`, `d3dcompiler_47`, `d3dcompiler_43`,
+`d3dx11_43`). Eidos las trae y las copia en el prefijo al lanzar. Nada que
+hacer, sin red.
 
 **Nivel 2 - verbos de winetricks** (`vcrun2022`, `dotnet8`, `dotnetdesktop8`,
 `dotnet48`, `xact`...). Estos escriben claves de registro, el GAC y hosts del CLR,
