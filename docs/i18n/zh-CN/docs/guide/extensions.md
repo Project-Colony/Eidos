@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/extensions.md sha=5f31f1cbc3dcbfb9655f3570f01e5ada1377268d -->
+<!-- eidos-i18n: source=docs/guide/extensions.md sha=1d33d938321e5dbf200cd9b7a38c1e5f412fb116 -->
 
 # 扩展
 
@@ -79,4 +79,4 @@ level<TAB>title<TAB>detail
 
 ## 扩展不能做什么
 
-扩展不能回调 Eidos、从压缩包中自行注册，也不能绘制自己的界面控件。使用协议 1 的结构化安装器可以返回经过检查的文件计划和选择提示；审核、暂存及发布由 Eidos 管理。FOMOD 和 BAIN 仍是原生安装器。预览和存档信息扩展也使用同一个对响应设有限制的宿主。有关匹配优先级、已记录的 CLI 回答、限制和重放身份检查，请参阅[协议规范与可运行示例](../../../../examples/extensions/README.md)。
+扩展不能回调 Eidos、从压缩包中自行注册，也不能绘制自己的界面控件。使用协议 1 的结构化安装器可以返回经过检查的文件计划和选择提示；审核、暂存及发布由 Eidos 管理。FOMOD 和 BAIN 仍是原生安装器。预览和存档信息扩展也使用同一个对响应设有限制的宿主。有关匹配优先级、已记录的 CLI 回答、限制和重放身份检查，请参阅[协议规范与可运行示例](../../../../guide/examples/extensions/README.md)。

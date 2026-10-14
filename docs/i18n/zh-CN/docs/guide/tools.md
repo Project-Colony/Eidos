@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=13248970bb8989b15a41910dd3f9c6564a833325 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f10a5437abda242ca6654c18a34358e156c71a93 -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -15,7 +15,7 @@ LOOT 一直在警告的 dirty edits 所对应的按钮。Eidos 按文件名在�
 
 - 游戏的安装目录,以及已启用模组的 `Root/` 树;
 - **本实例的 `mods/`**,MO2 用户就是把工具装在那里;
-- 你在设置里指定的**工具文件夹**(Tools -> Tools folder),用于实例之间共享的
+- 你在偏好设置里指定的**工具文件夹**(General -> Tools),用于实例之间共享的
   那个目录 - 诸如 `/mnt/Games/Tools`。
 
 `PGPatcher.exe` 在 Creation Engine 系列游戏中以同样的方式被找到，并且带着一个缺了就无法工作的参数 - 见[下文](#为什么-pgpatcher-需要---ignore-mo2vfscheck)。
@@ -117,7 +117,8 @@ Executables 对话框中的 `Prereqs` 字段是可以编辑的 - 检测出来的
 
 ### 三种前置
 
-**第一类 - 自带的 DLL**(`d3dx9_43`、`d3dcompiler_47`、`d3dx11_43`)。Eidos
+**第一类 - 自带的 DLL**(`d3dx9_43`、`d3dcompiler_47`、`d3dcompiler_43`、
+`d3dx11_43`)。Eidos
 随包提供它们,并在启动时把它们复制进前缀。无需任何操作,不联网。
 
 **第二类 - winetricks verb**(`vcrun2022`、`dotnet8`、`dotnetdesktop8`、

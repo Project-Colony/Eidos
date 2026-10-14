@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c1396f03f352fe3d3bc10c23662ec659cb9eec2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=929a7bc31548c16e2538cf9f04c51109f51ad2da -->
 
 # 使用 Eidos
 
@@ -283,7 +283,7 @@ eidos play /mnt/games/EidosSkyrim
 cargo run -p eidos-gui
 ```
 
-一个 MO2 风格的首次启动向导,采用 Colony 的羊皮纸 / 酒红观感:欢迎 -> 实例类型
+一个 MO2 风格的首次启动向导,使用 Colony 共享的主题绘制:欢迎 -> 实例类型
 (便携 / 全局)-> 游戏 -> 名称与位置 -> 摘要 -> 创建 -> 主界面。欢迎界面也会列出每一个
 已知的现有实例(全局与便携,最近使用的在前)供一键打开 - 它同时就是实例切换器 - 而把
 向导指向一个已经装着实例的文件夹时,它会原样接管,而不是覆盖着新建(若该文件夹属于
@@ -297,6 +297,23 @@ Conflicts / Overwrite / Saves / Downloads / Diagnostics 各标签页,以及一�
 重排不只有置顶/置底:MO2 那些精确移动这里也有 - 移到第一个冲突模组之上、最后一个之下、
 移到一个明确的优先级,或移进某个分隔条的分组。它们全都走同一个共享的移动助手,所以
 先删行再插回去带来的差一错误只存在于一个地方,而不是五个。
+
+### 偏好设置
+
+点击左上角的 **Eidos**,偏好设置就会取代两个窗格打开;再点一次(或点 **Close**)即可
+返回。和每一个 Colony 程序一样,General、Appearance 和 Accessibility 排在最前,
+然后是 Mod list、Nexus 和 About。每一项改动都立即生效并保存;没有 Save 按钮。
+
+- **General**:Eidos 打开的游戏、窗口大小、界面语言、工具文件夹,以及游戏如何运行。
+  窗口支持英语和法语;**System** 跟随 `LC_ALL`、`LC_MESSAGES` 或 `LANG`,改动立即
+  生效。`eidos` 命令行始终用英语回答。
+- **Appearance**:主题(25 个系列、57 套配色,默认是 Eidos 的羊皮纸)、强调色、
+  文字大小、效果,以及实时预览。
+- **Accessibility**:高对比度、适合阅读障碍者的字体、减少动效,以及一个与
+  Appearance 中的文字大小相乘的阅读文字大小。
+
+这些设置保存在 `~/.config/Colony/Eidos/preferences.json` 里。更早的 Eidos 存在
+`settings.ini` 里的主题会在第一次启动时被迁移过来。
 
 ### 列、排序与分组
 
@@ -397,7 +414,7 @@ Downloads 标签页是一个压缩包**库**,不是传输队列。按名称过�
 
 ### 离线模式
 
-**Settings -> Nexus -> Offline** 让 Eidos 完全不去联系 Nexus。更新检查、登录、下载和
+**Preferences -> Nexus -> Offline** 让 Eidos 完全不去联系 Nexus。更新检查、登录、下载和
 合集都会这么说明,而不是以一个连接错误失败。它默认是关的,除非你打开 - 更早的 Eidos
 写出的设置文件里没有这个键,而把缺失的键读成"开",会把每一个升级上来的人的网络都掐断。
 

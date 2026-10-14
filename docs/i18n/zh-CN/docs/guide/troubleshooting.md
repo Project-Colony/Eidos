@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=427084e50a9961f690747ca6fe98c2f1725defe9 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
 
 # 排查与诊断
 
@@ -64,9 +64,9 @@ A/B 实测,同一份 82 个插件的加载顺序,唯一变量是二进制文件�
 eidos play skyrimse -- %command%
 ```
 
-如果 Proton 需要原生 d3dcompiler 来编译着色器,就在前面加上
-`WINEDLLOVERRIDES="d3dcompiler_47=n"`;Eidos 会把它与模组自带的任何 DLL 覆盖
-(ENB/ReShade/`.asi` 加载器)合并。
+不需要加 `WINEDLLOVERRIDES` 前缀。当某个已启用的模组导入
+`d3dcompiler_47` 时,Eidos 会把自带的副本部署进前缀,强制它以原生方式加载,
+并与模组自带的任何 DLL 覆盖(ENB/ReShade/`.asi` 加载器)合并。
 
 ### 层索引真的在起作用吗?
 
