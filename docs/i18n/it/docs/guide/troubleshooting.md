@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=427084e50a9961f690747ca6fe98c2f1725defe9 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
 
 # Risoluzione dei problemi e diagnostica
 
@@ -75,9 +75,10 @@ su:
 eidos play skyrimse -- %command%
 ```
 
-Anteponi `WINEDLLOVERRIDES="d3dcompiler_47=n"` se Proton ha bisogno del d3dcompiler
-nativo per compilare gli shader; Eidos lo fonde con qualsiasi override di DLL che una
-mod porta con sé (loader ENB/ReShade/`.asi`).
+Non serve alcun prefisso `WINEDLLOVERRIDES`. Quando una mod abilitata importa
+`d3dcompiler_47`, Eidos distribuisce la propria copia inclusa nel prefisso, la
+forza come nativa e fonde questo con qualsiasi override di DLL che una mod porta
+con sé (loader ENB/ReShade/`.asi`).
 
 ### L'indice degli strati è davvero in uso?
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/README.md sha=90a0a24e5ea8b9486d85c2b00959ece00dab0390 -->
+<!-- eidos-i18n: source=docs/README.md sha=d6b5bc8e9d07f3987bbce789c907a4da1dc083be -->
 
 # Documentazione di Eidos
 
@@ -14,14 +14,17 @@ Ordinata per chi legge, non per argomento.
 | [guide/fallout4.it.md](guide/fallout4.md) | Fallout 4: perché non serve alcun trucco di avvio, i rami di versione, il crash dei detriti delle armi su NVIDIA |
 | [guide/graphics.it.md](guide/graphics.md) | Community Shaders, DLSS, frame generation: l'opzione di avvio e gli assassini silenziosi |
 | [guide/troubleshooting.it.md](guide/troubleshooting.md) | quando qualcosa sembra sbagliato: interruttori, contatori, problemi noti |
+| [guide/extensions.md](guide/extensions.md) | aggiungere voci tue: anteprime, informazioni sui salvataggi, installatori, come programmi esterni al processo |
+| [guide/examples/extensions/](../../../guide/examples/extensions/README.md) | il contratto del protocollo delle estensioni, con manifest di esempio eseguibili |
 
 ## Leggere il codice
 
 | | |
 |---|---|
-| [internals/architecture.md](../../../internals/architecture.md) | perché FUSE, il disegno del demone, la cache, la semantica di scrittura |
+| [internals/architecture.md](../../../internals/architecture.md) | perché FUSE, la mappa dei crate e i confini fra i loro processi, il disegno del demone, la cache, la semantica di scrittura |
 | [internals/performance.md](../../../internals/performance.md) | cosa era lento, cosa ha portato ogni modifica, come misurarlo da te |
 | [internals/paths.md](../../../internals/paths.md) | dove Eidos tiene i propri file, e come un aggiornamento li sposta senza perderne nessuno |
+| [internals/integrity.md](../../../internals/integrity.md) | come installazioni, collezioni e output generato restano coerenti quando qualcosa fallisce |
 | [internals/contributing.md](../../../internals/contributing.md) | compilare, testare, e dove sta ogni cosa |
 | [internals/adding-games.md](../../../internals/adding-games.md) | collegare una nuova famiglia di giochi |
 | [internals/packaging.md](../../../internals/packaging.md) | la distribuzione, e perché i formati ovvi non funzionano |
@@ -32,6 +35,6 @@ Ordinata per chi legge, non per argomento.
 |---|---|
 | [project/landscape.md](../../../project/landscape.md) | il problema, ogni approccio Linux, cosa qui è esclusivo |
 | [project/status.md](../../../project/status.md) | il registro completo di fatto/da fare |
-| [project/master-pieces.md](../../../project/master-pieces.md) | lo studio su MO2 + usvfs che ha guidato la parità |
+| [project/game-support.md](../../../project/game-support.md) | cosa serve per installare mod per giochi oltre a quelli Bethesda |
 
 Politica di sicurezza e come segnalare una vulnerabilità: [../SECURITY.md](../../../../SECURITY.md).

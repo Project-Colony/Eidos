@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/extensions.md sha=5f31f1cbc3dcbfb9655f3570f01e5ada1377268d -->
+<!-- eidos-i18n: source=docs/guide/extensions.md sha=1d33d938321e5dbf200cd9b7a38c1e5f412fb116 -->
 
 # Estensioni
 
@@ -88,4 +88,4 @@ si risolvono tutti viene rifiutato, ed Eidos dice quali mancano.
 
 ## Cosa un'estensione non può fare
 
-Un'estensione non può richiamare Eidos, registrarsi da un archivio o disegnare i propri widget. Gli installatori strutturati del protocollo 1 possono restituire piani dei file verificati e richieste di scelta; Eidos gestisce la revisione, la preparazione temporanea e la pubblicazione. FOMOD e BAIN restano installatori nativi. Le estensioni di anteprima e informazioni sui salvataggi usano lo stesso host con risposte limitate. La [specifica del protocollo e gli esempi eseguibili](../../../../examples/extensions/README.md) descrivono la priorità delle corrispondenze, le risposte CLI registrate, i limiti e i controlli d'identità durante la ripetizione.
+Un'estensione non può richiamare Eidos, registrarsi da un archivio o disegnare i propri widget. Gli installatori strutturati del protocollo 1 possono restituire piani dei file verificati e richieste di scelta; Eidos gestisce la revisione, la preparazione temporanea e la pubblicazione. FOMOD e BAIN restano installatori nativi. Le estensioni di anteprima e informazioni sui salvataggi usano lo stesso host con risposte limitate. La [specifica del protocollo e gli esempi eseguibili](../../../../guide/examples/extensions/README.md) descrivono la priorità delle corrispondenze, le risposte CLI registrate, i limiti e i controlli d'identità durante la ripetizione.

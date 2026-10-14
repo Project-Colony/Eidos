@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c1396f03f352fe3d3bc10c23662ec659cb9eec2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=929a7bc31548c16e2538cf9f04c51109f51ad2da -->
 
 # Usare Eidos
 
@@ -386,8 +386,8 @@ eidos play /mnt/games/EidosSkyrim
 cargo run -p eidos-gui
 ```
 
-Una procedura guidata di primo avvio in stile MO2 nell'aspetto pergamena /
-bordeaux di Colony: benvenuto -> tipo di istanza (portatile / globale) -> gioco
+Una procedura guidata di primo avvio in stile MO2, disegnata con i temi
+condivisi di Colony: benvenuto -> tipo di istanza (portatile / globale) -> gioco
 -> nome e posizione -> riepilogo -> creazione -> schermata principale. La
 schermata di benvenuto elenca anche ogni istanza esistente conosciuta (globale e
 portatile, la più recente per prima) da aprire con un clic - fa anche da
@@ -408,6 +408,29 @@ priorità esplicita, o dentro il gruppo di un separatore. Passano tutti da un
 unico helper di spostamento condiviso, così l'errore di uno che nasce dal
 togliere le righe prima di reinserirle esiste in un posto solo invece che in
 cinque.
+
+### Preferenze
+
+Clicca **Eidos**, in alto a sinistra, per aprire le preferenze al posto dei due
+riquadri, e cliccalo di nuovo (o **Close**) per tornare indietro. General,
+Appearance e Accessibility vengono per prime, come in ogni programma Colony, poi
+Mod list, Nexus e About. Ogni modifica si applica e si salva subito; non c'è
+alcun pulsante Save.
+
+- **General**: il gioco che Eidos apre, la dimensione della finestra, la lingua
+  dell'interfaccia, la cartella degli strumenti e il modo in cui un gioco viene
+  eseguito. La finestra parla inglese e francese; **System** segue `LC_ALL`,
+  `LC_MESSAGES` o `LANG`, e la modifica si applica subito. La riga di comando
+  `eidos` risponde sempre in inglese.
+- **Appearance**: il tema (25 famiglie, 57 palette, la pergamena di Eidos per
+  impostazione predefinita), il colore d'accento, la dimensione del testo, gli
+  effetti e un'anteprima dal vivo.
+- **Accessibility**: alto contrasto, un carattere adatto alla dislessia, movimento
+  ridotto e una dimensione del testo di lettura che si moltiplica con quella di
+  Appearance.
+
+Stanno in `~/.config/Colony/Eidos/preferences.json`. Il tema che un Eidos più
+vecchio teneva in `settings.ini` viene trasferito la prima volta.
 
 ### Colonne, ordinamento e raggruppamento
 
@@ -555,7 +578,7 @@ nome invece di confrontare i membri con l'elenco di mod sbagliato, dove ogni
 
 ### Modalità offline
 
-**Settings -> Nexus -> Offline** impedisce del tutto a Eidos di contattare
+**Preferences -> Nexus -> Offline** impedisce del tutto a Eidos di contattare
 Nexus. Il controllo degli aggiornamenti, l'accesso, i download e le collezioni
 lo dicono invece di fallire con un errore di connessione. È disattivata a meno
 che tu non l'attivi - un file di impostazioni scritto da un Eidos più vecchio
