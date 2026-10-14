@@ -1,6 +1,7 @@
 [package]
 name = "eidos-launch"
 version.workspace = true
+rust-version.workspace = true
 description = "Per-launch namespace wrapper: run a game through the Eidos union view"
 license.workspace = true
 repository.workspace = true
@@ -8,7 +9,7 @@ edition.workspace = true
 
 [dependencies]
 eidos-fuse = { path = "../eidos-fuse" }
-libc = "0.2"
+libc.workspace = true
 
 [[test]]
 name = "root_overwrite"

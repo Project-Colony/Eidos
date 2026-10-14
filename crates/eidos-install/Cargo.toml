@@ -1,18 +1,19 @@
 [package]
 name = "eidos-install"
 version.workspace = true
+rust-version.workspace = true
 description = "Eidos mod installer: archive tree, ModDataChecker, wrapper-strip (MO2 Simple installer parity)"
 license = "GPL-3.0-or-later AND GPL-3.0-only"
 repository.workspace = true
 edition.workspace = true
 
 [dependencies]
-encoding_rs = "0.8"
-libc = "0.2"
-crc32fast = "1.5"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-sha2 = { version = "0.11", default-features = false }
+encoding_rs.workspace = true
+libc.workspace = true
+crc32fast.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
 eidos-conflicts = { path = "../eidos-conflicts" }
 eidos-plugins = { path = "../eidos-plugins" }
 eidos-ini = { path = "../eidos-ini" }

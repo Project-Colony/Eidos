@@ -1,6 +1,7 @@
 [package]
 name = "eidos-sevenzip"
 version.workspace = true
+rust-version.workspace = true
 description = "The 7-Zip process seam for Eidos: find the binary, drive it, read its progress"
 license.workspace = true
 repository.workspace = true

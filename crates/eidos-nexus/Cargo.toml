@@ -1,6 +1,7 @@
 [package]
 name = "eidos-nexus"
 version.workspace = true
+rust-version.workspace = true
 description = "Eidos Nexus Mods integration: v1 API client, nxm:// links, MO2-compatible download .meta"
 license.workspace = true
 repository.workspace = true
@@ -9,23 +10,23 @@ edition.workspace = true
 [dependencies]
 # kill(2), to stop a download running in another `eidos nxm` process: the window
 # owns none of its transfers, so pausing one means signalling it.
-libc = "0.2"
-ureq = { version = "3", features = ["json"] }
-serde_json = "1"
+libc.workspace = true
+ureq = { workspace = true, features = ["json"] }
+serde_json.workspace = true
 # PKCE S256: a published transform with a published test vector. Hand-rolling a
 # hash to save a dependency would trade an audited 200 lines for our own.
 # default-features off: 0.11 defaults to `oid`, which drags const-oid into the
 # OAuth path for a crate whose only use is one Sha256::digest (PKCE S256).
-sha2 = { version = "0.11", default-features = false }
+sha2.workspace = true
 # Nexus identifies an archive that arrived with no sidecar by its MD5. Same
 # RustCrypto family and digest version as sha2 above, for the same reason: this
 # is a published algorithm with published vectors, not ours to reimplement.
 # MD5 is used here as a file fingerprint the API asks for, never as a security
 # primitive - which is why `ring`, already in the tree, refuses to provide it.
-md-5 = { version = "0.11", default-features = false }
-base64 = "0.23"
+md-5.workspace = true
+base64.workspace = true
 # JWT signature verification for the OAuth access token. Already in the tree via
 # ureq -> rustls, so this costs a line here and nothing at build time. Nexus
 # signs with RSA-1024, which needs ring's explicitly-named legacy verifier.
-ring = "0.17"
+ring.workspace = true
 eidos-instance = { path = "../eidos-instance" }

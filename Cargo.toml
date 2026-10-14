@@ -1,5 +1,9 @@
 [workspace]
-resolver = "2"
+# Resolver 3 is resolver 2 plus rust-version-aware resolution: `cargo update`
+# picks the newest release of each crate that still builds on the rust-version
+# below, so a transitive crate raising its own floor cannot move ours by
+# accident (design/dependencies.md in Project-Colony-Resources, "Toolchain").
+resolver = "3"
 members = ["crates/eidos-paths", "crates/eidos-core", "crates/eidos-fuse", "crates/eidos-games", "crates/eidos-launch", "crates/eidos-instance", "crates/eidos", "crates/eidos-gui", "crates/eidos-plugins", "crates/eidos-conflicts", "crates/eidos-install", "crates/eidos-fomod", "crates/eidos-gamefeatures", "crates/eidos-gamedef", "crates/eidos-ini", "crates/eidos-sevenzip", "crates/eidos-transfer", "crates/eidos-collections", "crates/eidos-nexus", "crates/eidos-loot", "crates/eidos-log", "crates/eidos-addons"]
 
 [workspace.package]
@@ -11,6 +15,53 @@ version = "1.18.4" # x-release-please-version
 license = "GPL-3.0-or-later"
 repository = "https://github.com/Project-Colony/Eidos"
 edition = "2021"
+# The oldest toolchain the workspace builds on, held honest by the msrv job in
+# CI. libloot 0.29 needs 1.89, which is also above the 1.88 iced 0.14 and
+# colony-ui need. Raise it deliberately, not because a crate raised its own.
+rust-version = "1.89"
+
+# Every external dependency, once, at its full current version: a floating
+# "1.0" looks current forever while the lockfile ages, and the manifest is what
+# a human reads (design/dependencies.md, "How versions are written"). Members
+# inherit with `dep.workspace = true` and add their own features. The exact
+# `=` pins and `default-features = false` live here too: a member cannot turn
+# defaults back off, and each member's manifest says why it needs the crate.
+[workspace.dependencies]
+base64 = "0.23.1"
+bcdec_rs = "=0.2.0"
+bzip2 = "0.6.1"
+colony-ui = "0.1.6"
+crc32fast = "1.5.2"
+ddsfile = "0.6.0"
+dirs = "7.0.0"
+encoding_rs = "0.8.42"
+esplugin = "6.1.4"
+flate2 = "1.1.10"
+fuser = "0.18.0"
+iced = "0.14.0"
+iced_runtime = "0.14.0"
+iced_tiny_skia = "0.14.1"
+# Imported as `image_decoder`, so it never reads as iced's `image` widget.
+image-decoder = { package = "image", version = "0.25.10", default-features = false }
+libc = "0.2.190"
+libloadorder = "=18.8.2"
+libloot = "0.29.6"
+lz4_flex = { version = "=0.14.0", default-features = false }
+md-5 = { version = "0.11.0", default-features = false }
+object = { version = "0.40.0", default-features = false }
+qbsdiff = { version = "=1.4.4", default-features = false }
+quick-xml = "0.42.0"
+rfd = "0.17.2"
+ring = "0.17.14"
+roxmltree = "0.21.1"
+rustix = "1.1.5"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = { version = "0.11.1", default-features = false }
+smol = "2.0.2"
+tempfile = "3.27.0"
+toml = "1.1.8"
+ureq = "3.4.2"
 
 [profile.release]
 # The Colony release profile (design/releases.md in Project-Colony-Resources,

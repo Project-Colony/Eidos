@@ -1,16 +1,17 @@
 [package]
 name = "eidos-plugins"
 version.workspace = true
+rust-version.workspace = true
 description = "Eidos plugin (ESP/ESM/ESL) load order: model, MO2-parity ordering, plugins.txt"
 license.workspace = true
 repository.workspace = true
 edition.workspace = true
 
 [dependencies]
-esplugin = "6"
-encoding_rs = "0.8"
+esplugin.workspace = true
+encoding_rs.workspace = true
 eidos-gamedef = { path = "../eidos-gamedef" }
 eidos-ini = { path = "../eidos-ini" }
 
 [dev-dependencies]
-libloadorder = "=18.8.2"
+libloadorder.workspace = true
