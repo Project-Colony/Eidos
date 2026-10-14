@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=0dcb88f3084e8fd1db8725e83f23670a6f88b578 -->
+<!-- eidos-i18n: source=README.md sha=9c6df24d2b5b403d78e0fd5afa489427e7bf9d71 -->
 
 <div align="center">
 
@@ -10,6 +10,10 @@
 **Nativní správce módů pro Linux, který se nikdy nedotkne vaší hry.**
 
 </div>
+
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](../../../LICENSE)
+[![Colony app](https://img.shields.io/badge/Colony-system-purple)](https://github.com/Project-Colony/Colony)
+[![Platforms](https://img.shields.io/badge/platforms-linux-lightgrey)](#instalace)
 
 Eidos dává hrám od Bethesdy na Linuxu to, co jim na Windows dává
 Mod Organizer 2 - virtuální sloučený pohled na vaše módy, vytvořený znovu při
@@ -46,6 +50,39 @@ Steam ──> eidos-gui %command% ──> [ private namespace ]
 - 🛡️ **Pojistky, které doloží proč.** Pád, který zničí váš seznam pluginů, se
   označí proti snímku pořízenému před sezením a obnova je na jedno kliknutí.
   Zachycení, které by smazalo vaše pořadí načítání, je odmítnuto a řekne proč.
+
+### Jak si stojí ve srovnání
+
+| | Eidos | MO2 přes Wine | Fluorine-Manager | Limo / nasazení přes odkazy |
+|---|---|---|---|---|
+| Správce běží nativně | ✅ | ❌ aplikace Windows ve Wine | ✅ (port do Qt) | ✅ |
+| Složka hry nedotčená | ✅ vždy | ✅ | ✅ | ❌ zapisují se do ní odkazy |
+| Připojení viditelné pro | jen hru | jen hru | **celý systém** | neuplatňuje se |
+| Nutný úklid po pádu | žádný, už z návrhu | žádný | obnova po mrtvém připojení | ruční zrušení nasazení |
+| Root módy (ENB, preloadery) | ✅ nativně | vyžaduje plugin | vyžaduje plugin | částečně |
+| Vyžadovaná oprávnění | žádná | žádná | úprava `/etc/fuse.conf` | žádná |
+
+### Jak je rychlý
+
+| | dříve | nyní |
+|---|---|---|
+| načtení uložené pozice | ~20 sekund | **6-7 sekund** |
+| čtení adresářů v jednom sezení | 5,6 milionu | 465 tisíc |
+
+Přechody mezi buňkami jsou okamžité. Zisk přišel z toho, že se vašich módů ptáme
+méně: hledání jednoho souboru dřív vyslýchalo všech padesát po řadě a výpis
+jedné složky to dělal padesátkrát. Ani jedno už to nedělá. Měřeno na skutečné
+instanci hrané normálně, ne na benchmarku.
+
+### Předchozí práce a poděkování
+
+- [ModOrganizer2](https://github.com/ModOrganizer2/modorganizer) a
+  [usvfs](https://github.com/ModOrganizer2/usvfs) - sémantika, kterou Eidos
+  reprodukuje, a kódová základna, proti které se studovala jeho parita
+- [LOOT](https://loot.github.io/) - řadicí engine, přes libloot
+- [Fluorine-Manager](https://github.com/SulfurNitride/Fluorine-Manager),
+  [Limo](https://github.com/limo-app/limo) a ostatní linuxoví správci - důkaz,
+  že existuje komunita, která chce tohle vyřešit
 
 ## Co umí
 
@@ -111,30 +148,55 @@ soubory. Podrobnosti v [internals/paths.md](../../internals/paths.md)
 
 [Kontroly integrity a vygenerované soubory](../../../docs/internals/integrity.md) (anglicky) popisují ochranu při nahrazování, konflikty souborů v BSA/BA2, statickou diagnostiku SKSE a záznamy generování včetně jejich omezení.
 
-## Jak si stojí ve srovnání
+### Podporované hry
 
-| | Eidos | MO2 přes Wine | Fluorine-Manager | Limo / nasazení přes odkazy |
-|---|---|---|---|---|
-| Správce běží nativně | ✅ | ❌ aplikace Windows ve Wine | ✅ (port do Qt) | ✅ |
-| Složka hry nedotčená | ✅ vždy | ✅ | ✅ | ❌ zapisují se do ní odkazy |
-| Připojení viditelné pro | jen hru | jen hru | **celý systém** | neuplatňuje se |
-| Nutný úklid po pádu | žádný, už z návrhu | žádný | obnova po mrtvém připojení | ruční zrušení nasazení |
-| Root módy (ENB, preloadery) | ✅ nativně | vyžaduje plugin | vyžaduje plugin | částečně |
-| Vyžadovaná oprávnění | žádná | žádná | úprava `/etc/fuse.conf` | žádná |
+**Skyrim SE/AE** - ověřený skutečným hraním. **Fallout 4** je zapojený od
+začátku do konce také (F4SE se podsune automaticky, invalidace archivů, pořadí
+načítání s hvězdičkami, LOOT, uložené pozice `.fos`) - viz
+[guide/fallout4.cs.md](docs/guide/fallout4.md). Zapojené podle sdíleného
+deskriptoru her a hledající testery: Skyrim LE, Skyrim VR, Enderal SE,
+Fallout 3, Fallout NV, Fallout 4 (+ VR), Starfield, Oblivion a Morrowind
+(poslední dvě se připojí a spravují módy; jejich seznamy pluginů řazené podle
+časových značek zatím spravované nejsou).
 
-## Jak je rychlý
+Přidání rodiny je jeden řádek deskriptoru:
+[internals/adding-games.md](../../internals/adding-games.md).
 
-| | dříve | nyní |
-|---|---|---|
-| načtení uložené pozice | ~20 sekund | **6-7 sekund** |
-| čtení adresářů v jednom sezení | 5,6 milionu | 465 tisíc |
+## Instalace
 
-Přechody mezi buňkami jsou okamžité. Zisk přišel z toho, že se vašich módů ptáme
-méně: hledání jednoho souboru dřív vyslýchalo všech padesát po řadě a výpis
-jedné složky to dělal padesátkrát. Ani jedno už to nedělá. Měřeno na skutečné
-instanci hrané normálně, ne na benchmarku.
+### Přes Colony (doporučeno)
 
-## Začínáme
+Vyhledejte **Eidos** v [Colony](https://github.com/Project-Colony/Colony) a
+nainstalujte jej. Aktualizace přicházejí přes spouštěč. Colony nainstaluje
+jediný soubor, `eidos-linux`: okno, a zároveň příkazovou řádku `eidos`, když je
+zavolán přes odkaz pojmenovaný `eidos`. Náhled modelů NIF potřebuje pomocný
+program, který obsahuje jen balík níže; bez něj to náhled řekne a všechno ostatní
+funguje. Co dělat po instalaci a jak na něj nasměrovat Steam:
+[docs/guide/install.md](docs/guide/install.md#přes-colony).
+
+### Přímé stažení binárních souborů
+
+Stáhněte si soubor z [posledního vydání](https://github.com/Project-Colony/Eidos/releases/latest):
+
+| Soubor | Co to je |
+|---|---|
+| `eidos-linux` | celý program v jednom souboru, tak jak jej instaluje Colony |
+| `eidos-linux-bundle.tar.gz` | `eidos`, `eidos-gui`, pomocný program pro náhled NIF, ikony a instalátor, který zaregistruje položku na ploše a obsluhu stahování z Nexusu |
+
+Nejdřív stažený soubor ověřte, jak ukazují
+[zásady podepisování kódu](#zásady-podepisování-kódu), potom:
+
+```bash
+tar xzf eidos-linux-bundle.tar.gz
+cd eidos-linux-bundle
+./install.sh
+```
+
+Instalátor vše umístí do `~/.local/bin` bez sudo; `--system` a `--bindir DIR`
+zvolí jiné místo. Oba soubory potřebují Linux x86_64 s glibc 2.39 nebo novějším,
+FUSE (`fusermount3`) a 7-Zip pro archivy s módy.
+
+### Sestavení ze zdrojových kódů
 
 ```bash
 git clone https://github.com/Project-Colony/Eidos && cd Eidos
@@ -142,20 +204,25 @@ just build
 just install
 ```
 
-Potom nastavte parametr spuštění vaší hry ve Steamu na
-`~/.local/bin/eidos-gui %command%` a stiskněte Hrát.
+Vyžaduje Rust 1.89 nebo novější (`rust-version`, které kontroluje CI; CI a
+vydání sestavují s 1.99.0), plus `just`, CMake 3.20+ a překladač C++17 pro
+pomocný program náhledu NIF. Balíček pro Arch se sestaví z `packaging/PKGBUILD`.
+Prerekvizity a příkazy bez `just`:
+[docs/guide/install.md](docs/guide/install.md).
 
-Balíčky pro Arch a archivy vydání, co je potřeba mít nainstalováno nejdřív, a
-cesta přes příkazovou řádku:
-**[docs/guide/install.cs.md](docs/guide/install.md)**.
+### Parametry spuštění ve Steamu
 
-## Parametry spuštění ve Steamu
-
-Základní řádek je všechno, co většina sestav potřebuje:
+Eidos běží *jako* spouštěcí příkaz hry - právě tak stihne připojit dřív, než se
+hra rozběhne. Základní řádek je všechno, co většina sestav potřebuje, s absolutní
+cestou k vaší instalaci (Steam nečte váš `PATH`):
 
 ```
 ~/.local/bin/eidos-gui %command%
 ```
+
+Z Colony je ta cesta `~/.local/share/Colony/apps/Eidos/eidos-linux`. Potom
+stiskněte Hrát: Eidos se otevře na instanci té hry a Run spustí hru skrz
+sloučený pohled.
 
 Všechno ostatní jsou proměnné prostředí naskládané před něj a volně se
 kombinují:
@@ -184,24 +251,13 @@ Hlubší diagnostické přepínače (`EIDOS_FUSE_TRACE`, přepínače pro bisekc
 indexu, proč je `EIDOS_FUSE_PASSTHROUGH` ve výchozím stavu vypnutý) žijí
 v [guide/troubleshooting.cs.md](docs/guide/troubleshooting.md).
 
-## Kam dál
+## Dokumentace
 
-| Pokud chcete... | |
-|---|---|
-| nainstalovat ho | [guide/install.cs.md](docs/guide/install.md) |
-| naučit se příkazovou řádku a GUI | [guide/usage.cs.md](docs/guide/usage.md) |
-| nastavit xEdit, BodySlide nebo DynDOLOD | [guide/tools.cs.md](docs/guide/tools.md) |
-| hrát Fallout 4 (F4SE, verze, pád na NVIDIA debris) | [guide/fallout4.cs.md](docs/guide/fallout4.md) |
-| rozchodit DLSS / generaci snímků (Community Shaders) | [guide/graphics.cs.md](docs/guide/graphics.md) |
-| opravit něco, co vypadá špatně | [guide/troubleshooting.cs.md](docs/guide/troubleshooting.md) |
-| vědět, proč je rychlý, a ověřit si to sami | [internals/performance.md](../../internals/performance.md) |
-| porozumět tomu, jak funguje uvnitř | [internals/architecture.md](../../internals/architecture.md) |
-| sestavit ho, otestovat, přispět | [internals/contributing.md](../../internals/contributing.md) |
-| vědět, proč vůbec existuje | [project/landscape.md](../../project/landscape.md) |
-
-Jazyk je jeden adresář: `docs/i18n/cs/` zrcadlí kořen repozitáře, takže odkaz mezi
-dvěma přeloženými stránkami je tentýž řetězec jako odkaz mezi jejich anglickými
-originály.
+Všechno je v [docs/](docs/README.md), seřazené podle toho, kdo čte, v
+[docs/README.md](docs/README.md): uživatelská příručka (instalace, příkazová
+řádka a GUI, nástroje jako xEdit a DynDOLOD, grafika, řešení problémů), jak Eidos
+funguje uvnitř a proč existuje. Bezpečnostní politika a jak nahlásit
+zranitelnost: [SECURITY.md](../../../SECURITY.md).
 
 ## Jazyk
 
@@ -236,33 +292,90 @@ aktuálního stavu, se **smaže**, nenechá se ležet: zastaralá stránka poř�
 autoritativně a rozdává příkazy z minulého měsíce, což je pro čtenáře horší než
 být poslán na angličtinu.
 
-Přidání jazyka jsou čtyři soubory a řádek v této tabulce;
-[`docs/internals/contributing.md`](../../internals/contributing.md) má postup.
+Jazyk je jeden adresář. `docs/i18n/<lang>/` zrcadlí kořen repozitáře, takže
+`docs/i18n/de/docs/guide/install.md` je německý `docs/guide/install.md` - právě
+díky tomu je odkaz mezi dvěma přeloženými stránkami TENTÝŽ řetězec jako odkaz
+mezi jejich anglickými originály a vyřazení jazyka je jedno `rm -r`.
 
-## Podporované hry
+## Zásady podepisování kódu
 
-**Skyrim SE/AE** - ověřený skutečným hraním. **Fallout 4** je zapojený od
-začátku do konce také (F4SE se podsune automaticky, invalidace archivů, pořadí
-načítání s hvězdičkami, LOOT, uložené pozice `.fos`) - viz
-[guide/fallout4.cs.md](docs/guide/fallout4.md). Zapojené podle sdíleného
-deskriptoru her a hledající testery: Skyrim LE, Skyrim VR, Enderal SE,
-Fallout 3, Fallout NV, Fallout 4 (+ VR), Starfield, Oblivion a Morrowind
-(poslední dvě se připojí a spravují módy; jejich seznamy pluginů řazené podle
-časových značek zatím spravované nejsou).
+Každý soubor vydání podepisuje organizace Project Colony v CI, nikdy na stroji
+vývojáře. Vedle každého souboru na stránce vydání:
 
-Přidání rodiny je jeden řádek deskriptoru:
-[internals/adding-games.md](../../internals/adding-games.md).
+| Soubor | Co to je |
+|---|---|
+| `<asset>.sig` | podpis ed25519 nad souborem, vytvořený klíčem vydání organizace |
+| `<asset>.meta` | tři řádky, které soubor svazují s jeho názvem, jeho sha256 a verzí vydání |
+| `<asset>.meta.sig` | podpis ed25519 nad `.meta` |
 
-## Předchozí práce a poděkování
+Soukromý klíč je tajemství organizace, které používá jen sdílený
+[workflow sign-and-publish](https://github.com/Project-Colony/Project-Colony-Resources/blob/main/.github/workflows/sign-and-publish.yml)
+v úloze, která nic nesestavuje; úlohy, které kompilují Eidos, jej nikdy nevidí.
+Colony před instalací nebo aktualizací Eidosu kontroluje všechny tři soubory a
+odmítne vydání starší než to nainstalované. Stažený soubor si ověříte sami
+pomocí OpenSSL 3 (tytéž příkazy fungují pro každý soubor):
 
-- [ModOrganizer2](https://github.com/ModOrganizer2/modorganizer) a
-  [usvfs](https://github.com/ModOrganizer2/usvfs) - sémantika, kterou Eidos
-  reprodukuje, a kódová základna, proti které se studovala jeho parita
-- [LOOT](https://loot.github.io/) - řadicí engine, přes libloot
-- [Fluorine-Manager](https://github.com/SulfurNitride/Fluorine-Manager),
-  [Limo](https://github.com/limo-app/limo) a ostatní linuxoví správci - důkaz,
-  že existuje komunita, která chce tohle vyřešit
+```bash
+cat > colony-release.pub <<'EOF'
+-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEARNjg3Nn8H6/aBg1unwGjkUTcrdTxERNefVaqU8cFu0s=
+-----END PUBLIC KEY-----
+EOF
+a=eidos-linux
+openssl pkeyutl -verify -pubin -inkey colony-release.pub -rawin -in "$a" -sigfile "$a.sig"
+openssl pkeyutl -verify -pubin -inkey colony-release.pub -rawin -in "$a.meta" -sigfile "$a.meta.sig"
+cat "$a.meta"     # version=<tag>, asset=<file name>, sha256=<digest>
+sha256sum "$a"    # the digest must equal the sha256 line
+```
+
+Jak se vydání sestavují, podepisují a zveřejňují:
+[design/releases.md](https://github.com/Project-Colony/Project-Colony-Resources/blob/main/design/releases.md#5-signing)
+(anglicky).
+
+## Soukromí
+
+Eidos neposílá žádnou telemetrii, žádnou analytiku a žádná hlášení o pádech.
+Nepřipojuje se k žádnému serveru kromě těch v této tabulce, a to jen kvůli
+akci, která je u nich uvedena. Režim **Offline** (Preferences -> Nexus) zastaví
+každé spojení s Nexusem.
+
+| Data | Uložena, nebo odeslána | Kam a proč |
+|---|---|---|
+| Předvolby, seznam instancí, definice her a doplňků | uložena | `~/.config/Colony/Eidos/` |
+| Instance, stažené runtimy, logy sezení | uložena | `~/.local/share/Colony/Eidos/`, nebo složka, kterou jste zvolili pro přenosnou instanci |
+| Masterlisty LOOT | uložena | `~/.cache/Colony/Eidos/loot/` |
+| Přihlášení k Nexusu | odeslána | Přihlášení otevře ve vašem prohlížeči `users.nexusmods.com`, který výsledek předá zpět naslouchači, jejž Eidos otevře na `127.0.0.1` jen pro toto přihlášení. Eidos jej pak vymění za tokeny na `users.nexusmods.com/oauth/token` a stáhne veřejné klíče, kterými je Nexus podepisuje. [Zásady ochrany soukromí Nexus Mods](https://help.nexusmods.com/article/20-privacy-policy) |
+| Přihlašovací údaje k Nexusu | uložena | Přístupový a obnovovací token, v `~/.config/Colony/Eidos/nexus.ini` s režimem 0600. Řádek `api_key=`, který tam zapsal starší Eidos, se zachová, ale nikdy nečte; klidně jej smažte. |
+| Požadavky na Nexus | odeslána | `api.nexusmods.com`, když použijete funkci Nexusu: jméno vašeho účtu a stav premium, podrobnosti o módech a souborech, kontroly aktualizací, kolekce a odkazy ke stažení. Každý požadavek nese váš přístupový token a uvádí Eidos a jeho verzi. |
+| Stahování z Nexusu | odeslána | Soubory, o které požádáte, z hostitele CDN Nexusu, kterého uvádí odkaz ke stažení, uložené do složky stahování instance s `.meta` ve formátu MO2 vedle každého z nich. |
+| Odkazy `nxm://` | uložena | `eidos nxm --register`, který za vás spustí `install.sh`, zapíše `~/.local/share/applications/eidos-nxm.desktop` a přes `xdg-mime` z něj udělá obsluhu `nxm://`, takže tlačítko Mod Manager Download na webu předá svůj odkaz Eidosu. Balíček pro Arch instaluje stejnou položku pro celý systém. |
+| Masterlisty LOOT | odeslána | `raw.githubusercontent.com/loot/...`, při prvním řazení LOOTem pro danou hru a kdykoli požádáte o aktualizaci. Nic vašeho se neodesílá. [Prohlášení GitHubu o ochraně soukromí](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement) |
+| Runtimy nástrojů | odeslána | Jen když instalujete prerekvizitu nástroje nebo ji potřebuje mód: běhové prostředí .NET z `builds.dotnet.microsoft.com`, odmítnuté, pokud neodpovídá SHA-256 zabudovanému v Eidosu, a `winetricks`, který to, co instaluje do Proton prefixu hry (redistribuovatelné balíky Visual C++ a .NET), stahuje od Microsoftu a z dalších hostitelů, které winetricks používá. [Prohlášení Microsoftu o zásadách ochrany osobních údajů](https://www.microsoft.com/en-us/privacy/privacystatement) |
+| Logy sezení | uložena | `~/.local/share/Colony/Eidos/logs/`, režim 0600: deset sezení na instanci, smazané po 30 dnech. Vaše domovská složka se zapisuje jako `~` a vaše uživatelské jméno jako `<user>`, takže log lze vložit do issue tak, jak je. Váš stroj nikdy neopustí, pokud je sami neodešlete. |
+| Zástupci | uložena | `install.sh` zapíše `eidos.desktop` a jeho ikony pod `~/.local/share`; zástupce nástroje, který vytvoříte, jde do `~/.local/share/applications`. |
+| Odkazy, které otevřete | ani jedno | Stránky módů a další odkazy se otevírají ve vašem vlastním prohlížeči přes `xdg-open`. |
+| Doplňky | ani jedno | Rozšíření, která nainstalujete, běží na vašem stroji jako samostatné programy; co dělají, je jejich věc. |
 
 ## Licence
 
-Původní kód Eidosu je pod licencí GPL-3.0-or-later. Přibalené překlady kódu OMOD jsou pod licencí GPL-3.0-only; viz [poděkování původním autorům](../../../crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md). Pomocný program NIF zachovává [licence součástí a poděkování autorům](../../../native/eidos-nif-preview/UPSTREAM.md). Správa módů patří všem.
+Původní kód Eidosu je pod licencí GPL-3.0-or-later; viz [LICENSE](../../../LICENSE).
+Tyto části jsou pod GPL-3.0 bez možnosti „or later“:
+
+- překlady skriptů OMOD v `eidos-install`; viz jejich
+  [poděkování původním autorům](../../../crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md);
+- pomocný program `eidos-nif-preview`, postavený na přibalené knihovně nifly; viz
+  jeho [licence součástí a poděkování autorům](../../../crates/eidos-nif-preview/UPSTREAM.md);
+- crate `esplugin` a `libloadorder`, které linkuje kód pořadí načítání a které
+  deklarují `GPL-3.0`.
+
+Ostatní crate jazyka Rust v binárních souborech si ponechávají své vlastní
+licence (MIT, Apache-2.0, BSD a podobné). Balík vydání nese jejich oznámení
+v `licenses/crates/` spolu s přehledem každého crate a jeho licence.
+
+Binární soubory také obsahují osm pravých redistribuovatelných DLL Microsoft
+DirectX (`d3dcompiler_47`, `d3dcompiler_43`, `d3dx9_43` a `d3dx11_43`, 32- a
+64bitové), které Eidos nasazuje do prefixu hry, když je potřebuje mód nebo
+nástroj. Zůstávají pod redistribučními podmínkami Microsoftu; viz jejich
+[původ](../../../crates/eidos-gamefeatures/assets/PROVENANCE.md).
+
+Správa módů patří všem.

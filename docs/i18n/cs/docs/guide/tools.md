@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=13248970bb8989b15a41910dd3f9c6564a833325 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f10a5437abda242ca6654c18a34358e156c71a93 -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -17,7 +17,7 @@ edits, na které LOOT pořád upozorňuje. Eidos je hledá podle názvu souboru 
 
 - instalační složce hry a ve stromech `Root/` zapnutých módů;
 - **`mods/` této instance**, kam si nástroje instalují uživatelé MO2;
-- **tools folder**, který nastavíte v Settings (Tools -> Tools folder), pro
+- **tools folder**, který nastavíte v Preferences (General -> Tools), pro
   adresář sdílený mezi instancemi - `/mnt/Games/Tools` a podobně.
 
 `PGPatcher.exe` se stejnym zpusobem najde u her na Creation Engine a prichazi s argumentem, bez ktereho nemuze pracovat - viz [nize](#proc-pgpatcher-potrebuje---ignore-mo2vfscheck).
@@ -128,8 +128,9 @@ neni volitelny, [nize](#proc-pgpatcher-potrebuje---ignore-mo2vfscheck).
 
 ### Tři druhy prerekvizit
 
-**Úroveň 1 - přibalené DLL** (`d3dx9_43`, `d3dcompiler_47`, `d3dx11_43`). Eidos
-je dodává a při spuštění je kopíruje do prefixu. Nic není třeba dělat, žádná síť.
+**Úroveň 1 - přibalené DLL** (`d3dx9_43`, `d3dcompiler_47`, `d3dcompiler_43`,
+`d3dx11_43`). Eidos je dodává a při spuštění je kopíruje do prefixu.
+Nic není třeba dělat, žádná síť.
 
 **Úroveň 2 - winetricks verbs** (`vcrun2022`, `dotnet8`, `dotnetdesktop8`,
 `dotnet48`, `xact`...). Ty zapisují klíče registru, GAC a CLR hosty, takže je

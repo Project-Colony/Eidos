@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c1396f03f352fe3d3bc10c23662ec659cb9eec2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=929a7bc31548c16e2538cf9f04c51109f51ad2da -->
 
 # Používání Eidosu
 
@@ -353,7 +353,7 @@ eidos play /mnt/games/EidosSkyrim
 cargo run -p eidos-gui
 ```
 
-Průvodce prvním spuštěním ve stylu MO2 ve vzhledu Colony pergamen / bordó:
+Průvodce prvním spuštěním ve stylu MO2, vykreslený ve sdílených motivech Colony:
 uvítání -> typ instance (přenosná / globální) -> hra -> název a umístění ->
 shrnutí -> vytvoření -> hlavní obrazovka. Uvítací obrazovka také vypisuje každou
 známou existující instanci (globální i přenosnou, naposledy použité první)
@@ -373,6 +373,26 @@ poslat nad první konfliktní mód, pod poslední, na výslovnou prioritu nebo d
 skupiny oddělovače. Všechny procházejí jedním sdíleným pomocníkem pro přesun,
 takže chyba o jedničku, která vzniká odebráním řádků před jejich opětovným
 vložením, existuje na jednom místě místo na pěti.
+
+### Předvolby
+
+Klikněte vlevo nahoře na **Eidos** a místo obou panelů se otevřou předvolby
+(Preferences); dalším kliknutím (nebo na **Close**) se vrátíte zpět. Nejdřív
+přichází General, Appearance a Accessibility, jako v každém programu Colony,
+potom Mod list, Nexus a About. Každá změna se okamžitě použije i uloží; žádné
+tlačítko Uložit není.
+
+- **General**: hra, kterou Eidos otevře, velikost okna, jazyk rozhraní, složka
+  s nástroji a způsob, jakým se hra spouští. Okno mluví anglicky a francouzsky;
+  **System** se řídí podle `LC_ALL`, `LC_MESSAGES` nebo `LANG` a změna se
+  projeví okamžitě. Příkazová řádka `eidos` odpovídá vždy anglicky.
+- **Appearance**: motiv (25 rodin, 57 palet, ve výchozím stavu pergamen
+  Eidosu), barva zvýraznění, velikost textu, efekty a živý náhled.
+- **Accessibility**: vysoký kontrast, písmo vhodné pro dyslektiky, omezený pohyb
+  a velikost textu pro čtení, která se násobí s tou z Appearance.
+
+Tyto předvolby žijí v `~/.config/Colony/Eidos/preferences.json`. Motiv, který
+starší Eidos držel v `settings.ini`, se napoprvé přenese.
 
 ### Sloupce, řazení a seskupování
 
@@ -505,7 +525,7 @@ spároval s nesprávným seznamem módů, kde by každé „nainstalovaný" a ka
 
 ### Režim offline
 
-**Settings -> Nexus -> Offline** Eidosu zcela zabrání kontaktovat Nexus.
+**Preferences -> Nexus -> Offline** Eidosu zcela zabrání kontaktovat Nexus.
 Kontroly aktualizací, přihlášení, stahování a kolekce to řeknou, místo aby
 selhaly chybou spojení. Je vypnutý, dokud jej nezapnete - soubor nastavení
 zapsaný starším Eidosem takový klíč nemá a číst chybějící jako „zapnuto" by

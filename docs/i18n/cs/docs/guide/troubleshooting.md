@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=427084e50a9961f690747ca6fe98c2f1725defe9 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
 
 # Řešení potíží a diagnostika
 
@@ -75,9 +75,10 @@ Steamu na:
 eidos play skyrimse -- %command%
 ```
 
-Předřaďte `WINEDLLOVERRIDES="d3dcompiler_47=n"`, pokud Proton potřebuje nativní
-d3dcompiler pro kompilaci shaderů; Eidos to sloučí s jakýmikoli DLL overrides,
-které přináší mód (ENB/ReShade/`.asi` loadery).
+Žádná předpona `WINEDLLOVERRIDES` není potřeba. Když zapnutý mód importuje
+`d3dcompiler_47`, Eidos nasadí do prefixu svou přibalenou kopii, vynutí ji jako
+nativní a sloučí to s jakýmikoli DLL overrides, které přináší mód
+(ENB/ReShade/`.asi` loadery).
 
 
 ### Používá se vlastně index vrstev?

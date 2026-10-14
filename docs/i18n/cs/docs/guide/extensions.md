@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/extensions.md sha=5f31f1cbc3dcbfb9655f3570f01e5ada1377268d -->
+<!-- eidos-i18n: source=docs/guide/extensions.md sha=1d33d938321e5dbf200cd9b7a38c1e5f412fb116 -->
 
 # Rozšíření
 
@@ -86,4 +86,4 @@ vyřešit, je odmítnuto a Eidos řekne, které chybí.
 
 ## Co rozšíření nemůže
 
-Rozšíření nemůže zpětně volat Eidos, zaregistrovat se z archivu ani kreslit vlastní widgety. Strukturované instalátory protokolu 1 mohou vracet kontrolované plány souborů a výzvy k výběru; kontrolu, přípravu v dočasném adresáři a zveřejnění řídí Eidos. FOMOD a BAIN zůstávají nativními instalátory. Rozšíření pro náhled a informace o uložených hrách používají stejného hostitele s omezenými odpověďmi. Prioritu přiřazování, zaznamenané odpovědi CLI, limity a kontroly identity při opakování popisuje [specifikace protokolu se spustitelnými příklady](../../../../examples/extensions/README.md).
+Rozšíření nemůže zpětně volat Eidos, zaregistrovat se z archivu ani kreslit vlastní widgety. Strukturované instalátory protokolu 1 mohou vracet kontrolované plány souborů a výzvy k výběru; kontrolu, přípravu v dočasném adresáři a zveřejnění řídí Eidos. FOMOD a BAIN zůstávají nativními instalátory. Rozšíření pro náhled a informace o uložených hrách používají stejného hostitele s omezenými odpověďmi. Prioritu přiřazování, zaznamenané odpovědi CLI, limity a kontroly identity při opakování popisuje [specifikace protokolu se spustitelnými příklady](../../../../guide/examples/extensions/README.md).

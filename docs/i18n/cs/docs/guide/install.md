@@ -1,8 +1,11 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=c47b7d58351d0b72f6e700bf9acb7e3d78af6a5c -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=40f02a87874c44292179b6dff322d0f623c307ff -->
 
 # Instalace Eidosu
 
-Tři cesty dovnitř. Všechny dají `eidos` (příkazovou řádku), `eidos-gui` a pomocný program pro statický náhled NIF, plus obsluhu `nxm://`, díky které tlačítko „Mod Manager Download“ na Nexusu přistane ve vaší instanci.
+Čtyři cesty dovnitř. Colony nainstaluje jediný soubor, `eidos-linux`, který je
+celým programem; ostatní dají vedle sebe `eidos` (příkazovou řádku), `eidos-gui`
+a pomocný program pro statický náhled NIF, plus obsluhu `nxm://`, díky které
+tlačítko „Mod Manager Download“ na Nexusu přistane ve vaší instanci.
 
 ## Co potřebujete nejdřív
 
@@ -16,21 +19,52 @@ Tři cesty dovnitř. Všechny dají `eidos` (příkazovou řádku), `eidos-gui` 
 přidávat do svých skupin. Eidos připojuje uvnitř soukromého jmenného prostoru,
 který patří procesu hry.
 
+## Přes Colony
+
+Vyhledejte **Eidos** v [Colony](https://github.com/Project-Colony/Colony) a
+nainstalujte jej; aktualizace přicházejí přes spouštěč. Colony drží jediný
+soubor, `~/.local/share/Colony/apps/Eidos/eidos-linux`. Spusťte jej a otevře se
+okno. Zavolaný přes odkaz pojmenovaný `eidos` je tentýž soubor příkazovou
+řádkou. Dejte si jeden takový do `PATH` a zaregistrujte obsluhu stahování
+z Nexusu:
+
+```bash
+mkdir -p ~/.local/bin
+ln -s ~/.local/share/Colony/apps/Eidos/eidos-linux ~/.local/bin/eidos
+eidos nxm --register    # the site's Mod Manager Download button now reaches Eidos
+```
+
+Okno žádný odkaz nepotřebuje: kdykoli spouští hru nebo nástroj, spustí svůj
+vlastní soubor jako CLI. Náhled modelů NIF potřebuje `eidos-nif-preview`, který
+obsahuje jen balík vydání a sestavení ze zdrojů; bez něj to náhled řekne a nic
+jiného se nemění. Steam nasměrujte přímo na ten soubor, jak je popsáno níže.
+
+## Balík vydání
+
+Stáhněte `eidos-linux-bundle.tar.gz` a k němu `.sig`, `.meta` a `.meta.sig`
+z [posledního vydání](https://github.com/Project-Colony/Eidos/releases/latest)
+a ověřte je tak, jak ukazují
+[zásady podepisování kódu](../../README.md#zásady-podepisování-kódu) v README.
+Potom:
+
+```bash
+tar xzf eidos-linux-bundle.tar.gz
+cd eidos-linux-bundle
+./install.sh
+```
+
+Ve výchozím stavu instaluje do `~/.local/bin`. `--system` jej dá do
+`/usr/local/bin`, `--bindir DIR` kamkoli jinam. Opětovné spuštění je zamýšlený
+způsob aktualizace. Balík i `eidos-linux` potřebují Linux x86_64 s glibc 2.39
+nebo novějším.
+
 ## Arch
 
 ```bash
 cd packaging && makepkg -si
 ```
 
-## Archiv vydání
-
-```bash
-./install.sh
-```
-
-Ve výchozím stavu instaluje do `~/.local/bin`. `--system` jej dá do
-`/usr/local/bin`, `--bindir DIR` kamkoli jinam. Opětovné spuštění je zamýšlený
-způsob aktualizace.
+PKGBUILD sestaví aktuální `main` ze zdrojových kódů.
 
 ## Ze zdrojových kódů
 
@@ -40,7 +74,7 @@ just build
 just install
 ```
 
-Sestavení ze zdrojů vyžaduje Rust, `just`, CMake 3.20+, překladač C++17 a Python 3 pro testy nativního pomocného programu. Příkazy bez `just` najdete v [pokynech k nativnímu pomocnému programu](../../../../../native/eidos-nif-preview/README.md). Rust sestavte pomocí `cargo build --release --locked`, pomocný program zkopírujte do `target/release` a poté spusťte `packaging/install.sh --from target/release`.
+Sestavení ze zdrojů vyžaduje Rust 1.89 nebo novější, `just`, CMake 3.20+, překladač C++17 a Python 3 pro testy nativního pomocného programu. Příkazy bez `just` najdete v [pokynech k nativnímu pomocnému programu](../../../../../crates/eidos-nif-preview/README.md). Rust sestavte pomocí `cargo build --release --locked`, pomocný program zkopírujte do `target/release` a poté spusťte `packaging/install.sh --from target/release`.
 
 ## Potom: nasměrovat na něj Steam
 
@@ -52,7 +86,8 @@ Parametry spuštění:
 ~/.local/bin/eidos-gui %command%
 ```
 
-Stiskněte Hrát. Eidos se otevře na instanci té hry; instalujte módy, seřaďte
+Z Colony je cesta `~/.local/share/Colony/apps/Eidos/eidos-linux`. Stiskněte
+Hrát. Eidos se otevře na instanci té hry; instalujte módy, seřaďte
 LOOTem, klikněte na Run. Po ukončení připojení zmizí s hrou a vaše instalace je
 přesně taková, jaká byla.
 
@@ -73,6 +108,8 @@ viz [usage.cs.md](usage.md). Kompletní prohlídka je tamtéž.
 ## Volitelně: FUSE passthrough
 
 `sudo setcap cap_sys_admin+ep "$(command -v eidos)"` uděluje volitelné oprávnění, ale nezapíná passthrough.
+Patří na samostatný binární soubor `eidos` z balíku nebo ze sestavení ze zdrojů,
+nikdy na `eidos-linux`, který je zároveň oknem ([SECURITY.md](../../../../../SECURITY.md)).
 `EIDOS_FUSE_PASSTHROUGH=1` je samostatný přepínač při spuštění. Je **ve výchozím stavu vypnutý a téměř jistě to tak chcete
 nechat**: měřeno na Skyrim SE brání hře otevřít vlastní archivy a pluginy, takže
 se módy tiše nenačtou. Přepínač existuje proto, aby šlo mechanismus znovu
