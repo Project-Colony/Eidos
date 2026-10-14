@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c1396f03f352fe3d3bc10c23662ec659cb9eec2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=929a7bc31548c16e2538cf9f04c51109f51ad2da -->
 
 # Usar o Eidos
 
@@ -370,8 +370,8 @@ eidos play /mnt/games/EidosSkyrim
 cargo run -p eidos-gui
 ```
 
-Um assistente de primeiro início no estilo do MO2, no visual pergaminho / bordô
-da Colony: boas-vindas -> tipo de instância (portátil / global) -> jogo -> nome
+Um assistente de primeiro início no estilo do MO2, desenhado com os temas
+compartilhados da Colony: boas-vindas -> tipo de instância (portátil / global) -> jogo -> nome
 e local -> resumo -> criar -> tela principal. A tela de boas-vindas também lista
 toda instância existente conhecida (global e portátil, a última usada primeiro)
 para abrir com um clique - ela serve também de alternador de instâncias - e
@@ -392,6 +392,28 @@ do MO2 também estão aqui - mandar acima do primeiro mod em conflito, abaixo do
 Todos passam por um mesmo auxiliar de movimentação, então o erro de um a mais
 que vem de remover linhas antes de reinseri-las existe em um lugar só, em vez de
 cinco.
+
+### Preferências
+
+Clique em **Eidos**, no canto superior esquerdo, para abrir as Preferências no
+lugar dos dois painéis, e clique de novo (ou em **Close**) para voltar. General,
+Appearance e Accessibility vêm primeiro, como em todo programa da Colony, depois
+Mod list, Nexus e About. Toda mudança é aplicada e salva na hora; não existe
+botão de salvar.
+
+- **General**: o jogo que o Eidos abre, o tamanho da janela, o idioma da
+  interface, a pasta de ferramentas e como um jogo é executado. A janela fala
+  inglês e francês; **System** segue `LC_ALL`, `LC_MESSAGES` ou `LANG`, e a
+  mudança vale na hora. A linha de comando `eidos` sempre responde em inglês.
+- **Appearance**: o tema (25 famílias, 57 paletas, o pergaminho do Eidos por
+  padrão), a cor de destaque, o tamanho do texto, os efeitos e uma prévia ao
+  vivo.
+- **Accessibility**: alto contraste, uma fonte amigável para dislexia, movimento
+  reduzido e um tamanho de texto de leitura que se multiplica pelo de
+  Appearance.
+
+Isso fica em `~/.config/Colony/Eidos/preferences.json`. O tema que um Eidos mais
+antigo guardava em `settings.ini` é trazido na primeira vez.
 
 ### Colunas, ordenação e agrupamento
 
@@ -530,7 +552,7 @@ cada "faltando" seria ruído com forma de resposta.
 
 ### Modo offline
 
-**Settings -> Nexus -> Offline** faz o Eidos parar de contatar o Nexus por
+**Preferences -> Nexus -> Offline** faz o Eidos parar de contatar o Nexus por
 completo. Verificações de atualização, login, downloads e coleções dizem isso em
 vez de falhar com um erro de conexão. Vem desligado a menos que você ligue - um
 arquivo de configuração escrito por um Eidos mais antigo não tem essa chave, e

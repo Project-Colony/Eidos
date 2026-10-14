@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=427084e50a9961f690747ca6fe98c2f1725defe9 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
 
 # Solução de problemas e diagnóstico
 
@@ -73,9 +73,10 @@ Steam como:
 eidos play skyrimse -- %command%
 ```
 
-Prefixe com `WINEDLLOVERRIDES="d3dcompiler_47=n"` se o Proton precisar do
-d3dcompiler nativo para compilar shaders; o Eidos funde isso com qualquer
-sobreposição de DLL que um mod traga (carregadores ENB/ReShade/`.asi`).
+Nenhum prefixo `WINEDLLOVERRIDES` é necessário. Quando um mod ativado importa
+`d3dcompiler_47`, o Eidos implanta a cópia que traz embutida dentro do prefixo,
+força-a como nativa e funde isso com qualquer sobreposição de DLL que um mod
+traga (carregadores ENB/ReShade/`.asi`).
 
 ### O índice de camadas está mesmo em uso?
 

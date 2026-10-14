@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/extensions.md sha=5f31f1cbc3dcbfb9655f3570f01e5ada1377268d -->
+<!-- eidos-i18n: source=docs/guide/extensions.md sha=1d33d938321e5dbf200cd9b7a38c1e5f412fb116 -->
 
 # Extensões
 
@@ -88,4 +88,4 @@ não podem ser todos resolvidos é recusado, e o Eidos diz quais faltam.
 
 ## O que uma extensão não pode fazer
 
-Uma extensão não pode fazer chamadas de volta ao Eidos, registrar-se a partir de um arquivo compactado nem desenhar seus próprios widgets. Instaladores estruturados do protocolo 1 podem retornar planos de arquivos verificados e perguntas com opções; o Eidos controla a revisão, a preparação temporária e a publicação. FOMOD e BAIN continuam sendo instaladores nativos. Extensões de prévia e informações sobre jogos salvos usam o mesmo host com respostas limitadas. Consulte o [contrato do protocolo e os exemplos executáveis](../../../../examples/extensions/README.md) para conhecer a prioridade de correspondência, as respostas CLI registradas, os limites e as verificações de identidade na repetição.
+Uma extensão não pode fazer chamadas de volta ao Eidos, registrar-se a partir de um arquivo compactado nem desenhar seus próprios widgets. Instaladores estruturados do protocolo 1 podem retornar planos de arquivos verificados e perguntas com opções; o Eidos controla a revisão, a preparação temporária e a publicação. FOMOD e BAIN continuam sendo instaladores nativos. Extensões de prévia e informações sobre jogos salvos usam o mesmo host com respostas limitadas. Consulte o [contrato do protocolo e os exemplos executáveis](../../../../guide/examples/extensions/README.md) para conhecer a prioridade de correspondência, as respostas CLI registradas, os limites e as verificações de identidade na repetição.

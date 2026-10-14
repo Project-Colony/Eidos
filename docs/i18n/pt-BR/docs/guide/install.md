@@ -1,8 +1,8 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=c47b7d58351d0b72f6e700bf9acb7e3d78af6a5c -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=40f02a87874c44292179b6dff322d0f623c307ff -->
 
 # Instalar o Eidos
 
-Três caminhos de entrada. Todos fornecem `eidos` (a linha de comando), `eidos-gui` e o programa auxiliar de prévia estática de NIF, além do manipulador `nxm://`, que faz o botão "Mod Manager Download" do Nexus chegar à sua instância.
+Quatro caminhos de entrada. A Colony instala um único arquivo, `eidos-linux`, que é o programa inteiro; os outros fornecem `eidos` (a linha de comando), `eidos-gui` e o programa auxiliar de prévia estática de NIF lado a lado, além do manipulador `nxm://`, que faz o botão "Mod Manager Download" do Nexus chegar à sua instância.
 
 ## O que você precisa antes
 
@@ -16,21 +16,52 @@ Sem root, sem daemon, sem editar `/etc/fuse.conf` e sem nada para acrescentar ao
 seus grupos. O Eidos monta dentro de um espaço de nomes privado que pertence ao
 processo do jogo.
 
+## Via Colony
+
+Procure **Eidos** na [Colony](https://github.com/Project-Colony/Colony) e
+instale; as atualizações chegam pelo lançador. A Colony guarda um único arquivo,
+`~/.local/share/Colony/apps/Eidos/eidos-linux`. Execute-o e a janela abre.
+Chamado por um link chamado `eidos`, o mesmo arquivo é a linha de comando. Ponha
+um no seu `PATH` e registre o manipulador de downloads do Nexus:
+
+```bash
+mkdir -p ~/.local/bin
+ln -s ~/.local/share/Colony/apps/Eidos/eidos-linux ~/.local/bin/eidos
+eidos nxm --register    # the site's Mod Manager Download button now reaches Eidos
+```
+
+A janela não precisa do link: sempre que inicia um jogo ou uma ferramenta, ela
+executa o próprio arquivo como a CLI. A prévia de modelos NIF precisa do
+`eidos-nif-preview`, que só o pacote de versão e as compilações a partir do
+código trazem; sem ele, a prévia avisa, e nada mais é afetado. Aponte o Steam
+para o próprio arquivo, como abaixo.
+
+## Um pacote de versão
+
+Baixe `eidos-linux-bundle.tar.gz` e os arquivos `.sig`, `.meta` e `.meta.sig`
+dele na [versão mais recente](https://github.com/Project-Colony/Eidos/releases/latest),
+e confira-os como mostra a
+[Política de assinatura de código](../../README.md#política-de-assinatura-de-código)
+do README. Depois:
+
+```bash
+tar xzf eidos-linux-bundle.tar.gz
+cd eidos-linux-bundle
+./install.sh
+```
+
+Instala em `~/.local/bin` por padrão. `--system` coloca em `/usr/local/bin`,
+`--bindir DIR` em qualquer outro lugar. Rodar de novo é a forma prevista de
+atualizar. O pacote e o `eidos-linux` exigem Linux x86_64 com glibc 2.39 ou mais
+recente.
+
 ## Arch
 
 ```bash
 cd packaging && makepkg -si
 ```
 
-## Um pacote de versão
-
-```bash
-./install.sh
-```
-
-Instala em `~/.local/bin` por padrão. `--system` coloca em `/usr/local/bin`,
-`--bindir DIR` em qualquer outro lugar. Rodar de novo é a forma prevista de
-atualizar.
+O PKGBUILD compila o `main` atual a partir do código-fonte.
 
 ## A partir do código
 
@@ -40,7 +71,7 @@ just build
 just install
 ```
 
-Compilar a partir do código-fonte exige Rust, `just`, CMake 3.20+, um compilador C++17 e Python 3 para os testes do programa auxiliar nativo. Para comandos sem `just`, consulte as [instruções do programa auxiliar nativo](../../../../../native/eidos-nif-preview/README.md), compile Rust com `cargo build --release --locked`, copie o programa auxiliar para `target/release` e execute `packaging/install.sh --from target/release`.
+Compilar a partir do código-fonte exige Rust 1.89 ou mais recente, `just`, CMake 3.20+, um compilador C++17 e Python 3 para os testes do programa auxiliar nativo. Para comandos sem `just`, consulte as [instruções do programa auxiliar nativo](../../../../../crates/eidos-nif-preview/README.md), compile Rust com `cargo build --release --locked`, copie o programa auxiliar para `target/release` e execute `packaging/install.sh --from target/release`.
 
 ## Depois: apontar o Steam para ele
 
@@ -52,6 +83,7 @@ Propriedades -> Opções de inicialização:
 ~/.local/bin/eidos-gui %command%
 ```
 
+Pela Colony, o caminho é `~/.local/share/Colony/apps/Eidos/eidos-linux`.
 Aperte Jogar. O Eidos abre na instância daquele jogo; instale mods, ordene com o
 LOOT, clique em Run. Ao sair, a montagem vai embora junto e sua instalação fica
 exatamente como estava.
@@ -68,12 +100,16 @@ eidos play skyrimse -- %command%  # rodar qualquer coisa através da visão comb
 ```
 
 Todo comando que aceita um identificador de jogo aceita também a pasta de uma
-instância portátil - veja [usage.pt-BR.md](usage.md). O passeio completo
-está lá.
+instância portátil - veja
+[usage.pt-BR.md](usage.md#instâncias-global-e-portátil). O passeio completo está
+em [usage.pt-BR.md](usage.md).
 
 ## Opcional: passthrough do FUSE
 
 `sudo setcap cap_sys_admin+ep "$(command -v eidos)"` concede a capacidade opcional, mas não ativa o passthrough.
+Ela vai no binário `eidos` separado do pacote de versão ou de uma compilação a
+partir do código, nunca no `eidos-linux`, que também é a janela
+([SECURITY.md](../../../../../SECURITY.md)).
 `EIDOS_FUSE_PASSTHROUGH=1` é a opção separada para ativá-lo durante a execução. Ele está **desligado por padrão e você quase certamente quer que
 continue assim**: medido no Skyrim SE, ele impede o jogo de abrir os próprios
 arquivos e plugins, de modo que os mods silenciosamente não carregam. A chave
