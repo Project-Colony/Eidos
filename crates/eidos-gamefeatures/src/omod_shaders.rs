@@ -1,7 +1,7 @@
 //! Per-launch Oblivion shader composition. No source or persistent Data writes.
 //!
 //! Format and mappings: ModOrganizer2/installer_omod
-//! 43caaa5e849c572791b79255e2331302135be208, src/installerOmod.cpp:127–203;
+//! 43caaa5e849c572791b79255e2331302135be208, src/installerOmod.cpp:127-203;
 //! OMODFramework 05b3d5629124cfa44308b3b78c38959b960b3730,
 //! OMODFramework/Oblivion/OblivionSDP.cs. The format has no checksum: SHA-256
 //! receipts below validate source identity separately from its length fields.

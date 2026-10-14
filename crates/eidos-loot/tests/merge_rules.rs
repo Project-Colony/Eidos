@@ -241,7 +241,10 @@ fn a_collection_extending_an_existing_group_is_applied_not_dropped() {
     assert_eq!(m.groups_extended, vec!["Collection Late".to_string()]);
     let written = fs::read_to_string(&b.userlist).unwrap();
     assert!(written.contains("Early Loaders"), "{written}");
-    assert!(written.contains("default"), "the old entry survives: {written}");
+    assert!(
+        written.contains("default"),
+        "the old entry survives: {written}"
+    );
     let _ = fs::remove_dir_all(&b.root);
 }
 
@@ -261,7 +264,13 @@ fn an_after_rule_is_added_to_what_is_there_rather_than_replacing_it() {
     let m = merge_user_rules(&b.view(), &rules, &[]).expect("merge");
     assert_eq!(m.rules_added, 1);
     let text = fs::read_to_string(&b.userlist).unwrap();
-    assert!(text.contains("Mine.esp"), "the user's rule survives:\n{text}");
-    assert!(text.contains("Theirs.esp"), "and the collection's is added:\n{text}");
+    assert!(
+        text.contains("Mine.esp"),
+        "the user's rule survives:\n{text}"
+    );
+    assert!(
+        text.contains("Theirs.esp"),
+        "and the collection's is added:\n{text}"
+    );
     let _ = fs::remove_dir_all(&b.root);
 }

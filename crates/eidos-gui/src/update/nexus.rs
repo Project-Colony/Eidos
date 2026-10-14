@@ -41,9 +41,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     let nexus = eidos_nexus::Nexus::connect()?;
                     let found = nexus.md5_search(domain, &md5)?;
                     let label = found.remote.name.clone();
-                    eidos_nexus::write_recovered_meta(&path, short, &found).map_err(|e| {
-                        tf("status_identify_sidecar_failed", &[("error", &e)])
-                    })?;
+                    eidos_nexus::write_recovered_meta(&path, short, &found)
+                        .map_err(|e| tf("status_identify_sidecar_failed", &[("error", &e)]))?;
                     Ok(label)
                 })();
                 let _ = tx.send(outcome);
@@ -76,9 +75,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // inside the task, because renewing an OAuth token costs a round trip
             // and must not run on the UI thread.
             if !eidos_nexus::Nexus::have_credentials() {
-                app.status = Some(
-                    t("status_connect_nexus_first").to_string(),
-                );
+                app.status = Some(t("status_connect_nexus_first").to_string());
                 return Task::none();
             }
             let domain = selected_game(app).map(|g| g.def.nexus_game.to_string());
@@ -141,9 +138,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         let Ok(mut meta) =
                             eidos_instance::ModMeta::read_checked(&inst.meta_path(&m.name))
                         else {
-                            app.status = Some(
-                                t("status_endorse_meta_unreadable").into(),
-                            );
+                            app.status = Some(t("status_endorse_meta_unreadable").into());
                             return Task::none();
                         };
                         if meta.mod_id() != Some(mod_id) {
@@ -151,11 +146,16 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         }
                         meta.set("endorsed", if now_endorsed { "1" } else { "0" });
                         if let Err(e) = meta.write(&inst.meta_path(&m.name)) {
-                            app.status = Some(tf("status_endorse_meta_save_failed", &[("error", &e)]));
+                            app.status =
+                                Some(tf("status_endorse_meta_save_failed", &[("error", &e)]));
                             return Task::none();
                         }
                         app.status = Some(tf(
-                            if now_endorsed { "status_endorsed" } else { "status_abstained" },
+                            if now_endorsed {
+                                "status_endorsed"
+                            } else {
+                                "status_abstained"
+                            },
                             &[("name", &m.display_name())],
                         ));
                     }
@@ -170,9 +170,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             }
             if !eidos_nexus::Nexus::have_credentials() {
-                app.status = Some(
-                    t("status_connect_nexus_first").to_string(),
-                );
+                app.status = Some(t("status_connect_nexus_first").to_string());
                 return Task::none();
             }
             let Some(domain) = selected_game(app).map(|g| g.def.nexus_game.to_string()) else {
@@ -285,9 +283,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let parsed = match eidos_nexus::NxmLink::parse(c.link.trim()) {
                 Ok(eidos_nexus::NxmLink::Collection(c)) => c,
                 Ok(eidos_nexus::NxmLink::Mod(_)) => {
-                    c.error = Some(
-                        t("collection_single_mod_link").to_string(),
-                    );
+                    c.error = Some(t("collection_single_mod_link").to_string());
                     return Task::none();
                 }
                 Err(e) => {
@@ -406,9 +402,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 // The escape hatch matters: a transfer that failed leaves its
                 // member missing AND already-asked, so without saying this the
                 // pane looks stuck.
-                app.status = Some(
-                    t("collection_nothing_left").to_string(),
-                );
+                app.status = Some(t("collection_nothing_left").to_string());
                 return Task::none();
             }
             // Two clicks, like every other action here that does something real.
@@ -448,7 +442,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 c.confirm_fetch = false;
             }
             app.status = Some(if left > 0 {
-                tf("collection_started_batch", &[("n", &started), ("left", &left)])
+                tf(
+                    "collection_started_batch",
+                    &[("n", &started), ("left", &left)],
+                )
             } else {
                 tf("collection_started_all", &[("n", &started)])
             });

@@ -153,10 +153,7 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
         return Column::new()
             .spacing(6)
             .push(text(t("tab_archives")).size(sz(13)))
-            .push(
-                text(t("archives_plugins_unknown"))
-                .size(sz(12)),
-            )
+            .push(text(t("archives_plugins_unknown")).size(sz(12)))
             .into();
     };
 
@@ -167,10 +164,7 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
-        .push(
-            text(tf("archives_count", &[("n", &rows.len())]))
-            .size(sz(13)),
-        )
+        .push(text(tf("archives_count", &[("n", &rows.len())])).size(sz(13)))
         .push(Space::new().width(Length::Fill))
         .push(
             text(if orphans == 0 {
@@ -188,8 +182,16 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
 
     let col_header = Row::new()
         .spacing(8)
-        .push(text(t("archives_col_archive")).size(sz(11)).width(Length::FillPortion(3)))
-        .push(text(t("archives_col_from_mod")).size(sz(11)).width(Length::FillPortion(2)))
+        .push(
+            text(t("archives_col_archive"))
+                .size(sz(11))
+                .width(Length::FillPortion(3)),
+        )
+        .push(
+            text(t("archives_col_from_mod"))
+                .size(sz(11))
+                .width(Length::FillPortion(2)),
+        )
         .push(
             text(t("archives_col_loaded_because"))
                 .size(sz(11))
@@ -208,7 +210,9 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
         } else {
             match (&r.by_plugin, r.registered) {
                 (_, true) => text(t("archives_ini_registers")).size(sz(11)).into(),
-                (Some(p), _) => text(tf("archives_plugin_active", &[("plugin", &p)])).size(sz(11)).into(),
+                (Some(p), _) => text(tf("archives_plugin_active", &[("plugin", &p)]))
+                    .size(sz(11))
+                    .into(),
                 (None, false) => text(t("archives_dead_weight"))
                     .size(sz(11))
                     .color(conflict_loses_fg())
@@ -243,9 +247,6 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
         .push(header)
         .push(col_header)
         .push(scrollable(list).height(Length::Fill))
-        .push(
-            text(t("archives_explainer"))
-            .size(sz(10)),
-        )
+        .push(text(t("archives_explainer")).size(sz(10)))
         .into()
 }

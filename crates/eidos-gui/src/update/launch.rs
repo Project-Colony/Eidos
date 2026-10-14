@@ -72,9 +72,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     play_command(id, &inst_arg, &game.install_path, inst, &app.launch_command);
                 start_run(app, game_name, cmd);
                 // Prepend advisories to whatever status start_run set.
-                for note in [se_warning, both_active.then(|| {
-                    t("status_enb_and_cs").to_string()
-                })].into_iter().flatten() {
+                for note in [
+                    se_warning,
+                    both_active.then(|| t("status_enb_and_cs").to_string()),
+                ]
+                .into_iter()
+                .flatten()
+                {
                     if let Some(s) = app.status.take() {
                         app.status = Some(format!("{note} {s}"));
                     }
@@ -154,16 +158,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 // A runtime needs no prefix and no Proton - it is a directory and
                 // an environment variable - so a missing prefix must not block it.
                 (Some(_), _) if !has_prefix && !any_runtime_pending(app) => {
-                    app.status = Some(
-                        t("status_prefix_needed_for_prereqs").to_string(),
-                    );
+                    app.status = Some(t("status_prefix_needed_for_prereqs").to_string());
                 }
                 (Some(arg), Some(log)) => match run_prereqs_setup(&arg, &log) {
                     Ok(()) => {
-                        app.status = Some(tf(
-                            "status_installing_prereqs",
-                            &[("log", &log.display())],
-                        ));
+                        app.status =
+                            Some(tf("status_installing_prereqs", &[("log", &log.display())]));
                     }
                     Err(e) => app.status = Some(tf("status_prereqs_failed", &[("error", &e)])),
                 },

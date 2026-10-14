@@ -1,6 +1,7 @@
 [package]
 name = "eidos-gui"
 version.workspace = true
+rust-version.workspace = true
 description = "Eidos GUI (iced)"
 license.workspace = true
 repository.workspace = true
@@ -13,7 +14,7 @@ eidos = { path = "../eidos" }
 eidos-paths = { path = "../eidos-paths" }
 # utimensat(2): a transferred save has to keep its own timestamp, and std has
 # no portable setter for one.
-libc = "0.2"
+libc.workspace = true
 # `smol` enables iced's timer subscriptions (`iced::time::every`), used to poll a
 # launched game for exit while the GUI is locked.
 # `advanced` is on for ONE thing: `iced::advanced::widget::operate`, which asks
@@ -21,7 +22,7 @@ libc = "0.2"
 # the button that opened it instead of from a coordinate somebody measured off
 # a screenshot - a button is as wide as its label in the resolved font, so no
 # literal can be right on every machine.
-iced = { version = "0.14", features = ["image", "smol", "advanced"] }
+iced = { workspace = true, features = ["image", "smol", "advanced"] }
 # For the hidden-file convention only: the GUI performs the hide/unhide rename,
 # eidos-core decides what the mount shows, and both must agree on the suffix.
 eidos-core = { path = "../eidos-core" }
@@ -48,25 +49,25 @@ eidos-gamedef = { path = "../eidos-gamedef" }
 # Installing a collection from the window runs the SAME driver the terminal
 # does; a second copy of it here is how this workspace got three find_7z.
 eidos-collections = { path = "../eidos-collections" }
-rfd = "0.17"
+rfd.workspace = true
 # Pure Rust block decoding; no encoder or native toolchain is needed for previews.
-bcdec_rs = "=0.2.0"
-ddsfile = "0.5"
-tempfile = "3"
+bcdec_rs.workspace = true
+ddsfile.workspace = true
+tempfile.workspace = true
 # Already used by iced; offload blocking preview work from its async executor.
-smol = "2"
+smol.workspace = true
 # Decode the bundled NIF helper's bounded geometry reply.
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-image-decoder = { package = "image", version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "gif", "webp", "ico", "tga"] }
+serde.workspace = true
+serde_json.workspace = true
+image-decoder = { workspace = true, features = ["png", "jpeg", "bmp", "gif", "webp", "ico", "tga"] }
 # The 25 theme families / 57 palettes of the Colony ecosystem, the eight accent
 # overrides, the high-contrast derivation and the shared pickers - generated from
 # the design tokens in Project-Colony-Resources rather than copied here.
 #
 # Pinned to a tag, as Colony and Xion pin it: a change upstream must not be able
 # to alter this window without a deliberate bump.
-colony-ui = "0.1.6"
+colony-ui.workspace = true
 
 [dev-dependencies]
-iced_runtime = "0.14"
-iced_tiny_skia = "0.14"
+iced_runtime.workspace = true
+iced_tiny_skia.workspace = true

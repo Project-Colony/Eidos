@@ -85,7 +85,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             }
             let _ = std::process::Command::new("xdg-open").arg(&p).spawn();
-            app.status = Some(tf("status_opened_in_file_manager_path", &[("path", &p.display())]));
+            app.status = Some(tf(
+                "status_opened_in_file_manager_path",
+                &[("path", &p.display())],
+            ));
         }
         // ---- menu bar --------------------------------------------------------
         Message::ShowAbout => {

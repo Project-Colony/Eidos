@@ -1,6 +1,6 @@
 use super::*;
-use crate::*;
 use crate::test_support::*;
+use crate::*;
 
 /// The rank each category is required to hold, written out separately from
 /// `ALL`. The match is exhaustive, so adding a category without giving it a
@@ -48,8 +48,15 @@ fn an_accent_can_be_picked_and_given_back() {
     let own = theme::accent();
 
     let _ = update(&mut app, Message::Preference(Change::Accent("green")));
-    assert_eq!(app.ui_prefs.standard.selected_accent.as_deref(), Some("green"));
-    assert_ne!(theme::accent(), own, "the override did not reach the window");
+    assert_eq!(
+        app.ui_prefs.standard.selected_accent.as_deref(),
+        Some("green")
+    );
+    assert_ne!(
+        theme::accent(),
+        own,
+        "the override did not reach the window"
+    );
 
     // Auto accent hands the accent back to the theme.
     let _ = update(&mut app, Message::Preference(Change::AutoAccent(true)));
@@ -63,7 +70,11 @@ fn high_contrast_reaches_the_window() {
     let plain = theme::pal().text_primary;
     let _ = update(&mut app, Message::Preference(Change::HighContrast(true)));
     assert!(app.ui_prefs.standard.high_contrast);
-    assert_ne!(theme::pal().text_primary, plain, "the boost never took effect");
+    assert_ne!(
+        theme::pal().text_primary,
+        plain,
+        "the boost never took effect"
+    );
 }
 
 #[test]
@@ -184,7 +195,10 @@ fn the_page_opens_on_general_with_every_section_shut() {
 
     let _ = update(&mut app, Message::SettingsToggleSection("startup"));
     let _ = update(&mut app, Message::SettingsTabSelected(SettingsTab::Nexus));
-    assert!(app.settings_expanded.contains("startup"), "forgotten while open");
+    assert!(
+        app.settings_expanded.contains("startup"),
+        "forgotten while open"
+    );
 
     let _ = update(&mut app, Message::TogglePreferences);
     let _ = update(&mut app, Message::TogglePreferences);
@@ -198,7 +212,10 @@ fn a_section_header_toggles_rather_than_only_opening() {
     let _ = update(&mut app, Message::SettingsToggleSection("startup"));
     assert!(app.settings_expanded.contains("startup"), "it did not open");
     let _ = update(&mut app, Message::SettingsToggleSection("startup"));
-    assert!(!app.settings_expanded.contains("startup"), "it did not close");
+    assert!(
+        !app.settings_expanded.contains("startup"),
+        "it did not close"
+    );
 }
 
 #[test]
@@ -246,7 +263,10 @@ fn the_server_field_is_stored_as_it_is_typed() {
 #[test]
 fn the_tools_folder_is_stored_as_it_is_typed() {
     let mut app = app_for_game("skyrimse");
-    let _ = update_inner(&mut app, Message::ToolsDirChanged(" /mnt/Tools ".to_string()));
+    let _ = update_inner(
+        &mut app,
+        Message::ToolsDirChanged(" /mnt/Tools ".to_string()),
+    );
     assert_eq!(app.prefs.tools_dir.as_deref(), Some("/mnt/Tools"));
     let _ = update_inner(&mut app, Message::ToolsDirChanged("  ".to_string()));
     assert_eq!(app.prefs.tools_dir, None, "an empty box clears it");

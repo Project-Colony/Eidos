@@ -146,15 +146,25 @@ fn a_plugins_tab_edit_on_a_fresh_morrowind_profile_keeps_the_real_ini() {
     app.created = Some(inst.clone());
     let spec = game.plugin_spec().unwrap();
     let mut list = inst
-        .plugin_list(&game.data_path, "morrowind", game.plugin_state_dir().as_deref())
+        .plugin_list(
+            &game.data_path,
+            "morrowind",
+            game.plugin_state_dir().as_deref(),
+        )
         .unwrap();
     assert!(list.set_enabled("B.esp", false));
     write_plugin_state(&app, &list, &spec).unwrap();
     let written =
         fs::read_to_string(inst.active().plugins_state_dir().join("Morrowind.ini")).unwrap();
     assert!(written.contains("Subtitles=1"), "{written}");
-    assert!(written.contains("GameFile0=A.esp") && !written.contains("B.esp"), "{written}");
-    assert_eq!(fs::read_to_string(game.install_path.join("Morrowind.ini")).unwrap(), ini);
+    assert!(
+        written.contains("GameFile0=A.esp") && !written.contains("B.esp"),
+        "{written}"
+    );
+    assert_eq!(
+        fs::read_to_string(game.install_path.join("Morrowind.ini")).unwrap(),
+        ini
+    );
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -182,7 +192,11 @@ fn a_plugin_edit_in_a_stale_window_does_not_revert_another_process_sort() {
     // window keeps the list it read before.
     let state = inst.active().plugins_state_dir().join("Morrowind.ini");
     let sorted = "[General]\r\n[Game Files]\r\nGameFile0=A.esp\r\nGameFile1=B.esp\r\n";
-    assert_ne!(fs::read_to_string(&state).unwrap(), sorted, "the sort must change something");
+    assert_ne!(
+        fs::read_to_string(&state).unwrap(),
+        sorted,
+        "the sort must change something"
+    );
     fs::write(&state, sorted).unwrap();
     let mut stale = list.clone();
     assert!(stale.set_enabled("B.esp", false));
@@ -269,8 +283,7 @@ fn gui_plugin_discovery_and_diagnostics_ignore_whiteouted_plugins() {
     let (mut app, root) = list_app(&["Broken"]);
     let inst = app.created.clone().unwrap();
     fs::write(app.mods[0].path.join("Broken.esp"), b"invalid header").unwrap();
-    let stack =
-        eidos_core::LayerStack::new(vec![app.mods[0].path.clone()], inst.overwrite_dir());
+    let stack = eidos_core::LayerStack::new(vec![app.mods[0].path.clone()], inst.overwrite_dir());
     stack.remove("Broken.esp").unwrap();
     app.plugins = compute_plugins(&app);
     assert!(!app
@@ -674,9 +687,9 @@ fn preflight_diagnostics_show_the_winning_dll_and_persistent_warnings() {
     assert!(found.iter().any(|d| d.title.contains("pe_unverified")
         && d.detail.contains("Overwrite")
         && d.detail.contains("overwrite/SKSE/Plugins/TEST.DLL")));
-    assert!(found.iter().any(
-        |d| d.title.contains("Incomplete installation") && d.detail.contains("needed.nif")
-    ));
+    assert!(found
+        .iter()
+        .any(|d| d.title.contains("Incomplete installation") && d.detail.contains("needed.nif")));
     assert!(found
         .iter()
         .any(|d| d.detail.contains("Corrupt archive Test.bsa")));

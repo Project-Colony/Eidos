@@ -1,6 +1,7 @@
 [package]
 name = "eidos-paths"
 version.workspace = true
+rust-version.workspace = true
 description = "Where Eidos keeps its files: the Colony filesystem layout, and the migration onto it"
 license.workspace = true
 repository.workspace = true
@@ -11,9 +12,10 @@ edition.workspace = true
 # Rebuilding it here by hand is what the Colony layout rule exists to stop: the
 # helper is the only place the `Colony/<Program>` shape, the absolute-only XDG
 # rule and the per-platform roots are written down.
-colony-ui = "0.1.5"
+colony-ui.workspace = true
 # Only for the roots of the layout Eidos used BEFORE it joined the ecosystem
 # (`~/.config/eidos`, `~/.local/share/eidos`, `~/.local/state/eidos`), which no
-# Colony helper names because no other program ever used them. Already in the
-# graph through colony-ui, at the same version.
-dirs = "6"
+# Colony helper names because no other program ever used them. colony-ui 0.1.6
+# still carries dirs 6, so both majors sit in the graph until its next release;
+# 7 only changed `preference_dir` on Windows, which nothing here calls.
+dirs.workspace = true

@@ -129,7 +129,10 @@ mod tests {
             }
         }
         let mut sources = Vec::new();
-        walk(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut sources);
+        walk(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut sources,
+        );
         let mut missing = BTreeSet::new();
         let mut used = 0;
         for body in &sources {
@@ -195,8 +198,17 @@ mod tests {
     #[test]
     fn placeholders_are_filled() {
         assert_eq!(
-            tf("settings_signed_in_as", &[("name", &"Lin"), ("tier", &t_in(Locale::En, "settings_tier_free"))]),
-            format!("Signed in as Lin ({}).", t_in(Locale::En, "settings_tier_free"))
+            tf(
+                "settings_signed_in_as",
+                &[
+                    ("name", &"Lin"),
+                    ("tier", &t_in(Locale::En, "settings_tier_free"))
+                ]
+            ),
+            format!(
+                "Signed in as Lin ({}).",
+                t_in(Locale::En, "settings_tier_free")
+            )
         );
     }
 }

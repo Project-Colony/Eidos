@@ -818,7 +818,7 @@ fn bsa_writer_rejects_unsafe_aliases_and_is_deterministic() {
     assert!(bsa::generate(&good, &AtomicBool::new(true)).is_err());
 }
 
-// SHA-256 goldens from an independent literal-operation extraction of H:157–264.
+// SHA-256 goldens from an independent literal-operation extraction of H:157-264.
 #[test]
 fn nif_derivative_bytes_match_pinned_source_goldens() {
     use sha2::Digest;

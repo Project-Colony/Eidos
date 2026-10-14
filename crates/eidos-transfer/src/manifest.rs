@@ -318,7 +318,10 @@ mod tests {
             back.left_out,
             vec![("mods/we ird".into(), "a symbolic link".into())]
         );
-        assert_eq!(back.game_id, "skyrimse", "the rest of the file still parsed");
+        assert_eq!(
+            back.game_id, "skyrimse",
+            "the rest of the file still parsed"
+        );
     }
 
     #[test]

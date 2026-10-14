@@ -366,8 +366,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     app.status = Some(tf("status_opening", &[("url", &url)]));
                 }
                 _ => {
-                    app.status =
-                        Some(t("status_no_nexus_id").to_string());
+                    app.status = Some(t("status_no_nexus_id").to_string());
                 }
             }
         }
@@ -528,7 +527,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             let _lock = match inst.try_lock("the Eidos window") {
                                 Ok(l) => l,
                                 Err(e) => {
-                                    app.status = Some(tf("status_cannot_rename_now", &[("error", &e)]));
+                                    app.status =
+                                        Some(tf("status_cannot_rename_now", &[("error", &e)]));
                                     return Task::none();
                                 }
                             };
@@ -572,7 +572,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                                     });
                                     mods_changed(app);
                                 }
-                                Err(e) => app.status = Some(tf("status_rename_failed", &[("error", &e)])),
+                                Err(e) => {
+                                    app.status = Some(tf("status_rename_failed", &[("error", &e)]))
+                                }
                             }
                         }
                     }
@@ -722,7 +724,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         }
                     };
                     app.status = Some(tf(
-                        if now { "status_tracking" } else { "status_untracked" },
+                        if now {
+                            "status_tracking"
+                        } else {
+                            "status_untracked"
+                        },
                         &[("name", &m.display_name())],
                     ));
                 }
@@ -745,7 +751,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         }
                     };
                     app.status = Some(tf(
-                        if now { "status_ignoring_updates" } else { "status_checking_updates" },
+                        if now {
+                            "status_ignoring_updates"
+                        } else {
+                            "status_checking_updates"
+                        },
                         &[("name", &m.display_name())],
                     ));
                     // The ignore flag lives in this mod's meta.ini.
@@ -838,8 +848,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 .file_name()
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            let base =
-                eidos_install::fix_directory_name(&raw).unwrap_or_else(|| t("new_mod_name").to_string());
+            let base = eidos_install::fix_directory_name(&raw)
+                .unwrap_or_else(|| t("new_mod_name").to_string());
             let name = suggest_free_name(&mods_dir, &base);
             let dest = mods_dir.join(&name);
             // Copy the folder's CONTENTS into mods/<name>/ (not the folder itself),
@@ -927,9 +937,17 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 eidos_instance::mod_list_csv(&inst, &app.mods, d.scope, &d.picked(), domain);
             match std::fs::write(&path, csv) {
                 Ok(()) => {
-                    app.status = Some(tf("status_exported", &[("n", &count), ("path", &path.display())]))
+                    app.status = Some(tf(
+                        "status_exported",
+                        &[("n", &count), ("path", &path.display())],
+                    ))
                 }
-                Err(e) => app.status = Some(tf("status_write_failed", &[("path", &path.display()), ("error", &e)])),
+                Err(e) => {
+                    app.status = Some(tf(
+                        "status_write_failed",
+                        &[("path", &path.display()), ("error", &e)],
+                    ))
+                }
             }
         }
         Message::SetAllModsEnabled(enable) => {
@@ -956,7 +974,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
             if changed == 0 {
                 app.status = Some(tf(
-                    if enable { "status_already_enabled" } else { "status_already_disabled" },
+                    if enable {
+                        "status_already_enabled"
+                    } else {
+                        "status_already_disabled"
+                    },
                     &[("n", &targets.len())],
                 ));
                 return Task::none();
@@ -980,11 +1002,19 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 (false, false) => tf("status_disabled_n", &[("n", &changed)]),
                 (true, true) => tf(
                     "status_enabled_n_on_screen",
-                    &[("n", &changed), ("shown", &targets.len()), ("total", &total)],
+                    &[
+                        ("n", &changed),
+                        ("shown", &targets.len()),
+                        ("total", &total),
+                    ],
                 ),
                 (false, true) => tf(
                     "status_disabled_n_on_screen",
-                    &[("n", &changed), ("shown", &targets.len()), ("total", &total)],
+                    &[
+                        ("n", &changed),
+                        ("shown", &targets.len()),
+                        ("total", &total),
+                    ],
                 ),
             });
         }
@@ -1013,7 +1043,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.menu_mod = None;
             if mods_changed(app) {
                 app.status = Some(tf(
-                    if new_state { "status_enabled_n" } else { "status_disabled_n" },
+                    if new_state {
+                        "status_enabled_n"
+                    } else {
+                        "status_disabled_n"
+                    },
                     &[("n", &targets.len())],
                 ));
             }
@@ -1070,7 +1104,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let mut status = if failed == 0 {
                 tf("status_removed_n", &[("n", &removed)])
             } else {
-                tf("status_removed_n_failed", &[("n", &removed), ("failed", &failed)])
+                tf(
+                    "status_removed_n_failed",
+                    &[("n", &removed), ("failed", &failed)],
+                )
             };
             // Before the save: every profile's modlist.txt still lists the deleted
             // folders, and a big enough batch of listed-but-missing mods is exactly
@@ -1079,7 +1116,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // one that failed keeps its line, its slot and its enabled state.
             let forgot = forget_removed_mods(app, &gone);
             if let Some(Err(e)) = forgot {
-                status = format!("{status} {}", tf("status_list_update_failed", &[("error", &e)]));
+                status = format!(
+                    "{status} {}",
+                    tf("status_list_update_failed", &[("error", &e)])
+                );
             }
             // Set BEFORE mods_changed, which replaces it with the reason if the
             // save is refused; set after, it hid that refusal behind "Removed".
@@ -1212,7 +1252,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     app.conflicts = compute_conflicts(app);
                     app.status = Some(tf("status_backup_saved", &[("path", &dest.display())]));
                 }
-                Err(error) => app.error = Some(tf("status_backup_failed", &[("name", &name), ("error", &error)])),
+                Err(error) => {
+                    app.error = Some(tf(
+                        "status_backup_failed",
+                        &[("name", &name), ("error", &error)],
+                    ))
+                }
             }
         }
         Message::ModRestoreBackup(i) => {
@@ -1262,7 +1307,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 };
                 let _ = std::fs::remove_dir_all(&stash);
                 if let Err(e) = std::fs::rename(&target, &stash) {
-                    app.error = Some(tf("status_restore_failed", &[("name", &orig), ("error", &e)]));
+                    app.error = Some(tf(
+                        "status_restore_failed",
+                        &[("name", &orig), ("error", &e)],
+                    ));
                     return Task::none();
                 }
                 match copy_dir_contents(&src, &target) {
@@ -1274,8 +1322,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         // Put it back exactly as it was.
                         let _ = std::fs::remove_dir_all(&target);
                         let _ = std::fs::rename(&stash, &target);
-                        app.error =
-                            Some(tf("status_restore_failed_unchanged", &[("name", &orig), ("error", &e)]));
+                        app.error = Some(tf(
+                            "status_restore_failed_unchanged",
+                            &[("name", &orig), ("error", &e)],
+                        ));
                         false
                     }
                 }

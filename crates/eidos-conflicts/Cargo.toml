@@ -1,17 +1,18 @@
 [package]
 name = "eidos-conflicts"
 version.workspace = true
+rust-version.workspace = true
 description = "Eidos per-file conflict analysis: winners, losers, per-mod conflict state"
 license.workspace = true
 repository.workspace = true
 edition.workspace = true
 
 [dependencies]
-encoding_rs = "0.8"
-flate2 = "1"
-lz4_flex = { version = "=0.14.0", default-features = false, features = ["std", "frame", "safe-encode", "safe-decode", "checked-decode"] }
-tempfile = "3"
-rustix = { version = "1", features = ["fs"] }
+encoding_rs.workspace = true
+flate2.workspace = true
+lz4_flex = { workspace = true, features = ["std", "frame", "safe-encode", "safe-decode", "checked-decode"] }
+tempfile.workspace = true
+rustix = { workspace = true, features = ["fs"] }
 
 [dev-dependencies]
-ddsfile = "0.5"
+ddsfile.workspace = true

@@ -741,11 +741,7 @@ fn unpack_group(
         if !rest.is_empty() {
             return Err(invalid("trailing bytes after final payload member"));
         }
-        on_progress(if expected == 0 {
-            100
-        } else {
-            ((total * 100) / expected) as u8
-        });
+        on_progress((total * 100).checked_div(expected).map_or(100, |p| p as u8));
         Ok(())
     };
     decode_stream(bin, input, member, expected, cancelled, &mut advance)?;
@@ -836,11 +832,11 @@ fn decode_container(
                 metadata.compression,
                 cancelled,
                 |percent| {
-                    on_progress(if total == 0 {
-                        100
-                    } else {
-                        ((completed + group_bytes * u64::from(percent) / 100) * 100 / total) as u8
-                    })
+                    on_progress(
+                        ((completed + group_bytes * u64::from(percent) / 100) * 100)
+                            .checked_div(total)
+                            .map_or(100, |p| p as u8),
+                    )
                 },
             )?;
             completed += group_bytes;

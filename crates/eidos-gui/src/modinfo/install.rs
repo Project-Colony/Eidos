@@ -153,7 +153,10 @@ pub(crate) fn after_install_report(
     if let Some(backup) = report.backup {
         let status = app.status.get_or_insert_with(String::new);
         status.push(' ');
-        status.push_str(&tf("status_backup_retained", &[("path", &backup.display())]));
+        status.push_str(&tf(
+            "status_backup_retained",
+            &[("path", &backup.display())],
+        ));
     }
 }
 
@@ -376,7 +379,10 @@ pub(crate) fn after_install(
             &[("name", &name), ("where", &where_to), ("note", &note)],
         )
     });
-    for warning in [warning, registration_warning, move_refused].into_iter().flatten() {
+    for warning in [warning, registration_warning, move_refused]
+        .into_iter()
+        .flatten()
+    {
         if let Some(status) = &mut app.status {
             status.push(' ');
             status.push_str(&tf("status_warning", &[("warning", &warning)]));
@@ -463,13 +469,14 @@ pub(crate) fn collision_dialog<'a>(c: &CollisionPrompt) -> Element<'a, Message> 
         .spacing(10)
         .push(text(tf("install_exists_title", &[("name", &c.name)])).size(sz(15)))
         .push(text(t("install_exists_body")).size(sz(12)))
-        .push(checkbox(c.backup).label(t("install_keep_backup"))
-            .on_toggle(Message::CollisionBackupChanged).text_size(sz(12)))
-        .push(buttons)
         .push(
-            text(t("install_merge_replace_note"))
-                .size(sz(10)),
+            checkbox(c.backup)
+                .label(t("install_keep_backup"))
+                .on_toggle(Message::CollisionBackupChanged)
+                .text_size(sz(12)),
         )
+        .push(buttons)
+        .push(text(t("install_merge_replace_note")).size(sz(10)))
         .push(rename)
         .push(
             button(text(t("common_cancel")).size(sz(12)))
@@ -509,9 +516,7 @@ pub(crate) fn nested_archive_hint(rows: &[eidos_install::TreeRow]) -> Option<Str
         .count();
     match n {
         0 => None,
-        1 => Some(
-            t("install_nested_one").to_string(),
-        ),
+        1 => Some(t("install_nested_one").to_string()),
         n => Some(tf("install_nested_many", &[("n", &n)])),
     }
 }
@@ -543,8 +548,7 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
             Column::new()
                 .spacing(10)
                 .push(
-                    text(tf("install_maybe_bain_body", &[("n", &subpackages.len())]))
-                    .size(sz(12)),
+                    text(tf("install_maybe_bain_body", &[("n", &subpackages.len())])).size(sz(12)),
                 )
                 .push(
                     Row::new()
@@ -585,10 +589,7 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
                 t("install_choose_subpackages").to_string(),
                 Column::new()
                     .spacing(8)
-                    .push(
-                        text(t("install_subpackages_note"))
-                            .size(sz(11)),
-                    )
+                    .push(text(t("install_subpackages_note")).size(sz(11)))
                     .push(scrollable(list).height(Length::Fixed(240.0)))
                     .into(),
             )
@@ -654,12 +655,7 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
                     // have always counted too - and became actively misleading once
                     // the vocabulary went per-game: a Stellar Blade mod is
                     // recognised ONLY by its `.pak`, never by a folder.
-                    .push(
-                        text(
-                            t("install_root_hint"),
-                        )
-                        .size(sz(10)),
-                    )
+                    .push(text(t("install_root_hint")).size(sz(10)))
                     // The case that sends people round in circles: an archive whose
                     // real content is another archive. Nothing here can install it,
                     // and without saying so the dialog just repeats that nothing

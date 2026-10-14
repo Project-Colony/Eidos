@@ -71,7 +71,7 @@ pub fn decode(bytes: &[u8], selection: Selection) -> Result<DecodedDds, String> 
     if parsed.block_size == 0 {
         rgba.copy_from_slice(data);
         if matches!(parsed.format as u32, 87 | 88 | 91 | 93) {
-            for pixel in rgba.chunks_exact_mut(4) {
+            for pixel in rgba.as_chunks_mut::<4>().0 {
                 pixel.swap(0, 2);
             }
         }
@@ -88,17 +88,15 @@ pub fn decode(bytes: &[u8], selection: Selection) -> Result<DecodedDds, String> 
             }
         }
     }
-    for pixel in rgba.chunks_exact_mut(4) {
+    for pixel in rgba.as_chunks_mut::<4>().0 {
         if parsed.alpha == AlphaMode::Opaque {
             pixel[3] = 255;
         } else if parsed.alpha == AlphaMode::PreMultiplied {
             let alpha = u32::from(pixel[3]);
             for value in &mut pixel[..3] {
-                *value = if alpha == 0 {
-                    0
-                } else {
-                    ((u32::from(*value) * 255 + alpha / 2) / alpha).min(255) as u8
-                };
+                *value = (u32::from(*value) * 255 + alpha / 2)
+                    .checked_div(alpha)
+                    .map_or(0, |v| v.min(255) as u8);
             }
         }
         match selection.channel {
@@ -193,7 +191,12 @@ fn parse(bytes: &[u8]) -> Result<Parsed<'_>, String> {
         28 | 29 | 87 | 88 | 91 | 93 => 0,
         71 | 72 | 80 | 81 => 8,
         74 | 75 | 77 | 78 | 83 | 84 | 95 | 96 | 98 | 99 => 16,
-        _ => return Err(tf("dds_format_unsupported", &[("format", &format!("{format:?}"))])),
+        _ => {
+            return Err(tf(
+                "dds_format_unsupported",
+                &[("format", &format!("{format:?}"))],
+            ))
+        }
     };
     if matches!(format as u32, 88 | 93) {
         alpha = AlphaMode::Opaque;
@@ -306,7 +309,7 @@ fn decode_block(block: &[u8], format: DxgiFormat) -> Result<[u8; 64], String> {
             } else {
                 bcdec_rs::bc4_float(block, &mut rg, 4, signed);
             }
-            for (i, pixel) in rgba.chunks_exact_mut(4).enumerate() {
+            for (i, pixel) in rgba.as_chunks_mut::<4>().0.iter_mut().enumerate() {
                 let display = |v: f32| unorm(if signed { v * 0.5 + 0.5 } else { v });
                 let r = display(rg[i * if two { 2 } else { 1 }]);
                 pixel.copy_from_slice(&if two {
@@ -322,7 +325,12 @@ fn decode_block(block: &[u8], format: DxgiFormat) -> Result<[u8; 64], String> {
             }
             let mut rgb = [0.0; 48];
             bcdec_rs::bc6h_float(block, &mut rgb, 12, format as u32 == 96);
-            for (source, pixel) in rgb.chunks_exact(3).zip(rgba.chunks_exact_mut(4)) {
+            for (source, pixel) in rgb
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .zip(rgba.as_chunks_mut::<4>().0)
+            {
                 pixel.copy_from_slice(&[
                     hdr_channel(source[0]),
                     hdr_channel(source[1]),

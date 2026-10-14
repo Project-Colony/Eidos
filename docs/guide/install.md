@@ -68,7 +68,7 @@ just build
 just install
 ```
 
-Source builds require Rust, `just`, CMake 3.20+, a C++17 compiler and Python 3
+Source builds require Rust 1.89 or newer, `just`, CMake 3.20+, a C++17 compiler and Python 3
 for the native helper's tests. For commands without `just`, see
 [the native helper instructions](../../crates/eidos-nif-preview/README.md),
 build Rust with `cargo build --release --locked`, copy the helper into

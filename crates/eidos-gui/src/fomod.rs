@@ -505,9 +505,17 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
         );
     }
     nav = nav.push(Space::new().width(Length::Fill));
-    nav = nav.push(fomod_btn(t("common_cancel"), Some(Message::FomodCancel), false));
+    nav = nav.push(fomod_btn(
+        t("common_cancel"),
+        Some(Message::FomodCancel),
+        false,
+    ));
     if has_prev {
-        nav = nav.push(fomod_btn(t("installer_back"), Some(Message::FomodBack), false));
+        nav = nav.push(fomod_btn(
+            t("installer_back"),
+            Some(Message::FomodBack),
+            false,
+        ));
     }
     let (label, msg) = if has_next {
         (t("wizard_next"), Message::FomodNext)

@@ -101,9 +101,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             };
             if !k.portable {
-                app.status = Some(
-                    t("status_global_nothing_to_forget").to_string(),
-                );
+                app.status = Some(t("status_global_nothing_to_forget").to_string());
                 return Task::none();
             }
             let mut reg = eidos_instance::Registry::load_from(&app.registry_path);
@@ -155,18 +153,14 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             }
             if !k.portable {
-                app.status = Some(
-                    t("status_global_no_folder").to_string(),
-                );
+                app.status = Some(t("status_global_no_folder").to_string());
                 return Task::none();
             }
             // Renaming the folder out from under the OPEN instance would leave
             // every cached path in the window pointing at somewhere that no
             // longer exists - including the lock it is holding.
             if app.created.as_ref().is_some_and(|c| c.root == k.inst.root) {
-                app.status = Some(
-                    t("status_instance_is_open").to_string(),
-                );
+                app.status = Some(t("status_instance_is_open").to_string());
                 return Task::none();
             }
             // And not one ANOTHER process is using. `app.created` only knows
@@ -200,7 +194,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     match reg.save_to(&app.registry_path) {
                         Ok(()) => {
                             app.known = known_instances(&app.games);
-                            app.status = Some(tf("status_renamed_plain", &[("name", &dest.display())]));
+                            app.status =
+                                Some(tf("status_renamed_plain", &[("name", &dest.display())]));
                         }
                         Err(e) => {
                             app.status = Some(tf(

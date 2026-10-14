@@ -115,7 +115,12 @@ mod tests {
     fn a_runtime_whose_two_halves_disagree_is_reported_as_split() {
         let (pfx, reference) = (tmp(), tmp());
         put(&reference, "system32", "vcruntime140.dll", "wine builtin");
-        put(&reference, "system32", "vcruntime140_1.dll", "wine builtin _1");
+        put(
+            &reference,
+            "system32",
+            "vcruntime140_1.dll",
+            "wine builtin _1",
+        );
         // The prefix kept Proton's `_1` but had `vcruntime140` replaced.
         put(&pfx, "system32", "vcruntime140.dll", "microsoft 2015");
         put(&pfx, "system32", "vcruntime140_1.dll", "wine builtin _1");
@@ -138,9 +143,19 @@ mod tests {
     fn the_atomic_wait_shim_and_its_msvcp_must_also_agree() {
         let (pfx, reference) = (tmp(), tmp());
         put(&reference, "system32", "msvcp140.dll", "wine builtin");
-        put(&reference, "system32", "msvcp140_atomic_wait.dll", "wine builtin aw");
+        put(
+            &reference,
+            "system32",
+            "msvcp140_atomic_wait.dll",
+            "wine builtin aw",
+        );
         put(&pfx, "system32", "msvcp140.dll", "microsoft 2015");
-        put(&pfx, "system32", "msvcp140_atomic_wait.dll", "wine builtin aw");
+        put(
+            &pfx,
+            "system32",
+            "msvcp140_atomic_wait.dll",
+            "wine builtin aw",
+        );
 
         let report = check(&pfx, &reference);
 

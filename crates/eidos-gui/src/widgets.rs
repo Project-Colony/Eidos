@@ -35,13 +35,16 @@ pub(crate) const IC_UPDATE: &[u8] = include_bytes!("../assets/icons/system-softw
 pub(crate) const IC_HELP: &[u8] = include_bytes!("../assets/icons/help-browser_32.png");
 
 // MO2's real conflict emblems (modconflicticondelegate: emblem_conflict_*).
-pub(crate) const IC_CONFLICT_OVERWRITE: &[u8] = include_bytes!("../assets/icons/conflict-overwrite.png");
+pub(crate) const IC_CONFLICT_OVERWRITE: &[u8] =
+    include_bytes!("../assets/icons/conflict-overwrite.png");
 
-pub(crate) const IC_CONFLICT_OVERWRITTEN: &[u8] = include_bytes!("../assets/icons/conflict-overwritten.png");
+pub(crate) const IC_CONFLICT_OVERWRITTEN: &[u8] =
+    include_bytes!("../assets/icons/conflict-overwritten.png");
 
 pub(crate) const IC_CONFLICT_MIXED: &[u8] = include_bytes!("../assets/icons/conflict-mixed.png");
 
-pub(crate) const IC_CONFLICT_REDUNDANT: &[u8] = include_bytes!("../assets/icons/conflict-redundant.png");
+pub(crate) const IC_CONFLICT_REDUNDANT: &[u8] =
+    include_bytes!("../assets/icons/conflict-redundant.png");
 
 pub(crate) const IC_CONFLICT_HIDDEN: &[u8] = include_bytes!("../assets/icons/conflict-hidden.png");
 
@@ -189,10 +192,16 @@ pub(crate) fn conflict_legend<'a>(app: &App) -> Option<Element<'a, Message>> {
     let mut row = Row::new().spacing(10).align_y(iced::Alignment::Center);
     row = row.push(text(tf("legend_conflicts", &[("name", &name)])).size(sz(11)));
     if over > 0 {
-        row = row.push(swatch(conflict_wins_bg(), tf("legend_it_overwrites", &[("n", &over)])));
+        row = row.push(swatch(
+            conflict_wins_bg(),
+            tf("legend_it_overwrites", &[("n", &over)]),
+        ));
     }
     if under > 0 {
-        row = row.push(swatch(conflict_loses_bg(), tf("legend_overwrite_it", &[("n", &under)])));
+        row = row.push(swatch(
+            conflict_loses_bg(),
+            tf("legend_overwrite_it", &[("n", &under)]),
+        ));
     }
     Some(row.into())
 }

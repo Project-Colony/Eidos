@@ -1,5 +1,7 @@
 //! Bundled NIF parsing and current-provider texture loading for static previews.
-use crate::{archive_conflicts::ProviderSource, dds_preview, nif_render, t, tf, App, Message, Preview};
+use crate::{
+    archive_conflicts::ProviderSource, dds_preview, nif_render, t, tf, App, Message, Preview,
+};
 use eidos_conflicts::ArchiveIdentity;
 use iced::{widget::image::Handle, Task};
 use std::{
@@ -99,7 +101,8 @@ fn parse_with_helper(
 }
 
 pub(crate) fn from_bytes(path: &Path, bytes: &[u8], cancel: &AtomicBool) -> Preview {
-    let scene = helper().ok_or_else(|| t("nif_helper_missing").to_string())
+    let scene = helper()
+        .ok_or_else(|| t("nif_helper_missing").to_string())
         .and_then(|helper| parse_with_helper(bytes, &helper, cancel));
     match scene {
         Ok(scene) => {
@@ -215,19 +218,14 @@ fn texture_requests(app: &App, model: &Model) -> (Vec<(String, ProviderSource)>,
             warnings.push(t("nif_texture_cap").into());
             break;
         }
-        let source = map
-            .ok_or(t("nif_providers_unavailable"))
-            .and_then(|map| {
-                let node = map
-                    .asset_files
-                    .get(&key)
-                    .ok_or(t("nif_texture_missing"))?;
-                if node.precedence_uncertain {
-                    warnings.push(tf("nif_provider_uncertain", &[("texture", &key)]));
-                }
-                crate::archive_conflicts::resolve_provider(app, &node.display_path, &node.winner)
-                    .map_err(|_| t("nif_provider_changed"))
-            });
+        let source = map.ok_or(t("nif_providers_unavailable")).and_then(|map| {
+            let node = map.asset_files.get(&key).ok_or(t("nif_texture_missing"))?;
+            if node.precedence_uncertain {
+                warnings.push(tf("nif_provider_uncertain", &[("texture", &key)]));
+            }
+            crate::archive_conflicts::resolve_provider(app, &node.display_path, &node.winner)
+                .map_err(|_| t("nif_provider_changed"))
+        });
         match source {
             Ok(source) => requests.push((key, source)),
             Err(error) => warnings.push(format!("{key}: {error}")),
@@ -329,10 +327,7 @@ pub(crate) fn change_view(
     cancel: &AtomicBool,
 ) -> Preview {
     if !dependencies_current(&preview) {
-        return crate::file_preview::unsupported(
-            preview.path(),
-            t("nif_textures_changed"),
-        );
+        return crate::file_preview::unsupported(preview.path(), t("nif_textures_changed"));
     }
     if let Some(model) = model_mut(&mut preview) {
         model.view = view;

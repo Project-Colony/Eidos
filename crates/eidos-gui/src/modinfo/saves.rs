@@ -29,30 +29,43 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
     let col_header = Row::new()
         .spacing(8)
         .push(text(t("info_name")).size(sz(11)).width(Length::Fill))
-        .push(text(t("saves_col_date")).size(sz(11)).width(Length::Fixed(scaled(130.0))))
-        .push(text(t("col_size")).size(sz(11)).width(Length::Fixed(scaled(80.0))))
+        .push(
+            text(t("saves_col_date"))
+                .size(sz(11))
+                .width(Length::Fixed(scaled(130.0))),
+        )
+        .push(
+            text(t("col_size"))
+                .size(sz(11))
+                .width(Length::Fixed(scaled(80.0))),
+        )
         .push(Space::new().width(Length::Fixed(scaled(80.0))));
 
     let mut rows = Column::new().spacing(2);
     if app.saves.is_empty() {
-        rows = rows.push(
-            text(t("saves_none_yet")).size(sz(12)),
-        );
+        rows = rows.push(text(t("saves_none_yet")).size(sz(12)));
     }
     for (i, save) in app.saves.iter().take(SAVES_LIST_CAP).enumerate() {
         let armed = app.confirm_delete_save == Some(i);
-        let del = button(text(if armed { t("common_confirm") } else { t("common_delete") }).size(sz(11)))
-            .padding(4)
-            .on_press(if armed {
-                Message::ConfirmDeleteSave(i)
+        let del = button(
+            text(if armed {
+                t("common_confirm")
             } else {
-                Message::DeleteSave(i)
+                t("common_delete")
             })
-            .style(if armed {
-                button::danger
-            } else {
-                button::secondary
-            });
+            .size(sz(11)),
+        )
+        .padding(4)
+        .on_press(if armed {
+            Message::ConfirmDeleteSave(i)
+        } else {
+            Message::DeleteSave(i)
+        })
+        .style(if armed {
+            button::danger
+        } else {
+            button::secondary
+        });
         // The name is the click target for the details pane; the row's other
         // controls keep working (a Delete click must not also select).
         let name = button(text(save.filename.clone()).size(sz(12)))
@@ -176,10 +189,12 @@ pub(crate) fn save_details<'a>(
         .spacing(4)
         .push(text(save.filename.clone()).size(sz(13)))
         .push(
-            button(text(t("saves_extension_details")).size(sz(11))).on_press(Message::RunFileExtension(
-                eidos_addons::protocol::Operation::SaveInfo,
-                save.path.clone(),
-            )),
+            button(text(t("saves_extension_details")).size(sz(11))).on_press(
+                Message::RunFileExtension(
+                    eidos_addons::protocol::Operation::SaveInfo,
+                    save.path.clone(),
+                ),
+            ),
         );
 
     let info = match app.save_info.as_ref().filter(|(p, _)| *p == save.path) {
@@ -187,9 +202,7 @@ pub(crate) fn save_details<'a>(
         Some((_, Err(e))) => {
             return col
                 .push(text(tf("saves_unreadable", &[("error", &e)])).size(sz(11)))
-                .push(
-                    text(t("saves_unreadable_note")).size(sz(10)),
-                )
+                .push(text(t("saves_unreadable_note")).size(sz(10)))
                 .into();
         }
         // Parsed on selection, so this only shows for the frame in between.
@@ -219,7 +232,10 @@ pub(crate) fn save_details<'a>(
         (t("saves_game_date"), info.game_date.clone()),
     ];
     if let Some((d, h, m)) = info.playtime() {
-        facts.push((t("saves_played"), tf("saves_playtime", &[("d", &d), ("h", &h), ("m", &m)])));
+        facts.push((
+            t("saves_played"),
+            tf("saves_playtime", &[("d", &d), ("h", &h), ("m", &m)]),
+        ));
     }
     facts.push((t("saves_heading"), format!("#{}", info.save_number)));
     // Fallout writes the runtime it was saved by; Skyrim does not, and leaves this
@@ -232,7 +248,10 @@ pub(crate) fn save_details<'a>(
         t("tab_plugins"),
         tf(
             "saves_plugin_counts",
-            &[("n", &info.plugins.len()), ("light", &info.light_plugins.len())],
+            &[
+                ("n", &info.plugins.len()),
+                ("light", &info.light_plugins.len()),
+            ],
         ),
     ));
     for (k, v) in facts {
@@ -264,7 +283,10 @@ pub(crate) fn save_details<'a>(
         let who = if m.providers.is_empty() {
             format!("  {}", t("saves_no_provider"))
         } else {
-            format!("  {}", tf("saves_provided_in", &[("mods", &m.providers.join(", "))]))
+            format!(
+                "  {}",
+                tf("saves_provided_in", &[("mods", &m.providers.join(", "))])
+            )
         };
         col = col
             .push(text(format!("{} ({what})", m.name)).size(sz(11)))
@@ -276,15 +298,10 @@ pub(crate) fn save_details<'a>(
     if fixable {
         col = col
             .push(Space::new().height(Length::Fixed(4.0)))
-            .push(tool_btn(
-                t("saves_enable_needed"),
-                Message::FixSaveMods,
-            ));
+            .push(tool_btn(t("saves_enable_needed"), Message::FixSaveMods));
     }
     if info.truncated {
-        col = col.push(
-            text(t("saves_truncated_note")).size(sz(10)),
-        );
+        col = col.push(text(t("saves_truncated_note")).size(sz(10)));
     }
     col.into()
 }

@@ -13,9 +13,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // number of hidden rows behind it, so "here" would be a lie. Same
             // promise the download drop makes, made the same way.
             if is_filtering(app) {
-                app.pending_note = Some(
-                    t("note_installed_at_end").to_string(),
-                );
+                app.pending_note = Some(t("note_installed_at_end").to_string());
                 return update(app, Message::InstallMod);
             }
             // The gap is remembered as a PLACE, not yet paired with an archive:
@@ -351,9 +349,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     || entangled(inst.overwrite_dir())
                     || entangled(inst.root.clone())
                 {
-                    app.status = Some(
-                        t("status_folder_is_instance").to_string(),
-                    );
+                    app.status = Some(t("status_folder_is_instance").to_string());
                     return Task::done(Message::DrainDrops);
                 }
             }
@@ -372,7 +368,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
             app.status = Some(tf(
                 "status_not_a_mod_archive",
-                &[("name", &path.file_name().unwrap_or_default().to_string_lossy())],
+                &[(
+                    "name",
+                    &path.file_name().unwrap_or_default().to_string_lossy(),
+                )],
             ));
             return Task::done(Message::DrainDrops);
         }
@@ -422,9 +421,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 // Said through the installer, not before it: `ModPicked` sets its
                 // own status a moment later and would overwrite this one before
                 // it could ever be read.
-                app.pending_note = Some(
-                    t("note_installed_at_end").to_string(),
-                );
+                app.pending_note = Some(t("note_installed_at_end").to_string());
             } else {
                 app.install_at = Some((d.gap, d.path.clone()));
             }
@@ -459,8 +456,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             job.fresh,
                         );
                     } else {
-                        app.status =
-                            Some(t("status_install_no_target").into());
+                        app.status = Some(t("status_install_no_target").into());
                     }
                 }
                 None => {

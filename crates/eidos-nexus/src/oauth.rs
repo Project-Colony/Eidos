@@ -571,7 +571,9 @@ fn signing_keys(want: Option<&str>) -> Result<Vec<SigningKey>, String> {
         }
     }
     let text = fetch_jwks().map_err(|e| {
-        format!("could not reach Nexus to check its signing keys ({e}). Try again once you are online.")
+        format!(
+            "could not reach Nexus to check its signing keys ({e}). Try again once you are online."
+        )
     })?;
     let keys = parse_jwks(&text)?;
     // Written only after it parses, so a proxy's error page cannot replace a
@@ -1291,7 +1293,10 @@ mod tests {
     #[test]
     fn a_valid_token_yields_its_claims() {
         let c = claims_with_keys(TEST_JWT, &test_keys()).expect("the vector is correctly signed");
-        assert!(c.verified, "a key that matches means a signature that was checked");
+        assert!(
+            c.verified,
+            "a key that matches means a signature that was checked"
+        );
         assert_eq!(c.user_id, 12345);
         assert_eq!(c.username, "TestAccount");
         assert!(c.is_premium, "membership_roles carries \"premium\"");
@@ -1323,7 +1328,10 @@ mod tests {
     #[test]
     fn junk_is_rejected_without_panicking() {
         for bad in ["", "abc", "a.b", "a.b.c.d", "....", "!!.??.$$"] {
-            assert!(claims_with_keys(bad, &test_keys()).is_err(), "accepted {bad:?}");
+            assert!(
+                claims_with_keys(bad, &test_keys()).is_err(),
+                "accepted {bad:?}"
+            );
         }
     }
 

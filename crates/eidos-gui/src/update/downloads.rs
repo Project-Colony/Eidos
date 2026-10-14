@@ -54,11 +54,18 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 String::new()
             };
             app.status = Some(if failed.is_empty() {
-                tf("status_extraction_removed", &[("n", &gone), ("busy", &busy)])
+                tf(
+                    "status_extraction_removed",
+                    &[("n", &gone), ("busy", &busy)],
+                )
             } else {
                 tf(
                     "status_extraction_partial",
-                    &[("n", &gone), ("failed", &failed.join(", ")), ("busy", &busy)],
+                    &[
+                        ("n", &gone),
+                        ("failed", &failed.join(", ")),
+                        ("busy", &busy),
+                    ],
                 )
             });
             app.diag_dirty = true;
@@ -85,7 +92,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             .find(|l| !l.trim().is_empty())
                             .unwrap_or(t("status_no_reason"))
                             .to_string();
-                        app.status = Some(tf("status_resume_failed", &[("name", &name), ("error", &why)]));
+                        app.status = Some(tf(
+                            "status_resume_failed",
+                            &[("name", &name), ("error", &why)],
+                        ));
                     }
                 }
             }
@@ -156,7 +166,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     app.resuming = Some((name.clone(), child, log));
                     app.status = Some(tf("status_resuming", &[("name", &name)]));
                 }
-                Err(e) => app.status = Some(tf("status_resume_failed", &[("name", &name), ("error", &e)])),
+                Err(e) => {
+                    app.status = Some(tf(
+                        "status_resume_failed",
+                        &[("name", &name), ("error", &e)],
+                    ))
+                }
             }
             load_downloads(app);
         }
@@ -186,14 +201,22 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     let _ = std::fs::remove_file(&partial);
                     let _ = std::fs::remove_file(&meta);
                     match archive_res {
-                        Ok(()) => app.status = Some(tf("status_download_deleted", &[("name", &name)])),
+                        Ok(()) => {
+                            app.status = Some(tf("status_download_deleted", &[("name", &name)]))
+                        }
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound && had_partial => {
-                            app.status = Some(tf("status_download_partial_removed", &[("name", &name)]));
+                            app.status =
+                                Some(tf("status_download_partial_removed", &[("name", &name)]));
                         }
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                             app.status = Some(tf("status_download_gone", &[("name", &name)]));
                         }
-                        Err(e) => app.status = Some(tf("status_delete_named_failed", &[("name", &name), ("error", &e)])),
+                        Err(e) => {
+                            app.status = Some(tf(
+                                "status_delete_named_failed",
+                                &[("name", &name), ("error", &e)],
+                            ))
+                        }
                     }
                 }
                 load_downloads(app);
@@ -226,7 +249,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         tf("status_download_unhidden", &[("name", &name)])
                     });
                 }
-                Err(e) => app.error = Some(tf("status_update_named_failed", &[("name", &name), ("error", &e)])),
+                Err(e) => {
+                    app.error = Some(tf(
+                        "status_update_named_failed",
+                        &[("name", &name), ("error", &e)],
+                    ))
+                }
             }
         }
         Message::ToggleShowHiddenDownloads => {
@@ -285,7 +313,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.status = Some(if failed == 0 {
                 tf("status_archives_removed", &[("n", &gone)])
             } else {
-                tf("status_archives_removed_partial", &[("n", &gone), ("failed", &failed)])
+                tf(
+                    "status_archives_removed_partial",
+                    &[("n", &gone), ("failed", &failed)],
+                )
             });
         }
         _ => unreachable!("routed by update_inner"),

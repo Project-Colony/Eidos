@@ -12,7 +12,7 @@ fn invalid(message: impl Into<String>) -> io::Error {
 
 impl DetectedGame {
     /// Morrowind's own plugin declares gameDirectory()/Saves, independent of
-    /// Wine: ModOrganizer2/modorganizer-game_morrowind, gamemorrowind.cpp:67–75.
+    /// Wine: ModOrganizer2/modorganizer-game_morrowind, gamemorrowind.cpp:67-75.
     pub fn saves_path(&self) -> Option<PathBuf> {
         if self.def.id == "morrowind" {
             return Some(self.install_path.join("Saves"));
@@ -244,25 +244,22 @@ fn read_userdata_config(path: &Path) -> io::Result<Option<String>> {
         match event {
             Event::Start(ref element) | Event::Empty(ref element) => {
                 if depth == 0 {
-                    if seen_root || element.name().as_ref() != b"ServerSettings" {
+                    if seen_root || element.name().as_ref() != "ServerSettings" {
                         return Err(invalid("Expected one ServerSettings XML root"));
                     }
                     seen_root = true;
-                } else if depth == 1 && element.name().as_ref() == b"property" {
+                } else if depth == 1 && element.name().as_ref() == "property" {
                     let mut name = None;
                     let mut value = None;
                     for attr in element.attributes() {
                         let attr = attr.map_err(|e| invalid(e.to_string()))?;
                         let text = attr
-                            .decoded_and_normalized_value(
-                                quick_xml::XmlVersion::Implicit1_0,
-                                reader.decoder(),
-                            )
+                            .normalized_value(quick_xml::XmlVersion::Implicit1_0)
                             .map_err(|e| invalid(e.to_string()))?
                             .into_owned();
                         match attr.key.as_ref() {
-                            b"name" => name = Some(text),
-                            b"value" => value = Some(text),
+                            "name" => name = Some(text),
+                            "value" => value = Some(text),
                             _ => {}
                         }
                     }
@@ -287,7 +284,7 @@ fn read_userdata_config(path: &Path) -> io::Result<Option<String>> {
             }
             Event::DocType(_) => return Err(invalid("Server config DTD is unsupported")),
             Event::Eof => break,
-            Event::Text(text) if depth == 0 && text.iter().any(|b| !b.is_ascii_whitespace()) => {
+            Event::Text(text) if depth == 0 && text.bytes().any(|b| !b.is_ascii_whitespace()) => {
                 return Err(invalid("Text outside server config root"))
             }
             _ => {}

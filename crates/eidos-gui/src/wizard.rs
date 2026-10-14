@@ -160,10 +160,7 @@ pub(crate) fn game_screen<'a>(app: &App) -> Element<'a, Message> {
     let content: Element<Message> = if app.games.is_empty() {
         Column::new()
             .push(text(t("wizard_no_games")).size(sz(15)))
-            .push(
-                text(t("wizard_no_games_hint"))
-                .size(sz(12)),
-            )
+            .push(text(t("wizard_no_games_hint")).size(sz(12)))
             .into()
     } else {
         let mut list = Column::new().spacing(6);
@@ -211,11 +208,13 @@ pub(crate) fn nameloc_screen<'a>(app: &App) -> Element<'a, Message> {
                 .padding(8),
         );
     if app.kind == InstanceKind::Portable {
-        content = content.push(text(t("wizard_portable_folder")).size(sz(13))).push(
-            text_input("~/Eidos/skyrimse", &app.portable_path)
-                .on_input(Message::PortableChanged)
-                .padding(8),
-        );
+        content = content
+            .push(text(t("wizard_portable_folder")).size(sz(13)))
+            .push(
+                text_input("~/Eidos/skyrimse", &app.portable_path)
+                    .on_input(Message::PortableChanged)
+                    .padding(8),
+            );
     }
     let next = (!app.name.trim().is_empty()).then_some(Message::Next);
     frame(
@@ -245,13 +244,22 @@ pub(crate) fn summary_screen<'a>(app: &App) -> Element<'a, Message> {
         .push(
             text(tf(
                 "wizard_review_game",
-                &[("game", &game.map(|g| g.def.name).unwrap_or(t("settings_none")))],
+                &[(
+                    "game",
+                    &game.map(|g| g.def.name).unwrap_or(t("settings_none")),
+                )],
             ))
             .size(sz(14)),
         )
         .push(text(tf("wizard_review_location", &[("path", &location)])).size(sz(13)));
     if let Some(g) = game {
-        content = content.push(text(tf("wizard_review_data", &[("path", &g.data_path.display())])).size(sz(12)));
+        content = content.push(
+            text(tf(
+                "wizard_review_data",
+                &[("path", &g.data_path.display())],
+            ))
+            .size(sz(12)),
+        );
     }
     // Say when Finish will ADOPT rather than create: the folder already
     // declares this game, and nothing in it will be overwritten. (A folder
@@ -261,10 +269,7 @@ pub(crate) fn summary_screen<'a>(app: &App) -> Element<'a, Message> {
         .and_then(|i| i.read_manifest())
         .is_some_and(|m| game.map(|g| g.def.id) == Some(m.game_id.as_str()));
     if adopts {
-        content = content.push(
-            text(t("wizard_adopts"))
-                .size(sz(12)),
-        );
+        content = content.push(text(t("wizard_adopts")).size(sz(12)));
     }
     if let Some(err) = &app.error {
         content = content.push(text(tf("wizard_error", &[("error", &err)])).size(sz(13)));

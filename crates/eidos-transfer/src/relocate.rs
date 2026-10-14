@@ -230,7 +230,10 @@ mod tests {
     fn a_sibling_folder_with_the_same_prefix_is_not_rewritten() {
         // The defect this exists for: `/mnt/Eidos` must not rewrite the middle of
         // `/mnt/Eidos-Fallout4`, which is a real, working path of its own.
-        assert_eq!(swap_root("/mnt/Eidos-Fallout4/mods/x", "/mnt/Eidos", "/new"), None);
+        assert_eq!(
+            swap_root("/mnt/Eidos-Fallout4/mods/x", "/mnt/Eidos", "/new"),
+            None
+        );
         assert_eq!(
             swap_root("/mnt/Eidos/mods/x", "/mnt/Eidos", "/new").as_deref(),
             Some("/new/mods/x")
@@ -280,7 +283,13 @@ mod tests {
         // `k[..3]` on a str panics when byte 3 splits a character, and this runs
         // AFTER the archive has been extracted - so the panic cost the restore
         // its repair pass and exited 101 with nothing said.
-        let keys = ["# ecran", "\u{e9}\u{e9}x", "a\u{5b57}x", "\u{1f600}x", "\u{5b57}xx"];
+        let keys = [
+            "# ecran",
+            "\u{e9}\u{e9}x",
+            "a\u{5b57}x",
+            "\u{1f600}x",
+            "\u{5b57}xx",
+        ];
         for k in keys {
             assert!(!starts_with_arg(k), "{k} is not an arg key");
             let line = format!("{k}=/old/root/x");
@@ -347,7 +356,10 @@ mod tests {
 
         let tools = fs::read_to_string(root.join("tools.ini")).unwrap();
         assert!(
-            tools.contains(&format!("exe={}/mods/BodySlide/BodySlide.exe", root.display())),
+            tools.contains(&format!(
+                "exe={}/mods/BodySlide/BodySlide.exe",
+                root.display()
+            )),
             "{tools}"
         );
         // A tool that was never inside the instance is left exactly as it was:

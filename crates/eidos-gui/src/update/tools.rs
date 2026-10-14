@@ -42,7 +42,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             };
             if let Some(why) = a.unavailable() {
-                app.status = Some(tf("status_cannot_run", &[("name", &a.name), ("reason", &why)]));
+                app.status = Some(tf(
+                    "status_cannot_run",
+                    &[("name", &a.name), ("reason", &why)],
+                ));
                 return Task::none();
             }
             let ctx = addon_context(app);
@@ -80,9 +83,17 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 .spawn()
             {
                 Ok(child) => {
-                    app.status = Some(tf("status_started_pid", &[("name", &a.name), ("pid", &child.id())]))
+                    app.status = Some(tf(
+                        "status_started_pid",
+                        &[("name", &a.name), ("pid", &child.id())],
+                    ))
                 }
-                Err(e) => app.status = Some(tf("status_start_failed", &[("name", &a.name), ("error", &e)])),
+                Err(e) => {
+                    app.status = Some(tf(
+                        "status_start_failed",
+                        &[("name", &a.name), ("error", &e)],
+                    ))
+                }
             }
         }
         Message::OpenAddonsFolder => {
@@ -273,7 +284,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         invalidate_plugins(app);
                     }
                 }
-                Err(e) => app.status = Some(tf("status_ini_save_failed", &[("file", &ed.current), ("error", &e)])),
+                Err(e) => {
+                    app.status = Some(tf(
+                        "status_ini_save_failed",
+                        &[("file", &ed.current), ("error", &e)],
+                    ))
+                }
             }
         }
         Message::IniEditorRevert => {
@@ -437,8 +453,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     title.is_empty() || title.chars().any(char::is_control)
                 });
                 if bad.is_some() {
-                    app.status =
-                        Some(t("status_tool_title_required").to_string());
+                    app.status = Some(t("status_tool_title_required").to_string());
                     return Task::none();
                 }
                 // A tool with no executable is a row that write_tools drops on
@@ -475,7 +490,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             load_tools(app); // refresh the run-target picker
                             app.status = Some(t("status_tools_saved").to_string());
                         }
-                        Err(e) => app.status = Some(tf("status_tools_save_failed", &[("error", &e)])),
+                        Err(e) => {
+                            app.status = Some(tf("status_tools_save_failed", &[("error", &e)]))
+                        }
                     }
                 }
             }

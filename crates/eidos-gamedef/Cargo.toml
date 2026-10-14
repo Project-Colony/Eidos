@@ -1,6 +1,7 @@
 [package]
 name = "eidos-gamedef"
 version.workspace = true
+rust-version.workspace = true
 description = "Eidos declarative per-game definitions (modelled on MO2's IPluginGame schema)"
 license.workspace = true
 repository.workspace = true
@@ -8,5 +9,5 @@ edition.workspace = true
 
 [dependencies]
 eidos-paths = { path = "../eidos-paths" }
-serde = { version = "1", features = ["derive"] }
-toml = "1"
+serde.workspace = true
+toml.workspace = true

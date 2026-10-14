@@ -30,13 +30,18 @@ impl Scratch {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         loop {
             let seq = NEXT.fetch_add(1, Ordering::Relaxed);
-            let dir = std::env::temp_dir().join(format!("eidos-{what}-{}-{seq}", std::process::id()));
+            let dir =
+                std::env::temp_dir().join(format!("eidos-{what}-{}-{seq}", std::process::id()));
             // Clock ticks are not unique. Claim a fresh private directory and
             // never remove an existing candidate, even after PID reuse.
             match fs::DirBuilder::new().mode(0o700).create(&dir) {
                 Ok(()) => return Ok(Scratch(dir)),
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(e) => return Err(TransferError::Io(format!("could not create a scratch folder: {e}"))),
+                Err(e) => {
+                    return Err(TransferError::Io(format!(
+                        "could not create a scratch folder: {e}"
+                    )))
+                }
             }
         }
     }
@@ -867,7 +872,10 @@ mod tests {
         assert!(!w.contains("logs"), "{w}");
         assert!(!w.contains("--no-downloads"), "{w}");
         let w = left_out_warning(&[left("downloads", Why::Symlink)]).unwrap();
-        assert!(w.contains("downloads - a symbolic link (to back up without it, pass --no-downloads"), "{w}");
+        assert!(
+            w.contains("downloads - a symbolic link (to back up without it, pass --no-downloads"),
+            "{w}"
+        );
     }
 
     #[test]

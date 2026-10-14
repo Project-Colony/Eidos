@@ -586,11 +586,18 @@ fn replacing_a_member_keeps_a_folder_that_holds_files_its_receipt_never_saw() {
     let installed = hooks.install(&member, &archive, &folder);
     assert!(matches!(installed, Installed::Ok(_)), "{installed:?}");
     assert!(!mine.exists());
-    assert_eq!(fs::read(backup.join("scripts/mine.pex")).unwrap(), b"my edit");
+    assert_eq!(
+        fs::read(backup.join("scripts/mine.pex")).unwrap(),
+        b"my edit"
+    );
     assert_eq!(hooks.kept, vec![(member.name.clone(), backup)]);
 
     let mut report = eidos_collections::report::Report::default();
     hooks.drain_notes(&mut report);
     assert_eq!(report.kept.len(), 1);
-    assert!(report.render().contains("Member_backup"), "{}", report.render());
+    assert!(
+        report.render().contains("Member_backup"),
+        "{}",
+        report.render()
+    );
 }

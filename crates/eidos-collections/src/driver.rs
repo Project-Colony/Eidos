@@ -310,9 +310,8 @@ pub fn adopt_other_revisions(
         .try_lock("adopting another collection revision")
         .map_err(|e| e.to_string())?;
     let mods = inst.mods_dir();
-    let marker = |owner: &str, key: &str| {
-        serde_json::to_string(&[owner, key]).expect("strings serialize")
-    };
+    let marker =
+        |owner: &str, key: &str| serde_json::to_string(&[owner, key]).expect("strings serialize");
     let owner = format!("{}:{}:{}", state.game_domain, state.slug, state.revision);
     let domain = &c.info.domain_name;
     let keys: Vec<String> = c.mods.iter().map(|m| key_for(m, domain)).collect();
@@ -323,7 +322,12 @@ pub fn adopt_other_revisions(
     let active = inst.active_profile();
     let mut elsewhere: std::collections::HashMap<String, Vec<String>> = Default::default();
     for p in inst.profiles().into_iter().filter(|p| *p != active) {
-        for m in inst.profile(&p).modlist().into_iter().filter(|m| m.is_active()) {
+        for m in inst
+            .profile(&p)
+            .modlist()
+            .into_iter()
+            .filter(|m| m.is_active())
+        {
             elsewhere.entry(m.name).or_default().push(p.clone());
         }
     }
@@ -407,11 +411,17 @@ pub fn adopt_other_revisions(
             // is not taken: it would be owned, enabled and in no ordering pass,
             // reported only as skipped. Left alone it is named below, as skipped.
             if matches!(state.status(&key), Status::Skipped) {
-                why_kept.insert(folder.clone(), "you skipped this optional member in this revision");
+                why_kept.insert(
+                    folder.clone(),
+                    "you skipped this optional member in this revision",
+                );
                 continue;
             }
             if state.folders.get(&key).is_some_and(|f| f != folder)
-                || state.folders.iter().any(|(k, f)| *k != key && f.eq_ignore_ascii_case(folder))
+                || state
+                    .folders
+                    .iter()
+                    .any(|(k, f)| *k != key && f.eq_ignore_ascii_case(folder))
                 || eidos_install::fix_directory_name(folder).as_deref() != Some(folder.as_str())
             {
                 continue;
@@ -485,7 +495,10 @@ pub fn adopt_other_revisions(
         for (key, folder) in &folders {
             // A folder this revision records is one it uses, whoever marks it.
             if eidos_install::fix_directory_name(folder).as_deref() == Some(folder.as_str())
-                && !state.folders.values().any(|f| f.eq_ignore_ascii_case(folder))
+                && !state
+                    .folders
+                    .values()
+                    .any(|f| f.eq_ignore_ascii_case(folder))
                 && enabled_here.contains(folder)
                 && owns_folder(&mods.join(folder), &marker(&other_owner, key))
             {
@@ -503,7 +516,10 @@ pub fn adopt_other_revisions(
                         why_kept.get(folder).copied().unwrap_or("this revision does not use it")
                     ),
                 };
-                leftovers.push(Note { subject: folder.clone(), detail });
+                leftovers.push(Note {
+                    subject: folder.clone(),
+                    detail,
+                });
             }
         }
     }
@@ -561,7 +577,7 @@ fn other_revisions(
             found.push(other);
         }
     }
-    found.sort_by(|a, b| b.revision.cmp(&a.revision));
+    found.sort_by_key(|a| std::cmp::Reverse(a.revision));
     Ok(found)
 }
 
@@ -1549,11 +1565,14 @@ const INI_TWEAKS_KEY: &str = "aux:ini-tweaks";
 
 /// The collection's "INI Tweaks" directory, in whatever case its author used.
 fn ini_tweaks_source(dir: &Path) -> std::io::Result<Option<PathBuf>> {
-    Ok(std::fs::read_dir(dir)?.filter_map(Result::ok).map(|e| e.path()).find(|p| {
-        p.is_dir()
-            && p.file_name()
-                .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("ini tweaks"))
-    }))
+    Ok(std::fs::read_dir(dir)?
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .find(|p| {
+            p.is_dir()
+                && p.file_name()
+                    .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("ini tweaks"))
+        }))
 }
 
 /// Whether `dir` ships INI fragments: the test [`apply_ini_tweaks`] makes
@@ -1660,7 +1679,10 @@ pub fn apply_ini_tweaks(
         // revision does not ship is only deselected there, and named.
         let meta_path = inst.mods_dir().join(&name).join("meta.ini");
         let mut meta = eidos_instance::ModMeta::read(&meta_path);
-        let shipped: Vec<String> = shipped.iter().map(|s| s.to_string_lossy().into_owned()).collect();
+        let shipped: Vec<String> = shipped
+            .iter()
+            .map(|s| s.to_string_lossy().into_owned())
+            .collect();
         let ours = meta.collection_ini_fragments();
         let mut removed = Vec::new();
         for old in ours.iter().flatten().filter(|old| !shipped.contains(old)) {
@@ -1677,12 +1699,22 @@ pub fn apply_ini_tweaks(
         let dropped: Vec<String> = meta
             .ini_tweaks()
             .iter()
-            .filter(|t| if ours.is_some() { removed.contains(t) } else { !shipped.contains(t) })
+            .filter(|t| {
+                if ours.is_some() {
+                    removed.contains(t)
+                } else {
+                    !shipped.contains(t)
+                }
+            })
             .cloned()
             .collect();
         if !dropped.is_empty() {
-            let selected: Vec<String> =
-                meta.ini_tweaks().iter().filter(|t| !dropped.contains(t)).cloned().collect();
+            let selected: Vec<String> = meta
+                .ini_tweaks()
+                .iter()
+                .filter(|t| !dropped.contains(t))
+                .cloned()
+                .collect();
             meta.set_ini_tweaks(&selected);
         }
         meta.set_collection_ini_fragments(&shipped);
@@ -1691,17 +1723,26 @@ pub fn apply_ini_tweaks(
             .map_err(|e| e.to_string())?;
         let mut detail = format!("{n} fragment(s) installed as '{name}'; select the wanted fragments in its INI Tweaks tab");
         if !removed.is_empty() {
-            detail += &format!(". Removed, as this revision no longer ships them: {}", removed.join(", "));
+            detail += &format!(
+                ". Removed, as this revision no longer ships them: {}",
+                removed.join(", ")
+            );
         }
-        let deselected: Vec<&str> =
-            dropped.iter().filter(|d| !removed.contains(d)).map(String::as_str).collect();
+        let deselected: Vec<&str> = dropped
+            .iter()
+            .filter(|d| !removed.contains(d))
+            .map(String::as_str)
+            .collect();
         if !deselected.is_empty() {
             detail += &format!(
                 ". Deselected, as this revision does not ship them (select them again if you added them yourself): {}",
                 deselected.join(", ")
             );
         }
-        report.deferred.push(Note { subject: "INI tweaks".into(), detail });
+        report.deferred.push(Note {
+            subject: "INI tweaks".into(),
+            detail,
+        });
         Ok(())
     })();
     if let Err(error) = result {
@@ -1745,29 +1786,50 @@ mod cache_tests {
         format!("{GATE}:gate:{revision}")
     }
     fn gate_state(revision: u32) -> InstallState {
-        InstallState { slug: "gate".into(), revision, game_domain: GATE.into(), ..Default::default() }
+        InstallState {
+            slug: "gate".into(),
+            revision,
+            game_domain: GATE.into(),
+            ..Default::default()
+        }
     }
     /// Cache `mods` as the manifest of `revision` and return it parsed.
     fn gate_manifest(root: &Path, revision: u32, mods: &[(&str, u64, u64)]) -> Collection {
         let mods: Vec<String> = mods
             .iter()
-            .map(|(name, m, f)| format!(r#"{{"name":"{name}","source":{{"type":"nexus","modId":{m},"fileId":{f}}}}}"#))
+            .map(|(name, m, f)| {
+                format!(
+                    r#"{{"name":"{name}","source":{{"type":"nexus","modId":{m},"fileId":{f}}}}}"#
+                )
+            })
             .collect();
-        let text = format!(r#"{{"info":{{"name":"Gate","domainName":"{GATE}"}},"mods":[{}]}}"#, mods.join(","));
+        let text = format!(
+            r#"{{"info":{{"name":"Gate","domainName":"{GATE}"}},"mods":[{}]}}"#,
+            mods.join(",")
+        );
         let dir = crate::state::revision_dir(root, "gate", revision);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("collection.json"), &text).unwrap();
-        std::fs::write(cache_marker(&dir), eidos_nexus::md5_file(&dir.join("collection.json")).unwrap()).unwrap();
+        std::fs::write(
+            cache_marker(&dir),
+            eidos_nexus::md5_file(&dir.join("collection.json")).unwrap(),
+        )
+        .unwrap();
         crate::read(&text).unwrap().collection
     }
     /// Revision 1 installed: one member revision 2 keeps, one it updates to a
     /// new file of the same page, one it drops. Returns revision 2's recipe.
     fn gate(tag: &str) -> (PathBuf, Instance, Collection) {
         use crate::state::Status;
-        let root = std::env::temp_dir().join(format!("eidos-revision-{tag}-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("eidos-revision-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let inst = Instance::portable(root.clone());
-        gate_manifest(&root, 1, &[("Kept", 1, 10), ("Updated", 2, 20), ("Dropped", 3, 30)]);
+        gate_manifest(
+            &root,
+            1,
+            &[("Kept", 1, 10), ("Updated", 2, 20), ("Dropped", 3, 30)],
+        );
         let mut old = gate_state(1);
         for (name, file) in [("Kept", 10), ("Updated", 20), ("Dropped", 30)] {
             let folder = inst.mods_dir().join(name);
@@ -1779,11 +1841,23 @@ mod cache_tests {
             old.set(&key(file), Status::Installed(name.into()));
         }
         let body = serde_json::json!({"schema":1,"owner":mark(&owner(1), &key(10)),"recipe":null,"files":{},"exclusions":{}});
-        std::fs::write(inst.mods_dir().join("Kept/.eidos-collection-recipe.json"), body.to_string()).unwrap();
+        std::fs::write(
+            inst.mods_dir().join("Kept/.eidos-collection-recipe.json"),
+            body.to_string(),
+        )
+        .unwrap();
         old.save(&InstallState::path(&root, "gate", 1)).unwrap();
         std::fs::create_dir_all(inst.profile("Default").dir()).unwrap();
-        std::fs::write(inst.profile("Default").dir().join("modlist.txt"), "+Kept\n+Updated\n+Dropped\n").unwrap();
-        let new = gate_manifest(&root, 2, &[("Kept", 1, 10), ("Updated", 2, 21), ("Added", 4, 40)]);
+        std::fs::write(
+            inst.profile("Default").dir().join("modlist.txt"),
+            "+Kept\n+Updated\n+Dropped\n",
+        )
+        .unwrap();
+        let new = gate_manifest(
+            &root,
+            2,
+            &[("Kept", 1, 10), ("Updated", 2, 21), ("Added", 4, 40)],
+        );
         (root, inst, new)
     }
 
@@ -1794,27 +1868,58 @@ mod cache_tests {
         let mut saved = None;
         let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |s| {
             // The claim is durable before the folder changes hands.
-            assert!(owns_folder(&inst.mods_dir().join("Kept"), &mark(&owner(1), &key(10))));
+            assert!(owns_folder(
+                &inst.mods_dir().join("Kept"),
+                &mark(&owner(1), &key(10))
+            ));
             saved = Some(s.folders.clone());
             Ok(())
         })
         .unwrap();
         assert_eq!(saved.as_ref(), Some(&state.folders));
-        assert_eq!(state.folders.get(&key(10)).map(String::as_str), Some("Kept"));
-        assert_eq!(state.folders.get(&key(21)).map(String::as_str), Some("Updated"));
+        assert_eq!(
+            state.folders.get(&key(10)).map(String::as_str),
+            Some("Kept")
+        );
+        assert_eq!(
+            state.folders.get(&key(21)).map(String::as_str),
+            Some("Updated")
+        );
         assert_eq!(state.folders.len(), 2);
-        assert!(owns_folder(&inst.mods_dir().join("Updated"), &mark(&owner(2), &key(21))));
+        assert!(owns_folder(
+            &inst.mods_dir().join("Updated"),
+            &mark(&owner(2), &key(21))
+        ));
         let receipt = inst.mods_dir().join("Kept/.eidos-collection-recipe.json");
-        let moved: serde_json::Value = serde_json::from_slice(&std::fs::read(&receipt).unwrap()).unwrap();
+        let moved: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&receipt).unwrap()).unwrap();
         assert_eq!(moved["owner"], mark(&owner(2), &key(10)));
         // The dropped member is named, not deleted.
-        assert_eq!(leftovers.iter().map(|n| n.subject.as_str()).collect::<Vec<_>>(), ["Dropped"]);
+        assert_eq!(
+            leftovers
+                .iter()
+                .map(|n| n.subject.as_str())
+                .collect::<Vec<_>>(),
+            ["Dropped"]
+        );
         assert!(inst.mods_dir().join("Dropped").is_dir());
         // The member reserves its old folder instead of "Kept (2)".
-        assert_eq!(reserve_folder(&inst, "Kept", &mark(&owner(2), &key(10)), state.folders.get(&key(10)).map(String::as_str)).unwrap(), "Kept");
+        assert_eq!(
+            reserve_folder(
+                &inst,
+                "Kept",
+                &mark(&owner(2), &key(10)),
+                state.folders.get(&key(10)).map(String::as_str)
+            )
+            .unwrap(),
+            "Kept"
+        );
         // Repeatable: a crash before the new state was saved adopts the same folders.
         let mut again = gate_state(2);
-        assert_eq!(adopt_other_revisions(&inst, &new, &mut again, &mut |_| Ok(())).unwrap(), leftovers);
+        assert_eq!(
+            adopt_other_revisions(&inst, &new, &mut again, &mut |_| Ok(())).unwrap(),
+            leftovers
+        );
         assert_eq!(again.folders, state.folders);
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -1823,7 +1928,11 @@ mod cache_tests {
     fn an_unchanged_member_keeps_its_installed_status_and_an_updated_one_does_not() {
         use crate::state::Status;
         let (root, inst, new) = gate("status");
-        std::fs::write(inst.profile("Default").dir().join("modlist.txt"), "+Updated\n+Dropped\n").unwrap();
+        std::fs::write(
+            inst.profile("Default").dir().join("modlist.txt"),
+            "+Updated\n+Dropped\n",
+        )
+        .unwrap();
         let mut state = gate_state(2);
         adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
         // Pending would be recovered as Approximate, an install that is not faithful.
@@ -1845,7 +1954,8 @@ mod cache_tests {
         meta.write(&folder.join("meta.ini")).unwrap();
         let path = InstallState::path(&root, "gate", 1);
         let mut old = InstallState::load(&path).unwrap().unwrap();
-        old.folders.insert(INI_TWEAKS_KEY.into(), "Gate - INI Tweaks".into());
+        old.folders
+            .insert(INI_TWEAKS_KEY.into(), "Gate - INI Tweaks".into());
         old.save(&path).unwrap();
         std::fs::create_dir_all(folder.join("Ini Tweaks")).unwrap();
         std::fs::write(folder.join("Ini Tweaks/Dropped.ini"), "[Display]\n").unwrap();
@@ -1855,18 +1965,31 @@ mod cache_tests {
         meta.write(&folder.join("meta.ini")).unwrap();
         let dir = crate::state::revision_dir(&root, "gate", 2);
         std::fs::create_dir_all(dir.join("INI Tweaks")).unwrap();
-        std::fs::write(inst.profile("Default").dir().join("modlist.txt"), "+Kept\n+Updated\n+Gate - INI Tweaks\n").unwrap();
+        std::fs::write(
+            inst.profile("Default").dir().join("modlist.txt"),
+            "+Kept\n+Updated\n+Gate - INI Tweaks\n",
+        )
+        .unwrap();
         // An empty directory ships nothing, so it takes nothing over.
         let mut state = gate_state(2);
         let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
         assert_eq!(state.folders.get(INI_TWEAKS_KEY), None);
-        assert!(leftovers.iter().any(|n| n.subject == "Gate - INI Tweaks"), "{leftovers:?}");
+        assert!(
+            leftovers.iter().any(|n| n.subject == "Gate - INI Tweaks"),
+            "{leftovers:?}"
+        );
         std::fs::write(dir.join("INI Tweaks/Kept.ini"), "[Display]\n").unwrap();
         let mut state = gate_state(2);
         let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
-        assert_eq!(state.folders.get(INI_TWEAKS_KEY).map(String::as_str), Some("Gate - INI Tweaks"));
+        assert_eq!(
+            state.folders.get(INI_TWEAKS_KEY).map(String::as_str),
+            Some("Gate - INI Tweaks")
+        );
         assert!(owns_folder(&folder, &mark(&owner(2), INI_TWEAKS_KEY)));
-        assert!(leftovers.iter().all(|n| n.subject != "Gate - INI Tweaks"), "{leftovers:?}");
+        assert!(
+            leftovers.iter().all(|n| n.subject != "Gate - INI Tweaks"),
+            "{leftovers:?}"
+        );
         // The fragment revision 2 dropped no longer applies at launch. This
         // folder predates the record of what a run installed, so the unknown
         // fragment is deselected and named, never deleted.
@@ -1877,8 +2000,17 @@ mod cache_tests {
         assert!(folder.join("Ini Tweaks/Kept.ini").is_file());
         let meta = eidos_instance::ModMeta::read(&folder.join("meta.ini"));
         assert_eq!(meta.ini_tweaks(), ["Kept.ini"]);
-        assert_eq!(meta.collection_ini_fragments(), Some(vec!["Kept.ini".to_string()]));
-        assert!(report.deferred.iter().any(|n| n.detail.contains("Deselected") && n.detail.contains("Dropped.ini")), "{report:?}");
+        assert_eq!(
+            meta.collection_ini_fragments(),
+            Some(vec!["Kept.ini".to_string()])
+        );
+        assert!(
+            report
+                .deferred
+                .iter()
+                .any(|n| n.detail.contains("Deselected") && n.detail.contains("Dropped.ini")),
+            "{report:?}"
+        );
         // Now the run's own fragments are known: one a later revision drops is
         // removed, while a fragment the user added and selected stays.
         std::fs::write(folder.join("Ini Tweaks/Mine.ini"), "[Display]\n").unwrap();
@@ -1893,7 +2025,10 @@ mod cache_tests {
         assert!(!folder.join("Ini Tweaks/Kept.ini").exists());
         assert!(folder.join("Ini Tweaks/Mine.ini").is_file());
         assert!(folder.join("Ini Tweaks/New.ini").is_file());
-        assert_eq!(eidos_instance::ModMeta::read(&folder.join("meta.ini")).ini_tweaks(), ["Mine.ini"]);
+        assert_eq!(
+            eidos_instance::ModMeta::read(&folder.join("meta.ini")).ini_tweaks(),
+            ["Mine.ini"]
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -1905,9 +2040,17 @@ mod cache_tests {
         state.set_by_user(&key(10), Status::Skipped);
         let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
         assert_eq!(state.folders.get(&key(10)), None);
-        assert!(owns_folder(&inst.mods_dir().join("Kept"), &mark(&owner(1), &key(10))));
+        assert!(owns_folder(
+            &inst.mods_dir().join("Kept"),
+            &mark(&owner(1), &key(10))
+        ));
         // This revision does use it; the user skipped it.
-        assert!(leftovers.iter().any(|n| n.subject == "Kept" && n.detail.contains("you skipped")), "{leftovers:?}");
+        assert!(
+            leftovers
+                .iter()
+                .any(|n| n.subject == "Kept" && n.detail.contains("you skipped")),
+            "{leftovers:?}"
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -1915,23 +2058,40 @@ mod cache_tests {
     fn a_folder_another_profile_enables_is_not_taken_over() {
         let (root, inst, new) = gate("profiles");
         std::fs::create_dir_all(inst.profile("Stable").dir()).unwrap();
-        std::fs::write(inst.profile("Stable").dir().join("modlist.txt"), "+Updated\n").unwrap();
+        std::fs::write(
+            inst.profile("Stable").dir().join("modlist.txt"),
+            "+Updated\n",
+        )
+        .unwrap();
         let mut state = gate_state(2);
         let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
         // "Stable" keeps revision 1's files; the update installs its own copy.
         assert_eq!(state.folders.get(&key(21)), None);
         // Removing it would remove it from "Stable" too, so the note never asks.
         let note = leftovers.iter().find(|n| n.subject == "Updated").unwrap();
-        assert!(note.detail.contains("'Stable'") && !note.detail.contains("or remove"), "{note:?}");
-        assert!(owns_folder(&inst.mods_dir().join("Updated"), &mark(&owner(1), &key(20))));
-        assert_eq!(state.folders.get(&key(10)).map(String::as_str), Some("Kept"));
+        assert!(
+            note.detail.contains("'Stable'") && !note.detail.contains("or remove"),
+            "{note:?}"
+        );
+        assert!(owns_folder(
+            &inst.mods_dir().join("Updated"),
+            &mark(&owner(1), &key(20))
+        ));
+        assert_eq!(
+            state.folders.get(&key(10)).map(String::as_str),
+            Some("Kept")
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
     fn a_leftover_the_user_disabled_is_no_longer_reported() {
         let (root, inst, new) = gate("disabled");
-        std::fs::write(inst.profile("Default").dir().join("modlist.txt"), "+Kept\n+Updated\n-Dropped\n").unwrap();
+        std::fs::write(
+            inst.profile("Default").dir().join("modlist.txt"),
+            "+Kept\n+Updated\n-Dropped\n",
+        )
+        .unwrap();
         let mut state = gate_state(2);
         let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
         // Disabling is what the note asks for, so it must clear the note.
@@ -1945,11 +2105,24 @@ mod cache_tests {
         let mut state = gate_state(2);
         adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
         state.save(&InstallState::path(&root, "gate", 2)).unwrap();
-        let old_recipe = gate_manifest(&root, 1, &[("Kept", 1, 10), ("Updated", 2, 20), ("Dropped", 3, 30)]);
-        let mut old = InstallState::load(&InstallState::path(&root, "gate", 1)).unwrap().unwrap();
-        let leftovers = adopt_other_revisions(&inst, &old_recipe, &mut old, &mut |_| Ok(())).unwrap();
-        assert!(owns_folder(&inst.mods_dir().join("Kept"), &mark(&owner(1), &key(10))));
-        assert!(owns_folder(&inst.mods_dir().join("Updated"), &mark(&owner(1), &key(20))));
+        let old_recipe = gate_manifest(
+            &root,
+            1,
+            &[("Kept", 1, 10), ("Updated", 2, 20), ("Dropped", 3, 30)],
+        );
+        let mut old = InstallState::load(&InstallState::path(&root, "gate", 1))
+            .unwrap()
+            .unwrap();
+        let leftovers =
+            adopt_other_revisions(&inst, &old_recipe, &mut old, &mut |_| Ok(())).unwrap();
+        assert!(owns_folder(
+            &inst.mods_dir().join("Kept"),
+            &mark(&owner(1), &key(10))
+        ));
+        assert!(owns_folder(
+            &inst.mods_dir().join("Updated"),
+            &mark(&owner(1), &key(20))
+        ));
         // Revision 1 uses both, so neither is reported as something it does not use.
         assert!(leftovers.is_empty(), "{leftovers:?}");
         std::fs::remove_dir_all(root).unwrap();
@@ -1964,9 +2137,19 @@ mod cache_tests {
         state.save(&InstallState::path(&root, "gate", 2)).unwrap();
         // A copy of the profile made before going back enables every folder.
         std::fs::create_dir_all(inst.profile("Backup").dir()).unwrap();
-        std::fs::write(inst.profile("Backup").dir().join("modlist.txt"), "+Kept\n+Updated\n").unwrap();
-        let old_recipe = gate_manifest(&root, 1, &[("Kept", 1, 10), ("Updated", 2, 20), ("Dropped", 3, 30)]);
-        let mut old = InstallState::load(&InstallState::path(&root, "gate", 1)).unwrap().unwrap();
+        std::fs::write(
+            inst.profile("Backup").dir().join("modlist.txt"),
+            "+Kept\n+Updated\n",
+        )
+        .unwrap();
+        let old_recipe = gate_manifest(
+            &root,
+            1,
+            &[("Kept", 1, 10), ("Updated", 2, 20), ("Dropped", 3, 30)],
+        );
+        let mut old = InstallState::load(&InstallState::path(&root, "gate", 1))
+            .unwrap()
+            .unwrap();
         let mut saved = None;
         adopt_other_revisions(&inst, &old_recipe, &mut old, &mut |s| {
             saved = Some(s.folders.clone());
@@ -1974,7 +2157,10 @@ mod cache_tests {
         })
         .unwrap();
         // Kept, the claim on a folder marked by revision 2 failed every run.
-        assert!(owns_folder(&inst.mods_dir().join("Kept"), &mark(&owner(2), &key(10))));
+        assert!(owns_folder(
+            &inst.mods_dir().join("Kept"),
+            &mark(&owner(2), &key(10))
+        ));
         assert_eq!(old.folders.get(&key(10)), None);
         assert_eq!(old.status(&key(10)), &Status::Pending);
         assert_eq!(saved.as_ref(), Some(&old.folders));
@@ -1985,7 +2171,11 @@ mod cache_tests {
     fn an_interrupted_adoption_still_registers_the_members_it_seeded() {
         use crate::state::Status;
         let (root, inst, new) = gate("resume");
-        std::fs::write(inst.profile("Default").dir().join("modlist.txt"), "+Updated\n+Dropped\n").unwrap();
+        std::fs::write(
+            inst.profile("Default").dir().join("modlist.txt"),
+            "+Updated\n+Dropped\n",
+        )
+        .unwrap();
         // Seeded and saved, then stopped before the folder changed hands.
         let mut state = gate_state(2);
         state.set(&key(10), Status::Installed("Kept".into()));
@@ -2001,9 +2191,15 @@ mod cache_tests {
         std::fs::write(InstallState::path(&root, "gate", 3), "{ truncated").unwrap();
         let mut state = gate_state(2);
         let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
-        assert!(leftovers.iter().any(|n| n.subject == "revision 3"), "{leftovers:?}");
+        assert!(
+            leftovers.iter().any(|n| n.subject == "revision 3"),
+            "{leftovers:?}"
+        );
         // Revision 1 is still taken over.
-        assert_eq!(state.folders.get(&key(10)).map(String::as_str), Some("Kept"));
+        assert_eq!(
+            state.folders.get(&key(10)).map(String::as_str),
+            Some("Kept")
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 }

@@ -168,7 +168,9 @@ impl Sections<'_> {
     fn startup<'a>(&self) -> Element<'a, Message> {
         let (app, typo) = (self.app, &self.typo);
         let games = std::iter::once((None, t("settings_none").to_string())).chain(
-            eidos_games::catalog().iter().map(|g| (Some(g.id.to_string()), g.name.to_string())),
+            eidos_games::catalog()
+                .iter()
+                .map(|g| (Some(g.id.to_string()), g.name.to_string())),
         );
         self.section(
             "startup",
@@ -179,7 +181,12 @@ impl Sections<'_> {
                     typo,
                     t("settings_default_game"),
                     t("settings_default_game_desc"),
-                    dropdown(typo, games, &app.prefs.default_game, Message::DefaultGameChanged),
+                    dropdown(
+                        typo,
+                        games,
+                        &app.prefs.default_game,
+                        Message::DefaultGameChanged,
+                    ),
                 ),
                 functional_toggle(
                     typo,
@@ -194,7 +201,8 @@ impl Sections<'_> {
 
     fn language<'a>(&self) -> Element<'a, Message> {
         let typo = &self.typo;
-        let choices = crate::i18n::LANGUAGES.map(|l| (l, t(&format!("settings_language_{l}")).to_string()));
+        let choices =
+            crate::i18n::LANGUAGES.map(|l| (l, t(&format!("settings_language_{l}")).to_string()));
         let current = crate::i18n::LANGUAGES
             .into_iter()
             .find(|l| *l == self.app.ui_prefs.language)
@@ -226,10 +234,14 @@ impl Sections<'_> {
                     .width(Length::Fixed(260.0 * typo.scale)),
             )
             .push(
-                button(text(t("settings_browse")).size(typo.sz(12)).font(typo.regular))
-                    .padding([4, 10])
-                    .style(button::secondary)
-                    .on_press(Message::BrowseToolsDir),
+                button(
+                    text(t("settings_browse"))
+                        .size(typo.sz(12))
+                        .font(typo.regular),
+                )
+                .padding([4, 10])
+                .style(button::secondary)
+                .on_press(Message::BrowseToolsDir),
             );
         self.section(
             "tools",
@@ -312,10 +324,14 @@ impl Sections<'_> {
         let mut controls = Row::new().spacing(8).push(action);
         if signed_in {
             controls = controls.push(
-                button(text(t("settings_sign_out")).size(typo.sz(12)).font(typo.regular))
-                    .padding([5, 12])
-                    .on_press(Message::NexusSignOut)
-                    .style(button::secondary),
+                button(
+                    text(t("settings_sign_out"))
+                        .size(typo.sz(12))
+                        .font(typo.regular),
+                )
+                .padding([5, 12])
+                .on_press(Message::NexusSignOut)
+                .style(button::secondary),
             );
         }
 
@@ -334,14 +350,16 @@ impl Sections<'_> {
                 // Say what is being withheld and why. Adult mods coming back
                 // blank with no explanation reads as Eidos being broken, and
                 // "could not check" is the case the user can actually act on.
-                rows.push(self.note(
-                    t(match adult_content_state() {
-                        Some(true) => "settings_adult_shown",
-                        Some(false) => "settings_adult_off",
-                        None => "settings_adult_unknown",
-                    })
-                    .to_string(),
-                ));
+                rows.push(
+                    self.note(
+                        t(match adult_content_state() {
+                            Some(true) => "settings_adult_shown",
+                            Some(false) => "settings_adult_off",
+                            None => "settings_adult_unknown",
+                        })
+                        .to_string(),
+                    ),
+                );
             }
             None => rows.push(self.note(t("settings_not_signed_in").to_string())),
         }
@@ -429,11 +447,15 @@ impl Sections<'_> {
                 ),
                 self.info(
                     t("settings_path_shared"),
-                    eidos_instance::settings::settings_path().display().to_string(),
+                    eidos_instance::settings::settings_path()
+                        .display()
+                        .to_string(),
                 ),
                 self.info(
                     t("settings_path_nexus"),
-                    eidos_instance::settings::nexus_key_path().display().to_string(),
+                    eidos_instance::settings::nexus_key_path()
+                        .display()
+                        .to_string(),
                 ),
                 self.info(
                     t("settings_path_games"),
@@ -454,10 +476,16 @@ impl Sections<'_> {
             [
                 self.info(t("settings_key_run"), "Ctrl+R".to_string()),
                 self.info(t("settings_key_refresh"), "F5".to_string()),
-                self.info(t("settings_key_select"), t("settings_key_select_how").to_string()),
+                self.info(
+                    t("settings_key_select"),
+                    t("settings_key_select_how").to_string(),
+                ),
                 self.info(t("settings_key_select_all"), "Ctrl+A".to_string()),
                 self.info(t("settings_key_clear"), t("settings_key_esc").to_string()),
-                self.info(t("settings_key_reorder"), t("settings_key_reorder_how").to_string()),
+                self.info(
+                    t("settings_key_reorder"),
+                    t("settings_key_reorder_how").to_string(),
+                ),
             ],
         )
     }

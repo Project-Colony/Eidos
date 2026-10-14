@@ -56,8 +56,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 .and_then(|i| app.mods.get(i))
                 .is_some_and(|m| m.is_unmanaged())
             {
-                app.status =
-                    Some(t("status_game_content_no_meta").to_string());
+                app.status = Some(t("status_game_content_no_meta").to_string());
                 return Task::none();
             }
             let typed = app.url_edit.trim().to_string();
@@ -67,8 +66,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // looks live.
             let is_web_link = typed.starts_with("http://") || typed.starts_with("https://");
             if !typed.is_empty() && !is_web_link {
-                app.status =
-                    Some(t("status_page_must_be_http").to_string());
+                app.status = Some(t("status_page_must_be_http").to_string());
                 return Task::none();
             }
             let result = match (app.info_mod, app.created.as_ref()) {
@@ -94,8 +92,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 .and_then(|i| app.mods.get(i))
                 .is_some_and(|m| m.is_unmanaged())
             {
-                app.status =
-                    Some(t("status_game_content_no_meta").to_string());
+                app.status = Some(t("status_game_content_no_meta").to_string());
                 return Task::none();
             }
             let result = match (app.info_mod, app.created.as_ref()) {

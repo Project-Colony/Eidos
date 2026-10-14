@@ -202,9 +202,7 @@ pub(crate) fn poll_archive_conflicts(app: &mut App) {
     let result = match job.receiver.try_recv() {
         Ok(v) => Some(v),
         Err(TryRecvError::Empty) => None,
-        Err(TryRecvError::Disconnected) => Some(Err(
-            t("archc_worker_stopped").into(),
-        )),
+        Err(TryRecvError::Disconnected) => Some(Err(t("archc_worker_stopped").into())),
     };
     let Some(result) = result else { return };
     let cancelled = job.cancel.load(Ordering::Relaxed);
@@ -400,7 +398,8 @@ pub(crate) fn archive_member_rows<'a>(
             .size(sz(12)),
         )
         .push(
-            button(text(t("archc_previous"))).on_press_maybe(page.checked_sub(1).map(Message::ArchivePage)),
+            button(text(t("archc_previous")))
+                .on_press_maybe(page.checked_sub(1).map(Message::ArchivePage)),
         )
         .push(
             button(text(t("wizard_next")))
@@ -558,8 +557,7 @@ pub(crate) fn export_destination(
     };
     if request.target != current_target(app) {
         app.archive_export = None;
-        app.status =
-            Some(t("archc_export_cancelled").into());
+        app.status = Some(t("archc_export_cancelled").into());
         return Task::none();
     }
     let Some(destination) = destination else {
