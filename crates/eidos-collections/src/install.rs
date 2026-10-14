@@ -538,14 +538,25 @@ mod tests {
         }
         impl Hooks for Gated {
             fn runtime_check(&mut self, _: &Collection) -> crate::recipe::RuntimeCheck {
-                crate::recipe::RuntimeCheck::Mismatch { observed: "new".into(), expected: vec!["old".into()] }
+                crate::recipe::RuntimeCheck::Mismatch {
+                    observed: "new".into(),
+                    expected: vec!["old".into()],
+                }
             }
             fn allow_runtime_mismatch(&self) -> bool {
                 self.allow
             }
-            fn adopt(&mut self, _: &Collection, _: &mut InstallState, _: &mut dyn FnMut(&InstallState) -> Result<(), String>) -> Result<Vec<Note>, String> {
+            fn adopt(
+                &mut self,
+                _: &Collection,
+                _: &mut InstallState,
+                _: &mut dyn FnMut(&InstallState) -> Result<(), String>,
+            ) -> Result<Vec<Note>, String> {
                 self.adopted += 1;
-                Ok(vec![Note { subject: "Old".into(), detail: "unused".into() }])
+                Ok(vec![Note {
+                    subject: "Old".into(),
+                    detail: "unused".into(),
+                }])
             }
             fn obtain(&mut self, _: &Mod) -> Obtained {
                 assert_eq!(self.adopted, 1, "adoption comes before the first member");
@@ -556,7 +567,10 @@ mod tests {
             }
         }
         let c = collection(vec![member("A", 0, false, 1)]);
-        let mut hooks = Gated { allow: false, adopted: 0 };
+        let mut hooks = Gated {
+            allow: false,
+            adopted: 0,
+        };
         // The user may stay on the revision they have; it keeps its folders.
         assert!(run(&c, &mut InstallState::default(), &mut hooks, &mut noop).aborted);
         assert_eq!(hooks.adopted, 0);

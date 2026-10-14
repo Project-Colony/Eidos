@@ -987,12 +987,19 @@ fn saving_morrowind_ini_in_the_window_does_not_block_its_next_plugin_edit() {
     {
         let ed = app.ini_editor.as_mut().expect("the editor opened");
         assert_eq!(ed.current, "Morrowind.ini");
-        let edited = ed.content.text().replace("[General]", "[General]\r\nSubtitles=1");
+        let edited = ed
+            .content
+            .text()
+            .replace("[General]", "[General]\r\nSubtitles=1");
         ed.content = iced::widget::text_editor::Content::with_text(&edited);
         ed.dirty = true;
     }
     let _ = update_inner(&mut app, Message::IniEditorSave);
-    assert!(!app.ini_editor.as_ref().unwrap().dirty, "status={:?}", app.status);
+    assert!(
+        !app.ini_editor.as_ref().unwrap().dirty,
+        "status={:?}",
+        app.status
+    );
 
     let mut next = app.plugins.clone().unwrap();
     assert!(next.set_enabled("B.esp", false));
@@ -1028,7 +1035,10 @@ fn the_ini_editor_opens_the_real_morrowind_ini_and_never_reverts_an_outside_writ
     ed.dirty = true;
     let _ = update_inner(&mut app, Message::IniEditorSave);
     assert!(app.ini_editor.as_ref().unwrap().dirty);
-    assert_eq!(fs::read_to_string(&path).unwrap(), "[Game Files]\r\nGameFile0=B.esp\r\n");
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        "[Game Files]\r\nGameFile0=B.esp\r\n"
+    );
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -1689,8 +1699,7 @@ fn cached_dds_selection_rejects_replaced_loose_files_and_archives() {
         bytes[at..at + 4].copy_from_slice(&value.to_le_bytes());
     }
     bytes[148..].copy_from_slice(&[255, 0, 0, 255]);
-    for (archived, change_view) in [(false, false), (true, false), (false, true), (true, true)]
-    {
+    for (archived, change_view) in [(false, false), (true, false), (false, true), (true, true)] {
         let path = root.join(if archived {
             "textures.bsa"
         } else {
@@ -1987,14 +1996,21 @@ fn an_edit_in_a_stale_window_keeps_what_another_process_wrote() {
     mods_changed(&mut app);
     let skyui = inst.modlist().into_iter().find(|m| m.name == "SkyUI");
     assert!(skyui.is_some_and(|m| m.enabled), "status={:?}", app.status);
-    assert!(app.mods.iter().any(|m| m.name == "SkyUI"), "the window reloaded");
+    assert!(
+        app.mods.iter().any(|m| m.name == "SkyUI"),
+        "the window reloaded"
+    );
     // Reloaded, the window's edits land again - twice, so its own save is
     // not mistaken for another process's.
     for on in [true, false] {
         let i = at(&app);
         app.mods[i].enabled = on;
         mods_changed(&mut app);
-        let aaa = inst.modlist().into_iter().find(|m| m.name == "Aaa").unwrap();
+        let aaa = inst
+            .modlist()
+            .into_iter()
+            .find(|m| m.name == "Aaa")
+            .unwrap();
         assert_eq!(aaa.enabled, on, "status={:?}", app.status);
     }
     // A removal edits modlist.txt itself before saving; that is the
@@ -2033,13 +2049,24 @@ fn a_rename_in_a_stale_window_is_refused_before_the_folder_moves() {
 
     // Refused while the folder still had its old name, and said so: had it
     // moved first, the reload would have listed "SkyUI 5.2" DISABLED.
-    assert!(root.join("mods").join("SkyUI").is_dir(), "status={:?}", app.status);
+    assert!(
+        root.join("mods").join("SkyUI").is_dir(),
+        "status={:?}",
+        app.status
+    );
     assert!(!root.join("mods").join("SkyUI 5.2").exists());
-    assert!(app.status.as_deref().unwrap_or("").contains("another Eidos process"));
+    assert!(app
+        .status
+        .as_deref()
+        .unwrap_or("")
+        .contains("another Eidos process"));
     let listed = inst.modlist();
     assert!(listed.iter().any(|m| m.name == "SkyUI" && m.enabled));
     assert!(listed.iter().any(|m| m.name == "Foo" && m.enabled));
-    assert!(app.mods.iter().any(|m| m.name == "Foo"), "the window reloaded");
+    assert!(
+        app.mods.iter().any(|m| m.name == "Foo"),
+        "the window reloaded"
+    );
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -2064,12 +2091,20 @@ fn batch_edits_in_a_stale_window_report_the_refusal_not_success() {
     // "Enable selected" used to replace the refusal with "Enabled 2 mod(s)."
     stale(&mut app, "Foo");
     let _ = update_inner(&mut app, Message::BatchToggleMods);
-    assert!(app.status.as_deref().unwrap_or("").contains("another Eidos process"));
+    assert!(app
+        .status
+        .as_deref()
+        .unwrap_or("")
+        .contains("another Eidos process"));
 
     // And a batch Remove refuses BEFORE deleting, not after.
     stale(&mut app, "Bar");
     let _ = update_inner(&mut app, Message::ConfirmBatchRemove);
-    assert!(app.status.as_deref().unwrap_or("").contains("another Eidos process"));
+    assert!(app
+        .status
+        .as_deref()
+        .unwrap_or("")
+        .contains("another Eidos process"));
     assert!(root.join("mods").join("Aaa").is_dir());
     fs::remove_dir_all(root).unwrap();
 }
@@ -2137,7 +2172,10 @@ fn renaming_a_mod_leaves_it_where_it_was_and_still_enabled() {
     assert!(app.mods[reloaded].enabled);
     let (other, trust) = inst.profile("Other").modlist_checked();
     assert!(trust.is_good(), "{trust:?}");
-    let at = other.iter().position(|m| m.name == "Renamed").expect("listed in Other");
+    let at = other
+        .iter()
+        .position(|m| m.name == "Renamed")
+        .expect("listed in Other");
     assert_eq!(at, before);
     assert!(other[at].enabled);
     let _ = fs::remove_dir_all(&root);
@@ -2347,10 +2385,7 @@ fn offline_mode_stops_the_sign_in_that_never_reaches_connect() {
     // Signing in opens a BROWSER before any request is made, so the guard in
     // `Nexus::connect` is not on this path at all.
     assert!(!app.nexus_signing_in, "it must not start");
-    assert_eq!(
-        app.nexus_error.as_deref(),
-        Some(t("nexus_offline"))
-    );
+    assert_eq!(app.nexus_error.as_deref(), Some(t("nexus_offline")));
 }
 
 #[test]
@@ -3320,9 +3355,7 @@ fn renaming_a_portable_instance_moves_the_folder_and_the_registry_with_it() {
     let _ = update_inner(&mut app, Message::InstanceRenameStart(0));
     let _ = update_inner(
         &mut app,
-        Message::InstanceRenameChanged(
-            dest.file_name().unwrap().to_string_lossy().into_owned(),
-        ),
+        Message::InstanceRenameChanged(dest.file_name().unwrap().to_string_lossy().into_owned()),
     );
     let _ = update_inner(&mut app, Message::InstanceRenameCommit);
 
@@ -3997,7 +4030,11 @@ fn collision_backup_choice_preserves_payload_metadata_and_disabled_state() {
         app.mods[0].enabled = false;
         inst.active().save_modlist(&app.mods).unwrap();
         let archive = root.join("reinstall.zip");
-        fs::write(&archive, include_bytes!("../../tests/fixtures/reinstall.zip")).unwrap();
+        fs::write(
+            &archive,
+            include_bytes!("../../tests/fixtures/reinstall.zip"),
+        )
+        .unwrap();
         app.collision = Some(CollisionPrompt {
             target: update::collection_target(&app).unwrap(),
             backup: false,
@@ -4858,8 +4895,14 @@ fn with_motion_off_nothing_animates_and_no_frames_are_asked_for() {
         &mut app,
         Message::Preference(colony_ui::preferences::Change::ReduceMotion(true)),
     );
-    assert!(app.ui_prefs.standard.reduce_motion, "the preference is what gets saved");
-    assert!(!app.ui_prefs.motion(), "it has to stop the animations at once");
+    assert!(
+        app.ui_prefs.standard.reduce_motion,
+        "the preference is what gets saved"
+    );
+    assert!(
+        !app.ui_prefs.motion(),
+        "it has to stop the animations at once"
+    );
 
     app.tab = Tab::Data;
     let _ = update(&mut app, Message::SelectTab(Tab::Saves));

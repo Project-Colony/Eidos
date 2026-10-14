@@ -130,7 +130,10 @@ fn read_cancel(path: &Path, cancel: &AtomicBool) -> Preview {
         let truncated = bytes.len() > limit;
         bytes.truncate(limit);
         if truncated && limit != PREVIEW_TEXT_CAP {
-            return Err(tf("preview_input_too_big", &[("n", &(limit / 1024 / 1024))]));
+            return Err(tf(
+                "preview_input_too_big",
+                &[("n", &(limit / 1024 / 1024))],
+            ));
         }
         Ok((bytes, truncated))
     })();
@@ -159,10 +162,7 @@ fn from_bytes_cancel(path: &Path, bytes: Vec<u8>, truncated: bool, cancel: &Atom
                 info,
                 dds_preview::Selection::default(),
             ),
-            Err(error) => unsupported(
-                path,
-                tf("preview_dds_unreadable", &[("error", &error)]),
-            ),
+            Err(error) => unsupported(path, tf("preview_dds_unreadable", &[("error", &error)])),
         };
     }
     if IMAGES.contains(&ext.as_str()) {
@@ -434,8 +434,7 @@ pub(crate) fn complete(app: &mut App, id: u64, mut preview: Preview) {
         app.preview = Some(preview);
     } else {
         app.preview = None;
-        app.status =
-            Some(t("preview_discarded").into());
+        app.status = Some(t("preview_discarded").into());
     }
 }
 
@@ -475,9 +474,7 @@ fn extension_preview(
                     | Preview::Dds { path: origin, .. }
                     | Preview::Nif { path: origin, .. }
                     | Preview::Unsupported { path: origin, .. } => *origin = path.into(),
-                    Preview::Archive { .. } => {
-                        return Err(t("preview_unexpected_helper").into())
-                    }
+                    Preview::Archive { .. } => return Err(t("preview_unexpected_helper").into()),
                 }
                 return Ok(preview);
             }

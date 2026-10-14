@@ -46,7 +46,7 @@ concurrency:
 env:
   # Same pin as CI: the binary users download is built by a known compiler, not
   # by whatever stable happened to be current that morning.
-  RUST_VERSION: "1.94.1"
+  RUST_VERSION: "1.99.0"
   CARGO_TERM_COLOR: always
 
 jobs:

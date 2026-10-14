@@ -534,8 +534,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     if let Some((i, inst)) = pinned {
         open_existing(&mut app, i, inst);
         if auto.is_some() {
-            app.status =
-                Some(t("status_launched_from_steam").to_string());
+            app.status = Some(t("status_launched_from_steam").to_string());
         }
     } else if let Some(i) = auto {
         app.selected = Some(i);
@@ -547,8 +546,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
             });
         if let Some(inst) = found {
             open_existing(&mut app, i, inst);
-            app.status =
-                Some(t("status_launched_from_steam").to_string());
+            app.status = Some(t("status_launched_from_steam").to_string());
         }
     } else if let Some(k) = app.known.first() {
         // Standalone: open the last-used instance if it still exists, else the
@@ -1878,7 +1876,11 @@ impl ModFilters {
     pub(crate) fn rows(self) -> [(&'static str, Criterion, FilterField); 5] {
         [
             (t("filter_active"), self.active, FilterField::Active),
-            (t("filter_conflicted"), self.conflicted, FilterField::Conflicted),
+            (
+                t("filter_conflicted"),
+                self.conflicted,
+                FilterField::Conflicted,
+            ),
             (t("filter_update"), self.update, FilterField::Update),
             (t("filter_plugins"), self.plugins, FilterField::Plugins),
             (
@@ -2332,7 +2334,6 @@ fn modlist_unchanged(app: &App, inst: &Instance) -> bool {
         .is_none_or(|seen| seen == modlist_fingerprint(inst))
 }
 
-
 /// For a handler that changes `mods/` itself (renames a folder, creates one)
 /// and then saves: the staleness check, made BEFORE the folder changes. Left
 /// to `save_mods`, the refusal came after it, and the reload then found the
@@ -2340,7 +2341,11 @@ fn modlist_unchanged(app: &App, inst: &Instance) -> bool {
 /// (a renamed mod, a mod built from the Overwrite stopped loading). Reloads and
 /// says so when stale; `true` means refused, leave `mods/` alone.
 pub(crate) fn refuse_stale_modlist(app: &mut App) -> bool {
-    if app.created.as_ref().is_none_or(|inst| modlist_unchanged(app, inst)) {
+    if app
+        .created
+        .as_ref()
+        .is_none_or(|inst| modlist_unchanged(app, inst))
+    {
         return false;
     }
     reload_mods(app);
@@ -2541,7 +2546,10 @@ fn run_addon_capture_inner(
     if !output.status.success() && stdout.is_empty() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let why = stderr.lines().next().unwrap_or(t("ext_no_output")).trim();
-        return Err(tf("ext_exited_with", &[("status", &output.status), ("reason", &why)]));
+        return Err(tf(
+            "ext_exited_with",
+            &[("status", &output.status), ("reason", &why)],
+        ));
     }
     Ok(stdout)
 }

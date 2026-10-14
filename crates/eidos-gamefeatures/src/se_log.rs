@@ -178,7 +178,10 @@ fn info_group(rest: &str) -> Option<(usize, usize)> {
 /// The plugin is refused. Counting it as live hid a dead plugin behind a green
 /// report - which is the one thing this panel exists to prevent.
 fn is_success(status: &str) -> bool {
-    status.trim().to_ascii_lowercase().starts_with("loaded correctly")
+    status
+        .trim()
+        .to_ascii_lowercase()
+        .starts_with("loaded correctly")
 }
 
 /// Drop the trailing `(handle N)` the extender appends on success - a load-order
@@ -267,9 +270,15 @@ mod tests {
         );
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].dll, "slack.dll");
-        assert_eq!(got[0].name, "Save & Load Accelerator for SKSE Cosaves (S.L.A.C.K.)");
+        assert_eq!(
+            got[0].name,
+            "Save & Load Accelerator for SKSE Cosaves (S.L.A.C.K.)"
+        );
         assert_eq!(got[0].status, "loaded correctly");
-        assert!(got[0].loaded, "it loaded - the parser must not invent a failure");
+        assert!(
+            got[0].loaded,
+            "it loaded - the parser must not invent a failure"
+        );
     }
 
     /// `no version data` is an ERROR line, not a quiet success. In SKSE 2.3.1

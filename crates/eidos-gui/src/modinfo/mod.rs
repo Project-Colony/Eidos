@@ -124,7 +124,10 @@ pub(crate) fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> 
             ));
     }
     if !app.info_provenance.is_empty() {
-        col = col.push(info_kv(t("info_generated_output"), app.info_provenance.clone()));
+        col = col.push(info_kv(
+            t("info_generated_output"),
+            app.info_provenance.clone(),
+        ));
     }
     // A page for mods that are not on Nexus. Without it every such mod is a dead
     // end in the interface: "Visit on Nexus" only appears when a Nexus id
@@ -132,7 +135,11 @@ pub(crate) fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> 
     let url_row = Row::new()
         .spacing(6)
         .align_y(iced::Alignment::Center)
-        .push(text(t("info_page")).size(sz(11)).width(Length::Fixed(scaled(90.0))))
+        .push(
+            text(t("info_page"))
+                .size(sz(11))
+                .width(Length::Fixed(scaled(90.0))),
+        )
         .push(
             text_input("https://...", &app.url_edit)
                 .on_input(Message::ModUrlChanged)
@@ -149,7 +156,11 @@ pub(crate) fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> 
 
     col.push(info_kv(
         t("info_enabled"),
-        if m.enabled { t("common_yes").into() } else { t("common_no").into() },
+        if m.enabled {
+            t("common_yes").into()
+        } else {
+            t("common_no").into()
+        },
     ))
     .push(info_kv(t("info_files"), files.to_string()))
     .push(info_kv(t("common_folder"), m.path.display().to_string()))
@@ -175,41 +186,71 @@ pub(crate) fn generated_summary(app: &App, name: &str) -> String {
         .into_iter()
         .flat_map(|list| list.plugins.iter().map(|p| (p.name.clone(), p.enabled)))
         .collect();
-    outputs.iter().map(|output| {
-        let receipt = &output.receipt;
-        let state = if inst.generated_input_drift(receipt, &inputs) { t("info_inputs_changed") } else { t("info_inputs_unchanged") };
-        let versions = receipt.inputs.iter().map(|input| {
-            let sources = input.installed_files.iter().map(|(m, f)| format!("{m}/{f}")).collect::<Vec<_>>().join(", ");
-            format!("{}: {}{}", input.name, input.version.as_deref().unwrap_or(t("info_version_unknown")), if sources.is_empty() { String::new() } else { format!(" [{sources}]") })
-        }).collect::<Vec<_>>().join("; ");
-        let fingerprint = receipt
-            .executable
-            .as_ref()
-            .map(|exe| {
-                tf(
-                    "info_fingerprint",
-                    &[
-                        ("path", &exe.path.display()),
-                        ("size", &exe.size),
-                        ("modified", &format_when(exe.modified)),
-                    ],
-                )
-            })
-            .unwrap_or_else(|| t("info_unavailable").into());
-        tf(
-            "info_receipt",
-            &[
-                ("tool", &receipt.tool),
-                ("when", &eidos_instance::format_stamp(receipt.started_at)),
-                ("profile", &receipt.profile),
-                ("n", &output.paths.len()),
-                ("state", &state),
-                ("inputs", &versions),
-                ("command", &receipt.command.join(" ")),
-                ("fingerprint", &fingerprint),
-            ],
-        )
-    }).collect::<Vec<_>>().join("\n\n")
+    outputs
+        .iter()
+        .map(|output| {
+            let receipt = &output.receipt;
+            let state = if inst.generated_input_drift(receipt, &inputs) {
+                t("info_inputs_changed")
+            } else {
+                t("info_inputs_unchanged")
+            };
+            let versions = receipt
+                .inputs
+                .iter()
+                .map(|input| {
+                    let sources = input
+                        .installed_files
+                        .iter()
+                        .map(|(m, f)| format!("{m}/{f}"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!(
+                        "{}: {}{}",
+                        input.name,
+                        input
+                            .version
+                            .as_deref()
+                            .unwrap_or(t("info_version_unknown")),
+                        if sources.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" [{sources}]")
+                        }
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            let fingerprint = receipt
+                .executable
+                .as_ref()
+                .map(|exe| {
+                    tf(
+                        "info_fingerprint",
+                        &[
+                            ("path", &exe.path.display()),
+                            ("size", &exe.size),
+                            ("modified", &format_when(exe.modified)),
+                        ],
+                    )
+                })
+                .unwrap_or_else(|| t("info_unavailable").into());
+            tf(
+                "info_receipt",
+                &[
+                    ("tool", &receipt.tool),
+                    ("when", &eidos_instance::format_stamp(receipt.started_at)),
+                    ("profile", &receipt.profile),
+                    ("n", &output.paths.len()),
+                    ("state", &state),
+                    ("inputs", &versions),
+                    ("command", &receipt.command.join(" ")),
+                    ("fingerprint", &fingerprint),
+                ],
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 /// Conflicts tab: which files this mod overrides, and which it loses, by mod name.
@@ -279,14 +320,23 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
     let summary = if hidden == 0 {
         tf("info_n_files", &[("n", &entries.len())])
     } else {
-        tf("info_n_files_hidden", &[("n", &entries.len()), ("hidden", &hidden)])
+        tf(
+            "info_n_files_hidden",
+            &[("n", &entries.len()), ("hidden", &hidden)],
+        )
     };
     let mut col = Column::new().spacing(1).push(text(summary).size(sz(12)));
     let mut tools = Row::new().spacing(6).align_y(iced::Alignment::Center);
     if hidden > 0 {
-        tools = tools.push(tool_btn(t("info_unhide_all"), Message::RestoreHiddenFiles(i)));
+        tools = tools.push(tool_btn(
+            t("info_unhide_all"),
+            Message::RestoreHiddenFiles(i),
+        ));
     }
-    tools = tools.push(tool_btn(t("info_new_folder"), Message::FiletreeNewFolderStart(i)));
+    tools = tools.push(tool_btn(
+        t("info_new_folder"),
+        Message::FiletreeNewFolderStart(i),
+    ));
     col = col.push(tools);
     if let Some((_, name)) = app.tree_new_folder.as_ref().filter(|(n, _)| *n == m.name) {
         col = col.push(
@@ -310,7 +360,11 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
     }
     for e in entries.iter().take(2000) {
         let is_hidden = path_is_hidden(e);
-        let label = if is_hidden { t("info_unhide") } else { t("info_hide") };
+        let label = if is_hidden {
+            t("info_unhide")
+        } else {
+            t("info_hide")
+        };
         // Renaming replaces the last component only, so the box holds the NAME.
         let renaming = app
             .tree_rename
@@ -383,18 +437,25 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
                 // be undone by clicking again - hiding renames, and renaming
                 // renames back. Two clicks, like everything else that removes.
                 .push(
-                    button(text(if armed { t("info_delete_confirm") } else { t("common_delete") }).size(sz(10)))
-                        .padding([1, 5])
-                        .style(if armed {
-                            button::danger
+                    button(
+                        text(if armed {
+                            t("info_delete_confirm")
                         } else {
-                            button::secondary
+                            t("common_delete")
                         })
-                        .on_press(if armed {
-                            Message::ConfirmFiletreeDelete(m.name.clone(), e.clone())
-                        } else {
-                            Message::FiletreeDelete(i, e.clone())
-                        }),
+                        .size(sz(10)),
+                    )
+                    .padding([1, 5])
+                    .style(if armed {
+                        button::danger
+                    } else {
+                        button::secondary
+                    })
+                    .on_press(if armed {
+                        Message::ConfirmFiletreeDelete(m.name.clone(), e.clone())
+                    } else {
+                        Message::FiletreeDelete(i, e.clone())
+                    }),
                 );
         }
         col = col.push(row);
@@ -403,10 +464,7 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
     // past the cap routinely, and a list that stops without saying so reads as
     // "the mod does not ship that file" to whoever scrolled looking for it.
     if entries.len() > 2000 {
-        col = col.push(
-            text(tf("info_tree_truncated", &[("n", &entries.len())]))
-            .size(sz(11)),
-        );
+        col = col.push(text(tf("info_tree_truncated", &[("n", &entries.len())])).size(sz(11)));
     }
     col.into()
 }
@@ -484,10 +542,7 @@ pub(crate) fn info_ini_tweaks<'a>(app: &App, i: usize, m: &ModEntry) -> Element<
         return Column::new()
             .spacing(6)
             .push(text(t("info_no_tweaks")).size(sz(12)))
-            .push(
-                text(t("info_tweaks_hint"))
-                    .size(sz(10)),
-            )
+            .push(text(t("info_tweaks_hint")).size(sz(10)))
             .into();
     }
     let enabled: Vec<String> = app
@@ -496,9 +551,9 @@ pub(crate) fn info_ini_tweaks<'a>(app: &App, i: usize, m: &ModEntry) -> Element<
         .map(|inst| inst.mod_meta(&m.name).ini_tweaks().to_vec())
         .unwrap_or_default();
 
-    let mut col = Column::new().spacing(3).push(
-        text(t("info_tweaks_note")).size(sz(11)),
-    );
+    let mut col = Column::new()
+        .spacing(3)
+        .push(text(t("info_tweaks_note")).size(sz(11)));
     for name in available {
         let on = enabled.iter().any(|e| e.eq_ignore_ascii_case(&name));
         let label = name.clone();

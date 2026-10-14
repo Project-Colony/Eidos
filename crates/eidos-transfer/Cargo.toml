@@ -1,6 +1,7 @@
 [package]
 name = "eidos-transfer"
 version.workspace = true
+rust-version.workspace = true
 description = "Pack a whole Eidos instance into one .eidos file, and put it back on another machine"
 license.workspace = true
 repository.workspace = true
@@ -22,4 +23,4 @@ eidos-sevenzip = { path = "../eidos-sevenzip" }
 eidos-ini = { path = "../eidos-ini" }
 # statvfs(2), so a 70 GB pack refuses on a disk with 4 GB free BEFORE spending
 # twenty minutes finding out.
-libc = "0.2"
+libc.workspace = true

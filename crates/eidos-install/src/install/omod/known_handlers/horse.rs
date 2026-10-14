@@ -260,7 +260,7 @@ pub(super) fn generate(
     }])
 }
 
-/// Fixed layouts from HorseArmorRevamped.cs:157–264. Guard the complete texture
+/// Fixed layouts from HorseArmorRevamped.cs:157-264. Guard the complete texture
 /// string and its length, header, and all edited ranges before changing a copy.
 pub(super) fn transform(base: &str, variant: &str, original: &[u8]) -> E<Vec<u8>> {
     let (length, token, kind) = match base {

@@ -109,7 +109,10 @@ impl Manifest {
         }
         if let Some(selection) = &self.installation {
             if selection.contains(['\n', '\r', '\0']) {
-                return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid installation identity"));
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "invalid installation identity",
+                ));
             }
             out.push_str("installation=");
             out.push_str(selection);
@@ -164,11 +167,17 @@ mod tests {
     #[test]
     fn selected_installation_survives_a_manifest_update() {
         let p = tmp();
-        fs::write(&p, "[eidos]\ngame_id=skyrimse\ninstallation=[\"GOG:1711230643\",\"/games/Skyrim\"]\n").unwrap();
+        fs::write(
+            &p,
+            "[eidos]\ngame_id=skyrimse\ninstallation=[\"GOG:1711230643\",\"/games/Skyrim\"]\n",
+        )
+        .unwrap();
         let mut m = Manifest::read_checked(&p).unwrap().unwrap();
         m.selected_profile = Some("Second".into());
         m.write(&p).unwrap();
-        assert!(fs::read_to_string(&p).unwrap().contains("installation=[\"GOG:1711230643\",\"/games/Skyrim\"]"));
+        assert!(fs::read_to_string(&p)
+            .unwrap()
+            .contains("installation=[\"GOG:1711230643\",\"/games/Skyrim\"]"));
         fs::remove_file(p).unwrap();
     }
 

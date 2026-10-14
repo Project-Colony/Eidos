@@ -245,8 +245,8 @@ fn read_rva<'a>(
 }
 
 fn inspect<Pe: object::read::pe::ImageNtHeaders>(read: Limited<'_>) -> Result<PeInfo, String> {
-    use object::LittleEndian as LE;
     use object::read::pe::{ExportTable, ExportTarget, PeFile, ResourceDirectory};
+    use object::LittleEndian as LE;
     let file: PeFile<'_, Pe, _> = PeFile::parse(read).map_err(|e| e.to_string())?;
     let sections = file.section_table();
     let mut declaration = None;
@@ -626,7 +626,7 @@ mod tests {
         u32at(&mut b, 0x300, 1);
         b[0x308..0x30d].copy_from_slice(b"Test\0");
         u32at(&mut b, 0x300 + 780, 0x01070680); // 1.7.104.0
-        // RT_VERSION / name / language tables, then IMAGE_RESOURCE_DATA_ENTRY.
+                                                // RT_VERSION / name / language tables, then IMAGE_RESOURCE_DATA_ENTRY.
         for (at, id, next) in [(0x800, 16, 24), (0x818, 1, 48), (0x830, 1033, 72)] {
             u16at(&mut b, at + 14, 1);
             u32at(&mut b, at + 16, id);
@@ -735,16 +735,14 @@ mod tests {
             .iter()
             .find(|g| g.id == "fallout4")
             .unwrap();
-        assert!(
-            scan_skse(
-                game,
-                &root.join("Data"),
-                &root,
-                &[],
-                &root.join("overwrite")
-            )
-            .is_empty()
-        );
+        assert!(scan_skse(
+            game,
+            &root.join("Data"),
+            &root,
+            &[],
+            &root.join("overwrite")
+        )
+        .is_empty());
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
@@ -798,35 +796,27 @@ mod tests {
             skse: None,
             address_library: None,
         };
-        assert!(
-            check_skse_plugin(&f.0, "M", &context)
-                .iter()
-                .any(|d| d.code == "address_library_missing")
-        );
+        assert!(check_skse_plugin(&f.0, "M", &context)
+            .iter()
+            .any(|d| d.code == "address_library_missing"));
         context.address_library = Some(&library.0);
-        assert!(
-            !check_skse_plugin(&f.0, "M", &context)
-                .iter()
-                .any(|d| d.severity == DiagnosticSeverity::Error)
-        );
+        assert!(!check_skse_plugin(&f.0, "M", &context)
+            .iter()
+            .any(|d| d.severity == DiagnosticSeverity::Error));
         u32at(&mut b, 0x300 + 776, 1);
         let f = Tmp::new(&b);
-        assert!(
-            check_skse_plugin(&f.0, "M", &context)
-                .iter()
-                .any(|d| d.code == "runtime_structures")
-        );
+        assert!(check_skse_plugin(&f.0, "M", &context)
+            .iter()
+            .any(|d| d.code == "runtime_structures"));
     }
     #[test]
     fn malformed_and_truncated_files_never_claim_compatibility() {
         for bytes in [vec![], b"MZ".to_vec(), fixture()[..600].to_vec()] {
             let f = Tmp::new(&bytes);
             assert!(inspect_pe(&f.0).is_err());
-            assert!(
-                check_skse_plugin(&f.0, "M", &SkseContext::default())
-                    .iter()
-                    .any(|d| d.code == "pe_unverified")
-            );
+            assert!(check_skse_plugin(&f.0, "M", &SkseContext::default())
+                .iter()
+                .any(|d| d.code == "pe_unverified"));
         }
     }
     #[test]
@@ -848,19 +838,15 @@ mod tests {
         let mut b = fixture();
         u32at(&mut b, 0x300, 2);
         let f = Tmp::new(&b);
-        assert!(
-            check_skse_plugin(&f.0, "M", &SkseContext::default())
-                .iter()
-                .any(|d| d.code == "skse_declaration_unverified")
-        );
+        assert!(check_skse_plugin(&f.0, "M", &SkseContext::default())
+            .iter()
+            .any(|d| d.code == "skse_declaration_unverified"));
         let mut b = fixture();
         u32at(&mut b, 0x300 + 772, 0x80000000);
         let f = Tmp::new(&b);
-        assert!(
-            check_skse_plugin(&f.0, "M", &SkseContext::default())
-                .iter()
-                .any(|d| d.code == "skse_flags_unverified")
-        );
+        assert!(check_skse_plugin(&f.0, "M", &SkseContext::default())
+            .iter()
+            .any(|d| d.code == "skse_flags_unverified"));
     }
     #[test]
     fn explicit_runtime_and_minimum_skse_can_match_without_claiming_hooks_are_safe() {
@@ -890,20 +876,16 @@ mod tests {
             skse: None,
             address_library: Some(&library.0),
         };
-        assert!(
-            check_skse_plugin(&f.0, "M", &context)
-                .iter()
-                .any(|d| d.code == "runtime_structures")
-        );
+        assert!(check_skse_plugin(&f.0, "M", &context)
+            .iter()
+            .any(|d| d.code == "runtime_structures"));
         let context = SkseContext {
             runtime: Some(Version([1, 5, 97, 0])),
             ..context
         };
-        assert!(
-            check_skse_plugin(&f.0, "M", &context)
-                .iter()
-                .any(|d| d.code == "legacy_runtime_unverified")
-        );
+        assert!(check_skse_plugin(&f.0, "M", &context)
+            .iter()
+            .any(|d| d.code == "legacy_runtime_unverified"));
     }
     #[test]
     fn minimum_skse_and_architecture_mismatches_are_errors() {
@@ -915,17 +897,13 @@ mod tests {
             skse: Some(Version([2, 2, 6, 0])),
             address_library: None,
         };
-        assert!(
-            check_skse_plugin(&f.0, "M", &context)
-                .iter()
-                .any(|d| d.code == "skse_too_old")
-        );
+        assert!(check_skse_plugin(&f.0, "M", &context)
+            .iter()
+            .any(|d| d.code == "skse_too_old"));
         u16at(&mut b, 0x84, 0x14c);
         let f = Tmp::new(&b);
-        assert!(
-            check_skse_plugin(&f.0, "M", &context)
-                .iter()
-                .any(|d| d.code == "pe_architecture")
-        );
+        assert!(check_skse_plugin(&f.0, "M", &context)
+            .iter()
+            .any(|d| d.code == "pe_architecture"));
     }
 }

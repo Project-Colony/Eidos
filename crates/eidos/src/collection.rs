@@ -10,7 +10,6 @@
 //! rules, and the INI tweaks. Once, at the end, rather than after every member:
 //! under a union mount there is no per-mod barrier to wait for.
 
-
 use std::process::exit;
 
 use eidos_collections::driver;
@@ -118,10 +117,15 @@ pub(crate) fn cmd_collection(args: &[String]) {
             exit(1);
         }
     };
-    if read.collection.info.domain_name.trim().is_empty() { read.collection.info.domain_name = rev.game_domain.clone(); }
+    if read.collection.info.domain_name.trim().is_empty() {
+        read.collection.info.domain_name = rev.game_domain.clone();
+    }
     let c = &read.collection;
     if !c.info.install_instructions.is_empty() {
-        println!("\n--- the author's notes ---\n{}\n", c.info.install_instructions);
+        println!(
+            "\n--- the author's notes ---\n{}\n",
+            c.info.install_instructions
+        );
     }
 
     let state_path = InstallState::path(&inst.root, &rev.slug, rev.revision_number);
@@ -216,9 +220,7 @@ pub(crate) fn cmd_collection(args: &[String]) {
 
     println!("\n{}", report.render());
     if !report.is_complete() {
-        println!(
-            "Run this again once you have what is missing; it picks up where it left off."
-        );
+        println!("Run this again once you have what is missing; it picks up where it left off.");
         exit(1);
     }
 }
@@ -249,7 +251,10 @@ fn preview(c: &Collection, state: &InstallState) {
         .filter(|m| m.source.kind != SourceType::Nexus)
         .collect();
     if !non_nexus.is_empty() {
-        println!("\n{} member(s) do not come from a Nexus mod page:", non_nexus.len());
+        println!(
+            "\n{} member(s) do not come from a Nexus mod page:",
+            non_nexus.len()
+        );
         for m in non_nexus {
             println!("  {}  ({:?})", m.name, m.source.kind);
         }
@@ -261,4 +266,3 @@ fn preview(c: &Collection, state: &InstallState) {
         }
     }
 }
-

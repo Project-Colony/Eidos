@@ -201,8 +201,9 @@ just build
 just install
 ```
 
-Requires Rust 1.94.1 or newer, the toolchain CI and releases build with, plus
-`just`, CMake 3.20+ and a C++17 compiler for the NIF preview helper. An Arch
+Requires Rust 1.89 or newer (the `rust-version` CI checks; CI and releases
+build with 1.99.0), plus `just`, CMake 3.20+ and a C++17 compiler for the NIF
+preview helper. An Arch
 package builds from `packaging/PKGBUILD`. Prerequisites and the commands without
 `just`: [docs/guide/install.md](docs/guide/install.md).
 

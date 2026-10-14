@@ -27,7 +27,7 @@ env:
   # red overnight for reasons nobody in the PR caused. Bumping this line is then
   # a normal, reviewable change that lands with whatever fixes it requires.
   # This is the version the project is developed against.
-  RUST_VERSION: "1.94.1"
+  RUST_VERSION: "1.99.0"
   CARGO_TERM_COLOR: always
   # A backtrace costs nothing on a green run and saves a whole re-run on a red one.
   RUST_BACKTRACE: "1"
@@ -117,18 +117,53 @@ jobs:
       - name: Test the GUI (serially - see above)
         run: cargo test -p eidos-gui --locked -- --test-threads=1
 
-  fmt:
-    name: rustfmt (advisory)
+  # The floor in Cargo.toml (`rust-version`) is a promise about who can build
+  # Eidos, and an untested floor is a guess. This job type-checks every target
+  # on exactly that toolchain, read from the manifest so the two cannot drift.
+  # RUSTUP_TOOLCHAIN outranks the runner's rustup default, and the rustc check
+  # makes a pin that silently stopped working fail loudly.
+  msrv:
+    name: MSRV
     runs-on: ubuntu-24.04
-    # The tree is NOT rustfmt-clean today: it is written to a wider column budget
-    # than rustfmt's default, so `cargo fmt --check` reports a diff in most files
-    # (hundreds of hunks at any max_width). Making that a hard gate now would
-    # redden every PR for something no PR author did, and the alternative - a
-    # one-shot `cargo fmt --all` - rewrites nearly every source file and buries
-    # the history of a young codebase. So this job REPORTS the diff without
-    # blocking. Flip `continue-on-error` to false in the same commit that lands
-    # the mass reformat and pins the width in a rustfmt.toml.
-    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read the declared rust-version
+        id: msrv
+        run: |
+          version=$(grep -m1 '^rust-version' Cargo.toml | tr -d ' "' | cut -d= -f2)
+          [ -n "$version" ] || { echo "::error::could not read rust-version from Cargo.toml"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "RUSTUP_TOOLCHAIN=$version" >> "$GITHUB_ENV"
+
+      - name: Install Rust ${{ steps.msrv.outputs.version }}
+        run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --no-self-update
+
+      - name: Cache cargo registry and build artifacts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-msrv-${{ steps.msrv.outputs.version }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-msrv-${{ steps.msrv.outputs.version }}-
+
+      - name: Check every target on the declared floor
+        run: |
+          rustc --version | grep -q "^rustc ${RUSTUP_TOOLCHAIN}[. ]" \
+            || { echo "::error::expected rustc ${RUSTUP_TOOLCHAIN}, got $(rustc --version)"; exit 1; }
+          cargo check --workspace --locked --all-targets
+
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-24.04
+    # A hard gate: the tree is formatted with rustfmt's defaults (no
+    # rustfmt.toml, the same as the rest of Project-Colony), so a red run here
+    # means the PR itself left code unformatted. Run `cargo fmt --all` and push.
+    continue-on-error: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 

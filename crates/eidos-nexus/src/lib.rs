@@ -703,7 +703,11 @@ fn adult_flag(v: &serde_json::Value) -> Option<bool> {
 /// tolerates a placeholder for mods with no recorded version).
 fn endorse_version(version: &str) -> &str {
     let v = version.trim();
-    if v.is_empty() { "1.0" } else { v }
+    if v.is_empty() {
+        "1.0"
+    } else {
+        v
+    }
 }
 
 impl Nexus {
@@ -2636,11 +2640,9 @@ mod tests {
 
     #[test]
     fn the_denied_explanation_points_at_the_setting_that_fixes_it() {
-        assert!(
-            HiddenReason::AdultDenied
-                .message()
-                .contains("next.nexusmods.com/settings/content-blocking")
-        );
+        assert!(HiddenReason::AdultDenied
+            .message()
+            .contains("next.nexusmods.com/settings/content-blocking"));
     }
 
     #[test]
@@ -3124,7 +3126,7 @@ mod tests {
         assert!(t.contains("installed=true"));
         assert!(t.contains("uninstalled=false"));
         assert!(t.contains("modID=1")); // other keys preserved
-        // No sidecar = silent no-op, not an error.
+                                        // No sidecar = silent no-op, not an error.
         mark_installed(&dir.join("absent.7z")).unwrap();
         let _ = fs::remove_dir_all(&dir);
     }
@@ -3454,21 +3456,17 @@ mod download_integrity_tests {
             );
             assert!(!requests[0].to_ascii_lowercase().contains("range:"));
             assert!(requests[1].to_ascii_lowercase().contains("range: bytes=3-"));
-            assert!(
-                requests[1]
-                    .to_ascii_lowercase()
-                    .contains("if-range: \"stable\"")
-            );
+            assert!(requests[1]
+                .to_ascii_lowercase()
+                .contains("if-range: \"stable\""));
             if restarts {
                 assert!(!requests[2].to_ascii_lowercase().contains("range:"));
             }
-            assert!(
-                !PathBuf::from(format!(
-                    "{}.identity.json",
-                    unfinished_path(&dest).display()
-                ))
-                .exists()
-            );
+            assert!(!PathBuf::from(format!(
+                "{}.identity.json",
+                unfinished_path(&dest).display()
+            ))
+            .exists());
             fs::remove_dir_all(root).unwrap();
         }
     }
@@ -3581,11 +3579,9 @@ mod update_metadata_integrity_tests {
         drop(lock);
         let replacement = "[General]\nmodid=99\nversion=3.0\nnotes=replacement\n";
         fs::write(&path, replacement).unwrap();
-        assert!(
-            apply_mod_update(&inst, "Personal", &snapshot, &remote, 124)
-                .unwrap()
-                .is_none()
-        );
+        assert!(apply_mod_update(&inst, "Personal", &snapshot, &remote, 124)
+            .unwrap()
+            .is_none());
         assert_eq!(fs::read_to_string(&path).unwrap(), replacement);
         fs::write(&path, [0xff, 0xfe]).unwrap();
         assert!(apply_mod_update(&inst, "Personal", &snapshot, &remote, 125).is_err());

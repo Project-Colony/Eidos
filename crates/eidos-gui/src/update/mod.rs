@@ -278,7 +278,10 @@ fn pack_on_worker(
             ("path", &report.path.display()),
             ("size", &eidos_transfer::human_bytes(report.bytes)),
             ("ratio", &ratio),
-            ("time", &eidos_transfer::human_secs(started.elapsed().as_secs())),
+            (
+                "time",
+                &eidos_transfer::human_secs(started.elapsed().as_secs()),
+            ),
         ],
     );
     if report.warnings.is_empty() {
@@ -642,7 +645,10 @@ fn unpack_on_worker(
         &[
             ("n", &report.entries),
             ("path", &report.root.display()),
-            ("time", &eidos_transfer::human_secs(started.elapsed().as_secs())),
+            (
+                "time",
+                &eidos_transfer::human_secs(started.elapsed().as_secs()),
+            ),
         ],
     )];
     if report.relocated.values > 0 {
@@ -661,7 +667,10 @@ fn unpack_on_worker(
         for tool in &report.missing_tools {
             lines.push(format!(
                 "  {}",
-                tf("transfer_missing_tool", &[("name", &tool.title), ("path", &tool.exe)])
+                tf(
+                    "transfer_missing_tool",
+                    &[("name", &tool.title), ("path", &tool.exe)]
+                )
             ));
         }
     }
@@ -683,7 +692,10 @@ fn open_unpacked(app: &mut App, root: &std::path::Path) -> Option<String> {
     let inst = Instance::portable(root.to_path_buf());
     let gid = inst.game_id()?;
     let Some(idx) = instance_game_index(&app.games, &inst, &gid) else {
-        return Some(format!("\n{}", tf("transfer_game_missing", &[("game", &gid)])));
+        return Some(format!(
+            "\n{}",
+            tf("transfer_game_missing", &[("game", &gid)])
+        ));
     };
     app.selected = Some(idx);
     let id = app.games[idx].def.id;
@@ -819,8 +831,7 @@ pub(crate) fn finish_open(
                     ctx,
                     hover: None,
                 });
-                app.status =
-                    Some(t("status_fomod_choose").to_string());
+                app.status = Some(t("status_fomod_choose").to_string());
             }
         }
         Ok(eidos_install::Opened::Simple(tree)) => {
@@ -1814,7 +1825,12 @@ fn seed_ini_from_game(app: &mut App, file: &str) -> Result<(), String> {
     let seeded = inst
         .try_lock("the Eidos window")
         .and_then(|_lock| prof.seed_plugin_state(&dir, &spec))
-        .map_err(|e| tf("status_cannot_open_file_now", &[("file", &file), ("error", &e)]))?;
+        .map_err(|e| {
+            tf(
+                "status_cannot_open_file_now",
+                &[("file", &file), ("error", &e)],
+            )
+        })?;
     if seeded > 0 {
         // The profile's plugin state changed under the cached load order and
         // the hash its next write is checked against.

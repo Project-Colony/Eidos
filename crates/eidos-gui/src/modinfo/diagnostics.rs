@@ -84,7 +84,10 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
             Diagnostic {
                 level: DiagLevel::Problem,
                 title: t("diag_passthrough_unavailable").to_string(),
-                detail: tf("diag_passthrough_unavailable_detail", &[("command", &setcap_hint())]),
+                detail: tf(
+                    "diag_passthrough_unavailable_detail",
+                    &[("command", &setcap_hint())],
+                ),
                 actions: Vec::new(),
             }
         } else {
@@ -179,7 +182,12 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                             },
                             &[(
                                 "plugins",
-                                &unverified.iter().take(8).cloned().collect::<Vec<_>>().join(", "),
+                                &unverified
+                                    .iter()
+                                    .take(8)
+                                    .cloned()
+                                    .collect::<Vec<_>>()
+                                    .join(", "),
                             )],
                         ),
                         actions: Vec::new(),
@@ -298,7 +306,10 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 },
                 title: tf(
                     "diag_native_check",
-                    &[("severity", &format!("{:?}", d.severity)), ("code", &d.code)],
+                    &[
+                        ("severity", &format!("{:?}", d.severity)),
+                        ("code", &d.code),
+                    ],
                 ),
                 detail: format!("{} ({}): {}", d.path.display(), d.origin_mod, d.detail),
                 actions: Vec::new(),
@@ -360,14 +371,14 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
             Ok(runs) => {
                 for run in runs {
                     out.push(Diagnostic {
-                    level: DiagLevel::Advice,
-                    title: tf("diag_unfinished_tool", &[("tool", &run.tool)]),
-                    detail: tf(
-                        "diag_unfinished_tool_detail",
-                        &[("started", &run.started_at), ("profile", &run.profile)],
-                    ),
-                    actions: Vec::new(),
-                });
+                        level: DiagLevel::Advice,
+                        title: tf("diag_unfinished_tool", &[("tool", &run.tool)]),
+                        detail: tf(
+                            "diag_unfinished_tool_detail",
+                            &[("started", &run.started_at), ("profile", &run.profile)],
+                        ),
+                        actions: Vec::new(),
+                    });
                 }
             }
             Err(e) => out.push(Diagnostic {
@@ -412,25 +423,31 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                     };
                     if inst.generated_input_drift(&output.receipt, active_plugins) {
                         out.push(Diagnostic {
-                        level: DiagLevel::Advice,
-                        title: t("diag_generated_inputs_changed").into(),
-                        detail: tf(
-                            "diag_generated_inputs_changed_detail",
-                            &[
-                                ("tool", &output.receipt.tool),
-                                ("owner", &owner.as_deref().unwrap_or("Overwrite")),
-                                (
-                                    "files",
-                                    &format!(
-                                        "{}{}",
-                                        output.paths.iter().take(8).map(|p| p.display().to_string()).collect::<Vec<_>>().join(", "),
-                                        if output.paths.len() > 8 { ", …" } else { "" }
+                            level: DiagLevel::Advice,
+                            title: t("diag_generated_inputs_changed").into(),
+                            detail: tf(
+                                "diag_generated_inputs_changed_detail",
+                                &[
+                                    ("tool", &output.receipt.tool),
+                                    ("owner", &owner.as_deref().unwrap_or("Overwrite")),
+                                    (
+                                        "files",
+                                        &format!(
+                                            "{}{}",
+                                            output
+                                                .paths
+                                                .iter()
+                                                .take(8)
+                                                .map(|p| p.display().to_string())
+                                                .collect::<Vec<_>>()
+                                                .join(", "),
+                                            if output.paths.len() > 8 { ", …" } else { "" }
+                                        ),
                                     ),
-                                ),
-                            ],
-                        ),
-                        actions: Vec::new(),
-                    });
+                                ],
+                            ),
+                            actions: Vec::new(),
+                        });
                     }
                 }
             }
@@ -461,7 +478,10 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
             out.push(Diagnostic {
                 level: DiagLevel::Advice,
                 title: tf("diag_debris", &[("n", &debris.len())]),
-                detail: tf("diag_debris_detail", &[("path", &inst.mods_dir().display())]),
+                detail: tf(
+                    "diag_debris_detail",
+                    &[("path", &inst.mods_dir().display())],
+                ),
                 // A check that knows the answer should not end by naming a
                 // directory and wishing the user luck. This one can only ever
                 // remove `mods/.eidos-install*`, which Eidos created itself and
@@ -649,7 +669,11 @@ pub(crate) fn script_extender_diagnostic(game: &DetectedGame) -> Option<Diagnost
         ),
         detail: tf(
             "diag_se_failed_detail",
-            &[("lines", &lines.join("   ")), ("tail", &tail), ("when", &when)],
+            &[
+                ("lines", &lines.join("   ")),
+                ("tail", &tail),
+                ("when", &when),
+            ],
         ),
         actions: Vec::new(),
     })
@@ -666,7 +690,23 @@ pub(crate) fn orphan_archive_diagnostics(app: &App, game_id: &str) -> Vec<Diagno
     if orphan.is_empty() {
         return Vec::new();
     }
-    vec![Diagnostic{level:DiagLevel::Advice,title:tf("diag_orphan_archives",&[("n",&orphan.len())]),detail:tf("diag_orphan_archives_detail",&[("list",&orphan.iter().take(8).map(|r|format!("{} ({})",r.archive,r.mod_name)).collect::<Vec<_>>().join(", "))]),actions:Vec::new()}]
+    vec![Diagnostic {
+        level: DiagLevel::Advice,
+        title: tf("diag_orphan_archives", &[("n", &orphan.len())]),
+        detail: tf(
+            "diag_orphan_archives_detail",
+            &[(
+                "list",
+                &orphan
+                    .iter()
+                    .take(8)
+                    .map(|r| format!("{} ({})", r.archive, r.mod_name))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            )],
+        ),
+        actions: Vec::new(),
+    }]
 }
 
 /// The Diagnostics tab label, carrying the count of things needing attention.
@@ -712,7 +752,12 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
                 Row::new()
                     .spacing(6)
                     .align_y(iced::Alignment::Center)
-                    .push(text(tag).size(sz(9)).color(color).width(Length::Fixed(scaled(58.0))))
+                    .push(
+                        text(tag)
+                            .size(sz(9))
+                            .color(color)
+                            .width(Length::Fixed(scaled(58.0))),
+                    )
                     .push(text(d.title).size(sz(12)).width(Length::Fill)),
             )
             .push(text(d.detail).size(sz(10)).color(text_muted()));

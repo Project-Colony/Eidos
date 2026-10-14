@@ -1,6 +1,6 @@
 //! Fixed native translations; received C# is never executed.
 //! Reference: erri120/OMODFramework 05b3d5629124cfa44308b3b78c38959b960b3730,
-//! GPL-3.0-only. UI scripts: Copyright 2007–2008 DarN; DarkUI modified by gothic251.
+//! GPL-3.0-only. UI scripts: Copyright 2007-2008 DarN; DarkUI modified by gothic251.
 //! Native translation and checked staging implementation: September 2026.
 
 use super::obmm::*;

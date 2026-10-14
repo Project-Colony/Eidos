@@ -17,6 +17,12 @@ binaries. Without `just`, follow the [native build instructions](../../crates/ei
 and add the helper's absolute output directory to `PATH` before GUI tests.
 Those tests require the real helper and do not silently skip model parsing.
 
+CI also fails a pull request whose code is not formatted with `cargo fmt --all`
+(rustfmt defaults, no `rustfmt.toml`), or that no longer builds on the
+`rust-version` declared in the root `Cargo.toml`. Dependencies are declared once,
+at their full version, in `[workspace.dependencies]`; a crate inherits one with
+`name.workspace = true` and adds its own features.
+
 The `eidos-fuse` integration suite is not a mock: it mounts a real union inside
 its own private user+mount namespace (no root, no host mounts touched) and drives
 20 checks through the kernel, including a writable `MAP_SHARED` mmap round-trip,

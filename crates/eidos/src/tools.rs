@@ -117,7 +117,10 @@ pub(crate) fn cmd_tool(args: &[String]) {
         exit(1);
     };
     let inst = target.inst;
-    if let Err(error) = inst.create().and_then(|()| inst.ensure_manifest(&target.game_id, InstanceKind::Global)) {
+    if let Err(error) = inst
+        .create()
+        .and_then(|()| inst.ensure_manifest(&target.game_id, InstanceKind::Global))
+    {
         eidos_log::warn!("Cannot prepare this instance: {error}");
         exit(1);
     }

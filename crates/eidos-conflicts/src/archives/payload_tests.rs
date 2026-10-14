@@ -312,7 +312,8 @@ fn payload_texture_reconstructs_dds_chunks_mips_and_cube_faces() {
         .unwrap()
         .misc_flag
         .contains(ddsfile::MiscFlag::TEXTURECUBE));
-    assert_eq!(dds.get_num_array_layers(), 1); // DX10 stores cube count, not face count.
+    // DX10 stores the cube count (asserted above); ddsfile reports faces.
+    assert_eq!(dds.get_num_array_layers(), 6);
     for face in 0..6 {
         let expected = [
             vec![face * 10; 8],

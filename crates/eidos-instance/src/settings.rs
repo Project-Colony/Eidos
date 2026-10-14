@@ -472,7 +472,9 @@ impl Settings {
                         "false" | "0" | "no" | "off"
                     )
                 }
-                "retain_install_backup" => s.retain_install_backup = matches!(v, "true" | "1" | "yes" | "on"),
+                "retain_install_backup" => {
+                    s.retain_install_backup = matches!(v, "true" | "1" | "yes" | "on")
+                }
                 "lock_gui" => {
                     s.lock_gui = !matches!(
                         v.to_ascii_lowercase().as_str(),
@@ -495,12 +497,12 @@ impl Settings {
     pub fn to_ini(&self) -> String {
         let mut out = format!(
             "[eidos]\nlock_gui={}\ndrag_scroll_speed={}\nsplit={}\nremember_window={}\n",
-            self.lock_gui,
-            self.drag_scroll_speed,
-            self.split,
-            self.remember_window
+            self.lock_gui, self.drag_scroll_speed, self.split, self.remember_window
         );
-        out.push_str(&format!("retain_install_backup={}\n", self.retain_install_backup));
+        out.push_str(&format!(
+            "retain_install_backup={}\n",
+            self.retain_install_backup
+        ));
         if self.offline {
             out.push_str("offline=true\n");
         }
@@ -743,7 +745,13 @@ mod tests {
         );
         assert!(!old.lock_gui, "the keys beside them still load");
         let ini = old.to_ini();
-        for key in ["theme_family", "theme_variant", "accent", "high_contrast", "motion"] {
+        for key in [
+            "theme_family",
+            "theme_variant",
+            "accent",
+            "high_contrast",
+            "motion",
+        ] {
             assert!(!ini.contains(&format!("{key}=")), "{key} was written back");
         }
     }

@@ -119,7 +119,11 @@ fn root_mode_fixture(
     id: &str,
     data: &str,
     files: &[(&str, &str)],
-) -> (std::path::PathBuf, eidos_instance::Instance, eidos_games::DetectedGame) {
+) -> (
+    std::path::PathBuf,
+    eidos_instance::Instance,
+    eidos_games::DetectedGame,
+) {
     let root = std::env::temp_dir().join(format!("eidos-collection-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
     let inst = eidos_instance::Instance::portable(root.join("instance"));
@@ -156,16 +160,29 @@ fn root_mode_fixture(
 fn morrowind_collection_seeds_the_install_ini_instead_of_writing_a_stub() {
     let ini = "[General]\r\nSubtitles=1\r\n[Archives]\r\nArchive 0=Tribunal.bsa\r\n\
                [Game Files]\r\nGameFile0=A.esp\r\n";
-    let (root, inst, game) =
-        root_mode_fixture("morrowind", "morrowind", "Data Files", &[("Morrowind.ini", ini)]);
+    let (root, inst, game) = root_mode_fixture(
+        "morrowind",
+        "morrowind",
+        "Data Files",
+        &[("Morrowind.ini", ini)],
+    );
     let profile_ini =
         fs::read_to_string(inst.active().plugins_state_dir().join("Morrowind.ini")).unwrap();
     // The real INI's other sections survive, and B.esp stays off as the user left it.
-    assert!(profile_ini.contains("Archive 0=Tribunal.bsa"), "{profile_ini}");
+    assert!(
+        profile_ini.contains("Archive 0=Tribunal.bsa"),
+        "{profile_ini}"
+    );
     assert!(profile_ini.contains("[General]"), "{profile_ini}");
-    assert!(!profile_ini.contains("A.esp") && !profile_ini.contains("B.esp"), "{profile_ini}");
+    assert!(
+        !profile_ini.contains("A.esp") && !profile_ini.contains("B.esp"),
+        "{profile_ini}"
+    );
     // The install root is the state dir here; the prefix shadow must not touch it.
-    assert_eq!(fs::read_to_string(game.install_path.join("Morrowind.ini")).unwrap(), ini);
+    assert_eq!(
+        fs::read_to_string(game.install_path.join("Morrowind.ini")).unwrap(),
+        ini
+    );
     assert!(!game.install_path.join("loadorder.txt").exists());
     fs::remove_dir_all(root).unwrap();
 }
@@ -179,10 +196,19 @@ fn oblivion_root_mode_collection_seeds_the_install_root_plugins_txt() {
         "Data",
         &[("Oblivion.ini", ini), ("plugins.txt", "A.esp\r\n")],
     );
-    let list = inst.plugin_list(&game.data_path, game.def.id, None).unwrap();
+    let list = inst
+        .plugin_list(&game.data_path, game.def.id, None)
+        .unwrap();
     // B.esp was off in the install-root plugins.txt; founding on the empty
     // AppData dir turned it on.
-    assert!(list.plugins.iter().all(|p| !p.enabled), "{:?}", list.plugins);
-    assert_eq!(fs::read_to_string(game.install_path.join("plugins.txt")).unwrap(), "A.esp\r\n");
+    assert!(
+        list.plugins.iter().all(|p| !p.enabled),
+        "{:?}",
+        list.plugins
+    );
+    assert_eq!(
+        fs::read_to_string(game.install_path.join("plugins.txt")).unwrap(),
+        "A.esp\r\n"
+    );
     fs::remove_dir_all(root).unwrap();
 }

@@ -14,7 +14,10 @@ pub(crate) fn compute_plugins(app: &App) -> Option<PluginList> {
     // plugin discovery wants, so feed it through as-is. Unmanaged rows (DLC and
     // Creation Club) are not layers: their `path` is one `.esm` FILE inside Data,
     // which is already the first source, and the mount drops them the same way.
-    let enabled = app.mods.iter().filter(|m| m.is_active() && !m.is_unmanaged());
+    let enabled = app
+        .mods
+        .iter()
+        .filter(|m| m.is_active() && !m.is_unmanaged());
     sources.extend(enabled.map(|m| (m.name.clone(), m.path.clone())));
     // The Overwrite layer is a plugin source too (a cleaned/generated .esp lands
     // there) - the launch path includes it, so the GUI must agree.
@@ -190,9 +193,7 @@ pub(crate) fn write_plugin_state(
             .get()
             .is_none_or(|seen| seen == plugin_state_fingerprint(&prof, spec));
         if !unchanged {
-            return Err(std::io::Error::other(
-                t("plugin_order_changed_elsewhere"),
-            ));
+            return Err(std::io::Error::other(t("plugin_order_changed_elsewhere")));
         }
         // Adopt the game's state first, as launch and sort do, failing closed.
         // Writing into an unseeded profile built Morrowind.ini from nothing: a
@@ -239,10 +240,13 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     let loot_ok = selected_game(app)
         .map(|g| eidos_loot::is_supported(g.def.id))
         .unwrap_or(false);
-    let mut top = Row::new()
-        .spacing(8)
-        .align_y(iced::Alignment::Center)
-        .push(text(tf("plugins_count", &[("n", &list.plugins.len()), ("active", &active)])).size(sz(12)));
+    let mut top = Row::new().spacing(8).align_y(iced::Alignment::Center).push(
+        text(tf(
+            "plugins_count",
+            &[("n", &list.plugins.len()), ("active", &active)],
+        ))
+        .size(sz(12)),
+    );
     if loot_ok {
         // No `on_press` while a sort runs, nor while a run is tracked: the button
         // greys itself. That is the only sign of work a multi-second masterlist
@@ -290,10 +294,8 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     }
     let mut head = Column::new().spacing(2).push(top);
     if !missing.is_empty() {
-        head = head.push(
-            text(tf("plugins_missing_masters", &[("n", &missing.len())]))
-            .size(sz(12)),
-        );
+        head =
+            head.push(text(tf("plugins_missing_masters", &[("n", &missing.len())])).size(sz(12)));
     }
 
     // A pin the engine had to overrule. Silence here would leave the user
@@ -314,7 +316,11 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         head = head.push(
             text(tf(
                 "plugins_pins_violated",
-                &[("n", &violated.len()), ("names", &names.join(", ")), ("tail", &tail)],
+                &[
+                    ("n", &violated.len()),
+                    ("names", &names.join(", ")),
+                    ("tail", &tail),
+                ],
             ))
             .size(sz(11)),
         );
@@ -322,12 +328,32 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
 
     let header = Row::new()
         .spacing(6)
-        .push(text(t("plugins_col_index")).size(sz(11)).width(Length::Fixed(scaled(52.0))))
-        .push(text(t("plugins_col_on")).size(sz(11)).width(Length::Fixed(scaled(28.0))))
-        .push(text(t("plugins_col_plugin")).size(sz(11)).width(Length::Fill))
-        .push(text(t("plugins_col_type")).size(sz(11)).width(Length::Fixed(scaled(36.0))))
+        .push(
+            text(t("plugins_col_index"))
+                .size(sz(11))
+                .width(Length::Fixed(scaled(52.0))),
+        )
+        .push(
+            text(t("plugins_col_on"))
+                .size(sz(11))
+                .width(Length::Fixed(scaled(28.0))),
+        )
+        .push(
+            text(t("plugins_col_plugin"))
+                .size(sz(11))
+                .width(Length::Fill),
+        )
+        .push(
+            text(t("plugins_col_type"))
+                .size(sz(11))
+                .width(Length::Fixed(scaled(36.0))),
+        )
         .push(text("LOOT").size(sz(11)).width(Length::Fixed(scaled(48.0))))
-        .push(text(t("plugins_col_pin")).size(sz(11)).width(Length::Fixed(scaled(26.0))));
+        .push(
+            text(t("plugins_col_pin"))
+                .size(sz(11))
+                .width(Length::Fixed(scaled(26.0))),
+        );
 
     // Base-game masters are implicit/always-on; show them as forced, not togglable.
     let spec = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id));
@@ -465,7 +491,10 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             }
             if !absent.is_empty() {
                 tip.push('\n');
-                tip.push_str(&tf("plugin_tip_missing_masters", &[("list", &absent.join(", "))]));
+                tip.push_str(&tf(
+                    "plugin_tip_missing_masters",
+                    &[("list", &absent.join(", "))],
+                ));
             }
             tip.push('\n');
             tip.push_str(t("plugin_tip_after_masters"));
@@ -487,7 +516,10 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             }
             if b.messages.len() > 3 {
                 tip.push('\n');
-                tip.push_str(&tf("plugin_tip_more_loot", &[("n", &(b.messages.len() - 3))]));
+                tip.push_str(&tf(
+                    "plugin_tip_more_loot",
+                    &[("n", &(b.messages.len() - 3))],
+                ));
             }
             for d in &b.dirty_info {
                 tip.push('\n');
@@ -537,7 +569,11 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             .push(container(toggle).width(Length::Fixed(scaled(28.0))))
             .push(container(name_cell).width(Length::Fill))
             .push(text(kind).size(sz(10)).width(Length::Fixed(scaled(36.0))))
-            .push(text(loot_badge).size(sz(10)).width(Length::Fixed(scaled(48.0))))
+            .push(
+                text(loot_badge)
+                    .size(sz(10))
+                    .width(Length::Fixed(scaled(48.0))),
+            )
             .push(container(pin).width(Length::Fixed(scaled(26.0))));
         // Grabbing the row arms the drag AND selects it, the same press doing
         // both exactly as in the mod list; hovering it during a drag means

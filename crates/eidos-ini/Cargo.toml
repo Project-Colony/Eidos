@@ -1,6 +1,7 @@
 [package]
 name = "eidos-ini"
 version.workspace = true
+rust-version.workspace = true
 description = "Shared low-level INI primitives for Eidos (newline/section/key parsing + format-preserving key edit)"
 license.workspace = true
 repository.workspace = true

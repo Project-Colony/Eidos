@@ -1,4 +1,4 @@
-use eidos_collections::{FileHash, Mod, Source, SourceType, recipe::*};
+use eidos_collections::{recipe::*, FileHash, Mod, Source, SourceType};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -83,11 +83,9 @@ fn clone_selects_bytes_renames_and_repeats_without_installers() {
     assert!(!d.join("options").exists());
     let mut missing = clone_member();
     missing.hashes[0].md5 = "00000000000000000000000000000000".into();
-    assert!(
-        populate(&missing, &s, &t.0.join("missing"))
-            .unwrap_err()
-            .contains("Missing")
-    );
+    assert!(populate(&missing, &s, &t.0.join("missing"))
+        .unwrap_err()
+        .contains("Missing"));
 }
 #[test]
 fn recipe_destinations_reject_escapes_and_windows_collisions() {
@@ -287,9 +285,9 @@ fn known_absolute_exclusions_rebase_only_exact_data_or_game_roots() {
 #[test]
 fn runtime_mismatch_blocks_every_member_then_requires_a_durable_exact_decision() {
     use eidos_collections::{
-        Collection,
-        install::{Hooks, Installed, Obtained, run},
+        install::{run, Hooks, Installed, Obtained},
         state::InstallState,
+        Collection,
     };
     struct Runtime {
         allow: bool,
@@ -508,19 +506,17 @@ fn excluded_provider_yields_in_both_profile_orders_and_keeps_other_files() {
     let collision = t.0.join("collision");
     put(&collision, "a.txt", b"new");
     put(&collision, "A.TXT.MOHIDDEN", b"personal hidden");
-    assert!(
-        finish(
-            &Mod {
-                file_overrides: vec!["a.txt".into()],
-                ..Default::default()
-            },
-            &t.0,
-            &collision,
-            "owner"
-        )
-        .unwrap_err()
-        .contains("collides with existing hidden")
-    );
+    assert!(finish(
+        &Mod {
+            file_overrides: vec!["a.txt".into()],
+            ..Default::default()
+        },
+        &t.0,
+        &collision,
+        "owner"
+    )
+    .unwrap_err()
+    .contains("collides with existing hidden"));
     assert_eq!(fs::read(collision.join("a.txt")).unwrap(), b"new");
     assert_eq!(
         fs::read(collision.join("A.TXT.MOHIDDEN")).unwrap(),
@@ -530,7 +526,7 @@ fn excluded_provider_yields_in_both_profile_orders_and_keeps_other_files() {
 
 #[test]
 fn actual_pe_runtime_evidence_gates_the_real_driver_before_member_mutation() {
-    use eidos_collections::{Collection, driver::RealHooks, install::run, state::InstallState};
+    use eidos_collections::{driver::RealHooks, install::run, state::InstallState, Collection};
     let t = Temp::new();
     let inst = eidos_instance::Instance::portable(t.0.join("instance"));
     inst.create().unwrap();

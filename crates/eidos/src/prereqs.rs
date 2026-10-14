@@ -218,7 +218,10 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
     if !eidos_gamefeatures::cabextract_available() {
         eidos_log::info!("warning: cabextract not on PATH - some winetricks verbs need it (e.g. `pacman -S cabextract`).");
     }
-    println!("Installing {} via winetricks (downloads).", pending2.join(", "));
+    println!(
+        "Installing {} via winetricks (downloads).",
+        pending2.join(", ")
+    );
     // One verb at a time, recording each success, so a later failure does not lose
     // the earlier installs (a single batched winetricks call would).
     let mut done = satisfied;

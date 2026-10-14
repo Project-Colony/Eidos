@@ -1,6 +1,7 @@
 [package]
 name = "eidos-log"
 version.workspace = true
+rust-version.workspace = true
 description = "Session log files for Eidos: levels, rotation, and home-path redaction"
 license.workspace = true
 repository.workspace = true
@@ -12,4 +13,4 @@ eidos-paths = { path = "../eidos-paths" }
 # manager's log is read next to "I clicked Play at 14:32", so UTC would make the
 # reader do arithmetic. libc is already in the workspace (eidos-core, eidos-fuse,
 # eidos-launch) so this pulls in nothing new, and everything else here is std.
-libc = "0.2"
+libc.workspace = true

@@ -238,7 +238,10 @@ pub(crate) fn cmd_pack(args: &[String]) {
                 human_bytes(r.bytes),
                 human_secs(started.elapsed().as_secs())
             );
-            println!("On the other machine: eidos unpack {} <folder>", r.path.display());
+            println!(
+                "On the other machine: eidos unpack {} <folder>",
+                r.path.display()
+            );
             // An incomplete backup is not a success, and this is a command
             // people put in front of `&&`. The archive is real and worth
             // keeping - it is named above - but the exit code has to say that
@@ -495,9 +498,7 @@ pub(crate) fn cmd_unpack(args: &[String]) {
                 "\nThis is now the instance Eidos opens, and the one a Steam launch will use."
             );
             println!("Next:");
-            println!(
-                "  1. Install the game through Steam and launch it once, if you have not."
-            );
+            println!("  1. Install the game through Steam and launch it once, if you have not.");
             println!(
                 "  2. eidos prereqs {} --install    (rebuild the Proton prefix this backup \
                  deliberately left behind)",
@@ -562,7 +563,10 @@ mod tests {
     fn a_trailing_slash_names_a_folder_even_before_it_exists() {
         // Otherwise the backup lands as a HIDDEN `.eidos` file inside it.
         let chosen = resolve_destination("/tmp/eidos-no-such-dir-xyz/", "skyrimse");
-        assert_eq!(chosen.parent().unwrap(), Path::new("/tmp/eidos-no-such-dir-xyz"));
+        assert_eq!(
+            chosen.parent().unwrap(),
+            Path::new("/tmp/eidos-no-such-dir-xyz")
+        );
         assert!(chosen
             .file_name()
             .unwrap()
@@ -575,8 +579,14 @@ mod tests {
         let p = parse_pack_args(&v(&["skyrimse", "out.eidos"])).unwrap();
         assert!(p.opt.downloads && !p.opt.force && !p.dry_run);
         assert_eq!(p.opt.level, eidos_transfer::DEFAULT_LEVEL);
-        let p = parse_pack_args(&v(&["skyrimse", "o", "--no-downloads", "--force", "--dry-run"]))
-            .unwrap();
+        let p = parse_pack_args(&v(&[
+            "skyrimse",
+            "o",
+            "--no-downloads",
+            "--force",
+            "--dry-run",
+        ]))
+        .unwrap();
         assert!(!p.opt.downloads && p.opt.force && p.dry_run);
     }
 
@@ -598,5 +608,4 @@ mod tests {
             PathBuf::from("/tmp/eidos-transfer-cli-no-such/backup.7z")
         );
     }
-
 }

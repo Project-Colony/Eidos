@@ -20,9 +20,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 pub mod archives;
-pub mod omod_shaders;
 pub mod crt;
 mod native_dll;
+pub mod omod_shaders;
 pub mod preflight;
 
 pub use native_dll::{
@@ -40,9 +40,8 @@ pub use se_log::{parse_se_log, se_log_path, SePluginLoad};
 
 mod prereqs;
 pub use prereqs::{
-    satisfied_prereqs_in, record_prereqs, prefix_busy_at,
     cabextract_available, find_winetricks, install_tier2_verb, is_tier2_verb, prefix_busy,
-    verbs_in_prefix,
+    prefix_busy_at, record_prereqs, satisfied_prereqs_in, verbs_in_prefix,
 };
 
 mod runtime;
