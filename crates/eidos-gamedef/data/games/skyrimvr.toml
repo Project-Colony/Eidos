@@ -1,0 +1,28 @@
+id = "skyrimvr"
+name = "Skyrim VR"
+short_name = "SkyrimVR"
+nexus_game = "skyrimspecialedition"
+steam_app_id = 611670
+data_dir = "Data"
+documents_dir = "Skyrim VR"
+ini_files = ["SkyrimVR.ini", "SkyrimPrefs.ini"]
+load_order = "Asterisk"
+primary_plugins = ["Skyrim.esm", "Update.esm", "Dawnguard.esm", "HearthFires.esm", "Dragonborn.esm"]
+game_binary = "SkyrimVR.exe"
+registry_name = "Skyrim VR"
+script_extender = { launcher = "SkyrimVRLauncher.exe", loader = "sksevr_loader.exe" }
+
+# Every xEdit release ships the editor and its QuickAutoClean twin, and the twin
+# is what cleans the dirty edits LOOT warns about. PGPatcher makes a mixed
+# texture setup use the right shaders (its argument: eidos_instance::default_args).
+[[known_tools]]
+exe = "TES5VREdit.exe"
+title = "TES5VREdit"
+
+[[known_tools]]
+exe = "TES5VREditQuickAutoClean.exe"
+title = "TES5VREdit QuickAutoClean"
+
+[[known_tools]]
+exe = "PGPatcher.exe"
+title = "PGPatcher"

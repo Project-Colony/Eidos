@@ -1,0 +1,30 @@
+id = "skyrim"
+name = "Skyrim"
+short_name = "Skyrim"
+nexus_game = "skyrim"
+steam_app_id = 72850
+data_dir = "Data"
+documents_dir = "Skyrim"
+# The Gamebryo engine reads SkyrimCustom.ini in LE too (MO2 manages it as a
+# per-profile INI, same as SkyrimSE), so it is part of the per-profile set.
+ini_files = ["Skyrim.ini", "SkyrimPrefs.ini", "SkyrimCustom.ini"]
+load_order = "PlainList"
+primary_plugins = ["Skyrim.esm", "Update.esm"]
+game_binary = "TESV.exe"
+registry_name = "Skyrim"
+script_extender = { launcher = "SkyrimLauncher.exe", loader = "skse_loader.exe" }
+
+# Every xEdit release ships the editor and its QuickAutoClean twin, and the twin
+# is what cleans the dirty edits LOOT warns about. PGPatcher makes a mixed
+# texture setup use the right shaders (its argument: eidos_instance::default_args).
+[[known_tools]]
+exe = "TES5Edit.exe"
+title = "TES5Edit"
+
+[[known_tools]]
+exe = "TES5EditQuickAutoClean.exe"
+title = "TES5Edit QuickAutoClean"
+
+[[known_tools]]
+exe = "PGPatcher.exe"
+title = "PGPatcher"

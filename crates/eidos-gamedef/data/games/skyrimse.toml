@@ -1,0 +1,30 @@
+id = "skyrimse"
+name = "Skyrim Special Edition"
+short_name = "SkyrimSE"
+nexus_game = "skyrimspecialedition"
+steam_app_id = 489830
+gog_ids = ["1162721350", "1711230643"]
+epic_ids = ["ac82db5035584c7f8a2c548d98c86b2c", "5d600e4f59974aeba0259c7734134e27"]
+data_dir = "Data"
+documents_dir = "Skyrim Special Edition"
+ini_files = ["Skyrim.ini", "SkyrimPrefs.ini", "SkyrimCustom.ini"]
+load_order = "Asterisk"
+primary_plugins = ["Skyrim.esm", "Update.esm", "Dawnguard.esm", "HearthFires.esm", "Dragonborn.esm"]
+game_binary = "SkyrimSE.exe"
+registry_name = "Skyrim Special Edition"
+script_extender = { launcher = "SkyrimSELauncher.exe", loader = "skse64_loader.exe" }
+
+# Every xEdit release ships the editor and its QuickAutoClean twin, and the twin
+# is what cleans the dirty edits LOOT warns about. PGPatcher makes a mixed
+# texture setup use the right shaders (its argument: eidos_instance::default_args).
+[[known_tools]]
+exe = "SSEEdit.exe"
+title = "SSEEdit"
+
+[[known_tools]]
+exe = "SSEEditQuickAutoClean.exe"
+title = "SSEEdit QuickAutoClean"
+
+[[known_tools]]
+exe = "PGPatcher.exe"
+title = "PGPatcher"

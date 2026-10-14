@@ -1,0 +1,38 @@
+id = "enderalse"
+name = "Enderal: Special Edition"
+short_name = "EnderalSE"
+nexus_game = "enderalspecialedition"
+steam_app_id = 976620
+data_dir = "Data"
+documents_dir = "Enderal Special Edition"
+ini_files = ["Enderal.ini", "EnderalPrefs.ini"]
+load_order = "Asterisk"
+# The Skyrim masters load without an activation entry (GameDef::implicit_plugins);
+# Enderal's own master and SkyUI must be explicitly active.
+primary_plugins = [
+    "Skyrim.esm",
+    "Update.esm",
+    "Dawnguard.esm",
+    "HearthFires.esm",
+    "Dragonborn.esm",
+    "Enderal - Forgotten Stories.esm",
+    "SkyUI_SE.esp",
+]
+game_binary = "SkyrimSE.exe"
+# Enderal SE ships as a Skyrim SE reskin and uses SKSE64 unchanged.
+script_extender = { launcher = "Enderal Launcher.exe", loader = "skse64_loader.exe" }
+
+# Every xEdit release ships the editor and its QuickAutoClean twin, and the twin
+# is what cleans the dirty edits LOOT warns about. PGPatcher makes a mixed
+# texture setup use the right shaders (its argument: eidos_instance::default_args).
+[[known_tools]]
+exe = "SSEEdit.exe"
+title = "SSEEdit"
+
+[[known_tools]]
+exe = "SSEEditQuickAutoClean.exe"
+title = "SSEEdit QuickAutoClean"
+
+[[known_tools]]
+exe = "PGPatcher.exe"
+title = "PGPatcher"

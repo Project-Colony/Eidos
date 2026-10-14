@@ -5,10 +5,15 @@ Eidos knows a game from a small declarative descriptor (modelled on Mod Organize
 
 ## 1. A built-in game (ships with Eidos)
 
-Add a row to `GAMES` in [`crates/eidos-gamedef/src/lib.rs`](../../crates/eidos-gamedef/src/lib.rs)
-and recompile. This is for the games Eidos supports out of the box: the
-Bethesda/Creation family, plus Stellar Blade as the first Unreal title and the
-worked example of a game declaring its own mod vocabulary.
+Add a `<id>.toml` to [`crates/eidos-gamedef/data/games/`](../../crates/eidos-gamedef/data/games/),
+list it in `BUILTIN_DEFINITIONS` in
+[`crates/eidos-gamedef/src/lib.rs`](../../crates/eidos-gamedef/src/lib.rs), and
+recompile. The file uses exactly the user-game schema below and is embedded in
+the binary. The snapshot test in that crate names every built-in game, so it fails
+until you add the new one there too. This is for the games Eidos supports out of
+the box: the Bethesda/Creation family, Stellar Blade as the first Unreal title and
+the worked example of a game declaring its own mod vocabulary, and the
+folder-per-mod games (Stardew Valley, 7 Days to Die).
 
 ## 2. A user game (no recompile, like MO2's `basic_games`)
 
@@ -31,12 +36,18 @@ game overrides that built-in; any other `id` is added.
 | `data_dir` | yes | - | Mod-merge root, relative to the install dir (`Data`, `Mods`, `.` for the game root) |
 | `valid_folders` | no | Gamebryo set | Top-level folder names that mark a mod root inside an archive |
 | `valid_suffixes` | no | Gamebryo set | File extensions (no dot) that mark a mod root |
+| `valid_files` | no | `[]` | Exact file names (any case) that mark a mod root, e.g. `manifest.json` |
+| `mod_unit` | no | `"files"` | `files` for loose files, `folder` to keep each mod's named folder under `data_dir` |
+| `gog_ids` | no | `[]` | GOG product ids accepted from installed manifests |
+| `epic_ids` | no | `[]` | Epic/Legendary app names accepted from installed manifests |
 | `short_name` | no | `""` | MO2-style short name (e.g. `SkyrimSE`) |
 | `nexus_game` | no | `""` | Nexus domain (for downloads/updates) |
 | `documents_dir` | no | `""` | `My Games/<dir>` folder, if the game keeps per-profile INIs there |
 | `ini_files` | no | `[]` | Per-profile INIs; the first carries the `[Archive]` section |
 | `load_order` | no | `"None"` | `Asterisk`, `PlainList`, `FileTime`, or `None` |
 | `primary_plugins` | no | `[]` | Implicit master plugins (omitted from `plugins.txt`) |
+| `game_binary` | no | `""` | The game's executable in the install dir, offered as a default tool |
+| `registry_name` | no | `""` | The game's key under `HKLM\Software\Bethesda Softworks\` in the Wine registry |
 | `script_extender` | no | none | `{ launcher = "...", loader = "..." }` |
 | `known_tools` | no | `[]` | `[[known_tools]]` entries, `exe` + `title`: executables Eidos recognises wherever it finds them |
 
