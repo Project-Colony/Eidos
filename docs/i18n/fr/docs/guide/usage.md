@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c1396f03f352fe3d3bc10c23662ec659cb9eec2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=929a7bc31548c16e2538cf9f04c51109f51ad2da -->
 
 # Utiliser Eidos
 
@@ -396,7 +396,7 @@ eidos play /mnt/games/EidosSkyrim
 cargo run -p eidos-gui
 ```
 
-Un assistant de premier lancement à la MO2, dans le look parchemin / bordeaux de
+Un assistant de premier lancement à la MO2, dessiné dans les thèmes partagés de
 Colony : accueil -> type d'instance (portable / globale) -> jeu -> nom et
 emplacement -> résumé -> création -> écran principal. L'écran d'accueil liste
 aussi toutes les instances existantes connues (globales et portables, la dernière
@@ -418,6 +418,29 @@ conflit, au-dessous du dernier, à une priorité explicite, ou dans le groupe d'
 séparateur. Ils passent tous par un même helper de déplacement, si bien que le
 décalage d'un cran qui vient du retrait des lignes avant leur réinsertion
 n'existe qu'à un seul endroit au lieu de cinq.
+
+### Préférences
+
+Cliquez sur **Eidos**, en haut à gauche, pour ouvrir Preferences à la place des
+deux volets, et cliquez à nouveau (ou sur **Close**) pour revenir. General,
+Appearance et Accessibility viennent en premier, comme dans chaque programme
+Colony, puis Mod list, Nexus et About. Chaque changement s'applique et
+s'enregistre aussitôt ; il n'y a pas de bouton Save.
+
+- **General** : le jeu qu'Eidos ouvre, la taille de la fenêtre, la langue de
+  l'interface, le dossier d'outils et la façon de lancer un jeu. La fenêtre
+  parle anglais et français ; **System** suit `LC_ALL`, `LC_MESSAGES` ou
+  `LANG`, et le changement s'applique aussitôt. La ligne de commande `eidos`
+  répond toujours en anglais.
+- **Appearance** : le thème (25 familles, 57 palettes, le parchemin d'Eidos par
+  défaut), la couleur d'accent, la taille du texte, les effets et un aperçu en
+  direct.
+- **Accessibility** : contraste élevé, une police adaptée à la dyslexie,
+  animations réduites et une taille de texte de lecture qui se multiplie avec
+  celle d'Appearance.
+
+Ces réglages vivent dans `~/.config/Colony/Eidos/preferences.json`. Le thème
+qu'un Eidos plus ancien gardait dans `settings.ini` est repris la première fois.
 
 ### Colonnes, tri et regroupement
 
@@ -566,7 +589,7 @@ jeu plutôt que de rapprocher les membres de la mauvaise liste de mods, où chaq
 
 ### Mode hors ligne
 
-**Settings -> Nexus -> Offline** empêche complètement Eidos de contacter Nexus.
+**Preferences -> Nexus -> Offline** empêche complètement Eidos de contacter Nexus.
 Les vérifications de mise à jour, la connexion, les téléchargements et les
 collections le disent au lieu d'échouer sur une erreur de connexion. C'est
 désactivé sauf si vous l'activez - un fichier de réglages écrit par un Eidos plus

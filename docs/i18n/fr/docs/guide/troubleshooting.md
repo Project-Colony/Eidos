@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=427084e50a9961f690747ca6fe98c2f1725defe9 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
 
 # Dépannage et diagnostics
 
@@ -77,9 +77,10 @@ Pour lancer le jeu lui-même à travers Eidos, mettez son option de lancement St
 eidos play skyrimse -- %command%
 ```
 
-Préfixez-la de `WINEDLLOVERRIDES="d3dcompiler_47=n"` si Proton a besoin du
-d3dcompiler natif pour compiler les shaders ; Eidos fusionne cela avec les
-surcharges de DLL qu'un mod embarque (chargeurs ENB/ReShade/`.asi`).
+Aucun préfixe `WINEDLLOVERRIDES` n'est nécessaire. Quand un mod activé importe
+`d3dcompiler_47`, Eidos déploie sa copie fournie dans le préfixe, la force en
+natif, et fusionne cela avec les surcharges de DLL qu'un mod embarque (chargeurs
+ENB/ReShade/`.asi`).
 
 ### L'index des couches est-il réellement utilisé ?
 

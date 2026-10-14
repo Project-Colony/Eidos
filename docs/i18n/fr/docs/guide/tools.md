@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=13248970bb8989b15a41910dd3f9c6564a833325 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f10a5437abda242ca6654c18a34358e156c71a93 -->
 
 # Outils : xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -20,8 +20,8 @@ dans :
   activés ;
 - **le `mods/` de cette instance**, là où les utilisateurs de MO2 installent
   leurs outils ;
-- le **tools folder** que vous avez défini dans Settings (Tools -> Tools
-  folder), pour le répertoire partagé entre instances - `/mnt/Games/Tools` et
+- le **tools folder** que vous avez défini dans Preferences (General -> Tools),
+  pour le répertoire partagé entre instances - `/mnt/Games/Tools` et
   consorts.
 
 `PGPatcher.exe` est trouvé de la même manière sur les jeux Creation Engine, et il arrive avec un argument sans lequel il ne peut pas fonctionner - voir [plus bas](#pourquoi-pgpatcher-a-besoin-de---ignore-mo2vfscheck).
@@ -141,8 +141,8 @@ pourquoi ce n'est pas optionnel, [plus bas](#pourquoi-pgpatcher-a-besoin-de---ig
 
 ### Trois sortes de prérequis
 
-**Palier 1 - DLL fournies** (`d3dx9_43`, `d3dcompiler_47`, `d3dx11_43`). Eidos
-les embarque et les copie dans le préfixe au lancement. Rien à faire, pas de
+**Palier 1 - DLL fournies** (`d3dx9_43`, `d3dcompiler_47`, `d3dcompiler_43`,
+`d3dx11_43`). Eidos les embarque et les copie dans le préfixe au lancement. Rien à faire, pas de
 réseau.
 
 **Palier 2 - verbes winetricks** (`vcrun2022`, `dotnet8`, `dotnetdesktop8`,

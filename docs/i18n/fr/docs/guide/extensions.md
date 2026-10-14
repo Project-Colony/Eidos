@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/extensions.md sha=5f31f1cbc3dcbfb9655f3570f01e5ada1377268d -->
+<!-- eidos-i18n: source=docs/guide/extensions.md sha=1d33d938321e5dbf200cd9b7a38c1e5f412fb116 -->
 
 # Extensions
 
@@ -88,4 +88,4 @@ pour qu'une faute échoue visiblement au lieu de transformer `--out {typo}` en
 
 ## Ce qu'une extension ne peut pas faire
 
-Une extension ne peut pas rappeler Eidos, s'enregistrer depuis une archive ni dessiner ses propres widgets. Les installateurs structurés du protocole 1 peuvent renvoyer des plans de fichiers vérifiés et des demandes de choix ; Eidos assure la révision, la préparation temporaire et la publication. FOMOD et BAIN restent des installateurs natifs. Les extensions d'aperçu et d'informations sur les sauvegardes utilisent le même hôte aux réponses bornées. Consultez le [contrat du protocole et les exemples exécutables](../../../../examples/extensions/README.md) pour la priorité de correspondance, les réponses CLI enregistrées, les limites et les contrôles d'identité lors de la répétition.
+Une extension ne peut pas rappeler Eidos, s'enregistrer depuis une archive ni dessiner ses propres widgets. Les installateurs structurés du protocole 1 peuvent renvoyer des plans de fichiers vérifiés et des demandes de choix ; Eidos assure la révision, la préparation temporaire et la publication. FOMOD et BAIN restent des installateurs natifs. Les extensions d'aperçu et d'informations sur les sauvegardes utilisent le même hôte aux réponses bornées. Consultez le [contrat du protocole et les exemples exécutables](../../../../guide/examples/extensions/README.md) (en anglais) pour la priorité de correspondance, les réponses CLI enregistrées, les limites et les contrôles d'identité lors de la répétition.

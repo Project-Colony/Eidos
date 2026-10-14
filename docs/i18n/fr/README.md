@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=0dcb88f3084e8fd1db8725e83f23670a6f88b578 -->
+<!-- eidos-i18n: source=README.md sha=9c6df24d2b5b403d78e0fd5afa489427e7bf9d71 -->
 
 <div align="center">
 
@@ -12,7 +12,11 @@
 </div>
 
 > 🇬🇧 L'anglais fait foi. En cas de désaccord entre cette page et
-> [README.md](README.md), c'est l'anglais qui a raison.
+> [README.md](../../../README.md), c'est l'anglais qui a raison.
+
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](../../../LICENSE)
+[![Colony app](https://img.shields.io/badge/Colony-system-purple)](https://github.com/Project-Colony/Colony)
+[![Platforms](https://img.shields.io/badge/platforms-linux-lightgrey)](#installation)
 
 Eidos apporte aux jeux Bethesda sous Linux ce que Mod Organizer 2 leur apporte
 sous Windows - une vue fusionnée de vos mods, virtuelle et recréée à chaque
@@ -52,6 +56,40 @@ Steam ──> eidos-gui %command% ──> [ espace de noms privé ]
   une restauration en un clic. Une capture qui effacerait votre ordre de
   chargement est refusée, en disant pourquoi.
 
+### Comment il se compare
+
+| | Eidos | MO2 via Wine | Fluorine-Manager | Limo / déployeurs par liens |
+|---|---|---|---|---|
+| Gestionnaire natif | ✅ | ❌ appli Windows dans Wine | ✅ (portage Qt) | ✅ |
+| Dossier du jeu intact | ✅ toujours | ✅ | ✅ | ❌ des liens y sont écrits |
+| Montage visible par | le jeu seul | le jeu seul | **tout le système** | sans objet |
+| Nettoyage après plantage | aucun, par conception | aucun | récupération de montage mort | dé-déploiement manuel |
+| Mods root (ENB, préchargeurs) | ✅ natif | greffon requis | greffon requis | partiel |
+| Privilèges requis | aucun | aucun | modifier `/etc/fuse.conf` | aucun |
+
+### Sa rapidité
+
+| | avant | maintenant |
+|---|---|---|
+| charger une sauvegarde | ~20 secondes | **6-7 secondes** |
+| lectures de dossiers dans une session | 5,6 millions | 465 mille |
+
+Les changements de cellule sont immédiats. Le gain vient d'avoir posé moins de
+questions à vos mods : trouver un fichier interrogeait auparavant les cinquante
+couches l'une après l'autre, et lister un dossier le faisait cinquante fois. Ni
+l'un ni l'autre ne le fait plus. Mesuré sur une instance réelle jouée normalement,
+pas sur un banc d'essai.
+
+### Travaux antérieurs et remerciements
+
+- [ModOrganizer2](https://github.com/ModOrganizer2/modorganizer) et
+  [usvfs](https://github.com/ModOrganizer2/usvfs) - la sémantique qu'Eidos
+  reproduit, et la base de code face à laquelle sa parité a été étudiée
+- [LOOT](https://loot.github.io/) - le moteur de tri, via libloot
+- [Fluorine-Manager](https://github.com/SulfurNitride/Fluorine-Manager),
+  [Limo](https://github.com/limo-app/limo) et les autres gestionnaires Linux - la
+  preuve qu'une communauté veut voir ce problème résolu
+
 ## Ce qu'il fait
 
 **Mods.** Archives simples, assistants FOMOD, paquets BAIN de Wrye Bash, un
@@ -79,7 +117,7 @@ jeux), déplaçable et isolé, comme celles de MO2. Les instances portables sont
 mémorisées d'une session à l'autre ; la GUI, le lancement Steam et chaque commande
 suivent celle que vous avez utilisée en dernier, et toute commande accepte le
 dossier partout où elle accepte un identifiant de jeu. Détails dans
-[usage.md](docs/guide/usage.md) 🇬🇧.
+[usage.md](docs/guide/usage.md).
 
 **Profils.** Ordre des mods, état des plugins, INI et sauvegardes par profil. Les
 sauvegardes sont analysées, comparées à vos plugins actuels - avec un bouton qui
@@ -118,31 +156,57 @@ anglais).
 
 Consultez [Contrôles d'intégrité et fichiers générés](../../../docs/internals/integrity.md) (en anglais) pour la protection des remplacements, les conflits entre fichiers BSA/BA2, les diagnostics statiques SKSE et les traces de génération, ainsi que leurs limites.
 
-## Comment il se compare
+### Jeux pris en charge
 
-| | Eidos | MO2 via Wine | Fluorine-Manager | Limo / déployeurs par liens |
-|---|---|---|---|---|
-| Gestionnaire natif | ✅ | ❌ appli Windows dans Wine | ✅ (portage Qt) | ✅ |
-| Dossier du jeu intact | ✅ toujours | ✅ | ✅ | ❌ des liens y sont écrits |
-| Montage visible par | le jeu seul | le jeu seul | **tout le système** | sans objet |
-| Nettoyage après plantage | aucun, par conception | aucun | récupération de montage mort | dé-déploiement manuel |
-| Mods root (ENB, préchargeurs) | ✅ natif | greffon requis | greffon requis | partiel |
-| Privilèges requis | aucun | aucun | modifier `/etc/fuse.conf` | aucun |
+**Skyrim SE/AE** - éprouvé en jeu réel. **Fallout 4** est câblé de bout en bout
+également (F4SE substitué automatiquement, invalidation d'archives, ordre de
+chargement à astérisques, LOOT, sauvegardes `.fos`) - voir
+[guide/fallout4.md](docs/guide/fallout4.md). Câblés selon le descripteur de jeu
+partagé et en attente de testeurs : Skyrim LE, Skyrim VR, Enderal SE, Fallout 3,
+Fallout NV, Fallout 4 (+ VR), Starfield, Oblivion et Morrowind (ces deux derniers
+se montent et gèrent les mods ; leurs listes de plugins ordonnées par horodatage
+ne sont pas encore gérées).
 
-## Sa rapidité
+Ajouter une famille tient en une ligne de descripteur :
+[internals/adding-games.md](../../internals/adding-games.md).
 
-| | avant | maintenant |
-|---|---|---|
-| charger une sauvegarde | ~20 secondes | **6-7 secondes** |
-| lectures de dossiers dans une session | 5,6 millions | 465 mille |
+## Installation
 
-Les changements de cellule sont immédiats. Le gain vient d'avoir posé moins de
-questions à vos mods : trouver un fichier interrogeait auparavant les cinquante
-couches l'une après l'autre, et lister un dossier le faisait cinquante fois. Ni
-l'un ni l'autre ne le fait plus. Mesuré sur une instance réelle jouée normalement,
-pas sur un banc d'essai.
+### Via Colony (recommandé)
 
-## Démarrer
+Cherchez **Eidos** dans [Colony](https://github.com/Project-Colony/Colony) et
+installez-le. Les mises à jour arrivent par le lanceur. Colony installe un seul
+fichier, `eidos-linux` : la fenêtre, et aussi la ligne de commande `eidos`
+quand il est appelé à travers un lien nommé `eidos`. L'aperçu des modèles NIF a
+besoin d'un utilitaire que seul le paquet ci-dessous contient ; sans lui,
+l'aperçu le signale et tout le reste fonctionne. Que faire après l'installation,
+et comment y faire pointer Steam :
+[docs/guide/install.md](docs/guide/install.md#via-colony).
+
+### Téléchargement direct du binaire
+
+Prenez un fichier dans la [dernière version](https://github.com/Project-Colony/Eidos/releases/latest) :
+
+| Fichier | Ce que c'est |
+|---|---|
+| `eidos-linux` | tout le programme en un seul fichier, tel que Colony l'installe |
+| `eidos-linux-bundle.tar.gz` | `eidos`, `eidos-gui`, l'utilitaire d'aperçu NIF, les icônes et un installateur qui enregistre l'entrée de bureau et le gestionnaire de téléchargements Nexus |
+
+Vérifiez d'abord le téléchargement, comme le montre la
+[politique de signature du code](#politique-de-signature-du-code), puis :
+
+```bash
+tar xzf eidos-linux-bundle.tar.gz
+cd eidos-linux-bundle
+./install.sh
+```
+
+L'installateur met tout dans `~/.local/bin` sans sudo ; `--system` et
+`--bindir DIR` choisissent un autre emplacement. Les deux fichiers exigent
+Linux x86_64 avec glibc 2.39 ou plus récent, FUSE (`fusermount3`) et 7-Zip pour
+les archives de mods.
+
+### Compiler depuis les sources
 
 ```bash
 git clone https://github.com/Project-Colony/Eidos && cd Eidos
@@ -150,19 +214,26 @@ just build
 just install
 ```
 
-Mettez ensuite l'option de lancement Steam de votre jeu à
-`~/.local/bin/eidos-gui %command%` et appuyez sur Jouer.
+Exige Rust 1.89 ou plus récent (la `rust-version` que vérifie la CI ; la CI et
+les versions publiées compilent avec 1.99.0), ainsi que `just`, CMake 3.20+ et
+un compilateur C++17 pour l'utilitaire d'aperçu NIF. Un paquet Arch se compile
+depuis `packaging/PKGBUILD`. Prérequis et commandes sans `just` :
+[docs/guide/install.md](docs/guide/install.md).
 
-Paquets Arch, archives de version, ce qu'il faut installer d'abord et la voie en
-ligne de commande : **[docs/guide/install.fr.md](docs/guide/install.md)**.
+### Options de lancement Steam
 
-## Options de lancement Steam
-
-La ligne de base suffit à la plupart des configurations :
+Eidos s'exécute *en tant que* commande de lancement du jeu, et c'est ainsi qu'il
+monte avant que le jeu démarre. La ligne de base suffit à la plupart des
+configurations, avec le chemin absolu de votre installation (Steam ne lit pas
+votre `PATH`) :
 
 ```
 ~/.local/bin/eidos-gui %command%
 ```
+
+Depuis Colony, ce chemin est `~/.local/share/Colony/apps/Eidos/eidos-linux`.
+Appuyez ensuite sur Jouer : Eidos s'ouvre sur l'instance de ce jeu, et Run
+démarre le jeu à travers la vue fusionnée.
 
 Tout le reste est constitué de variables d'environnement empilées devant, et elles
 se combinent librement :
@@ -189,26 +260,16 @@ Ajoutez `DXVK_HUD=fps` devant le temps de vérifier que tout marche, puis retire
 Les interrupteurs de diagnostic plus profonds (`EIDOS_FUSE_TRACE`, les bascules de
 bissection du cache et de l'index, pourquoi `EIDOS_FUSE_PASSTHROUGH` est
 désactivé par défaut) vivent dans
-[guide/troubleshooting.fr.md](docs/guide/troubleshooting.md).
+[guide/troubleshooting.md](docs/guide/troubleshooting.md).
 
-## Où aller ensuite
+## Documentation
 
-| Si vous voulez... | |
-|---|---|
-| l'installer | [guide/install.fr.md](docs/guide/install.md) |
-| apprendre la ligne de commande et la GUI | [guide/usage.fr.md](docs/guide/usage.md) |
-| configurer xEdit, BodySlide ou DynDOLOD | [guide/tools.fr.md](docs/guide/tools.md) |
-| jouer à Fallout 4 (F4SE, versions, le plantage des débris NVIDIA) | [guide/fallout4.fr.md](docs/guide/fallout4.md) |
-| faire marcher DLSS et la génération d'images (Community Shaders) | [guide/graphics.fr.md](docs/guide/graphics.md) |
-| réparer quelque chose qui semble anormal | [guide/troubleshooting.fr.md](docs/guide/troubleshooting.md) |
-| savoir pourquoi c'est rapide, et le vérifier vous-même | [internals/performance.md](../../internals/performance.md) |
-| comprendre son fonctionnement interne | [internals/architecture.md](../../internals/architecture.md) |
-| le compiler, le tester, y contribuer | [internals/contributing.md](../../internals/contributing.md) |
-| savoir pourquoi il existe | [project/landscape.md](../../project/landscape.md) |
-
-Une langue tient dans un seul dossier : `docs/i18n/fr/` reproduit l'arborescence
-de la racine du dépôt, ce qui rend un lien entre deux pages traduites identique au
-lien entre leurs originaux anglais.
+Tout est dans [docs/](../../), indexé selon le lecteur dans
+[docs/README.md](docs/README.md) : le guide de l'utilisateur (installation, la
+ligne de commande et la GUI, des outils comme xEdit et DynDOLOD, le graphisme,
+le dépannage), le fonctionnement interne d'Eidos, et pourquoi il existe.
+Politique de sécurité et comment signaler une vulnérabilité :
+[SECURITY.md](../../../SECURITY.md) (en anglais).
 
 ## Langue
 
@@ -245,30 +306,95 @@ dernier, ce qui est pire pour le lecteur que d'être renvoyé vers l'anglais.
 Ajouter une langue, c'est neuf fichiers et une ligne dans cette liste ;
 [`docs/internals/contributing.md`](../../internals/contributing.md) donne les étapes.
 
-## Jeux pris en charge
+Une langue tient dans un seul dossier. `docs/i18n/<lang>/` reproduit
+l'arborescence de la racine du dépôt, si bien que
+`docs/i18n/de/docs/guide/install.md` est le `docs/guide/install.md` allemand -
+c'est ce qui rend un lien entre deux pages traduites identique au lien entre
+leurs originaux anglais, et ce qui permet de retirer une langue avec un seul
+`rm -r`.
 
-**Skyrim SE/AE** - éprouvé en jeu réel. **Fallout 4** est câblé de bout en bout
-également (F4SE substitué automatiquement, invalidation d'archives, ordre de
-chargement à astérisques, LOOT, sauvegardes `.fos`) - voir
-[guide/fallout4.md](docs/guide/fallout4.md). Câblés selon le descripteur de jeu
-partagé et en attente de testeurs : Skyrim LE, Skyrim VR, Enderal SE, Fallout 3,
-Fallout NV, Fallout 4 (+ VR), Starfield, Oblivion et Morrowind (ces deux derniers
-se montent et gèrent les mods ; leurs listes de plugins ordonnées par horodatage
-ne sont pas encore gérées).
+## Politique de signature du code
 
-Ajouter une famille tient en une ligne de descripteur :
-[internals/adding-games.md](../../internals/adding-games.md).
+Chaque fichier publié est signé par l'organisation Project Colony dans la CI,
+jamais sur la machine d'un développeur. À côté de chaque fichier, sur la page de
+la version :
 
-## Travaux antérieurs et remerciements
+| Fichier | Ce que c'est |
+|---|---|
+| `<asset>.sig` | une signature ed25519 du fichier, faite avec la clé de publication de l'organisation |
+| `<asset>.meta` | trois lignes qui lient le fichier à son nom, à son sha256 et au numéro de version |
+| `<asset>.meta.sig` | une signature ed25519 du `.meta` |
 
-- [ModOrganizer2](https://github.com/ModOrganizer2/modorganizer) et
-  [usvfs](https://github.com/ModOrganizer2/usvfs) - la sémantique qu'Eidos
-  reproduit, et la base de code face à laquelle sa parité a été étudiée
-- [LOOT](https://loot.github.io/) - le moteur de tri, via libloot
-- [Fluorine-Manager](https://github.com/SulfurNitride/Fluorine-Manager),
-  [Limo](https://github.com/limo-app/limo) et les autres gestionnaires Linux - la
-  preuve qu'une communauté veut voir ce problème résolu
+La clé privée est un secret de l'organisation, utilisé uniquement par le
+[workflow sign-and-publish](https://github.com/Project-Colony/Project-Colony-Resources/blob/main/.github/workflows/sign-and-publish.yml)
+partagé, dans une tâche qui ne compile rien ; les tâches qui compilent Eidos ne
+la voient jamais. Colony vérifie les trois fichiers avant d'installer ou de
+mettre à jour Eidos, et refuse une version plus ancienne que celle installée.
+Pour vérifier vous-même un téléchargement avec OpenSSL 3 (les mêmes commandes
+valent pour chaque fichier) :
+
+```bash
+cat > colony-release.pub <<'EOF'
+-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEARNjg3Nn8H6/aBg1unwGjkUTcrdTxERNefVaqU8cFu0s=
+-----END PUBLIC KEY-----
+EOF
+a=eidos-linux
+openssl pkeyutl -verify -pubin -inkey colony-release.pub -rawin -in "$a" -sigfile "$a.sig"
+openssl pkeyutl -verify -pubin -inkey colony-release.pub -rawin -in "$a.meta" -sigfile "$a.meta.sig"
+cat "$a.meta"     # version=<tag>, asset=<file name>, sha256=<digest>
+sha256sum "$a"    # the digest must equal the sha256 line
+```
+
+Comment les versions sont compilées, signées et publiées :
+[design/releases.md](https://github.com/Project-Colony/Project-Colony-Resources/blob/main/design/releases.md#5-signing) (en anglais).
+
+## Confidentialité
+
+Eidos n'envoie ni télémétrie, ni statistiques d'utilisation, ni rapports de
+plantage. Il ne se connecte à aucun serveur en dehors de ceux de ce tableau, et
+seulement pour l'action qui y est indiquée. Le mode **hors ligne**
+(Preferences -> Nexus) coupe toute connexion à Nexus.
+
+| Donnée | Stockée ou envoyée | Où, et pourquoi |
+|---|---|---|
+| Préférences, liste d'instances, définitions de jeux et d'extensions | stockées | `~/.config/Colony/Eidos/` |
+| Instances, runtimes téléchargés, journaux de session | stockés | `~/.local/share/Colony/Eidos/`, ou le dossier choisi pour une instance portable |
+| Masterlists LOOT | stockées | `~/.cache/Colony/Eidos/loot/` |
+| Connexion à Nexus | envoyée | Se connecter ouvre `users.nexusmods.com` dans votre navigateur, qui renvoie le résultat à un écouteur qu'Eidos ouvre sur `127.0.0.1` pour cette seule connexion. Eidos l'échange ensuite contre des jetons sur `users.nexusmods.com/oauth/token` et récupère les clés publiques avec lesquelles Nexus les signe. [Politique de confidentialité de Nexus Mods](https://help.nexusmods.com/article/20-privacy-policy) |
+| Identifiants Nexus | stockés | Les jetons d'accès et de renouvellement, dans `~/.config/Colony/Eidos/nexus.ini` avec le mode 0600. Une ligne `api_key=` écrite là par un Eidos plus ancien est conservée mais jamais lue ; supprimez-la si vous le souhaitez. |
+| Requêtes Nexus | envoyées | `api.nexusmods.com`, quand vous utilisez une fonction Nexus : le nom de votre compte et votre statut premium, les détails des mods et des fichiers, les vérifications de mises à jour, les collections et les liens de téléchargement. Chaque requête porte votre jeton d'accès et indique Eidos et sa version. |
+| Téléchargements Nexus | envoyés | Les fichiers que vous demandez, depuis l'hôte CDN de Nexus que nomme le lien de téléchargement, enregistrés dans le dossier de téléchargements de l'instance avec un `.meta` au format MO2 à côté de chacun. |
+| Liens `nxm://` | stockés | `eidos nxm --register`, que `install.sh` lance pour vous, écrit `~/.local/share/applications/eidos-nxm.desktop` et en fait le gestionnaire `nxm://` via `xdg-mime`, si bien que le bouton Mod Manager Download du site transmet son lien à Eidos. Le paquet Arch installe la même entrée pour tout le système. |
+| Masterlists LOOT | envoyées | `raw.githubusercontent.com/loot/...`, au premier tri LOOT d'un jeu et chaque fois que vous demandez une mise à jour. Rien de ce qui vous concerne n'est envoyé. [Déclaration de confidentialité de GitHub](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement) |
+| Runtimes des outils | envoyés | Seulement quand vous installez un prérequis d'outil ou qu'un mod en a besoin : le runtime .NET depuis `builds.dotnet.microsoft.com`, refusé s'il ne correspond pas au SHA-256 intégré à Eidos, et `winetricks`, qui télécharge ce qu'il installe dans le préfixe Proton du jeu (redistribuables Visual C++ et .NET) depuis Microsoft et les autres hôtes qu'utilise winetricks. [Déclaration de confidentialité de Microsoft](https://www.microsoft.com/en-us/privacy/privacystatement) |
+| Journaux de session | stockés | `~/.local/share/Colony/Eidos/logs/`, mode 0600 : dix sessions par instance, effacées au bout de 30 jours. Votre dossier personnel y est écrit `~` et votre nom d'utilisateur `<user>`, si bien qu'un journal peut être collé tel quel dans un ticket. Ils ne quittent jamais votre machine à moins que vous ne les envoyiez. |
+| Raccourcis | stockés | `install.sh` écrit `eidos.desktop` et ses icônes sous `~/.local/share` ; un raccourci d'outil que vous créez va dans `~/.local/share/applications`. |
+| Liens que vous ouvrez | ni l'un ni l'autre | Les pages de mods et les autres liens s'ouvrent dans votre propre navigateur via `xdg-open`. |
+| Extensions | ni l'un ni l'autre | Les extensions que vous installez s'exécutent comme des programmes distincts sur votre machine ; ce qu'elles font ne relève que d'elles. |
 
 ## Licence
 
-Le code original d'Eidos est sous licence GPL-3.0-or-later. Les traductions de code OMOD intégrées sont sous licence GPL-3.0-only ; consultez leurs [crédits d'origine](../../../crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md). L'utilitaire NIF conserve les [licences et crédits de ses composants](../../../native/eidos-nif-preview/UPSTREAM.md). La gestion de mods appartient à tout le monde.
+Le code original d'Eidos est sous licence GPL-3.0-or-later ; voir
+[LICENSE](../../../LICENSE). Les parties suivantes sont sous GPL-3.0 sans
+l'option « or later » :
+
+- les traductions de scripts OMOD dans `eidos-install` ; voir leurs
+  [crédits d'origine](../../../crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md) ;
+- l'utilitaire `eidos-nif-preview`, construit sur la bibliothèque nifly
+  intégrée au dépôt ; voir les [licences et crédits de ses composants](../../../crates/eidos-nif-preview/UPSTREAM.md) ;
+- les crates `esplugin` et `libloadorder` auxquelles le code de l'ordre de
+  chargement est lié, qui déclarent `GPL-3.0`.
+
+Les autres crates Rust présentes dans les binaires gardent leurs propres
+licences (MIT, Apache-2.0, BSD et similaires). Le paquet de la version porte
+leurs mentions dans `licenses/crates/`, avec un index de chaque crate et de sa
+licence.
+
+Les binaires embarquent aussi huit DLL redistribuables Microsoft DirectX
+authentiques (`d3dcompiler_47`, `d3dcompiler_43`, `d3dx9_43` et `d3dx11_43`, en
+32 et 64 bits), qu'Eidos déploie dans le préfixe du jeu quand un mod ou un outil
+en a besoin. Elles restent sous les conditions de redistribution de Microsoft ;
+voir leur [provenance](../../../crates/eidos-gamefeatures/assets/PROVENANCE.md).
+
+La gestion de mods appartient à tout le monde.
