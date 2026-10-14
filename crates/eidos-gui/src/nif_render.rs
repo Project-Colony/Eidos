@@ -548,7 +548,7 @@ pub(crate) fn render(
         height: HEIGHT,
         rgba: vec![0; WIDTH as usize * HEIGHT as usize * 4],
     };
-    for pixel in frame.rgba.chunks_exact_mut(4) {
+    for pixel in frame.rgba.as_chunks_mut::<4>().0 {
         pixel.copy_from_slice(&BACKGROUND);
     }
     let mut depth = vec![f32::NEG_INFINITY; WIDTH as usize * HEIGHT as usize];

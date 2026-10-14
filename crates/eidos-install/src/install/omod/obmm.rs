@@ -380,12 +380,11 @@ impl ObmmProgram {
                         return Err(err(code[s].line, "Select requires a Case or Default"));
                     }
                 }
-                "Label" => {
+                "Label"
                     if code[i].args[0].contains('%')
-                        || labels.insert(code[i].args[0].clone(), i).is_some()
-                    {
-                        return Err(err(code[i].line, "dynamic or duplicate label"));
-                    }
+                        || labels.insert(code[i].args[0].clone(), i).is_some() =>
+                {
+                    return Err(err(code[i].line, "dynamic or duplicate label"));
                 }
                 _ => {}
             }

@@ -561,7 +561,7 @@ fn other_revisions(
             found.push(other);
         }
     }
-    found.sort_by(|a, b| b.revision.cmp(&a.revision));
+    found.sort_by_key(|a| std::cmp::Reverse(a.revision));
     Ok(found)
 }
 
