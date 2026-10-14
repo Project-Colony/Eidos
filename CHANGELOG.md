@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.2](https://github.com/Project-Colony/Eidos/compare/v1.19.1...v1.19.2) (2026-10-14)
+
+
+### Documentation
+
+* restore the translated guides and keep them in sync with the English ([#96](https://github.com/Project-Colony/Eidos/issues/96)) ([5337a0c](https://github.com/Project-Colony/Eidos/commit/5337a0c2917102e910cb708b404efb64d7898f0a))
+
 ## [1.19.1](https://github.com/Project-Colony/Eidos/compare/v1.19.0...v1.19.1) (2026-10-14)
 
 
