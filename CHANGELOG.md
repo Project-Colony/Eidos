@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.1](https://github.com/Project-Colony/Eidos/compare/v1.19.0...v1.19.1) (2026-10-14)
+
+
+### Fixes
+
+* bundle the DirectX DLLs in eidos again and deploy them automatically ([#94](https://github.com/Project-Colony/Eidos/issues/94)) ([e2dffde](https://github.com/Project-Colony/Eidos/commit/e2dffde5ae9b38080a735a6861f5df34b700c131))
+
 ## [1.19.0](https://github.com/Project-Colony/Eidos/compare/v1.18.4...v1.19.0) (2026-10-14)
 
 
