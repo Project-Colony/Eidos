@@ -348,9 +348,9 @@ pub(crate) fn cmd_tool(args: &[String]) {
             let prereqs = tool.prereqs.clone();
             let output_mod = tool.output_mod.clone();
             let app_id = tool.app_id;
-            // A winetricks verb (DirectX DLL, vcrun, dotnet) that hasn't been
-            // installed will likely crash the tool, so warn with the fix - without
-            // blocking (the user may have it via Steam).
+            // The bundled Tier-1 DLLs get provisioned at launch; but a Tier-2 verb
+            // (vcrun/dotnet) that hasn't been installed will likely crash the tool, so
+            // warn with the fix - without blocking (the user may have it via Steam).
             let satisfied = satisfied_prereqs_in(&inst, game.prefix().as_deref());
             let missing2: Vec<&String> = prereqs
                 .iter()
@@ -363,7 +363,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
                     .collect::<Vec<_>>()
                     .join(", ");
                 eidos_log::info!(
-                    "eidos tool: '{title}' needs {names} - run `eidos prereqs {id} --install` to set it up (downloads)."
+                    "eidos tool: '{title}' needs {names} - run `eidos prereqs {id} --install` to set it up (downloads from Microsoft)."
                 );
             }
             // Tier 3: point the tool at any runtime it declares. Nothing is

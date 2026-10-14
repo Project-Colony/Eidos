@@ -307,7 +307,7 @@ server except the ones in this table, and only for the action named there.
 | Nexus downloads | sent | The files you ask for, from the Nexus CDN host the download link names, saved in the instance's downloads folder with an MO2-format `.meta` beside each one. |
 | `nxm://` links | stored | `eidos nxm --register`, which `install.sh` runs for you, writes `~/.local/share/applications/eidos-nxm.desktop` and makes it the `nxm://` handler through `xdg-mime`, so the site's Mod Manager Download button hands its link to Eidos. The Arch package installs the same entry system-wide. |
 | LOOT masterlists | sent | `raw.githubusercontent.com/loot/...`, on a game's first LOOT sort and whenever you ask for an update. Nothing of yours is sent. [GitHub privacy statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement) |
-| Tool runtimes | sent | Only when you install a tool prerequisite or a mod needs one: the .NET runtime from `builds.dotnet.microsoft.com`, refused unless it matches the SHA-256 built into Eidos, and `winetricks`, which downloads what it installs into the game's Proton prefix (Visual C++ and .NET redistributables, and DirectX DLLs such as `d3dcompiler_47`) from Microsoft and the other hosts winetricks uses. [Microsoft privacy statement](https://www.microsoft.com/en-us/privacy/privacystatement) |
+| Tool runtimes | sent | Only when you install a tool prerequisite or a mod needs one: the .NET runtime from `builds.dotnet.microsoft.com`, refused unless it matches the SHA-256 built into Eidos, and `winetricks`, which downloads what it installs into the game's Proton prefix (Visual C++ and .NET redistributables) from Microsoft and the other hosts winetricks uses. [Microsoft privacy statement](https://www.microsoft.com/en-us/privacy/privacystatement) |
 | Session logs | stored | `~/.local/share/Colony/Eidos/logs/`, mode 0600: ten sessions per instance, swept after 30 days. Your home folder is written as `~` and your user name as `<user>`, so a log can be pasted into an issue as it is. They never leave your machine unless you send them. |
 | Shortcuts | stored | `install.sh` writes `eidos.desktop` and its icons under `~/.local/share`; a tool shortcut you create goes to `~/.local/share/applications`. |
 | Links you open | neither | Mod pages and other links open in your own browser through `xdg-open`. |
@@ -329,7 +329,10 @@ The other Rust crates in the binaries keep their own licenses (MIT, Apache-2.0,
 BSD and similar). The release bundle carries their notices in `licenses/crates/`,
 with an index of every crate and its license.
 
-Eidos ships no Microsoft binary. The DirectX DLLs some mods and tools need are
-installed into the game's prefix by winetricks, when you ask for them.
+The binaries also embed eight genuine Microsoft DirectX redistributable DLLs
+(`d3dcompiler_47`, `d3dcompiler_43`, `d3dx9_43` and `d3dx11_43`, 32- and 64-bit),
+which Eidos deploys into the game's prefix when a mod or tool needs them. They
+stay under Microsoft's redistributable terms; see their
+[provenance](crates/eidos-gamefeatures/assets/PROVENANCE.md).
 
 Mod management belongs to everyone.

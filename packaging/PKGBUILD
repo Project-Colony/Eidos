@@ -27,7 +27,7 @@ depends=('fuse3' '7zip' 'xdg-utils' 'gcc-libs' 'glibc')
 makedepends=('cargo' 'git' 'cmake' 'python' 'jq')
 optdepends=(
 	'steam: game and Proton detection'
-	'winetricks: tool and mod prerequisites (DirectX DLLs, .NET, vcrun)'
+	'winetricks: tier-2 tool prerequisites (.NET / vcrun for Synthesis, FNIS, Pandora)'
 	'xdg-desktop-portal: native file dialogs in the GUI'
 	'vulkan-icd-loader: GPU rendering for the GUI'
 )

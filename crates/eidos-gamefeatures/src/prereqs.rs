@@ -1,13 +1,12 @@
-//! Tier-2 prerequisite installation: winetricks verbs. Some write registry / GAC /
-//! CLR-host state (vcrun2022, dotnet8, ...); others drop Microsoft's DirectX DLLs
-//! into the prefix (d3dcompiler_47, d3dx9_43, ..., see [`crate::is_native_dll_verb`]),
-//! which Eidos does not redistribute.
+//! Tier-2 prerequisite installation: winetricks verbs (vcrun2022, dotnet8, ...)
+//! that write registry / GAC / CLR-host and so cannot be file-copied like the
+//! Tier-1 DLLs in [`native_dll`].
 //!
 //! We run the system `winetricks` pointed straight at Proton's own `wine` plus the
 //! game prefix (the approach NaK/Jackify use), which bypasses Steam's
 //! pressure-vessel container - and therefore the protontricks + Proton-GE
-//! `bwrap`/`ntdll.so` mismatch. These verbs DOWNLOAD their payloads, so this is
-//! only ever run on an explicit, user-consented action (`eidos prereqs
+//! `bwrap`/`ntdll.so` mismatch. These verbs DOWNLOAD their payloads from Microsoft,
+//! so this is only ever run on an explicit, user-consented action (`eidos prereqs
 //! --install`), never silently at launch.
 
 use std::fs;
@@ -15,13 +14,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// The winetricks verbs Eidos knows how to request. A verb that is neither one of
-/// these nor a runtime ([`crate::is_runtime_verb`]) is unknown.
+/// The Tier-2 installer verbs Eidos knows how to request (vs the Tier-1 bundled
+/// DLLs in [`crate::is_tier1_dll`]). A verb in neither set is unknown.
 const TIER2_VERBS: &[&str] = &[
-    "d3dcompiler_47",
-    "d3dcompiler_43",
-    "d3dx9_43",
-    "d3dx11_43",
     "vcrun2022",
     "dotnet6",
     "dotnet7",
@@ -71,15 +66,6 @@ pub fn satisfied_prereqs_in(
         return Default::default();
     };
     let mut done = verbs_in_prefix(prefix);
-    // A DirectX DLL is satisfied by the DLL itself, whoever put it there: a
-    // manual install, or an Eidos release that still copied its own.
-    let windows = prefix.join("drive_c").join("windows");
-    done.extend(
-        crate::native_dll::NATIVE_DLL_VERBS
-            .iter()
-            .filter(|v| crate::native_dll_present(&windows, v))
-            .map(|v| v.to_string()),
-    );
     if let (Ok(key), Ok(receipt)) = (
         prefix_receipt_key(prefix),
         fs::read_to_string(instance_root.join("prereqs.done")),
@@ -200,18 +186,7 @@ pub fn install_tier2_verb(
             "winetricks not found on PATH (install it, e.g. `pacman -S winetricks`)",
         )
     })?;
-    run_winetricks(&winetricks, proton, prefix, steam_env, verb)
-}
 
-/// [`install_tier2_verb`] with the `winetricks` executable given, so a test can
-/// stand in a fake one and never touch the network.
-fn run_winetricks(
-    winetricks: &Path,
-    proton: &Path,
-    prefix: &Path,
-    steam_env: &[(String, String)],
-    verb: &str,
-) -> io::Result<()> {
     // The proton script lives at `<proton_dir>/proton`; its wine is under `files/bin`.
     let proton_dir = proton.parent().ok_or_else(|| {
         io::Error::new(
@@ -244,7 +219,7 @@ fn run_winetricks(
             )
         })?;
 
-    let mut cmd = Command::new(winetricks);
+    let mut cmd = Command::new(&winetricks);
     cmd.arg("-q")
         .arg(verb)
         .env("WINEPREFIX", prefix)
@@ -520,75 +495,8 @@ mod tests {
         assert!(is_tier2_verb("vcrun2022"));
         assert!(is_tier2_verb("dotnet8"));
         assert!(is_tier2_verb("dotnetdesktop8"));
-        // Eidos ships no Microsoft DLL: the DirectX ones come from winetricks too.
-        for verb in crate::native_dll::NATIVE_DLL_VERBS {
-            assert!(is_tier2_verb(verb), "{verb}");
-        }
+        assert!(!is_tier2_verb("d3dx9_43")); // Tier 1 (bundled DLL)
         assert!(!is_tier2_verb("nonsense"));
-    }
-
-    #[test]
-    fn a_directx_dll_is_installed_by_winetricks_against_protons_wine() {
-        // A stand-in winetricks records what it was asked to do; nothing is
-        // downloaded. Eidos ships no Microsoft DLL, so this call is the whole of
-        // how d3dcompiler_47 reaches the prefix.
-        let root = std::env::temp_dir().join(format!("eidos-prq-mock-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        let bin = root.join("proton/files/bin");
-        fs::create_dir_all(&bin).unwrap();
-        fs::write(bin.join("wine"), b"").unwrap();
-        let prefix = root.join("pfx");
-        fs::create_dir_all(&prefix).unwrap();
-        let record = root.join("called");
-        let fake = root.join("winetricks");
-        fs::write(
-            &fake,
-            format!(
-                "#!/bin/sh\nprintf '%s\\n' \"$*\" \"$WINEPREFIX\" \"$WINE\" > '{}'\n",
-                record.display()
-            ),
-        )
-        .unwrap();
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();
-
-        run_winetricks(
-            &fake,
-            &root.join("proton/proton"),
-            &prefix,
-            &[],
-            "d3dcompiler_47",
-        )
-        .unwrap();
-        let called = fs::read_to_string(&record).unwrap();
-        let lines: Vec<&str> = called.lines().collect();
-        assert_eq!(lines[0], "-q d3dcompiler_47");
-        assert_eq!(Path::new(lines[1]), prefix);
-        assert_eq!(Path::new(lines[2]), bin.join("wine"));
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn a_directx_dll_already_in_the_prefix_is_not_installed_again() {
-        // An Eidos release that still shipped these DLLs copied them straight
-        // in, with no winetricks.log entry. They must read as done, or every
-        // existing user is sent to download what they already have.
-        let root = std::env::temp_dir().join(format!("eidos-prq-legacy-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        let prefix = root.join("pfx");
-        let windows = prefix.join("drive_c/windows");
-        for dir in ["system32", "syswow64"] {
-            fs::create_dir_all(windows.join(dir)).unwrap();
-            fs::write(
-                windows.join(dir).join("d3dx9_43.dll"),
-                [b'M', b'Z', 0, 0].repeat(64),
-            )
-            .unwrap();
-        }
-        let done = satisfied_prereqs_in(&root, Some(&prefix));
-        assert!(done.contains("d3dx9_43"), "{done:?}");
-        assert!(!done.contains("d3dcompiler_47"), "{done:?}");
-        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

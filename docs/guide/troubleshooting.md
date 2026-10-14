@@ -71,12 +71,9 @@ To launch the game itself through Eidos, set its Steam launch option to:
 eidos play skyrimse -- %command%
 ```
 
-No `WINEDLLOVERRIDES` prefix is needed: Eidos forces native `d3dcompiler_47`
-when an enabled mod imports it, and merges that with any DLL overrides a mod
-ships (ENB/ReShade/`.asi` loaders). Eidos does not ship Microsoft's DLL itself.
-If the launch log says the prefix only has Wine's builtin, install it once with
-`eidos prereqs skyrimse --install` (or Install in the Diagnostics tab); that
-runs winetricks, which downloads it.
+Prefix it with `WINEDLLOVERRIDES="d3dcompiler_47=n"` if Proton needs native
+d3dcompiler for shader compilation; Eidos merges that with any DLL overrides a
+mod ships (ENB/ReShade/`.asi` loaders).
 
 
 ### Is the layer index actually in use?

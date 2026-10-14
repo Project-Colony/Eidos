@@ -774,7 +774,7 @@ pub(crate) fn tool_command(inst_arg: &str, title: &str) -> std::process::Command
 }
 
 /// Install the tools' runtime prerequisites into the prefix (`eidos prereqs <id>
-/// --install`). The winetricks step downloads and can take a
+/// --install`). The Tier-2 winetricks step downloads from Microsoft and can take a
 /// while; its output is redirected to `log` (the GUI has no terminal when launched
 /// from Steam) so the user can follow progress and read any error.
 pub(crate) fn run_prereqs_setup(inst_arg: &str, log: &Path) -> std::io::Result<()> {
