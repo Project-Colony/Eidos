@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=427084e50a9961f690747ca6fe98c2f1725defe9 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
 
 # 疑難排解與診斷
 
@@ -66,9 +66,9 @@ Papyrus 腳本都活著。
 eidos play skyrimse -- %command%
 ```
 
-如果 Proton 需要原生 d3dcompiler 來編譯著色器,就在前面加上
-`WINEDLLOVERRIDES="d3dcompiler_47=n"`;Eidos 會把它與模組自帶的任何 DLL override
-合併(ENB/ReShade/`.asi` 載入器)。
+不需要加上 `WINEDLLOVERRIDES` 前綴。當某個已啟用的模組匯入 `d3dcompiler_47` 時,
+Eidos 會把自己隨附的那份部署進前綴、強制它以原生方式載入,並把這項設定與模組自帶的
+任何 DLL override 合併(ENB/ReShade/`.asi` 載入器)。
 
 
 ### 層索引真的有在用嗎?
@@ -96,7 +96,7 @@ cargo run --release -p eidos-core --example listing_cost -- <mods-dir> <overwrit
 
 三種各自獨立的成因,每一種都沒有任何錯誤訊息:啟動選項裡沒有啟用 NVAPI、獨佔
 全螢幕,或是一個過時的 Reflex FPS 上限。完整的檢查清單在
-[graphics.zh-TW.md](graphics.md)。
+[graphics.md](graphics.md)。
 
 **一個把同一個目錄寫成兩種拼法的模組,弄丟了第二種拼法底下的一切。** 已修正。ext4
 把 `meshes/` 與 `Meshes/` 當成兩回事;合併檢視不能這樣,而真實的模組兩種都會出貨 -
@@ -117,7 +117,7 @@ XP32 Maximum Skeleton 的動畫與 FNIS 行為檔在大寫的那個底下,`chara
 的答案。
 
 **DynDOLOD 的 LODGen 死掉,只留下一份空的日誌。** 已由 `dotnet10` 修正;見
-[tools.zh-TW.md](tools.md)。症狀不會認錯:每一個世界的
+[tools.md](tools.md)。症狀不會認錯:每一個世界的
 `LODGen_SSE_<world>_log.txt` 裡只有一段版本橫幅、一行 `.NET Version:`,再無其他,
 而對話框只說「failed to generate object LOD for one or more worlds」。成因是 Wine
 的 Mono 代替 .NET Framework 回應,而且裝再多次 .NET Framework 都修不好 - 每次前綴

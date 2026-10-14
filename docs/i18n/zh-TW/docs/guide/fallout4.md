@@ -75,7 +75,7 @@ Fallout 4 的武器碎片效果基於 NVIDIA FleX,那是 NVIDIA 在 Pascal 之�
 
 ## 如果哪裡不對勁
 
-通用排查清單在 [troubleshooting.zh-TW.md](troubleshooting.md);而 Fallout 特有的
+通用排查清單在 [troubleshooting.md](troubleshooting.md);而 Fallout 特有的
 第一個問題永遠是*究竟啟動了哪個執行檔*。Eidos 會把完整的啟動命令寫進實例的執行紀錄,
 所以:
 

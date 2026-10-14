@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=13248970bb8989b15a41910dd3f9c6564a833325 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f10a5437abda242ca6654c18a34358e156c71a93 -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -15,7 +15,7 @@ edits 的按鈕。Eidos 會依檔名,在這些地方找它們:
 
 - 遊戲的安裝資料夾,以及已啟用模組的 `Root/` 樹;
 - **這個實例的 `mods/`**,MO2 使用者就是把工具裝在那裡;
-- 你在 Settings 裡設定的**工具資料夾**(Tools -> Tools folder),用於實例之間
+- 你在 Preferences 裡設定的**工具資料夾**(General -> Tools),用於實例之間
   共用的目錄 - 像 `/mnt/Games/Tools` 之類。
 
 `PGPatcher.exe` 在 Creation Engine 系列遊戲中以同樣的方式被找到，並且帶著一個缺了就無法運作的參數 - 見[下文](#為什麼-pgpatcher-需要---ignore-mo2vfscheck)。
@@ -116,8 +116,8 @@ Executables 對話框裡的 `Prereqs` 欄位可以編輯 - 偵測結果是預設
 
 ### 三種前置需求
 
-**第一層 - 隨附的 DLL**(`d3dx9_43`、`d3dcompiler_47`、`d3dx11_43`)。Eidos
-自己帶著它們,並在啟動時複製進前綴。不必做任何事,不用網路。
+**第一層 - 隨附的 DLL**(`d3dx9_43`、`d3dcompiler_47`、`d3dcompiler_43`、
+`d3dx11_43`)。Eidos 自己帶著它們,並在啟動時複製進前綴。不必做任何事,不用網路。
 
 **第二層 - winetricks verb**(`vcrun2022`、`dotnet8`、`dotnetdesktop8`、
 `dotnet48`、`xact`...)。它們會寫入登錄機碼、GAC 與 CLR host,所以沒辦法用複製

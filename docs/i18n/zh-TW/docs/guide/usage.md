@@ -1,9 +1,9 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c1396f03f352fe3d3bc10c23662ec659cb9eec2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=929a7bc31548c16e2538cf9f04c51109f51ad2da -->
 
 # 使用 Eidos
 
 實務手冊:CLI、GUI、Steam 啟動選項、從原始碼建置,以及概念驗證腳本。
-東西看起來不對勁時該怎麼辦,見 [troubleshooting.zh-TW.md](troubleshooting.md)。
+東西看起來不對勁時該怎麼辦,見 [troubleshooting.md](troubleshooting.md)。
 
 ## 使用它(CLI)
 
@@ -115,7 +115,7 @@ setuid 輔助程式、沒有常駐程式,也沒有什麼權限要授予。
 
 
 舊的 `setcap` 建議為什麼消失了 - 以及 FUSE passthrough 為什麼出貨時就關著 - 在
-[troubleshooting.zh-TW.md](troubleshooting.md#為什麼-passthrough-預設關閉)
+[troubleshooting.md](troubleshooting.md#為什麼-passthrough-預設關閉)
 有說明。
 
 ## 安裝一份 Nexus 合集
@@ -294,7 +294,7 @@ eidos play /mnt/games/EidosSkyrim
 cargo run -p eidos-gui
 ```
 
-一個 MO2 風格的首次啟動精靈,採用 Colony 的羊皮紙 / 酒紅配色:歡迎 -> 實例類型
+一個 MO2 風格的首次啟動精靈,以 Colony 共用的主題繪製:歡迎 -> 實例類型
 (可攜 / 全域)-> 遊戲 -> 名稱與位置 -> 摘要 -> 建立 -> 主畫面。歡迎畫面也會列出
 每一個已知的既有實例(全域與可攜,最近使用的在前),一鍵開啟 - 它兼任實例切換器 -
 而把精靈指向一個已經放著實例的資料夾,會「原樣沿用」它,而不是覆蓋著建立
@@ -309,6 +309,23 @@ Data / Plugins / Conflicts / Overwrite / Saves / Downloads / Diagnostics 分頁,
 之上、最後一個之下、移到指定的優先順序,或移進某個分隔線的群組。它們全都走同一個
 共用的移動輔助函式,所以「先移除列、再重新插入」造成的 off-by-one 只存在一個
 地方,而不是五個。
+
+### 偏好設定
+
+點左上角的 **Eidos**,偏好設定就會取代兩個窗格開啟;再點一次(或點 **Close**)即可
+返回。最前面是 General、Appearance 與 Accessibility,和每個 Colony 程式一樣,接著是
+Mod list、Nexus 與 About。每項變更都會立即套用並儲存;沒有儲存按鈕。
+
+- **General**:Eidos 開啟的遊戲、視窗大小、介面語言、工具資料夾,以及遊戲的執行
+  方式。視窗介面支援英文與法文;**System** 會依循 `LC_ALL`、`LC_MESSAGES` 或
+  `LANG`,變更立即生效。`eidos` 命令列一律以英文回應。
+- **Appearance**:主題(25 個系列、57 套配色,預設為 Eidos 的羊皮紙)、強調色、
+  文字大小、效果,以及即時預覽。
+- **Accessibility**:高對比、適合閱讀障礙者的字型、減少動態效果,以及一個與
+  Appearance 文字大小相乘的閱讀文字大小。
+
+這些設定存放在 `~/.config/Colony/Eidos/preferences.json`。舊版 Eidos 存在
+`settings.ini` 裡的主題,會在第一次啟動時沿用過來。
 
 ### 欄位、排序與分組
 
@@ -415,7 +432,7 @@ Downloads 分頁是一座壓縮檔**圖書館**,不是傳輸佇列。可以依�
 
 ### 離線模式
 
-**Settings -> Nexus -> Offline** 會讓 Eidos 完全不去接觸 Nexus。更新檢查、登入、
+**Preferences -> Nexus -> Offline** 會讓 Eidos 完全不去接觸 Nexus。更新檢查、登入、
 下載與合集都會直說,而不是以連線錯誤失敗。除非你打開它,否則它是關的 - 舊版 Eidos
 寫出的設定檔沒有這個鍵,而把一個缺少的鍵讀成「開」,會切斷每一個升級者的網路。
 
@@ -431,7 +448,7 @@ MO2 自己的(`categories.dat` 與 `nexuscatmap.dat`),所以共用的實例只�
 **View -> INI editor** 編輯設定檔的遊戲 INI - 會留存的那一份,而不是埋在 Proton
 前綴裡、每次啟動都被覆寫的那一份。**View -> Log** 讀取工作階段日誌。
 **View -> Extensions** 列出你自己的附加元件;見
-[extensions.zh-TW.md](extensions.md)。
+[extensions.md](extensions.md)。
 
 安裝什麼都接受:Simple 與 FOMOD 兩條路徑,加上 Wrye Bash 的 **BAIN** 套件(勾選子
 套件,它們會依序合併),以及一個**手動**選擇器,會顯示壓縮檔的樹狀結構,讓你在沒有
@@ -491,7 +508,7 @@ eidos prereqs skyrimse --install  # fetch whatever is missing
 
 那張表、三個前置需求層級、DynDOLOD 為什麼需要一個 winetricks 裝不了的 .NET 執行
 階段,以及以模組方式安裝的工具為什麼是從合併後的路徑而不是它自己的資料夾啟動,
-都在 [tools.zh-TW.md](tools.md)。
+都在 [tools.md](tools.md)。
 
 從原始碼建置與儲存庫的目錄配置,在
 [../internals/contributing.md](../../../../internals/contributing.md)。
@@ -501,4 +518,4 @@ eidos prereqs skyrimse --install  # fetch whatever is missing
 Eidos 不必重新建置就能擴充:一份放在 `~/.config/Colony/Eidos/addons/` 的 TOML
 清單,可以在 Extensions 清單裡加一個工具,或在 Health 分頁加一項檢查。沒有任何
 東西被載入 Eidos 內部 - 一個擴充就是它執行的一支程式。見
-[extensions.zh-TW.md](extensions.md)。
+[extensions.md](extensions.md)。

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/extensions.md sha=5f31f1cbc3dcbfb9655f3570f01e5ada1377268d -->
+<!-- eidos-i18n: source=docs/guide/extensions.md sha=1d33d938321e5dbf200cd9b7a38c1e5f412fb116 -->
 
 # 擴充
 
@@ -79,4 +79,4 @@ level<TAB>title<TAB>detail
 
 ## 擴充不能做什麼
 
-擴充不能回呼 Eidos、從壓縮檔中自行註冊，也不能繪製自己的介面元件。使用協定 1 的結構化安裝程式可以傳回經過檢查的檔案計畫和選擇提示；審核、暫存及發布由 Eidos 管理。FOMOD 和 BAIN 仍是原生安裝程式。預覽和存檔資訊擴充也使用同一個對回應設有限制的宿主。有關比對優先順序、已記錄的 CLI 回答、限制和重播身分檢查，請參閱[協定規範與可執行範例](../../../../examples/extensions/README.md)。
+擴充不能回呼 Eidos、從壓縮檔中自行註冊，也不能繪製自己的介面元件。使用協定 1 的結構化安裝程式可以傳回經過檢查的檔案計畫和選擇提示；審核、暫存及發布由 Eidos 管理。FOMOD 和 BAIN 仍是原生安裝程式。預覽和存檔資訊擴充也使用同一個對回應設有限制的宿主。有關比對優先順序、已記錄的 CLI 回答、限制和重播身分檢查，請參閱[協定規範與可執行範例](../../../../guide/examples/extensions/README.md)。

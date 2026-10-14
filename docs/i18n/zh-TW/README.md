@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=0dcb88f3084e8fd1db8725e83f23670a6f88b578 -->
+<!-- eidos-i18n: source=README.md sha=9c6df24d2b5b403d78e0fd5afa489427e7bf9d71 -->
 
 <div align="center">
 
@@ -10,6 +10,10 @@
 **從不碰你遊戲的原生 Linux 模組管理器。**
 
 </div>
+
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](../../../LICENSE)
+[![Colony app](https://img.shields.io/badge/Colony-system-purple)](https://github.com/Project-Colony/Colony)
+[![Platforms](https://img.shields.io/badge/platforms-linux-lightgrey)](#安裝)
 
 Eidos 為 Linux 上的 Bethesda 遊戲帶來 Mod Organizer 2 在 Windows 上帶來的東西 -
 一份虛擬的、每次啟動重建的模組合併檢視 - 建立在 Linux 原生機制上,而不是 Windows
@@ -40,6 +44,38 @@ Steam ──> eidos-gui %command% ──> [ 私有命名空間 ]
 - 🛡️ **有憑有據的防護。** 一次弄壞你外掛清單的當機,會被對照工作階段前的快照
   標示出來,並附一鍵還原。一次會抹掉你載入順序的擷取會被拒絕,並說明原因。
 
+### 它和其他方案的比較
+
+| | Eidos | 透過 Wine 的 MO2 | Fluorine-Manager | Limo / 連結式部署器 |
+|---|---|---|---|---|
+| 管理器原生執行 | ✅ | ❌ Wine 裡的 Windows 程式 | ✅(Qt 移植) | ✅ |
+| 遊戲目錄不受動 | ✅ 永遠 | ✅ | ✅ | ❌ 連結被寫進去 |
+| 掛載對誰可見 | 只有遊戲 | 只有遊戲 | **整個系統** | n/a |
+| 當機後需要清理 | 沒有,設計使然 | 沒有 | 陳舊掛載的復原 | 手動取消部署 |
+| root 模組(ENB、預載器) | ✅ 原生 | 需要外掛程式 | 需要外掛程式 | 部分 |
+| 需要的特權 | 沒有 | 沒有 | 改 `/etc/fuse.conf` | 沒有 |
+
+### 它有多快
+
+| | 之前 | 現在 |
+|---|---|---|
+| 載入一份存檔 | ~20 秒 | **6-7 秒** |
+| 一次工作階段裡的目錄讀取 | 560 萬 | 46.5 萬 |
+
+Cell 切換是即時的。這份收益來自少問你的模組幾個問題:以前找一個檔案要把五十個模組
+逐一問過,列一個資料夾則要重複做五十遍。現在兩者都不做了。這是在一個正常遊玩的
+真實實例上量出來的,不是在跑分程式上。
+
+### 前人成果與致謝
+
+- [ModOrganizer2](https://github.com/ModOrganizer2/modorganizer) 與
+  [usvfs](https://github.com/ModOrganizer2/usvfs) - Eidos 重現的語意,以及它據以
+  研究對等程度的那份程式碼庫
+- [LOOT](https://loot.github.io/) - 排序引擎,透過 libloot
+- [Fluorine-Manager](https://github.com/SulfurNitride/Fluorine-Manager)、
+  [Limo](https://github.com/limo-app/limo) 與其他 Linux 管理器 - 證明有一個社群
+  想看到這個問題被解決
+
 ## 它做些什麼
 
 **模組。** 單純的壓縮檔、FOMOD 精靈、Wrye Bash BAIN 套件,其餘的則有一個手動選擇器 -
@@ -60,7 +96,7 @@ Root Builder 外掛程式,也沒有任何東西被複製進你的安裝目錄。
 資料夾,放在你想要的任何地方(第二顆硬碟、遊戲分割區),可移動、彼此隔離,和 MO2
 的一樣。可攜實例會跨工作階段被記住;GUI、Steam 啟動與每一個 CLI 命令都跟隨你上次
 用的那一個,而凡是接受遊戲 id 的命令,同樣接受那個資料夾。細節見
-[usage.zh-TW.md](docs/guide/usage.md#實例全域與可攜)。
+[usage.md](docs/guide/usage.md#實例全域與可攜)。
 
 **設定檔。** 每個設定檔各有自己的模組順序、外掛狀態、INI 與存檔。存檔會被解析、和你
 目前的外掛比對 - 還附一個按鈕啟用存檔需要的東西 - 並在每次工作階段之後同步回去給
@@ -85,29 +121,50 @@ Steam AppID,並寫出一個 `.desktop` 捷徑,讓它完全不必打開 Eidos 就
 
 關於替換保護、BSA/BA2 內部檔案衝突、SKSE 靜態診斷、產生紀錄及其限制，請參閱[完整性檢查與產生檔案](../../../docs/internals/integrity.md)（英文）。
 
-## 它和其他方案的比較
+### 支援的遊戲
 
-| | Eidos | 透過 Wine 的 MO2 | Fluorine-Manager | Limo / 連結式部署器 |
-|---|---|---|---|---|
-| 管理器原生執行 | ✅ | ❌ Wine 裡的 Windows 程式 | ✅(Qt 移植) | ✅ |
-| 遊戲目錄不受動 | ✅ 永遠 | ✅ | ✅ | ❌ 連結被寫進去 |
-| 掛載對誰可見 | 只有遊戲 | 只有遊戲 | **整個系統** | n/a |
-| 當機後需要清理 | 沒有,設計使然 | 沒有 | 陳舊掛載的復原 | 手動取消部署 |
-| root 模組(ENB、預載器) | ✅ 原生 | 需要外掛程式 | 需要外掛程式 | 部分 |
-| 需要的特權 | 沒有 | 沒有 | 改 `/etc/fuse.conf` | 沒有 |
+**Skyrim SE/AE** - 在實際遊玩中得到驗證。**Fallout 4** 也已經接好整條線(自動換上
+F4SE、封裝檔失效、星號載入順序、LOOT、`.fos` 存檔)- 見
+[guide/fallout4.md](docs/guide/fallout4.md)。依共用的遊戲描述符接好線、
+正在找測試者的有:Skyrim LE、Skyrim VR、Enderal SE、Fallout 3、Fallout NV、
+Fallout 4(+ VR)、Starfield、Oblivion 與 Morrowind(最後兩款會掛載並管理模組;
+它們以時間戳排序的外掛清單還沒有被管理)。
 
-## 它有多快
+加一個家族就是一列描述符:
+[internals/adding-games.md](../../internals/adding-games.md)(英文)。
 
-| | 之前 | 現在 |
-|---|---|---|
-| 載入一份存檔 | ~20 秒 | **6-7 秒** |
-| 一次工作階段裡的目錄讀取 | 560 萬 | 46.5 萬 |
+## 安裝
 
-Cell 切換是即時的。這份收益來自少問你的模組幾個問題:以前找一個檔案要把五十個模組
-逐一問過,列一個資料夾則要重複做五十遍。現在兩者都不做了。這是在一個正常遊玩的
-真實實例上量出來的,不是在跑分程式上。
+### 透過 Colony(推薦)
 
-## 開始上手
+在 [Colony](https://github.com/Project-Colony/Colony) 裡搜尋 **Eidos** 並安裝。
+更新會透過啟動器送達。Colony 只安裝一個檔案 `eidos-linux`:它是視窗,而透過名為
+`eidos` 的連結呼叫時,它也是 `eidos` 命令列。NIF 模型預覽需要一個只有下方套件才帶有
+的輔助程式;少了它,預覽會說明這一點,其他一切照常運作。安裝之後該做什麼,以及如何
+讓 Steam 指向它:[docs/guide/install.md](docs/guide/install.md#透過-colony)。
+
+### 直接下載執行檔
+
+從[最新發行版](https://github.com/Project-Colony/Eidos/releases/latest)取得一個檔案:
+
+| 檔案 | 它是什麼 |
+|---|---|
+| `eidos-linux` | 整個程式合為一個檔案,和 Colony 安裝的一樣 |
+| `eidos-linux-bundle.tar.gz` | `eidos`、`eidos-gui`、NIF 預覽輔助程式、圖示,以及一個會註冊桌面項目與 Nexus 下載處理器的安裝程式 |
+
+先依照[程式碼簽章政策](#程式碼簽章政策)驗證下載的檔案,然後:
+
+```bash
+tar xzf eidos-linux-bundle.tar.gz
+cd eidos-linux-bundle
+./install.sh
+```
+
+安裝程式不需要 sudo,會把一切放進 `~/.local/bin`;`--system` 與 `--bindir DIR`
+可以選擇其他位置。兩種檔案都需要 x86_64 Linux、glibc 2.39 或更新版本、FUSE
+(`fusermount3`),以及用來處理模組壓縮檔的 7-Zip。
+
+### 從原始碼建置
 
 ```bash
 git clone https://github.com/Project-Colony/Eidos && cd Eidos
@@ -115,25 +172,28 @@ just build
 just install
 ```
 
-接著把你遊戲的 Steam 啟動選項設成 `~/.local/bin/eidos-gui %command%`,然後按下
-開始遊戲。
+需要 Rust 1.89 或更新版本(CI 檢查的 `rust-version`;CI 與發行版以 1.99.0 建置),
+另加 `just`、CMake 3.20 或更新版本,以及供 NIF 預覽輔助程式使用的 C++17 編譯器。
+Arch 套件可從 `packaging/PKGBUILD` 建置。前置需求以及不用 `just` 的命令:
+[docs/guide/install.md](docs/guide/install.md)。
 
-Arch 套件與發行壓縮檔、你需要先裝好的東西,以及命令列這條路:
-**[docs/guide/install.zh-TW.md](docs/guide/install.md)**。
+### Steam 啟動選項
 
-## Steam 啟動選項
-
-大多數設定需要的就只有這條基本行:
+Eidos 是*作為*遊戲的啟動命令執行的,這正是它能在遊戲啟動前完成掛載的原因。大多數
+設定需要的就只有這條基本行,並使用你安裝位置的絕對路徑(Steam 不會讀取你的 `PATH`):
 
 ```
 ~/.local/bin/eidos-gui %command%
 ```
 
+透過 Colony 安裝時,這個路徑是 `~/.local/share/Colony/apps/Eidos/eidos-linux`。接著
+按下開始遊戲:Eidos 會在該遊戲的實例上開啟,而 Run 會讓遊戲穿過合併檢視啟動。
+
 其餘的一切都是疊在它前面的環境變數,而且可以自由組合:
 
 | 你想要... | 放在前面 |
 |---|---|
-| 搭配 Community Shaders 的 DLSS | `PROTON_ENABLE_NVAPI=1` - 沒有它,DLSS 會靜悄悄地永遠不初始化;完整檢查清單在 [guide/graphics.zh-TW.md](docs/guide/graphics.md) |
+| 搭配 Community Shaders 的 DLSS | `PROTON_ENABLE_NVAPI=1` - 沒有它,DLSS 會靜悄悄地永遠不初始化;完整檢查清單在 [guide/graphics.md](docs/guide/graphics.md) |
 | 畫面上的 FPS 計數器 | `DXVK_HUD=fps` |
 | 驅動層級的影格插補,零模組(RTX 40/50) | `NVPRESENT_ENABLE_SMOOTH_MOTION=1` - 絕不要和 Community Shaders 自己的影格生成一起用 |
 | 給錯誤回報用的詳細日誌 | `EIDOS_LOG=debug`(工作階段日誌落在 `~/.local/share/Colony/Eidos/logs/`) |
@@ -152,25 +212,14 @@ PROTON_ENABLE_NVAPI=1 ~/.local/bin/eidos-gui %command%
 
 更深入的診斷開關(`EIDOS_FUSE_TRACE`、快取與索引的二分排查開關,以及
 `EIDOS_FUSE_PASSTHROUGH` 為什麼預設關閉)住在
-[guide/troubleshooting.zh-TW.md](docs/guide/troubleshooting.md)。
+[guide/troubleshooting.md](docs/guide/troubleshooting.md)。
 
-## 接下來去哪裡
+## 文件
 
-| 如果你想... | |
-|---|---|
-| 安裝它 | [guide/install.zh-TW.md](docs/guide/install.md) |
-| 學會 CLI 與 GUI | [guide/usage.zh-TW.md](docs/guide/usage.md) |
-| 設定 xEdit、BodySlide 或 DynDOLOD | [guide/tools.zh-TW.md](docs/guide/tools.md) |
-| 玩 Fallout 4(F4SE、版本、NVIDIA 武器碎片當機) | [guide/fallout4.zh-TW.md](docs/guide/fallout4.md) |
-| 讓 DLSS / 影格生成運作起來(Community Shaders) | [guide/graphics.zh-TW.md](docs/guide/graphics.md) |
-| 修好某個看起來不對勁的東西 | [guide/troubleshooting.zh-TW.md](docs/guide/troubleshooting.md) |
-| 知道它為什麼快,並自己驗證 | [internals/performance.md](../../internals/performance.md) |
-| 理解它內部如何運作 | [internals/architecture.md](../../internals/architecture.md) |
-| 建置它、測試它、貢獻 | [internals/contributing.md](../../internals/contributing.md) |
-| 知道它究竟為什麼存在 | [project/landscape.md](../../project/landscape.md) |
-
-一種語言就是一個目錄:`docs/i18n/zh-TW/` 鏡像了儲存庫根目錄的結構,因此兩個譯文
-頁面之間的連結與它們英文原文之間的連結是同一串字元。
+一切都在 [docs/](../../) 裡,並在 [docs/README.md](docs/README.md) 依讀者分類索引:
+使用者指南(安裝、CLI 與 GUI、xEdit 與 DynDOLOD 之類的工具、圖形、疑難排解)、
+Eidos 內部如何運作,以及它為什麼存在。安全政策以及如何回報漏洞:
+[SECURITY.md](../../../SECURITY.md)。
 
 ## 語言
 
@@ -201,31 +250,85 @@ PROTON_ENABLE_NVAPI=1 ~/.local/bin/eidos-gui %command%
 **刪除**,而不是留在原地:一個過期的頁面看起來仍然權威,卻發出上個月的命令,對
 讀者來說比被送去看英文更糟。
 
-加一種語言就是四個檔案加上這張表裡的一列;
-[`docs/internals/contributing.md`](../../internals/contributing.md) 寫了步驟。
+一種語言就是一個目錄。`docs/i18n/<lang>/` 鏡像了儲存庫根目錄的結構,所以
+`docs/i18n/de/docs/guide/install.md` 就是德文版的 `docs/guide/install.md` - 正因如此,
+兩個譯文頁面之間的連結與它們英文原文之間的連結是同一串字元,而要撤下一種語言也
+只需要一次 `rm -r`。
 
-## 支援的遊戲
+## 程式碼簽章政策
 
-**Skyrim SE/AE** - 在實際遊玩中得到驗證。**Fallout 4** 也已經接好整條線(自動換上
-F4SE、封裝檔失效、星號載入順序、LOOT、`.fos` 存檔)- 見
-[guide/fallout4.zh-TW.md](docs/guide/fallout4.md)。依共用的遊戲描述符接好線、
-正在找測試者的有:Skyrim LE、Skyrim VR、Enderal SE、Fallout 3、Fallout NV、
-Fallout 4(+ VR)、Starfield、Oblivion 與 Morrowind(最後兩款會掛載並管理模組;
-它們以時間戳排序的外掛清單還沒有被管理)。
+每一個發行檔案都由 Project Colony 組織在 CI 中簽章,從不在開發者的機器上簽。在發行
+頁面上,每個檔案旁邊都有:
 
-加一個家族就是一列描述符:
-[internals/adding-games.md](../../internals/adding-games.md)。
+| 檔案 | 它是什麼 |
+|---|---|
+| `<asset>.sig` | 以組織的發行金鑰對該檔案做的 ed25519 簽章 |
+| `<asset>.meta` | 三行內容,把該檔案綁定到它的檔名、它的 sha256 與發行版本 |
+| `<asset>.meta.sig` | 對 `.meta` 做的 ed25519 簽章 |
 
-## 前人成果與致謝
+私鑰是組織的機密,只由共用的
+[sign-and-publish 工作流程](https://github.com/Project-Colony/Project-Colony-Resources/blob/main/.github/workflows/sign-and-publish.yml)
+在一個不建置任何東西的 job 中使用;編譯 Eidos 的那些 job 從來看不到它。
+Colony 在安裝或更新 Eidos 之前會檢查這三個檔案,並拒絕比已安裝版本更舊的發行版。
+要用 OpenSSL 3 自己驗證下載的檔案(同樣的命令適用於每一個檔案):
 
-- [ModOrganizer2](https://github.com/ModOrganizer2/modorganizer) 與
-  [usvfs](https://github.com/ModOrganizer2/usvfs) - Eidos 重現的語意,以及它據以
-  研究對等程度的那份程式碼庫
-- [LOOT](https://loot.github.io/) - 排序引擎,透過 libloot
-- [Fluorine-Manager](https://github.com/SulfurNitride/Fluorine-Manager)、
-  [Limo](https://github.com/limo-app/limo) 與其他 Linux 管理器 - 證明有一個社群
-  想看到這個問題被解決
+```bash
+cat > colony-release.pub <<'EOF'
+-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEARNjg3Nn8H6/aBg1unwGjkUTcrdTxERNefVaqU8cFu0s=
+-----END PUBLIC KEY-----
+EOF
+a=eidos-linux
+openssl pkeyutl -verify -pubin -inkey colony-release.pub -rawin -in "$a" -sigfile "$a.sig"
+openssl pkeyutl -verify -pubin -inkey colony-release.pub -rawin -in "$a.meta" -sigfile "$a.meta.sig"
+cat "$a.meta"     # version=<tag>, asset=<file name>, sha256=<digest>
+sha256sum "$a"    # the digest must equal the sha256 line
+```
+
+發行版如何建置、簽章與發布:
+[design/releases.md](https://github.com/Project-Colony/Project-Colony-Resources/blob/main/design/releases.md#5-signing)(英文)。
+
+## 隱私
+
+Eidos 不傳送任何遙測、分析資料或當機報告。除了這張表裡列出的伺服器之外,它不連線到
+任何伺服器,而且只在表中所寫的動作時才連線。**離線**模式(Preferences -> Nexus)會
+停止所有與 Nexus 的連線。
+
+| 資料 | 儲存或傳送 | 在哪裡,以及為什麼 |
+|---|---|---|
+| 偏好設定、實例清單、遊戲與附加元件定義 | 儲存 | `~/.config/Colony/Eidos/` |
+| 實例、下載的執行環境、工作階段日誌 | 儲存 | `~/.local/share/Colony/Eidos/`,或你為可攜實例選擇的資料夾 |
+| LOOT 主清單 | 儲存 | `~/.cache/Colony/Eidos/loot/` |
+| Nexus 登入 | 傳送 | 登入時會在你的瀏覽器開啟 `users.nexusmods.com`,它會把結果交回給 Eidos 只為這次登入在 `127.0.0.1` 上開啟的監聽程式。接著 Eidos 在 `users.nexusmods.com/oauth/token` 把它換成權杖,並取得 Nexus 用來簽署權杖的公開金鑰。[Nexus Mods 隱私權政策](https://help.nexusmods.com/article/20-privacy-policy) |
+| Nexus 憑證 | 儲存 | 存取權杖與更新權杖,存放在 `~/.config/Colony/Eidos/nexus.ini`,權限模式 0600。舊版 Eidos 寫在那裡的 `api_key=` 行會保留但永遠不會被讀取;你想刪就刪。 |
+| Nexus 請求 | 傳送 | `api.nexusmods.com`,在你使用 Nexus 功能時:你的帳號名稱與 premium 狀態、模組與檔案細節、更新檢查、合集與下載連結。每個請求都帶著你的存取權杖,並標明 Eidos 及其版本。 |
+| Nexus 下載 | 傳送 | 你要求的檔案,來自下載連結所指名的 Nexus CDN 主機,存進實例的下載資料夾,每個檔案旁邊附一個 MO2 格式的 `.meta`。 |
+| `nxm://` 連結 | 儲存 | `eidos nxm --register`(`install.sh` 會替你執行)會寫出 `~/.local/share/applications/eidos-nxm.desktop`,並透過 `xdg-mime` 把它設為 `nxm://` 處理器,讓網站上的 Mod Manager Download 按鈕把連結交給 Eidos。Arch 套件會在全系統安裝同樣的項目。 |
+| LOOT 主清單 | 傳送 | `raw.githubusercontent.com/loot/...`,在某款遊戲第一次以 LOOT 排序時,以及你要求更新時。不會送出任何屬於你的資料。[GitHub 隱私權聲明](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement) |
+| 工具執行環境 | 傳送 | 只在你安裝某個工具的前置需求,或某個模組需要它時:來自 `builds.dotnet.microsoft.com` 的 .NET 執行環境(若與編進 Eidos 的 SHA-256 不符就拒絕),以及 `winetricks`,它會從 Microsoft 與 winetricks 使用的其他主機下載它要安裝進遊戲 Proton 前綴的東西(Visual C++ 與 .NET 可轉散發套件)。[Microsoft 隱私權聲明](https://www.microsoft.com/en-us/privacy/privacystatement) |
+| 工作階段日誌 | 儲存 | `~/.local/share/Colony/Eidos/logs/`,權限模式 0600:每個實例十個工作階段,30 天後清除。你的家目錄寫成 `~`,使用者名稱寫成 `<user>`,所以日誌可以原樣貼進 issue。除非你自己送出,它們永遠不會離開你的機器。 |
+| 捷徑 | 儲存 | `install.sh` 會在 `~/.local/share` 底下寫出 `eidos.desktop` 及其圖示;你建立的工具捷徑會放到 `~/.local/share/applications`。 |
+| 你開啟的連結 | 皆否 | 模組頁面與其他連結會透過 `xdg-open` 在你自己的瀏覽器中開啟。 |
+| 附加元件 | 皆否 | 你安裝的擴充以獨立程式的身分在你的機器上執行;它們做什麼由它們自己負責。 |
 
 ## 授權
 
-Eidos 的原創程式碼採用 GPL-3.0-or-later 授權。隨附的 OMOD 轉譯程式碼採用 GPL-3.0-only 授權；請參閱其[上游作者致謝](../../../crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md)。NIF 輔助程式保留其[元件授權與作者致謝](../../../native/eidos-nif-preview/UPSTREAM.md)。模組管理屬於所有人。
+Eidos 的原創程式碼採用 GPL-3.0-or-later 授權;見 [LICENSE](../../../LICENSE)。以下部分
+採用不含「or later」選項的 GPL-3.0:
+
+- `eidos-install` 中的 OMOD 腳本轉譯;請參閱其
+  [上游作者致謝](../../../crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md);
+- 建立在內附 nifly 函式庫之上的 `eidos-nif-preview` 輔助程式;請參閱其
+  [元件授權與作者致謝](../../../crates/eidos-nif-preview/UPSTREAM.md);
+- 載入順序程式碼所連結的 `esplugin` 與 `libloadorder` crate,它們宣告的授權是
+  `GPL-3.0`。
+
+執行檔中的其他 Rust crate 保留各自的授權(MIT、Apache-2.0、BSD 及類似授權)。發行
+套件在 `licenses/crates/` 中附上它們的授權聲明,並附有每個 crate 及其授權的索引。
+
+執行檔也內嵌了八個正版的 Microsoft DirectX 可轉散發 DLL(`d3dcompiler_47`、
+`d3dcompiler_43`、`d3dx9_43` 與 `d3dx11_43`,32 位元與 64 位元各一),當某個模組或
+工具需要它們時,Eidos 會把它們部署進遊戲的前綴。它們仍受 Microsoft 可轉散發條款
+約束;見它們的[來源說明](../../../crates/eidos-gamefeatures/assets/PROVENANCE.md)。
+
+模組管理屬於所有人。
