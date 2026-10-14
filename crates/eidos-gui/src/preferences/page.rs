@@ -82,7 +82,28 @@ pub(crate) fn preferences_page<'a>(app: &App) -> Element<'a, Message> {
         selected,
         |i| Message::SettingsTabSelected(SettingsTab::ALL[i]),
     );
-    colony_ui::widgets::preferences_page(&typo, categories, content, Message::TogglePreferences)
+    let page = colony_ui::widgets::preferences_page(
+        &typo,
+        categories,
+        content,
+        Message::TogglePreferences,
+    );
+    match app.toast {
+        // "Theme applied.", over the bottom of the page until dismissed.
+        Some(note) => iced::widget::Stack::new()
+            .push(page)
+            .push(
+                iced::widget::container(colony_ui::widgets::toast(
+                    &typo,
+                    note,
+                    Message::DismissToast,
+                ))
+                .padding(16)
+                .align_bottom(Length::Fill),
+            )
+            .into(),
+        None => page,
+    }
 }
 
 /// Eidos's own sections, each a collapsible row of the kit.

@@ -269,22 +269,7 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
     // all stay exactly where they are: the program's chrome does not move
     // because the user went to configure it.
     let body: Element<'_, Message> = if app.settings_open {
-        match app.toast {
-            // "Theme applied.", over the bottom of the page until dismissed.
-            Some(note) => Stack::new()
-                .push(preferences_page(app))
-                .push(
-                    container(colony_ui::widgets::toast(
-                        &colony_ui::Typography::current(),
-                        note,
-                        Message::DismissToast,
-                    ))
-                    .padding(16)
-                    .align_bottom(Length::Fill),
-                )
-                .into(),
-            None => preferences_page(app),
-        }
+        preferences_page(app)
     } else {
         Row::new()
             .spacing(4)

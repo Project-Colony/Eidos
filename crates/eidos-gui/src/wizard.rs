@@ -13,6 +13,19 @@ use crate::theme::{card_style, text};
 use crate::widgets::nav;
 use crate::{planned_instance, selected_game, t, tf, App, InstanceKind, Message};
 
+/// The program's name, which is the way into Preferences and out again, as on
+/// the main screen. It is here too so the language, the text size and the
+/// dyslexia-friendly font can be set before there is an instance.
+pub(crate) fn identity<'a>(open: bool) -> Element<'a, Message> {
+    colony_ui::widgets::identity_button(
+        &colony_ui::Typography::current(),
+        "Eidos",
+        26,
+        open,
+        Message::TogglePreferences,
+    )
+}
+
 pub(crate) fn frame<'a>(
     step: String,
     title: &'a str,
@@ -21,9 +34,10 @@ pub(crate) fn frame<'a>(
     next_label: &'a str,
     next_msg: Option<Message>,
 ) -> Element<'a, Message> {
+    // Never drawn while Preferences is open: `view` puts the page in its place.
     let header = Column::new()
         .spacing(2)
-        .push(text("Eidos").size(sz(26)))
+        .push(identity(false))
         .push(text(step).size(sz(12)));
 
     let card = container(content)

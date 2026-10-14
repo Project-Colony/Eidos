@@ -52,6 +52,13 @@ pub(crate) fn view(app: &App) -> Element<'_, Message> {
         return main_screen(app);
     }
     let inner = match app.screen {
+        // Preferences replace the wizard's content as they replace the main
+        // window's, under the same name button that opened them.
+        _ if app.settings_open => Column::new()
+            .spacing(16)
+            .push(wizard::identity(true))
+            .push(preferences_page(app))
+            .into(),
         Screen::Welcome => welcome(app),
         Screen::Kind => kind_screen(app),
         Screen::Game => game_screen(app),
@@ -1186,8 +1193,6 @@ fn fmt_day(t: std::time::SystemTime) -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
-/// Default separator bar colour when its `meta.ini` carries none (a parchment tan,
-/// #C8B895).
 /// A separator the user has given no colour of their own.
 pub(crate) fn separator_accent() -> Color {
     pal().border_subtle

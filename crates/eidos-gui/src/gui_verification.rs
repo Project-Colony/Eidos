@@ -151,6 +151,42 @@ fn key(
     })
 }
 
+/// Preferences open from the first-run screens too: the language, the text size
+/// and the dyslexia-friendly font matter most before there is any instance.
+#[test]
+fn the_name_opens_preferences_from_the_welcome_screen() {
+    let _look = crate::test_support::look_lock();
+    let mut app = crate::test_support::nav_app(&[]);
+    app.screen = Screen::Welcome;
+    let mut renderer = renderer();
+    let point = label(crate::view(&app), &mut renderer, "Eidos", 0);
+    let (_, messages) = frame(
+        crate::view(&app),
+        &mut renderer,
+        Cache::new(),
+        &click(),
+        point,
+        None,
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|m| matches!(m, Message::TogglePreferences)),
+        "{messages:?}"
+    );
+    apply(&mut app, messages);
+    assert!(app.settings_open);
+
+    let title = |locale| colony_ui::i18n::t_in(locale, "settings_title");
+    let drawn = positions(crate::view(&app), &mut renderer).labels;
+    assert!(
+        drawn.iter().any(|(text, _)| {
+            text == title(colony_ui::i18n::Locale::En) || text == title(colony_ui::i18n::Locale::Fr)
+        }),
+        "the page was not drawn: {drawn:?}"
+    );
+}
+
 #[test]
 fn installer_widgets_emit_pointer_and_keyboard_events_and_publish_exact_choice() {
     let _look = crate::test_support::look_lock();
