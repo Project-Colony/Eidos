@@ -1,0 +1,28 @@
+id = "starfield"
+name = "Starfield"
+short_name = "Starfield"
+nexus_game = "starfield"
+steam_app_id = 1716740
+data_dir = "Data"
+documents_dir = "Starfield"
+ini_files = ["StarfieldCustom.ini", "StarfieldPrefs.ini"]
+load_order = "Asterisk"
+primary_plugins = ["Starfield.esm", "Constellation.esm", "OldMars.esm"]
+game_binary = "Starfield.exe"
+registry_name = "Starfield"
+script_extender = { launcher = "Starfield.exe", loader = "sfse_loader.exe" }
+
+# Every xEdit release ships the editor and its QuickAutoClean twin, and the twin
+# is what cleans the dirty edits LOOT warns about. PGPatcher makes a mixed
+# texture setup use the right shaders (its argument: eidos_instance::default_args).
+[[known_tools]]
+exe = "SF1Edit.exe"
+title = "SF1Edit"
+
+[[known_tools]]
+exe = "SF1EditQuickAutoClean.exe"
+title = "SF1Edit QuickAutoClean"
+
+[[known_tools]]
+exe = "PGPatcher.exe"
+title = "PGPatcher"

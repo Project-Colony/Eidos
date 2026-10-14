@@ -1,0 +1,29 @@
+id = "falloutnv"
+name = "Fallout: New Vegas"
+short_name = "FalloutNV"
+nexus_game = "newvegas"
+steam_app_id = 22380
+epic_ids = ["5daeb974a22a435988892319b3a4f476"]
+data_dir = "Data"
+documents_dir = "FalloutNV"
+ini_files = ["Fallout.ini", "FalloutPrefs.ini", "FalloutCustom.ini"]
+load_order = "FileTime"
+primary_plugins = ["FalloutNV.esm"]
+game_binary = "FalloutNV.exe"
+registry_name = "FalloutNV"
+script_extender = { launcher = "FalloutNVLauncher.exe", loader = "nvse_loader.exe" }
+
+# Every xEdit release ships the editor and its QuickAutoClean twin, and the twin
+# is what cleans the dirty edits LOOT warns about. PGPatcher makes a mixed
+# texture setup use the right shaders (its argument: eidos_instance::default_args).
+[[known_tools]]
+exe = "FNVEdit.exe"
+title = "FNVEdit"
+
+[[known_tools]]
+exe = "FNVEditQuickAutoClean.exe"
+title = "FNVEdit QuickAutoClean"
+
+[[known_tools]]
+exe = "PGPatcher.exe"
+title = "PGPatcher"

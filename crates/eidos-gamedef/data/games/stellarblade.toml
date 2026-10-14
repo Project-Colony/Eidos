@@ -1,0 +1,44 @@
+# The first non-Bethesda game here, and the first to declare its own vocabulary.
+#
+# Unreal Engine, so no plugins.txt, no BSA, no My Games INI. A mod is a
+# .pak/.ucas/.utoc triplet, and it deploys into ~mods: the ~ is what makes the
+# engine scan that folder last, so mods there win over the base game's own paks.
+#
+# Paks itself is NOT the deploy root, and the difference is not cosmetic. Unreal
+# would load a _P pak from either, but the mod frameworks read ~mods by name:
+# Custom Nanosuit System roots its recursive config scan at
+# Dirs.Game.Content.Paks["~mods"], so a .dekcns.json deployed one level higher is
+# never seen and the mod installs, loads its pak, and adds nothing. That is
+# exactly what a real install did before this line was corrected.
+#
+# A mod's own LogicMods half still lands correctly: an archive addressing
+# SB/Content/Paks/LogicMods has it collected beside the data dir and routed
+# through Root/, which puts it back at the game root under its own path.
+#
+# valid_folders is empty for the same reason the deploy root moved. A mod is
+# recognised by carrying a pak, never by a folder: naming ~mods there would make
+# an archive that ships ~mods/foo.pak look valid AT that level, and the wrapper
+# would survive into ~mods/~mods/foo.pak.
+#
+# Declaring valid_suffixes is what makes valid_folders mean "only these": see
+# From<&GameDef> for LayoutRules. That is deliberate. A Stellar Blade mod is
+# identified by carrying a pak, and inheriting the Gamebryo folder list would let
+# an archive shipping a textures/ folder read as a valid mod root.
+#
+# UE4SS is this game's script extender, its SKSE. script_extender stays unset
+# because that field models an EXE SWAP (run the loader instead of the vanilla
+# launcher), and UE4SS does not work that way: it is a proxy DLL side-loaded next
+# to the game binary. Its own Lua mods ship a SB/Binaries/Win64/ue4ss/... tree,
+# addressed from the install root; root_builder_split recognises that shape from
+# data_dir naming SB as the game's own directory, and routes it to the Root/
+# surface.
+
+id = "stellarblade"
+name = "Stellar Blade"
+short_name = "StellarBlade"
+nexus_game = "stellarblade"
+steam_app_id = 3489700
+data_dir = "SB/Content/Paks/~mods"
+valid_suffixes = ["pak", "utoc", "ucas"]
+load_order = "None"
+game_binary = "SB.exe"

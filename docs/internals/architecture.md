@@ -168,7 +168,7 @@ the product.
 | `eidos-paths` | Where Eidos keeps its files, on `colony_ui::paths`, and the migration onto that layout ([paths.md](paths.md)). |
 | `eidos-log` | Session logs: levels, rotation, home-path redaction. |
 | `eidos-ini` | Shared INI primitives: newline, section and key parsing, format-preserving edits. |
-| `eidos-gamedef` | The declarative per-game descriptor, one row per game on MO2's `IPluginGame` schema. |
+| `eidos-gamedef` | The declarative per-game descriptor on MO2's `IPluginGame` schema, one embedded TOML file per built-in game. |
 | `eidos-games` | The supported-game catalog, and install detection for Steam and Heroic (GOG, Epic). |
 | `eidos-plugins` | ESP/ESM/ESL load order: MO2-parity ordering, FormID indexes, `plugins.txt`. |
 | `eidos-loot` | LOOT sorting through libloot, and the masterlist fetch and cache. |

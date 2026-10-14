@@ -1119,9 +1119,9 @@ mod tests {
     /// returns `None` everywhere, and every Skyrim mod lands in the manual picker.
     ///
     /// The eleven Bethesda games are named outright rather than derived from
-    /// `GAMES`, so that adding a twelfth game cannot quietly shrink what this
-    /// covers - which is exactly what would have happened here when Stellar Blade
-    /// arrived and the loop stopped meaning "every game".
+    /// `eidos_gamedef::builtin()`, so that adding a twelfth game cannot quietly
+    /// shrink what this covers - which is exactly what would have happened here
+    /// when Stellar Blade arrived and the loop stopped meaning "every game".
     #[test]
     fn a_game_that_declares_nothing_keeps_the_gamebryo_vocabulary() {
         let default = LayoutRules::default();
@@ -1165,7 +1165,7 @@ mod tests {
         // yields the default, declaring anything yields something else. Both
         // branches must be exercised or the assertions above pass vacuously.
         let (mut declaring, mut inheriting) = (0, 0);
-        for def in eidos_gamedef::GAMES {
+        for def in eidos_gamedef::builtin() {
             let rules = LayoutRules::from(def);
             assert_eq!(
                 LayoutRules::for_game(def.id),

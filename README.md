@@ -294,11 +294,11 @@ How releases are built, signed and published:
 
 Eidos sends no telemetry, no analytics and no crash reports. It connects to no
 server except the ones in this table, and only for the action named there.
-**Offline** mode (Settings) stops every connection to Nexus.
+**Offline** mode (Preferences -> Nexus) stops every connection to Nexus.
 
 | Data | Stored or sent | Where, and why |
 |---|---|---|
-| Settings, instance list, game and add-on definitions | stored | `~/.config/Colony/Eidos/` |
+| Preferences, instance list, game and add-on definitions | stored | `~/.config/Colony/Eidos/` |
 | Instances, downloaded runtimes, session logs | stored | `~/.local/share/Colony/Eidos/`, or the folder you chose for a portable instance |
 | LOOT masterlists | stored | `~/.cache/Colony/Eidos/loot/` |
 | Nexus sign-in | sent | Signing in opens `users.nexusmods.com` in your browser, which hands the result back to a listener Eidos opens on `127.0.0.1` for that sign-in only. Eidos then trades it for tokens at `users.nexusmods.com/oauth/token` and fetches the public keys Nexus signs them with. [Nexus Mods privacy policy](https://help.nexusmods.com/article/20-privacy-policy) |

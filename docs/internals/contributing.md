@@ -39,7 +39,7 @@ crates/eidos-paths         where Eidos keeps its files: the Colony layout from
                            colony_ui::paths, and the migration onto it (see paths.md)
 crates/eidos-log           session logs: levels, rotation, home-path redaction
 crates/eidos-ini           shared low-level INI primitives (newline / section / key / edit)
-crates/eidos-gamedef       declarative per-game descriptor (one row per game; MO2 schema)
+crates/eidos-gamedef       declarative per-game descriptor (one TOML file per game; MO2 schema)
 crates/eidos-games         supported-game catalog + Steam / Heroic install detection
 crates/eidos-plugins       ESP/ESM/ESL plugin load order (via esplugin) + plugins.txt
 crates/eidos-loot          LOOT graph sorting (libloot) + masterlist fetch/cache

@@ -676,7 +676,7 @@ pub(crate) fn pick_mirror(mirrors: &[(String, String)], preferred: &[String]) ->
 /// have been made and the user needs to recognise it as their own setting
 /// rather than a failure.
 pub const OFFLINE_MESSAGE: &str =
-    "Offline mode is on - Eidos is not contacting Nexus. Turn it off in Settings.";
+    "Offline mode is on - Eidos is not contacting Nexus. Turn it off in Preferences.";
 
 fn s(v: &serde_json::Value, k: &str) -> String {
     v.get(k)
@@ -866,7 +866,7 @@ impl Nexus {
                 }
             }
             CredentialChoice::None => {
-                Err("not connected to Nexus: sign in from Settings".to_string())
+                Err("not connected to Nexus: sign in from Preferences".to_string())
             }
         }
     }

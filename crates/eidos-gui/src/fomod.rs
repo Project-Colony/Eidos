@@ -6,14 +6,34 @@
 use crate::theme::*;
 use crate::*;
 
-pub(crate) fn group_type_label(t: eidos_fomod::GroupType) -> &'static str {
+/// An in-progress FOMOD installer: the extracted+parsed archive, the current step,
+/// and the user's selection so far.
+pub(crate) struct FomodWizard {
+    pub(crate) target: CollectionTarget,
+    pub(crate) session: eidos_install::FomodSession,
+    pub(crate) step: usize,
+    pub(crate) selection: eidos_fomod::Selection,
+    pub(crate) game_id: String,
+    /// The source archive, kept so the download can be marked installed on finish.
+    pub(crate) archive: PathBuf,
+    /// Current plugin states, so fileDependency/gameDependency conditions evaluate
+    /// against the real setup instead of always reading Missing.
+    pub(crate) ctx: eidos_fomod::Context,
+    /// The `(group, option)` the pointer is over, which is what the preview pane
+    /// shows. `None` falls back to the option that is actually selected, so the
+    /// pane is never blank and the keyboard is not left out - MO2 tracks hover
+    /// only, and its preview empties the moment you move the mouse away.
+    pub(crate) hover: Option<(usize, usize)>,
+}
+
+pub(crate) fn group_type_label(kind: eidos_fomod::GroupType) -> &'static str {
     use eidos_fomod::GroupType::*;
-    match t {
-        SelectExactlyOne => "choose one",
-        SelectAtMostOne => "choose at most one",
-        SelectAtLeastOne => "choose at least one",
-        SelectAny => "choose any",
-        SelectAll => "all included",
+    match kind {
+        SelectExactlyOne => t("fomod_choose_one"),
+        SelectAtMostOne => t("fomod_choose_at_most_one"),
+        SelectAtLeastOne => t("fomod_choose_at_least_one"),
+        SelectAny => t("fomod_choose_any"),
+        SelectAll => t("fomod_all_included"),
     }
 }
 
@@ -57,8 +77,8 @@ pub(crate) const FOMOD_OPTIONS_W: f32 = 260.0;
 /// make the whole dialog jump on every hover.
 pub(crate) const FOMOD_PREVIEW_H: f32 = 420.0;
 
-// The parchment family, spelled out once. These are the same inks the rest of the
-// window uses; the wizard only ever looked out of place because it was drawn with
+// The wizard's inks, named once. These are the same palette fields the rest of
+// the window uses; the wizard only ever looked out of place because it was drawn with
 // iced's stock `button::secondary` and an ASCII `[x]`, not because it was missing
 // anything iced cannot do.
 /// The colour of the installer's hairlines and dividers. (`fomod_rule` below
@@ -73,7 +93,7 @@ pub(crate) fn fomod_row_bg() -> Color {
 pub(crate) fn fomod_row_hover() -> Color {
     pal().bg_card
 }
-// Both inks are measured against the page (0xECDFC2): SOFT reaches 6.2:1 and FAINT
+// Both inks were measured against the parchment page: SOFT reaches 6.2:1 and FAINT
 // 4.5:1, the WCAG floor for text this small. The first pass had FAINT at 2.9:1,
 // which is a decorative grey, not a legible one - and it was carrying "required"
 // and "recommended", the only guidance the mod author gives. Below ~10px there is
@@ -216,10 +236,7 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
     let current = current.or_else(|| step.and_then(|s| (!s.groups.is_empty()).then_some((0, 0))));
 
     // ---- header: which mod, which step ----
-    let bold = iced::Font {
-        weight: iced::font::Weight::Bold,
-        ..iced::Font::DEFAULT
-    };
+    let bold = colony_ui::ui_font_bold();
     // The name takes Length::Fill and the chip stays Shrink. iced's flex measures
     // the Shrink children first and hands what is left to the Fill ones, so the
     // chip is always laid out at its full size; with the name left as Shrink it was
@@ -229,19 +246,19 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
         .align_y(iced::Alignment::Center)
         .push(
             text(config.module_name.clone())
-                .size(17.0)
+                .size(sz(17))
                 .font(bold)
                 .width(Length::Fill),
         );
     if let Some(s) = step {
-        title = title.push(text(s.name.clone()).size(12.0).color(fomod_ink_faint()));
+        title = title.push(text(s.name.clone()).size(sz(12)).color(fomod_ink_faint()));
     }
     let head = title.push(
         // The step counter as a chip, so it reads as status rather than as one
         // more sentence competing with the mod's name.
         container(
-            text(format!("Step {shown_no} of {total}"))
-                .size(11.0)
+            text(tf("fomod_step", &[("n", &shown_no), ("total", &total)]))
+                .size(sz(11))
                 .color(fomod_on_accent()),
         )
         .padding([3, 9])
@@ -275,14 +292,14 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
                         // width by a long group name and pushed out of the column.
                         .push(
                             text(group.name.clone())
-                                .size(11.0)
+                                .size(sz(11))
                                 .color(fomod_ink_soft())
                                 .width(Length::Fill),
                         )
-                        .push(text("·").size(11.0).color(fomod_ink_faint()))
+                        .push(text("·").size(sz(11)).color(fomod_ink_faint()))
                         .push(
                             text(group_type_label(group.group_type))
-                                .size(11.0)
+                                .size(sz(11))
                                 .color(fomod_ink_faint()),
                         ),
                 )
@@ -326,9 +343,9 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
                     || matches!(group.group_type, GroupType::SelectAll)
                     || group_forced;
                 let tag = match ptype {
-                    PluginType::Required => "required",
-                    PluginType::Recommended => "recommended",
-                    PluginType::NotUsable => "not usable",
+                    PluginType::Required => t("fomod_required"),
+                    PluginType::Recommended => t("fomod_recommended"),
+                    PluginType::NotUsable => t("fomod_not_usable"),
                     _ => "",
                 };
                 let label = if on {
@@ -344,13 +361,13 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
                     .push(fomod_marker(on, usable, radio))
                     .push(
                         text(plugin.name.clone())
-                            .size(12.5)
+                            .size(sz(12))
                             .color(label)
                             .width(Length::Fill),
                     )
                     // 10px, not 9.5, and in the darker ink: this string carries the
                     // author's own guidance and was being rendered at 2.7:1.
-                    .push(text(tag).size(10.0).color(if on {
+                    .push(text(tag).size(sz(10)).color(if on {
                         fomod_on_accent()
                     } else {
                         fomod_ink_soft()
@@ -424,8 +441,8 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
         // INK_SOFT, not FAINT: this sits on the preview fill, which is darker than
         // the page, so the faint ink fell to 2.4:1 and the box just read as blank.
         None => container(
-            text("No preview for this option.")
-                .size(12.0)
+            text(t("fomod_no_preview"))
+                .size(sz(12))
                 .color(fomod_ink_soft()),
         )
         .center_x(Length::Fill)
@@ -453,14 +470,14 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
         // paragraphs - CBBE's run to several lines.
         let mut d = Column::new().spacing(4).push(
             text(p.name.clone())
-                .size(13.0)
+                .size(sz(13))
                 .font(bold)
                 .width(Length::Fill),
         );
         if !p.description.is_empty() {
             d = d.push(
                 text(p.description.clone())
-                    .size(12.0)
+                    .size(sz(12))
                     .color(fomod_ink_soft())
                     .width(Length::Fill),
             );
@@ -482,20 +499,20 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
     let mut nav = Row::new().spacing(8).align_y(iced::Alignment::Center);
     if !valid {
         nav = nav.push(
-            text("Select the required option(s) to continue.")
-                .size(11.0)
+            text(t("fomod_select_required"))
+                .size(sz(11))
                 .color(fomod_ink_faint()),
         );
     }
     nav = nav.push(Space::new().width(Length::Fill));
-    nav = nav.push(fomod_btn("Cancel", Some(Message::FomodCancel), false));
+    nav = nav.push(fomod_btn(t("common_cancel"), Some(Message::FomodCancel), false));
     if has_prev {
-        nav = nav.push(fomod_btn("Back", Some(Message::FomodBack), false));
+        nav = nav.push(fomod_btn(t("installer_back"), Some(Message::FomodBack), false));
     }
     let (label, msg) = if has_next {
-        ("Next", Message::FomodNext)
+        (t("wizard_next"), Message::FomodNext)
     } else {
-        ("Install", Message::FomodInstall)
+        (t("install_install"), Message::FomodInstall)
     };
     // The one button that carries the flow gets the burgundy. When the step is
     // unsatisfied it keeps its place and its size and simply stops responding,
@@ -547,10 +564,10 @@ pub(crate) fn fomod_btn<'a>(
     primary: bool,
 ) -> Element<'a, Message> {
     let live = msg.is_some();
-    let mut b = button(text(label).size(12.5).width(Length::Fill).center())
+    let mut b = button(text(label).size(sz(12)).width(Length::Fill).center())
         .padding([7, 16])
         .width(if primary {
-            Length::Fixed(104.0)
+            Length::Fixed(scaled(104.0))
         } else {
             Length::Shrink
         })

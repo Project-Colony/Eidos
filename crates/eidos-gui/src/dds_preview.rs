@@ -5,6 +5,8 @@ use ddsfile::{
 };
 use std::io::Cursor;
 
+use crate::{t, tf};
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Channel {
     #[default]
@@ -53,13 +55,13 @@ pub fn decode(bytes: &[u8], selection: Selection) -> Result<DecodedDds, String> 
     let info = parsed.info;
     if selection.mip >= info.mips || selection.layer >= info.layers || selection.face >= info.faces
     {
-        return Err("DDS mip, array layer or cube face is out of range".into());
+        return Err(t("dds_out_of_range").into());
     }
     let width = (info.width >> selection.mip).max(1);
     let height = (info.height >> selection.mip).max(1);
     let output_size = u64::from(width) * u64::from(height) * 4;
     if output_size > MAX_RGBA_BYTES as u64 {
-        return Err("DDS decoded image exceeds the 64 MiB limit; select a smaller mip".into());
+        return Err(t("dds_decoded_too_big").into());
     }
     let stride: usize = parsed.sizes.iter().sum();
     let offset = (selection.layer * info.faces + selection.face) as usize * stride
@@ -125,13 +127,13 @@ struct Parsed<'a> {
 }
 fn parse(bytes: &[u8]) -> Result<Parsed<'_>, String> {
     if bytes.len() > MAX_DDS_BYTES {
-        return Err("DDS input exceeds the 128 MiB limit".into());
+        return Err(t("dds_input_too_big").into());
     }
-    let rest = bytes.strip_prefix(b"DDS ").ok_or("Invalid DDS signature")?;
+    let rest = bytes.strip_prefix(b"DDS ").ok_or(t("dds_bad_signature"))?;
     let mut reader = Cursor::new(rest);
-    let header = Header::read(&mut reader).map_err(|e| format!("Invalid DDS header: {e}"))?;
+    let header = Header::read(&mut reader).map_err(|e| tf("dds_bad_header", &[("error", &e)]))?;
     let header10 = if header.spf.fourcc == Some(FourCC(FourCC::DX10)) {
-        Some(Header10::read(&mut reader).map_err(|e| format!("Invalid DDS DX10 header: {e}"))?)
+        Some(Header10::read(&mut reader).map_err(|e| tf("dds_bad_dx10_header", &[("error", &e)]))?)
     } else {
         None
     };
@@ -143,24 +145,24 @@ fn parse(bytes: &[u8]) -> Result<Parsed<'_>, String> {
     };
     let h = &dds.header;
     if h.width == 0 || h.height == 0 {
-        return Err("DDS dimensions must be nonzero".into());
+        return Err(t("dds_zero_dimensions").into());
     }
     if h.width > 16_384 || h.height > 16_384 {
-        return Err("DDS dimensions exceed the 16384 limit".into());
+        return Err(t("dds_dimensions_too_big").into());
     }
     if h.depth.unwrap_or(1) != 1 || h.caps2.contains(Caps2::VOLUME) {
-        return Err("DDS volume textures are not supported".into());
+        return Err(t("dds_volume").into());
     }
     let mips = h.mip_map_count.unwrap_or(1);
     if mips == 0 || mips > u32::BITS - h.width.max(h.height).leading_zeros() {
-        return Err("Invalid DDS mip count".into());
+        return Err(t("dds_bad_mips").into());
     }
     let (layers, cube) = if let Some(h10) = &dds.header10 {
         match h10.resource_dimension {
             D3D10ResourceDimension::Texture2D => {}
             D3D10ResourceDimension::Texture1D
                 if h.height == 1 && !h10.misc_flag.contains(MiscFlag::TEXTURECUBE) => {}
-            _ => return Err("DDS resource dimension is not supported".into()),
+            _ => return Err(t("dds_resource_dimension").into()),
         }
         (
             h10.array_size,
@@ -171,34 +173,34 @@ fn parse(bytes: &[u8]) -> Result<Parsed<'_>, String> {
         if cube && !h.caps2.contains(Caps2::CUBEMAP_ALLFACES)
             || !cube && h.caps2.intersects(Caps2::CUBEMAP_ALLFACES)
         {
-            return Err("DDS partial cubemaps are not supported".into());
+            return Err(t("dds_partial_cube").into());
         }
         (1, cube)
     };
     if layers == 0 {
-        return Err("DDS array is empty".into());
+        return Err(t("dds_empty_array").into());
     }
     if layers > 2048 {
-        return Err("DDS array exceeds the 2048 layer limit".into());
+        return Err(t("dds_array_too_big").into());
     }
     if cube && h.width != h.height {
-        return Err("DDS cube faces must be square".into());
+        return Err(t("dds_cube_not_square").into());
     }
     let (format, mut alpha) = format(&dds)?;
     let block_size = match format as u32 {
         28 | 29 | 87 | 88 | 91 | 93 => 0,
         71 | 72 | 80 | 81 => 8,
         74 | 75 | 77 | 78 | 83 | 84 | 95 | 96 | 98 | 99 => 16,
-        _ => return Err(format!("DDS format {format:?} is not supported")),
+        _ => return Err(tf("dds_format_unsupported", &[("format", &format!("{format:?}"))])),
     };
     if matches!(format as u32, 88 | 93) {
         alpha = AlphaMode::Opaque;
     }
     if alpha == AlphaMode::Custom {
-        return Err("DDS custom alpha semantics are not supported".into());
+        return Err(t("dds_custom_alpha").into());
     }
     if block_size == 0 && h.pitch.is_some_and(|p| p != h.width * 4) {
-        return Err("DDS padded or invalid row pitch is not supported".into());
+        return Err(t("dds_row_pitch").into());
     }
     let sizes: Vec<usize> = (0..mips)
         .map(|mip| {
@@ -210,7 +212,7 @@ fn parse(bytes: &[u8]) -> Result<Parsed<'_>, String> {
                 width.div_ceil(4) * height.div_ceil(4) * block_size as u64
             }
         })
-        .map(|size| usize::try_from(size).map_err(|_| "DDS size overflow".to_owned()))
+        .map(|size| usize::try_from(size).map_err(|_| t("dds_size_overflow").to_owned()))
         .collect::<Result<_, _>>()?;
     let faces = if cube { 6 } else { 1 };
     let expected = sizes
@@ -218,10 +220,10 @@ fn parse(bytes: &[u8]) -> Result<Parsed<'_>, String> {
         .map(|&s| s as u64)
         .sum::<u64>()
         .checked_mul(u64::from(layers) * u64::from(faces))
-        .ok_or("DDS size overflow")?;
+        .ok_or(t("dds_size_overflow"))?;
     let data = &bytes[4 + reader.position() as usize..];
     if expected != data.len() as u64 {
-        return Err("DDS payload size disagrees with its complete mip/array/face layout".into());
+        return Err(t("dds_payload_size").into());
     }
     Ok(Parsed {
         info: DdsInfo {
@@ -264,9 +266,12 @@ fn format(dds: &Dds) -> Result<(DxgiFormat, AlphaMode), String> {
             b"ATI2" | b"BC5U" => F::BC5_UNorm,
             b"BC5S" => F::BC5_SNorm,
             _ => {
-                return Err(format!(
-                    "DDS FourCC {:?} is not supported",
-                    String::from_utf8_lossy(&fourcc.0.to_le_bytes())
+                return Err(tf(
+                    "dds_fourcc_unsupported",
+                    &[(
+                        "fourcc",
+                        &format!("{:?}", String::from_utf8_lossy(&fourcc.0.to_le_bytes())),
+                    )],
                 ))
             }
         }
@@ -279,7 +284,7 @@ fn format(dds: &Dds) -> Result<(DxgiFormat, AlphaMode), String> {
                 F::R8G8B8A8_UNorm
             }
             Some(D3DFormat::X8R8G8B8) => F::B8G8R8X8_UNorm,
-            _ => return Err("DDS legacy pixel masks/format are not supported".into()),
+            _ => return Err(t("dds_legacy_format").into()),
         }
     };
     Ok((format, alpha))
@@ -311,7 +316,7 @@ fn decode_block(block: &[u8], format: DxgiFormat) -> Result<[u8; 64], String> {
         }
         95 | 96 => {
             if matches!(block[0] & 31, 19 | 23 | 27 | 31) {
-                return Err("DDS BC6 block uses a reserved mode".into());
+                return Err(t("dds_bc6_reserved").into());
             }
             let mut rgb = [0.0; 48];
             bcdec_rs::bc6h_float(block, &mut rgb, 12, format as u32 == 96);
@@ -326,11 +331,11 @@ fn decode_block(block: &[u8], format: DxgiFormat) -> Result<[u8; 64], String> {
         }
         98 | 99 => {
             if block[0] == 0 {
-                return Err("DDS BC7 block has no valid mode".into());
+                return Err(t("dds_bc7_mode").into());
             }
             bcdec_rs::bc7(block, &mut rgba, 16);
         }
-        _ => return Err("Unsupported DDS block format".into()),
+        _ => return Err(t("dds_block_format").into()),
     }
     Ok(rgba)
 }

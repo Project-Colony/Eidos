@@ -135,7 +135,7 @@ pub(crate) fn mix_bg(
 /// in wall-clock time; they are simply drawn at their destination, because
 /// every reader goes through [`at`].
 pub(crate) fn animating(app: &crate::App) -> bool {
-    app.motion && (app.tab_anim.running() || app.info_anim.running() || app.status_anim.running())
+    app.ui_prefs.motion() && (app.tab_anim.running() || app.info_anim.running() || app.status_anim.running())
 }
 
 /// Whether the window must keep receiving frames.
@@ -163,7 +163,7 @@ pub(crate) fn needs_frames(app: &crate::App) -> bool {
 /// immediately - which is what "reduced motion" has to mean: not a quicker
 /// animation, none at all.
 pub(crate) fn at(app: &crate::App, phase: &Phase) -> f32 {
-    if app.motion {
+    if app.ui_prefs.motion() {
         phase.eased()
     } else {
         1.0

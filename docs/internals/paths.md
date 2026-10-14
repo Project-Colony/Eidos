@@ -8,7 +8,7 @@ sub-directories Eidos uses inside them, and no other crate builds a path from
 
 | Root | Path | What lives there |
 |---|---|---|
-| config | `~/.config/Colony/Eidos/` | `settings.ini`, `nexus.ini` (the Nexus session, mode 0600), `instances.ini`, `games/*.toml`, `addons/*.toml` |
+| config | `~/.config/Colony/Eidos/` | `settings.ini`, `preferences.json` (the window's theme, fonts and language), `nexus.ini` (the Nexus session, mode 0600), `instances.ini`, `games/*.toml`, `addons/*.toml` |
 | data | `~/.local/share/Colony/Eidos/` | `instances/<game>/` (global instances), `runtimes/` (downloaded tool runtimes), `logs/` (session logs) |
 | cache | `~/.cache/Colony/Eidos/` | `loot/<repo>/` (LOOT masterlist and prelude, fetched again when missing) |
 
