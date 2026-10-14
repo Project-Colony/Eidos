@@ -68,10 +68,30 @@ impl UiPreferences {
         let mut prefs = match std::fs::read_to_string(path) {
             // Lenient per field: a bad value falls back to its default, so only
             // a file that is not JSON at all loses the rest.
-            Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
-                eidos_log::warn!("{} is not valid JSON ({e}); using defaults", path.display());
-                UiPreferences::default()
-            }),
+            Ok(text) => match serde_json::from_str(&text) {
+                Ok(prefs) => prefs,
+                // Moved aside before anything can save over it: a hand-edited
+                // file with one typo would otherwise lose every look setting to
+                // the next change. If it cannot be moved, nothing is written to
+                // it this session.
+                Err(e) => {
+                    let bad = path.with_extension("json.bad");
+                    if let Err(move_error) = std::fs::rename(path, &bad) {
+                        eidos_log::warn!(
+                            "{} is not valid JSON ({e}) and could not be moved aside \
+                             ({move_error}); using defaults without saving them",
+                            path.display()
+                        );
+                        return UiPreferences::default();
+                    }
+                    eidos_log::warn!(
+                        "{} is not valid JSON ({e}); kept it as {} and using defaults",
+                        path.display(),
+                        bad.display()
+                    );
+                    UiPreferences::default()
+                }
+            },
             Err(_) => {
                 let mut migrated = std::fs::read_to_string(legacy_ini)
                     .map(|text| UiPreferences::from_legacy_ini(&text))
@@ -220,6 +240,27 @@ mod tests {
         assert_eq!(back.standard.selected_theme, "nord");
         assert_eq!(back.standard.font_size, FontSize::Default);
         assert_eq!(back.language, "system", "no language means the system's");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_broken_file_is_kept_aside_rather_than_saved_over() {
+        let d = tmp("broken");
+        let json = d.join("preferences.json");
+        let broken = "{\"selected_theme\": \"nord\",, }";
+        std::fs::write(&json, broken).unwrap();
+
+        let mut p = UiPreferences::load_from(&json, &d.join("none.ini"));
+        assert_eq!(p.standard.selected_theme, DEFAULT_THEME.0);
+        p.language = "fr".to_string();
+        p.save().unwrap();
+
+        let bad = d.join("preferences.json.bad");
+        assert_eq!(std::fs::read_to_string(&bad).unwrap(), broken);
+        assert_eq!(
+            UiPreferences::load_from(&json, &d.join("none.ini")).language,
+            "fr"
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 
