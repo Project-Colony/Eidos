@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=13248970bb8989b15a41910dd3f9c6564a833325 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f10a5437abda242ca6654c18a34358e156c71a93 -->
 
 # Інструменти: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -17,7 +17,7 @@
 
 - теці встановлення гри та деревах `Root/` увімкнених модів;
 - **`mods/` цього екземпляра**, куди інструменти встановлюють користувачі MO2;
-- **теці інструментів**, яку ви задали в Налаштуваннях (Tools -> Tools folder),
+- **теці інструментів**, яку ви задали в Preferences (General -> Tools),
   для каталогу, спільного між екземплярами - `/mnt/Games/Tools` і подібних.
 
 `PGPatcher.exe` знаходиться так само в іграх на Creation Engine і приходить з аргументом, без якого не може працювати - див. [нижче](#чому-pgpatcher-потребує---ignore-mo2vfscheck).
@@ -132,7 +132,8 @@ Tools -> Executables -> (ваш інструмент) -> Capture output into: FN
 
 ### Три різновиди передумов
 
-**Рівень 1 - вбудовані DLL** (`d3dx9_43`, `d3dcompiler_47`, `d3dx11_43`). Eidos
+**Рівень 1 - вбудовані DLL** (`d3dx9_43`, `d3dcompiler_47`, `d3dcompiler_43`,
+`d3dx11_43`). Eidos
 постачає їх і копіює у префікс під час запуску. Робити нічого не треба, мережа не
 потрібна.
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=427084e50a9961f690747ca6fe98c2f1725defe9 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
 
 # Діагностика та усунення несправностей
 
@@ -72,9 +72,10 @@ Passthrough передає ядру справжній файл-основу, т
 eidos play skyrimse -- %command%
 ```
 
-Поставте перед ним `WINEDLLOVERRIDES="d3dcompiler_47=n"`, якщо Proton потребує
-рідного d3dcompiler для компіляції шейдерів; Eidos зіллє це з будь-якими
-перевизначеннями DLL, які постачає мод (завантажувачі ENB/ReShade/`.asi`).
+Префікс `WINEDLLOVERRIDES` не потрібен. Коли увімкнений мод імпортує
+`d3dcompiler_47`, Eidos розгортає свою вбудовану копію в префікс, примусово
+робить її рідною і зливає це з будь-якими перевизначеннями DLL, які постачає мод
+(завантажувачі ENB/ReShade/`.asi`).
 
 ### Чи справді використовується індекс шарів?
 
