@@ -16,10 +16,12 @@ url="https://github.com/Project-Colony/Eidos"
 # the OMOD handlers, the nifly helper and the esplugin/libloadorder crates
 # (GPL-3.0-only), half.hpp (MIT), and the licenses the linked Rust crates leave
 # no choice about. scripts/third-party-licenses.sh lists every crate with its
-# declared license and installs their notices under crates/.
+# declared license and installs their notices under crates/. The binary also
+# embeds Microsoft DirectX redistributable DLLs; their provenance file is
+# installed under microsoft-directx/.
 license=('GPL-3.0-or-later' 'GPL-3.0-only' 'MIT' 'Apache-2.0' 'BSD-2-Clause'
 	'BSD-3-Clause' 'ISC' 'Zlib' 'CC0-1.0' 'MPL-2.0' 'Unicode-3.0'
-	'CDLA-Permissive-2.0' 'bzip2-1.0.6')
+	'CDLA-Permissive-2.0' 'bzip2-1.0.6' 'LicenseRef-Microsoft-DirectX-Redistributable')
 # fuse3 is what actually mounts (fusermount3 for the rootless path); 7zip backs
 # the mod installer's extraction; xdg-utils is the nxm:// handler registration
 # and "open in explorer".
@@ -27,7 +29,7 @@ depends=('fuse3' '7zip' 'xdg-utils' 'gcc-libs' 'glibc')
 makedepends=('cargo' 'git' 'cmake' 'python' 'jq')
 optdepends=(
 	'steam: game and Proton detection'
-	'winetricks: tool and mod prerequisites (DirectX DLLs, .NET, vcrun)'
+	'winetricks: tier-2 tool prerequisites (.NET / vcrun for Synthesis, FNIS, Pandora)'
 	'xdg-desktop-portal: native file dialogs in the GUI'
 	'vulkan-icd-loader: GPU rendering for the GUI'
 )
@@ -104,6 +106,7 @@ package() {
 	for notice in half.hpp Miniball.hpp; do
 		install -Dm644 "crates/eidos-nif-preview/vendor/nifly/external/$notice" "$pkgdir/usr/share/licenses/$pkgname/nifly/vendor/nifly/external/$notice"
 	done
+	install -Dm644 crates/eidos-gamefeatures/assets/PROVENANCE.md "$pkgdir/usr/share/licenses/$pkgname/microsoft-directx/PROVENANCE.md"
 	RUSTUP_TOOLCHAIN=stable bash scripts/third-party-licenses.sh "$pkgdir/usr/share/licenses/$pkgname/crates" --frozen
 	install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 	install -Dm644 docs/internals/packaging.md "$pkgdir/usr/share/doc/$pkgname/packaging.md"

@@ -569,10 +569,9 @@ starts with every SKSE mod inert is worse than one that does not start.
 
 Older instructions here forced `WINEDLLOVERRIDES="d3dcompiler_47=n"`. That is no
 longer needed and was never quite right: an override to *native* only helps if a
-genuine `d3dcompiler_47.dll` is already in the prefix. Eidos scans the enabled
-mods' DLL imports and sets the override itself. It does not ship Microsoft's
-DLL: `eidos prereqs <game> --install` (or Install in the Diagnostics tab) gets
-it through winetricks, which downloads it.
+genuine `d3dcompiler_47.dll` is already in the prefix. Eidos now scans the
+enabled mods' DLL imports, deploys the real Microsoft DLL itself, and only then
+sets the override.
 
 ## Try the proof of concept
 
@@ -596,11 +595,11 @@ eidos prereqs skyrimse --install  # fetch whatever is missing
 ```
 
 One thing to know before naming a tool: **the title decides which runtime DLLs
-Eidos requests for it** - `BodySlide` asks for its DirectX libraries, `BS` gets
+Eidos provisions for it** - `BodySlide` gets its DirectX libraries, `BS` gets
 nothing. In the GUI the Executables dialog shows each prerequisite's real state
 under the field, and the missing ones are buttons.
 
-The table, the two kinds of prerequisite, why DynDOLOD needs a .NET runtime that
+The table, the three prerequisite tiers, why DynDOLOD needs a .NET runtime that
 winetricks cannot install, and why a tool installed as a mod is launched from the
 merged path rather than its own folder are in [tools.md](tools.md).
 

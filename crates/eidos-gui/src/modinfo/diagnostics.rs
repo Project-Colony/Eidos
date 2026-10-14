@@ -329,22 +329,6 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 actions: Vec::new(),
             });
         }
-        // Eidos forces d3dcompiler_47 native at launch but ships no Microsoft
-        // DLL; without the real one the mod meets Wine's builtin and fails to load.
-        // The prefix check is cheap, so it runs before the DLL import scan.
-        let windows = game.prefix().map(|p| p.join("drive_c").join("windows"));
-        if windows
-            .as_deref()
-            .is_some_and(|w| !eidos_gamefeatures::native_dll_present(w, "d3dcompiler_47"))
-            && eidos_gamefeatures::scan_imports_provisionable(&cs_roots)
-        {
-            out.push(Diagnostic {
-                level: DiagLevel::Problem,
-                title: t("diag_d3dcompiler").to_string(),
-                detail: t("diag_d3dcompiler_detail").to_string(),
-                actions: vec![(t("diag_action_install"), Message::SetupPrereqs)],
-            });
-        }
     }
 
     // A non-empty Overwrite is generated content sitting outside any mod.
