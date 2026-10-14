@@ -16,4 +16,4 @@ colony-ui = "0.1.5"
 # (`~/.config/eidos`, `~/.local/share/eidos`, `~/.local/state/eidos`), which no
 # Colony helper names because no other program ever used them. Already in the
 # graph through colony-ui, at the same version.
-dirs = "6"
+dirs = "7"
