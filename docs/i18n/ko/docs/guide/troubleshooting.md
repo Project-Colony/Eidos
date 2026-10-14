@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=427084e50a9961f690747ca6fe98c2f1725defe9 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
 
 # 문제 해결과 진단
 
@@ -69,9 +69,9 @@ proton-cachyos 11.0, 커널 7.1.4, 동일한 82개 플러그인 로드 순서에
 eidos play skyrimse -- %command%
 ```
 
-셰이더 컴파일에 Proton이 네이티브 d3dcompiler를 필요로 한다면 앞에
-`WINEDLLOVERRIDES="d3dcompiler_47=n"`을 붙이세요. Eidos는 그것을 모드가 함께 담아
-오는 DLL 오버라이드(ENB/ReShade/`.asi` 로더)와 병합합니다.
+`WINEDLLOVERRIDES` 접두어는 필요 없습니다. 활성화된 모드가 `d3dcompiler_47`을
+가져다 쓰면, Eidos는 번들된 사본을 프리픽스에 배치하고 네이티브로 강제한 뒤,
+모드가 함께 담아 오는 DLL 오버라이드(ENB/ReShade/`.asi` 로더)와 병합합니다.
 
 
 ### 레이어 인덱스가 실제로 쓰이고 있는가?
@@ -101,7 +101,7 @@ cargo run --release -p eidos-core --example listing_cost -- <mods-dir> <overwrit
 
 원인이 셋으로 갈리고 어느 것도 오류 메시지를 내지 않습니다. 실행 옵션에서 NVAPI가
 켜지지 않았거나, 독점 전체 화면이거나, 예전 값으로 남은 Reflex FPS 상한입니다. 점검
-목록 전체는 [graphics.ko.md](graphics.md)에 있습니다.
+목록 전체는 [graphics.md](graphics.md)에 있습니다.
 
 **한 디렉터리를 두 가지로 적은 모드가 두 번째 철자 아래의 모든 것을 잃었습니다.**
 고쳐졌습니다. ext4는 `meshes/`와 `Meshes/`를 별개로 두지만 병합된 뷰는 그래서는 안
@@ -125,7 +125,7 @@ cargo run --release -p eidos-core --example listing_cost -- <mods-dir> <overwrit
 폴백 쪽입니다.
 
 **DynDOLOD의 LODGen이 빈 로그를 남기고 죽습니다.** `dotnet10`으로 해결됩니다.
-[tools.ko.md](tools.md)를 보세요. 증상은 오해할 여지가 없습니다. 모든 월드마다
+[tools.md](tools.md)를 보세요. 증상은 오해할 여지가 없습니다. 모든 월드마다
 `LODGen_SSE_<world>_log.txt`에 버전 배너와 `.NET Version:` 줄만 있고 그 밖에는
 아무것도 없으며, "failed to generate object LOD for one or more worlds"만 적힌 대화
 상자가 뜹니다. 원인은 Wine의 Mono가 .NET Framework 행세를 하는 것이고, .NET

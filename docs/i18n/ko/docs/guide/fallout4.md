@@ -84,7 +84,7 @@ Eidos와는 무관합니다.
 
 ## 뭔가 잘못돼 보인다면
 
-일반적인 점검 목록은 [troubleshooting.ko.md](troubleshooting.md)에 있습니다.
+일반적인 점검 목록은 [troubleshooting.md](troubleshooting.md)에 있습니다.
 Fallout 고유의 첫 질문은 언제나 *실제로 어떤 실행 파일이 시작됐는가*입니다. Eidos는
 전체 실행 명령을 인스턴스의 실행 로그에 기록하므로:
 

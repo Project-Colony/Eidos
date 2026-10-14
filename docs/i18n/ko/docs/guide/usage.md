@@ -1,10 +1,10 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c1396f03f352fe3d3bc10c23662ec659cb9eec2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=929a7bc31548c16e2538cf9f04c51109f51ad2da -->
 
 # Eidos 사용하기
 
 실용 설명서: CLI, GUI, Steam 실행 옵션, 소스에서 빌드하기, 그리고 개념 증명
 스크립트. 뭔가 잘못돼 보일 때 무엇을 해야 하는지는
-[troubleshooting.ko.md](troubleshooting.md)를 보세요.
+[troubleshooting.md](troubleshooting.md)를 보세요.
 
 ## 써보기 (CLI)
 
@@ -138,7 +138,7 @@ Eidos는 완전히 rootless로 동작합니다. 비공개 user + mount 네임스
 
 
 예전의 `setcap` 안내가 사라진 이유와 FUSE 패스스루가 꺼진 채로 배포되는 이유는
-[troubleshooting.ko.md](troubleshooting.md#패스스루가-기본으로-꺼져-있는-이유)에
+[troubleshooting.md](troubleshooting.md#패스스루가-기본으로-꺼져-있는-이유)에
 설명되어 있습니다.
 
 ## Nexus 컬렉션 설치하기
@@ -338,7 +338,7 @@ eidos play /mnt/games/EidosSkyrim
 cargo run -p eidos-gui
 ```
 
-Colony의 양피지 / 버건디 외양을 한 MO2식 첫 실행 마법사: 환영 -> 인스턴스
+Colony 공용 테마로 그려지는 MO2식 첫 실행 마법사: 환영 -> 인스턴스
 종류(휴대용 / 전역) -> 게임 -> 이름과 위치 -> 요약 -> 생성 -> 메인 화면. 환영
 화면은 알려진 기존 인스턴스도 모두(전역과 휴대용, 최근에 쓴 것부터) 나열해 한
 번의 클릭으로 열게 해줍니다 - 인스턴스 전환기 역할도 겸합니다 - 그리고 이미
@@ -356,6 +356,25 @@ Conflicts / Overwrite / Saves / Downloads / Diagnostics 탭과 실행 대상 선
 우선순위로, 또는 구분자의 그룹 안으로. 모두 하나의 공유 이동 헬퍼를 거치므로,
 행을 지우고 다시 넣을 때 생기는 오프바이원은 다섯 곳이 아니라 한 곳에만
 있습니다.
+
+### 환경 설정
+
+왼쪽 위의 **Eidos**를 누르면 두 창 대신 Preferences가 열리고, 다시 누르면(또는
+**Close**) 돌아갑니다. 모든 Colony 프로그램처럼 General, Appearance,
+Accessibility가 먼저 오고, 그다음 Mod list, Nexus, About이 옵니다. 모든 변경은
+즉시 적용되고 저장됩니다. Save 버튼은 없습니다.
+
+- **General**: Eidos가 여는 게임, 창 크기, 인터페이스 언어, 도구 폴더, 그리고
+  게임을 실행하는 방식. 창은 영어와 프랑스어를 지원합니다. **System**은
+  `LC_ALL`, `LC_MESSAGES`, `LANG`을 따르며, 변경은 즉시 적용됩니다. `eidos`
+  명령줄은 언제나 영어로 답합니다.
+- **Appearance**: 테마(25개 계열, 57개 팔레트, 기본값은 Eidos의 양피지), 강조
+  색, 글자 크기, 효과, 그리고 실시간 미리 보기.
+- **Accessibility**: 고대비, 난독증 친화 글꼴, 동작 줄이기, 그리고 Appearance의
+  글자 크기와 곱해지는 읽기용 글자 크기.
+
+이 설정은 `~/.config/Colony/Eidos/preferences.json`에 저장됩니다. 예전 Eidos가
+`settings.ini`에 두던 테마는 처음 한 번 옮겨집니다.
 
 ### 열, 정렬, 그룹
 
@@ -482,7 +501,7 @@ Skyrim 컬렉션을 열면, 구성 항목들을 엉뚱한 모드 목록에 맞�
 
 ### 오프라인 모드
 
-**Settings -> Nexus -> Offline**은 Eidos가 Nexus에 접촉하는 일을 아예 멈춥니다.
+**Preferences -> Nexus -> Offline**은 Eidos가 Nexus에 접촉하는 일을 아예 멈춥니다.
 업데이트 확인, 로그인, 내려받기, 컬렉션은 연결 오류로 실패하는 대신 그렇다고
 말합니다. 켜지 않는 한 꺼져 있습니다 - 예전 Eidos가 쓴 설정 파일에는 그런 키가
 없고, 없는 것을 "켜짐"으로 읽으면 업그레이드하는 모두의 네트워크를 끊게 됩니다.
@@ -502,7 +521,7 @@ Nexus가 고르고 이 설정은 아무것도 바꾸지 않습니다. 이것은 
 **View -> INI editor**는 프로필의 게임 INI를 편집합니다 - 실행할 때마다 덮어쓰이는
 Proton 프리픽스 속에 파묻힌 것이 아니라 남아 있는 사본 쪽입니다. **View ->
 Log**는 세션 로그를 읽습니다. **View -> Extensions**는 여러분 자신의 애드온을
-나열합니다. [extensions.ko.md](extensions.md)를 보세요.
+나열합니다. [extensions.md](extensions.md)를 보세요.
 
 설치는 무엇이든 받습니다: Simple과 FOMOD 경로, 여기에 Wrye Bash **BAIN**
 패키지(하위 패키지를 체크하면 순서대로 병합됩니다)와, 어떤 휴리스틱도 배치를
@@ -568,7 +587,7 @@ DLL을 준비해 줄지 결정합니다** - `BodySlide`는 DirectX 라이브러�
 
 표, 세 가지 선행 요건 등급, DynDOLOD가 winetricks로는 설치할 수 없는 .NET 런타임을
 필요로 하는 이유, 그리고 모드로 설치된 도구가 자기 폴더가 아니라 병합된 경로에서
-실행되는 이유는 [tools.ko.md](tools.md)에 있습니다.
+실행되는 이유는 [tools.md](tools.md)에 있습니다.
 
 소스에서 빌드하는 법과 저장소 배치는
 [../internals/contributing.md](../../../../internals/contributing.md)에 있습니다.
@@ -578,4 +597,4 @@ DLL을 준비해 줄지 결정합니다** - `BodySlide`는 DirectX 라이브러�
 Eidos는 다시 빌드하지 않고도 확장할 수 있습니다: `~/.config/Colony/Eidos/addons/`에
 둔 TOML 매니페스트가 Extensions 목록에 도구를, 또는 Health 탭에 검사를 더합니다.
 Eidos 안으로 로드되는 것은 아무것도 없습니다 - 확장은 Eidos가 실행하는
-프로그램입니다. [extensions.ko.md](extensions.md)를 보세요.
+프로그램입니다. [extensions.md](extensions.md)를 보세요.

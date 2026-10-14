@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=13248970bb8989b15a41910dd3f9c6564a833325 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f10a5437abda242ca6654c18a34358e156c71a93 -->
 
 # 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -17,7 +17,7 @@ Eidos를 통해 실행된 도구는 게임 자신의 Proton 프리픽스 안에�
 
 - 게임 설치 폴더, 그리고 활성화된 모드의 `Root/` 트리;
 - **이 인스턴스의 `mods/`** - MO2 사용자가 도구를 설치하는 곳입니다;
-- 설정에서 지정한 **tools folder** (Tools -> Tools folder), 인스턴스끼리 공유하는
+- Preferences에서 지정한 **tools folder** (General -> Tools), 인스턴스끼리 공유하는
   디렉터리용 - `/mnt/Games/Tools` 같은 것.
 
 `PGPatcher.exe`도 Creation Engine 게임에서 같은 방식으로 발견되며, 없으면 동작할 수 없는 인자와 함께 등록됩니다 - [아래](#pgpatcher에---ignore-mo2vfscheck가-필요한-이유) 참조.
@@ -127,7 +127,8 @@ Executables 대화상자의 `Prereqs` 항목은 편집할 수 있습니다 - 감
 
 ### 사전 요구 사항의 세 종류
 
-**Tier 1 - 번들 DLL** (`d3dx9_43`, `d3dcompiler_47`, `d3dx11_43`). Eidos가 함께
+**Tier 1 - 번들 DLL** (`d3dx9_43`, `d3dcompiler_47`, `d3dcompiler_43`,
+`d3dx11_43`). Eidos가 함께
 배포하며 실행할 때 프리픽스로 복사합니다. 할 일 없음, 네트워크 없음.
 
 **Tier 2 - winetricks verb** (`vcrun2022`, `dotnet8`, `dotnetdesktop8`,
