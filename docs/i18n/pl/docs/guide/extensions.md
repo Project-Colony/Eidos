@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/extensions.md sha=5f31f1cbc3dcbfb9655f3570f01e5ada1377268d -->
+<!-- eidos-i18n: source=docs/guide/extensions.md sha=1d33d938321e5dbf200cd9b7a38c1e5f412fb116 -->
 
 # Rozszerzenia
 
@@ -88,4 +88,4 @@ rozwinąć, jest odrzucane, a Eidos mówi, których brakuje.
 
 ## Czego rozszerzenie nie może
 
-Rozszerzenie nie może wywoływać Eidosa zwrotnie, rejestrować się z archiwum ani rysować własnych widżetów. Instalatory korzystające ze strukturalnego protokołu 1 mogą zwracać sprawdzone plany plików i pytania z wyborem; Eidos odpowiada za przegląd, przygotowanie w katalogu tymczasowym i publikację. FOMOD i BAIN pozostają instalatorami natywnymi. Rozszerzenia podglądu i informacji o zapisach gry używają tego samego hosta z ograniczonymi odpowiedziami. [Specyfikacja protokołu i uruchamialne przykłady](../../../../examples/extensions/README.md) opisują priorytet dopasowania, zapisane odpowiedzi CLI, limity oraz kontrolę tożsamości przy ponownym wykonaniu.
+Rozszerzenie nie może wywoływać Eidosa zwrotnie, rejestrować się z archiwum ani rysować własnych widżetów. Instalatory korzystające ze strukturalnego protokołu 1 mogą zwracać sprawdzone plany plików i pytania z wyborem; Eidos odpowiada za przegląd, przygotowanie w katalogu tymczasowym i publikację. FOMOD i BAIN pozostają instalatorami natywnymi. Rozszerzenia podglądu i informacji o zapisach gry używają tego samego hosta z ograniczonymi odpowiedziami. [Specyfikacja protokołu i uruchamialne przykłady](../../../../guide/examples/extensions/README.md) opisują priorytet dopasowania, zapisane odpowiedzi CLI, limity oraz kontrolę tożsamości przy ponownym wykonaniu.

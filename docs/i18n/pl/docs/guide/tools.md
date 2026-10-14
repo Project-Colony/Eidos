@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=13248970bb8989b15a41910dd3f9c6564a833325 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f10a5437abda242ca6654c18a34358e156c71a93 -->
 
 # Narzędzia: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -17,7 +17,7 @@ edycji, przed którymi LOOT wciąż ostrzega. Eidos szuka ich, po nazwie pliku, 
 
 - folderze instalacyjnym gry oraz w drzewach `Root/` włączonych modów;
 - **`mods/` tej instancji**, czyli tam, gdzie użytkownicy MO2 instalują narzędzia;
-- **folderze narzędzi** ustawionym w Ustawieniach (Tools -> Tools folder), dla
+- **folderze narzędzi** ustawionym w Preferences (General -> Tools), dla
   katalogu współdzielonego między instancjami - `/mnt/Games/Tools` i podobnych.
 
 `PGPatcher.exe` jest znajdowany tak samo w grach na Creation Engine i przychodzi z argumentem, bez ktorego nie zadziala - zobacz [ponizej](#dlaczego-pgpatcher-potrzebuje---ignore-mo2vfscheck).
@@ -134,9 +134,9 @@ dlaczego nie jest opcjonalny - [ponizej](#dlaczego-pgpatcher-potrzebuje---ignore
 
 ### Trzy rodzaje zależności
 
-**Poziom 1 - dołączone DLL-e** (`d3dx9_43`, `d3dcompiler_47`, `d3dx11_43`). Eidos
-je dostarcza i kopiuje do prefiksu przy uruchomieniu. Nic do zrobienia, żadnej
-sieci.
+**Poziom 1 - dołączone DLL-e** (`d3dx9_43`, `d3dcompiler_47`, `d3dcompiler_43`,
+`d3dx11_43`). Eidos je dostarcza i kopiuje do prefiksu przy uruchomieniu. Nic do
+zrobienia, żadnej sieci.
 
 **Poziom 2 - czasowniki winetricks** (`vcrun2022`, `dotnet8`, `dotnetdesktop8`,
 `dotnet48`, `xact`...). Zapisują klucze rejestru, GAC i hosty CLR, więc nie da

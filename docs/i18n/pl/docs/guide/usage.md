@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c1396f03f352fe3d3bc10c23662ec659cb9eec2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=929a7bc31548c16e2538cf9f04c51109f51ad2da -->
 
 # Używanie Eidos
 
@@ -371,7 +371,7 @@ eidos play /mnt/games/EidosSkyrim
 cargo run -p eidos-gui
 ```
 
-Kreator pierwszego uruchomienia w stylu MO2, w pergaminowo-burgundowym wyglądzie
+Kreator pierwszego uruchomienia w stylu MO2, narysowany we wspólnych motywach
 Colony: powitanie -> typ instancji (przenośna / globalna) -> gra -> nazwa i
 lokalizacja -> podsumowanie -> utworzenie -> ekran główny. Ekran powitalny
 wypisuje też każdą znaną istniejącą instancję (globalną i przenośną, ostatnio
@@ -392,6 +392,27 @@ na wskazany priorytet albo do grupy separatora. Wszystkie idą przez jednego
 wspólnego pomocnika przesuwania, więc błąd o jeden, biorący się z usuwania
 wierszy przed ich ponownym wstawieniem, istnieje w jednym miejscu zamiast w
 pięciu.
+
+### Preferencje
+
+Kliknij **Eidos** w lewym górnym rogu, aby otworzyć Preferences w miejscu dwóch
+paneli, i kliknij ponownie (albo **Close**), aby wrócić. Najpierw są General,
+Appearance i Accessibility, jak w każdym programie Colony, potem Mod list, Nexus
+i About. Każda zmiana stosuje się i zapisuje od razu; nie ma przycisku Save.
+
+- **General**: gra, którą otwiera Eidos, rozmiar okna, język interfejsu, folder
+  narzędzi i sposób uruchamiania gry. Okno mówi po angielsku i po francusku;
+  **System** podąża za `LC_ALL`, `LC_MESSAGES` albo `LANG`, a zmiana działa od
+  razu. Wiersz poleceń `eidos` zawsze odpowiada po angielsku.
+- **Appearance**: motyw (25 rodzin, 57 palet, domyślnie pergamin Eidosa), kolor
+  akcentu, rozmiar tekstu, efekty i podgląd na żywo.
+- **Accessibility**: wysoki kontrast, czcionka przyjazna osobom z dysleksją,
+  ograniczony ruch i rozmiar tekstu do czytania, który mnoży się z tym z
+  Appearance.
+
+Są przechowywane w `~/.config/Colony/Eidos/preferences.json`. Motyw, który
+starszy Eidos trzymał w `settings.ini`, zostaje przeniesiony przy pierwszym
+uruchomieniu.
 
 ### Kolumny, sortowanie i grupowanie
 
@@ -529,7 +550,7 @@ członków z niewłaściwą listą modów, gdzie każde „zainstalowany" i każ
 
 ### Tryb offline
 
-**Settings -> Nexus -> Offline** całkiem powstrzymuje Eidos przed kontaktem z
+**Preferences -> Nexus -> Offline** całkiem powstrzymuje Eidos przed kontaktem z
 Nexusem. Sprawdzanie aktualizacji, logowanie, pobierania i kolekcje mówią o tym,
 zamiast padać z błędem połączenia. Jest wyłączony, dopóki go nie włączysz - plik
 ustawień zapisany przez starszy Eidos nie ma takiego klucza, a odczytanie

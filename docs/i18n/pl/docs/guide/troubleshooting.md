@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=427084e50a9961f690747ca6fe98c2f1725defe9 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
 
 # Rozwiązywanie problemów i diagnostyka
 
@@ -73,9 +73,10 @@ Aby uruchomić samą grę przez Eidos, ustaw jej opcję uruchamiania w Steamie n
 eidos play skyrimse -- %command%
 ```
 
-Poprzedź to `WINEDLLOVERRIDES="d3dcompiler_47=n"`, jeśli Proton potrzebuje natywnego
-d3dcompilera do kompilacji shaderów; Eidos scala to z dowolnymi nadpisaniami DLL,
-które dostarcza mod (ładowarki ENB/ReShade/`.asi`).
+Prefiks `WINEDLLOVERRIDES` nie jest potrzebny. Gdy włączony mod importuje
+`d3dcompiler_47`, Eidos wdraża swoją dołączoną kopię do prefiksu, wymusza ją jako
+natywną i scala to z dowolnymi nadpisaniami DLL, które dostarcza mod (ładowarki
+ENB/ReShade/`.asi`).
 
 ### Czy indeks warstw jest naprawdę używany?
 
