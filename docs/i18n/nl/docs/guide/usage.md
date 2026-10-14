@@ -1,10 +1,10 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c1396f03f352fe3d3bc10c23662ec659cb9eec2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=929a7bc31548c16e2538cf9f04c51109f51ad2da -->
 
 # Eidos gebruiken
 
 De praktische handleiding: de CLI, de GUI, de Steam-opstartoptie, bouwen vanaf de
 broncode, en het proof-of-concept-script. Wat te doen wanneer er iets mis lijkt,
-staat in [troubleshooting.nl.md](troubleshooting.md).
+staat in [troubleshooting.md](troubleshooting.md).
 
 ## Gebruiken (CLI)
 
@@ -159,7 +159,7 @@ identiek uitgerold.
 
 Waarom het oude `setcap`-advies weg is - en waarom FUSE-passthrough uit
 geleverd wordt - wordt uitgelegd in
-[troubleshooting.nl.md](troubleshooting.md#waarom-passthrough-standaard-uit-staat).
+[troubleshooting.md](troubleshooting.md#waarom-passthrough-standaard-uit-staat).
 
 ## Een Nexus-collectie installeren
 
@@ -378,8 +378,8 @@ eidos play /mnt/games/EidosSkyrim
 cargo run -p eidos-gui
 ```
 
-Een wizard bij de eerste start in MO2-stijl, in de perkament-/bordeauxlook van
-Colony: welkom -> instantietype (draagbaar / globaal) -> spel -> naam & locatie
+Een wizard bij de eerste start in MO2-stijl, getekend in de gedeelde
+Colony-thema's: welkom -> instantietype (draagbaar / globaal) -> spel -> naam & locatie
 -> samenvatting -> maken -> hoofdscherm. Het welkomscherm toont ook elke bekende
 bestaande instantie (globaal en draagbaar, laatst gebruikte eerst) om met één
 klik te openen - het dient meteen als instantiewisselaar - en de wizard op een
@@ -399,6 +399,27 @@ laatste, naar een expliciete prioriteit, of in de groep van een scheiding. Ze
 lopen allemaal door één gedeelde verplaatshelper, zodat de off-by-one die
 ontstaat door rijen te verwijderen voor je ze opnieuw invoegt op één plek bestaat
 in plaats van vijf.
+
+### Preferences
+
+Klik linksboven op **Eidos** om Preferences te openen in plaats van de twee
+panelen, en klik er nogmaals op (of op **Close**) om terug te gaan. General,
+Appearance en Accessibility komen eerst, zoals in elk Colony-programma, daarna
+Mod list, Nexus en About. Elke wijziging wordt meteen toegepast en opgeslagen; er
+is geen Save-knop.
+
+- **General**: het spel dat Eidos opent, de venstergrootte, de taal van de
+  interface, de tools folder en hoe een spel gestart wordt. Het venster spreekt
+  Engels en Frans; **System** volgt `LC_ALL`, `LC_MESSAGES` of `LANG`, en de
+  wijziging gaat meteen in. De opdrachtregel `eidos` antwoordt altijd in het Engels.
+- **Appearance**: het thema (25 families, 57 paletten, standaard het perkament
+  van Eidos), de accentkleur, de tekstgrootte, effecten en een live voorvertoning.
+- **Accessibility**: hoog contrast, een lettertype dat prettig is bij dyslexie,
+  minder beweging en een leestekstgrootte die vermenigvuldigd wordt met die van
+  Appearance.
+
+Deze staan in `~/.config/Colony/Eidos/preferences.json`. Het thema dat een oudere
+Eidos in `settings.ini` bewaarde, wordt de eerste keer overgenomen.
 
 ### Kolommen, sorteren en groeperen
 
@@ -541,7 +562,7 @@ toenaam in plaats van de leden aan de verkeerde modlijst te koppelen, waar elke
 
 ### Offlinemodus
 
-**Settings -> Nexus -> Offline** laat Eidos Nexus helemaal niet meer benaderen.
+**Preferences -> Nexus -> Offline** laat Eidos Nexus helemaal niet meer benaderen.
 Updatecontroles, aanmelden, downloads en collecties zeggen dat, in plaats van te
 falen met een verbindingsfout. Het staat uit tenzij je het aanzet - een
 instellingenbestand dat door een oudere Eidos geschreven is heeft zo'n sleutel
@@ -563,7 +584,7 @@ houdt één catalogus.
 **View -> INI editor** bewerkt de spel-INI's van het profiel - de kopie die
 blijft bestaan, niet die begraven in het Proton-prefix die bij elke start
 overschreven wordt. **View -> Log** leest de sessielogs. **View -> Extensions**
-toont je eigen add-ons; zie [extensions.nl.md](extensions.md).
+toont je eigen add-ons; zie [extensions.md](extensions.md).
 
 Installeren aanvaardt alles: de Simple- en FOMOD-paden, plus Wrye
 Bash-**BAIN**-pakketten (vink de subpakketten aan, die op volgorde samenvloeien)
@@ -635,7 +656,7 @@ onder het veld de echte staat van elke vereiste, en de ontbrekende zijn knoppen.
 De tabel, de drie niveaus van vereisten, waarom DynDOLOD een .NET-runtime nodig
 heeft die winetricks niet kan installeren, en waarom een als mod geïnstalleerde
 tool vanaf het samengevoegde pad gestart wordt in plaats van vanuit zijn eigen
-map, staan in [tools.nl.md](tools.md).
+map, staan in [tools.md](tools.md).
 
 Bouwen vanaf de broncode en de indeling van de repository staan in
 [../internals/contributing.md](../../../../internals/contributing.md).
@@ -646,4 +667,4 @@ Eidos kan uitgebreid worden zonder opnieuw gebouwd te worden: een TOML-manifest
 in `~/.config/Colony/Eidos/addons/` voegt een tool toe aan de lijst Extensions of
 een controle aan het tabblad Health. Er wordt niets in Eidos geladen - een
 extensie is een programma dat het uitvoert. Zie
-[extensions.nl.md](extensions.md).
+[extensions.md](extensions.md).

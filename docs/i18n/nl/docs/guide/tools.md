@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=13248970bb8989b15a41910dd3f9c6564a833325 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f10a5437abda242ca6654c18a34358e156c71a93 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -17,7 +17,7 @@ voor waarschuwt. Eidos zoekt ernaar, op bestandsnaam, in:
 
 - de installatiemap van het spel, en de `Root/`-bomen van ingeschakelde mods;
 - **de `mods/` van deze instantie**, waar MO2-gebruikers hun tools installeren;
-- de **tools folder** die je in Settings instelt (Tools -> Tools folder), voor de
+- de **tools folder** die je in Preferences instelt (General -> Tools), voor de
   map die tussen instanties gedeeld wordt - `/mnt/Games/Tools` en dergelijke.
 
 `PGPatcher.exe` wordt op dezelfde manier gevonden bij de Creation Engine-spellen, en komt met een argument waarzonder het niet kan werken - zie [hieronder](#waarom-pgpatcher---ignore-mo2vfscheck-nodig-heeft).
@@ -133,8 +133,8 @@ het niet optioneel is, staat [hieronder](#waarom-pgpatcher---ignore-mo2vfscheck-
 
 ### Drie soorten vereiste
 
-**Tier 1 - meegeleverde DLL's** (`d3dx9_43`, `d3dcompiler_47`, `d3dx11_43`). Eidos
-levert ze mee en kopieert ze bij het starten naar het prefix. Niets te doen, geen
+**Tier 1 - meegeleverde DLL's** (`d3dx9_43`, `d3dcompiler_47`, `d3dcompiler_43`,
+`d3dx11_43`). Eidos levert ze mee en kopieert ze bij het starten naar het prefix. Niets te doen, geen
 netwerk.
 
 **Tier 2 - winetricks-verbs** (`vcrun2022`, `dotnet8`, `dotnetdesktop8`,

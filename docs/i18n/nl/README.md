@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=0dcb88f3084e8fd1db8725e83f23670a6f88b578 -->
+<!-- eidos-i18n: source=README.md sha=9c6df24d2b5b403d78e0fd5afa489427e7bf9d71 -->
 
 <div align="center">
 
@@ -10,6 +10,10 @@
 **De native Linux-modmanager die je spel nooit aanraakt.**
 
 </div>
+
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](../../../LICENSE)
+[![Colony app](https://img.shields.io/badge/Colony-system-purple)](https://github.com/Project-Colony/Colony)
+[![Platforms](https://img.shields.io/badge/platforms-linux-lightgrey)](#installatie)
 
 Eidos geeft Bethesda-spellen op Linux wat Mod Organizer 2 ze op Windows geeft -
 een virtuele, bij elke start opnieuw samengevoegde weergave van je mods -
@@ -49,6 +53,39 @@ Steam ──> eidos-gui %command% ──> [ privénaamruimte ]
   klik. Een capture die je laadvolgorde zou wissen wordt geweigerd, met de reden
   erbij.
 
+### Hoe het zich verhoudt
+
+| | Eidos | MO2 via Wine | Fluorine-Manager | Limo / uitrollers met links |
+|---|---|---|---|---|
+| Manager draait native | ✅ | ❌ Windows-app in Wine | ✅ (Qt-port) | ✅ |
+| Spelmap onaangeroerd | ✅ altijd | ✅ | ✅ | ❌ er worden links in geschreven |
+| Koppeling zichtbaar voor | alleen het spel | alleen het spel | **het hele systeem** | n.v.t. |
+| Opruimen na crash nodig | geen, bij ontwerp | geen | herstel van een dode koppeling | handmatig uitrollen ongedaan maken |
+| Root-mods (ENB, preloaders) | ✅ native | plugin vereist | plugin vereist | gedeeltelijk |
+| Vereiste privileges | geen | geen | `/etc/fuse.conf` aanpassen | geen |
+
+### Hoe snel het is
+
+| | voorheen | nu |
+|---|---|---|
+| een save laden | ~20 seconden | **6-7 seconden** |
+| maplezingen in één sessie | 5,6 miljoen | 465 duizend |
+
+Celovergangen zijn onmiddellijk. De winst kwam van je mods minder vragen te
+stellen: één bestand vinden ondervroeg vroeger alle vijftig op hun beurt, en één
+map opsommen deed dat vijftig keer over. Geen van beide doet dat nog. Gemeten op
+een echte instantie die normaal gespeeld werd, niet op een benchmark.
+
+### Eerder werk en dank
+
+- [ModOrganizer2](https://github.com/ModOrganizer2/modorganizer) en
+  [usvfs](https://github.com/ModOrganizer2/usvfs) - de semantiek die Eidos
+  reproduceert, en de codebase waartegen zijn pariteit bestudeerd is
+- [LOOT](https://loot.github.io/) - de sorteermotor, via libloot
+- [Fluorine-Manager](https://github.com/SulfurNitride/Fluorine-Manager),
+  [Limo](https://github.com/limo-app/limo) en de andere Linux-managers - het
+  bewijs dat er een gemeenschap is die dit opgelost wil zien
+
 ## Wat het doet
 
 **Mods.** Simpele archieven, FOMOD-wizards, BAIN-pakketten van Wrye Bash, een
@@ -76,7 +113,7 @@ spellenpartitie), verplaatsbaar en geïsoleerd, zoals die van MO2. Draagbare
 instanties worden van sessie tot sessie onthouden; de GUI, de Steam-start en elke
 CLI-opdracht volgen degene die je het laatst gebruikt hebt, en elke opdracht
 neemt de map aan waar ze ook een spel-id aanneemt.
-Details in [usage.nl.md](docs/guide/usage.md#instanties-globaal-en-draagbaar).
+Details in [usage.md](docs/guide/usage.md#instanties-globaal-en-draagbaar).
 
 **Profielen.** Modvolgorde, pluginstatus, INI's en saves per profiel. Saves
 worden ontleed, vergeleken met je huidige plugins - met een knop die inschakelt
@@ -114,30 +151,57 @@ gebruiken. Details in [internals/paths.md](../../internals/paths.md) (Engels).
 
 Zie [Integriteitscontroles en gegenereerde bestanden](../../../docs/internals/integrity.md) (Engels) voor bescherming bij vervanging, conflicten tussen BSA/BA2-bestanden, statische SKSE-diagnostiek en generatieregistraties, inclusief hun beperkingen.
 
-## Hoe het zich verhoudt
+### Ondersteunde spellen
 
-| | Eidos | MO2 via Wine | Fluorine-Manager | Limo / uitrollers met links |
-|---|---|---|---|---|
-| Manager draait native | ✅ | ❌ Windows-app in Wine | ✅ (Qt-port) | ✅ |
-| Spelmap onaangeroerd | ✅ altijd | ✅ | ✅ | ❌ er worden links in geschreven |
-| Koppeling zichtbaar voor | alleen het spel | alleen het spel | **het hele systeem** | n.v.t. |
-| Opruimen na crash nodig | geen, bij ontwerp | geen | herstel van een dode koppeling | handmatig uitrollen ongedaan maken |
-| Root-mods (ENB, preloaders) | ✅ native | plugin vereist | plugin vereist | gedeeltelijk |
-| Vereiste privileges | geen | geen | `/etc/fuse.conf` aanpassen | geen |
+**Skyrim SE/AE** - bewezen in echt spel. **Fallout 4** is ook van begin tot eind
+aangesloten (F4SE wordt automatisch in de plaats gezet, archiefinvalidatie,
+laadvolgorde met asterisken, LOOT, `.fos`-saves) - zie
+[guide/fallout4.md](docs/guide/fallout4.md). Aangesloten volgens de
+gedeelde speldescriptor en op zoek naar testers: Skyrim LE, Skyrim VR, Enderal
+SE, Fallout 3, Fallout NV, Fallout 4 (+ VR), Starfield, Oblivion en Morrowind
+(die laatste twee koppelen en beheren mods; hun op tijdstempel geordende
+pluginlijsten worden nog niet beheerd).
 
-## Hoe snel het is
+Een familie toevoegen is één descriptorregel:
+[internals/adding-games.md](../../internals/adding-games.md).
 
-| | voorheen | nu |
-|---|---|---|
-| een save laden | ~20 seconden | **6-7 seconden** |
-| maplezingen in één sessie | 5,6 miljoen | 465 duizend |
+## Installatie
 
-Celovergangen zijn onmiddellijk. De winst kwam van je mods minder vragen te
-stellen: één bestand vinden ondervroeg vroeger alle vijftig op hun beurt, en één
-map opsommen deed dat vijftig keer over. Geen van beide doet dat nog. Gemeten op
-een echte instantie die normaal gespeeld werd, niet op een benchmark.
+### Via Colony (aanbevolen)
 
-## Aan de slag
+Zoek naar **Eidos** in [Colony](https://github.com/Project-Colony/Colony) en
+installeer het. Updates komen binnen via de launcher. Colony installeert één
+bestand, `eidos-linux`: het venster, en ook de opdrachtregel `eidos` wanneer het
+aangeroepen wordt via een link met de naam `eidos`. De NIF-modelvoorvertoning
+heeft een hulpprogramma nodig dat alleen de bundel hieronder meelevert; zonder
+dat programma zegt de voorvertoning dat en werkt al het andere. Wat je na het
+installeren doet, en hoe je Steam ernaar laat wijzen:
+[docs/guide/install.md](docs/guide/install.md#via-colony).
+
+### Binair bestand direct downloaden
+
+Haal een bestand op van de [nieuwste release](https://github.com/Project-Colony/Eidos/releases/latest):
+
+| Bestand | Wat het is |
+|---|---|
+| `eidos-linux` | het hele programma in één bestand, zoals Colony het installeert |
+| `eidos-linux-bundle.tar.gz` | `eidos`, `eidos-gui`, het hulpprogramma voor NIF-voorvertoningen, pictogrammen en een installatieprogramma dat het bureaubladitem en de downloadhandler van Nexus registreert |
+
+Controleer de download eerst, zoals het
+[beleid voor codeondertekening](#beleid-voor-codeondertekening) laat zien, en
+daarna:
+
+```bash
+tar xzf eidos-linux-bundle.tar.gz
+cd eidos-linux-bundle
+./install.sh
+```
+
+Het installatieprogramma zet alles in `~/.local/bin`, zonder sudo; `--system` en
+`--bindir DIR` kiezen een andere plek. Beide bestanden vereisen x86_64-Linux met
+glibc 2.39 of nieuwer, FUSE (`fusermount3`) en 7-Zip voor modarchieven.
+
+### Bouwen vanuit de broncode
 
 ```bash
 git clone https://github.com/Project-Colony/Eidos && cd Eidos
@@ -145,26 +209,32 @@ just build
 just install
 ```
 
-Zet daarna de Steam-opstartoptie van je spel op
-`~/.local/bin/eidos-gui %command%` en druk op Spelen.
+Vereist Rust 1.89 of nieuwer (de `rust-version` die de CI controleert; CI en
+releases bouwen met 1.99.0), plus `just`, CMake 3.20+ en een C++17-compiler voor
+het hulpprogramma voor NIF-voorvertoningen. Een Arch-pakket wordt gebouwd vanuit
+`packaging/PKGBUILD`. Vereisten en de opdrachten zonder `just`:
+[docs/guide/install.md](docs/guide/install.md).
 
-Arch-pakketten en release-archieven, wat je eerst geïnstalleerd moet hebben, en
-de weg via de CLI: **[docs/guide/install.nl.md](docs/guide/install.md)**.
+### Steam-opstartopties
 
-## Steam-opstartopties
-
-De basisregel is alles wat de meeste opstellingen nodig hebben:
+Eidos draait *als* de startopdracht van het spel, en zo koppelt het voordat het
+spel begint. De basisregel is alles wat de meeste opstellingen nodig hebben, met
+het absolute pad van je installatie (Steam leest je `PATH` niet):
 
 ```
 ~/.local/bin/eidos-gui %command%
 ```
+
+Vanuit Colony is dat pad `~/.local/share/Colony/apps/Eidos/eidos-linux`. Druk
+daarna op Spelen: Eidos opent op de instantie van dat spel, en Run start het spel
+door de samengevoegde weergave.
 
 Al het andere bestaat uit omgevingsvariabelen die ervoor gestapeld worden, en ze
 laten zich vrij combineren:
 
 | Je wilt... | Zet ervoor |
 |---|---|
-| DLSS met Community Shaders | `PROTON_ENABLE_NVAPI=1` - zonder haar initialiseert DLSS zich stilzwijgend nooit; de volledige checklist is [guide/graphics.nl.md](docs/guide/graphics.md) |
+| DLSS met Community Shaders | `PROTON_ENABLE_NVAPI=1` - zonder haar initialiseert DLSS zich stilzwijgend nooit; de volledige checklist is [guide/graphics.md](docs/guide/graphics.md) |
 | een fps-teller op het scherm | `DXVK_HUD=fps` |
 | frame-interpolatie op driverniveau, nul mods (RTX 40/50) | `NVPRESENT_ENABLE_SMOOTH_MOTION=1` - nooit samen met de eigen frame generation van Community Shaders |
 | uitgebreide logs voor een bugrapport | `EIDOS_LOG=debug` (sessielogs belanden in `~/.local/share/Colony/Eidos/logs/`) |
@@ -184,26 +254,15 @@ het weg zodra dat zo is.
 
 De diepere diagnoseschakelaars (`EIDOS_FUSE_TRACE`, de bisectieschakelaars voor
 cache en index, waarom `EIDOS_FUSE_PASSTHROUGH` standaard uit staat) staan in
-[guide/troubleshooting.nl.md](docs/guide/troubleshooting.md).
+[guide/troubleshooting.md](docs/guide/troubleshooting.md).
 
-## Waar je hierna heen gaat
+## Documentatie
 
-| Als je wilt... | |
-|---|---|
-| het installeren | [guide/install.nl.md](docs/guide/install.md) |
-| de CLI en de GUI leren | [guide/usage.nl.md](docs/guide/usage.md) |
-| xEdit, BodySlide of DynDOLOD instellen | [guide/tools.nl.md](docs/guide/tools.md) |
-| Fallout 4 spelen (F4SE, versies, de NVIDIA-debris-crash) | [guide/fallout4.nl.md](docs/guide/fallout4.md) |
-| DLSS / frame generation aan de praat krijgen (Community Shaders) | [guide/graphics.nl.md](docs/guide/graphics.md) |
-| iets repareren dat er verkeerd uitziet | [guide/troubleshooting.nl.md](docs/guide/troubleshooting.md) |
-| weten waarom het snel is, en het zelf nagaan | [internals/performance.md](../../internals/performance.md) |
-| begrijpen hoe het van binnen werkt | [internals/architecture.md](../../internals/architecture.md) |
-| het bouwen, testen, eraan bijdragen | [internals/contributing.md](../../internals/contributing.md) |
-| weten waarom het überhaupt bestaat | [project/landscape.md](../../project/landscape.md) |
-
-Een taal is één map: `docs/i18n/nl/` spiegelt de wortel van de repository, waardoor
-een link tussen twee vertaalde pagina's dezelfde tekenreeks is als de link tussen
-hun Engelse originelen.
+Alles staat in [docs/](docs/), op lezer ingedeeld in
+[docs/README.md](docs/README.md): de gebruikersgids (installatie, de CLI en de
+GUI, tools zoals xEdit en DynDOLOD, graphics, probleemoplossing), hoe Eidos van
+binnen werkt, en waarom het bestaat. Beveiligingsbeleid en hoe je een
+kwetsbaarheid meldt: [SECURITY.md](../../../SECURITY.md).
 
 ## Taal
 
@@ -234,38 +293,95 @@ voor een publiek dat ze niet nodig heeft.
 
 Elke vertaling draagt de hash van het Engelse bestand waaruit ze gemaakt is, en de
 CI faalt wanneer het Engels vooruitloopt - zie [`scripts/i18n-check.sh`](../../../scripts/i18n-check.sh).
-Een vertaling die niet weer bij de tijd gebracht kan worden wordt **verwijderd**,
-niet laten staan: een verouderde pagina ziet er nog steeds gezaghebbend uit en
+Een vertaling die niet weer bij de tijd gebracht kan worden, wordt **verwijderd**
+en niet laten staan: een verouderde pagina ziet er nog steeds gezaghebbend uit en
 deelt de opdrachten van vorige maand uit, wat voor de lezer erger is dan naar het
 Engels gestuurd worden.
 
-Een taal toevoegen is vier bestanden en een rij in deze tabel;
-[`docs/internals/contributing.md`](../../internals/contributing.md) heeft de stappen.
+Een taal is één map. `docs/i18n/<lang>/` spiegelt de wortel van de repository, dus
+`docs/i18n/de/docs/guide/install.md` is de Duitse `docs/guide/install.md` - en dat
+maakt een link tussen twee vertaalde pagina's DEZELFDE tekenreeks als de link
+tussen hun Engelse originelen, en maakt het opheffen van een taal één `rm -r`.
 
-## Ondersteunde spellen
+## Beleid voor codeondertekening
 
-**Skyrim SE/AE** - bewezen in echt spel. **Fallout 4** is ook van begin tot eind
-aangesloten (F4SE wordt automatisch in de plaats gezet, archiefinvalidatie,
-laadvolgorde met asterisken, LOOT, `.fos`-saves) - zie
-[guide/fallout4.nl.md](docs/guide/fallout4.md). Aangesloten volgens de
-gedeelde speldescriptor en op zoek naar testers: Skyrim LE, Skyrim VR, Enderal
-SE, Fallout 3, Fallout NV, Fallout 4 (+ VR), Starfield, Oblivion en Morrowind
-(die laatste twee koppelen en beheren mods; hun op tijdstempel geordende
-pluginlijsten worden nog niet beheerd).
+Elk releasebestand wordt in de CI ondertekend door de organisatie Project Colony,
+nooit op de machine van een ontwikkelaar. Naast elk bestand op de releasepagina:
 
-Een familie toevoegen is één descriptorregel:
-[internals/adding-games.md](../../internals/adding-games.md).
+| Bestand | Wat het is |
+|---|---|
+| `<asset>.sig` | een ed25519-handtekening over het bestand, gemaakt met de releasesleutel van de organisatie |
+| `<asset>.meta` | drie regels die het bestand binden aan zijn bestandsnaam, zijn sha256 en de releaseversie |
+| `<asset>.meta.sig` | een ed25519-handtekening over de `.meta` |
 
-## Eerder werk en dank
+De privésleutel is een geheim van de organisatie, dat alleen gebruikt wordt door de gedeelde
+[sign-and-publish-workflow](https://github.com/Project-Colony/Project-Colony-Resources/blob/main/.github/workflows/sign-and-publish.yml)
+in een job die niets bouwt; de jobs die Eidos compileren krijgen hem nooit te zien.
+Colony controleert alle drie de bestanden voordat het Eidos installeert of bijwerkt,
+en weigert een release die ouder is dan de geïnstalleerde. Om een download zelf te
+controleren met OpenSSL 3 (dezelfde opdrachten werken voor elk bestand):
 
-- [ModOrganizer2](https://github.com/ModOrganizer2/modorganizer) en
-  [usvfs](https://github.com/ModOrganizer2/usvfs) - de semantiek die Eidos
-  reproduceert, en de codebase waartegen zijn pariteit bestudeerd is
-- [LOOT](https://loot.github.io/) - de sorteermotor, via libloot
-- [Fluorine-Manager](https://github.com/SulfurNitride/Fluorine-Manager),
-  [Limo](https://github.com/limo-app/limo) en de andere Linux-managers - het
-  bewijs dat er een gemeenschap is die dit opgelost wil zien
+```bash
+cat > colony-release.pub <<'EOF'
+-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEARNjg3Nn8H6/aBg1unwGjkUTcrdTxERNefVaqU8cFu0s=
+-----END PUBLIC KEY-----
+EOF
+a=eidos-linux
+openssl pkeyutl -verify -pubin -inkey colony-release.pub -rawin -in "$a" -sigfile "$a.sig"
+openssl pkeyutl -verify -pubin -inkey colony-release.pub -rawin -in "$a.meta" -sigfile "$a.meta.sig"
+cat "$a.meta"     # version=<tag>, asset=<file name>, sha256=<digest>
+sha256sum "$a"    # the digest must equal the sha256 line
+```
+
+Hoe releases gebouwd, ondertekend en gepubliceerd worden:
+[design/releases.md](https://github.com/Project-Colony/Project-Colony-Resources/blob/main/design/releases.md#5-signing).
+
+## Privacy
+
+Eidos verstuurt geen telemetrie, geen analysegegevens en geen crashrapporten. Het
+maakt met geen enkele server verbinding behalve die in deze tabel, en alleen voor
+de handeling die daar genoemd wordt. De **offline**-modus (Preferences -> Nexus)
+stopt elke verbinding met Nexus.
+
+| Gegevens | Opgeslagen of verstuurd | Waar, en waarom |
+|---|---|---|
+| Voorkeuren, instantielijst, spel- en add-on-definities | opgeslagen | `~/.config/Colony/Eidos/` |
+| Instanties, gedownloade runtimes, sessielogs | opgeslagen | `~/.local/share/Colony/Eidos/`, of de map die je voor een draagbare instantie gekozen hebt |
+| LOOT-masterlists | opgeslagen | `~/.cache/Colony/Eidos/loot/` |
+| Aanmelden bij Nexus | verstuurd | Aanmelden opent `users.nexusmods.com` in je browser, die het resultaat teruggeeft aan een luisteraar die Eidos alleen voor die aanmelding op `127.0.0.1` opent. Eidos ruilt het daarna in voor tokens bij `users.nexusmods.com/oauth/token` en haalt de publieke sleutels op waarmee Nexus ze ondertekent. [Privacybeleid van Nexus Mods](https://help.nexusmods.com/article/20-privacy-policy) |
+| Nexus-inloggegevens | opgeslagen | De access- en refreshtokens, in `~/.config/Colony/Eidos/nexus.ini` met modus 0600. Een regel `api_key=` die een oudere Eidos daar geschreven heeft, blijft staan maar wordt nooit gelezen; verwijder hem gerust. |
+| Nexus-verzoeken | verstuurd | `api.nexusmods.com`, wanneer je een Nexus-functie gebruikt: je accountnaam en premiumstatus, details van mods en bestanden, updatecontroles, collecties en downloadlinks. Elk verzoek draagt je access-token en noemt Eidos en zijn versie. |
+| Nexus-downloads | verstuurd | De bestanden waar je om vraagt, van de CDN-host van Nexus die de downloadlink noemt, opgeslagen in de downloadmap van de instantie met naast elk ervan een `.meta` in MO2-formaat. |
+| `nxm://`-links | opgeslagen | `eidos nxm --register`, dat `install.sh` voor je uitvoert, schrijft `~/.local/share/applications/eidos-nxm.desktop` en maakt dat via `xdg-mime` de handler voor `nxm://`, zodat de knop Mod Manager Download van de site zijn link aan Eidos geeft. Het Arch-pakket installeert hetzelfde item systeembreed. |
+| LOOT-masterlists | verstuurd | `raw.githubusercontent.com/loot/...`, bij de eerste LOOT-sortering van een spel en telkens wanneer je om een update vraagt. Er wordt niets van jou verstuurd. [Privacyverklaring van GitHub](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement) |
+| Tool-runtimes | verstuurd | Alleen wanneer je een vereiste voor een tool installeert of een mod er een nodig heeft: de .NET-runtime van `builds.dotnet.microsoft.com`, geweigerd tenzij die overeenkomt met de SHA-256 die in Eidos is ingebouwd, en `winetricks`, dat wat het in het Proton-prefix van het spel installeert (herdistribueerbare pakketten van Visual C++ en .NET) downloadt van Microsoft en de andere hosts die winetricks gebruikt. [Privacyverklaring van Microsoft](https://www.microsoft.com/en-us/privacy/privacystatement) |
+| Sessielogs | opgeslagen | `~/.local/share/Colony/Eidos/logs/`, modus 0600: tien sessies per instantie, opgeruimd na 30 dagen. Je thuismap wordt geschreven als `~` en je gebruikersnaam als `<user>`, zodat een log zoals het is in een issue geplakt kan worden. Ze verlaten je machine nooit, tenzij je ze zelf verstuurt. |
+| Snelkoppelingen | opgeslagen | `install.sh` schrijft `eidos.desktop` en zijn pictogrammen onder `~/.local/share`; een snelkoppeling naar een tool die je maakt, komt in `~/.local/share/applications`. |
+| Links die je opent | geen van beide | Modpagina's en andere links openen in je eigen browser via `xdg-open`. |
+| Add-ons | geen van beide | Extensies die je installeert, draaien als eigen programma's op je machine; wat ze doen is hun zaak. |
 
 ## Licentie
 
-De oorspronkelijke code van Eidos valt onder GPL-3.0-or-later. De meegeleverde vertalingen van OMOD-code vallen onder GPL-3.0-only; zie de [vermelding van de oorspronkelijke auteurs](../../../crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md). Het NIF-hulpprogramma behoudt de [licenties en auteursvermeldingen van zijn onderdelen](../../../native/eidos-nif-preview/UPSTREAM.md). Modbeheer is van iedereen.
+De oorspronkelijke code van Eidos valt onder GPL-3.0-or-later; zie
+[LICENSE](../../../LICENSE). Deze onderdelen vallen onder GPL-3.0 zonder de optie
+"or later":
+
+- de vertalingen van OMOD-scripts in `eidos-install`; zie hun
+  [vermelding van de oorspronkelijke auteurs](../../../crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md);
+- het hulpprogramma `eidos-nif-preview`, gebouwd op de meegeleverde bibliotheek
+  nifly; zie de [licenties en auteursvermeldingen van zijn onderdelen](../../../crates/eidos-nif-preview/UPSTREAM.md);
+- de crates `esplugin` en `libloadorder` waartegen de laadvolgordecode linkt, die
+  `GPL-3.0` opgeven.
+
+De andere Rust-crates in de binaire bestanden behouden hun eigen licenties (MIT,
+Apache-2.0, BSD en dergelijke). De releasebundel bevat hun vermeldingen in
+`licenses/crates/`, met een index van elke crate en zijn licentie.
+
+De binaire bestanden bevatten ook acht echte herdistribueerbare DLL's van
+Microsoft DirectX (`d3dcompiler_47`, `d3dcompiler_43`, `d3dx9_43` en `d3dx11_43`,
+32- en 64-bits), die Eidos in het prefix van het spel plaatst wanneer een mod of
+tool ze nodig heeft. Ze blijven onder de herdistributievoorwaarden van Microsoft
+vallen; zie hun [herkomst](../../../crates/eidos-gamefeatures/assets/PROVENANCE.md).
+
+Modbeheer is van iedereen.

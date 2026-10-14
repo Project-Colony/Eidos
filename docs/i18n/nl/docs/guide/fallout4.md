@@ -85,7 +85,7 @@ uitschakelt in plaats van het effect.
 
 ## Als er iets fout lijkt
 
-De algemene checklist staat in [troubleshooting.nl.md](troubleshooting.md); de
+De algemene checklist staat in [troubleshooting.md](troubleshooting.md); de
 Fallout-specifieke eerste vraag is altijd *welk uitvoerbaar bestand er werkelijk
 startte*. Eidos schrijft de volledige startopdracht in het uitvoerlogboek van de
 instantie, dus:

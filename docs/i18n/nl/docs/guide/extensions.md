@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/extensions.md sha=5f31f1cbc3dcbfb9655f3570f01e5ada1377268d -->
+<!-- eidos-i18n: source=docs/guide/extensions.md sha=1d33d938321e5dbf200cd9b7a38c1e5f412fb116 -->
 
 # Uitbreidingen
 
@@ -88,4 +88,4 @@ plaatshouders op te lossen zijn wordt geweigerd, en Eidos zegt welke ontbreken.
 
 ## Wat een uitbreiding niet kan
 
-Een uitbreiding kan Eidos niet terug aanroepen, zichzelf niet vanuit een archief registreren en geen eigen widgets tekenen. Gestructureerde installatieprogramma's met protocol 1 kunnen gecontroleerde bestandsplannen en keuzevragen teruggeven; Eidos beheert de beoordeling, tijdelijke voorbereiding en publicatie. FOMOD en BAIN blijven native installatieprogramma's. Uitbreidingen voor voorvertoningen en informatie over opgeslagen spellen gebruiken dezelfde host met begrensde antwoorden. Zie de [protocolspecificatie en uitvoerbare voorbeelden](../../../../examples/extensions/README.md) voor de prioriteit van overeenkomsten, vastgelegde CLI-antwoorden, limieten en identiteitscontroles bij herhaling.
+Een uitbreiding kan Eidos niet terug aanroepen, zichzelf niet vanuit een archief registreren en geen eigen widgets tekenen. Gestructureerde installatieprogramma's met protocol 1 kunnen gecontroleerde bestandsplannen en keuzevragen teruggeven; Eidos beheert de beoordeling, tijdelijke voorbereiding en publicatie. FOMOD en BAIN blijven native installatieprogramma's. Uitbreidingen voor voorvertoningen en informatie over opgeslagen spellen gebruiken dezelfde host met begrensde antwoorden. Zie de [protocolspecificatie en uitvoerbare voorbeelden](../../../../guide/examples/extensions/README.md) voor de prioriteit van overeenkomsten, vastgelegde CLI-antwoorden, limieten en identiteitscontroles bij herhaling.

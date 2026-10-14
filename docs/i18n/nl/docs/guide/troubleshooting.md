@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=427084e50a9961f690747ca6fe98c2f1725defe9 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
 
 # Probleemoplossing en diagnostiek
 
@@ -77,9 +77,10 @@ Om het spel zelf via Eidos te starten, zet je zijn Steam-opstartoptie op:
 eidos play skyrimse -- %command%
 ```
 
-Zet er `WINEDLLOVERRIDES="d3dcompiler_47=n"` voor als Proton native
-d3dcompiler nodig heeft voor het compileren van shaders; Eidos voegt dat samen
-met alle DLL-overrides die een mod meelevert (ENB/ReShade/`.asi`-loaders).
+Een `WINEDLLOVERRIDES`-voorvoegsel is niet nodig. Wanneer een ingeschakelde mod
+`d3dcompiler_47` importeert, plaatst Eidos zijn meegeleverde kopie in het prefix,
+dwingt die af als native, en voegt dat samen met alle DLL-overrides die een mod
+meelevert (ENB/ReShade/`.asi`-loaders).
 
 
 ### Wordt de laagindex ook echt gebruikt?
@@ -111,7 +112,7 @@ twee antwoorden juist datgene is wat je aan het debuggen bent.
 Drie afzonderlijke oorzaken, elk zonder enige foutmelding: NVAPI niet
 ingeschakeld in de opstartopties, exclusive fullscreen, of een verouderde
 Reflex-FPS-limiet. De volledige checklist staat in
-[graphics.nl.md](graphics.md).
+[graphics.md](graphics.md).
 
 **Een mod die één map op twee manieren spelt, verloor alles onder de tweede.**
 Opgelost. ext4 houdt `meshes/` en `Meshes/` uit elkaar; de samengevoegde
@@ -137,7 +138,7 @@ de fallback niet kon geven, en dat is de verkeerde volgorde - de fallback is het
 antwoord dat nooit fout hoort te zijn.
 
 **DynDOLOD's LODGen sterft en laat een leeg log achter.** Opgelost door
-`dotnet10`; zie [tools.nl.md](tools.md). Het symptoom is onmiskenbaar:
+`dotnet10`; zie [tools.md](tools.md). Het symptoom is onmiskenbaar:
 `LODGen_SSE_<world>_log.txt` met een versiebanner, een regel `.NET Version:` en
 verder niets, voor elke wereld, en een dialoogvenster dat alleen "failed to
 generate object LOD for one or more worlds" zegt. De oorzaak is dat Wine's Mono
