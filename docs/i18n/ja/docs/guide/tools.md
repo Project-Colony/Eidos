@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=13248970bb8989b15a41910dd3f9c6564a833325 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f10a5437abda242ca6654c18a34358e156c71a93 -->
 
 # ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -17,7 +17,7 @@ Fallout 4 なら `FO4Edit.exe`、Skyrim SE なら `SSEEdit.exe`、初代なら
 
 - ゲームのインストールフォルダと、有効な MOD の `Root/` ツリー;
 - **このインスタンスの `mods/`**。MO2 の利用者がツールを入れる場所です;
-- 設定で指定した**ツールフォルダ**(Tools -> Tools folder)。インスタンス間で
+- 環境設定で指定した**ツールフォルダ**(General -> Tools)。インスタンス間で
   共有するディレクトリ - `/mnt/Games/Tools` のようなもののためです。
 
 `PGPatcher.exe` も Creation Engine 系のゲームで同じように見つかり、これがないと動作できない引数とともに登録されます - [下記](#pgpatcher-に---ignore-mo2vfscheck-が要る理由)を参照。
@@ -129,7 +129,8 @@ Executables ダイアログの `Prereqs` 欄は編集できます - この検出
 
 ### 前提条件は三種類
 
-**Tier 1 - 同梱の DLL**(`d3dx9_43`、`d3dcompiler_47`、`d3dx11_43`)。Eidos が
+**Tier 1 - 同梱の DLL**(`d3dx9_43`、`d3dcompiler_47`、`d3dcompiler_43`、
+`d3dx11_43`)。Eidos が
 同梱しており、起動時にプレフィックスへコピーします。やることは無く、ネット
 ワークも要りません。
 

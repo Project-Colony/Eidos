@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=427084e50a9961f690747ca6fe98c2f1725defe9 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
 
 # トラブルシューティングと診断
 
@@ -75,9 +75,10 @@ FAILED` ゼロ、`passthrough refused` ゼロ)。エラーはデーモンが
 eidos play skyrimse -- %command%
 ```
 
-シェーダのコンパイルに Proton がネイティブの d3dcompiler を要るなら、前に
-`WINEDLLOVERRIDES="d3dcompiler_47=n"` を付けてください。Eidos はそれを MOD が
-同梱する DLL オーバーライド(ENB/ReShade/`.asi` ローダ)と統合します。
+`WINEDLLOVERRIDES` を前に付ける必要はありません。有効な MOD が `d3dcompiler_47`
+をインポートしていれば、Eidos は同梱のコピーをプレフィックスへ配置してネイティブ
+を強制し、それを MOD が同梱する DLL オーバーライド(ENB/ReShade/`.asi` ローダ)と
+統合します。
 
 
 ### レイヤのインデックスは本当に使われているのか?

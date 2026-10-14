@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=0dcb88f3084e8fd1db8725e83f23670a6f88b578 -->
+<!-- eidos-i18n: source=README.md sha=9c6df24d2b5b403d78e0fd5afa489427e7bf9d71 -->
 
 <div align="center">
 
@@ -10,6 +10,10 @@
 **ゲームに一切触れない、ネイティブ Linux の MOD マネージャ。**
 
 </div>
+
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](../../../LICENSE)
+[![Colony app](https://img.shields.io/badge/Colony-system-purple)](https://github.com/Project-Colony/Colony)
+[![Platforms](https://img.shields.io/badge/platforms-linux-lightgrey)](#インストール)
 
 Eidos は、Windows で Mod Organizer 2 が Bethesda のゲームに与えるものを Linux で
 与えます - 起動ごとに作られる、MOD の仮想的な統合ビューを。それを Windows API の
@@ -45,6 +49,39 @@ Steam ──> eidos-gui %command% ──> [ private namespace ]
 - 🛡️ **根拠を示すガード。** プラグイン一覧を壊すクラッシュは、セッション前の
   スナップショットと突き合わせて指摘され、ワンクリックで復元できます。ロード順を
   消してしまう取り込みは拒否され、その理由を表示します。
+
+### 他との比較
+
+| | Eidos | Wine 上の MO2 | Fluorine-Manager | Limo / リンク配置型 |
+|---|---|---|---|---|
+| マネージャがネイティブに動く | ✅ | ❌ Wine の中の Windows アプリ | ✅(Qt 移植) | ✅ |
+| ゲームディレクトリに触れない | ✅ 常に | ✅ | ✅ | ❌ リンクが書き込まれる |
+| マウントが見える範囲 | ゲームだけ | ゲームだけ | **システム全体** | n/a |
+| クラッシュ後の後片付け | 設計上不要 | 不要 | 残留マウントの復旧 | 手動で解除 |
+| root MOD(ENB、プリローダ) | ✅ ネイティブ | プラグインが必要 | プラグインが必要 | 一部 |
+| 必要な権限 | なし | なし | `/etc/fuse.conf` の編集 | なし |
+
+### 速さ
+
+| | 以前 | 現在 |
+|---|---|---|
+| セーブの読み込み | 約 20 秒 | **6-7 秒** |
+| 1 セッションのディレクトリ読み取り | 560 万 | 46.5 万 |
+
+セル移動は即座です。この改善は MOD への問い合わせを減らしたことで得られました。
+ファイルを一つ探すのに以前は五十個すべてを順に問い合わせ、フォルダを一つ列挙する
+のに以前はそれを五十回繰り返していました。どちらももうしません。ベンチマークでは
+なく、普通に遊んでいる実際のインスタンスで計測しています。
+
+### 先行事例と謝辞
+
+- [ModOrganizer2](https://github.com/ModOrganizer2/modorganizer) と
+  [usvfs](https://github.com/ModOrganizer2/usvfs) - Eidos が再現する意味論と、
+  その同等性を突き合わせて調べたコードベース
+- [LOOT](https://loot.github.io/) - 並べ替えのエンジン、libloot 経由
+- [Fluorine-Manager](https://github.com/SulfurNitride/Fluorine-Manager)、
+  [Limo](https://github.com/limo-app/limo) をはじめとする Linux のマネージャ群 -
+  これを解決してほしいコミュニティが存在することの証
 
 ## できること
 
@@ -99,30 +136,56 @@ Steam AppID を与え、Eidos をまったく開かずに統合ビュー越し�
 
 置き換え時の保護、BSA/BA2 内のファイル競合、SKSE の静的診断、生成履歴とその制限については、[整合性チェックと生成ファイル](../../../docs/internals/integrity.md)（英語）を参照してください。
 
-## 他との比較
+### 対応ゲーム
 
-| | Eidos | Wine 上の MO2 | Fluorine-Manager | Limo / リンク配置型 |
-|---|---|---|---|---|
-| マネージャがネイティブに動く | ✅ | ❌ Wine の中の Windows アプリ | ✅(Qt 移植) | ✅ |
-| ゲームディレクトリに触れない | ✅ 常に | ✅ | ✅ | ❌ リンクが書き込まれる |
-| マウントが見える範囲 | ゲームだけ | ゲームだけ | **システム全体** | n/a |
-| クラッシュ後の後片付け | 設計上不要 | 不要 | 残留マウントの復旧 | 手動で解除 |
-| root MOD(ENB、プリローダ) | ✅ ネイティブ | プラグインが必要 | プラグインが必要 | 一部 |
-| 必要な権限 | なし | なし | `/etc/fuse.conf` の編集 | なし |
+**Skyrim SE/AE** - 実際のプレイで実証済み。**Fallout 4** も端から端まで通して
+あります(F4SE の自動差し替え、archive invalidation、アスタリスク方式のロード順、
+LOOT、`.fos` のセーブ) - [guide/fallout4.ja.md](docs/guide/fallout4.md) を
+参照。共通のゲーム記述子で組み込み済み、テスター募集中: Skyrim LE、Skyrim VR、
+Enderal SE、Fallout 3、Fallout NV、Fallout 4(+ VR)、Starfield、Oblivion、
+Morrowind(最後の二つはマウントと MOD 管理はできますが、タイムスタンプ順の
+プラグイン一覧はまだ管理していません)。
 
-## 速さ
+系列の追加は記述子の一行です:
+[internals/adding-games.md](../../internals/adding-games.md)。
 
-| | 以前 | 現在 |
-|---|---|---|
-| セーブの読み込み | 約 20 秒 | **6-7 秒** |
-| 1 セッションのディレクトリ読み取り | 560 万 | 46.5 万 |
+## インストール
 
-セル移動は即座です。この改善は MOD への問い合わせを減らしたことで得られました。
-ファイルを一つ探すのに以前は五十個すべてを順に問い合わせ、フォルダを一つ列挙する
-のに以前はそれを五十回繰り返していました。どちらももうしません。ベンチマークでは
-なく、普通に遊んでいる実際のインスタンスで計測しています。
+### Colony 経由(推奨)
 
-## はじめる
+[Colony](https://github.com/Project-Colony/Colony) で **Eidos** を検索して
+インストールします。更新はランチャー経由で届きます。Colony がインストールするのは
+`eidos-linux` というファイル一つです。これがウィンドウであり、`eidos` という名前の
+リンク経由で呼び出されたときは `eidos` コマンドラインにもなります。NIF モデルの
+プレビューには、下のバンドルにしか含まれないヘルパーが必要です。ない場合は
+プレビューがその旨を表示し、ほかはすべて動きます。インストール後にすること、
+そして Steam をそこへ向ける方法は
+[docs/guide/install.ja.md](docs/guide/install.md#colony-経由) に。
+
+### バイナリを直接ダウンロード
+
+[最新リリース](https://github.com/Project-Colony/Eidos/releases/latest) から
+アセットを取得します:
+
+| アセット | 中身 |
+|---|---|
+| `eidos-linux` | プログラム全体を一つのファイルにしたもの。Colony がインストールするのと同じ |
+| `eidos-linux-bundle.tar.gz` | `eidos`、`eidos-gui`、NIF プレビュー用ヘルパー、アイコン、そしてデスクトップエントリと Nexus のダウンロードハンドラを登録するインストーラ |
+
+まず [コード署名ポリシー](#コード署名ポリシー) に示す方法でダウンロードを検証し、
+そのあと:
+
+```bash
+tar xzf eidos-linux-bundle.tar.gz
+cd eidos-linux-bundle
+./install.sh
+```
+
+インストーラは sudo なしで全部を `~/.local/bin` に入れます。`--system` と
+`--bindir DIR` で別の場所を選べます。どちらのアセットにも、glibc 2.39 以降の
+x86_64 Linux、FUSE(`fusermount3`)、そして MOD 書庫用の 7-Zip が必要です。
+
+### ソースからビルドする
 
 ```bash
 git clone https://github.com/Project-Colony/Eidos && cd Eidos
@@ -130,19 +193,25 @@ just build
 just install
 ```
 
-あとはゲームの Steam 起動オプションを `~/.local/bin/eidos-gui %command%` にして、
-「プレイ」を押します。
+Rust 1.89 以降が必要です(CI が検査する `rust-version`。CI とリリースは 1.99.0 で
+ビルドしています)。さらに NIF プレビュー用ヘルパーのために `just`、CMake 3.20
+以降、C++17 コンパイラが要ります。Arch のパッケージは `packaging/PKGBUILD` から
+ビルドします。前提条件と `just` を使わないコマンドは
+[docs/guide/install.ja.md](docs/guide/install.md) に。
 
-Arch のパッケージとリリースの書庫、先に入れておくもの、CLI の道筋は
-**[docs/guide/install.ja.md](docs/guide/install.md)** に。
+### Steam の起動オプション
 
-## Steam の起動オプション
-
-たいていの環境はこの基本の一行だけで足ります。
+Eidos はゲームの起動コマンド*として*動きます。だからこそゲームが始まる前に
+マウントできます。たいていの環境はこの基本の一行だけで足ります。インストール先の
+絶対パスで書いてください(Steam はあなたの `PATH` を読みません):
 
 ```
 ~/.local/bin/eidos-gui %command%
 ```
+
+Colony からの場合、そのパスは `~/.local/share/Colony/apps/Eidos/eidos-linux` です。
+あとは「プレイ」を押します。Eidos はそのゲームのインスタンスで開き、Run で
+ゲームが統合ビュー越しに起動します。
 
 それ以外はすべて、その前に積む環境変数です。自由に組み合わせられます。
 
@@ -169,23 +238,13 @@ PROTON_ENABLE_NVAPI=1 ~/.local/bin/eidos-gui %command%
 切り分けトグル、`EIDOS_FUSE_PASSTHROUGH` が既定で無効な理由)は
 [guide/troubleshooting.ja.md](docs/guide/troubleshooting.md) に。
 
-## 次に読むもの
+## ドキュメント
 
-| やりたいこと | |
-|---|---|
-| インストールする | [guide/install.ja.md](docs/guide/install.md) |
-| CLI と GUI を覚える | [guide/usage.ja.md](docs/guide/usage.md) |
-| xEdit、BodySlide、DynDOLOD を設定する | [guide/tools.ja.md](docs/guide/tools.md) |
-| Fallout 4 を遊ぶ(F4SE、バージョン、NVIDIA の debris クラッシュ) | [guide/fallout4.ja.md](docs/guide/fallout4.md) |
-| DLSS / フレーム生成を動かす(Community Shaders) | [guide/graphics.ja.md](docs/guide/graphics.md) |
-| おかしいところを直す | [guide/troubleshooting.ja.md](docs/guide/troubleshooting.md) |
-| なぜ速いのかを知り、自分で確かめる | [internals/performance.md](../../internals/performance.md) |
-| 内部の仕組みを理解する | [internals/architecture.md](../../internals/architecture.md) |
-| ビルドする、テストする、貢献する | [internals/contributing.md](../../internals/contributing.md) |
-| そもそもなぜ存在するのかを知る | [project/landscape.md](../../project/landscape.md) |
-
-言語はディレクトリ一つです。`docs/i18n/ja/` はリポジトリのルートを写しているので、
-翻訳ページ同士のリンクは、その英語原文同士のリンクとまったく同じ文字列になります。
+すべては [docs/](../../../docs/) にあり、読む人ごとに
+[docs/README.ja.md](docs/README.md) で索引されています: ユーザーガイド
+(インストール、CLI と GUI、xEdit や DynDOLOD などのツール、グラフィックス、
+トラブルシューティング)、Eidos の内部の仕組み、そしてなぜ存在するのか。
+セキュリティ方針と脆弱性の報告方法: [SECURITY.md](../../../SECURITY.md)。
 
 ## 言語
 
@@ -218,32 +277,90 @@ PROTON_ENABLE_NVAPI=1 ~/.local/bin/eidos-gui %command%
 なった翻訳はそのまま置かず、**削除します**。古びたページはそれでも権威ありげに
 見え、先月のコマンドを配ってしまい、英語へ送られるより読者にとって悪いからです。
 
-言語の追加はファイル四つとこの表の行一つです。手順は
-[`docs/internals/contributing.md`](../../internals/contributing.md) に。
+言語はディレクトリ一つです。`docs/i18n/<lang>/` はリポジトリのルートを写して
+いるので、`docs/i18n/de/docs/guide/install.md` はドイツ語版の
+`docs/guide/install.md` です - だからこそ翻訳ページ同士のリンクは、その英語原文
+同士のリンクとまったく同じ文字列になり、言語の廃止は `rm -r` 一回で済みます。
 
-## 対応ゲーム
+## コード署名ポリシー
 
-**Skyrim SE/AE** - 実際のプレイで実証済み。**Fallout 4** も端から端まで通して
-あります(F4SE の自動差し替え、archive invalidation、アスタリスク方式のロード順、
-LOOT、`.fos` のセーブ) - [guide/fallout4.ja.md](docs/guide/fallout4.md) を
-参照。共通のゲーム記述子で組み込み済み、テスター募集中: Skyrim LE、Skyrim VR、
-Enderal SE、Fallout 3、Fallout NV、Fallout 4(+ VR)、Starfield、Oblivion、
-Morrowind(最後の二つはマウントと MOD 管理はできますが、タイムスタンプ順の
-プラグイン一覧はまだ管理していません)。
+リリースのアセットはすべて、開発者のマシンではなく CI の中で、Project Colony
+という組織によって署名されます。リリースページでは各アセットの隣に次のものが
+あります:
 
-系列の追加は記述子の一行です:
-[internals/adding-games.md](../../internals/adding-games.md)。
+| ファイル | 中身 |
+|---|---|
+| `<asset>.sig` | 組織のリリース鍵で作った、アセットに対する ed25519 署名 |
+| `<asset>.meta` | アセットを、そのファイル名、sha256、リリースのバージョンに結びつける三行 |
+| `<asset>.meta.sig` | `.meta` に対する ed25519 署名 |
 
-## 先行事例と謝辞
+秘密鍵は組織のシークレットで、共有の
+[sign-and-publish ワークフロー](https://github.com/Project-Colony/Project-Colony-Resources/blob/main/.github/workflows/sign-and-publish.yml)
+が、何もビルドしないジョブの中でだけ使います。Eidos をコンパイルするジョブが
+それを目にすることはありません。Colony は Eidos をインストールまたは更新する前に
+三つのファイルすべてを検証し、インストール済みのものより古いリリースは拒否します。
+ダウンロードを自分で検証するには、OpenSSL 3 で次のようにします(どのアセットにも
+同じコマンドが使えます):
 
-- [ModOrganizer2](https://github.com/ModOrganizer2/modorganizer) と
-  [usvfs](https://github.com/ModOrganizer2/usvfs) - Eidos が再現する意味論と、
-  その同等性を突き合わせて調べたコードベース
-- [LOOT](https://loot.github.io/) - 並べ替えのエンジン、libloot 経由
-- [Fluorine-Manager](https://github.com/SulfurNitride/Fluorine-Manager)、
-  [Limo](https://github.com/limo-app/limo) をはじめとする Linux のマネージャ群 -
-  これを解決してほしいコミュニティが存在することの証
+```bash
+cat > colony-release.pub <<'EOF'
+-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEARNjg3Nn8H6/aBg1unwGjkUTcrdTxERNefVaqU8cFu0s=
+-----END PUBLIC KEY-----
+EOF
+a=eidos-linux
+openssl pkeyutl -verify -pubin -inkey colony-release.pub -rawin -in "$a" -sigfile "$a.sig"
+openssl pkeyutl -verify -pubin -inkey colony-release.pub -rawin -in "$a.meta" -sigfile "$a.meta.sig"
+cat "$a.meta"     # version=<tag>, asset=<file name>, sha256=<digest>
+sha256sum "$a"    # the digest must equal the sha256 line
+```
+
+リリースのビルド、署名、公開の方法:
+[design/releases.md](https://github.com/Project-Colony/Project-Colony-Resources/blob/main/design/releases.md#5-signing)。
+
+## プライバシー
+
+Eidos はテレメトリも、利用状況の分析も、クラッシュレポートも送りません。この表に
+あるサーバ以外には接続せず、それも表に書かれた操作のときだけです。**Offline**
+モード(Preferences -> Nexus)は Nexus へのあらゆる接続を止めます。
+
+| データ | 保存か送信か | 場所と理由 |
+|---|---|---|
+| 環境設定、インスタンスの一覧、ゲームとアドオンの定義 | 保存 | `~/.config/Colony/Eidos/` |
+| インスタンス、ダウンロードしたランタイム、セッションログ | 保存 | `~/.local/share/Colony/Eidos/`、またはポータブルインスタンス用に選んだフォルダ |
+| LOOT のマスターリスト | 保存 | `~/.cache/Colony/Eidos/loot/` |
+| Nexus へのサインイン | 送信 | サインインするとブラウザで `users.nexusmods.com` が開き、その結果は、Eidos がそのサインインのためだけに `127.0.0.1` で開くリスナーへ返されます。Eidos はそれを `users.nexusmods.com/oauth/token` でトークンと交換し、Nexus がトークンの署名に使う公開鍵を取得します。[Nexus Mods のプライバシーポリシー](https://help.nexusmods.com/article/20-privacy-policy) |
+| Nexus の認証情報 | 保存 | アクセストークンとリフレッシュトークンを、モード 0600 の `~/.config/Colony/Eidos/nexus.ini` に。以前の Eidos がそこに書いた `api_key=` の行は残されますが、読まれることはありません。消してもかまいません。 |
+| Nexus へのリクエスト | 送信 | Nexus の機能を使うときに `api.nexusmods.com` へ: アカウント名とプレミアムの状態、MOD とファイルの詳細、更新確認、コレクション、ダウンロードリンク。どのリクエストもアクセストークンを伴い、Eidos とそのバージョンを名乗ります。 |
+| Nexus からのダウンロード | 送信 | 要求したファイルを、ダウンロードリンクが示す Nexus の CDN ホストから取得し、インスタンスのダウンロードフォルダに、それぞれの隣に MO2 形式の `.meta` を添えて保存します。 |
+| `nxm://` リンク | 保存 | `eidos nxm --register`(`install.sh` が代わりに実行します)が `~/.local/share/applications/eidos-nxm.desktop` を書き、`xdg-mime` でそれを `nxm://` のハンドラにします。これでサイトの Mod Manager Download ボタンがリンクを Eidos に渡します。Arch のパッケージは同じエントリをシステム全体にインストールします。 |
+| LOOT のマスターリスト | 送信 | `raw.githubusercontent.com/loot/...` から、そのゲームで初めて LOOT の並べ替えをするときと、更新を求めたときに。あなたのものは何も送られません。[GitHub のプライバシーステートメント](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement) |
+| ツールのランタイム | 送信 | ツールの前提条件をインストールするときか、MOD がそれを必要とするときだけ: `builds.dotnet.microsoft.com` からの .NET ランタイム(Eidos に組み込まれた SHA-256 と一致しなければ拒否されます)、そして `winetricks`。これはゲームの Proton プレフィックスにインストールするもの(Visual C++ と .NET の再頒布可能パッケージ)を、Microsoft や winetricks が使うほかのホストからダウンロードします。[Microsoft のプライバシーに関する声明](https://www.microsoft.com/en-us/privacy/privacystatement) |
+| セッションログ | 保存 | `~/.local/share/Colony/Eidos/logs/`、モード 0600。インスタンスごとに十セッション、30 日で掃除されます。ホームフォルダは `~`、ユーザー名は `<user>` と書かれるので、ログはそのまま issue に貼れます。あなたが送らない限り、マシンの外へ出ることはありません。 |
+| ショートカット | 保存 | `install.sh` が `eidos.desktop` とそのアイコンを `~/.local/share` の下に書きます。自分で作ったツールのショートカットは `~/.local/share/applications` に入ります。 |
+| 開いたリンク | どちらでもない | MOD のページなどのリンクは、`xdg-open` を通じてあなた自身のブラウザで開きます。 |
+| アドオン | どちらでもない | インストールした拡張は、あなたのマシン上で独立したプログラムとして動きます。それが何をするかは、その拡張次第です。 |
 
 ## ライセンス
 
-Eidos のオリジナルコードは GPL-3.0-or-later です。同梱の OMOD 移植コードは GPL-3.0-only です。[元の作者へのクレジット](../../../crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md)を参照してください。NIF ヘルパーは[各コンポーネントのライセンスとクレジット](../../../native/eidos-nif-preview/UPSTREAM.md)を保持しています。MOD 管理はみんなのものです。
+Eidos のオリジナルコードは GPL-3.0-or-later です。[LICENSE](../../../LICENSE) を
+参照してください。次の部分は「or later」の選択肢のない GPL-3.0 です:
+
+- `eidos-install` 内の OMOD スクリプト移植コード。
+  [元の作者へのクレジット](../../../crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md)を参照;
+- 同梱の nifly ライブラリの上に作られた `eidos-nif-preview` ヘルパー。
+  [各コンポーネントのライセンスとクレジット](../../../crates/eidos-nif-preview/UPSTREAM.md)を参照;
+- ロード順のコードがリンクする `esplugin` と `libloadorder` の各クレート。
+  これらは `GPL-3.0` を宣言しています。
+
+バイナリに含まれるその他の Rust クレートは、それぞれのライセンス(MIT、
+Apache-2.0、BSD など)を保ちます。リリースバンドルは、すべてのクレートとその
+ライセンスの索引とともに、それらの告知を `licenses/crates/` に収めています。
+
+バイナリにはさらに、Microsoft DirectX の正規の再頒布可能 DLL が八つ
+(`d3dcompiler_47`、`d3dcompiler_43`、`d3dx9_43`、`d3dx11_43` の 32 ビット版と
+64 ビット版)埋め込まれており、MOD やツールが必要とするときに Eidos がゲームの
+プレフィックスへ配置します。これらは Microsoft の再頒布条件のもとにあります。
+[入手元の記録](../../../crates/eidos-gamefeatures/assets/PROVENANCE.md)を参照してください。
+
+MOD 管理はみんなのものです。
