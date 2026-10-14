@@ -691,7 +691,7 @@ mod tests {
         )
         .unwrap();
         let mods = vec![("Higher".into(), high.clone()), ("Lower".into(), low)];
-        let game = eidos_gamedef::GAMES
+        let game = eidos_gamedef::builtin()
             .iter()
             .find(|g| g.id == "skyrimse")
             .unwrap();
@@ -719,7 +719,7 @@ mod tests {
         std::fs::create_dir_all(root.join("Data/SKSE/Plugins")).unwrap();
         std::fs::write(root.join("Data/SKSE/Plugins/Test.dll"), fixture()).unwrap();
         std::fs::write(root.join("SkyrimSE.exe"), fixture()).unwrap();
-        let game = eidos_gamedef::GAMES
+        let game = eidos_gamedef::builtin()
             .iter()
             .find(|g| g.id == "skyrimse")
             .unwrap();
@@ -731,7 +731,7 @@ mod tests {
             &root.join("overwrite"),
         );
         assert!(found.iter().any(|d| d.code == "skse_metadata_unverified"));
-        let game = eidos_gamedef::GAMES
+        let game = eidos_gamedef::builtin()
             .iter()
             .find(|g| g.id == "fallout4")
             .unwrap();

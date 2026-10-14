@@ -10,8 +10,9 @@
 //!   the one `eidos nexus status` sees. Personal API keys are not supported; an
 //!   `api_key=` line left by an older version is kept but never read.
 //! - `~/.config/Colony/Eidos/settings.ini` holds the rest of the app-global
-//!   preferences (theme, default game id, last window size), none of which is
-//!   secret.
+//!   preferences (default game id, last window size, tools folder), none of
+//!   which is secret. The window's look (theme, fonts, text size) is the GUI's
+//!   own `preferences.json` beside it.
 //!
 //! Everything here is process-global, not per-instance: per-instance state lives
 //! in the instance manifest (`manifest.rs`) instead.
@@ -257,7 +258,8 @@ fn render_nexus_creds(existing: &str, creds: &NexusCreds) -> String {
 }
 
 /// `~/.config/Colony/Eidos/settings.ini`, holding the non-secret app-global
-/// preferences (theme, default game, last window size).
+/// preferences (default game, last window size, tools folder). The window's
+/// look lives beside it in `preferences.json`.
 pub fn settings_path() -> PathBuf {
     config_home().join("settings.ini")
 }
@@ -269,27 +271,6 @@ pub fn settings_path() -> PathBuf {
 // promise this type cannot keep.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
-    /// The color theme to render in.
-    /// The theme family, either `eidos` for this program's own parchment or one
-    /// of the 25 in the shared Colony catalogue.
-    ///
-    /// This replaces a `theme = system | light | dark` key that had never done
-    /// anything: the GUI's `theme()` ignored its argument, so all three choices
-    /// drew the same parchment. An old file's `theme=` is simply an unknown key
-    /// now, which the parser ignores - so an upgrade leaves everybody on the
-    /// parchment, which is what they were looking at whatever they had picked.
-    pub theme_family: String,
-    /// The variant within the family.
-    pub theme_variant: String,
-    /// The accent override the user picked, or `None` for the theme's own.
-    ///
-    /// Never stores a colour, only a key: "auto" is the ABSENCE of an override,
-    /// not a value, and writing a resolved colour here would freeze it against
-    /// the theme it was resolved from.
-    pub accent: Option<String>,
-    /// Boost the separation between surfaces and text, on any palette. Derived
-    /// from the active theme rather than shipped as a second palette.
-    pub high_contrast: bool,
     /// The game id to open by default when none is given (e.g. `skyrimse`).
     pub default_game: Option<String>,
     /// The last window size in logical pixels, `(width, height)`.
@@ -309,14 +290,6 @@ pub struct Settings {
     /// the right pane's tab strip runs out of room and "Diagnostics (2)" gets
     /// clipped on a narrow window, with no way to give it more.
     pub split: f32,
-    /// Whether the window animates at all (on by default).
-    ///
-    /// Named for what it controls rather than for the preference that usually
-    /// turns it off: the Colony convention calls this Accessibility -> Motion,
-    /// and requires that a program which animates can be told not to. Off means
-    /// every animated value jumps straight to its target - not a faster
-    /// animation, none - and the frame timer is never even subscribed.
-    pub motion: bool,
     /// Restore the window to its last size on launch (on by default). Off means
     /// the size is neither read nor written, so the compositor decides.
     pub remember_window: bool,
@@ -350,12 +323,6 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Settings {
-            // The look this program has always worn. An upgrade must not repaint
-            // anybody's window.
-            theme_family: "eidos".to_string(),
-            theme_variant: "parchment".to_string(),
-            accent: None,
-            high_contrast: false,
             default_game: None,
             window_size: None,
             // MO2 defaults `lock_gui` to true, and an absent key means "on".
@@ -363,7 +330,6 @@ impl Default for Settings {
             retain_install_backup: false,
             drag_scroll_speed: 1.0,
             split: 0.6,
-            motion: true,
             remember_window: true,
             offline: false,
             tools_dir: None,
@@ -443,16 +409,6 @@ impl Settings {
             };
             let v = v.trim();
             match k.trim() {
-                "theme_family" if !v.is_empty() => s.theme_family = v.to_string(),
-                "theme_variant" if !v.is_empty() => s.theme_variant = v.to_string(),
-                // An empty value is meaningful: it is how "no override" is
-                // written back, and it must read as None rather than as an
-                // accent named "".
-                "accent" => s.accent = (!v.is_empty()).then(|| v.to_string()),
-                "high_contrast" => {
-                    s.high_contrast =
-                        matches!(v.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on")
-                }
                 "default_game" if !v.is_empty() => s.default_game = Some(v.to_string()),
                 "window_width" => width = v.parse().ok(),
                 "window_height" => height = v.parse().ok(),
@@ -523,15 +479,6 @@ impl Settings {
                         "false" | "0" | "no" | "off"
                     )
                 }
-                // On unless explicitly off, like lock_gui. A user who has never
-                // heard of this key gets the animations; one who wrote
-                // `motion=off` gets a window that never moves on its own.
-                "motion" => {
-                    s.motion = !matches!(
-                        v.to_ascii_lowercase().as_str(),
-                        "false" | "0" | "no" | "off"
-                    )
-                }
                 _ => {}
             }
         }
@@ -547,20 +494,13 @@ impl Settings {
     /// Render these settings as a `settings.ini` body. Split out for unit tests.
     pub fn to_ini(&self) -> String {
         let mut out = format!(
-            "[eidos]\ntheme_family={}\ntheme_variant={}\nhigh_contrast={}\nlock_gui={}\ndrag_scroll_speed={}\nsplit={}\nmotion={}\nremember_window={}\n",
-            self.theme_family,
-            self.theme_variant,
-            self.high_contrast,
+            "[eidos]\nlock_gui={}\ndrag_scroll_speed={}\nsplit={}\nremember_window={}\n",
             self.lock_gui,
             self.drag_scroll_speed,
             self.split,
-            self.motion,
             self.remember_window
         );
         out.push_str(&format!("retain_install_backup={}\n", self.retain_install_backup));
-        if let Some(a) = &self.accent {
-            out.push_str(&format!("accent={a}\n"));
-        }
         if self.offline {
             out.push_str("offline=true\n");
         }
@@ -793,54 +733,19 @@ mod tests {
         let _ = fs::remove_file(&path);
     }
 
-    /// The default is Eidos's own parchment, so an upgrade repaints nobody's
-    /// window - whatever they had picked, the parchment is what they saw.
+    /// The look moved to `preferences.json`, which the window owns. The keys an
+    /// older build wrote are left on disk for the window to migrate from, and
+    /// are no longer read or written here.
     #[test]
-    fn the_default_theme_is_eidoss_own() {
-        let s = Settings::default();
-        assert_eq!(s.theme_family, "eidos");
-        assert_eq!(s.theme_variant, "parchment");
-        assert_eq!(s.accent, None);
-        assert!(!s.high_contrast);
-
-        // And a file that predates all four keys lands there too.
-        let old = Settings::parse("[eidos]\ntheme=dark\nlock_gui=true\n");
-        assert_eq!(old.theme_family, "eidos");
-        assert_eq!(old.accent, None);
-    }
-
-    #[test]
-    fn a_theme_choice_survives_the_file() {
-        let s = Settings {
-            theme_family: "kanagawa".to_string(),
-            theme_variant: "journal".to_string(),
-            accent: Some("violet".to_string()),
-            high_contrast: true,
-            ..Settings::default()
-        };
-        let back = Settings::parse(&s.to_ini());
-        assert_eq!(back.theme_family, "kanagawa");
-        assert_eq!(back.theme_variant, "journal");
-        assert_eq!(back.accent.as_deref(), Some("violet"));
-        assert!(back.high_contrast);
-    }
-
-    /// "Auto" is the ABSENCE of an override, never a colour and never a key
-    /// named for one. An accent that is unset must not come back as `Some("")`.
-    #[test]
-    fn no_accent_is_none_and_not_an_empty_name() {
-        let s = Settings {
-            accent: None,
-            ..Settings::default()
-        };
-        let ini = s.to_ini();
-        assert!(
-            !ini.contains("accent="),
-            "an absent accent must not be written"
+    fn the_old_appearance_keys_are_no_longer_settings() {
+        let old = Settings::parse(
+            "[eidos]\ntheme_family=nord\ntheme_variant=dark\naccent=green\nhigh_contrast=true\nmotion=off\nlock_gui=false\n",
         );
-        assert_eq!(Settings::parse(&ini).accent, None);
-        // And an empty value on disk reads as no override, not as an accent.
-        assert_eq!(Settings::parse("accent=\n").accent, None);
+        assert!(!old.lock_gui, "the keys beside them still load");
+        let ini = old.to_ini();
+        for key in ["theme_family", "theme_variant", "accent", "high_contrast", "motion"] {
+            assert!(!ini.contains(&format!("{key}=")), "{key} was written back");
+        }
     }
 
     #[test]
@@ -851,17 +756,12 @@ mod tests {
             preferred_servers: Vec::new(),
             mod_columns: None,
             tools_dir: None,
-            theme_family: "gruvbox".to_string(),
-            theme_variant: "dark".to_string(),
-            accent: Some("green".to_string()),
-            high_contrast: true,
             default_game: Some("skyrimse".to_string()),
             window_size: Some((1280, 720)),
             lock_gui: false,
             retain_install_backup: true,
             drag_scroll_speed: 1.0,
             split: 0.6,
-            motion: false,
             remember_window: false,
         };
         let parsed = Settings::parse(&s.to_ini());
@@ -871,7 +771,7 @@ mod tests {
     #[test]
     fn settings_round_trip_minimal() {
         let s = Settings {
-            theme_family: "nord".to_string(),
+            default_game: Some("fallout4".to_string()),
             ..Settings::default()
         };
         let parsed = Settings::parse(&s.to_ini());
@@ -896,32 +796,6 @@ mod tests {
             ..Settings::default()
         };
         assert_eq!(Settings::parse(&s.to_ini()).split, 0.42);
-    }
-
-    /// On unless told otherwise, and only an explicit off turns it off. A user
-    /// who has never heard of the key must get the animations; the key exists
-    /// for the one who does not want them.
-    #[test]
-    fn motion_is_on_unless_explicitly_refused() {
-        assert!(Settings::default().motion);
-        assert!(Settings::parse("").motion);
-        assert!(Settings::parse("motion=true\n").motion);
-
-        for off in ["false", "0", "no", "off", "OFF", "No"] {
-            assert!(
-                !Settings::parse(&format!("motion={off}\n")).motion,
-                "{off} should have turned motion off"
-            );
-        }
-        // Anything else is not an off switch. Nonsense leaves it on rather than
-        // silently stopping the window from animating.
-        assert!(Settings::parse("motion=maybe\n").motion);
-
-        let s = Settings {
-            motion: false,
-            ..Settings::default()
-        };
-        assert!(!Settings::parse(&s.to_ini()).motion);
     }
 
     #[test]
@@ -968,9 +842,7 @@ mod tests {
         let text =
             "[eidos]\ntheme=dark\nbogus_key=whatever\nno-equals-sign\ndefault_game=fallout4\n";
         let s = Settings::parse(text);
-        // `theme=dark` joins the unknown keys: it named a setting that never
-        // changed a pixel, and nothing reads it now.
-        assert_eq!(s.theme_family, "eidos");
+        assert!(!s.to_ini().contains("theme"));
         assert_eq!(s.default_game.as_deref(), Some("fallout4"));
     }
 
@@ -1011,17 +883,12 @@ mod tests {
             preferred_servers: Vec::new(),
             mod_columns: None,
             tools_dir: None,
-            theme_family: "gruvbox".to_string(),
-            theme_variant: "dark".to_string(),
-            accent: Some("green".to_string()),
-            high_contrast: true,
             default_game: Some("starfield".to_string()),
             window_size: Some((1600, 900)),
             lock_gui: false,
             retain_install_backup: true,
             drag_scroll_speed: 1.0,
             split: 0.6,
-            motion: false,
             remember_window: false,
         };
         fs::write(&path, s.to_ini()).unwrap();

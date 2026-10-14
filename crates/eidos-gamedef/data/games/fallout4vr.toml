@@ -1,0 +1,28 @@
+id = "fallout4vr"
+name = "Fallout 4 VR"
+short_name = "Fallout4VR"
+nexus_game = "fallout4"
+steam_app_id = 611660
+data_dir = "Data"
+documents_dir = "Fallout4VR"
+ini_files = ["Fallout4.ini", "Fallout4Prefs.ini", "Fallout4Custom.ini"]
+load_order = "Asterisk"
+primary_plugins = ["Fallout4.esm"]
+game_binary = "Fallout4VR.exe"
+registry_name = "Fallout 4 VR"
+script_extender = { launcher = "Fallout4VRLauncher.exe", loader = "f4sevr_loader.exe" }
+
+# Every xEdit release ships the editor and its QuickAutoClean twin, and the twin
+# is what cleans the dirty edits LOOT warns about. PGPatcher makes a mixed
+# texture setup use the right shaders (its argument: eidos_instance::default_args).
+[[known_tools]]
+exe = "FO4VREdit.exe"
+title = "FO4VREdit"
+
+[[known_tools]]
+exe = "FO4VREditQuickAutoClean.exe"
+title = "FO4VREdit QuickAutoClean"
+
+[[known_tools]]
+exe = "PGPatcher.exe"
+title = "PGPatcher"

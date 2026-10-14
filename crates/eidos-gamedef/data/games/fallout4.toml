@@ -1,0 +1,28 @@
+id = "fallout4"
+name = "Fallout 4"
+short_name = "Fallout4"
+nexus_game = "fallout4"
+steam_app_id = 377160
+data_dir = "Data"
+documents_dir = "Fallout4"
+ini_files = ["Fallout4.ini", "Fallout4Prefs.ini", "Fallout4Custom.ini"]
+load_order = "Asterisk"
+primary_plugins = ["Fallout4.esm"]
+game_binary = "Fallout4.exe"
+registry_name = "Fallout4"
+script_extender = { launcher = "Fallout4Launcher.exe", loader = "f4se_loader.exe" }
+
+# Every xEdit release ships the editor and its QuickAutoClean twin, and the twin
+# is what cleans the dirty edits LOOT warns about. PGPatcher makes a mixed
+# texture setup use the right shaders (its argument: eidos_instance::default_args).
+[[known_tools]]
+exe = "FO4Edit.exe"
+title = "FO4Edit"
+
+[[known_tools]]
+exe = "FO4EditQuickAutoClean.exe"
+title = "FO4Edit QuickAutoClean"
+
+[[known_tools]]
+exe = "PGPatcher.exe"
+title = "PGPatcher"

@@ -13,7 +13,7 @@ fn validate_sources(sources: &Sources) -> Result<(), String> {
     if sources.iter().any(|(path, identity)| {
         !eidos_conflicts::archive_identity(path).is_ok_and(|current| current == *identity)
     }) {
-        Err("Archives changed during analysis. Refresh to retry.".into())
+        Err(t("archc_changed").into())
     } else {
         Ok(())
     }
@@ -135,10 +135,7 @@ pub(crate) fn schedule_archive_conflicts(app: &mut App) {
             if let Some((text, _)) = eidos_instance::read_text_lossy(&path) {
                 texts.push(text)
             } else {
-                warnings.push(format!(
-                    "Could not read enabled INI tweak {}.",
-                    path.display()
-                ));
+                warnings.push(tf("archc_tweak_unreadable", &[("path", &path.display())]));
             }
         }
         let loose = ConflictMap::build_from(&parts);
@@ -206,7 +203,7 @@ pub(crate) fn poll_archive_conflicts(app: &mut App) {
         Ok(v) => Some(v),
         Err(TryRecvError::Empty) => None,
         Err(TryRecvError::Disconnected) => Some(Err(
-            "Archive analysis worker stopped without a result. Refresh to retry.".into(),
+            t("archc_worker_stopped").into(),
         )),
     };
     let Some(result) = result else { return };
@@ -314,10 +311,7 @@ pub(crate) fn archive_ini_texts(
     for path in paths {
         match eidos_instance::read_text_lossy(&path) {
             Some((text, _)) => texts.push(text),
-            None => warnings.push(format!(
-                "Could not read archive configuration {}.",
-                path.display()
-            )),
+            None => warnings.push(tf("archc_config_unreadable", &[("path", &path.display())])),
         }
     }
     (texts, warnings)
@@ -327,7 +321,7 @@ pub(crate) fn provider_label(map: &ConflictMap, p: &eidos_conflicts::AssetProvid
     match (&p.archive, &p.plugin) {
         (Some(a), Some(plugin)) => format!("{} / {a} / {plugin}", map.name(p.origin)),
         (Some(a), None) => format!("{} / {a} / INI", map.name(p.origin)),
-        (None, _) => format!("{} / loose", map.name(p.origin)),
+        (None, _) => format!("{} / {}", map.name(p.origin), t("archc_loose")),
     }
 }
 
@@ -358,17 +352,17 @@ pub(crate) fn archive_member_rows<'a>(
     {
         let mut row = Column::new()
             .spacing(3)
-            .push(text(node.display_path.clone()).size(11.0));
+            .push(text(node.display_path.clone()).size(sz(11)));
         for (index, provider) in std::iter::once(&node.winner)
             .chain(&node.alternatives)
             .enumerate()
         {
             let label = if node.precedence_uncertain {
-                "Unresolved"
+                t("archc_unresolved")
             } else if index == 0 {
-                "Winner"
+                t("archc_winner")
             } else {
-                "Alternative"
+                t("archc_alternative")
             };
             let action = |export| Message::ArchiveProviderAction {
                 epoch: app.archive_completed_epoch.unwrap_or_default(),
@@ -382,14 +376,14 @@ pub(crate) fn archive_member_rows<'a>(
                     .spacing(6)
                     .push(
                         text(format!("{label}: {}", provider_label(map, provider)))
-                            .size(10.0)
+                            .size(sz(10))
                             .width(Length::Fill),
                     )
                     .push(
-                        button(text("Preview").size(10.0))
+                        button(text(t("installer_preview")).size(sz(10)))
                             .on_press_maybe(active.then(|| action(false))),
                     )
-                    .push(button(text("Export").size(10.0)).on_press_maybe(
+                    .push(button(text(t("archc_export")).size(sz(10))).on_press_maybe(
                         (active && provider.archive.is_some()).then(|| action(true)),
                     )),
             );
@@ -399,25 +393,24 @@ pub(crate) fn archive_member_rows<'a>(
     let header = Row::new()
         .spacing(6)
         .push(
-            text(format!(
-                "Archive member conflicts: {count} · page {}/{}",
-                page + 1,
-                pages
+            text(tf(
+                "archc_heading",
+                &[("n", &count), ("page", &(page + 1)), ("pages", &pages)],
             ))
-            .size(12.0),
+            .size(sz(12)),
         )
         .push(
-            button(text("Previous")).on_press_maybe(page.checked_sub(1).map(Message::ArchivePage)),
+            button(text(t("archc_previous"))).on_press_maybe(page.checked_sub(1).map(Message::ArchivePage)),
         )
         .push(
-            button(text("Next"))
+            button(text(t("wizard_next")))
                 .on_press_maybe((page + 1 < pages).then_some(Message::ArchivePage(page + 1))),
         );
     Column::new()
         .spacing(4)
         .push(header)
         .push(
-            text_input("Filter archive member paths", &app.archive_filter)
+            text_input(t("archc_filter"), &app.archive_filter)
                 .on_input(Message::ArchiveFilterChanged),
         )
         .push(scrollable(rows).height(Length::Fill))
@@ -460,7 +453,7 @@ pub(crate) fn resolve_provider(
 ) -> Result<ProviderSource, String> {
     let layer = conflict_layers(app)
         .and_then(|layers| layers.into_iter().find(|l| l.origin == provider.origin))
-        .ok_or("The selected provider is no longer enabled")?;
+        .ok_or(t("archc_provider_disabled"))?;
     let relative = provider.archive.as_deref().unwrap_or(member);
     // Winning map paths already retain their physical spelling. Only losing
     // providers need the cached spelling fallback.
@@ -486,7 +479,7 @@ pub(crate) fn resolve_provider(
                 })?;
             resolve_in_mod(&layer.root, &actual).filter(|p| p.is_file())
         })
-        .ok_or("The selected provider is no longer present. Refresh the file list.")?;
+        .ok_or(t("archc_provider_gone"))?;
     if provider.archive.is_none() {
         return Ok(ProviderSource::Loose(path));
     }
@@ -495,7 +488,7 @@ pub(crate) fn resolve_provider(
         .get(&path)
         .cloned()
         .filter(|i| eidos_conflicts::archive_identity(&path).is_ok_and(|current| current == *i))
-        .ok_or("The archive changed since it was scanned. Refresh before reading it.")?;
+        .ok_or(t("archc_archive_changed"))?;
     Ok(ProviderSource::Archive(MemberSource {
         path,
         member: member.into(),
@@ -518,7 +511,7 @@ pub(crate) fn provider_action(
             .and_then(|m| m.asset_files.get(&member.to_ascii_lowercase()))
             .is_some_and(|node| node.winner == provider || node.alternatives.contains(&provider));
     if !valid {
-        app.status = Some("Archive analysis changed. Refresh before selecting a provider.".into());
+        app.status = Some(t("archc_analysis_changed").into());
         return Task::none();
     }
     let source = match resolve_provider(app, &member, &provider) {
@@ -548,7 +541,7 @@ pub(crate) fn provider_action(
     });
     Task::perform(
         rfd::AsyncFileDialog::new()
-            .set_title("Export archive member")
+            .set_title(t("archc_export_title"))
             .set_file_name(name)
             .save_file(),
         move |picked| Message::ArchiveExportDestination(id, picked.map(|h| h.path().to_path_buf())),
@@ -566,7 +559,7 @@ pub(crate) fn export_destination(
     if request.target != current_target(app) {
         app.archive_export = None;
         app.status =
-            Some("Export cancelled because the active profile or installation changed.".into());
+            Some(t("archc_export_cancelled").into());
         return Task::none();
     }
     let Some(destination) = destination else {
@@ -596,19 +589,20 @@ pub(crate) fn export_finished(app: &mut App, id: u64, result: Result<PathBuf, St
     }
     app.archive_export = None;
     app.status = Some(match result {
-        Ok(path) => format!("Archive member exported to {}", path.display()),
-        Err(error) => format!("Archive export failed: {error}"),
+        Ok(path) => tf("archc_exported", &[("path", &path.display())]),
+        Err(error) => tf("archc_export_failed", &[("error", &error)]),
     });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::*;
 
     #[test]
     fn failed_scans_do_not_certify_old_archive_providers() {
         for failure in ["disconnected", "changed_during_scan", "changed_after_send"] {
-            let (mut app, root) = crate::tests::data_app(&[("old.bsa", "archive")], &[]);
+            let (mut app, root) = crate::test_support::data_app(&[("old.bsa", "archive")], &[]);
             let mut map = compute_conflicts(&app).unwrap();
             let loose_count = map.files.len();
             map.asset_mods = map.mods.clone();
@@ -671,5 +665,323 @@ mod tests {
             );
             fs::remove_dir_all(root).unwrap();
         }
+    }
+
+    fn archive_bsa_fixture() -> Vec<u8> {
+        let folder = b"textures\0";
+        let name = b"shared.dds\0";
+        let record = 60 + 1 + folder.len();
+        let names = record + 16;
+        let payload = names + name.len();
+        let mut b = vec![0; payload + 1];
+        b[..4].copy_from_slice(b"BSA\0");
+        for (at, n) in [
+            (4, 105),
+            (8, 36),
+            (12, 3),
+            (16, 1),
+            (20, 1),
+            (24, folder.len() as u32),
+            (28, name.len() as u32),
+            (44, 1),
+            (52, (60 + name.len()) as u32),
+            (record + 8, 1),
+            (record + 12, payload as u32),
+        ] {
+            b[at..at + 4].copy_from_slice(&n.to_le_bytes())
+        }
+        b[60] = folder.len() as u8;
+        b[61..61 + folder.len()].copy_from_slice(folder);
+        b[names..payload].copy_from_slice(name);
+        b
+    }
+
+    fn finish_archive_worker(app: &mut App) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while app.archive_job.is_some() {
+            poll_archive_conflicts(app);
+            assert!(
+                std::time::Instant::now() < deadline,
+                "archive worker timeout"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn archive_analysis_defers_during_runs_and_restarts_cancelled_work() {
+        let (mut app, root) = data_app(&[("example.txt", "data")], &[]);
+        start_run(
+            &mut app,
+            "test child".into(),
+            std::process::Command::new("/bin/true"),
+        );
+        schedule_archive_conflicts(&mut app);
+        assert!(
+            app.archive_job.is_none(),
+            "started an archive scan during a run"
+        );
+        app.running.take();
+        schedule_archive_conflicts(&mut app);
+        assert!(app.archive_job.is_some());
+        start_run(
+            &mut app,
+            "test child".into(),
+            std::process::Command::new("/bin/true"),
+        );
+        schedule_archive_conflicts(&mut app);
+        finish_archive_worker(&mut app);
+        assert!(
+            app.archive_completed_epoch.is_none(),
+            "published cancelled analysis"
+        );
+        app.running.take();
+        schedule_archive_conflicts(&mut app);
+        finish_archive_worker(&mut app);
+        assert_eq!(app.archive_completed_epoch, Some(app.archive_epoch.get()));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn archive_worker_uses_plugin_order_ini_registration_and_cached_members() {
+        let (mut app, root) = data_app(&[("A.esp", "plugin")], &[]);
+        let a = app.mods[0].path.clone();
+        let b = root.join("mods/BBB");
+        fs::create_dir_all(&b).unwrap();
+        fs::write(a.join("A.bsa"), archive_bsa_fixture()).unwrap();
+        fs::write(a.join("Standalone.bsa"), archive_bsa_fixture()).unwrap();
+        fs::write(b.join("B.esp"), b"plugin").unwrap();
+        fs::write(b.join("B.bsa"), archive_bsa_fixture()).unwrap();
+        app.mods.push(ModEntry {
+            name: "BBB".into(),
+            enabled: true,
+            path: b,
+            unmanaged: false,
+        });
+        let mut plugins = PluginList::default();
+        plugins.plugins = vec![plugin_row("A.esp", "AAA"), plugin_row("B.esp", "BBB")];
+        for p in &mut plugins.plugins {
+            p.enabled = true
+        }
+        app.plugins = Some(plugins);
+        let profile = app.created.as_ref().unwrap().active();
+        fs::write(
+            profile.ini_path("Skyrim.ini"),
+            "[Archive]\nsResourceArchiveList=Standalone.bsa\n",
+        )
+        .unwrap();
+        schedule_archive_conflicts(&mut app);
+        finish_archive_worker(&mut app);
+        let map = app.conflicts.as_ref().unwrap();
+        let node = &map.asset_files["textures/shared.dds"];
+        assert_eq!(node.winner.origin, 2);
+        assert_eq!(node.winner.plugin.as_deref(), Some("B.esp"));
+        assert_eq!(map.state(1), ConflictState::Overwritten);
+        assert_eq!(node.alternatives.len(), 2);
+        assert!(provider_label(map, &node.winner).contains("B.bsa / B.esp"));
+        assert!(app.archive_warnings.is_empty());
+        app.plugins.as_mut().unwrap().plugins[1].enabled = false;
+        plugin_state_changed(&app);
+        schedule_archive_conflicts(&mut app);
+        finish_archive_worker(&mut app);
+        assert_eq!(
+            app.conflicts.as_ref().unwrap().asset_files["textures/shared.dds"]
+                .winner
+                .plugin
+                .as_deref(),
+            Some("A.esp")
+        );
+        fs::write(a.join("A.bsa"), b"broken").unwrap();
+        let epoch = app.archive_epoch.get();
+        let provider = app.conflicts.as_ref().unwrap().asset_files["textures/shared.dds"]
+            .winner
+            .clone();
+        let _ = update_inner(
+            &mut app,
+            Message::ArchiveProviderAction {
+                epoch,
+                member: "textures/shared.dds".into(),
+                provider,
+                export: false,
+            },
+        );
+        assert!(app.preview_pending.is_none());
+        assert!(app.status.as_deref().unwrap().contains("changed since"));
+        schedule_archive_conflicts(&mut app);
+        assert!(
+            app.archive_job.is_none(),
+            "unchanged input uses cached member map"
+        );
+        bump_views(&app);
+        schedule_archive_conflicts(&mut app);
+        finish_archive_worker(&mut app);
+        assert!(app.archive_warnings.iter().any(|w| w.contains("A.bsa")));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cold_archive_worker_honors_the_profiles_pinned_plugin_order() {
+        let (mut app, root) = data_app(&[("A.esp", "plugin"), ("B.esp", "plugin")], &[]);
+        let mod_root = app.mods[0].path.clone();
+        for name in ["A.bsa", "B.bsa"] {
+            fs::write(mod_root.join(name), archive_bsa_fixture()).unwrap();
+        }
+        let profile = app.created.as_ref().unwrap().active();
+        fs::write(
+            profile.plugins_state_dir().join("plugins.txt"),
+            "*B.esp\n*A.esp\n",
+        )
+        .unwrap();
+        profile
+            .write_locked_order(&std::collections::BTreeMap::from([("a.esp".into(), 0)]))
+            .unwrap();
+        app.plugins = None;
+        schedule_archive_conflicts(&mut app);
+        finish_archive_worker(&mut app);
+        let node = &app.conflicts.as_ref().unwrap().asset_files["textures/shared.dds"];
+        assert_eq!(node.winner.plugin.as_deref(), Some("B.esp"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn archive_analysis_is_invalidated_by_file_edits_and_both_restore_messages() {
+        for action in ["rename", "mod_restore", "order_restore"] {
+            let (mut app, root) = data_app(&[("A.esp", "plugin"), ("B.esp", "plugin")], &[]);
+            let inst = app.created.clone().unwrap();
+            let mod_root = app.mods[0].path.clone();
+            let profile = inst.active();
+            fs::write(mod_root.join("A.bsa"), archive_bsa_fixture()).unwrap();
+            let stamp = if action == "order_restore" {
+                fs::write(mod_root.join("B.bsa"), archive_bsa_fixture()).unwrap();
+                fs::write(
+                    profile.plugins_state_dir().join("plugins.txt"),
+                    "A.esp\n*B.esp\n",
+                )
+                .unwrap();
+                fs::write(
+                    profile.plugins_state_dir().join("loadorder.txt"),
+                    "A.esp\nB.esp\n",
+                )
+                .unwrap();
+                let backup = profile
+                    .create_backup(eidos_instance::BackupKind::LoadOrder)
+                    .unwrap();
+                fs::write(
+                    profile.plugins_state_dir().join("plugins.txt"),
+                    "*A.esp\nB.esp\n",
+                )
+                .unwrap();
+                backup.stamp
+            } else {
+                0
+            };
+            if action == "mod_restore" {
+                let backup = root.join("mods/AAA_backup");
+                fs::create_dir_all(&backup).unwrap();
+                fs::write(backup.join("B.esp"), "restored plugin").unwrap();
+                fs::write(backup.join("B.bsa"), archive_bsa_fixture()).unwrap();
+                reload_mods(&mut app);
+            }
+            app.conflicts = compute_conflicts(&app);
+            schedule_archive_conflicts(&mut app);
+            finish_archive_worker(&mut app);
+            let epoch = app.archive_epoch.get();
+            assert_eq!(
+                app.conflicts.as_ref().unwrap().asset_files["textures/shared.dds"]
+                    .winner
+                    .plugin
+                    .as_deref(),
+                Some("A.esp")
+            );
+            app.loot_meta = Some(HashMap::new());
+            match action {
+                "rename" => {
+                    let index = app.mods.iter().position(|m| m.name == "AAA").unwrap();
+                    let _ = update_inner(
+                        &mut app,
+                        Message::FiletreeRenameStart(index, "A.bsa".into()),
+                    );
+                    let _ = update_inner(&mut app, Message::FiletreeRenameChanged("B.bsa".into()));
+                    let _ = update_inner(&mut app, Message::FiletreeRenameCommit);
+                }
+                "mod_restore" => {
+                    let _ = update_inner(
+                        &mut app,
+                        Message::ConfirmModRestoreBackup("AAA_backup".into()),
+                    );
+                }
+                "order_restore" => {
+                    let _ = update_inner(
+                        &mut app,
+                        Message::RestoreBackup(eidos_instance::BackupKind::LoadOrder, stamp),
+                    );
+                }
+                _ => unreachable!(),
+            }
+            assert!(
+                app.archive_epoch.get() > epoch,
+                "{action}: previous worker generation must be invalidated"
+            );
+            assert!(
+                app.loot_meta.is_none(),
+                "{action}: old record validity must be discarded"
+            );
+            schedule_archive_conflicts(&mut app);
+            finish_archive_worker(&mut app);
+            assert_eq!(
+                app.conflicts.as_ref().unwrap().asset_files["textures/shared.dds"]
+                    .winner
+                    .plugin
+                    .as_deref(),
+                Some("B.esp"),
+                "{action}: {:?}",
+                app.archive_warnings
+            );
+            assert!(
+                app.archive_warnings.is_empty(),
+                "{action}: {:?}",
+                app.archive_warnings
+            );
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn archive_worker_discards_stale_results_and_honors_whiteouts_and_opacity() {
+        let (mut app, root) = data_app(
+            &[("A.esp", "plugin"), ("textures/shared.dds", "lower")],
+            &[
+                (".eidoswh.A.bsa", ""),
+                ("textures/.eidoswh_opaque", ""),
+                ("textures/shared.dds", "upper"),
+            ],
+        );
+        fs::write(app.mods[0].path.join("A.bsa"), archive_bsa_fixture()).unwrap();
+        let mut plugins = PluginList::default();
+        plugins.plugins = vec![plugin_row("A.esp", "AAA")];
+        plugins.plugins[0].enabled = true;
+        app.plugins = Some(plugins);
+        schedule_archive_conflicts(&mut app);
+        bump_views(&app);
+        finish_archive_worker(&mut app);
+        assert!(
+            app.conflicts.is_none(),
+            "old generation must never install its winners"
+        );
+        schedule_archive_conflicts(&mut app);
+        finish_archive_worker(&mut app);
+        let map = app.conflicts.as_ref().unwrap();
+        assert!(!map.files.contains_key("a.bsa"));
+        assert_eq!(map.files["textures/shared.dds"].winner, u32::MAX);
+        assert!(map.files["textures/shared.dds"].alternatives.is_empty());
+        assert!(map.asset_files["textures/shared.dds"]
+            .winner
+            .archive
+            .is_none());
+        assert!(archive_rows(&app, "skyrimse")
+            .unwrap()
+            .iter()
+            .all(|r| !r.loaded()));
+        fs::remove_dir_all(root).unwrap();
     }
 }

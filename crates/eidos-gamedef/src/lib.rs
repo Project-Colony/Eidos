@@ -5,12 +5,12 @@
 //! and primary masters, and the script-extender loader.
 //!
 //! This is the single source of truth the other crates read from, so adding a
-//! built-in game is one row in [`GAMES`] instead of edits scattered across
-//! detection, plugins, and game features.
+//! built-in game is one data file in `data/games/` (see [`builtin`]) instead of
+//! edits scattered across detection, plugins, and game features.
 //!
 //! Games can also be added WITHOUT recompiling, the way MO2's `basic_games` plugin
 //! lets simple games be declared as data: drop a `<id>.toml` into
-//! `~/.config/Colony/Eidos/games/` (or `~/.config/Colony/Eidos/games/`) and it joins the
+//! `~/.config/Colony/Eidos/games/` and it joins the
 //! registry on next launch (see [`all`]). A definition with `load_order = "None"`
 //! and no `ini_files`/`primary_plugins` is a "generic" game - just the file union
 //! over its data dir, no plugins.txt / BSA / INI machinery - which covers most
@@ -137,445 +137,53 @@ pub struct GameDef {
     pub known_tools: &'static [(&'static str, &'static str)],
 }
 
-/// The xEdit variants for one game, and the other tools that ship beside them.
+/// The built-in game descriptors, in the order Eidos lists them. Each one is a
+/// data file in `data/games/` with exactly the schema of a user definition, so a
+/// built-in game is added by writing one more file and listing it here.
+const BUILTIN_DEFINITIONS: &[&str] = &[
+    include_str!("../data/games/skyrimse.toml"),
+    include_str!("../data/games/skyrimvr.toml"),
+    include_str!("../data/games/skyrim.toml"),
+    include_str!("../data/games/enderalse.toml"),
+    include_str!("../data/games/fallout4.toml"),
+    include_str!("../data/games/fallout4vr.toml"),
+    include_str!("../data/games/falloutnv.toml"),
+    include_str!("../data/games/fallout3.toml"),
+    include_str!("../data/games/oblivion.toml"),
+    include_str!("../data/games/morrowind.toml"),
+    include_str!("../data/games/starfield.toml"),
+    include_str!("../data/games/stellarblade.toml"),
+    include_str!("../data/games/stardewvalley.toml"),
+    include_str!("../data/games/7daystodie.toml"),
+];
+
+/// Every game Eidos ships with, parsed once from [`BUILTIN_DEFINITIONS`].
 ///
-/// Every xEdit release contains both the editor and its QuickAutoClean twin, and
-/// the second is the one that matters for the "dirty edits" LOOT keeps warning
-/// about - so finding one without the other would leave the user with the
-/// warning and no button.
-macro_rules! xedit {
-    ($name:literal) => {
-        &[
-            (concat!($name, ".exe"), $name),
-            (
-                concat!($name, "QuickAutoClean.exe"),
-                concat!($name, " QuickAutoClean"),
-            ),
-            // PGPatcher patches meshes and plugins so every texture mod uses the
-            // right shader (parallax / complex material / PBR) whatever it ships.
-            // Listed for the Creation-Engine games because it is the tool that
-            // makes a mixed texture setup work at all, and because it needs an
-            // argument nobody can guess - see `eidos_instance::default_args`.
-            ("PGPatcher.exe", "PGPatcher"),
-        ]
-    };
+/// A built-in file that does not parse is a build defect, not a user error, so it
+/// panics here (and in the test that parses each file) instead of being skipped.
+pub fn builtin() -> &'static [GameDef] {
+    static BUILTIN: OnceLock<Vec<GameDef>> = OnceLock::new();
+    BUILTIN.get_or_init(|| {
+        BUILTIN_DEFINITIONS
+            .iter()
+            .map(|text| match toml::from_str::<RawGameDef>(text) {
+                Ok(raw) => raw.into_gamedef(&[]),
+                Err(e) => panic!("invalid built-in game definition: {e}"),
+            })
+            .collect()
+    })
 }
-
-/// Shared across the three Skyrim SE-engine games (SE, VR, Enderal SE).
-const SKYRIM_SE_MASTERS: &[&str] = &[
-    "Skyrim.esm",
-    "Update.esm",
-    "Dawnguard.esm",
-    "HearthFires.esm",
-    "Dragonborn.esm",
-];
-
-/// Every game Eidos knows about. Add a game by adding one row.
-pub static GAMES: &[GameDef] = &[
-    GameDef {
-        id: "skyrimse",
-        name: "Skyrim Special Edition",
-        steam_app_id: 489830,
-        gog_ids: &["1162721350", "1711230643"],
-        epic_ids: &[
-            "ac82db5035584c7f8a2c548d98c86b2c",
-            "5d600e4f59974aeba0259c7734134e27",
-        ],
-        short_name: "SkyrimSE",
-        nexus_game: "skyrimspecialedition",
-        data_dir: "Data",
-        valid_folders: &[],
-        valid_suffixes: &[],
-        valid_files: &[],
-        mod_unit: ModUnit::Files,
-        documents_dir: "Skyrim Special Edition",
-        ini_files: &["Skyrim.ini", "SkyrimPrefs.ini", "SkyrimCustom.ini"],
-        load_order: LoadOrder::Asterisk,
-        primary_plugins: SKYRIM_SE_MASTERS,
-        game_binary: "SkyrimSE.exe",
-        registry_name: "Skyrim Special Edition",
-        script_extender: Some(ScriptExtender {
-            launcher: "SkyrimSELauncher.exe",
-            loader: "skse64_loader.exe",
-        }),
-        known_tools: xedit!("SSEEdit"),
-    },
-    GameDef {
-        id: "skyrimvr",
-        name: "Skyrim VR",
-        steam_app_id: 611670,
-        gog_ids: &[],
-        epic_ids: &[],
-        short_name: "SkyrimVR",
-        nexus_game: "skyrimspecialedition",
-        data_dir: "Data",
-        valid_folders: &[],
-        valid_suffixes: &[],
-        valid_files: &[],
-        mod_unit: ModUnit::Files,
-        documents_dir: "Skyrim VR",
-        ini_files: &["SkyrimVR.ini", "SkyrimPrefs.ini"],
-        load_order: LoadOrder::Asterisk,
-        primary_plugins: SKYRIM_SE_MASTERS,
-        game_binary: "SkyrimVR.exe",
-        registry_name: "Skyrim VR",
-        script_extender: Some(ScriptExtender {
-            launcher: "SkyrimVRLauncher.exe",
-            loader: "sksevr_loader.exe",
-        }),
-        known_tools: xedit!("TES5VREdit"),
-    },
-    GameDef {
-        id: "skyrim",
-        name: "Skyrim",
-        steam_app_id: 72850,
-        gog_ids: &[],
-        epic_ids: &[],
-        short_name: "Skyrim",
-        nexus_game: "skyrim",
-        data_dir: "Data",
-        valid_folders: &[],
-        valid_suffixes: &[],
-        valid_files: &[],
-        mod_unit: ModUnit::Files,
-        documents_dir: "Skyrim",
-        // The gamebryo engine reads SkyrimCustom.ini in LE too (MO2 manages it as a
-        // per-profile INI, same as SkyrimSE), so include it in the per-profile set.
-        ini_files: &["Skyrim.ini", "SkyrimPrefs.ini", "SkyrimCustom.ini"],
-        load_order: LoadOrder::PlainList,
-        primary_plugins: &["Skyrim.esm", "Update.esm"],
-        game_binary: "TESV.exe",
-        registry_name: "Skyrim",
-        script_extender: Some(ScriptExtender {
-            launcher: "SkyrimLauncher.exe",
-            loader: "skse_loader.exe",
-        }),
-        known_tools: xedit!("TES5Edit"),
-    },
-    GameDef {
-        id: "enderalse",
-        name: "Enderal: Special Edition",
-        steam_app_id: 976620,
-        gog_ids: &[],
-        epic_ids: &[],
-        short_name: "EnderalSE",
-        nexus_game: "enderalspecialedition",
-        data_dir: "Data",
-        valid_folders: &[],
-        valid_suffixes: &[],
-        valid_files: &[],
-        mod_unit: ModUnit::Files,
-        documents_dir: "Enderal Special Edition",
-        ini_files: &["Enderal.ini", "EnderalPrefs.ini"],
-        load_order: LoadOrder::Asterisk,
-        primary_plugins: &[
-            "Skyrim.esm",
-            "Update.esm",
-            "Dawnguard.esm",
-            "HearthFires.esm",
-            "Dragonborn.esm",
-            "Enderal - Forgotten Stories.esm",
-            "SkyUI_SE.esp",
-        ],
-        game_binary: "SkyrimSE.exe",
-        registry_name: "",
-        // Enderal SE ships as a Skyrim SE reskin and uses SKSE64 unchanged.
-        script_extender: Some(ScriptExtender {
-            launcher: "Enderal Launcher.exe",
-            loader: "skse64_loader.exe",
-        }),
-        known_tools: xedit!("SSEEdit"),
-    },
-    GameDef {
-        id: "fallout4",
-        name: "Fallout 4",
-        steam_app_id: 377160,
-        gog_ids: &[],
-        epic_ids: &[],
-        short_name: "Fallout4",
-        nexus_game: "fallout4",
-        data_dir: "Data",
-        valid_folders: &[],
-        valid_suffixes: &[],
-        valid_files: &[],
-        mod_unit: ModUnit::Files,
-        documents_dir: "Fallout4",
-        ini_files: &["Fallout4.ini", "Fallout4Prefs.ini", "Fallout4Custom.ini"],
-        load_order: LoadOrder::Asterisk,
-        primary_plugins: &["Fallout4.esm"],
-        game_binary: "Fallout4.exe",
-        registry_name: "Fallout4",
-        script_extender: Some(ScriptExtender {
-            launcher: "Fallout4Launcher.exe",
-            loader: "f4se_loader.exe",
-        }),
-        known_tools: xedit!("FO4Edit"),
-    },
-    GameDef {
-        id: "fallout4vr",
-        name: "Fallout 4 VR",
-        steam_app_id: 611660,
-        gog_ids: &[],
-        epic_ids: &[],
-        short_name: "Fallout4VR",
-        nexus_game: "fallout4",
-        data_dir: "Data",
-        valid_folders: &[],
-        valid_suffixes: &[],
-        valid_files: &[],
-        mod_unit: ModUnit::Files,
-        documents_dir: "Fallout4VR",
-        ini_files: &["Fallout4.ini", "Fallout4Prefs.ini", "Fallout4Custom.ini"],
-        load_order: LoadOrder::Asterisk,
-        primary_plugins: &["Fallout4.esm"],
-        game_binary: "Fallout4VR.exe",
-        registry_name: "Fallout 4 VR",
-        script_extender: Some(ScriptExtender {
-            launcher: "Fallout4VRLauncher.exe",
-            loader: "f4sevr_loader.exe",
-        }),
-        known_tools: xedit!("FO4VREdit"),
-    },
-    GameDef {
-        id: "falloutnv",
-        name: "Fallout: New Vegas",
-        steam_app_id: 22380,
-        gog_ids: &[],
-        epic_ids: &["5daeb974a22a435988892319b3a4f476"],
-        short_name: "FalloutNV",
-        nexus_game: "newvegas",
-        data_dir: "Data",
-        valid_folders: &[],
-        valid_suffixes: &[],
-        valid_files: &[],
-        mod_unit: ModUnit::Files,
-        documents_dir: "FalloutNV",
-        ini_files: &["Fallout.ini", "FalloutPrefs.ini", "FalloutCustom.ini"],
-        load_order: LoadOrder::FileTime,
-        primary_plugins: &["FalloutNV.esm"],
-        game_binary: "FalloutNV.exe",
-        registry_name: "FalloutNV",
-        script_extender: Some(ScriptExtender {
-            launcher: "FalloutNVLauncher.exe",
-            loader: "nvse_loader.exe",
-        }),
-        known_tools: xedit!("FNVEdit"),
-    },
-    GameDef {
-        id: "fallout3",
-        name: "Fallout 3 (GOTY)",
-        steam_app_id: 22370,
-        gog_ids: &[],
-        epic_ids: &["adeae8bbfc94427db57c7dfecce3f1d4"],
-        short_name: "Fallout3",
-        nexus_game: "fallout3",
-        data_dir: "Data",
-        valid_folders: &[],
-        valid_suffixes: &[],
-        valid_files: &[],
-        mod_unit: ModUnit::Files,
-        documents_dir: "Fallout3",
-        ini_files: &["Fallout.ini", "FalloutPrefs.ini", "FalloutCustom.ini"],
-        load_order: LoadOrder::FileTime,
-        primary_plugins: &["Fallout3.esm"],
-        game_binary: "Fallout3.exe",
-        registry_name: "Fallout3",
-        script_extender: Some(ScriptExtender {
-            launcher: "FalloutLauncher.exe",
-            loader: "fose_loader.exe",
-        }),
-        known_tools: xedit!("FO3Edit"),
-    },
-    GameDef {
-        id: "oblivion",
-        name: "Oblivion",
-        steam_app_id: 22330,
-        gog_ids: &[],
-        epic_ids: &[],
-        short_name: "Oblivion",
-        nexus_game: "oblivion",
-        data_dir: "Data",
-        valid_folders: &[],
-        valid_suffixes: &[],
-        valid_files: &[],
-        mod_unit: ModUnit::Files,
-        documents_dir: "Oblivion",
-        ini_files: &["Oblivion.ini", "OblivionPrefs.ini"],
-        load_order: LoadOrder::FileTime,
-        primary_plugins: &["Oblivion.esm"],
-        game_binary: "Oblivion.exe",
-        registry_name: "Oblivion",
-        script_extender: Some(ScriptExtender {
-            launcher: "OblivionLauncher.exe",
-            loader: "obse_loader.exe",
-        }),
-        known_tools: xedit!("TES4Edit"),
-    },
-    GameDef {
-        id: "morrowind",
-        name: "Morrowind",
-        steam_app_id: 22320,
-        gog_ids: &[],
-        epic_ids: &[],
-        short_name: "Morrowind",
-        nexus_game: "morrowind",
-        data_dir: "Data Files",
-        valid_folders: &[],
-        valid_suffixes: &[],
-        valid_files: &[],
-        mod_unit: ModUnit::Files,
-        // Morrowind keeps Morrowind.ini in the install directory, not My Games; the
-        // per-profile INI machinery is pointed there by game id (see prepare_inis).
-        documents_dir: "",
-        ini_files: &["Morrowind.ini"],
-        load_order: LoadOrder::FileTime,
-        primary_plugins: &["Morrowind.esm"],
-        game_binary: "Morrowind.exe",
-        registry_name: "Morrowind",
-        script_extender: None,
-        known_tools: &[],
-    },
-    GameDef {
-        id: "starfield",
-        name: "Starfield",
-        steam_app_id: 1716740,
-        gog_ids: &[],
-        epic_ids: &[],
-        short_name: "Starfield",
-        nexus_game: "starfield",
-        data_dir: "Data",
-        valid_folders: &[],
-        valid_suffixes: &[],
-        valid_files: &[],
-        mod_unit: ModUnit::Files,
-        documents_dir: "Starfield",
-        ini_files: &["StarfieldCustom.ini", "StarfieldPrefs.ini"],
-        load_order: LoadOrder::Asterisk,
-        primary_plugins: &["Starfield.esm", "Constellation.esm", "OldMars.esm"],
-        game_binary: "Starfield.exe",
-        registry_name: "Starfield",
-        script_extender: Some(ScriptExtender {
-            launcher: "Starfield.exe",
-            loader: "sfse_loader.exe",
-        }),
-        known_tools: xedit!("SF1Edit"),
-    },
-    // The first non-Bethesda game here, and the first to declare its own vocabulary.
-    //
-    // Unreal Engine, so no plugins.txt, no BSA, no My Games INI. A mod is a
-    // `.pak`/`.ucas`/`.utoc` triplet, and it deploys into `~mods` - the `~` is what
-    // makes the engine scan that folder last, so mods there win over the base
-    // game's own paks.
-    //
-    // `Paks` itself is NOT the deploy root, and the difference is not cosmetic.
-    // Unreal would load a `_P` pak from either, but the mod frameworks read
-    // `~mods` by name: Custom Nanosuit System roots its recursive config scan at
-    // `Dirs.Game.Content.Paks["~mods"]`, so a `.dekcns.json` deployed one level
-    // higher is never seen and the mod installs, loads its pak, and adds nothing.
-    // That is exactly what a real install did before this line was corrected.
-    //
-    // A mod's own `LogicMods` half still lands correctly: an archive addressing
-    // `SB/Content/Paks/LogicMods` has it collected beside the data dir and routed
-    // through `Root/`, which puts it back at the game root under its own path.
-    //
-    // `valid_folders` is empty for the same reason the deploy root moved. A mod is
-    // recognised by carrying a pak, never by a folder: naming `~mods` here would
-    // make an archive that ships `~mods/foo.pak` look valid AT that level, and the
-    // wrapper would survive into `~mods/~mods/foo.pak`.
-    //
-    // Declaring `valid_suffixes` is what makes `valid_folders` mean "only these":
-    // see `From<&GameDef> for LayoutRules`. That is deliberate. A Stellar Blade mod
-    // is identified by carrying a pak, and inheriting the Gamebryo folder list would
-    // let an archive shipping a `textures/` folder read as a valid mod root.
-    //
-    // UE4SS is this game's script extender - its SKSE. `script_extender` stays None
-    // because that field models an EXE SWAP (run the loader instead of the vanilla
-    // launcher), and UE4SS does not work that way: it is a proxy DLL side-loaded
-    // next to the game binary. Its own Lua mods ship a `SB/Binaries/Win64/ue4ss/...`
-    // tree, addressed from the install root; `root_builder_split` recognises that
-    // shape from `data_dir` naming `SB` as the game's own directory, and routes it
-    // to the `Root/` surface.
-    GameDef {
-        id: "stellarblade",
-        name: "Stellar Blade",
-        steam_app_id: 3489700,
-        gog_ids: &[],
-        epic_ids: &[],
-        short_name: "StellarBlade",
-        nexus_game: "stellarblade",
-        data_dir: "SB/Content/Paks/~mods",
-        valid_folders: &[],
-        valid_suffixes: &["pak", "utoc", "ucas"],
-        valid_files: &[],
-        mod_unit: ModUnit::Files,
-        documents_dir: "",
-        ini_files: &[],
-        load_order: LoadOrder::None,
-        primary_plugins: &[],
-        game_binary: "SB.exe",
-        registry_name: "",
-        script_extender: None,
-        known_tools: &[],
-    },
-    // SMAPI discovers each named mod folder by its manifest.json.
-    GameDef {
-        id: "stardewvalley",
-        name: "Stardew Valley",
-        short_name: "stardewvalley",
-        nexus_game: "stardewvalley",
-        steam_app_id: 413150,
-        gog_ids: &["1453375253"],
-        epic_ids: &[],
-        data_dir: "Mods",
-        valid_folders: &[],
-        valid_suffixes: &[],
-        valid_files: &["manifest.json"],
-        mod_unit: ModUnit::Folder,
-        documents_dir: "",
-        ini_files: &[],
-        load_order: LoadOrder::None,
-        primary_plugins: &[],
-        game_binary: "Stardew Valley.exe",
-        registry_name: "",
-        script_extender: Some(ScriptExtender {
-            launcher: "Stardew Valley.exe",
-            loader: "StardewModdingAPI.exe",
-        }),
-        known_tools: &[("StardewModdingAPI.exe", "SMAPI")],
-    },
-    // Install-local modlets: Mods/<unit>/ModInfo.xml, beside 7DaysToDie.exe.
-    GameDef {
-        id: "7daystodie",
-        name: "7 Days to Die",
-        short_name: "7daystodie",
-        nexus_game: "7daystodie",
-        steam_app_id: 251570,
-        gog_ids: &[],
-        epic_ids: &[],
-        data_dir: "Mods",
-        valid_folders: &[],
-        valid_suffixes: &[],
-        valid_files: &["ModInfo.xml"],
-        mod_unit: ModUnit::Folder,
-        documents_dir: "",
-        ini_files: &[],
-        load_order: LoadOrder::None,
-        primary_plugins: &[],
-        game_binary: "7DaysToDie.exe",
-        registry_name: "",
-        script_extender: None,
-        known_tools: &[],
-    },
-];
 
 impl GameDef {
     /// Pinned primary plugins that the engine loads without an activation entry.
-    /// Enderal's own master and SkyUI are required but must be explicitly active.
+    /// Enderal SE runs on the Skyrim SE engine, which loads only Skyrim's own
+    /// masters implicitly: Enderal's master and SkyUI are required but must be
+    /// explicitly active.
     pub fn implicit_plugins(&self) -> &'static [&'static str] {
-        if self.id == "enderalse" {
-            SKYRIM_SE_MASTERS
-        } else {
-            self.primary_plugins
+        let skyrim_se = || builtin().iter().find(|g| g.id == "skyrimse");
+        match self.id {
+            "enderalse" => skyrim_se().map_or(self.primary_plugins, |se| se.primary_plugins),
+            _ => self.primary_plugins,
         }
     }
 
@@ -585,13 +193,13 @@ impl GameDef {
     }
 }
 
-/// Every game definition Eidos knows: the built-in [`GAMES`] plus any user TOML
+/// Every game definition Eidos knows: the [`builtin`] games plus any user TOML
 /// definitions in `~/.config/Colony/Eidos/games/`, loaded once. A user definition
 /// whose `id` matches a built-in overrides it; the rest are appended.
 pub fn all() -> &'static [GameDef] {
     static REGISTRY: OnceLock<Vec<GameDef>> = OnceLock::new();
     REGISTRY.get_or_init(|| {
-        let mut games: Vec<GameDef> = GAMES.to_vec();
+        let mut games: Vec<GameDef> = builtin().to_vec();
         for g in load_games_from(&user_games_dir()) {
             match games.iter_mut().find(|b| b.id.eq_ignore_ascii_case(g.id)) {
                 Some(slot) => *slot = g,
@@ -632,7 +240,7 @@ pub fn load_games_from(dir: &Path) -> Vec<GameDef> {
 pub fn parse_game(toml: &str) -> Option<GameDef> {
     toml::from_str::<RawGameDef>(toml)
         .ok()
-        .map(RawGameDef::into_gamedef)
+        .map(|raw| raw.into_gamedef(builtin()))
 }
 
 /// The owned, deserializable shape of a TOML game definition. The Bethesda-specific
@@ -698,10 +306,12 @@ fn default_load_order() -> String {
 }
 
 impl RawGameDef {
-    fn into_gamedef(self) -> GameDef {
-        // Registry initialization parses these rows, so inheritance must only
-        // consult built-ins rather than re-entering the registry's OnceLock.
-        let inherited_tools = GAMES
+    /// `inherit_tools_from` is where an empty `known_tools` list is filled from:
+    /// the built-in games for a user definition, nothing for a built-in one.
+    /// Registry initialization parses user rows, so inheritance must only consult
+    /// built-ins rather than re-entering the registry's OnceLock.
+    fn into_gamedef(self, inherit_tools_from: &[GameDef]) -> GameDef {
+        let inherited_tools = inherit_tools_from
             .iter()
             .find(|g| g.id.eq_ignore_ascii_case(&self.id))
             .map(|g| g.known_tools)
@@ -801,25 +411,106 @@ fn leak_tools(v: Vec<RawKnownTool>) -> &'static [(&'static str, &'static str)] {
 mod tests {
     use super::*;
 
+    /// Every embedded data file parses on its own, and together they are exactly
+    /// the catalog Eidos has always shipped: same ids in the same order, same
+    /// masters, same implicit set. Changing a built-in game must change this.
     #[test]
-    fn folder_game_examples_match_the_complete_builtin_layouts() {
-        for text in [
-            include_str!("../examples/games/stardewvalley.toml"),
-            include_str!("../examples/games/7daystodie.toml"),
+    fn the_embedded_data_files_are_the_built_in_catalog() {
+        for text in BUILTIN_DEFINITIONS {
+            toml::from_str::<RawGameDef>(text).expect("built-in definition parses");
+        }
+        let skyrim_se: &[&str] = &[
+            "Skyrim.esm",
+            "Update.esm",
+            "Dawnguard.esm",
+            "HearthFires.esm",
+            "Dragonborn.esm",
+        ];
+        let snapshot: &[(&str, u32, LoadOrder, &[&str])] = &[
+            ("skyrimse", 489830, LoadOrder::Asterisk, skyrim_se),
+            ("skyrimvr", 611670, LoadOrder::Asterisk, skyrim_se),
+            (
+                "skyrim",
+                72850,
+                LoadOrder::PlainList,
+                &["Skyrim.esm", "Update.esm"],
+            ),
+            (
+                "enderalse",
+                976620,
+                LoadOrder::Asterisk,
+                &[
+                    "Skyrim.esm",
+                    "Update.esm",
+                    "Dawnguard.esm",
+                    "HearthFires.esm",
+                    "Dragonborn.esm",
+                    "Enderal - Forgotten Stories.esm",
+                    "SkyUI_SE.esp",
+                ],
+            ),
+            ("fallout4", 377160, LoadOrder::Asterisk, &["Fallout4.esm"]),
+            ("fallout4vr", 611660, LoadOrder::Asterisk, &["Fallout4.esm"]),
+            ("falloutnv", 22380, LoadOrder::FileTime, &["FalloutNV.esm"]),
+            ("fallout3", 22370, LoadOrder::FileTime, &["Fallout3.esm"]),
+            ("oblivion", 22330, LoadOrder::FileTime, &["Oblivion.esm"]),
+            ("morrowind", 22320, LoadOrder::FileTime, &["Morrowind.esm"]),
+            (
+                "starfield",
+                1716740,
+                LoadOrder::Asterisk,
+                &["Starfield.esm", "Constellation.esm", "OldMars.esm"],
+            ),
+            ("stellarblade", 3489700, LoadOrder::None, &[]),
+            ("stardewvalley", 413150, LoadOrder::None, &[]),
+            ("7daystodie", 251570, LoadOrder::None, &[]),
+        ];
+        let actual: Vec<_> = builtin()
+            .iter()
+            .map(|g| (g.id, g.steam_app_id, g.load_order, g.primary_plugins))
+            .collect();
+        assert_eq!(actual, snapshot);
+
+        // Only Enderal loads fewer masters implicitly than it pins.
+        for g in builtin() {
+            let expected = if g.id == "enderalse" {
+                skyrim_se
+            } else {
+                g.primary_plugins
+            };
+            assert_eq!(g.implicit_plugins(), expected, "{}", g.id);
+        }
+
+        // The xEdit family travels as a set, per game.
+        let tools = |id: &str| {
+            builtin()
+                .iter()
+                .find(|g| g.id == id)
+                .unwrap()
+                .known_tools
+                .iter()
+                .map(|(exe, _)| *exe)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            tools("skyrimse"),
+            ["SSEEdit.exe", "SSEEditQuickAutoClean.exe", "PGPatcher.exe"]
+        );
+        assert_eq!(tools("stardewvalley"), ["StardewModdingAPI.exe"]);
+        assert!(tools("morrowind").is_empty());
+    }
+
+    #[test]
+    fn folder_games_declare_their_marker_files() {
+        for (id, marker) in [
+            ("stardewvalley", "manifest.json"),
+            ("7daystodie", "ModInfo.xml"),
         ] {
-            let game = parse_game(text).expect("complete folder-game example");
-            let builtin = GameDef::for_id(game.id).unwrap();
-            assert_eq!(game.steam_app_id, builtin.steam_app_id);
-            assert_eq!(game.gog_ids, builtin.gog_ids);
-            assert_eq!(game.epic_ids, builtin.epic_ids);
-            assert_eq!(game.data_dir, builtin.data_dir);
-            assert_eq!(game.valid_files, builtin.valid_files);
+            let game = builtin().iter().find(|g| g.id == id).unwrap();
             assert_eq!(game.mod_unit, ModUnit::Folder);
+            assert_eq!(game.valid_files, [marker]);
             assert!(game.valid_folders.is_empty() && game.valid_suffixes.is_empty());
-            assert_eq!(game.load_order, LoadOrder::None);
-            assert_eq!(game.game_binary, builtin.game_binary);
-            assert_eq!(game.script_extender, builtin.script_extender);
-            assert_eq!(game.known_tools, builtin.known_tools);
+            assert_eq!(game.data_dir, "Mods");
         }
         let legacy = parse_game("id = \"legacy\"\nname = \"Legacy\"\ndata_dir = \"Data\"").unwrap();
         assert_eq!(legacy.mod_unit, ModUnit::Files);
@@ -848,9 +539,9 @@ mod tests {
         // Case-insensitively, because that is how `for_id` matches: two ids
         // differing only in case would pass an exact-match check here and then
         // shadow each other at every lookup.
-        for (i, g) in GAMES.iter().enumerate() {
+        for (i, g) in builtin().iter().enumerate() {
             assert!(
-                GAMES
+                builtin()
                     .iter()
                     .skip(i + 1)
                     .all(|o| !o.id.eq_ignore_ascii_case(g.id)),
@@ -899,7 +590,7 @@ mod tests {
 
     #[test]
     fn games_with_inis_have_a_documents_dir() {
-        for g in GAMES {
+        for g in builtin() {
             // Morrowind's INI lives in the install dir, not My Games (special-cased).
             if !g.ini_files.is_empty() && g.id != "morrowind" {
                 assert!(
@@ -1068,7 +759,7 @@ mod tests {
         // was Bethesda's. `LoadOrder::None` is a real answer now (Stellar Blade),
         // and a game with no plugin system at all has no masters to declare - so
         // the condition has to name the two mechanisms it is actually about.
-        for g in GAMES {
+        for g in builtin() {
             if matches!(g.load_order, LoadOrder::Asterisk | LoadOrder::PlainList) {
                 assert!(
                     !g.primary_plugins.is_empty(),
@@ -1083,7 +774,7 @@ mod tests {
     /// rest of the workspace can key off `LoadOrder::None` alone.
     #[test]
     fn a_game_without_a_load_order_declares_no_plugin_machinery() {
-        for g in GAMES.iter().filter(|g| g.load_order == LoadOrder::None) {
+        for g in builtin().iter().filter(|g| g.load_order == LoadOrder::None) {
             assert!(
                 g.primary_plugins.is_empty(),
                 "{} has masters but no load order",
@@ -1096,7 +787,7 @@ mod tests {
             );
         }
         // And the one that exists is the one we expect, so this cannot pass vacuously.
-        assert!(GAMES
+        assert!(builtin()
             .iter()
             .any(|g| g.id == "stellarblade" && g.load_order == LoadOrder::None));
     }
@@ -1105,7 +796,7 @@ mod tests {
     fn nexus_mapping_is_populated() {
         // Every game has the MO2 short name + the Nexus domain; VR editions
         // share their parent game's Nexus.
-        for g in GAMES {
+        for g in builtin() {
             assert!(!g.short_name.is_empty(), "{} missing short_name", g.id);
             assert!(!g.nexus_game.is_empty(), "{} missing nexus_game", g.id);
         }

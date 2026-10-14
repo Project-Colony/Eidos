@@ -1,5 +1,5 @@
 //! Bundled NIF parsing and current-provider texture loading for static previews.
-use crate::{archive_conflicts::ProviderSource, dds_preview, nif_render, App, Message, Preview};
+use crate::{archive_conflicts::ProviderSource, dds_preview, nif_render, t, tf, App, Message, Preview};
 use eidos_conflicts::ArchiveIdentity;
 use iced::{widget::image::Handle, Task};
 use std::{
@@ -48,9 +48,8 @@ fn warning_text<'a>(warnings: impl IntoIterator<Item = &'a String>) -> Arc<str> 
         }
     }
     if omitted > 0 {
-        text.push_str(&format!(
-            "\n{omitted} additional warnings are not displayed."
-        ));
+        text.push('\n');
+        text.push_str(&tf("nif_more_warnings", &[("n", &omitted)]));
     }
     text.into()
 }
@@ -71,10 +70,10 @@ fn parse_with_helper(
     cancel: &AtomicBool,
 ) -> Result<nif_render::Scene, String> {
     if bytes.len() > MAX_MODEL_BYTES {
-        return Err("NIF model exceeds 64 MiB".into());
+        return Err(t("nif_model_too_big").into());
     }
     if cancel.load(Ordering::Relaxed) {
-        return Err("Cancelled".into());
+        return Err(t("preview_cancelled").into());
     }
     let workspace = tempfile::tempdir().map_err(|e| e.to_string())?;
     let input = workspace.path().join("model.nif");
@@ -86,21 +85,21 @@ fn parse_with_helper(
         MAX_MODEL_BYTES,
     )?;
     if !output.status.success() {
-        return Err(format!(
-            "NIF helper failed ({}): {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr)
-                .trim()
-                .chars()
-                .take(2048)
-                .collect::<String>()
+        let stderr = String::from_utf8_lossy(&output.stderr)
+            .trim()
+            .chars()
+            .take(2048)
+            .collect::<String>();
+        return Err(tf(
+            "nif_helper_failed",
+            &[("status", &output.status), ("error", &stderr)],
         ));
     }
     nif_render::parse(&output.stdout)
 }
 
 pub(crate) fn from_bytes(path: &Path, bytes: &[u8], cancel: &AtomicBool) -> Preview {
-    let scene = helper().ok_or_else(|| "NIF preview needs eidos-nif-preview beside Eidos or on PATH. The single eidos-linux file does not carry it: install eidos-linux-bundle.tar.gz, or build the native helper.".to_string())
+    let scene = helper().ok_or_else(|| t("nif_helper_missing").to_string())
         .and_then(|helper| parse_with_helper(bytes, &helper, cancel));
     match scene {
         Ok(scene) => {
@@ -213,25 +212,21 @@ fn texture_requests(app: &App, model: &Model) -> (Vec<(String, ProviderSource)>,
         // ponytail: 64 diffuse textures per model; raise only with a measured
         // memory/latency budget. Missing textures retain neutral shading.
         if seen.len() > 64 {
-            warnings.push("Only the first 64 diffuse textures are loaded.".into());
+            warnings.push(t("nif_texture_cap").into());
             break;
         }
         let source = map
-            .ok_or(
-                "Texture providers are unavailable; refresh archive analysis and reopen the model",
-            )
+            .ok_or(t("nif_providers_unavailable"))
             .and_then(|map| {
                 let node = map
                     .asset_files
                     .get(&key)
-                    .ok_or("Texture is missing from the active providers")?;
+                    .ok_or(t("nif_texture_missing"))?;
                 if node.precedence_uncertain {
-                    warnings.push(format!(
-                        "{key}: provider order is uncertain; using the displayed candidate"
-                    ));
+                    warnings.push(tf("nif_provider_uncertain", &[("texture", &key)]));
                 }
                 crate::archive_conflicts::resolve_provider(app, &node.display_path, &node.winner)
-                    .map_err(|_| "Texture provider changed or is unavailable")
+                    .map_err(|_| t("nif_provider_changed"))
             });
         match source {
             Ok(source) => requests.push((key, source)),
@@ -250,7 +245,7 @@ fn read_texture(
         .saturating_sub(*input_bytes)
         .min(dds_preview::MAX_DDS_BYTES);
     if remaining == 0 {
-        return Err("Model texture input exceeds 256 MiB".into());
+        return Err(t("nif_textures_input_too_big").into());
     }
     let previous = *input_bytes;
     // Failed archive reads do not report partial bytes, so reserve their whole
@@ -276,30 +271,30 @@ fn read_texture(
                 .open(path)
                 .map_err(|e| e.to_string())?;
             if !file.metadata().map_err(|e| e.to_string())?.is_file() {
-                return Err("Texture is not a regular file".into());
+                return Err(t("nif_texture_not_regular").into());
             }
             let mut bytes = Vec::new();
             file.take(remaining as u64 + 1)
                 .read_to_end(&mut bytes)
                 .map_err(|e| e.to_string())?;
             if bytes.len() > remaining {
-                return Err("Model texture input exceeds its limit".into());
+                return Err(t("nif_texture_input_limit").into());
             }
             (path.clone(), identity, bytes)
         }
     };
     *input_bytes = previous + bytes.len();
     if eidos_conflicts::archive_identity(&path).ok().as_ref() != Some(&identity) {
-        return Err("Texture source changed while reading".into());
+        return Err(t("nif_texture_source_changed").into());
     }
     let info = dds_preview::inspect(&bytes)?;
     if info.layers != 1 || info.faces != 1 {
-        return Err("Diffuse cube/array textures are unsupported".into());
+        return Err(t("nif_texture_cube").into());
     }
     let mut selection = dds_preview::Selection::default();
     while (info.width >> selection.mip).max(info.height >> selection.mip) > 4096 {
         if selection.mip + 1 >= info.mips {
-            return Err("Diffuse texture exceeds 4096 pixels and has no smaller mip".into());
+            return Err(t("nif_texture_too_large").into());
         }
         selection.mip += 1;
     }
@@ -307,7 +302,7 @@ fn read_texture(
         * (info.height >> selection.mip).max(1) as usize
         * 4;
     if required > MAX_TEXTURE_BYTES.saturating_sub(*decoded_bytes) {
-        return Err("Decoded model textures exceed 64 MiB".into());
+        return Err(t("nif_textures_decoded_too_big").into());
     }
     let decoded = dds_preview::decode(&bytes, selection)?;
     *decoded_bytes += decoded.rgba.len();
@@ -336,7 +331,7 @@ pub(crate) fn change_view(
     if !dependencies_current(&preview) {
         return crate::file_preview::unsupported(
             preview.path(),
-            "Model textures changed. Open the preview again.",
+            t("nif_textures_changed"),
         );
     }
     if let Some(model) = model_mut(&mut preview) {
@@ -353,7 +348,7 @@ pub(crate) mod tests {
     pub(crate) fn fixture_model() -> Model {
         Model {
             scene: Arc::new(
-                nif_render::parse(include_bytes!("nif_render_fixtures/sse.json")).unwrap(),
+                nif_render::parse(include_bytes!("../tests/fixtures/nif_render_sse.json")).unwrap(),
             ),
             textures: Arc::new(HashMap::new()),
             view: Default::default(),
@@ -451,7 +446,7 @@ pub(crate) mod tests {
     fn model_textures_use_current_loose_winners_then_checked_archive_members() {
         let member = "Textures/Synthetic/Diffuse.dds";
         let (mut app, root) =
-            crate::tests::data_app(&[(member, "placeholder")], &[(member, "placeholder")]);
+            crate::test_support::data_app(&[(member, "placeholder")], &[(member, "placeholder")]);
         let loose = root.join("overwrite").join(member);
         let packed = root.join("mods/AAA/textures.bsa");
         std::fs::write(&loose, dds([0, 255, 0, 255])).unwrap();
@@ -517,7 +512,7 @@ pub(crate) mod tests {
     fn nif_controls_keep_original_source_and_view_provenance() {
         for archived in [false, true] {
             for replace_source in [false, true] {
-                let (mut app, root) = crate::tests::data_app(&[], &[]);
+                let (mut app, root) = crate::test_support::data_app(&[], &[]);
                 let path = root.join(if archived { "models.bsa" } else { "mesh.nif" });
                 std::fs::write(&path, b"source").unwrap();
                 let _ = crate::file_preview::start(&mut app, path.clone(), None, None, None);
@@ -560,7 +555,7 @@ pub(crate) mod tests {
 
     #[test]
     fn nif_texture_phase_and_late_replies_keep_the_original_request() {
-        let (mut app, root) = crate::tests::data_app(&[], &[]);
+        let (mut app, root) = crate::test_support::data_app(&[], &[]);
         let path = root.join("mesh.nif");
         std::fs::write(&path, b"source").unwrap();
         let _ = crate::file_preview::start(&mut app, path.clone(), None, None, None);

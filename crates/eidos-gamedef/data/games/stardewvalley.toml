@@ -3,6 +3,7 @@
 # it does not install SMAPI or configure a native Linux launch script.
 # IDs/loader: https://github.com/ModOrganizer2/modorganizer-basic_games/blob/master/games/game_stardewvalley.py
 # Packaging: https://github.com/Pathoschild/SMAPI/blob/develop/docs/technical/mod-package.md
+# SMAPI discovers each named mod folder by its manifest.json.
 id = "stardewvalley"
 name = "Stardew Valley"
 short_name = "stardewvalley"

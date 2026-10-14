@@ -1,0 +1,14 @@
+id = "morrowind"
+name = "Morrowind"
+short_name = "Morrowind"
+nexus_game = "morrowind"
+steam_app_id = 22320
+data_dir = "Data Files"
+# Morrowind keeps Morrowind.ini in the install directory, not My Games, so there
+# is no documents_dir: the per-profile INI machinery is pointed there by game id
+# (see prepare_inis).
+ini_files = ["Morrowind.ini"]
+load_order = "FileTime"
+primary_plugins = ["Morrowind.esm"]
+game_binary = "Morrowind.exe"
+registry_name = "Morrowind"

@@ -18,7 +18,7 @@ file name, in:
 
 - the game's install folder, and the `Root/` trees of enabled mods;
 - **this instance's `mods/`**, which is where MO2 users install tools;
-- the **tools folder** you set in Settings (Tools -> Tools folder), for the
+- the **tools folder** you set in Preferences (General -> Tools), for the
   directory shared between instances - `/mnt/Games/Tools` and the like.
 
 The list is per game, so a Skyrim instance is never offered Fallout's editor.

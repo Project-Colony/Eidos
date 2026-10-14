@@ -1,6 +1,6 @@
 //! Shared bounded byte previews for loose files, archives and trusted helpers.
 use crate::update::collection_target as target;
-use crate::{dds_preview, App, CollectionTarget, Message, Preview, PREVIEW_TEXT_CAP};
+use crate::{dds_preview, t, tf, App, CollectionTarget, Message};
 use eidos_addons::protocol::{Operation, Outcome, Payload, Request};
 use iced::{widget::image::Handle, Task};
 use std::io::Read;
@@ -9,6 +9,60 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
 };
+
+/// Decoded content and its physical source for Reveal.
+#[derive(Debug, Clone)]
+pub(crate) enum Preview {
+    Archive {
+        source: crate::archive_conflicts::MemberSource,
+        content: Box<Preview>,
+    },
+    Image {
+        path: PathBuf,
+        handle: iced::widget::image::Handle,
+    },
+    Dds {
+        path: PathBuf,
+        provenance: Option<Snapshot>,
+        bytes: std::sync::Arc<Vec<u8>>,
+        info: dds_preview::DdsInfo,
+        selection: dds_preview::Selection,
+        image: Result<iced::widget::image::Handle, String>,
+    },
+    Nif {
+        path: PathBuf,
+        provenance: Option<Snapshot>,
+        model: crate::nif_preview::Model,
+    },
+    /// The head of a text file, and whether there was more.
+    Text {
+        path: PathBuf,
+        body: String,
+        truncated: bool,
+    },
+    /// Nothing could be shown, and this says why rather than showing an empty
+    /// box - "no preview" with no reason reads as the feature being broken.
+    Unsupported { path: PathBuf, why: String },
+}
+
+impl Preview {
+    pub(crate) fn path(&self) -> &Path {
+        match self {
+            Preview::Archive { source, .. } => &source.path,
+            Preview::Image { path, .. }
+            | Preview::Dds { path, .. }
+            | Preview::Nif { path, .. }
+            | Preview::Text { path, .. }
+            | Preview::Unsupported { path, .. } => path,
+        }
+    }
+}
+
+/// How much of a text file a preview reads.
+///
+/// A preview is a glance, and a log can be a hundred megabytes - reading one
+/// whole to show its first screen is how a file browser freezes.
+pub(crate) const PREVIEW_TEXT_CAP: usize = 64 * 1024;
 
 const IMAGES: &[&str] = &["png", "jpg", "jpeg", "bmp", "gif", "webp", "ico", "tga"];
 
@@ -67,7 +121,7 @@ fn read_cancel(path: &Path, cancel: &AtomicBool) -> Preview {
             .map_err(|e| e.to_string())?;
         let md = file.metadata().map_err(|e| e.to_string())?;
         if !md.is_file() {
-            return Err("This is not a regular file".into());
+            return Err(t("preview_not_regular").into());
         }
         let mut bytes = Vec::new();
         file.take((limit + 1) as u64)
@@ -76,7 +130,7 @@ fn read_cancel(path: &Path, cancel: &AtomicBool) -> Preview {
         let truncated = bytes.len() > limit;
         bytes.truncate(limit);
         if truncated && limit != PREVIEW_TEXT_CAP {
-            return Err(format!("Preview input exceeds {} MiB", limit / 1024 / 1024));
+            return Err(tf("preview_input_too_big", &[("n", &(limit / 1024 / 1024))]));
         }
         Ok((bytes, truncated))
     })();
@@ -107,7 +161,7 @@ fn from_bytes_cancel(path: &Path, bytes: Vec<u8>, truncated: bool, cancel: &Atom
             ),
             Err(error) => unsupported(
                 path,
-                format!("Cannot read DDS: {error}. Reveal opens its source location."),
+                tf("preview_dds_unreadable", &[("error", &error)]),
             ),
         };
     }
@@ -124,7 +178,7 @@ fn from_bytes_cancel(path: &Path, bytes: Vec<u8>, truncated: bool, cancel: &Atom
         return crate::nif_preview::from_bytes(path, &bytes, cancel);
     }
     if bytes.contains(&0) {
-        return unsupported(path, "This is a binary file; no text preview is available.");
+        return unsupported(path, t("preview_binary"));
     }
     let was_truncated = truncated || bytes.len() > PREVIEW_TEXT_CAP;
     let bytes = &bytes[..bytes.len().min(PREVIEW_TEXT_CAP)];
@@ -139,7 +193,7 @@ fn image(bytes: &[u8], extension: &str) -> Result<Handle, String> {
     use image_decoder::ImageDecoder;
     let mut reader = image_decoder::ImageReader::new(std::io::Cursor::new(bytes));
     let format =
-        image_decoder::ImageFormat::from_extension(extension).ok_or("unsupported image format")?;
+        image_decoder::ImageFormat::from_extension(extension).ok_or(t("preview_image_format"))?;
     reader.set_format(format);
     let mut limits = image_decoder::Limits::default();
     limits.max_image_width = Some(16384);
@@ -151,7 +205,7 @@ fn image(bytes: &[u8], extension: &str) -> Result<Handle, String> {
     if decoder.total_bytes() > dds_preview::MAX_RGBA_BYTES as u64
         || u64::from(width) * u64::from(height) * 4 > dds_preview::MAX_RGBA_BYTES as u64
     {
-        return Err("Decoded image exceeds 64 MiB".into());
+        return Err(t("preview_image_too_big").into());
     }
     let rgba = image_decoder::DynamicImage::from_decoder(decoder)
         .map_err(|e| e.to_string())?
@@ -256,7 +310,7 @@ fn start_control(
         cancel: cancel.clone(),
     });
     if selection.is_none() {
-        app.preview = Some(unsupported(&path, "Reading…"));
+        app.preview = Some(unsupported(&path, t("preview_reading")));
     }
     let addons = app.addons.clone();
     let context = crate::addon_context(app);
@@ -266,7 +320,7 @@ fn start_control(
     Task::perform(
         crate::background_work::run(move || {
             if cancel.load(Ordering::Relaxed) {
-                return unsupported(&path, "Cancelled");
+                return unsupported(&path, t("preview_cancelled"));
             }
             if let Some(operation) = extension {
                 return extension_preview(&path, id, operation, &game, &addons, &context, &cancel)
@@ -302,7 +356,7 @@ fn start_control(
             }
             if let (Some(selection), Some(old)) = (selection, old) {
                 if identity.is_none() || identity != eidos_conflicts::archive_identity(&path).ok() {
-                    return unsupported(&path, "The preview source changed. Open it again.");
+                    return unsupported(&path, t("preview_source_changed"));
                 }
                 let selection = match selection {
                     Control::Nif(view) => {
@@ -322,9 +376,9 @@ fn start_control(
                             )),
                             source,
                         },
-                        _ => unsupported(&path, "The selected archive member is not a DDS texture"),
+                        _ => unsupported(&path, t("preview_member_not_dds")),
                     },
-                    _ => unsupported(&path, "The selected file is not a DDS texture"),
+                    _ => unsupported(&path, t("preview_file_not_dds")),
                 };
             }
             read_cancel(&path, &cancel)
@@ -381,7 +435,7 @@ pub(crate) fn complete(app: &mut App, id: u64, mut preview: Preview) {
     } else {
         app.preview = None;
         app.status =
-            Some("Preview discarded because its file, profile or installation changed.".into());
+            Some(t("preview_discarded").into());
     }
 }
 
@@ -422,7 +476,7 @@ fn extension_preview(
                     | Preview::Nif { path: origin, .. }
                     | Preview::Unsupported { path: origin, .. } => *origin = path.into(),
                     Preview::Archive { .. } => {
-                        return Err("Unexpected archived helper result".into())
+                        return Err(t("preview_unexpected_helper").into())
                     }
                 }
                 return Ok(preview);
@@ -439,7 +493,7 @@ fn extension_preview(
                 for field in fields {
                     body.push_str(&format!("{}: {}\n", field.label, field.value));
                 }
-                body.push_str("\nPlugins:\n");
+                body.push_str(&format!("\n{}:\n", t("tab_plugins")));
                 for name in plugins.iter().chain(&light_plugins) {
                     body.push_str(name);
                     body.push('\n');
@@ -455,12 +509,9 @@ fn extension_preview(
                 });
             }
             Outcome::Manual { reason } | Outcome::Failed { message: reason } => return Err(reason),
-            Outcome::Cancelled => return Err("Extension cancelled".into()),
-            _ => return Err("Unexpected extension reply".into()),
+            Outcome::Cancelled => return Err(t("preview_extension_cancelled").into()),
+            _ => return Err(t("preview_extension_unexpected").into()),
         }
     }
-    Err(
-        "No installed extension handled this file. Open Extensions to inspect matching rules."
-            .into(),
-    )
+    Err(t("preview_no_extension").into())
 }

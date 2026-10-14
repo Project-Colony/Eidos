@@ -349,7 +349,7 @@ eidos play /mnt/games/EidosSkyrim
 cargo run -p eidos-gui
 ```
 
-An MO2-style first-launch wizard in the Colony parchment / burgundy look:
+An MO2-style first-launch wizard, drawn in the shared Colony themes:
 welcome -> instance type (portable / global) -> game -> name & location ->
 summary -> create -> main screen. The welcome screen also lists every known
 existing instance (global and portable, last-used first) to open with one
@@ -368,6 +368,25 @@ send above the first conflicting mod, below the last, to an explicit priority, o
 into a separator's group. They all run through one shared move helper, so the
 off-by-one that comes from removing rows before re-inserting them exists in one
 place instead of five.
+
+### Preferences
+
+Click **Eidos**, top left, to open Preferences in place of the two panes, and
+click it again (or **Close**) to go back. General, Appearance and Accessibility
+come first, as in every Colony program, then Mod list, Nexus and About. Every
+change applies and saves at once; there is no Save button.
+
+- **General**: the game Eidos opens, the window size, the interface language,
+  the tools folder and how a game is run. The window speaks English and French;
+  **System** follows `LC_ALL`, `LC_MESSAGES` or `LANG`, and the change applies
+  at once. The `eidos` command line always answers in English.
+- **Appearance**: the theme (25 families, 57 palettes, Eidos's parchment by
+  default), the accent colour, the text size, effects and a live preview.
+- **Accessibility**: high contrast, a dyslexia-friendly font, reduced motion and
+  a reading text size that multiplies with the Appearance one.
+
+These live in `~/.config/Colony/Eidos/preferences.json`. The theme an older
+Eidos kept in `settings.ini` is carried over the first time.
 
 ### Columns, sorting and grouping
 
@@ -496,7 +515,7 @@ would be noise wearing the shape of an answer.
 
 ### Offline mode
 
-**Settings -> Nexus -> Offline** stops Eidos contacting Nexus at all. Update
+**Preferences -> Nexus -> Offline** stops Eidos contacting Nexus at all. Update
 checks, sign-in, downloads and collections say so instead of failing with a
 connection error. It is off unless you turn it on - a settings file written by an
 older Eidos has no such key, and reading a missing one as "on" would cut the
