@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=9c6df24d2b5b403d78e0fd5afa489427e7bf9d71 -->
+<!-- eidos-i18n: source=README.md sha=c4073ef7daa93b14edfa3d1e00794a2cdbdf8066 -->
 
 <div align="center">
 
@@ -284,7 +284,7 @@ quando uma tradução discorda dele, quem está certo é o arquivo em inglês.
 
 **Todo o resto está em inglês de propósito, não por omissão.** `docs/internals/`
 e `docs/project/` são lidos por gente que também está lendo o Rust, e o
-`CHANGELOG.md` é gerado. Traduzi-los seriam mais 17.678 palavras para manter
+`CHANGELOG.md` é gerado. Traduzi-los seriam mais 18.536 palavras para manter
 honestas para um público que não precisa delas.
 
 Cada tradução carrega o hash do arquivo em inglês do qual foi feita, e a CI

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=9c6df24d2b5b403d78e0fd5afa489427e7bf9d71 -->
+<!-- eidos-i18n: source=README.md sha=c4073ef7daa93b14edfa3d1e00794a2cdbdf8066 -->
 
 <div align="center">
 
@@ -243,7 +243,7 @@ Eidos 內部如何運作,以及它為什麼存在。安全政策以及如何回�
 
 **其餘的一切是刻意用英文,不是漏掉。** `docs/internals/` 與 `docs/project/` 的讀者
 同時也在讀 Rust 程式碼,而 `CHANGELOG.md` 是產生出來的。翻譯它們等於為一群並不
-需要它們的讀者,多出 17,678 個字要維持誠實。
+需要它們的讀者,多出 18,536 個字要維持誠實。
 
 每一份翻譯都帶著它所依據的英文檔案的雜湊值,而當英文往前走時 CI 會失敗 - 見
 [`scripts/i18n-check.sh`](../../../scripts/i18n-check.sh)。無法被帶回到最新狀態的翻譯會被

@@ -279,7 +279,7 @@ translation disagrees with it, the English file is right.
 
 **Everything else is English on purpose, not by omission.** `docs/internals/` and
 `docs/project/` are read by people who are also reading the Rust, and `CHANGELOG.md`
-is generated. Translating them would be 17,678 more words to keep honest for an
+is generated. Translating them would be 18,536 more words to keep honest for an
 audience that does not need them.
 
 Each translation carries the hash of the English file it was made from, and CI

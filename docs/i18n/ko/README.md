@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=9c6df24d2b5b403d78e0fd5afa489427e7bf9d71 -->
+<!-- eidos-i18n: source=README.md sha=c4073ef7daa93b14edfa3d1e00794a2cdbdf8066 -->
 
 <div align="center">
 
@@ -267,7 +267,7 @@ DynDOLOD 같은 도구, 그래픽, 문제 해결), Eidos가 내부에서 어떻�
 
 **나머지는 빠뜨린 것이 아니라 일부러 영어입니다.** `docs/internals/`와
 `docs/project/`는 Rust 코드도 함께 읽는 사람들이 읽고, `CHANGELOG.md`는
-생성됩니다. 그것들을 번역한다는 것은 필요로 하지 않는 독자를 위해 17,678 단어를
+생성됩니다. 그것들을 번역한다는 것은 필요로 하지 않는 독자를 위해 18,536 단어를
 더 정직하게 유지한다는 뜻입니다.
 
 번역마다 그것이 만들어진 영어 파일의 해시를 담고 있고, 영어가 앞서 나가면 CI가

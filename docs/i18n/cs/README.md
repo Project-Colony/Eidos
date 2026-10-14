@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=9c6df24d2b5b403d78e0fd5afa489427e7bf9d71 -->
+<!-- eidos-i18n: source=README.md sha=c4073ef7daa93b14edfa3d1e00794a2cdbdf8066 -->
 
 <div align="center">
 
@@ -282,7 +282,7 @@ s ní překlad nesouhlasí, pravdu má anglický soubor.
 
 **Všechno ostatní je anglicky záměrně, ne opomenutím.** `docs/internals/` a
 `docs/project/` čtou lidé, kteří zároveň čtou Rust, a `CHANGELOG.md` se generuje.
-Jejich překlad by znamenal dalších 17 678 slov, které je třeba udržovat poctivé,
+Jejich překlad by znamenal dalších 18 536 slov, které je třeba udržovat poctivé,
 pro publikum, které je nepotřebuje.
 
 Každý překlad nese hash anglického souboru, ze kterého vznikl, a CI selže, když

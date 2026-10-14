@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=9c6df24d2b5b403d78e0fd5afa489427e7bf9d71 -->
+<!-- eidos-i18n: source=README.md sha=c4073ef7daa93b14edfa3d1e00794a2cdbdf8066 -->
 
 <div align="center">
 
@@ -269,7 +269,7 @@ PROTON_ENABLE_NVAPI=1 ~/.local/bin/eidos-gui %command%
 
 **それ以外が英語なのは、手落ちではなく意図的です。** `docs/internals/` と
 `docs/project/` を読む人は Rust も読んでいますし、`CHANGELOG.md` は生成物です。
-翻訳すれば、それを必要としない読者のために正しく保ち続ける語が 17,678 語
+翻訳すれば、それを必要としない読者のために正しく保ち続ける語が 18,536 語
 増えます。
 
 各翻訳は、元にした英語ファイルのハッシュを持っています。英語が先に進むと CI が

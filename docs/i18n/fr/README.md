@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=9c6df24d2b5b403d78e0fd5afa489427e7bf9d71 -->
+<!-- eidos-i18n: source=README.md sha=c4073ef7daa93b14edfa3d1e00794a2cdbdf8066 -->
 
 <div align="center">
 
@@ -294,7 +294,7 @@ traduction le contredit, c'est le fichier anglais qui a raison.
 
 **Tout le reste est en anglais volontairement, pas par omission.** `docs/internals/`
 et `docs/project/` sont lus par des gens qui lisent aussi le Rust, et `CHANGELOG.md`
-est généré. Les traduire ferait 17 678 mots de plus à tenir honnêtes pour un public
+est généré. Les traduire ferait 18 536 mots de plus à tenir honnêtes pour un public
 qui n'en a pas besoin.
 
 Chaque traduction porte l'empreinte du fichier anglais dont elle est issue, et la CI

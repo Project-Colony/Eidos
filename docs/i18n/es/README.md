@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=9c6df24d2b5b403d78e0fd5afa489427e7bf9d71 -->
+<!-- eidos-i18n: source=README.md sha=c4073ef7daa93b14edfa3d1e00794a2cdbdf8066 -->
 
 <div align="center">
 
@@ -291,7 +291,7 @@ razón.
 
 **Todo lo demás está en inglés a propósito, no por omisión.** `docs/internals/` y
 `docs/project/` los leen personas que además leen el Rust, y `CHANGELOG.md` se
-genera. Traducirlos serían 17.678 palabras más que mantener honestas para un
+genera. Traducirlos serían 18.536 palabras más que mantener honestas para un
 público que no las necesita.
 
 Cada traducción lleva el hash del archivo en inglés del que se hizo, y CI falla

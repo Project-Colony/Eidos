@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=9c6df24d2b5b403d78e0fd5afa489427e7bf9d71 -->
+<!-- eidos-i18n: source=README.md sha=c4073ef7daa93b14edfa3d1e00794a2cdbdf8066 -->
 
 <div align="center">
 
@@ -288,7 +288,7 @@ gelijk.
 
 **Al het andere is met opzet Engels, niet uit nalatigheid.** `docs/internals/` en
 `docs/project/` worden gelezen door mensen die ook de Rust lezen, en `CHANGELOG.md`
-wordt gegenereerd. Ze vertalen zou 17.678 woorden extra zijn om eerlijk te houden,
+wordt gegenereerd. Ze vertalen zou 18.536 woorden extra zijn om eerlijk te houden,
 voor een publiek dat ze niet nodig heeft.
 
 Elke vertaling draagt de hash van het Engelse bestand waaruit ze gemaakt is, en de

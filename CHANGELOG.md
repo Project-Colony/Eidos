@@ -82,7 +82,7 @@
 
 * NIF previews are static and approximate. OMOD support is finite; arbitrary C#/VB scripts are not executed. Trusted extensions have the user's filesystem access.
 * External stores require an explicit compatible launch command; external Tier-2 runtime installation remains manual. Flatpak/AppImage packaging is unverified.
-* Verification evidence and remaining limits are recorded in [the follow-up ledger](docs/project/mo2-followups/progress.md). No Skyrim/Proton gameplay or FPS improvement is claimed.
+* Verification evidence and remaining limits are recorded in [the follow-up ledger](https://github.com/Project-Colony/Eidos/blob/v1.18.0/docs/project/mo2-followups/progress.md). No Skyrim/Proton gameplay or FPS improvement is claimed.
 
 ## [1.17.1](https://github.com/Project-Colony/Eidos/compare/v1.16.0...v1.17.1) (2026-09-12)
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=9c6df24d2b5b403d78e0fd5afa489427e7bf9d71 -->
+<!-- eidos-i18n: source=README.md sha=c4073ef7daa93b14edfa3d1e00794a2cdbdf8066 -->
 
 <div align="center">
 
@@ -291,7 +291,7 @@ quando una traduzione è in disaccordo con esso, ha ragione il file inglese.
 
 **Tutto il resto è in inglese di proposito, non per dimenticanza.**
 `docs/internals/` e `docs/project/` vengono letti da persone che stanno leggendo
-anche il Rust, e `CHANGELOG.md` è generato. Tradurli sarebbe altre 17.678 parole
+anche il Rust, e `CHANGELOG.md` è generato. Tradurli sarebbe altre 18.536 parole
 da tenere oneste per un pubblico che non ne ha bisogno.
 
 Ogni traduzione porta l'hash del file inglese da cui è stata fatta, e la CI

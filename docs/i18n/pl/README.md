@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=9c6df24d2b5b403d78e0fd5afa489427e7bf9d71 -->
+<!-- eidos-i18n: source=README.md sha=c4073ef7daa93b14edfa3d1e00794a2cdbdf8066 -->
 
 <div align="center">
 
@@ -285,7 +285,7 @@ wzorcową**: gdy tłumaczenie się z nim nie zgadza, rację ma plik angielski.
 
 **Cała reszta jest po angielsku celowo, nie przez przeoczenie.**
 `docs/internals/` i `docs/project/` czytają ludzie, którzy czytają też Rusta, a
-`CHANGELOG.md` jest generowany. Tłumaczenie ich to 17 678 dodatkowych słów do
+`CHANGELOG.md` jest generowany. Tłumaczenie ich to 18 536 dodatkowych słów do
 utrzymania w zgodzie z prawdą dla odbiorców, którzy ich nie potrzebują.
 
 Każde tłumaczenie niesie skrót pliku angielskiego, z którego powstało, a CI

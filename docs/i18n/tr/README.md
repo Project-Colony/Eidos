@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=9c6df24d2b5b403d78e0fd5afa489427e7bf9d71 -->
+<!-- eidos-i18n: source=README.md sha=c4073ef7daa93b14edfa3d1e00794a2cdbdf8066 -->
 
 <div align="center">
 
@@ -287,7 +287,7 @@ Bir oyuncunun ihtiyaç duyduğu sayfalar çevrilmiştir. **İngilizce asıldır*
 **Geri kalan her şey ihmalden değil, bilerek İngilizcedir.** `docs/internals/`
 ve `docs/project/`, aynı zamanda Rust'ı da okuyan kişilerce okunuyor,
 `CHANGELOG.md` ise üretiliyor. Onları çevirmek, ihtiyacı olmayan bir kitle için
-dürüst tutulacak 17.678 kelime daha demek olurdu.
+dürüst tutulacak 18.536 kelime daha demek olurdu.
 
 Her çeviri, yapıldığı İngilizce dosyanın hash'ini taşır ve İngilizce ilerlediğinde
 CI başarısız olur - bkz. [`scripts/i18n-check.sh`](../../../scripts/i18n-check.sh).

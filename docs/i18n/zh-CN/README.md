@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=9c6df24d2b5b403d78e0fd5afa489427e7bf9d71 -->
+<!-- eidos-i18n: source=README.md sha=c4073ef7daa93b14edfa3d1e00794a2cdbdf8066 -->
 
 <div align="center">
 
@@ -241,7 +241,7 @@ PROTON_ENABLE_NVAPI=1 ~/.local/bin/eidos-gui %command%
 
 **其余的一切是刻意用英文,而不是漏掉了。** `docs/internals/` 和 `docs/project/` 是给
 那些同时也在读 Rust 的人看的,而 `CHANGELOG.md` 是生成的。翻译它们意味着还要为一批
-并不需要的读者,再维持 17,678 个词的诚实。
+并不需要的读者,再维持 18,536 个词的诚实。
 
 每份译文都带着它所依据的英文文件的哈希,当英文往前走了,CI 就会失败 - 见
 [`scripts/i18n-check.sh`](../../../scripts/i18n-check.sh)。一份没法被重新更新到位的译文会被
