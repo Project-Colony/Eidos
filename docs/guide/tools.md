@@ -127,8 +127,9 @@ name) is given `--ignore-mo2vfscheck`. Why, and why it is not optional, is
 
 ### Three kinds of prerequisite
 
-**Tier 1 - bundled DLLs** (`d3dx9_43`, `d3dcompiler_47`, `d3dx11_43`). Eidos
-ships them and copies them into the prefix at launch. Nothing to do, no network.
+**Tier 1 - bundled DLLs** (`d3dx9_43`, `d3dcompiler_47`, `d3dcompiler_43`,
+`d3dx11_43`). Eidos ships them and copies them into the prefix at launch.
+Nothing to do, no network.
 
 **Tier 2 - winetricks verbs** (`vcrun2022`, `dotnet8`, `dotnetdesktop8`,
 `dotnet48`, `xact`...). These write registry keys, the GAC and CLR hosts, so they

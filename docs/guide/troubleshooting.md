@@ -71,9 +71,10 @@ To launch the game itself through Eidos, set its Steam launch option to:
 eidos play skyrimse -- %command%
 ```
 
-Prefix it with `WINEDLLOVERRIDES="d3dcompiler_47=n"` if Proton needs native
-d3dcompiler for shader compilation; Eidos merges that with any DLL overrides a
-mod ships (ENB/ReShade/`.asi` loaders).
+No `WINEDLLOVERRIDES` prefix is needed. When an enabled mod imports
+`d3dcompiler_47`, Eidos deploys its bundled copy into the prefix, forces it
+native, and merges that with any DLL overrides a mod ships (ENB/ReShade/`.asi`
+loaders).
 
 
 ### Is the layer index actually in use?
