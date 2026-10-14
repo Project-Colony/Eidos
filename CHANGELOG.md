@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.19.0](https://github.com/Project-Colony/Eidos/compare/v1.18.4...v1.19.0) (2026-10-14)
+
+
+### Features
+
+* adopt the Colony design system with shared themes, fonts, text scaling, Preferences navigation and a French interface ([#89](https://github.com/Project-Colony/Eidos/issues/89)) ([3939d65](https://github.com/Project-Colony/Eidos/commit/3939d6537328abd4a63e7e1b14e1a7cde4ba5d46))
+* answer --version and run the eidos CLI from the eidos-gui binary ([f3ab736](https://github.com/Project-Colony/Eidos/commit/f3ab7369c4e04ef7d644962047841e58fd03d839))
+* ship eidos-linux, a single signed file Colony installs, plus eidos-linux-bundle.tar.gz replacing the versioned tarball and its .sha256 ([f3ab736](https://github.com/Project-Colony/Eidos/commit/f3ab7369c4e04ef7d644962047841e58fd03d839))
+
+
+### Fixes
+
+* open Preferences from the first-run screens and keep a broken preferences file instead of overwriting it ([#92](https://github.com/Project-Colony/Eidos/issues/92)) ([a1477f2](https://github.com/Project-Colony/Eidos/commit/a1477f2c85b67c3f3fda97ea0762b0786542f2d5))
+* **paths:** migrate data safely into the Colony layout and keep legacy files as fallback ([#76](https://github.com/Project-Colony/Eidos/issues/76)) ([acbc0f2](https://github.com/Project-Colony/Eidos/commit/acbc0f2c61a8d2e6507a90318540d89bb72afc0b))
+* **paths:** never move an instance under a running Eidos, and clean up after a crashed move ([#78](https://github.com/Project-Colony/Eidos/issues/78)) ([4552027](https://github.com/Project-Colony/Eidos/commit/4552027ac4273c8a00cc34529da11c5e275fdf91))
+* stop shipping Microsoft DirectX DLLs inside eidos and install them through winetricks when a mod or tool needs them ([#87](https://github.com/Project-Colony/Eidos/issues/87)) ([cf01336](https://github.com/Project-Colony/Eidos/commit/cf01336783a5fa21b495e9690903b64c7102c896))
+
+
+### Documentation
+
+* remove agent artefacts and translated copies and bring the docs up to date ([#86](https://github.com/Project-Colony/Eidos/issues/86)) ([97cca9b](https://github.com/Project-Colony/Eidos/commit/97cca9bd1dd0e938bbf505f5ba85d647dbdbd697))
+
 ## [1.18.4](https://github.com/Project-Colony/Eidos/compare/v1.18.3...v1.18.4) (2026-10-08)
 
 
