@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=427084e50a9961f690747ca6fe98c2f1725defe9 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
 
 # Sorun giderme ve tanılama
 
@@ -77,9 +77,10 @@ ayarlayın:
 eidos play skyrimse -- %command%
 ```
 
-Proton'un shader derlemesi için native d3dcompiler'a ihtiyacı varsa başına
-`WINEDLLOVERRIDES="d3dcompiler_47=n"` ekleyin; Eidos bunu bir modun getirdiği
-DLL geçersiz kılmalarıyla birleştirir (ENB/ReShade/`.asi` yükleyicileri).
+Başına bir `WINEDLLOVERRIDES` eklemek gerekmez. Etkin bir mod `d3dcompiler_47`
+içe aktardığında Eidos kendi paketlediği kopyayı öneke yerleştirir, onu native
+olmaya zorlar ve bunu bir modun getirdiği DLL geçersiz kılmalarıyla birleştirir
+(ENB/ReShade/`.asi` yükleyicileri).
 
 
 ### Katman indeksi gerçekten kullanılıyor mu?

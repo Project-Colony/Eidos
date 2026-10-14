@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=13248970bb8989b15a41910dd3f9c6564a833325 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f10a5437abda242ca6654c18a34358e156c71a93 -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -17,8 +17,8 @@ düzenlemelerin düğmesidir. Eidos onları dosya adına göre şuralarda arar:
 
 - oyunun kurulum klasörü ve etkin modların `Root/` ağaçları;
 - MO2 kullanıcılarının araçları kurduğu yer olan **bu örneğin `mods/`** dizini;
-- örnekler arasında paylaşılan dizin için Ayarlar'da belirlediğiniz **araçlar
-  klasörü** (Tools -> Tools folder) - `/mnt/Games/Tools` ve benzerleri.
+- örnekler arasında paylaşılan dizin için Tercihler'de belirlediğiniz **araçlar
+  klasörü** (General -> Tools) - `/mnt/Games/Tools` ve benzerleri.
 
 `PGPatcher.exe` Creation Engine oyunlarinda ayni sekilde bulunur ve onsuz calisamayacagi bir argumanla gelir - bkz. [asagisi](#pgpatcher-neden---ignore-mo2vfscheck-ister).
 
@@ -134,8 +134,8 @@ istege bagli olmadigi [asagisi](#pgpatcher-neden---ignore-mo2vfscheck-ister).
 ### Üç tür ön gereksinim
 
 **Kademe 1 - paketle gelen DLL'ler** (`d3dx9_43`, `d3dcompiler_47`,
-`d3dx11_43`). Eidos onları birlikte getirir ve başlatmada öneke kopyalar.
-Yapılacak bir şey yok, ağ yok.
+`d3dcompiler_43`, `d3dx11_43`). Eidos onları birlikte getirir ve başlatmada
+öneke kopyalar. Yapılacak bir şey yok, ağ yok.
 
 **Kademe 2 - winetricks fiilleri** (`vcrun2022`, `dotnet8`, `dotnetdesktop8`,
 `dotnet48`, `xact`...). Bunlar registry anahtarlarını, GAC'yi ve CLR

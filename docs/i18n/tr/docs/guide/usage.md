@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c1396f03f352fe3d3bc10c23662ec659cb9eec2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=929a7bc31548c16e2538cf9f04c51109f51ad2da -->
 
 # Eidos kullanımı
 
@@ -369,7 +369,7 @@ eidos play /mnt/games/EidosSkyrim
 cargo run -p eidos-gui
 ```
 
-Colony'nin parşömen / bordo görünümünde, MO2 tarzı bir ilk başlatma sihirbazı:
+Paylaşılan Colony temalarıyla çizilmiş, MO2 tarzı bir ilk başlatma sihirbazı:
 karşılama -> örnek türü (taşınabilir / global) -> oyun -> ad ve konum -> özet ->
 oluştur -> ana ekran. Karşılama ekranı ayrıca bilinen her mevcut örneği (global
 ve taşınabilir, en son kullanılan başta) tek tıkla açmak üzere listeler - aynı
@@ -389,6 +389,27 @@ taşımaları da burada - çakışan ilk modun üstüne, sonuncusunun altına, a
 belirtilmiş bir önceliğe ya da bir ayracın grubunun içine gönderin. Hepsi tek bir
 paylaşılan taşıma yardımcısından geçer, böylece satırları yeniden eklemeden önce
 kaldırmaktan doğan bir-fark hatası beş yerde değil tek yerde bulunur.
+
+### Tercihler
+
+İki bölmenin yerine Tercihler'i açmak için sol üstteki **Eidos**'a tıklayın;
+geri dönmek için ona yeniden (ya da **Close**'a) tıklayın. Her Colony
+programında olduğu gibi önce General, Appearance ve Accessibility gelir, ardından
+Mod list, Nexus ve About. Her değişiklik anında uygulanır ve kaydedilir; Save
+düğmesi yoktur.
+
+- **General**: Eidos'un açtığı oyun, pencere boyutu, arayüz dili, araçlar
+  klasörü ve bir oyunun nasıl çalıştırıldığı. Pencere İngilizce ve Fransızca
+  konuşur; **System** `LC_ALL`, `LC_MESSAGES` ya da `LANG` değerini izler ve
+  değişiklik anında uygulanır. `eidos` komut satırı her zaman İngilizce yanıt
+  verir.
+- **Appearance**: tema (25 aile, 57 palet, varsayılan olarak Eidos'un parşömeni),
+  vurgu rengi, metin boyutu, efektler ve canlı bir önizleme.
+- **Accessibility**: yüksek karşıtlık, disleksi dostu bir yazı tipi, azaltılmış
+  hareket ve Appearance'taki boyutla çarpılan bir okuma metni boyutu.
+
+Bunlar `~/.config/Colony/Eidos/preferences.json` içinde durur. Daha eski bir
+Eidos'un `settings.ini` içinde tuttuğu tema ilk seferde aktarılır.
 
 ### Sütunlar, sıralama ve gruplama
 
@@ -526,7 +547,7 @@ yanıt kılığına girmiş gürültü olurdu.
 
 ### Çevrimdışı kip
 
-**Settings -> Nexus -> Offline**, Eidos'un Nexus'la hiç bağlantı kurmasını
+**Preferences -> Nexus -> Offline**, Eidos'un Nexus'la hiç bağlantı kurmasını
 durdurur. Güncelleme denetimleri, oturum açma, indirmeler ve koleksiyonlar bir
 bağlantı hatasıyla başarısız olmak yerine bunu söyler. Siz açmadıkça kapalıdır -
 daha eski bir Eidos'un yazdığı bir ayar dosyasında böyle bir anahtar yoktur ve

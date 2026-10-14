@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/extensions.md sha=5f31f1cbc3dcbfb9655f3570f01e5ada1377268d -->
+<!-- eidos-i18n: source=docs/guide/extensions.md sha=1d33d938321e5dbf200cd9b7a38c1e5f412fb116 -->
 
 # Eklentiler
 
@@ -88,4 +88,4 @@ bir hata görünür biçimde başarısız olur, `--out {typo}` ifadesini
 
 ## Bir eklentinin yapamayacakları
 
-Bir eklenti Eidos'a geri çağrı yapamaz, kendisini bir arşivden kaydedemez veya kendi arayüz bileşenlerini çizemez. Yapılandırılmış protokol 1 kurucuları denetlenen dosya planları ve seçim soruları döndürebilir; inceleme, geçici hazırlık ve yayımlama Eidos'un kontrolündedir. FOMOD ve BAIN yerel kurucular olarak kalır. Önizleme ve kayıt bilgisi eklentileri aynı sınırlı yanıt sunucusunu kullanır. Eşleştirme önceliği, kaydedilmiş CLI yanıtları, sınırlar ve yeniden yürütmede kimlik denetimleri için [protokol sözleşmesine ve çalıştırılabilir örneklere](../../../../examples/extensions/README.md) bakın.
+Bir eklenti Eidos'a geri çağrı yapamaz, kendisini bir arşivden kaydedemez veya kendi arayüz bileşenlerini çizemez. Yapılandırılmış protokol 1 kurucuları denetlenen dosya planları ve seçim soruları döndürebilir; inceleme, geçici hazırlık ve yayımlama Eidos'un kontrolündedir. FOMOD ve BAIN yerel kurucular olarak kalır. Önizleme ve kayıt bilgisi eklentileri aynı sınırlı yanıt sunucusunu kullanır. Eşleştirme önceliği, kaydedilmiş CLI yanıtları, sınırlar ve yeniden yürütmede kimlik denetimleri için [protokol sözleşmesine ve çalıştırılabilir örneklere](../../../../guide/examples/extensions/README.md) bakın.
