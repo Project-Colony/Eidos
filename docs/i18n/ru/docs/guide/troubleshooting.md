@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=427084e50a9961f690747ca6fe98c2f1725defe9 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
 
 # Диагностика и устранение неполадок
 
@@ -73,9 +73,10 @@ Diagnostics появляются только тогда, когда вы её �
 eidos play skyrimse -- %command%
 ```
 
-Поставьте перед ним `WINEDLLOVERRIDES="d3dcompiler_47=n"`, если Proton нуждается в
-родном d3dcompiler для компиляции шейдеров; Eidos сольёт это с любыми
-переопределениями DLL, которые поставляет мод (загрузчики ENB/ReShade/`.asi`).
+Префикс `WINEDLLOVERRIDES` не нужен. Когда включённый мод импортирует
+`d3dcompiler_47`, Eidos разворачивает в префиксе свою встроенную копию,
+принудительно делает её родной (native) и сливает это с любыми переопределениями
+DLL, которые поставляет мод (загрузчики ENB/ReShade/`.asi`).
 
 ### Действительно ли используется индекс слоёв?
 
@@ -105,7 +106,7 @@ cargo run --release -p eidos-core --example listing_cost -- <mods-dir> <overwrit
 
 Три отдельные причины, каждая без единого сообщения об ошибке: NVAPI не включён в
 параметрах запуска, эксклюзивный полноэкранный режим или устаревший лимит FPS у
-Reflex. Полный список - в [graphics.ru.md](graphics.md).
+Reflex. Полный список - в [graphics.md](graphics.md).
 
 **Мод, который пишет один каталог двумя способами, терял всё под вторым.**
 Исправлено. ext4 различает `meshes/` и `Meshes/`; объединённая вид не должен, а
