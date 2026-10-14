@@ -160,16 +160,21 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                 .size(sz(11))
                 .width(Length::Fixed(scaled(DL_C_VERSION))),
         )
-        .push(text(t("col_size")).size(sz(11)).width(Length::Fixed(scaled(DL_C_SIZE))))
-        .push(text(t("prereq_status")).size(sz(11)).width(Length::Fixed(scaled(DL_C_STATUS))))
+        .push(
+            text(t("col_size"))
+                .size(sz(11))
+                .width(Length::Fixed(scaled(DL_C_SIZE))),
+        )
+        .push(
+            text(t("prereq_status"))
+                .size(sz(11))
+                .width(Length::Fixed(scaled(DL_C_STATUS))),
+        )
         .push(Space::new().width(Length::Fixed(scaled(DL_C_ACTIONS))));
 
     let mut rows = Column::new().spacing(2);
     if app.downloads.is_empty() {
-        rows = rows.push(
-            text(t("dl_none_yet"))
-                .size(sz(11)),
-        );
+        rows = rows.push(text(t("dl_none_yet")).size(sz(11)));
     }
     for (i, row) in app.downloads.iter().enumerate() {
         let armed = app.confirm_delete_download.as_deref() == Some(row.name.as_str());
@@ -251,18 +256,25 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                             .style(button::primary),
                     )
                     .push(
-                        button(text(if armed { t("common_confirm") } else { t("common_delete") }).size(sz(10)))
-                            .padding(3)
-                            .on_press(if armed {
-                                Message::ConfirmDeleteDownload(row.name.clone())
+                        button(
+                            text(if armed {
+                                t("common_confirm")
                             } else {
-                                Message::DeleteDownload(row.name.clone())
+                                t("common_delete")
                             })
-                            .style(if armed {
-                                button::danger
-                            } else {
-                                button::secondary
-                            }),
+                            .size(sz(10)),
+                        )
+                        .padding(3)
+                        .on_press(if armed {
+                            Message::ConfirmDeleteDownload(row.name.clone())
+                        } else {
+                            Message::DeleteDownload(row.name.clone())
+                        })
+                        .style(if armed {
+                            button::danger
+                        } else {
+                            button::secondary
+                        }),
                     )
                     .into()
             } else {
@@ -286,26 +298,40 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                 .into()
             }
         } else {
-            let install = button(text(if installed { t("dl_reinstall") } else { t("install_install") }).size(sz(11)))
-                .padding(4)
-                .on_press(Message::ModPicked(Some(row.path.clone())))
-                .style(if installed {
-                    button::secondary
+            let install = button(
+                text(if installed {
+                    t("dl_reinstall")
                 } else {
-                    button::primary
-                });
-            let del = button(text(if armed { t("common_confirm") } else { t("common_delete") }).size(sz(11)))
-                .padding(4)
-                .on_press(if armed {
-                    Message::ConfirmDeleteDownload(row.name.clone())
-                } else {
-                    Message::DeleteDownload(row.name.clone())
+                    t("install_install")
                 })
-                .style(if armed {
-                    button::danger
+                .size(sz(11)),
+            )
+            .padding(4)
+            .on_press(Message::ModPicked(Some(row.path.clone())))
+            .style(if installed {
+                button::secondary
+            } else {
+                button::primary
+            });
+            let del = button(
+                text(if armed {
+                    t("common_confirm")
                 } else {
-                    button::secondary
-                });
+                    t("common_delete")
+                })
+                .size(sz(11)),
+            )
+            .padding(4)
+            .on_press(if armed {
+                Message::ConfirmDeleteDownload(row.name.clone())
+            } else {
+                Message::DeleteDownload(row.name.clone())
+            })
+            .style(if armed {
+                button::danger
+            } else {
+                button::secondary
+            });
             let mut actions = Row::new()
                 .spacing(4)
                 .align_y(iced::Alignment::Center)
@@ -349,10 +375,17 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
             // Hiding is not deleting, which is why both are offered: an archive
             // somebody is done with but does not want to lose is the common case
             // this list had no answer for.
-            let hide = button(text(if row.hidden { t("info_unhide") } else { t("info_hide") }).size(sz(11)))
-                .padding(4)
-                .style(button::text)
-                .on_press(Message::HideDownload(row.name.clone()));
+            let hide = button(
+                text(if row.hidden {
+                    t("info_unhide")
+                } else {
+                    t("info_hide")
+                })
+                .size(sz(11)),
+            )
+            .padding(4)
+            .style(button::text)
+            .on_press(Message::HideDownload(row.name.clone()));
             actions.push(hide).push(install).push(del).into()
         };
         // Prefer the friendly Nexus mod name when present, else the file name.

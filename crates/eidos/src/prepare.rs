@@ -551,7 +551,10 @@ fn instance_sync_keys(prof_saves: &std::path::Path) -> std::collections::HashSet
 /// another device or a launch without Eidos lands here, and nothing pulls it in:
 /// seeding is one-time so saves the user deleted stay deleted. Older names are
 /// that deleted set, so they are not reported.
-fn hidden_prefix_saves(prof_saves: &std::path::Path, prefix_saves: &std::path::Path) -> Vec<String> {
+fn hidden_prefix_saves(
+    prof_saves: &std::path::Path,
+    prefix_saves: &std::path::Path,
+) -> Vec<String> {
     let Ok(seeded) = std::fs::metadata(prof_saves.join(".seeded")).and_then(|m| m.modified())
     else {
         return Vec::new(); // not seeded yet: the next seed adopts everything
@@ -1284,7 +1287,10 @@ mod rescue_tests {
             stamped(&dir.join("quicksave.fos"), tag.as_bytes(), secs);
             stamped(&dir.join("quicksave.nvse"), tag.as_bytes(), secs);
             sync_saves_for_cloud(dir, &prefix).unwrap();
-            assert_eq!(fs::read(prefix.join("quicksave.fos")).unwrap(), tag.as_bytes());
+            assert_eq!(
+                fs::read(prefix.join("quicksave.fos")).unwrap(),
+                tag.as_bytes()
+            );
         }
         // Each overwritten prefix copy still lives in the profile that pushed it.
         assert!(orphans(&a).is_empty(), "{:?}", orphans(&a));
@@ -1331,7 +1337,11 @@ mod rescue_tests {
         let pushed = root.join("profiles/Other/saves");
         stamped(&prefix.join("Other.ess"), b"other", t + 10);
         fs::create_dir_all(&pushed).unwrap();
-        fs::write(pushed.join(".cloud-sync-manifest"), "Other.ess\t0000000000000000\n").unwrap();
+        fs::write(
+            pushed.join(".cloud-sync-manifest"),
+            "Other.ess\t0000000000000000\n",
+        )
+        .unwrap();
         // Made on a Steam Deck and downloaded by Steam Cloud.
         stamped(&prefix.join("Deck.ess"), b"deck", t + 10);
         stamped(&prefix.join("Deck.skse"), b"deck cosave", t + 10);
@@ -1340,7 +1350,10 @@ mod rescue_tests {
         // Warned once per change, not on every launch.
         assert!(hidden_saves_changed(&saves, &hidden));
         assert!(!hidden_saves_changed(&saves, &hidden));
-        assert!(hidden_saves_changed(&saves, &["Deck.ess".into(), "Deck2.ess".into()]));
+        assert!(hidden_saves_changed(
+            &saves,
+            &["Deck.ess".into(), "Deck2.ess".into()]
+        ));
         assert!(!hidden_saves_changed(&saves, &[]));
         assert!(hidden_saves_changed(&saves, &hidden));
         fs::remove_dir_all(root).unwrap();

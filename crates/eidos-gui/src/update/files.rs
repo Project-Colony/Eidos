@@ -9,8 +9,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
     match message {
         Message::OverwriteToModStart => {
             if app.created.as_ref().is_some_and(|i| i.overwrite_is_empty()) {
-                app.status =
-                    Some(t("status_overwrite_empty").to_string());
+                app.status = Some(t("status_overwrite_empty").to_string());
             } else {
                 // Default to a fresh, non-colliding name, like the installer does.
                 let suggestion = app
@@ -112,9 +111,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     app.conflicts = compute_conflicts(app);
                 } else {
                     app.confirm_clear = true;
-                    app.status = Some(
-                        t("status_overwrite_clear_confirm").to_string(),
-                    );
+                    app.status = Some(t("status_overwrite_clear_confirm").to_string());
                 }
             }
         }
@@ -233,7 +230,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 }
                 Err(e) => {
                     app.status = Some(tf(
-                        if hide { "status_hide_failed" } else { "status_unhide_failed" },
+                        if hide {
+                            "status_hide_failed"
+                        } else {
+                            "status_unhide_failed"
+                        },
                         &[("file", &subject), ("error", &e)],
                     ));
                 }
@@ -257,7 +258,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             match result {
                 Ok(was_on) => {
                     app.status = Some(tf(
-                        if was_on { "status_tweak_disabled" } else { "status_tweak_enabled" },
+                        if was_on {
+                            "status_tweak_disabled"
+                        } else {
+                            "status_tweak_enabled"
+                        },
                         &[("tweak", &name), ("name", &m.name)],
                     ));
                     bump_views(app);
@@ -318,15 +323,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 }
             };
             let Some(owners) = overwrite_owners(app) else {
-                app.status = Some(
-                    t("status_sync_needs_conflicts").to_string(),
-                );
+                app.status = Some(t("status_sync_needs_conflicts").to_string());
                 return Task::none();
             };
             if owners.is_empty() {
-                app.status = Some(
-                    t("status_sync_nowhere").to_string(),
-                );
+                app.status = Some(t("status_sync_nowhere").to_string());
                 return Task::none();
             }
             match inst.sync_overwrite_to_mods(&owners) {
@@ -572,7 +573,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 let md = match path.symlink_metadata() {
                     Ok(md) => md,
                     Err(e) => {
-                        app.error = Some(tf("status_delete_failed", &[("path", &rel), ("error", &e)]));
+                        app.error =
+                            Some(tf("status_delete_failed", &[("path", &rel), ("error", &e)]));
                         return Task::none();
                     }
                 };
@@ -587,7 +589,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     refresh_after_tree_change(app);
                     app.status = Some(tf("status_deleted", &[("path", &rel)]));
                 }
-                Err(e) => app.error = Some(tf("status_delete_failed", &[("path", &rel), ("error", &e)])),
+                Err(e) => {
+                    app.error = Some(tf("status_delete_failed", &[("path", &rel), ("error", &e)]))
+                }
             }
         }
         Message::FiletreeNewFolderStart(i) => {
@@ -644,7 +648,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     refresh_after_tree_change(app);
                     app.status = Some(tf("status_created_folder", &[("name", &name)]));
                 }
-                Err(e) => app.error = Some(tf("status_create_folder_failed", &[("name", &name), ("error", &e)])),
+                Err(e) => {
+                    app.error = Some(tf(
+                        "status_create_folder_failed",
+                        &[("name", &name), ("error", &e)],
+                    ))
+                }
             }
         }
         // Nothing to store. Every animated value is a function of the instant

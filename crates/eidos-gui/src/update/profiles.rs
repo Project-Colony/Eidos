@@ -37,7 +37,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             });
             if let Some((name, src_name, true)) = created {
                 if switch_to_profile(app, &name) {
-                    app.status = Some(tf("status_profile_copied", &[("name", &name), ("source", &src_name)]));
+                    app.status = Some(tf(
+                        "status_profile_copied",
+                        &[("name", &name), ("source", &src_name)],
+                    ));
                 }
             }
         }
@@ -79,8 +82,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 } else if app.running.is_some() {
                     // A rename mid-run would pull the played profile out from
                     // under the session's post-exit steps (and the bound dirs).
-                    app.status =
-                        Some(t("status_rename_profile_while_running").to_string());
+                    app.status = Some(t("status_rename_profile_while_running").to_string());
                 } else if let Err(e) = probe_lock(inst) {
                     // app.running only sees runs THIS window started; the flock
                     // also covers a session launched from the CLI or Steam.
@@ -108,7 +110,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let suggested = app
                 .created
                 .as_ref()
-                .map(|inst| suggest_free_profile_name(inst, &tf("profile_copy_name", &[("name", &name)])))
+                .map(|inst| {
+                    suggest_free_profile_name(inst, &tf("profile_copy_name", &[("name", &name)]))
+                })
                 .unwrap_or_else(|| tf("profile_copy_name", &[("name", &name)]));
             app.profile_copy = Some((name, suggested));
             app.profile_rename = None;
@@ -136,8 +140,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             app.profile_copy = None;
                             app.profile_menu = None;
                             if switch_to_profile(app, &new) {
-                                app.status =
-                                    Some(tf("status_profile_copied", &[("name", &new), ("source", &src_name)]));
+                                app.status = Some(tf(
+                                    "status_profile_copied",
+                                    &[("name", &new), ("source", &src_name)],
+                                ));
                             }
                         }
                         Err(e) => app.status = Some(tf("status_copy_failed", &[("error", &e)])),

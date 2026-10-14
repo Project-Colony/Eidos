@@ -42,10 +42,26 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
 
     let header = Row::new()
         .spacing(6)
-        .push(text(t("info_name")).size(sz(11)).width(Length::FillPortion(3)))
-        .push(text(t("data_provided_by")).size(sz(11)).width(Length::FillPortion(2)))
-        .push(text(t("col_size")).size(sz(11)).width(Length::Fixed(scaled(C_SIZE))))
-        .push(text(t("col_modified")).size(sz(11)).width(Length::Fixed(scaled(C_DATE))))
+        .push(
+            text(t("info_name"))
+                .size(sz(11))
+                .width(Length::FillPortion(3)),
+        )
+        .push(
+            text(t("data_provided_by"))
+                .size(sz(11))
+                .width(Length::FillPortion(2)),
+        )
+        .push(
+            text(t("col_size"))
+                .size(sz(11))
+                .width(Length::Fixed(scaled(C_SIZE))),
+        )
+        .push(
+            text(t("col_modified"))
+                .size(sz(11))
+                .width(Length::Fixed(scaled(C_DATE))),
+        )
         .push(text("").size(sz(11)).width(Length::Fixed(scaled(C_ACTION))));
 
     // No spacing: the insertion strips below provide the separation, and they
@@ -159,10 +175,7 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
         list = list.push(striped(row.into(), idx % 2 == 0));
     }
     if truncated {
-        list = list.push(
-            text(tf("data_truncated", &[("n", &DATA_TREE_ROWS)]))
-            .size(sz(11)),
-        );
+        list = list.push(text(tf("data_truncated", &[("n", &DATA_TREE_ROWS)])).size(sz(11)));
     }
     Column::new()
         .spacing(4)
@@ -197,14 +210,13 @@ pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
     let dir = inst.overwrite_dir();
     let actions = Row::new()
         .spacing(6)
-        .push(
-            text(t("overwrite_intro"))
-                .size(sz(12))
-                .width(Length::Fill),
-        )
+        .push(text(t("overwrite_intro")).size(sz(12)).width(Length::Fill))
         // MO2's central Overwrite workflow: turn what the game/tools generated into
         // a real, orderable mod instead of only being able to delete it.
-        .push(tool_btn(t("overwrite_create_mod"), Message::OverwriteToModStart))
+        .push(tool_btn(
+            t("overwrite_create_mod"),
+            Message::OverwriteToModStart,
+        ))
         // MO2's "Sync to Mods": send each file back to the mod that already
         // provides that path, instead of bundling everything into a new one.
         .push(
@@ -224,7 +236,10 @@ pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
                 button::secondary
             }),
         )
-        .push(tool_btn(t("common_open_folder"), Message::OpenFolder(dir.clone())))
+        .push(tool_btn(
+            t("common_open_folder"),
+            Message::OpenFolder(dir.clone()),
+        ))
         .push(
             button(
                 text(if app.confirm_clear {
@@ -316,10 +331,7 @@ pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
         c = c.push(row);
     }
     if truncated {
-        c = c.push(
-            text(tf("overwrite_truncated", &[("n", &DATA_TREE_ROWS)]))
-            .size(sz(11)),
-        );
+        c = c.push(text(tf("overwrite_truncated", &[("n", &DATA_TREE_ROWS)])).size(sz(11)));
     }
 
     let mut col = Column::new().spacing(8).push(actions);

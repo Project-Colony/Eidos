@@ -50,7 +50,10 @@ fn the_fields_the_writer_code_could_not_settle() {
         .find(|m| m.source.md5 == "ad453eedf3660139782bb2e8f80e32aa")
         .expect("the member the API was cross-checked against");
     assert_eq!(k.source.file_size, Some(3_609_261));
-    assert_eq!(k.source.logical_filename, "The Great Town of Karthwasten Patch Collection");
+    assert_eq!(
+        k.source.logical_filename,
+        "The Great Town of Karthwasten Patch Collection"
+    );
 }
 
 #[test]

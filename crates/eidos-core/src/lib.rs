@@ -2370,7 +2370,10 @@ mod tests {
         // No truncated copy at the final path to shadow the lower file for good,
         // and no stranded temp either.
         assert_eq!(fs::read_dir(&over).unwrap().count(), 0);
-        assert_eq!(stack.resolve_read("plugin.esp"), Some(game.join("plugin.esp")));
+        assert_eq!(
+            stack.resolve_read("plugin.esp"),
+            Some(game.join("plugin.esp"))
+        );
     }
 
     #[test]

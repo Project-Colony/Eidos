@@ -286,7 +286,11 @@ fn resolve_windows_path(value: &str, s_drive: Option<&Path>) -> Option<PathBuf> 
         'S' => s_drive?.to_path_buf(),
         _ => return None,
     };
-    Some(if rest.is_empty() { base } else { base.join(rest) })
+    Some(if rest.is_empty() {
+        base
+    } else {
+        base.join(rest)
+    })
 }
 
 /// What `ensure_registry` did, and when it did nothing, why.
@@ -565,7 +569,12 @@ mod tests {
         let reg = system_reg(&escape_reg(WANT), &escape_reg(LAUNCHER));
         let steam = Path::new("/mnt/Jeux/SteamLibrary/steamapps");
         assert!(matches!(
-            registry_status_in(&reg, Path::new(INSTALL), "Skyrim Special Edition", Some(steam)),
+            registry_status_in(
+                &reg,
+                Path::new(INSTALL),
+                "Skyrim Special Edition",
+                Some(steam)
+            ),
             RegistryStatus::Correct
         ));
     }
@@ -577,7 +586,12 @@ mod tests {
         // and the card must show that value - it is the one xEdit would print.
         let reg = system_reg(&escape_reg(WANT), &escape_reg(LAUNCHER));
         let root = Path::new("/mnt/Jeux/SteamLibrary");
-        match registry_status_in(&reg, Path::new(INSTALL), "Skyrim Special Edition", Some(root)) {
+        match registry_status_in(
+            &reg,
+            Path::new(INSTALL),
+            "Skyrim Special Edition",
+            Some(root),
+        ) {
             RegistryStatus::Stale { found, want } => {
                 assert_eq!(found.as_deref(), Some(LAUNCHER));
                 assert_eq!(want, WANT);

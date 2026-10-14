@@ -303,12 +303,10 @@ mod tests {
     /// 4096), the DLL name (4224) and the address and name thunks (4256, 4272).
     fn synthetic_pe(dll: &str, pe64: bool, delay: bool) -> Vec<u8> {
         let mut pe = vec![0_u8; 1024];
-        let put16 = |pe: &mut Vec<u8>, at: usize, v: u16| {
-            pe[at..at + 2].copy_from_slice(&v.to_le_bytes())
-        };
-        let put32 = |pe: &mut Vec<u8>, at: usize, v: u32| {
-            pe[at..at + 4].copy_from_slice(&v.to_le_bytes())
-        };
+        let put16 =
+            |pe: &mut Vec<u8>, at: usize, v: u16| pe[at..at + 2].copy_from_slice(&v.to_le_bytes());
+        let put32 =
+            |pe: &mut Vec<u8>, at: usize, v: u32| pe[at..at + 4].copy_from_slice(&v.to_le_bytes());
         pe[..2].copy_from_slice(b"MZ");
         put32(&mut pe, 60, 128);
         pe[128..132].copy_from_slice(b"PE\0\0");
@@ -323,7 +321,13 @@ mod tests {
         put16(&mut pe, 148, opt_size);
         put16(&mut pe, 150, flags);
         put16(&mut pe, opt, magic);
-        for (at, v) in [(32, 4096), (36, 512), (56, 8192), (60, 512), (rva_count_at, 16)] {
+        for (at, v) in [
+            (32, 4096),
+            (36, 512),
+            (56, 8192),
+            (60, 512),
+            (rva_count_at, 16),
+        ] {
             put32(&mut pe, opt + at, v);
         }
         // Data directory 1 is the import table, 13 the delay-load one.
@@ -469,7 +473,11 @@ mod tests {
         // Nest the DLL like a real SKSE plugin: <mod>/SKSE/Plugins/foo.dll.
         let nested = dir.join("SKSE/Plugins");
         fs::create_dir_all(&nested).unwrap();
-        fs::write(nested.join("foo.dll"), synthetic_pe("rpcrt4.dll", true, false)).unwrap();
+        fs::write(
+            nested.join("foo.dll"),
+            synthetic_pe("rpcrt4.dll", true, false),
+        )
+        .unwrap();
         assert!(
             scan_imports_for(&[dir.clone()], "RPCRT4.dll"),
             "recursive scan must find it"
@@ -510,12 +518,20 @@ mod tests {
     fn a_wow64_prefix_needs_the_native_dll_in_both_system_dirs() {
         let (win, s32, sw64) = win64_prefix();
         assert!(!native_dll_present(&win, "d3dx9_43"), "nothing there yet");
-        fs::write(s32.join("d3dx9_43.dll"), synthetic_pe("kernel32.dll", true, false)).unwrap();
+        fs::write(
+            s32.join("d3dx9_43.dll"),
+            synthetic_pe("kernel32.dll", true, false),
+        )
+        .unwrap();
         assert!(
             !native_dll_present(&win, "d3dx9_43"),
             "a 32-bit tool would still load Wine's builtin from syswow64"
         );
-        fs::write(sw64.join("d3dx9_43.dll"), synthetic_pe("kernel32.dll", false, false)).unwrap();
+        fs::write(
+            sw64.join("d3dx9_43.dll"),
+            synthetic_pe("kernel32.dll", false, false),
+        )
+        .unwrap();
         assert!(native_dll_present(&win, "d3dx9_43"));
         let _ = fs::remove_dir_all(&win);
     }
@@ -545,7 +561,11 @@ mod tests {
         // A copied placeholder (a "fake DLL") is not native either.
         for d in [&s32, &sw64] {
             fs::remove_file(d.join("d3dcompiler_47.dll")).unwrap();
-            fs::write(d.join("d3dcompiler_47.dll"), wine_builtin(b"Wine placeholder DLL")).unwrap();
+            fs::write(
+                d.join("d3dcompiler_47.dll"),
+                wine_builtin(b"Wine placeholder DLL"),
+            )
+            .unwrap();
         }
         assert!(!native_dll_present(&win, "d3dcompiler_47"));
 

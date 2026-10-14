@@ -77,9 +77,7 @@ pub(crate) fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
         return Column::new()
             .spacing(4)
             .push(text(t("tab_conflicts")).size(sz(13)))
-            .push(
-                text(t("conflicts_open_instance")).size(sz(12)),
-            )
+            .push(text(t("conflicts_open_instance")).size(sz(12)))
             .into();
     };
 
@@ -160,9 +158,7 @@ pub(crate) fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
 pub(crate) fn conflicting_files<'a>(app: &App, map: &ConflictMap) -> Element<'a, Message> {
     const SHOWN: usize = 40;
     let Some(focus) = app.selected_mod else {
-        return text(t("conflicts_select_mod"))
-            .size(sz(11))
-            .into();
+        return text(t("conflicts_select_mod")).size(sz(11)).into();
     };
     let origin = (focus + 1) as u32;
     let name = app

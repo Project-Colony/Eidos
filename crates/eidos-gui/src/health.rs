@@ -97,7 +97,10 @@ pub(crate) fn prefix_checks(f: &PrefixFacts) -> Vec<Diagnostic> {
                 // tool is about to complain about, and the only thing that lets
                 // someone connect that complaint to Eidos.
                 Some(bad) => tf("health_registry_wrong", &[("found", &bad), ("want", &want)]),
-                None => tf("health_registry_missing", &[("game", game), ("want", &want)]),
+                None => tf(
+                    "health_registry_missing",
+                    &[("game", game), ("want", &want)],
+                ),
             },
             actions: Vec::new(),
         }),

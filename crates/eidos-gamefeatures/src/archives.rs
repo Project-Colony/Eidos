@@ -399,10 +399,8 @@ mod tests {
             ["A.bsa", "B.bsa", "Missing.bsa"]
         );
         assert_eq!(plan.diagnostics.len(), 2);
-        assert!(
-            !archive_plan("unknown", &[], &[], &[], "en")
-                .diagnostics
-                .is_empty()
-        );
+        assert!(!archive_plan("unknown", &[], &[], &[], "en")
+            .diagnostics
+            .is_empty());
     }
 }

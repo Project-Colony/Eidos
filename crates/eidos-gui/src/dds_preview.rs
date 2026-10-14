@@ -191,7 +191,12 @@ fn parse(bytes: &[u8]) -> Result<Parsed<'_>, String> {
         28 | 29 | 87 | 88 | 91 | 93 => 0,
         71 | 72 | 80 | 81 => 8,
         74 | 75 | 77 | 78 | 83 | 84 | 95 | 96 | 98 | 99 => 16,
-        _ => return Err(tf("dds_format_unsupported", &[("format", &format!("{format:?}"))])),
+        _ => {
+            return Err(tf(
+                "dds_format_unsupported",
+                &[("format", &format!("{format:?}"))],
+            ))
+        }
     };
     if matches!(format as u32, 88 | 93) {
         alpha = AlphaMode::Opaque;
@@ -320,7 +325,12 @@ fn decode_block(block: &[u8], format: DxgiFormat) -> Result<[u8; 64], String> {
             }
             let mut rgb = [0.0; 48];
             bcdec_rs::bc6h_float(block, &mut rgb, 12, format as u32 == 96);
-            for (source, pixel) in rgb.as_chunks::<3>().0.iter().zip(rgba.as_chunks_mut::<4>().0) {
+            for (source, pixel) in rgb
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .zip(rgba.as_chunks_mut::<4>().0)
+            {
                 pixel.copy_from_slice(&[
                     hdr_channel(source[0]),
                     hdr_channel(source[1]),

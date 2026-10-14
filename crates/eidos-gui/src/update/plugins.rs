@@ -70,7 +70,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     plugin_state_changed(app);
                     app.status = Some(match written {
                         Ok(_) => tf(
-                            if now { "status_plugin_disabled" } else { "status_plugin_enabled" },
+                            if now {
+                                "status_plugin_disabled"
+                            } else {
+                                "status_plugin_enabled"
+                            },
                             &[("name", &name)],
                         ),
                         Err(e) => {
@@ -113,9 +117,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             };
             let Some(prefix) = game.prefix() else {
-                app.status = Some(
-                    t("status_no_prefix").to_string(),
-                );
+                app.status = Some(t("status_no_prefix").to_string());
                 return Task::none();
             };
             let Some(list) = app.plugins.as_ref() else {
@@ -353,7 +355,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.status = Some(match written {
                 Ok(_) => {
                     if changed == 0 {
-                        tf("status_sort_unchanged", &[("n", &sorted.len()), ("held", &held)])
+                        tf(
+                            "status_sort_unchanged",
+                            &[("n", &sorted.len()), ("held", &held)],
+                        )
                     } else {
                         tf(
                             "status_sorted",
@@ -431,20 +436,14 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         let _ = std::process::Command::new("xdg-open").arg(&m.path).spawn();
                     }
                 }
-                None => {
-                    app.status =
-                        Some(t("status_plugin_from_game").into())
-                }
+                None => app.status = Some(t("status_plugin_from_game").into()),
             }
         }
         Message::ShowPluginOriginInfo(i) => {
             app.menu_plugin = None;
             match plugin_origin_row(app, i) {
                 Some(row) => return update(app, Message::ShowModInfo(row)),
-                None => {
-                    app.status =
-                        Some(t("status_plugin_from_game").into())
-                }
+                None => app.status = Some(t("status_plugin_from_game").into()),
             }
         }
         Message::PluginsSendTop | Message::PluginsSendBottom => {
@@ -562,7 +561,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // a running game holds the lock - and overwriting that turned "your
             // change was not saved" into "moved".
             if app.status == before {
-                app.status = Some(tf("status_plugins_moved", &[("n", &rows.len()), ("row", &dest)]));
+                app.status = Some(tf(
+                    "status_plugins_moved",
+                    &[("n", &rows.len()), ("row", &dest)],
+                ));
             }
         }
         Message::PluginsSetAll(on) => {
@@ -609,7 +611,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
             put_plugin_selection(app, held);
             app.status = Some(tf(
-                if on { "status_plugins_activated" } else { "status_plugins_deactivated" },
+                if on {
+                    "status_plugins_activated"
+                } else {
+                    "status_plugins_deactivated"
+                },
                 &[("n", &names.len())],
             ));
             commit_plugin_order(app, &spec);
@@ -716,8 +722,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 (names, refused)
             };
             if names.is_empty() {
-                app.status =
-                    Some(t("status_plugins_game_loads").to_string());
+                app.status = Some(t("status_plugins_game_loads").to_string());
                 return Task::none();
             }
             let held = hold_plugin_selection(app);
@@ -736,7 +741,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 String::new()
             };
             app.status = Some(tf(
-                if on { "status_plugins_enabled_n" } else { "status_plugins_disabled_n" },
+                if on {
+                    "status_plugins_enabled_n"
+                } else {
+                    "status_plugins_disabled_n"
+                },
                 &[("n", &names.len()), ("tail", &tail)],
             ));
             commit_plugin_order(app, &spec);

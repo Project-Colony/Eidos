@@ -206,8 +206,7 @@ fn work(app: &mut App, install: bool) -> Task<Message> {
         return Task::none();
     };
     if current.as_ref() != Some(&w.target) {
-        w.error =
-            Some(t("installer_target_changed_reopen").into());
+        w.error = Some(t("installer_target_changed_reopen").into());
         return Task::none();
     }
     let Some(mut session) = w.session.take() else {
@@ -236,56 +235,128 @@ fn work(app: &mut App, install: bool) -> Task<Message> {
         crate::background_work::run(move || {
             let inst = Instance::portable(target.instance.clone());
             let outcome = (|| {
-            if cancel.load(Ordering::Relaxed) { return Err(invalid(t("installer_cancelled"))); }
-            let _guard = inst.try_lock("running scripted installer")?;
-            if crate::update::collection_target_for(&inst, &game, &candidates).as_ref() != Some(&target) { return Err(invalid(t("installer_target_changed"))); }
-            let context = if matches!(session, Session::Custom { .. }) {
-                custom::context_for_instance(&inst, game.def.id, &game.install_path, &game.data_path, game.prefix().as_deref(), &control_dirs(&game), &cancel)?
-            } else { eidos_addons::Context::default() };
-            if let Session::Omod { receipt_loaded, receipt, .. } = &mut session {
-                if !*receipt_loaded {
-                    *receipt_loaded = true;
-                    *receipt = if let Some((folder, owner)) = &collection {
-                        match eidos_collections::installer_answers::read(folder, owner).map_err(invalid)? {
-                            Some(eidos_collections::installer_answers::InstallerAnswers::Omod { receipt, .. }) => Some(receipt),
-                            _ => return Err(invalid(t("installer_receipt_changed"))),
-                        }
-                    } else { scripted::read_installed_receipt(&inst.mods_dir().join(&name))? };
+                if cancel.load(Ordering::Relaxed) {
+                    return Err(invalid(t("installer_cancelled")));
                 }
-            }
-            evaluate(&mut session, &inst, &game, &addons, &context, &cancel)?;
-            if !install { return Ok(Outcome::Reviewed); }
-            if let Some((folder, owner)) = &collection {
-                use eidos_collections::installer_answers::{self, InstallerAnswers};
-                let answers = match &session {
-                    Session::Omod { receipt: Some(receipt), evaluation: Some(scripted::ScriptedEvaluation::Review(_)), .. } => InstallerAnswers::Omod {
-                        receipt: receipt.clone(), prompt: None, apply_profile_effects: approval.apply_profile_effects, allow_incomplete: approval.allow_incomplete,
-                    },
-                    Session::Custom { session, .. } if matches!(session.state, custom::CustomEvaluation::Ready(_)) => InstallerAnswers::Custom { receipt: session.receipt(), prompt: None },
-                    _ => return Err(invalid(t("installer_collection_needs_answer"))),
+                let _guard = inst.try_lock("running scripted installer")?;
+                if crate::update::collection_target_for(&inst, &game, &candidates).as_ref()
+                    != Some(&target)
+                {
+                    return Err(invalid(t("installer_target_changed")));
+                }
+                let context = if matches!(session, Session::Custom { .. }) {
+                    custom::context_for_instance(
+                        &inst,
+                        game.def.id,
+                        &game.install_path,
+                        &game.data_path,
+                        game.prefix().as_deref(),
+                        &control_dirs(&game),
+                        &cancel,
+                    )?
+                } else {
+                    eidos_addons::Context::default()
                 };
-                installer_answers::write(folder, owner, &answers).map_err(invalid)?;
-                return Ok(Outcome::ChoicesSaved);
-            }
-            let mut warnings = Vec::new();
-            let report = match &session {
-                Session::Omod { session, context: Some(ctx), evaluation: Some(scripted::ScriptedEvaluation::Review(review)), .. } => {
-                    let result = scripted::install_scripted_omod(session, ctx, review, &name, policy, approval, &cancel)?;
-                    warnings.extend(result.warnings);
-                    if result.pending_effects { warnings.push(tf("installer_effects_pending", &[("instance", &target.instance.display()), ("name", &result.install.name)])); }
-                    result.install
+                if let Session::Omod {
+                    receipt_loaded,
+                    receipt,
+                    ..
+                } = &mut session
+                {
+                    if !*receipt_loaded {
+                        *receipt_loaded = true;
+                        *receipt = if let Some((folder, owner)) = &collection {
+                            match eidos_collections::installer_answers::read(folder, owner)
+                                .map_err(invalid)?
+                            {
+                                Some(
+                                    eidos_collections::installer_answers::InstallerAnswers::Omod {
+                                        receipt,
+                                        ..
+                                    },
+                                ) => Some(receipt),
+                                _ => return Err(invalid(t("installer_receipt_changed"))),
+                            }
+                        } else {
+                            scripted::read_installed_receipt(&inst.mods_dir().join(&name))?
+                        };
+                    }
                 }
-                Session::Custom { session, .. } => {
-                    if let custom::CustomEvaluation::Ready(plan) = &session.state { warnings.extend(plan.warnings.clone()); }
-                    custom::finish_custom(session, &inst.mods_dir(), &name, policy, &addons, &context, &cancel)?
-                },
-                _ => return Err(invalid(t("installer_needs_answer"))),
-            };
-            if let Err(error) = inst.register_installed_mod(&report.name) {
-                warnings.push(tf("installer_registration_failed", &[("error", &error)]));
-            }
-            Ok(Outcome::Installed(report, warnings))
-        })().map_err(|e: eidos_install::InstallError| e.to_string());
+                evaluate(&mut session, &inst, &game, &addons, &context, &cancel)?;
+                if !install {
+                    return Ok(Outcome::Reviewed);
+                }
+                if let Some((folder, owner)) = &collection {
+                    use eidos_collections::installer_answers::{self, InstallerAnswers};
+                    let answers = match &session {
+                        Session::Omod {
+                            receipt: Some(receipt),
+                            evaluation: Some(scripted::ScriptedEvaluation::Review(_)),
+                            ..
+                        } => InstallerAnswers::Omod {
+                            receipt: receipt.clone(),
+                            prompt: None,
+                            apply_profile_effects: approval.apply_profile_effects,
+                            allow_incomplete: approval.allow_incomplete,
+                        },
+                        Session::Custom { session, .. }
+                            if matches!(session.state, custom::CustomEvaluation::Ready(_)) =>
+                        {
+                            InstallerAnswers::Custom {
+                                receipt: session.receipt(),
+                                prompt: None,
+                            }
+                        }
+                        _ => return Err(invalid(t("installer_collection_needs_answer"))),
+                    };
+                    installer_answers::write(folder, owner, &answers).map_err(invalid)?;
+                    return Ok(Outcome::ChoicesSaved);
+                }
+                let mut warnings = Vec::new();
+                let report = match &session {
+                    Session::Omod {
+                        session,
+                        context: Some(ctx),
+                        evaluation: Some(scripted::ScriptedEvaluation::Review(review)),
+                        ..
+                    } => {
+                        let result = scripted::install_scripted_omod(
+                            session, ctx, review, &name, policy, approval, &cancel,
+                        )?;
+                        warnings.extend(result.warnings);
+                        if result.pending_effects {
+                            warnings.push(tf(
+                                "installer_effects_pending",
+                                &[
+                                    ("instance", &target.instance.display()),
+                                    ("name", &result.install.name),
+                                ],
+                            ));
+                        }
+                        result.install
+                    }
+                    Session::Custom { session, .. } => {
+                        if let custom::CustomEvaluation::Ready(plan) = &session.state {
+                            warnings.extend(plan.warnings.clone());
+                        }
+                        custom::finish_custom(
+                            session,
+                            &inst.mods_dir(),
+                            &name,
+                            policy,
+                            &addons,
+                            &context,
+                            &cancel,
+                        )?
+                    }
+                    _ => return Err(invalid(t("installer_needs_answer"))),
+                };
+                if let Err(error) = inst.register_installed_mod(&report.name) {
+                    warnings.push(tf("installer_registration_failed", &[("error", &error)]));
+                }
+                Ok(Outcome::Installed(report, warnings))
+            })()
+            .map_err(|e: eidos_install::InstallError| e.to_string());
             if let Ok(mut slot) = result.lock() {
                 *slot = Some(Reply { session, outcome });
             }
@@ -470,9 +541,7 @@ pub(crate) fn update(app: &mut App, action: Action) -> Task<Message> {
         app.installer = None;
         app.preview_pending = None;
         app.preview = None;
-        app.status = Some(
-            t("installer_closed").into(),
-        );
+        app.status = Some(t("installer_closed").into());
         return Task::none();
     }
     let current = crate::update::collection_target(app);
@@ -504,7 +573,10 @@ pub(crate) fn update(app: &mut App, action: Action) -> Task<Message> {
                             .push_str(&format!("\n{}", warnings.join("\n")));
                     }
                 } else {
-                    w.error = Some(tf("installer_installed_elsewhere", &[("name", &report.name)]));
+                    w.error = Some(tf(
+                        "installer_installed_elsewhere",
+                        &[("name", &report.name)],
+                    ));
                 }
             }
             Ok(Outcome::Reviewed) => set_page(w),
@@ -593,9 +665,7 @@ pub(crate) fn update(app: &mut App, action: Action) -> Task<Message> {
         }
         Action::Manual => {
             if w.collection.is_some() {
-                w.error = Some(
-                    t("installer_resume_collection").into(),
-                );
+                w.error = Some(t("installer_resume_collection").into());
                 return Task::none();
             }
             let target = w.target.clone();
@@ -685,7 +755,9 @@ pub(crate) fn view(w: &Wizard) -> Element<'_, Message> {
                         }
                     }
                 }
-                body = body.push(button(text(t("installer_continue"))).on_press(msg(Action::Answer(None))));
+                body = body.push(
+                    button(text(t("installer_continue"))).on_press(msg(Action::Answer(None))),
+                );
             }
             ObmmPromptKind::YesNo { title, message } => {
                 body = body.push(text(title)).push(text(message)).push(
@@ -699,7 +771,10 @@ pub(crate) fn view(w: &Wizard) -> Element<'_, Message> {
             ObmmPromptKind::Input { title, .. } => {
                 body = body
                     .push(text(title))
-                    .push(text_input(t("installer_answer"), &w.input).on_input(|s| msg(Action::Text(s))))
+                    .push(
+                        text_input(t("installer_answer"), &w.input)
+                            .on_input(|s| msg(Action::Text(s))),
+                    )
                     .push(button(text(t("installer_continue"))).on_press(msg(Action::Answer(None))))
             }
             ObmmPromptKind::Message { title, message } => {
@@ -711,7 +786,10 @@ pub(crate) fn view(w: &Wizard) -> Element<'_, Message> {
             ObmmPromptKind::Preview { title, path, .. } => {
                 body = body
                     .push(text(title))
-                    .push(button(text(t("installer_open_preview"))).on_press(msg(Action::Preview(path))))
+                    .push(
+                        button(text(t("installer_open_preview")))
+                            .on_press(msg(Action::Preview(path))),
+                    )
                     .push(button(text(t("installer_continue"))).on_press(msg(Action::Answer(None))))
             }
         }
@@ -730,7 +808,10 @@ pub(crate) fn view(w: &Wizard) -> Element<'_, Message> {
         if ready {
             if w.collection.is_none() {
                 body = body
-                    .push(text_input(t("installer_folder_name"), &w.name).on_input(|v| msg(Action::Name(v))))
+                    .push(
+                        text_input(t("installer_folder_name"), &w.name)
+                            .on_input(|v| msg(Action::Name(v))),
+                    )
                     .push(
                         checkbox(w.replace)
                             .label(t("installer_replace"))
@@ -765,7 +846,8 @@ pub(crate) fn view(w: &Wizard) -> Element<'_, Message> {
             );
         }
         if w.collection.is_none() && matches!(w.session, Some(Session::Custom { .. })) {
-            body = body.push(button(text(t("installer_choose_manually"))).on_press(msg(Action::Manual)));
+            body = body
+                .push(button(text(t("installer_choose_manually"))).on_press(msg(Action::Manual)));
         }
         body = body.push(button(text(t("installer_restart"))).on_press(msg(Action::Restart)));
     }

@@ -92,7 +92,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             load_saves(app);
             app.status = Some(match failed {
                 0 => tf("status_saves_deleted", &[("n", &gone)]),
-                f => tf("status_saves_deleted_partial", &[("n", &gone), ("failed", &f)]),
+                f => tf(
+                    "status_saves_deleted_partial",
+                    &[("n", &gone), ("failed", &f)],
+                ),
             });
         }
         Message::SavesCopyToProfile(target) => {
@@ -106,7 +109,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
             let dest_dir = inst.profile(&target).saves_dir();
             if let Err(e) = std::fs::create_dir_all(&dest_dir) {
-                app.status = Some(tf("status_open_profile_failed", &[("profile", &target), ("error", &e)]));
+                app.status = Some(tf(
+                    "status_open_profile_failed",
+                    &[("profile", &target), ("error", &e)],
+                ));
                 return Task::none();
             }
             let mut copied = 0usize;
@@ -203,8 +209,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 }
             }
             if enabled == 0 {
-                app.status =
-                    Some(t("status_save_mods_already_enabled").to_string());
+                app.status = Some(t("status_save_mods_already_enabled").to_string());
                 return Task::none();
             }
             let saved = mods_changed(app);
@@ -228,7 +233,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.status = Some(if left == 0 {
                 tf("status_save_mods_enabled", &[("n", &enabled)])
             } else {
-                tf("status_save_mods_enabled_left", &[("n", &enabled), ("left", &left)])
+                tf(
+                    "status_save_mods_enabled_left",
+                    &[("n", &enabled), ("left", &left)],
+                )
             });
         }
         Message::RestorePreSessionPlugins => {
@@ -307,7 +315,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             }
                             app.status = Some(tf("status_save_gone", &[("name", &name)]));
                         }
-                        Err(e) => app.status = Some(tf("status_delete_named_failed", &[("name", &name), ("error", &e)])),
+                        Err(e) => {
+                            app.status = Some(tf(
+                                "status_delete_named_failed",
+                                &[("name", &name), ("error", &e)],
+                            ))
+                        }
                     }
                 }
                 load_saves(app);

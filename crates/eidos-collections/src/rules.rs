@@ -61,7 +61,13 @@ pub fn edges(c: &Collection) -> (Vec<Edge>, Vec<Unresolved>) {
             RuleType::Before | RuleType::After => rule.kind,
             _ => continue,
         };
-        let name = |k: &str| format!("{} {k} {}", describe(&rule.source), describe(&rule.reference));
+        let name = |k: &str| {
+            format!(
+                "{} {k} {}",
+                describe(&rule.source),
+                describe(&rule.reference)
+            )
+        };
         let word = if ordering == RuleType::Before {
             "before"
         } else {
@@ -361,7 +367,10 @@ mod tests {
         // A member that failed, was skipped, or was optional and declined takes
         // part in nothing. This function reorders; it does not install.
         let list: Vec<String> = ["A", "mine"].iter().map(|s| s.to_string()).collect();
-        let members = [(0usize, "A".to_string()), (1usize, "Never Installed".into())];
+        let members = [
+            (0usize, "A".to_string()),
+            (1usize, "Never Installed".into()),
+        ];
         assert_eq!(merge(&list, &members, &[1, 0]), list);
     }
 

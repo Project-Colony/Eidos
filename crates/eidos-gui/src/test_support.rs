@@ -9,8 +9,12 @@ use crate::*;
 /// is mid-assertion. Dropping it puts the defaults back.
 pub(crate) fn look_lock() -> LookGuard {
     static LOOK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let guard = LOOK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    crate::preferences::UiPreferences::default().standard.apply();
+    let guard = LOOK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    crate::preferences::UiPreferences::default()
+        .standard
+        .apply();
     LookGuard(guard)
 }
 
@@ -18,7 +22,9 @@ pub(crate) struct LookGuard(#[allow(dead_code)] std::sync::MutexGuard<'static, (
 
 impl Drop for LookGuard {
     fn drop(&mut self) {
-        crate::preferences::UiPreferences::default().standard.apply();
+        crate::preferences::UiPreferences::default()
+            .standard
+            .apply();
     }
 }
 
@@ -148,10 +154,7 @@ pub(crate) fn list_app(names: &[&str]) -> (App, PathBuf) {
 
 /// An App with a real portable instance, one mod, and a game Data dir - the
 /// minimum the Data tab needs to build a real `LayerStack`.
-pub(crate) fn data_app(
-    mod_files: &[(&str, &str)],
-    overwrite: &[(&str, &str)],
-) -> (App, PathBuf) {
+pub(crate) fn data_app(mod_files: &[(&str, &str)], overwrite: &[(&str, &str)]) -> (App, PathBuf) {
     let root = temp_portable("skyrimse");
     let game = root.join("game/Data");
     fs::create_dir_all(&game).unwrap();

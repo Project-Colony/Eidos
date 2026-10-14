@@ -106,8 +106,10 @@ impl UiPreferences {
                 "accent" if !v.is_empty() => s.selected_accent = Some(v.to_string()),
                 "high_contrast" => s.high_contrast = on(v),
                 "motion" => {
-                    s.reduce_motion =
-                        matches!(v.to_ascii_lowercase().as_str(), "false" | "0" | "no" | "off")
+                    s.reduce_motion = matches!(
+                        v.to_ascii_lowercase().as_str(),
+                        "false" | "0" | "no" | "off"
+                    )
                 }
                 _ => {}
             }
@@ -146,10 +148,7 @@ mod tests {
     use colony_ui::typography::{FontSize, TextSize};
 
     fn tmp(label: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "eidos-ui-prefs-{label}-{}",
-            std::process::id()
-        ));
+        let d = std::env::temp_dir().join(format!("eidos-ui-prefs-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
@@ -159,7 +158,10 @@ mod tests {
     fn a_fresh_install_wears_the_parchment() {
         let p = UiPreferences::default();
         assert_eq!(
-            (p.standard.selected_theme.as_str(), p.standard.selected_variant.as_str()),
+            (
+                p.standard.selected_theme.as_str(),
+                p.standard.selected_variant.as_str()
+            ),
             DEFAULT_THEME
         );
         assert!(p.motion());
@@ -194,7 +196,12 @@ mod tests {
 
         // settings.ini loses the keys on its next save; the JSON keeps them.
         std::fs::write(&ini, "lock_gui=true\n").unwrap();
-        assert_eq!(UiPreferences::load_from(&json, &ini).standard.selected_theme, "gruvbox");
+        assert_eq!(
+            UiPreferences::load_from(&json, &ini)
+                .standard
+                .selected_theme,
+            "gruvbox"
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 

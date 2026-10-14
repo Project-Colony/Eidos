@@ -196,16 +196,14 @@ fn actual_archive_override_precedes_member_order_and_loose_wins() {
     assert!(!map.asset_mods[&1].overwrites.contains(&1));
     assert!(map.asset_mods[&1].overwrites.contains(&2));
     let mut parts = parts;
-    parts[0].1.0.retain(|p| p != "textures/shared.dds");
+    parts[0].1 .0.retain(|p| p != "textures/shared.dds");
     let map = ConflictMap::build_with_archives_from(&parts, &active);
     assert_eq!(map.asset_files["textures/shared.dds"].winner.origin, 2);
     let map = ConflictMap::build_with_archives_from(&parts, &active[..1]);
     assert_eq!(map.asset_files["textures/shared.dds"].winner.origin, 1);
-    assert!(
-        map.asset_files["textures/shared.dds"]
-            .alternatives
-            .is_empty()
-    );
+    assert!(map.asset_files["textures/shared.dds"]
+        .alternatives
+        .is_empty());
     std::fs::write(a.join("A.bsa"), b"broken").unwrap();
     let map = ConflictMap::build_with_archives_from(&parts, &active);
     assert_eq!(map.archive_diagnostics.len(), 1);

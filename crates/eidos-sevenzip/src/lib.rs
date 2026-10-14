@@ -165,11 +165,7 @@ pub fn close_the_gap(success: bool, last: Option<u8>, on_progress: &mut impl FnM
 /// arrives); this function adds none, because add and extract want different
 /// ones and guessing on the caller's behalf is how a switch ends up in an
 /// invocation that rejects it.
-pub fn run<I, S>(
-    bin: &str,
-    args: I,
-    on_progress: &mut impl FnMut(u8),
-) -> Result<(), SevenZipError>
+pub fn run<I, S>(bin: &str, args: I, on_progress: &mut impl FnMut(u8)) -> Result<(), SevenZipError>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<std::ffi::OsStr>,

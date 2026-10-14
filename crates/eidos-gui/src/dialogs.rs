@@ -90,10 +90,7 @@ pub(crate) fn backups_dialog<'a>(state: &BackupsDialogState) -> Element<'a, Mess
                 ),
         )
         .push(body)
-        .push(
-            text(t("backups_restore_note"))
-                .size(sz(11)),
-        );
+        .push(text(t("backups_restore_note")).size(sz(11)));
 
     container(card)
         .width(Length::Fixed(620.0))
@@ -179,7 +176,11 @@ pub(crate) fn executables_dialog<'a>(
     let editor: Element<'a, Message> = if state.selected_is_user() {
         Column::new()
             .spacing(8)
-            .push(exe_field(t("exe_field_title"), &state.title, Message::ToolTitleChanged))
+            .push(exe_field(
+                t("exe_field_title"),
+                &state.title,
+                Message::ToolTitleChanged,
+            ))
             .push(exe_field_browse(
                 t("exe_field_path"),
                 &state.exe,
@@ -240,7 +241,10 @@ pub(crate) fn executables_dialog<'a>(
     let footer = Row::new()
         .spacing(8)
         .push(Space::new().width(Length::Fill))
-        .push(tool_btn(t("common_cancel"), Message::CloseExecutablesDialog))
+        .push(tool_btn(
+            t("common_cancel"),
+            Message::CloseExecutablesDialog,
+        ))
         .push(
             button(text(t("common_save")).size(sz(12)))
                 .padding([5, 14])
@@ -396,9 +400,11 @@ pub(crate) fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Me
         })
         .unwrap_or_default();
 
-    let mut col = Column::new()
-        .spacing(2)
-        .push(text(t("prereq_status")).size(sz(11)).color(fomod_ink_faint()));
+    let mut col = Column::new().spacing(2).push(
+        text(t("prereq_status"))
+            .size(sz(11))
+            .color(fomod_ink_faint()),
+    );
     let mut any_missing = false;
     for v in verbs {
         let (label, missing) = prereq_state(&v, &done);
@@ -406,7 +412,11 @@ pub(crate) fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Me
 
         let row = Row::new()
             .spacing(8)
-            .push(text(v.clone()).size(sz(11)).width(Length::Fixed(scaled(150.0))))
+            .push(
+                text(v.clone())
+                    .size(sz(11))
+                    .width(Length::Fixed(scaled(150.0))),
+            )
             .push(text(label).size(sz(11)).color(if missing {
                 pal().error
             } else {
@@ -440,16 +450,10 @@ pub(crate) fn about_dialog<'a>() -> Element<'a, Message> {
         .spacing(8)
         .push(text("Eidos").size(sz(20)))
         .push(text(format!("Version {}", env!("CARGO_PKG_VERSION"))).size(sz(12)))
-        .push(
-            text(t("about_blurb"))
-                .size(sz(12)),
-        )
+        .push(text(t("about_blurb")).size(sz(12)))
         .push(Space::new().height(Length::Fixed(6.0)))
         .push(text(t("about_shortcuts")).size(sz(13)))
-        .push(
-            text(t("about_shortcut_list"))
-                .size(sz(11)),
-        )
+        .push(text(t("about_shortcut_list")).size(sz(11)))
         .push(Space::new().height(Length::Fixed(6.0)))
         .push(
             button(text(t("common_close")).size(sz(12)))
@@ -527,11 +531,14 @@ pub(crate) fn running_lock_card<'a>(run: &RunningState) -> Element<'a, Message> 
         .spacing(10)
         .align_x(iced::alignment::Horizontal::Center)
         .push(text(t("lock_title")).size(sz(18)))
-        .push(text(tf("lock_running", &[("title", &run.title), ("pid", &run.pid)])).size(sz(13)))
         .push(
-            text(t("lock_body"))
-                .size(sz(11)),
+            text(tf(
+                "lock_running",
+                &[("title", &run.title), ("pid", &run.pid)],
+            ))
+            .size(sz(13)),
         )
+        .push(text(t("lock_body")).size(sz(11)))
         .push(Space::new().height(Length::Fixed(6.0)))
         .push(
             button(text(t("lock_unlock")).size(sz(13)))
@@ -539,11 +546,7 @@ pub(crate) fn running_lock_card<'a>(run: &RunningState) -> Element<'a, Message> 
                 .on_press(Message::ForceUnlock)
                 .style(button::primary),
         )
-        .push(
-            text(t("lock_unlock_note"))
-                .size(sz(10))
-                .color(text_muted()),
-        );
+        .push(text(t("lock_unlock_note")).size(sz(10)).color(text_muted()));
     container(card)
         .max_width(470.0)
         .padding(20)
@@ -672,9 +675,12 @@ pub(crate) fn loot_report_dialog<'a>(report: &eidos_loot::LootReport) -> Element
             .push(text(p.name.clone()).size(sz(13)));
         if !p.missing_masters.is_empty() {
             sec = sec.push(
-                text(tf("loot_missing_masters", &[("list", &p.missing_masters.join(", "))]))
-                    .size(sz(11))
-                    .color(pal().error),
+                text(tf(
+                    "loot_missing_masters",
+                    &[("list", &p.missing_masters.join(", "))],
+                ))
+                .size(sz(11))
+                .color(pal().error),
             );
         }
         for m in &p.messages {
@@ -757,7 +763,10 @@ pub(crate) fn loot_report_text(report: &eidos_loot::LootReport) -> String {
         if !p.missing_masters.is_empty() {
             out.push_str(&format!(
                 "  {}\n",
-                tf("loot_missing_masters", &[("list", &p.missing_masters.join(", "))])
+                tf(
+                    "loot_missing_masters",
+                    &[("list", &p.missing_masters.join(", "))]
+                )
             ));
         }
         for m in &p.messages {
@@ -845,7 +854,10 @@ pub(crate) fn categories_dialog<'a>(state: &CategoriesDialogState) -> Element<'a
             if rest.is_empty() {
                 primary
             } else {
-                tf("cat_primary_more", &[("name", &primary), ("n", &rest.len())])
+                tf(
+                    "cat_primary_more",
+                    &[("name", &primary), ("n", &rest.len())],
+                )
             }
         }
     };
@@ -860,12 +872,7 @@ pub(crate) fn categories_dialog<'a>(state: &CategoriesDialogState) -> Element<'a
 
     let mut card = Column::new().spacing(12).push(header).push(body).push(foot);
     if state.names.len() > 1 {
-        card = card.push(
-            text(
-                t("cat_apply_note"),
-            )
-            .size(sz(11)),
-        );
+        card = card.push(text(t("cat_apply_note")).size(sz(11)));
     }
 
     container(card)
@@ -930,7 +937,10 @@ fn category_picker<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
 
     let nexus = Row::new()
         .spacing(6)
-        .push(tool_btn(t("cat_fetch_nexus"), Message::FetchNexusCategories))
+        .push(tool_btn(
+            t("cat_fetch_nexus"),
+            Message::FetchNexusCategories,
+        ))
         .push(tool_btn(
             t("cat_use_nexus"),
             Message::AssignCategoriesFromNexus,
@@ -941,12 +951,7 @@ fn category_picker<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
         .push(search)
         .push(scrollable(rows).height(Length::Fixed(320.0)))
         .push(nexus)
-        .push(
-            text(
-                t("cat_fetch_note"),
-            )
-            .size(sz(10)),
-        )
+        .push(text(t("cat_fetch_note")).size(sz(10)))
         .into()
 }
 
@@ -994,10 +999,17 @@ fn catalog_editor<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
                         .on_press(Message::RenameCategoryStart(id)),
                 )
                 .push(
-                    button(text(if armed { t("common_confirm") } else { t("common_delete") }).size(sz(10)))
-                        .padding([2, 6])
-                        .style(if armed { button::danger } else { button::text })
-                        .on_press(Message::DeleteCategory(id)),
+                    button(
+                        text(if armed {
+                            t("common_confirm")
+                        } else {
+                            t("common_delete")
+                        })
+                        .size(sz(10)),
+                    )
+                    .padding([2, 6])
+                    .style(if armed { button::danger } else { button::text })
+                    .on_press(Message::DeleteCategory(id)),
                 ),
         );
     }
@@ -1047,12 +1059,7 @@ fn catalog_editor<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
         .spacing(8)
         .push(scrollable(rows).height(Length::Fixed(300.0)))
         .push(add)
-        .push(
-            text(
-                t("cat_delete_note"),
-            )
-            .size(sz(10)),
-        )
+        .push(text(t("cat_delete_note")).size(sz(10)))
         .into()
 }
 
@@ -1140,12 +1147,7 @@ fn output_mod_field<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> 
             .padding(5)
             .width(Length::Fill),
         )
-        .push(
-            text(
-                t("exe_capture_note"),
-            )
-            .size(sz(10)),
-        )
+        .push(text(t("exe_capture_note")).size(sz(10)))
         .into()
 }
 
@@ -1217,7 +1219,10 @@ pub(crate) fn ini_editor_dialog<'a>(app: &App, state: &'a IniEditorState) -> Ele
                 .size(sz(11))
                 .width(Length::Fill),
         )
-        .push(tool_btn(t("ini_open_externally"), Message::IniEditorOpenExternal));
+        .push(tool_btn(
+            t("ini_open_externally"),
+            Message::IniEditorOpenExternal,
+        ));
     if state.dirty {
         actions = actions.push(tool_btn(t("ini_revert"), Message::IniEditorRevert));
     }
@@ -1375,28 +1380,25 @@ pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
         .get(app.selected.unwrap_or(0))
         .map(|g| g.def.id.to_string());
 
-    let header = Row::new()
-        .align_y(iced::Alignment::Center)
-        .spacing(8)
-        .push(text(t("ext_title")).size(sz(18)).width(Length::Fill))
-        .push(
-            button(text(t("ext_preview_file")).size(sz(11))).on_press(Message::ChooseExtensionFile(
-                eidos_addons::protocol::Operation::Preview,
-            )),
-        )
-        .push(
-            button(text(t("ext_read_save")).size(sz(11))).on_press(Message::ChooseExtensionFile(
-                eidos_addons::protocol::Operation::SaveInfo,
-            )),
-        )
-        .push(tool_btn(t("common_open_folder"), Message::OpenAddonsFolder))
-        .push(tool_btn(t("ext_reload"), Message::ReloadAddons))
-        .push(
-            button(text(t("common_close")).size(sz(12)))
-                .padding([4, 12])
-                .style(button::secondary)
-                .on_press(Message::CloseAddons),
-        );
+    let header =
+        Row::new()
+            .align_y(iced::Alignment::Center)
+            .spacing(8)
+            .push(text(t("ext_title")).size(sz(18)).width(Length::Fill))
+            .push(button(text(t("ext_preview_file")).size(sz(11))).on_press(
+                Message::ChooseExtensionFile(eidos_addons::protocol::Operation::Preview),
+            ))
+            .push(button(text(t("ext_read_save")).size(sz(11))).on_press(
+                Message::ChooseExtensionFile(eidos_addons::protocol::Operation::SaveInfo),
+            ))
+            .push(tool_btn(t("common_open_folder"), Message::OpenAddonsFolder))
+            .push(tool_btn(t("ext_reload"), Message::ReloadAddons))
+            .push(
+                button(text(t("common_close")).size(sz(12)))
+                    .padding([4, 12])
+                    .style(button::secondary)
+                    .on_press(Message::CloseAddons),
+            );
 
     let mut rows = Column::new().spacing(6);
     // The refusals FIRST. A manifest that failed to parse simply does not
@@ -1419,12 +1421,7 @@ pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
         );
     }
     if app.addons.is_empty() && app.addon_rejected.is_empty() {
-        rows = rows.push(
-            text(
-                t("ext_none_yet"),
-            )
-            .size(sz(12)),
-        );
+        rows = rows.push(text(t("ext_none_yet")).size(sz(12)));
     }
     for a in &app.addons {
         let kind = match a.kind {
@@ -1491,12 +1488,7 @@ pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
                 .height(Length::Fixed(360.0))
                 .width(Length::Fill),
         )
-        .push(
-            text(
-                t("ext_explainer"),
-            )
-            .size(sz(10)),
-        );
+        .push(text(t("ext_explainer")).size(sz(10)));
 
     container(card)
         .width(Length::Fixed(680.0))
@@ -1594,14 +1586,12 @@ pub(crate) fn export_dialog<'a>(app: &App, state: &ExportDialogState) -> Element
     let footer = Row::new()
         .spacing(8)
         .align_y(iced::Alignment::Center)
-        .push(
-            text(
-                t("export_note"),
-            )
-            .size(sz(10))
-            .width(Length::Fill),
-        )
-        .push(if state.picked().is_empty() { run } else { run.on_press(Message::ExportRun) });
+        .push(text(t("export_note")).size(sz(10)).width(Length::Fill))
+        .push(if state.picked().is_empty() {
+            run
+        } else {
+            run.on_press(Message::ExportRun)
+        });
 
     let card = Column::new()
         .spacing(12)
@@ -1693,14 +1683,21 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
             );
             let armed = app.confirm_forget == Some(i);
             title = title.push(
-                button(text(if armed { t("common_confirm") } else { t("instances_forget") }).size(sz(11)))
-                    .padding([3, 8])
-                    .style(if armed {
-                        button::danger
+                button(
+                    text(if armed {
+                        t("common_confirm")
                     } else {
-                        button::secondary
+                        t("instances_forget")
                     })
-                    .on_press(Message::InstanceForget(i)),
+                    .size(sz(11)),
+                )
+                .padding([3, 8])
+                .style(if armed {
+                    button::danger
+                } else {
+                    button::secondary
+                })
+                .on_press(Message::InstanceForget(i)),
             );
         }
         title = title.push(
@@ -1716,12 +1713,7 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
         .spacing(12)
         .push(header)
         .push(scrollable(rows).height(Length::Fixed(300.0)))
-        .push(
-            text(
-                t("instances_forget_note"),
-            )
-            .size(sz(10)),
-        );
+        .push(text(t("instances_forget_note")).size(sz(10)));
 
     container(card)
         .width(Length::Fixed(680.0))
@@ -1753,14 +1745,16 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
         .align_y(iced::Alignment::Center)
         .spacing(8)
         .push(text(name).size(sz(15)).width(Length::Fill))
-        .push(button(text(t("preview_extension")).size(sz(11))).on_press_maybe(
-            (!matches!(p, Preview::Archive { .. })).then(|| {
-                Message::RunFileExtension(
-                    eidos_addons::protocol::Operation::Preview,
-                    p.path().into(),
-                )
-            }),
-        ))
+        .push(
+            button(text(t("preview_extension")).size(sz(11))).on_press_maybe(
+                (!matches!(p, Preview::Archive { .. })).then(|| {
+                    Message::RunFileExtension(
+                        eidos_addons::protocol::Operation::Preview,
+                        p.path().into(),
+                    )
+                }),
+            ),
+        )
         .push(
             button(text(t("preview_reveal")).size(sz(11)))
                 .padding([4, 10])
@@ -1835,11 +1829,7 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
                 .into(),
                 Err(error) => container(text(error.clone())).center(Length::Fill).into(),
             };
-            let note = if info.hdr {
-                t("preview_hdr_note")
-            } else {
-                ""
-            };
+            let note = if info.hdr { t("preview_hdr_note") } else { "" };
             Column::new()
                 .spacing(8)
                 .push(controls)
@@ -1894,7 +1884,10 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
                             Message::PreviewNifView(crate::nif_render::View { wireframe, ..view })
                         }),
                 )
-                .push(button(text(t("preview_reset"))).on_press(Message::PreviewNifView(Default::default())));
+                .push(
+                    button(text(t("preview_reset")))
+                        .on_press(Message::PreviewNifView(Default::default())),
+                );
             let image: Element<'a, Message> = match &model.image {
                 Some(Ok(handle)) => container(
                     iced::widget::image(handle.clone()).content_fit(iced::ContentFit::Contain),
@@ -1906,8 +1899,17 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
                     .center(Length::Fill)
                     .into(),
             };
-            let mut body = Column::new().spacing(8).push(orbit).push(controls)
-                .push(text(tf("preview_model_note", &[("n", &model.scene.meshes.len())])).size(sz(10)))
+            let mut body = Column::new()
+                .spacing(8)
+                .push(orbit)
+                .push(controls)
+                .push(
+                    text(tf(
+                        "preview_model_note",
+                        &[("n", &model.scene.meshes.len())],
+                    ))
+                    .size(sz(10)),
+                )
                 .push(image);
             if !model.warnings.is_empty() {
                 body = body.push(
@@ -1979,10 +1981,17 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
             .size(sz(12)),
         )
         .push(
-            button(text(if state.loading { "..." } else { t("collection_look_up") }).size(sz(12)))
-                .padding([4, 12])
-                .style(button::primary)
-                .on_press_maybe((!state.loading).then_some(Message::CollectionFetch)),
+            button(
+                text(if state.loading {
+                    "..."
+                } else {
+                    t("collection_look_up")
+                })
+                .size(sz(12)),
+            )
+            .padding([4, 12])
+            .style(button::primary)
+            .on_press_maybe((!state.loading).then_some(Message::CollectionFetch)),
         );
 
     let mut card = Column::new().spacing(10).push(header).push(field);
@@ -2029,9 +2038,13 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
             .filter(|s| **s == MemberState::OtherVersion)
             .count();
 
-        let mut title = Column::new()
-            .spacing(2)
-            .push(text(tf("collection_revision", &[("name", &rev.name), ("n", &rev.revision_number)])).size(sz(15)));
+        let mut title = Column::new().spacing(2).push(
+            text(tf(
+                "collection_revision",
+                &[("name", &rev.name), ("n", &rev.revision_number)],
+            ))
+            .size(sz(15)),
+        );
         if !rev.author.is_empty() {
             title = title.push(text(tf("collection_by", &[("author", &rev.author)])).size(sz(11)));
         }
@@ -2109,7 +2122,9 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
         let mut rows = Column::new().spacing(1);
         for (i, (m, st)) in rev.mods.iter().zip(&state.states).enumerate() {
             let (label, colour) = match st {
-                MemberState::Installed => (t("collection_member_installed"), Some(conflict_wins_fg())),
+                MemberState::Installed => {
+                    (t("collection_member_installed"), Some(conflict_wins_fg()))
+                }
                 MemberState::Unverified => (t("collection_member_unverified"), Some(pal().warning)),
                 // Its own word, and its own colour: the mod is there but not the
                 // version the collection was built against.
@@ -2164,12 +2179,7 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
         card = card.push(scrollable(rows).height(Length::Fixed(320.0)));
     }
 
-    card = card.push(
-        text(
-            t("collection_explainer"),
-        )
-        .size(sz(10)),
-    );
+    card = card.push(text(t("collection_explainer")).size(sz(10)));
 
     // Scrollable, and capped. A collection's own installation notes are free
     // Markdown from its author and routinely run to several screens; drawn into
@@ -2222,13 +2232,17 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
         .map(|i| i.root.display().to_string())
         .unwrap_or_default();
     let blurb = text(tf("pack_blurb", &[("root", &root)]))
-    .size(sz(11))
-    .color(text_muted());
+        .size(sz(11))
+        .color(text_muted());
 
     let dest = Row::new()
         .spacing(6)
         .align_y(iced::Alignment::Center)
-        .push(text(t("pack_file")).size(sz(11)).width(Length::Fixed(scaled(56.0))))
+        .push(
+            text(t("pack_file"))
+                .size(sz(11))
+                .width(Length::Fixed(scaled(56.0))),
+        )
         .push(
             text_input("/home/you/skyrimse.eidos", &state.dest)
                 .on_input(Message::PackDestChanged)
@@ -2256,16 +2270,20 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
     let downloads = checkbox(state.downloads)
         .label(tf(
             "pack_include_downloads",
-            &[("size", &eidos_transfer::human_bytes(state.plan.downloads_bytes))],
+            &[(
+                "size",
+                &eidos_transfer::human_bytes(state.plan.downloads_bytes),
+            )],
         ))
         .on_toggle(|_| Message::PackToggleDownloads)
         .size(sz(13))
         .text_size(sz(12));
 
-    let mut levels = Row::new()
-        .spacing(4)
-        .align_y(iced::Alignment::Center)
-        .push(text(t("pack_compression")).size(sz(11)).width(Length::Fixed(scaled(76.0))));
+    let mut levels = Row::new().spacing(4).align_y(iced::Alignment::Center).push(
+        text(t("pack_compression"))
+            .size(sz(11))
+            .width(Length::Fixed(scaled(76.0))),
+    );
     for n in eidos_transfer::LEVELS {
         levels = levels.push(
             button(text(n.to_string()).size(sz(11)))
@@ -2314,13 +2332,9 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
             .color(text_muted()),
         );
 
-    let mut notes = Column::new().spacing(3).push(
-        text(
-            t("pack_left_out"),
-        )
-        .size(sz(10))
-        .color(text_muted()),
-    );
+    let mut notes = Column::new()
+        .spacing(3)
+        .push(text(t("pack_left_out")).size(sz(10)).color(text_muted()));
     if !state.plan.tools_outside.is_empty() {
         notes = notes.push(
             text(tf(
@@ -2404,7 +2418,11 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
     let archive = Row::new()
         .spacing(6)
         .align_y(iced::Alignment::Center)
-        .push(text(t("unpack_backup")).size(sz(11)).width(Length::Fixed(scaled(52.0))))
+        .push(
+            text(t("unpack_backup"))
+                .size(sz(11))
+                .width(Length::Fixed(scaled(52.0))),
+        )
         .push(
             text_input("/home/you/skyrimse.eidos", &state.archive)
                 .padding(5)
@@ -2429,7 +2447,11 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
             .push(
                 text(tf(
                     "unpack_made_by",
-                    &[("game", &m.game_id), ("date", &m.created), ("version", &m.eidos_version)],
+                    &[
+                        ("game", &m.game_id),
+                        ("date", &m.created),
+                        ("version", &m.eidos_version),
+                    ],
                 ))
                 .size(sz(11)),
             )
@@ -2465,7 +2487,10 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
             .collect();
         if !missing.is_empty() {
             about = about.push(
-                text(tf("unpack_tools_missing", &[("tools", &missing.join(", "))]))
+                text(tf(
+                    "unpack_tools_missing",
+                    &[("tools", &missing.join(", "))],
+                ))
                 .size(sz(10))
                 .color(pal().warning),
             );
@@ -2475,7 +2500,11 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
     let dest = Row::new()
         .spacing(6)
         .align_y(iced::Alignment::Center)
-        .push(text(t("common_folder")).size(sz(11)).width(Length::Fixed(scaled(52.0))))
+        .push(
+            text(t("common_folder"))
+                .size(sz(11))
+                .width(Length::Fixed(scaled(52.0))),
+        )
         .push(
             text_input("/mnt/games/EidosSkyrim", &state.dest)
                 .on_input(Message::UnpackDestChanged)
@@ -2503,12 +2532,10 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
         .spacing(8)
         .align_y(iced::Alignment::Center)
         .push(
-            text(
-                t("unpack_prefix_note"),
-            )
-            .size(sz(10))
-            .color(text_muted())
-            .width(Length::Fill),
+            text(t("unpack_prefix_note"))
+                .size(sz(10))
+                .color(text_muted())
+                .width(Length::Fill),
         )
         .push(if ready {
             run.on_press(Message::UnpackRun)
@@ -2561,13 +2588,7 @@ pub(crate) fn transfer_dialog<'a>(job: &crate::TransferJob) -> Element<'a, Messa
                     })
                     .size(sz(12)),
                 )
-                .push(
-                    text(
-                        t("transfer_note"),
-                    )
-                    .size(sz(10))
-                    .color(text_muted()),
-                );
+                .push(text(t("transfer_note")).size(sz(10)).color(text_muted()));
         }
         Some(result) => {
             let (body, colour) = match result {

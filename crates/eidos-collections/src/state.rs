@@ -459,21 +459,15 @@ mod tests {
             game_domain: "skyrimspecialedition".into(),
             ..Default::default()
         };
-        assert!(
-            state
-                .validate_revision("one", 1, "SkyrimSpecialEdition")
-                .is_ok()
-        );
-        assert!(
-            state
-                .validate_revision("two", 1, "skyrimspecialedition")
-                .is_err()
-        );
-        assert!(
-            state
-                .validate_revision("one", 2, "skyrimspecialedition")
-                .is_err()
-        );
+        assert!(state
+            .validate_revision("one", 1, "SkyrimSpecialEdition")
+            .is_ok());
+        assert!(state
+            .validate_revision("two", 1, "skyrimspecialedition")
+            .is_err());
+        assert!(state
+            .validate_revision("one", 2, "skyrimspecialedition")
+            .is_err());
         for (key, invalid) in [
             ("members", serde_json::json!({"file:1": {}})),
             ("folders", serde_json::json!({"file:1": 9})),
@@ -542,11 +536,9 @@ mod tests {
         std::fs::write(&p, "half a fi").unwrap();
         let e = InstallState::load(&p).unwrap_err();
         assert!(e.contains("cannot be read"), "{e}");
-        assert!(
-            InstallState::load(&dir.join("nope.json"))
-                .unwrap()
-                .is_none()
-        );
+        assert!(InstallState::load(&dir.join("nope.json"))
+            .unwrap()
+            .is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

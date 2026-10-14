@@ -30,8 +30,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 Vec::new()
             };
             if targets.is_empty() {
-                app.status =
-                    Some(t("status_no_categories_here").to_string());
+                app.status = Some(t("status_no_categories_here").to_string());
                 return Task::none();
             }
             let names: Vec<String> = targets
@@ -152,9 +151,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::FetchNexusCategories => {
             if !eidos_nexus::Nexus::have_credentials() {
-                app.status = Some(
-                    t("status_connect_nexus_first").to_string(),
-                );
+                app.status = Some(t("status_connect_nexus_first").to_string());
                 return Task::none();
             }
             let Some(domain) = selected_game(app).map(|g| g.def.nexus_game.to_string()) else {
@@ -229,7 +226,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
             app.status = Some(tf(
                 "status_categories_fetched",
-                &[("n", &remote.len()), ("created", &created), ("mapped", &mapped)],
+                &[
+                    ("n", &remote.len()),
+                    ("created", &created),
+                    ("mapped", &mapped),
+                ],
             ));
         }
         Message::AssignCategoriesFromNexus => {
@@ -240,8 +241,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             };
             if d.catalog.all().iter().all(|c| c.nexus.is_empty()) {
-                app.status =
-                    Some(t("status_no_nexus_mappings").to_string());
+                app.status = Some(t("status_no_nexus_mappings").to_string());
                 return Task::none();
             }
             // Only the targeted mods, so this stays the dialog's own action and
@@ -270,9 +270,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     });
                 }
                 None => {
-                    app.status = Some(
-                        t("status_no_nexus_category").to_string(),
-                    );
+                    app.status = Some(t("status_no_nexus_category").to_string());
                 }
             }
         }
@@ -329,7 +327,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             } else {
                 tf(
                     "status_categories_partial",
-                    &[("n", &written), ("failed", &failed.len()), ("errors", &failed.join("; "))],
+                    &[
+                        ("n", &written),
+                        ("failed", &failed.len()),
+                        ("errors", &failed.join("; ")),
+                    ],
                 )
             });
         }

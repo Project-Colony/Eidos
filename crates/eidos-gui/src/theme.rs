@@ -233,7 +233,11 @@ mod tests {
     #[test]
     fn an_unknown_theme_degrades_to_the_fallback_palette() {
         let _look = crate::test_support::look_lock();
-        for (family, variant) in [("no-such-family", "dark"), ("gruvbox", "no-such-variant"), ("", "")] {
+        for (family, variant) in [
+            ("no-such-family", "dark"),
+            ("gruvbox", "no-such-variant"),
+            ("", ""),
+        ] {
             colony_ui::set_active_theme(family, variant);
             assert_eq!(pal(), colony_ui::FALLBACK_PALETTE, "{family}/{variant}");
         }
@@ -245,7 +249,11 @@ mod tests {
         let prefs = crate::preferences::UiPreferences::default().standard;
         let (family, variant) = (prefs.selected_theme, prefs.selected_variant);
         colony_ui::set_active_theme(&family, &variant);
-        assert_ne!(pal(), colony_ui::FALLBACK_PALETTE, "{family}/{variant} is not in the catalogue");
+        assert_ne!(
+            pal(),
+            colony_ui::FALLBACK_PALETTE,
+            "{family}/{variant} is not in the catalogue"
+        );
     }
 
     /// TYP-3: every text size scales with the user's two text sizes, so none
@@ -273,7 +281,10 @@ mod tests {
             }
         }
         let mut raw = Vec::new();
-        walk(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut raw);
+        walk(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut raw,
+        );
         assert!(raw.is_empty(), "sizes that skip sz():\n{}", raw.join("\n"));
     }
 

@@ -224,8 +224,7 @@ pub(crate) fn from_payload(
                 } else {
                     str_at(file, "name")
                 },
-                size_in_bytes: loose_u64(file.and_then(|f| f.get("sizeInBytes")))
-                    .unwrap_or(0),
+                size_in_bytes: loose_u64(file.and_then(|f| f.get("sizeInBytes"))).unwrap_or(0),
                 optional: m
                     .get("optional")
                     .and_then(serde_json::Value::as_bool)

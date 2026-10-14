@@ -147,7 +147,11 @@ pub fn install(verb: &str, progress: impl FnMut(&str)) -> Result<bool, RuntimeEr
     install_into(r, &runtime_dir(r), progress)
 }
 
-fn install_into(r: &Runtime, dir: &Path, mut progress: impl FnMut(&str)) -> Result<bool, RuntimeError> {
+fn install_into(
+    r: &Runtime,
+    dir: &Path,
+    mut progress: impl FnMut(&str),
+) -> Result<bool, RuntimeError> {
     // Instances share this cache. Hold one process-safe lock through the probe,
     // staging and publication so a second installer cannot delete live work.
     let cache = dir.parent().unwrap_or(dir);
@@ -384,8 +388,10 @@ mod tests {
         drop(lock);
         worker.join().unwrap();
         fs::remove_dir_all(cache).unwrap();
-        assert!(matches!(early, Err(std::sync::mpsc::RecvTimeoutError::Timeout)),
-            "another installer inspected the shared cache while it was locked");
+        assert!(
+            matches!(early, Err(std::sync::mpsc::RecvTimeoutError::Timeout)),
+            "another installer inspected the shared cache while it was locked"
+        );
         assert!(!rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap());
     }
 

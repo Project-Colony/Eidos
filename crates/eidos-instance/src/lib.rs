@@ -530,10 +530,20 @@ impl Instance {
 
     /// Bind a new/legacy instance to a selected installation without switching an
     /// existing binding. The caller holds the instance mutation lock.
-    pub fn ensure_installation(&self, game_id: &str, kind: InstanceKind, selection: &str) -> std::io::Result<()> {
+    pub fn ensure_installation(
+        &self,
+        game_id: &str,
+        kind: InstanceKind,
+        selection: &str,
+    ) -> std::io::Result<()> {
         let mut manifest = Manifest::read_checked(&self.manifest_path())?
             .unwrap_or_else(|| Manifest::new(game_id, kind));
-        if manifest.game_id != game_id || manifest.installation.as_deref().is_some_and(|old| old != selection) {
+        if manifest.game_id != game_id
+            || manifest
+                .installation
+                .as_deref()
+                .is_some_and(|old| old != selection)
+        {
             return Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists,
                 "this instance belongs to another game installation; choose another instance folder"));
         }
@@ -1017,7 +1027,8 @@ impl Instance {
         let spec = eidos_plugins::GameSpec::for_id(game_id)?;
         let mut sources = vec![(String::new(), game_data.to_path_buf())];
         sources.extend(
-            profile.modlist()
+            profile
+                .modlist()
                 .into_iter()
                 .filter(|m| m.is_active())
                 .map(|m| (m.name, m.path)),
@@ -2848,7 +2859,11 @@ mod whole_audit_regressions {
 
         let (list, trust) = i.modlist_checked();
         assert!(trust.is_good(), "{trust:?}");
-        let names = |l: &[ModEntry]| l.iter().map(|m| (m.name.clone(), m.enabled)).collect::<Vec<_>>();
+        let names = |l: &[ModEntry]| {
+            l.iter()
+                .map(|m| (m.name.clone(), m.enabled))
+                .collect::<Vec<_>>()
+        };
         assert_eq!(names(&list), names(&mods[11..]));
         i.save_modlist(&list).unwrap();
         assert!(i.profile("Other").modlist_checked().1.is_good());
@@ -2875,7 +2890,11 @@ mod whole_audit_regressions {
 
         let (list, trust) = i.profile("Other").modlist_checked();
         assert!(trust.is_good(), "{trust:?}");
-        let names = |l: &[ModEntry]| l.iter().map(|m| (m.name.clone(), m.enabled)).collect::<Vec<_>>();
+        let names = |l: &[ModEntry]| {
+            l.iter()
+                .map(|m| (m.name.clone(), m.enabled))
+                .collect::<Vec<_>>()
+        };
         assert_eq!(names(&list), names(&mods));
     }
 

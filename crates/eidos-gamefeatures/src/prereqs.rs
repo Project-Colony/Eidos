@@ -552,8 +552,14 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();
 
-        run_winetricks(&fake, &root.join("proton/proton"), &prefix, &[], "d3dcompiler_47")
-            .unwrap();
+        run_winetricks(
+            &fake,
+            &root.join("proton/proton"),
+            &prefix,
+            &[],
+            "d3dcompiler_47",
+        )
+        .unwrap();
         let called = fs::read_to_string(&record).unwrap();
         let lines: Vec<&str> = called.lines().collect();
         assert_eq!(lines[0], "-q d3dcompiler_47");
@@ -573,8 +579,11 @@ mod tests {
         let windows = prefix.join("drive_c/windows");
         for dir in ["system32", "syswow64"] {
             fs::create_dir_all(windows.join(dir)).unwrap();
-            fs::write(windows.join(dir).join("d3dx9_43.dll"), [b'M', b'Z', 0, 0].repeat(64))
-                .unwrap();
+            fs::write(
+                windows.join(dir).join("d3dx9_43.dll"),
+                [b'M', b'Z', 0, 0].repeat(64),
+            )
+            .unwrap();
         }
         let done = satisfied_prereqs_in(&root, Some(&prefix));
         assert!(done.contains("d3dx9_43"), "{done:?}");

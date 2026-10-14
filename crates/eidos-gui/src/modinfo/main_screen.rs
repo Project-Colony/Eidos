@@ -155,7 +155,9 @@ pub(crate) fn status_bar<'a>(app: &App) -> Element<'a, Message> {
         InstanceKind::Global => t("instance_kind_global"),
         InstanceKind::Portable => t("instance_kind_portable"),
     };
-    let game = selected_game(app).map(|g| g.def.name).unwrap_or(t("status_bar_instance"));
+    let game = selected_game(app)
+        .map(|g| g.def.name)
+        .unwrap_or(t("status_bar_instance"));
     // A live multi-selection count takes the left slot (MO2's "N selected"), unless a
     // transient status message is showing; otherwise the instance summary.
     let showing_status = app.status.is_some();
@@ -783,7 +785,10 @@ pub(crate) fn profile_menu_card<'a>(app: &App, name: &str) -> Element<'a, Messag
             .style(button::danger)
             .into()
     } else {
-        menu_item(t("common_delete"), Message::ProfileDeleteConfirm(name.to_string()))
+        menu_item(
+            t("common_delete"),
+            Message::ProfileDeleteConfirm(name.to_string()),
+        )
     };
     col = col.push(delete);
 

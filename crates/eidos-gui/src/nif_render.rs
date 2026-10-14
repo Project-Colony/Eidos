@@ -1,9 +1,9 @@
 //! Bounded static NIF preview; input is the bundled helper's versioned JSON.
+use crate::{t, tf};
 use serde::{
     de::{self, SeqAccess, Visitor},
     Deserialize, Deserializer,
 };
-use crate::{t, tf};
 use std::{
     collections::{HashMap, HashSet},
     fmt,
@@ -148,9 +148,7 @@ fn meshes<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<Mesh>, D::Er
                     || mesh.normals.len() != mesh.positions.len()
                     || (!mesh.uvs.is_empty() && mesh.uvs.len() != mesh.positions.len())
                 {
-                    return Err(de::Error::custom(
-                        t("nif_inconsistent_counts"),
-                    ));
+                    return Err(de::Error::custom(t("nif_inconsistent_counts")));
                 }
                 vertices += mesh.positions.len();
                 triangles += mesh.triangles.len();
@@ -269,23 +267,32 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Scene, String> {
         if let Some(path) = mesh.material.textures.first().filter(|s| !s.is_empty()) {
             match normalize_texture_path(path) {
                 Ok(key) => mesh.diffuse_key = Some(key),
-                Err(e) => scene
-                    .warnings
-                    .push(tf("nif_block_texture_omitted", &[("block", &mesh.block), ("error", &e)])),
+                Err(e) => scene.warnings.push(tf(
+                    "nif_block_texture_omitted",
+                    &[("block", &mesh.block), ("error", &e)],
+                )),
             }
             if mesh.uvs.is_empty() {
-                scene.warnings.push(tf("nif_block_no_uvs", &[("block", &mesh.block)]));
+                scene
+                    .warnings
+                    .push(tf("nif_block_no_uvs", &[("block", &mesh.block)]));
             }
         }
         let flags = mesh.material.alpha_flags;
         if mesh.material.alpha < 1.0 && flags & 1 == 0 {
-            scene.warnings.push(tf("nif_block_opacity", &[("block", &mesh.block)]));
+            scene
+                .warnings
+                .push(tf("nif_block_opacity", &[("block", &mesh.block)]));
         }
         if flags & 1 != 0 && ((flags >> 1) & 15 != 6 || (flags >> 5) & 15 != 7) {
-            scene.warnings.push(tf("nif_block_blend", &[("block", &mesh.block)]));
+            scene
+                .warnings
+                .push(tf("nif_block_blend", &[("block", &mesh.block)]));
         }
         if flags & 0xa000 != 0 {
-            scene.warnings.push(tf("nif_block_alpha_sorter", &[("block", &mesh.block)]));
+            scene
+                .warnings
+                .push(tf("nif_block_alpha_sorter", &[("block", &mesh.block)]));
         }
     }
     match (&scene.bounds, vertex_count) {
@@ -411,10 +418,7 @@ pub(crate) fn render(
         return Err(t("nif_camera_finite").into());
     }
     validate_textures(textures)?;
-    let bounds = scene
-        .bounds
-        .as_ref()
-        .ok_or(t("nif_no_geometry"))?;
+    let bounds = scene.bounds.as_ref().ok_or(t("nif_no_geometry"))?;
     if scene.meshes.iter().all(|m| m.triangles.is_empty()) {
         return Err(t("nif_no_triangles").into());
     }

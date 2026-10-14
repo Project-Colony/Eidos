@@ -233,7 +233,10 @@ mod tests {
         assert!(n.starts_with("skyrimse-"), "{n}");
         assert!(n.ends_with(".eidos"), "{n}");
         // Nothing a shell or a filesystem has to be told about.
-        assert!(!n.contains(' ') && !n.contains(':') && !n.contains('/'), "{n}");
+        assert!(
+            !n.contains(' ') && !n.contains(':') && !n.contains('/'),
+            "{n}"
+        );
     }
 
     #[test]
