@@ -45,7 +45,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // guard there does not cover the one action that begins by leaving
             // the program.
             if app.prefs.offline {
-                app.nexus_error = Some(eidos_nexus::OFFLINE_MESSAGE.to_string());
+                app.nexus_error = Some(t("nexus_offline").to_string());
                 return Task::none();
             }
             app.nexus_signing_in = true;
@@ -110,7 +110,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
             // The status bar's account line is now wrong either way: offline
             // means Eidos will not check, and coming back online means it can.
-            app.nexus_error = on.then(|| eidos_nexus::OFFLINE_MESSAGE.to_string());
+            app.nexus_error = on.then(|| t("nexus_offline").to_string());
         }
         Message::PreferredServersChanged(t) => {
             app.typing = true;
@@ -163,7 +163,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::BrowseToolsDir => {
-            let mut dlg = rfd::AsyncFileDialog::new().set_title("Where your modding tools live");
+            let mut dlg = rfd::AsyncFileDialog::new().set_title(t("dialog_pick_tools_dir"));
             if let Some(cur) = app.prefs.tools_dir.as_deref().filter(|d| !d.is_empty()) {
                 dlg = dlg.set_directory(cur);
             }

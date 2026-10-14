@@ -418,7 +418,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::BrowseToolWorkdir => {
             let start = selected_game(app).map(|g| g.install_path.clone());
-            let mut dlg = rfd::AsyncFileDialog::new().set_title("Select the working directory");
+            let mut dlg = rfd::AsyncFileDialog::new().set_title(t("dialog_pick_working_dir"));
             if let Some(dir) = start {
                 dlg = dlg.set_directory(dir);
             }

@@ -416,7 +416,10 @@ impl Sections<'_> {
                 ),
                 self.info(
                     t("settings_path_games"),
-                    "~/.config/Colony/Eidos/games/*.toml".to_string(),
+                    eidos_paths::config_dir()
+                        .join("games/*.toml")
+                        .display()
+                        .to_string(),
                 ),
             ],
         )

@@ -62,7 +62,7 @@ fn nexus_client() -> eidos_nexus::Nexus {
             // some quite different cause - which is exactly the kind of wrong
             // hint that sends somebody round a loop of signing in again.
             eidos_log::info!(
-                "Not connected to Nexus: {e}\nSign in from the GUI (Settings -> Nexus); \
+                "Not connected to Nexus: {e}\nSign in from the GUI (Preferences -> Nexus); \
                  personal API keys are not supported."
             );
             exit(1);

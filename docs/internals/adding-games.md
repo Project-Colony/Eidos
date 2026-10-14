@@ -54,7 +54,7 @@ game overrides that built-in; any other `id` is added.
 ### Tools the game has
 
 Eidos looks for these by FILE NAME, in the game folder, inside enabled mods, and
-in the shared tools directory from Settings, and lists any it finds ready to run.
+in the shared tools directory from Preferences, and lists any it finds ready to run.
 Declare the ones a Bethesda-shaped game would never have:
 
 ```toml

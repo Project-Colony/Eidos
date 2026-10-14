@@ -2786,12 +2786,12 @@ pub(crate) fn switch_to_profile(app: &mut App, name: &str) -> bool {
         match inst.try_lock("the Eidos window") {
             Ok(_lock) => {
                 if let Err(e) = inst.set_active_profile(name) {
-                    app.status = Some(format!("Cannot switch profiles: {e}."));
+                    app.status = Some(tf("status_switch_profile_failed", &[("error", &e)]));
                     return false;
                 }
             }
             Err(e) => {
-                app.status = Some(format!("Cannot switch profiles: {e}."));
+                app.status = Some(tf("status_switch_profile_failed", &[("error", &e)]));
                 return false;
             }
         }

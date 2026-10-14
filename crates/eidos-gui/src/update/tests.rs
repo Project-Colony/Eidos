@@ -2349,7 +2349,7 @@ fn offline_mode_stops_the_sign_in_that_never_reaches_connect() {
     assert!(!app.nexus_signing_in, "it must not start");
     assert_eq!(
         app.nexus_error.as_deref(),
-        Some(eidos_nexus::OFFLINE_MESSAGE)
+        Some(t("nexus_offline"))
     );
 }
 
