@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c1396f03f352fe3d3bc10c23662ec659cb9eec2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=929a7bc31548c16e2538cf9f04c51109f51ad2da -->
 
 # Eidos verwenden
 
@@ -396,8 +396,8 @@ eidos play /mnt/games/EidosSkyrim
 cargo run -p eidos-gui
 ```
 
-Ein MO2-artiger Assistent beim ersten Start im Colony-Look aus Pergament und
-Burgunderrot: Willkommen -> Instanztyp (portabel / global) -> Spiel -> Name & Ort
+Ein MO2-artiger Assistent beim ersten Start, gezeichnet in den gemeinsamen
+Colony-Themes: Willkommen -> Instanztyp (portabel / global) -> Spiel -> Name & Ort
 -> Zusammenfassung -> Anlegen -> Hauptbildschirm. Der Willkommensbildschirm
 listet außerdem jede bekannte vorhandene Instanz (global und portabel, zuletzt
 benutzte zuerst) zum Öffnen mit einem Klick - er ist zugleich der
@@ -419,6 +419,29 @@ letzte, auf eine ausdrückliche Priorität oder in die Gruppe eines Trenners. Si
 laufen alle durch denselben gemeinsamen Verschiebe-Helfer, sodass der Off-by-one,
 der vom Entfernen der Zeilen vor dem Wiedereinfügen kommt, an einer Stelle
 existiert statt an fünf.
+
+### Preferences
+
+Klicken Sie oben links auf **Eidos**, um die Preferences anstelle der beiden
+Bereiche zu öffnen, und klicken Sie erneut darauf (oder auf **Close**), um
+zurückzukehren. General, Appearance und Accessibility kommen zuerst, wie in jedem
+Colony-Programm, danach Mod list, Nexus und About. Jede Änderung wird sofort
+angewendet und gespeichert; es gibt keinen Save-Knopf.
+
+- **General**: das Spiel, das Eidos öffnet, die Fenstergröße, die Sprache der
+  Oberfläche, der Tools-Ordner und wie ein Spiel ausgeführt wird. Das Fenster
+  spricht Englisch und Französisch; **System** folgt `LC_ALL`, `LC_MESSAGES`
+  oder `LANG`, und die Änderung gilt sofort. Die Kommandozeile `eidos` antwortet
+  immer auf Englisch.
+- **Appearance**: das Theme (25 Familien, 57 Paletten, standardmäßig das
+  Pergament von Eidos), die Akzentfarbe, die Textgröße, Effekte und eine
+  Live-Vorschau.
+- **Accessibility**: hoher Kontrast, eine legasthenikerfreundliche Schrift,
+  reduzierte Bewegung und eine Lesetextgröße, die sich mit der aus Appearance
+  multipliziert.
+
+Diese liegen in `~/.config/Colony/Eidos/preferences.json`. Das Theme, das ein
+älteres Eidos in `settings.ini` gespeichert hat, wird beim ersten Mal übernommen.
 
 ### Spalten, Sortierung und Gruppierung
 
@@ -568,7 +591,7 @@ trägt.
 
 ### Offline-Modus
 
-**Settings -> Nexus -> Offline** hält Eidos davon ab, Nexus überhaupt zu
+**Preferences -> Nexus -> Offline** hält Eidos davon ab, Nexus überhaupt zu
 kontaktieren. Update-Prüfungen, Anmeldung, Downloads und Collections sagen das,
 statt mit einem Verbindungsfehler zu scheitern. Es ist aus, solange Sie es nicht
 einschalten - eine von einem älteren Eidos geschriebene Einstellungsdatei hat

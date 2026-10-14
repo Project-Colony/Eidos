@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/extensions.md sha=5f31f1cbc3dcbfb9655f3570f01e5ada1377268d -->
+<!-- eidos-i18n: source=docs/guide/extensions.md sha=1d33d938321e5dbf200cd9b7a38c1e5f412fb116 -->
 
 # Erweiterungen
 
@@ -91,4 +91,4 @@ sagt, welche fehlen.
 
 ## Was eine Erweiterung nicht kann
 
-Eine Erweiterung kann Eidos nicht zurückrufen, sich nicht aus einem Archiv registrieren und keine eigenen Widgets zeichnen. Strukturierte Installer mit Protokoll 1 können geprüfte Dateipläne und Auswahldialoge zurückgeben; Prüfung, Vorbereitung im temporären Verzeichnis und Veröffentlichung übernimmt Eidos. FOMOD und BAIN bleiben native Installer. Vorschau- und Spielstandinfo-Erweiterungen verwenden denselben Host mit begrenzten Antworten. Die [Protokollspezifikation mit ausführbaren Beispielen](../../../../examples/extensions/README.md) erläutert die Zuordnungspriorität, gespeicherte CLI-Antworten, Grenzen und Identitätsprüfungen beim Wiederholen.
+Eine Erweiterung kann Eidos nicht zurückrufen, sich nicht aus einem Archiv registrieren und keine eigenen Widgets zeichnen. Strukturierte Installer mit Protokoll 1 können geprüfte Dateipläne und Auswahldialoge zurückgeben; Prüfung, Vorbereitung im temporären Verzeichnis und Veröffentlichung übernimmt Eidos. FOMOD und BAIN bleiben native Installer. Vorschau- und Spielstandinfo-Erweiterungen verwenden denselben Host mit begrenzten Antworten. Die [Protokollspezifikation mit ausführbaren Beispielen](../../../../guide/examples/extensions/README.md) erläutert die Zuordnungspriorität, gespeicherte CLI-Antworten, Grenzen und Identitätsprüfungen beim Wiederholen.

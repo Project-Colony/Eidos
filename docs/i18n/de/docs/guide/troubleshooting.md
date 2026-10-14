@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=427084e50a9961f690747ca6fe98c2f1725defe9 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
 
 # Fehlersuche und Diagnose
 
@@ -75,9 +75,10 @@ Um das Spiel selbst durch Eidos zu starten, setzen Sie seine Steam-Startoption a
 eidos play skyrimse -- %command%
 ```
 
-Stellen Sie `WINEDLLOVERRIDES="d3dcompiler_47=n"` davor, falls Proton den nativen
-d3dcompiler für die Shader-Übersetzung braucht; Eidos führt das mit allen
-DLL-Overrides zusammen, die eine Mod mitbringt (ENB/ReShade/`.asi`-Loader).
+Ein vorangestelltes `WINEDLLOVERRIDES` ist nicht nötig. Wenn eine aktivierte Mod
+`d3dcompiler_47` importiert, legt Eidos seine mitgelieferte Kopie ins Präfix,
+erzwingt sie als native und führt das mit allen DLL-Overrides zusammen, die eine
+Mod mitbringt (ENB/ReShade/`.asi`-Loader).
 
 ### Wird der Schichtindex tatsächlich benutzt?
 
