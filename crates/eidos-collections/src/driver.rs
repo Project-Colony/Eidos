@@ -255,6 +255,12 @@ fn reserve_folder(
                 ))
             };
         }
+        // Gone under its recorded name: the user may have renamed it, and the
+        // folder still carries its marker. Reinstalling under the old name
+        // would leave that renamed copy enabled beside a second one.
+        if let Some(Some(renamed)) = folders_by_owner(&mods).get(marker) {
+            return Ok(renamed.clone());
+        }
     }
     let mut name = previous.unwrap_or(wanted).to_string();
     loop {
@@ -384,10 +390,16 @@ pub fn adopt_other_revisions(
         // update installed a second copy beside the old one, still enabled.
         for (key, folder) in folders.iter_mut() {
             let path = mods.join(&*folder);
-            let (from, to) = (marker(&other_owner, key), marker(&owner, key));
-            if owns_folder(&path, &from) || owns_folder(&path, &to) {
+            // Still there and marked (by any key: a member paired by its Nexus
+            // page carries the new key): not renamed, and no scan is paid.
+            if path.is_dir()
+                && eidos_instance::ModMeta::read(&path.join("meta.ini"))
+                    .collection_owner()
+                    .is_some()
+            {
                 continue;
             }
+            let (from, to) = (marker(&other_owner, key), marker(&owner, key));
             let owned = owned_folders.get_or_insert_with(|| folders_by_owner(&mods));
             if let Some(Some(renamed)) = owned.get(&from).or_else(|| owned.get(&to)) {
                 *folder = renamed.clone();
@@ -462,7 +474,12 @@ pub fn adopt_other_revisions(
                 );
                 continue;
             }
-            if state.folders.get(&key).is_some_and(|f| f != folder)
+            // A folder this revision recorded that no longer exists was renamed
+            // or removed: the marker found above is the one to follow.
+            if state
+                .folders
+                .get(&key)
+                .is_some_and(|f| f != folder && mods.join(f).exists())
                 || state
                     .folders
                     .iter()
@@ -2168,6 +2185,69 @@ mod cache_tests {
                 .collect::<Vec<_>>(),
             ["Dropped - mine"]
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_marker_two_folders_carry_is_followed_into_neither() {
+        let (root, inst, new) = gate("ambiguous");
+        let mods = inst.mods_dir();
+        std::fs::rename(mods.join("Updated"), mods.join("Updated A")).unwrap();
+        std::fs::create_dir_all(mods.join("Updated B")).unwrap();
+        std::fs::copy(
+            mods.join("Updated A/meta.ini"),
+            mods.join("Updated B/meta.ini"),
+        )
+        .unwrap();
+        let mut state = gate_state(2);
+        adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
+        assert_eq!(state.folders.get(&key(21)), None);
+        assert!(owns_folder(
+            &mods.join("Updated A"),
+            &mark(&owner(1), &key(20))
+        ));
+        assert!(owns_folder(
+            &mods.join("Updated B"),
+            &mark(&owner(1), &key(20))
+        ));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_folder_renamed_after_a_takeover_is_followed_going_back_and_on_a_rerun() {
+        let (root, inst, new) = gate("renamed-back");
+        let mods = inst.mods_dir();
+        let mut two = gate_state(2);
+        adopt_other_revisions(&inst, &new, &mut two, &mut |_| Ok(())).unwrap();
+        two.save(&InstallState::path(&root, "gate", 2)).unwrap();
+        std::fs::rename(mods.join("Kept"), mods.join("Kept - mine")).unwrap();
+        // A re-run of revision 2 reserves the renamed folder, not a new "Kept".
+        assert_eq!(
+            reserve_folder(&inst, "Kept", &mark(&owner(2), &key(10)), Some("Kept")).unwrap(),
+            "Kept - mine"
+        );
+        assert!(!mods.join("Kept").exists());
+        // Going back to revision 1, which recorded "Kept", takes the renamed one.
+        let old = crate::read(
+            &std::fs::read_to_string(
+                crate::state::revision_dir(&root, "gate", 1).join("collection.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap()
+        .collection;
+        let mut one = InstallState::load(&InstallState::path(&root, "gate", 1))
+            .unwrap()
+            .unwrap();
+        adopt_other_revisions(&inst, &old, &mut one, &mut |_| Ok(())).unwrap();
+        assert_eq!(
+            one.folders.get(&key(10)).map(String::as_str),
+            Some("Kept - mine")
+        );
+        assert!(owns_folder(
+            &mods.join("Kept - mine"),
+            &mark(&owner(1), &key(10))
+        ));
         std::fs::remove_dir_all(root).unwrap();
     }
 
