@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.3](https://github.com/Project-Colony/Eidos/compare/v1.19.2...v1.19.3) (2026-10-16)
+
+
+### Fixes
+
+* **release:** sync Cargo.lock with 1.19.2 and find a new release PR from release-please's output ([#98](https://github.com/Project-Colony/Eidos/issues/98)) ([02f4d5c](https://github.com/Project-Colony/Eidos/commit/02f4d5cdab64e2c907fa339c3f2f99afbcda29ef))
+
 ## [1.19.2](https://github.com/Project-Colony/Eidos/compare/v1.19.1...v1.19.2) (2026-10-14)
 
 
