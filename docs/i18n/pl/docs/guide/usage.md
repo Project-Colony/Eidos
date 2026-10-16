@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=929a7bc31548c16e2538cf9f04c51109f51ad2da -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ae08652e5ffe8559a077d6c4321b7d834bb793f1 -->
 
 # Używanie Eidos
 
@@ -215,6 +215,10 @@ i tamten profil zmieniłby się bez twojej wiedzy: nowa rewizja instaluje zamias
 tego własną kopię obok niego, a raport prosi cię o wyłączenie starej w tym
 profilu, nigdy o jej usunięcie. Powrót do starszej rewizji tak samo przejmuje z
 powrotem jej foldery albo instaluje świeże kopie tych, których przejąć nie może.
+Za każdym razem, gdy członek jest w ten sposób zastępowany, a ty zmieniłeś lub
+dodałeś pliki w jego folderze, stary folder zostaje najpierw zachowany obok
+jako `<name>_backup`, który nigdy nie jest wczytywany do gry, a raport go
+wymienia.
 
 Pozostałość po wcześniejszej rewizji, która zostaje włączona, sprawia, że
 instalacja nie liczy się jako ta zbudowana przez autora; uwaga znika, gdy ją

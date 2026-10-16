@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=929a7bc31548c16e2538cf9f04c51109f51ad2da -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ae08652e5ffe8559a077d6c4321b7d834bb793f1 -->
 
 # Eidos kullanımı
 
@@ -214,6 +214,9 @@ değişirdi: yeni revizyon onun yerine kendi kopyasını onun yanına kurar ve r
 sizden eskisini bu profilde devre dışı bırakmanızı ister, asla kaldırmanızı
 değil. Daha eski bir revizyona dönmek, onun klasörlerini aynı biçimde geri alır
 ya da alamadıklarının taze kopyalarını kurar.
+Bir üye bu şekilde değiştirildiğinde ve siz onun klasöründe dosyaları
+değiştirmiş ya da eklemişseniz, eski klasör önce `<name>_backup` adıyla yanında
+saklanır; bu klasör oyuna asla yüklenmez ve raporda adı geçer.
 
 Daha eski bir revizyondan kalıp açık kalmayı sürdüren bir artık, kurulumun
 yazarın oluşturduğu kurulum sayılmasını engeller; onu devre dışı bıraktığınızda

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=929a7bc31548c16e2538cf9f04c51109f51ad2da -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ae08652e5ffe8559a077d6c4321b7d834bb793f1 -->
 
 # Usar Eidos
 
@@ -220,6 +220,9 @@ perfil cambiaría a tus espaldas: la nueva revisión instala en su lugar su prop
 copia al lado, y el informe te pide que desactives la antigua en este perfil,
 nunca que la quites. Volver a una revisión más antigua recupera sus carpetas del
 mismo modo, o instala copias nuevas de las que no puede tomar.
+Cada vez que un miembro se reemplaza así y habías cambiado o añadido ficheros
+en su carpeta, la carpeta antigua se conserva antes al lado como
+`<name>_backup`, que nunca se carga en el juego, y el informe la nombra.
 
 Un resto de una revisión anterior que sigue activado impide que la instalación
 cuente como la que construyó el autor; la nota desaparece en cuanto lo

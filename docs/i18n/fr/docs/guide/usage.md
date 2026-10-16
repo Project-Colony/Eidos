@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=929a7bc31548c16e2538cf9f04c51109f51ad2da -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ae08652e5ffe8559a077d6c4321b7d834bb793f1 -->
 
 # Utiliser Eidos
 
@@ -229,6 +229,10 @@ nouvelle révision installe à la place sa propre copie à côté, et le rapport
 demande de désactiver l'ancienne dans ce profil, jamais de la retirer. Revenir à
 une révision plus ancienne reprend ses dossiers de la même façon, ou installe des
 copies neuves de ceux qu'elle ne peut pas reprendre.
+Chaque fois qu'un membre est remplacé ainsi alors que vous aviez modifié ou
+ajouté des fichiers dans son dossier, l'ancien dossier est d'abord conservé à
+côté sous le nom `<name>_backup`, qui n'est jamais chargé dans le jeu, et le
+rapport le nomme.
 
 Un vestige d'une révision antérieure qui demeure activé empêche l'installation de
 compter comme celle que l'auteur a construite ; la remarque disparaît dès que
