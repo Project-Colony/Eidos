@@ -44,7 +44,7 @@ pub(crate) fn write_meta_preserving(
     let had_metadata = preserved.is_some();
     let mut meta = preserved.unwrap_or_default();
     // Only an explicit collection-owned publication may retain replacement authority.
-    meta.set("eidosCollectionOwner", "");
+    meta.set_collection_owner("");
     let mut sources = if merging {
         meta.installed_files()
     } else {

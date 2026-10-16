@@ -154,7 +154,7 @@ pub(crate) fn begin(
             inst.mod_meta(&name)
                 .collection_owner()
                 .filter(|_| eidos_collections::installer_answers::path(&folder).is_file())
-                .map(|owner| (folder, owner.to_string()))
+                .map(|owner| (folder, owner))
         }),
     });
     work(app, false)
@@ -1332,7 +1332,7 @@ with zipfile.ZipFile(sys.argv[1],'w') as z:
         fs::create_dir(&folder).unwrap();
         let owner = r#"["fixture/1","member"]"#;
         let mut meta = eidos_instance::ModMeta::default();
-        meta.set("eidosCollectionOwner", owner);
+        meta.set_collection_owner(owner);
         meta.write(&folder.join("meta.ini")).unwrap();
         inst.save_modlist(&inst.modlist()).unwrap();
         let session = eidos_install::open_omod_with(
@@ -1382,7 +1382,9 @@ with zipfile.ZipFile(sys.argv[1],'w') as z:
             archive
         );
         assert_eq!(
-            eidos_instance::ModMeta::read(&folder.join("meta.ini")).collection_owner(),
+            eidos_instance::ModMeta::read(&folder.join("meta.ini"))
+                .collection_owner()
+                .as_deref(),
             Some(owner)
         );
     }
