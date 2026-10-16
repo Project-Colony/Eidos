@@ -95,18 +95,25 @@ jobs:
       # with `--locked`. A release PR that bumped Cargo.toml alone would fail
       # the moment it merged, so the lock is brought along here.
       #
-      # The open release PR is found by release-please's own label, on every
-      # push, rather than only when this run touched it: release-please leaves an
-      # unchanged PR alone and reports nothing, so a sync that failed once would
-      # otherwise never be retried. No pending PR is the only quiet exit; a PR
-      # that exists and cannot be synced fails the job.
+      # The release PR this run opened or updated comes from release-please's
+      # own output. A PR it has just opened is not reliably found by its label
+      # yet: on 1.19.2 the label lookup one second after "added labels" came
+      # back empty, the lock was never synced, and the merged release failed
+      # its --locked build. The label lookup still runs on every push, so a PR
+      # that release-please left unchanged (and reports nothing for) is retried.
+      # No pending PR is the only quiet exit; a PR that exists and cannot be
+      # synced fails the job.
       - name: Keep Cargo.lock in step with the version
         env:
           GH_TOKEN: ${{ secrets.EIDOS_RELEASE_TOKEN }}
+          PRS: ${{ steps.release.outputs.prs }}
         run: |
           set -euo pipefail
-          branches=$(gh pr list -R "$GITHUB_REPOSITORY" --state open --label 'autorelease: pending' \
-            --json headRefName --jq '.[].headRefName')
+          branches=$( {
+            if [ -n "${PRS:-}" ]; then jq -r '.[].headBranchName' <<<"$PRS"; fi
+            gh pr list -R "$GITHUB_REPOSITORY" --state open --label 'autorelease: pending' \
+              --json headRefName --jq '.[].headRefName'
+          } | sort -u)
           if [ -z "$branches" ]; then
             echo "no release PR open - nothing to sync"
             exit 0
