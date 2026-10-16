@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=929a7bc31548c16e2538cf9f04c51109f51ad2da -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ae08652e5ffe8559a077d6c4321b7d834bb793f1 -->
 
 # Usare Eidos
 
@@ -222,6 +222,10 @@ piedi: la nuova revisione installa invece la propria copia accanto a essa, e il
 rapporto ti chiede di disattivare quella vecchia in questo profilo, mai di
 rimuoverla. Tornare a una revisione più vecchia riprende le sue cartelle allo
 stesso modo, oppure installa copie nuove di quelle che non riesce a prendere.
+Ogni volta che un membro viene sostituito così e avevi modificato o aggiunto
+file nella sua cartella, la vecchia cartella viene prima conservata accanto
+come `<name>_backup`, che non viene mai caricata nel gioco, e il rapporto la
+nomina.
 
 Un residuo di una revisione precedente che resta attivo impedisce che
 l'installazione conti come quella costruita dall'autore; la nota sparisce una

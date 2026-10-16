@@ -200,6 +200,9 @@ you: the new revision installs its own copy beside it instead, and the report
 asks you to disable the old one in this profile, never to remove it. Going back
 to an older revision takes its folders back the same way, or installs fresh
 copies of the ones it cannot take.
+Whenever a member is replaced this way and you had changed or added files in
+its folder, the old folder is first kept beside it as `<name>_backup`, which is
+never loaded into the game, and the report names it.
 
 A leftover from an earlier revision that stays enabled keeps the install from
 counting as the one the author built; the note goes away once you disable it.

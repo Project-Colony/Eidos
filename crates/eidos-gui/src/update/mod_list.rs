@@ -394,7 +394,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let owner = app
                 .created
                 .as_ref()
-                .and_then(|inst| inst.mod_meta(&name).collection_owner().map(str::to_owned));
+                .and_then(|inst| inst.mod_meta(&name).collection_owner());
             if let Some(owner) = owner {
                 let folder = m.path.clone();
                 app.mod_picker = app.mod_picker.wrapping_add(1);

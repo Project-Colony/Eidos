@@ -252,7 +252,9 @@ impl ModMeta {
     /// Missing installer payloads retained for front-end diagnostics.
     pub fn install_warning(&self) -> Option<String> {
         let raw = self.raw("eidosInstallWarning")?;
-        let decoded = serde_json::from_str::<String>(raw).unwrap_or_else(|_| unquote(raw));
+        // JSON as Eidos writes it; once MO2 has saved the file, QSettings' own
+        // escaping, which JSON cannot read.
+        let decoded = serde_json::from_str::<String>(raw).unwrap_or_else(|_| qt_value(raw));
         (!decoded.is_empty()).then_some(decoded)
     }
 
@@ -265,23 +267,46 @@ impl ModMeta {
         );
     }
 
-    /// Raw collection reservation marker; callers compare its encoded bytes.
-    pub fn collection_owner(&self) -> Option<&str> {
-        self.raw("eidosCollectionOwner")
+    /// The collection reservation marker (the JSON array its writer chose);
+    /// callers compare it as a whole. `None` when absent or cleared.
+    ///
+    /// MO2 saves meta.ini through QSettings, which reads an unquoted value with
+    /// a comma as a string LIST and writes it back joined with ", " and its
+    /// quotes gone: `["a","b"]` came back as `[a, b]`, and the folder no longer
+    /// looked owned. [`Self::set_collection_owner`] writes the shape QSettings
+    /// keeps unchanged, and both older shapes still read as the same marker.
+    pub fn collection_owner(&self) -> Option<String> {
+        let value = json_list_value(self.raw("eidosCollectionOwner")?);
+        (!value.is_empty()).then_some(value)
+    }
+
+    /// Record (or, with an empty string, clear) the collection reservation.
+    pub fn set_collection_owner(&mut self, marker: &str) {
+        let marker = marker.trim();
+        self.set(
+            "eidosCollectionOwner",
+            &if marker.is_empty() {
+                String::new()
+            } else {
+                qt_quote(marker)
+            },
+        );
     }
 
     /// The INI fragments a collection itself installed into this folder, so a
     /// later revision removes only those and never one the user added. `None`
     /// for a folder written before this record existed: provenance unknown.
     pub fn collection_ini_fragments(&self) -> Option<Vec<String>> {
-        serde_json::from_str(self.raw("eidosCollectionIniFragments")?).ok()
+        let value = json_list_value(self.raw("eidosCollectionIniFragments")?);
+        serde_json::from_str(&value).ok()
     }
 
     pub fn set_collection_ini_fragments(&mut self, names: &[String]) {
-        // JSON keeps arbitrary file names on one INI line, like eidosInstallWarning.
+        // JSON keeps arbitrary file names on one INI line, quoted the way
+        // QSettings writes it back unchanged (see collection_owner).
         self.set(
             "eidosCollectionIniFragments",
-            &serde_json::to_string(names).expect("strings serialize"),
+            &qt_quote(&serde_json::to_string(names).expect("strings serialize")),
         );
     }
 
@@ -891,6 +916,126 @@ fn unquote(v: &str) -> String {
         .to_string()
 }
 
+/// `value` quoted and escaped the way QSettings writes a string that holds a
+/// comma, so MO2 reads it as one string and saves it back byte for byte.
+fn qt_quote(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('"');
+    for c in value.chars() {
+        match c {
+            '"' | '\\' => {
+                out.push('\\');
+                out.push(c);
+            }
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            _ => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// The items of a raw value, read the way QSettings reads it: `"..."` spans
+/// quoted, `\` escapes decoded, an unquoted comma splitting a string list.
+fn qt_items(raw: &str) -> Vec<String> {
+    let mut items = Vec::new();
+    let mut cur = String::new();
+    // Qt 5 without a codec writes each UTF-8 byte above 0x7E as its own `\xNN`.
+    let mut bytes = Vec::new();
+    let flush = |bytes: &mut Vec<u8>, cur: &mut String| {
+        if !bytes.is_empty() {
+            match String::from_utf8(std::mem::take(bytes)) {
+                Ok(text) => cur.push_str(&text),
+                Err(e) => cur.extend(e.into_bytes().into_iter().map(char::from)),
+            }
+        }
+    };
+    let mut quoted = false;
+    let mut chars = raw.trim().chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' && chars.peek() == Some(&'x') {
+            chars.next();
+            let mut code = 0u32;
+            while let Some(d) = chars.peek().and_then(|c| c.to_digit(16)) {
+                code = code.saturating_mul(16).saturating_add(d);
+                chars.next();
+            }
+            match u8::try_from(code) {
+                Ok(byte) => bytes.push(byte),
+                Err(_) => {
+                    flush(&mut bytes, &mut cur);
+                    cur.extend(char::from_u32(code));
+                }
+            }
+            continue;
+        }
+        flush(&mut bytes, &mut cur);
+        match c {
+            '"' => quoted = !quoted,
+            ',' if !quoted => items.push(std::mem::take(&mut cur).trim().to_string()),
+            '\\' => match chars.next() {
+                Some('a') => cur.push('\x07'),
+                Some('b') => cur.push('\x08'),
+                Some('f') => cur.push('\x0c'),
+                Some('n') => cur.push('\n'),
+                Some('r') => cur.push('\r'),
+                Some('t') => cur.push('\t'),
+                Some('v') => cur.push('\x0b'),
+                Some(other) => cur.push(other),
+                None => {}
+            },
+            _ => cur.push(c),
+        }
+    }
+    flush(&mut bytes, &mut cur);
+    items.push(cur.trim().to_string());
+    items
+}
+
+/// A raw value as one string, as QSettings reads it; a list comes back joined
+/// with ", ", the way QSettings writes one.
+fn qt_value(raw: &str) -> String {
+    qt_items(raw).join(", ")
+}
+
+/// A JSON string array as Eidos wrote it, in canonical form, from any shape
+/// it can have on disk: quoted as `set_collection_owner` writes it, the bare
+/// JSON older versions wrote, or the string list QSettings made of that bare
+/// JSON (`[a, b]`, an item with a comma kept quoted). Anything else is
+/// returned decoded and otherwise as it is.
+fn json_list_value(raw: &str) -> String {
+    let canonical = |items: Vec<String>| serde_json::to_string(&items).expect("strings serialize");
+    if let Ok(items) = serde_json::from_str::<Vec<String>>(raw.trim()) {
+        return canonical(items);
+    }
+    let mut items = qt_items(raw);
+    if let [one] = &items[..] {
+        if let Ok(list) = serde_json::from_str::<Vec<String>>(one) {
+            return canonical(list);
+        }
+        // One element with no comma loses its quotes but stays one string.
+        if let Some(inner) = one.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            return canonical(if inner.is_empty() {
+                Vec::new()
+            } else {
+                vec![inner.to_string()]
+            });
+        }
+        return one.clone();
+    }
+    let opens = items.first().is_some_and(|f| f.starts_with('['));
+    let closes = items.last().is_some_and(|l| l.ends_with(']'));
+    if opens && closes {
+        let last = items.len() - 1;
+        items[0].remove(0);
+        items[last].pop();
+        return canonical(items);
+    }
+    items.join(", ")
+}
+
 /// Remove `<...>` tags from a value (MO2's `name` field can carry HTML).
 fn strip_html(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -1299,6 +1444,86 @@ mod tests {
         m.set("repository", "Nexus"); // unchanged
         assert!(!m.is_dirty());
         let _ = fs::remove_file(&p);
+    }
+
+    /// The owner marker and the fragment record read the same before and after
+    /// MO2's QSettings saved the file, in every shape Eidos has written.
+    #[test]
+    fn collection_markers_survive_a_qsettings_save() {
+        let marker = r#"["skyrimspecialedition:gate:3","file:skyrimspecialedition:7"]"#;
+        let mut m = ModMeta::default();
+        m.set_collection_owner(marker);
+        // Quoted with `\"`: the shape QSettings writes back unchanged.
+        assert_eq!(
+            m.raw("eidosCollectionOwner"),
+            Some(r#""[\"skyrimspecialedition:gate:3\",\"file:skyrimspecialedition:7\"]""#)
+        );
+        assert_eq!(m.collection_owner().as_deref(), Some(marker));
+        for raw in [
+            // Older Eidos, bare JSON.
+            r#"["skyrimspecialedition:gate:3","file:skyrimspecialedition:7"]"#,
+            // That bare JSON once MO2 saved it: a string list, quotes gone.
+            "[skyrimspecialedition:gate:3, file:skyrimspecialedition:7]",
+        ] {
+            m.set("eidosCollectionOwner", raw);
+            assert_eq!(m.collection_owner().as_deref(), Some(marker), "{raw}");
+        }
+        m.set("eidosCollectionOwner", "reservation-token");
+        assert_eq!(m.collection_owner().as_deref(), Some("reservation-token"));
+        m.set_collection_owner("");
+        assert_eq!(m.collection_owner(), None);
+
+        let names = vec!["a.ini".to_string(), "b.ini".to_string()];
+        m.set_collection_ini_fragments(&names);
+        assert_eq!(m.collection_ini_fragments(), Some(names.clone()));
+        for raw in [r#"["a.ini","b.ini"]"#, "[a.ini, b.ini]"] {
+            m.set("eidosCollectionIniFragments", raw);
+            assert_eq!(m.collection_ini_fragments(), Some(names.clone()), "{raw}");
+        }
+        // One name has no comma, so QSettings writes it unquoted, quotes escaped.
+        m.set("eidosCollectionIniFragments", r#"[\"a.ini\"]"#);
+        assert_eq!(
+            m.collection_ini_fragments(),
+            Some(vec!["a.ini".to_string()])
+        );
+        m.set("eidosCollectionIniFragments", "[]");
+        assert_eq!(m.collection_ini_fragments(), Some(Vec::new()));
+
+        // An item with ", " keeps its boundaries in every shape: bare JSON,
+        // the list QSettings makes of it (that item stays quoted), and one
+        // such item alone, which QSettings keeps as one quoted string.
+        let named = r#"["skyrimspecialedition:gate:3","name:presets, outfits"]"#;
+        for raw in [
+            named,
+            r#"[skyrimspecialedition:gate:3, "name:presets, outfits]""#,
+        ] {
+            m.set("eidosCollectionOwner", raw);
+            assert_eq!(m.collection_owner().as_deref(), Some(named), "{raw}");
+        }
+        m.set("eidosCollectionIniFragments", r#""[Foo, Bar.ini]""#);
+        assert_eq!(
+            m.collection_ini_fragments(),
+            Some(vec!["Foo, Bar.ini".to_string()])
+        );
+        // Qt 5 without a codec writes each UTF-8 byte as its own escape.
+        m.set(
+            "eidosCollectionIniFragments",
+            r#"[\"R\xc3\xa9glages.ini\"]"#,
+        );
+        assert_eq!(
+            m.collection_ini_fragments(),
+            Some(vec!["Réglages.ini".to_string()])
+        );
+
+        // QSettings writes a warning without commas unquoted, `\` escaped.
+        m.set(
+            "eidosInstallWarning",
+            r"Missing archive sources: C:\\Mods\\a.esp",
+        );
+        assert_eq!(
+            m.install_warning().as_deref(),
+            Some(r"Missing archive sources: C:\Mods\a.esp")
+        );
     }
 
     #[test]

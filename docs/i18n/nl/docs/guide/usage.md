@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=929a7bc31548c16e2538cf9f04c51109f51ad2da -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ae08652e5ffe8559a077d6c4321b7d834bb793f1 -->
 
 # Eidos gebruiken
 
@@ -218,6 +218,9 @@ revisie installeert dan haar eigen kopie ernaast, en het verslag vraagt je de
 oude in dit profiel uit te schakelen, nooit om haar te verwijderen. Teruggaan naar
 een oudere revisie neemt haar mappen op dezelfde manier terug, of installeert
 verse kopieën van de mappen die ze niet kan overnemen.
+Telkens als een lid zo vervangen wordt terwijl je in zijn map bestanden
+gewijzigd of toegevoegd had, wordt de oude map eerst ernaast bewaard als
+`<name>_backup`, die nooit in het spel geladen wordt, en het verslag noemt hem.
 
 Een overblijfsel van een eerdere revisie dat ingeschakeld blijft, zorgt ervoor
 dat de installatie niet telt als die welke de auteur gebouwd heeft; de melding

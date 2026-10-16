@@ -436,7 +436,11 @@ pub(super) fn install_destination_ready(
     {
         if owner.is_empty()
             || owner.contains(['\r', '\n'])
-            || preserved.as_ref().and_then(ModMeta::collection_owner) != Some(owner)
+            || preserved
+                .as_ref()
+                .and_then(ModMeta::collection_owner)
+                .as_ref()
+                != Some(owner)
         {
             return Err(InstallError::BadSelection(
                 "The collection reservation changed before publication".into(),
@@ -483,7 +487,7 @@ pub(super) fn install_destination_ready(
         // collection replacement or claim that the old exact source is still intact.
         let merge_checkpoint = if merging {
             let mut meta = preserved.clone().unwrap_or_default();
-            meta.set("eidosCollectionOwner", "");
+            meta.set_collection_owner("");
             meta.set_installed_files(&[]);
             meta.set("fileID", "0");
             meta.set_install_warning(
@@ -510,7 +514,7 @@ pub(super) fn install_destination_ready(
             if let OverwritePolicy::ReplaceOwned(owner)
             | OverwritePolicy::ReplaceOwnedWithBackup(owner) = &policy
             {
-                meta.set("eidosCollectionOwner", owner);
+                meta.set_collection_owner(owner);
             }
 
             let warning = if missing.is_empty() {

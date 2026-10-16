@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=929a7bc31548c16e2538cf9f04c51109f51ad2da -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ae08652e5ffe8559a077d6c4321b7d834bb793f1 -->
 
 # Usar o Eidos
 
@@ -214,6 +214,9 @@ pés: em vez disso, a nova revisão instala a própria cópia ao lado dela, e o
 relatório pede que você desligue a antiga neste perfil, nunca que a remova.
 Voltar para uma revisão mais antiga retoma as pastas dela do mesmo jeito, ou
 instala cópias novas das que ela não consegue retomar.
+Sempre que um membro é substituído assim e você tinha alterado ou acrescentado
+arquivos na pasta dele, a pasta antiga é guardada antes ao lado como
+`<name>_backup`, que nunca é carregada no jogo, e o relatório a nomeia.
 
 Uma sobra de uma revisão anterior que continua ligada impede que a instalação
 conte como a que o autor montou; a nota some assim que você a desliga. Um membro

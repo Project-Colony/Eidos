@@ -201,8 +201,37 @@ impl RealHooks<'_> {
 
 fn owns_folder(folder: &Path, marker: &str) -> bool {
     std::fs::symlink_metadata(folder).is_ok_and(|meta| meta.file_type().is_dir())
-        && eidos_instance::ModMeta::read(&folder.join("meta.ini")).collection_owner()
+        && eidos_instance::ModMeta::read(&folder.join("meta.ini"))
+            .collection_owner()
+            .as_deref()
             == Some(marker)
+}
+
+/// Every mod folder that carries a collection marker, by marker. A marker two
+/// folders carry (a copy the user made) names neither. Backups and separators
+/// are never collection folders, whatever their meta.ini says.
+fn folders_by_owner(mods: &Path) -> std::collections::HashMap<String, Option<String>> {
+    let mut found = std::collections::HashMap::new();
+    for entry in std::fs::read_dir(mods).into_iter().flatten().flatten() {
+        let Ok(name) = entry.file_name().into_string() else {
+            continue;
+        };
+        if eidos_instance::is_backup_name(&name)
+            || eidos_instance::is_separator_name(&name)
+            || !entry.file_type().is_ok_and(|t| t.is_dir())
+        {
+            continue;
+        }
+        if let Some(owner) =
+            eidos_instance::ModMeta::read(&entry.path().join("meta.ini")).collection_owner()
+        {
+            found
+                .entry(owner)
+                .and_modify(|seen: &mut Option<String>| *seen = None)
+                .or_insert(Some(name));
+        }
+    }
+    found
 }
 
 fn reserve_folder(
@@ -226,6 +255,12 @@ fn reserve_folder(
                 ))
             };
         }
+        // Gone under its recorded name: the user may have renamed it, and the
+        // folder still carries its marker. Reinstalling under the old name
+        // would leave that renamed copy enabled beside a second one.
+        if let Some(Some(renamed)) = folders_by_owner(&mods).get(marker) {
+            return Ok(renamed.clone());
+        }
     }
     let mut name = previous.unwrap_or(wanted).to_string();
     loop {
@@ -248,7 +283,7 @@ fn reserve_folder(
             Err(e) => return Err(e.to_string()),
         }
         let mut meta = eidos_instance::ModMeta::default();
-        meta.set("eidosCollectionOwner", marker);
+        meta.set_collection_owner(marker);
         meta.write(&path.join("meta.ini"))
             .map_err(|e| e.to_string())?;
         std::fs::File::open(path.join("meta.ini"))
@@ -340,12 +375,34 @@ pub fn adopt_other_revisions(
         .map(|m| m.name)
         .collect();
     let mut leftovers = Vec::new();
+    // Read only when a recorded folder no longer carries its marker.
+    let mut owned_folders: Option<std::collections::HashMap<String, Option<String>>> = None;
     for other in other_revisions(inst, state, &mut leftovers)? {
         let other_owner = format!("{}:{}:{}", other.game_domain, other.slug, other.revision);
         let mut folders = other.folders.clone();
         for (key, status) in &other.members {
             if let Status::Installed(f) | Status::Approximate(f, _) = status {
                 folders.entry(key.clone()).or_insert_with(|| f.clone());
+            }
+        }
+        // A folder the user renamed keeps its marker. Looked up by its recorded
+        // name alone it was neither taken over nor named as a leftover, so the
+        // update installed a second copy beside the old one, still enabled.
+        for (key, folder) in folders.iter_mut() {
+            let path = mods.join(&*folder);
+            // Still there and marked (by any key: a member paired by its Nexus
+            // page carries the new key): not renamed, and no scan is paid.
+            if path.is_dir()
+                && eidos_instance::ModMeta::read(&path.join("meta.ini"))
+                    .collection_owner()
+                    .is_some()
+            {
+                continue;
+            }
+            let (from, to) = (marker(&other_owner, key), marker(&owner, key));
+            let owned = owned_folders.get_or_insert_with(|| folders_by_owner(&mods));
+            if let Some(Some(renamed)) = owned.get(&from).or_else(|| owned.get(&to)) {
+                *folder = renamed.clone();
             }
         }
         // (this revision's key, the other revision's key)
@@ -417,7 +474,12 @@ pub fn adopt_other_revisions(
                 );
                 continue;
             }
-            if state.folders.get(&key).is_some_and(|f| f != folder)
+            // A folder this revision recorded that no longer exists was renamed
+            // or removed: the marker found above is the one to follow.
+            if state
+                .folders
+                .get(&key)
+                .is_some_and(|f| f != folder && mods.join(f).exists())
                 || state
                     .folders
                     .iter()
@@ -481,7 +543,7 @@ pub fn adopt_other_revisions(
         for (path, from, to, folder, register) in moves {
             crate::recipe::transfer_receipt(&path, &from, &to)?;
             let mut meta = eidos_instance::ModMeta::read(&path.join("meta.ini"));
-            meta.set("eidosCollectionOwner", &to);
+            meta.set_collection_owner(&to);
             meta.write(&path.join("meta.ini"))
                 .map_err(|e| e.to_string())?;
             // A verified member is never registered again, so this does it, as
@@ -1835,7 +1897,7 @@ mod cache_tests {
             let folder = inst.mods_dir().join(name);
             std::fs::create_dir_all(&folder).unwrap();
             let mut meta = eidos_instance::ModMeta::default();
-            meta.set("eidosCollectionOwner", &mark(&owner(1), &key(file)));
+            meta.set_collection_owner(&mark(&owner(1), &key(file)));
             meta.write(&folder.join("meta.ini")).unwrap();
             old.folders.insert(key(file), name.into());
             old.set(&key(file), Status::Installed(name.into()));
@@ -1950,7 +2012,7 @@ mod cache_tests {
         let folder = inst.mods_dir().join("Gate - INI Tweaks");
         std::fs::create_dir_all(&folder).unwrap();
         let mut meta = eidos_instance::ModMeta::default();
-        meta.set("eidosCollectionOwner", &mark(&owner(1), INI_TWEAKS_KEY));
+        meta.set_collection_owner(&mark(&owner(1), INI_TWEAKS_KEY));
         meta.write(&folder.join("meta.ini")).unwrap();
         let path = InstallState::path(&root, "gate", 1);
         let mut old = InstallState::load(&path).unwrap().unwrap();
@@ -2081,6 +2143,138 @@ mod cache_tests {
             state.folders.get(&key(10)).map(String::as_str),
             Some("Kept")
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_renamed_member_is_taken_over_and_a_renamed_leftover_is_named() {
+        let (root, inst, new) = gate("renamed");
+        let mods = inst.mods_dir();
+        std::fs::rename(mods.join("Updated"), mods.join("Updated - mine")).unwrap();
+        std::fs::rename(mods.join("Dropped"), mods.join("Dropped - mine")).unwrap();
+        // A backup carries the same marker and must never be picked instead.
+        std::fs::create_dir_all(mods.join("Updated_backup")).unwrap();
+        std::fs::copy(
+            mods.join("Updated - mine/meta.ini"),
+            mods.join("Updated_backup/meta.ini"),
+        )
+        .unwrap();
+        std::fs::write(
+            inst.profile("Default").dir().join("modlist.txt"),
+            "+Kept\n+Updated - mine\n+Dropped - mine\n",
+        )
+        .unwrap();
+        let mut state = gate_state(2);
+        let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
+        assert_eq!(
+            state.folders.get(&key(21)).map(String::as_str),
+            Some("Updated - mine")
+        );
+        assert!(owns_folder(
+            &mods.join("Updated - mine"),
+            &mark(&owner(2), &key(21))
+        ));
+        assert!(owns_folder(
+            &mods.join("Updated_backup"),
+            &mark(&owner(1), &key(20))
+        ));
+        assert_eq!(
+            leftovers
+                .iter()
+                .map(|n| n.subject.as_str())
+                .collect::<Vec<_>>(),
+            ["Dropped - mine"]
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_marker_two_folders_carry_is_followed_into_neither() {
+        let (root, inst, new) = gate("ambiguous");
+        let mods = inst.mods_dir();
+        std::fs::rename(mods.join("Updated"), mods.join("Updated A")).unwrap();
+        std::fs::create_dir_all(mods.join("Updated B")).unwrap();
+        std::fs::copy(
+            mods.join("Updated A/meta.ini"),
+            mods.join("Updated B/meta.ini"),
+        )
+        .unwrap();
+        let mut state = gate_state(2);
+        adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
+        assert_eq!(state.folders.get(&key(21)), None);
+        assert!(owns_folder(
+            &mods.join("Updated A"),
+            &mark(&owner(1), &key(20))
+        ));
+        assert!(owns_folder(
+            &mods.join("Updated B"),
+            &mark(&owner(1), &key(20))
+        ));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_folder_renamed_after_a_takeover_is_followed_going_back_and_on_a_rerun() {
+        let (root, inst, new) = gate("renamed-back");
+        let mods = inst.mods_dir();
+        let mut two = gate_state(2);
+        adopt_other_revisions(&inst, &new, &mut two, &mut |_| Ok(())).unwrap();
+        two.save(&InstallState::path(&root, "gate", 2)).unwrap();
+        std::fs::rename(mods.join("Kept"), mods.join("Kept - mine")).unwrap();
+        // A re-run of revision 2 reserves the renamed folder, not a new "Kept".
+        assert_eq!(
+            reserve_folder(&inst, "Kept", &mark(&owner(2), &key(10)), Some("Kept")).unwrap(),
+            "Kept - mine"
+        );
+        assert!(!mods.join("Kept").exists());
+        // Going back to revision 1, which recorded "Kept", takes the renamed one.
+        let old = crate::read(
+            &std::fs::read_to_string(
+                crate::state::revision_dir(&root, "gate", 1).join("collection.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap()
+        .collection;
+        let mut one = InstallState::load(&InstallState::path(&root, "gate", 1))
+            .unwrap()
+            .unwrap();
+        adopt_other_revisions(&inst, &old, &mut one, &mut |_| Ok(())).unwrap();
+        assert_eq!(
+            one.folders.get(&key(10)).map(String::as_str),
+            Some("Kept - mine")
+        );
+        assert!(owns_folder(
+            &mods.join("Kept - mine"),
+            &mark(&owner(1), &key(10))
+        ));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_member_whose_meta_ini_mo2_saved_is_still_taken_over() {
+        let (root, inst, new) = gate("qsettings");
+        // What QSettings writes back for the JSON array older versions wrote.
+        let meta = inst.mods_dir().join("Kept/meta.ini");
+        std::fs::write(
+            &meta,
+            format!(
+                "[General]\neidosCollectionOwner=[{}, {}]\n",
+                owner(1),
+                key(10)
+            ),
+        )
+        .unwrap();
+        let mut state = gate_state(2);
+        adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
+        assert_eq!(
+            state.folders.get(&key(10)).map(String::as_str),
+            Some("Kept")
+        );
+        assert!(owns_folder(
+            &inst.mods_dir().join("Kept"),
+            &mark(&owner(2), &key(10))
+        ));
         std::fs::remove_dir_all(root).unwrap();
     }
 

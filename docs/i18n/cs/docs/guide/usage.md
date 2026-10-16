@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=929a7bc31548c16e2538cf9f04c51109f51ad2da -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ae08652e5ffe8559a077d6c4321b7d834bb793f1 -->
 
 # Používání Eidosu
 
@@ -203,6 +203,9 @@ nainstaluje vlastní kopii vedle ní a zpráva vás požádá, abyste starou v t
 profilu vypnuli, nikdy ne, abyste ji odebrali. Návrat ke starší revizi si vezme
 její složky zpět stejným způsobem, nebo nainstaluje čerstvé kopie těch, které
 převzít nemůže.
+Kdykoli se člen takto nahrazuje a vy jste v jeho složce změnili nebo přidali
+soubory, stará složka se nejprve ponechá vedle jako `<name>_backup`, která se
+do hry nikdy nenačte, a zpráva ji jmenuje.
 
 Pozůstatek z dřívější revize, který zůstane zapnutý, brání tomu, aby se
 instalace počítala jako ta, kterou sestavil autor; poznámka zmizí, jakmile ho

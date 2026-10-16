@@ -44,7 +44,10 @@ pub fn path(folder: &Path) -> PathBuf {
 }
 fn owned(folder: &Path, owner: &str) -> Result<(), String> {
     if !fs::symlink_metadata(folder).is_ok_and(|m| m.is_dir())
-        || eidos_instance::ModMeta::read(&folder.join("meta.ini")).collection_owner() != Some(owner)
+        || eidos_instance::ModMeta::read(&folder.join("meta.ini"))
+            .collection_owner()
+            .as_deref()
+            != Some(owner)
     {
         return Err("Installer answers require the collection's owned reservation".into());
     }

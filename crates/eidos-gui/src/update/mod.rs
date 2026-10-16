@@ -69,7 +69,7 @@ fn spawn_open(
                 None
             } else {
                 meta.collection_owner()
-                    .map(|owner| eidos_collections::installer_answers::read(&folder, owner))
+                    .map(|owner| eidos_collections::installer_answers::read(&folder, &owner))
                     .transpose()
                     .map_err(eidos_install::InstallError::BadSelection)?
                     .flatten()

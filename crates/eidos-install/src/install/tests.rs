@@ -1805,7 +1805,7 @@ fn merging_the_same_source_deduplicates_and_an_unknown_replacement_clears_identi
             assert_eq!(meta.mod_id(), None);
         }
         assert_ne!(
-            meta.collection_owner(),
+            meta.collection_owner().as_deref(),
             Some("owned"),
             "manual edits revoke collection replacement authority"
         );
@@ -1997,7 +1997,10 @@ fn failed_merge_revokes_exact_identity_and_marks_partial_content() {
     assert!(result.is_err());
     assert!(dest.join("changed.esp").is_file());
     let meta = ModMeta::read(&dest.join("meta.ini"));
-    assert_ne!(meta.collection_owner(), Some("collection:member"));
+    assert_ne!(
+        meta.collection_owner().as_deref(),
+        Some("collection:member")
+    );
     assert!(meta.has_installed_files());
     assert!(meta.installed_files().is_empty());
     assert!(meta.file_id().is_none());
@@ -2114,7 +2117,7 @@ fn merge_metadata_failure_keeps_incomplete_checkpoint_after_payload() {
     );
     assert!(result.is_err());
     let meta = ModMeta::read(&mods.path().join("Mod/meta.ini"));
-    assert_ne!(meta.collection_owner(), Some("forged"));
+    assert_ne!(meta.collection_owner().as_deref(), Some("forged"));
     assert!(meta
         .install_warning()
         .unwrap()
@@ -2627,7 +2630,9 @@ fn owned_backup_policy_requires_the_exact_reservation_and_preserves_it() {
     .unwrap();
     assert_eq!(report.backup, Some(t.path().join("Owned_backup")));
     assert_eq!(
-        ModMeta::read(&report.dest.join("meta.ini")).collection_owner(),
+        ModMeta::read(&report.dest.join("meta.ini"))
+            .collection_owner()
+            .as_deref(),
         Some("collection:member")
     );
 }
