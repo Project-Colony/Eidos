@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.4](https://github.com/Project-Colony/Eidos/compare/v1.19.3...v1.19.4) (2026-10-16)
+
+
+### Fixes
+
+* **collections:** keep collection folders recognisable after MO2 saves meta.ini or the user renames them ([#100](https://github.com/Project-Colony/Eidos/issues/100)) ([856e962](https://github.com/Project-Colony/Eidos/commit/856e9624bf55bfebbf428d2b7223738ef1ccf3ce))
+
 ## [1.19.3](https://github.com/Project-Colony/Eidos/compare/v1.19.2...v1.19.3) (2026-10-16)
 
 
