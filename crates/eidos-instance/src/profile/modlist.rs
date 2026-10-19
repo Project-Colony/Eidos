@@ -43,6 +43,30 @@ pub(crate) fn copy_dir_recursive(from: &Path, to: &Path) -> io::Result<()> {
 /// included, is a mod the user installed.
 pub(crate) const INSTALL_TEMP_PREFIX: &str = ".eidos-install-";
 
+/// The folders in `mods/` that count as mods, sorted. Shared by the trust check
+/// and [`crate::Instance::missing_mods`], so "missing" means the same thing to
+/// the check that raises the alarm and to the button that answers it.
+pub(crate) fn mod_folders(mods_dir: &Path) -> io::Result<Vec<String>> {
+    // `file_type()` reads the dirent's d_type instead of stat()ing the target.
+    // Two things follow, both load-bearing: a directory that is readable but
+    // not SEARCHABLE (mode 0600, an exFAT mount whose dmask drops +x) still
+    // reports its children's kinds, where `path().is_dir()` returns false for
+    // every one of them and empties the whole list; and a DANGLING symlink is
+    // distinguishable from an absent folder.
+    let mut names: Vec<String> = fs::read_dir(mods_dir)?
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir() || t.is_symlink()))
+        .filter_map(|e| e.file_name().into_string().ok())
+        // Eidos's own in-flight/crashed extraction temps are not mods. Only
+        // ours: a leading dot is legal in a mod name and real mods use it
+        // (".NET Script Framework" is a near-universal Skyrim SE
+        // dependency), so filtering every dot-dir would silently erase them.
+        .filter(|n| !n.starts_with(INSTALL_TEMP_PREFIX))
+        .collect();
+    names.sort();
+    Ok(names)
+}
+
 /// Whether a freshly-scanned mod list may be written back over `modlist.txt`.
 ///
 /// The reconciliation is destructive by nature - it exists to forget mods that are
@@ -185,29 +209,9 @@ impl Profile {
     /// fit to display, and [`Profile::save_modlist`] refuses to write it.
     pub fn modlist_checked(&self) -> (Vec<ModEntry>, ListTrust) {
         let mods_dir = self.mods_dir();
-        // `file_type()` reads the dirent's d_type instead of stat()ing the target.
-        // Two things follow, both load-bearing: a directory that is readable but
-        // not SEARCHABLE (mode 0600, an exFAT mount whose dmask drops +x) still
-        // reports its children's kinds, where `path().is_dir()` returns false for
-        // every one of them and empties the whole list; and a DANGLING symlink is
-        // distinguishable from an absent folder.
-        let scan = fs::read_dir(&mods_dir).map(|rd| {
-            let mut names: Vec<String> = rd
-                .flatten()
-                .filter(|e| e.file_type().is_ok_and(|t| t.is_dir() || t.is_symlink()))
-                .filter_map(|e| e.file_name().into_string().ok())
-                // Eidos's own in-flight/crashed extraction temps are not mods. Only
-                // ours: a leading dot is legal in a mod name and real mods use it
-                // (".NET Script Framework" is a near-universal Skyrim SE
-                // dependency), so filtering every dot-dir would silently erase them.
-                .filter(|n| !n.starts_with(INSTALL_TEMP_PREFIX))
-                .collect();
-            names.sort();
-            names
-        });
         // An unreadable mods/ is NOT an empty one. Saying so is the difference
         // between "the user deleted their mods" and "the drive is not mounted".
-        let (present, readable) = match scan {
+        let (present, readable) = match mod_folders(&mods_dir) {
             Ok(names) => (names, true),
             Err(_) => (Vec::new(), false),
         };
@@ -381,6 +385,20 @@ impl Profile {
         // wrote: this rewrites the whole file from that list, so such a caller
         // must compare `modlist_bytes` with what it read (the window does).
         crate::write_atomic(&target, s.as_bytes())
+    }
+
+    /// The mod names this profile's `modlist.txt` lists, in file order: `+`, `-`
+    /// or bare lines, the same reading as [`Profile::forget_mods`] - never a `*`
+    /// row (the game's own content, which has no folder) or a comment.
+    pub fn listed_mods(&self) -> Vec<String> {
+        fs::read_to_string(self.modlist_source())
+            .unwrap_or_default()
+            .lines()
+            .map(str::trim)
+            .filter(|t| !t.is_empty() && !t.starts_with(['*', '#']))
+            .map(|t| t.strip_prefix(['+', '-']).unwrap_or(t).trim().to_string())
+            .filter(|n| !n.is_empty())
+            .collect()
     }
 
     /// Drop the lines of mods whose folders the caller has just deleted, leaving

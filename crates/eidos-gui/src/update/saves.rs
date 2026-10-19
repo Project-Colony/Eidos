@@ -243,8 +243,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // Same gates as every other mutation: the plugins dir is bind-mounted
             // into a running session, and restoring under the game's feet races
             // its own writes.
-            if app.running.is_some() {
-                app.status = Some(t("status_restore_while_running").to_string());
+            if let Some(r) = &app.running {
+                app.status = Some(tf("status_restore_while_running", &[("title", &r.title)]));
                 return Task::none();
             }
             let Some(inst) = app.created.as_ref() else {
@@ -270,8 +270,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::AcceptPluginState => {
-            if app.running.is_some() {
-                app.status = Some(t("status_not_while_running").to_string());
+            if let Some(r) = &app.running {
+                app.status = Some(tf("status_not_while_running", &[("title", &r.title)]));
                 return Task::none();
             }
             let Some(inst) = app.created.as_ref() else {

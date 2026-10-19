@@ -91,8 +91,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // would only be refused by the lock anyway (and resynced), so
             // starting it just wastes a masterlist download to throw the result
             // away - and shows a "Sorting..." status for a sort that cannot land.
-            if app.running.is_some() {
-                app.status = Some(t("status_sort_while_running").to_string());
+            if let Some(r) = &app.running {
+                app.status = Some(tf("status_sort_while_running", &[("title", &r.title)]));
                 return Task::none();
             }
             // One at a time. Without this every impatient click during the

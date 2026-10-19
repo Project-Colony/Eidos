@@ -5094,3 +5094,304 @@ fn cleaning_debris_only_touches_eidos_install_folders() {
     );
     let _ = fs::remove_dir_all(&root);
 }
+
+/// An instance whose active list names two mods the user deleted with the file
+/// manager (and nothing that is still there, so the trust check calls it
+/// suspect), a second profile listing one of them, and a third listing none.
+fn deleted_mods_app() -> (App, PathBuf) {
+    let (mut app, root) = list_app(&["Keep"]);
+    let inst = app.created.clone().unwrap();
+    fs::write(
+        inst.active().dir().join("modlist.txt"),
+        "# order\n+GoneA\n-GoneB\n",
+    )
+    .unwrap();
+    for (name, list) in [("Other", "+GoneA\n*DLC.esm\n+Keep\n"), ("Third", "+Keep\n")] {
+        inst.profile(name).create().unwrap();
+        fs::write(inst.profile(name).dir().join("modlist.txt"), list).unwrap();
+    }
+    reload_mods(&mut app);
+    assert!(
+        !inst.modlist_checked().1.is_good(),
+        "the fixture must be suspect"
+    );
+    (app, root)
+}
+
+fn offers_forget(app: &App) -> bool {
+    diagnostics(app)
+        .into_iter()
+        .find(|d| d.title == t("diag_modlist_mismatch"))
+        .expect("the mismatch card")
+        .actions
+        .iter()
+        .any(|(_, m)| matches!(m, Message::ForgetMissingMods))
+}
+
+#[test]
+fn forgetting_missing_mods_edits_every_profile_after_backing_each_up() {
+    let (mut app, root) = deleted_mods_app();
+    let inst = app.created.clone().unwrap();
+    assert!(offers_forget(&app));
+
+    let _ = update_inner(&mut app, Message::ForgetMissingMods);
+
+    let list = |p: &str| fs::read_to_string(inst.profile(p).dir().join("modlist.txt")).unwrap();
+    let active = inst.active().name;
+    assert_eq!(list(&active), "# order\n");
+    assert_eq!(list("Other"), "*DLC.esm\n+Keep\n");
+    assert_eq!(list("Third"), "+Keep\n");
+    // Undoable from the Backups dialog: one restore point per profile that
+    // was edited, holding the list as it was, and none for a profile that
+    // listed nothing missing (each one takes a slot of the ten kept).
+    let backups = |p: &str| inst.profile(p).backups(eidos_instance::BackupKind::ModList);
+    assert_eq!(
+        fs::read_to_string(&backups(&active)[0].files[0]).unwrap(),
+        "# order\n+GoneA\n-GoneB\n"
+    );
+    assert_eq!(backups("Other").len(), 1);
+    assert!(backups("Third").is_empty());
+    assert!(inst.modlist_checked().1.is_good());
+    assert!(app.mods.iter().any(|m| m.name == "Keep"));
+    assert!(
+        app.status.as_deref().unwrap_or("").contains('2'),
+        "{:?}",
+        app.status
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn forgetting_missing_mods_does_nothing_when_the_mods_folder_is_unreadable() {
+    use std::os::unix::fs::PermissionsExt;
+    let (mut app, root) = deleted_mods_app();
+    let inst = app.created.clone().unwrap();
+    let before: Vec<String> = ["Default", "Other", "Third"]
+        .iter()
+        .map(|p| fs::read_to_string(inst.profile(p).dir().join("modlist.txt")).unwrap())
+        .collect();
+    fs::set_permissions(inst.mods_dir(), fs::Permissions::from_mode(0)).unwrap();
+
+    let offered = offers_forget(&app);
+    let _ = update_inner(&mut app, Message::ForgetMissingMods);
+
+    fs::set_permissions(inst.mods_dir(), fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(!offered, "an unreadable folder may be an unmounted drive");
+    let after: Vec<String> = ["Default", "Other", "Third"]
+        .iter()
+        .map(|p| fs::read_to_string(inst.profile(p).dir().join("modlist.txt")).unwrap())
+        .collect();
+    assert_eq!(before, after);
+    for p in ["Default", "Other", "Third"] {
+        assert!(inst
+            .profile(p)
+            .backups(eidos_instance::BackupKind::ModList)
+            .is_empty());
+    }
+    assert!(app.status.is_some());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn run_is_blocked_before_spawning_while_the_mod_list_cannot_be_trusted() {
+    // `eidos play` and `eidos tool` both refuse this list; the window says why
+    // instead of starting a run that can only end in "exited with an error".
+    let (mut app, root) = deleted_mods_app();
+    app.launch_command = vec!["/bin/true".into()];
+    for tool in [None, Some("xEdit".to_string())] {
+        app.tool_choice = tool;
+        app.status = None;
+        // The cache as a window opened before the deletion holds it: no card.
+        app.diag = Vec::new();
+        app.diag_stale.set(false);
+        app.diag_dirty = false;
+        let _ = update_inner(&mut app, Message::Run);
+        assert!(app.running.is_none());
+        let status = app.status.clone().unwrap_or_default();
+        assert!(status.contains("missing"), "{status}");
+        // The tab the status points at must show the card and its button.
+        refresh_diagnostics(&mut app);
+        assert!(app
+            .diag
+            .iter()
+            .any(|d| d.title == t("diag_modlist_mismatch") && !d.actions.is_empty()));
+    }
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn setup_prereqs_is_refused_while_a_run_is_tracked() {
+    // winetricks and the running game share one prefix.
+    let (mut app, root) = list_app(&["Keep"]);
+    start_run(
+        &mut app,
+        "Game".into(),
+        std::process::Command::new("/bin/true"),
+    );
+    let pid = app.running.as_ref().map(|r| r.pid);
+
+    let _ = update_inner(&mut app, Message::SetupPrereqs);
+
+    assert_eq!(app.running.as_ref().map(|r| r.pid), pid);
+    assert_eq!(
+        app.status.as_deref(),
+        Some(tf("status_prereqs_wait_run", &[("title", &"Game")]).as_str())
+    );
+    assert!(!root.join("prereqs.log").exists());
+    app.running.take();
+    let _ = fs::remove_dir_all(root);
+}
+
+/// Wait for the tracked run's child to exit, then let the poll finish it.
+fn finish_tracked_run(app: &mut App) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !app
+        .running
+        .as_ref()
+        .is_some_and(|r| r.done.load(std::sync::atomic::Ordering::SeqCst))
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the child never exited"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let _ = update_inner(app, Message::PollRunning);
+    assert!(app.running.is_none());
+}
+
+#[test]
+fn a_run_with_an_explicit_log_writes_its_header_and_exit_there() {
+    // What the prerequisite install relies on. The SetupPrereqs arm itself
+    // (tracked, unlocked, status naming the log) is not driven here: that
+    // would spawn a real `eidos prereqs --install`.
+    let (mut app, root) = list_app(&["Keep"]);
+    let log = root.join("prereqs.log");
+    start_run_with_log(
+        &mut app,
+        t("prereqs_run_title").to_string(),
+        std::process::Command::new("/bin/true"),
+        Some(log.clone()),
+    );
+    assert!(app.running.is_some());
+
+    finish_tracked_run(&mut app);
+    let text = fs::read_to_string(&log).unwrap();
+    assert!(text.starts_with("# eidos: running"), "{text}");
+    assert!(text.contains("exited with code 0"), "{text}");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_run_eidos_refused_says_why_in_the_status_bar() {
+    let (mut app, root) = list_app(&["Keep"]);
+    let mut cmd = std::process::Command::new("/bin/sh");
+    cmd.arg("-c").arg(
+        "echo \"ERROR: ld.so: object 'gameoverlayrenderer.so' from LD_PRELOAD cannot be preloaded\" >&2; \
+         echo 'WARN  eidos: refusing to launch: /x is in use by installing tool prerequisites (pid 7)' >&2; \
+         exit 1",
+    );
+    start_run(&mut app, "Skyrim".into(), cmd);
+    finish_tracked_run(&mut app);
+    let status = app.status.clone().unwrap_or_default();
+    assert!(
+        status.contains("refusing to launch: /x is in use by installing tool prerequisites"),
+        "{status}"
+    );
+    assert!(status.contains("run-"), "the log stays named: {status}");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn the_refusal_line_is_eidos_s_own_and_only_its_first_line() {
+    let log = "# eidos: running Skyrim\n\
+               ERROR: ld.so: object '/s/gameoverlayrenderer.so' from LD_PRELOAD cannot be preloaded\n\
+               WARN  eidos play: refusing to start - the mod list cannot be trusted: 3 of 9 missing\n\
+               \x20 Nothing has been written.\n\
+               WARN  eidos: refusing to launch: second\n";
+    assert_eq!(
+        refusal_line(log).as_deref(),
+        Some("eidos play: refusing to start - the mod list cannot be trusted: 3 of 9 missing")
+    );
+    // Proton's noise alone, or a plain failure, is not a refusal.
+    assert_eq!(
+        refusal_line(
+            "ERROR: ld.so: object 'gameoverlayrenderer.so' from LD_PRELOAD cannot be preloaded\n\
+             WARN  wine: refusing to do something\n\
+             INFO  eidos: mounted\n"
+        ),
+        None
+    );
+    assert_eq!(refusal_line(""), None);
+    assert_eq!(
+        refusal_line("WARN  eidos prereqs: refusing to install: /x is in use by eidos play\n")
+            .as_deref(),
+        Some("eidos prereqs: refusing to install: /x is in use by eidos play")
+    );
+}
+
+#[test]
+fn forget_is_withheld_for_an_empty_mods_folder_and_a_damaged_active_list() {
+    let (mut app, root) = deleted_mods_app();
+    let inst = app.created.clone().unwrap();
+    let lists = || -> Vec<String> {
+        ["Default", "Other", "Third"]
+            .iter()
+            .map(|p| fs::read_to_string(inst.profile(p).dir().join("modlist.txt")).unwrap())
+            .collect()
+    };
+
+    // An empty, readable mods/ is what an unmounted bind-mount target looks
+    // like: every listed mod "missing", and forgetting them all would erase
+    // the order the drive is waiting to come back to.
+    let keep = inst.mods_dir().join("Keep");
+    fs::remove_dir_all(&keep).unwrap();
+    let before = lists();
+    assert!(!offers_forget(&app));
+    let _ = update_inner(&mut app, Message::ForgetMissingMods);
+    assert_eq!(lists(), before);
+
+    // An emptied active modlist.txt: the verdict is about that file, which
+    // forgetting the other profiles' lines cannot fix.
+    fs::create_dir(&keep).unwrap();
+    fs::write(inst.active().dir().join("modlist.txt"), "").unwrap();
+    assert!(!inst.modlist_checked().1.is_good());
+    let before = lists();
+    assert!(!offers_forget(&app));
+    let _ = update_inner(&mut app, Message::ForgetMissingMods);
+    assert_eq!(lists(), before);
+    for p in ["Default", "Other", "Third"] {
+        assert!(inst
+            .profile(p)
+            .backups(eidos_instance::BackupKind::ModList)
+            .is_empty());
+    }
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn an_unlocked_run_neither_disarms_confirmations_nor_drops_the_selection() {
+    let (mut app, root) = list_app(&["A", "B", "C"]);
+    start_run(
+        &mut app,
+        "Game".into(),
+        std::process::Command::new("/bin/true"),
+    );
+    app.running.as_mut().unwrap().lock = false;
+    app.selected_mods = [0usize, 2].into_iter().collect();
+    // Each 600 ms exit poll of a still-running child is the program watching,
+    // not the user acting; only the tick that ends the run is an action.
+    // Flipped by hand only once the wait thread is through with the flag.
+    let done = app.running.as_ref().unwrap().done.clone();
+    while !done.load(std::sync::atomic::Ordering::SeqCst) {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    done.store(false, std::sync::atomic::Ordering::SeqCst);
+    assert!(is_ambient(&app, &Message::PollRunning));
+    done.store(true, std::sync::atomic::Ordering::SeqCst);
+    assert!(!is_ambient(&app, &Message::PollRunning));
+
+    finish_tracked_run(&mut app);
+    assert_eq!(app.selected_mods.len(), 2);
+    let _ = fs::remove_dir_all(root);
+}

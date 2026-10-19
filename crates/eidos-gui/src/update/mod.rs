@@ -1059,6 +1059,15 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         //
         // Not blanket, though: a release that commits an aimed drag really is
         // an action, and must cancel like any other.
+        // The run's exit poll (600 ms while a game, a tool or the prerequisite
+        // install runs) is the program watching a child, like InstallPoll. The
+        // prerequisite install leaves the window usable for minutes, so as an
+        // action it disarmed every confirmation before its second click. Only
+        // the tick that ends the run - and reloads the list - counts as one.
+        Message::PollRunning => !app
+            .running
+            .as_ref()
+            .is_some_and(|r| r.done.load(std::sync::atomic::Ordering::SeqCst)),
         Message::PointerReleased => {
             !(app.drag_state.is_some_and(|d| d.aimed)
                 || app.plugin_drag.as_ref().is_some_and(|d| d.aimed)
@@ -1240,6 +1249,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::BatchToggleMods
         | Message::BatchRemoveMods
         | Message::ConfirmBatchRemove
+        | Message::ForgetMissingMods
         | Message::BatchSendTop
         | Message::BatchSendBottom
         | Message::DragStart(..)

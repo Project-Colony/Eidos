@@ -28,8 +28,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // AND the plugin state dir, which is bind-mounted into a running
             // session - importing under the game's feet mixed the two states and
             // half-undid the import at the next launch.
-            if app.running.is_some() {
-                app.status = Some(t("status_import_while_running").to_string());
+            if let Some(r) = &app.running {
+                app.status = Some(tf("status_import_while_running", &[("title", &r.title)]));
                 return Task::none();
             }
             let Some(inst) = app.created.as_ref() else {

@@ -1079,6 +1079,36 @@ impl Instance {
         result
     }
 
+    /// The mods some profile still lists that have no folder in `mods/` - the
+    /// ones a user deleted with the file manager - deduplicated, in profile then
+    /// file order. MO2 drops such mods on its next refresh; Eidos refuses to,
+    /// because the same picture is what an unmounted drive looks like, so this is
+    /// what the user is shown before choosing to forget them.
+    ///
+    /// An unreadable `mods/` is an error, never an empty folder: that may be the
+    /// drive that is not mounted, and every listed mod would then look missing.
+    /// So is a `mods/` with no mod folder at all while a profile still lists
+    /// some: an unmounted bind-mount target or mount point is exactly that, an
+    /// existing, readable, EMPTY directory.
+    pub fn missing_mods(&self) -> std::io::Result<Vec<String>> {
+        let present: HashSet<String> = profile::mod_folders(&self.mods_dir())?
+            .into_iter()
+            .collect();
+        let mut seen = HashSet::new();
+        let missing: Vec<String> = self
+            .profiles()
+            .iter()
+            .flat_map(|p| self.profile(p).listed_mods())
+            .filter(|n| !present.contains(n) && seen.insert(n.clone()))
+            .collect();
+        if present.is_empty() && !missing.is_empty() {
+            return Err(std::io::Error::other(
+                "the mods folder holds no mod at all (is the drive it lives on mounted?)",
+            ));
+        }
+        Ok(missing)
+    }
+
     /// Follow a folder the caller has just renamed in `mods/`, in EVERY profile -
     /// see [`Profile::rename_mod`]. Same lock and same error rule as
     /// [`Instance::forget_mods`].
@@ -2867,6 +2897,51 @@ mod whole_audit_regressions {
         assert_eq!(names(&list), names(&mods[11..]));
         i.save_modlist(&list).unwrap();
         assert!(i.profile("Other").modlist_checked().1.is_good());
+    }
+
+    #[test]
+    fn missing_mods_are_what_any_profile_lists_without_a_folder() {
+        // The mods a user deleted with the file manager: listed in some profile,
+        // gone from `mods/`. Only those - never the game's own `*` rows, never a
+        // comment, and never a folder that is still there as a symlink.
+        let fixture = Fixture::new();
+        let i = &fixture.0;
+        let mods: Vec<ModEntry> = (0..4)
+            .map(|n| i.create_empty_mod(&format!("Mod{n}")).unwrap())
+            .collect();
+        i.save_modlist(&mods).unwrap();
+        let other = i.profile("Other");
+        other.create_from(&i.active()).unwrap();
+        let mut text = fs::read_to_string(other.dir().join("modlist.txt")).unwrap();
+        text.push_str("+OnlyOther\n*DLC.esm\n# a note\n");
+        fs::write(other.dir().join("modlist.txt"), text).unwrap();
+        fs::remove_dir_all(&mods[0].path).unwrap();
+        // A dangling symlink is a folder whose target is elsewhere, exactly as
+        // the trust check counts it.
+        fs::remove_dir_all(&mods[1].path).unwrap();
+        symlink("/nonexistent-eidos-target", &mods[1].path).unwrap();
+
+        assert_eq!(
+            i.missing_mods().unwrap(),
+            vec!["Mod0".to_string(), "OnlyOther".to_string()]
+        );
+
+        // An unreadable `mods/` may be a drive that is not mounted: never an
+        // answer to forget from.
+        fs::set_permissions(i.mods_dir(), fs::Permissions::from_mode(0)).unwrap();
+        let result = i.missing_mods();
+        fs::set_permissions(i.mods_dir(), fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(result.is_err(), "{result:?}");
+
+        // Nor is a readable but EMPTY one: that is what an unmounted bind-mount
+        // target looks like, and every listed mod would count as missing.
+        for m in &mods[1..] {
+            fs::remove_file(&m.path)
+                .or_else(|_| fs::remove_dir_all(&m.path))
+                .unwrap();
+        }
+        let result = i.missing_mods();
+        assert!(result.is_err(), "{result:?}");
     }
 
     #[test]
