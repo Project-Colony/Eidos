@@ -23,6 +23,20 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     .map(|r| r.title.clone())
                     .unwrap_or_default();
                 app.status = Some(tf("status_still_running", &[("title", &what)]));
+            } else if let Some(why) = app
+                .created
+                .as_ref()
+                .and_then(|i| i.modlist_checked().1.reason().map(str::to_string))
+            {
+                // `eidos play` and `eidos tool` both refuse this list (they share
+                // `run_through_view`), and the refusal only reached the window as
+                // "exited with an error". Said here, before spawning, with where
+                // the way out is. The Diagnostics card is cached and nothing
+                // watches `mods/`, so resync first, the way a refused stale save
+                // does: folders deleted since the last refresh must show there.
+                reload_mods(app);
+                mod_views_changed(app);
+                app.status = Some(tf("status_launch_blocked_modlist", &[("reason", &why)]));
             } else if let Some(title) = app.tool_choice.clone() {
                 // A tool: the CLI resolves Proton itself, no Steam command needed.
                 // The owned arg ends the immutable borrow before `start_run`.
@@ -151,6 +165,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.status = Some(tf("status_opening", &[("url", &url)]));
         }
         Message::SetupPrereqs => {
+            // Never under a running game or tool: winetricks writes the prefix
+            // they are running in, and the install would only be refused by the
+            // instance lock the run holds anyway.
+            if let Some(r) = &app.running {
+                app.status = Some(tf("status_prereqs_wait_run", &[("title", &r.title)]));
+                return Task::none();
+            }
             let arg = instance_arg(app);
             let has_prefix = selected_game(app).and_then(|g| g.prefix()).is_some();
             let log = app.created.as_ref().map(|i| i.root.join("prereqs.log"));
@@ -160,13 +181,19 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 (Some(_), _) if !has_prefix && !any_runtime_pending(app) => {
                     app.status = Some(t("status_prefix_needed_for_prereqs").to_string());
                 }
-                (Some(arg), Some(log)) => match run_prereqs_setup(&arg, &log) {
-                    Ok(()) => {
+                (Some(arg), Some(log)) => {
+                    // Tracked like any run, so Run waits for it and the exit is
+                    // reported. start_run_with_log sets the failure status itself.
+                    let title = t("prereqs_run_title").to_string();
+                    start_run_with_log(app, title, prereqs_command(&arg), Some(log.clone()));
+                    if let Some(r) = app.running.as_mut() {
+                        // No lock overlay: its text is about a game in the merged
+                        // view, and it would hide the status naming the log.
+                        r.lock = false;
                         app.status =
                             Some(tf("status_installing_prereqs", &[("log", &log.display())]));
                     }
-                    Err(e) => app.status = Some(tf("status_prereqs_failed", &[("error", &e)])),
-                },
+                }
                 _ => app.status = Some(t("status_open_instance_first").to_string()),
             }
         }

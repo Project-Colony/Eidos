@@ -775,19 +775,14 @@ pub(crate) fn tool_command(inst_arg: &str, title: &str) -> std::process::Command
 
 /// Install the tools' runtime prerequisites into the prefix (`eidos prereqs <id>
 /// --install`). The Tier-2 winetricks step downloads from Microsoft and can take a
-/// while; its output is redirected to `log` (the GUI has no terminal when launched
-/// from Steam) so the user can follow progress and read any error.
-pub(crate) fn run_prereqs_setup(inst_arg: &str, log: &Path) -> std::io::Result<()> {
-    let out = std::fs::File::create(log)?;
-    let err = out.try_clone()?;
-    eidos_command()
-        .arg("prereqs")
-        .arg(inst_arg)
-        .arg("--install")
-        .stdout(std::process::Stdio::from(out))
-        .stderr(std::process::Stdio::from(err))
-        .spawn()
-        .map(|_| ())
+/// while. Returned unspawned, like [`tool_command`]: it runs as a tracked run
+/// with its output in `<instance>/prereqs.log`, because the `eidos` child holds
+/// the instance lock for the whole install - an untracked one let Run start an
+/// `eidos play` that could only be refused, and was never reaped.
+pub(crate) fn prereqs_command(inst_arg: &str) -> std::process::Command {
+    let mut cmd = eidos_command();
+    cmd.arg("prereqs").arg(inst_arg).arg("--install");
+    cmd
 }
 
 /// Identify which detected game a Steam `%command%` is launching, by matching
@@ -1171,8 +1166,7 @@ pub(crate) fn render_command(cmd: &std::process::Command) -> String {
     out
 }
 
-pub(crate) fn start_run(app: &mut App, title: String, mut cmd: std::process::Command) {
-    use std::sync::atomic::Ordering;
+pub(crate) fn start_run(app: &mut App, title: String, cmd: std::process::Command) {
     let log = app.created.as_ref().and_then(|inst| {
         let dir = inst.root.join("logs");
         std::fs::create_dir_all(&dir).ok()?;
@@ -1182,6 +1176,19 @@ pub(crate) fn start_run(app: &mut App, title: String, mut cmd: std::process::Com
             .unwrap_or(0);
         Some(dir.join(format!("run-{stamp}.log")))
     });
+    start_run_with_log(app, title, cmd, log);
+}
+
+/// [`start_run`] with the log file chosen by the caller: the prerequisite
+/// install keeps `<instance>/prereqs.log`, the name the transfer plan and the
+/// status message already use.
+pub(crate) fn start_run_with_log(
+    app: &mut App,
+    title: String,
+    mut cmd: std::process::Command,
+    log: Option<PathBuf>,
+) {
+    use std::sync::atomic::Ordering;
     if let Some(p) = &log {
         if let Ok(mut f) = std::fs::File::create(p) {
             use std::io::Write;
@@ -1237,6 +1244,11 @@ pub(crate) fn start_run(app: &mut App, title: String, mut cmd: std::process::Com
 /// rewritten plugins.txt / loadorder.txt while playing, so re-read the mod list,
 /// load order and conflicts. Called from the exit poll once the child exits.
 /// A non-zero exit is reported with the run log's path so failures are diagnosable.
+///
+/// Also ends the prerequisite install. The refresh is mostly redundant for it,
+/// and the health checks it marks dirty do read the prefix it just changed;
+/// only the selection reset is skipped, because that run never locked the
+/// window and the user kept working through it.
 pub(crate) fn finish_run(app: &mut App) {
     let run = app.running.take();
     reload_mods(app);
@@ -1247,9 +1259,14 @@ pub(crate) fn finish_run(app: &mut App) {
         app.conflicts = compute_conflicts(app);
         refresh_meta_cache(app);
         recompute_counts(app);
-        app.selected_mods.clear();
-        app.drag_state = None;
-        app.download_drag = None;
+        // An unlocked run (the prerequisite install, or Unlock) left the user
+        // working; reload_mods already carried their selection across by name,
+        // and clearing it would retarget a batch action or drop a drag mid-way.
+        if run.as_ref().is_none_or(|r| r.lock) {
+            app.selected_mods.clear();
+            app.drag_state = None;
+            app.download_drag = None;
+        }
         // The run just wrote the script extender's log, which is one of the
         // health checks - and reading it is exactly what the cache defers.
         app.diag_dirty = true;
@@ -1292,15 +1309,48 @@ pub(crate) fn finish_run(app: &mut App) {
     }
     app.status = Some(if failed {
         match &run.log {
-            Some(p) => tf(
-                "status_exited_error_log",
-                &[("title", &run.title), ("log", &p.display())],
-            ),
+            // When `eidos` itself refused (the instance in use, a list it cannot
+            // trust), that sentence IS the answer; "see the log" alone left the
+            // user to find it among the game's own output.
+            Some(p) => match std::fs::read(p)
+                .ok()
+                .and_then(|b| refusal_line(&String::from_utf8_lossy(&b)))
+            {
+                Some(reason) => tf(
+                    "status_exited_refused",
+                    &[
+                        ("title", &run.title),
+                        ("reason", &reason),
+                        ("log", &p.display()),
+                    ],
+                ),
+                None => tf(
+                    "status_exited_error_log",
+                    &[("title", &run.title), ("log", &p.display())],
+                ),
+            },
             None => tf("status_exited_error", &[("title", &run.title)]),
         }
     } else {
         tf("status_exited", &[("title", &run.title)])
     });
+}
+
+/// The first line in a run log where the `eidos` CLI refused to go on, without
+/// its level prefix: `WARN  eidos: refusing to launch: ...` gives `eidos:
+/// refusing to launch: ...`. Only `eidos` lines behind a log level count - the
+/// same log holds the game's and Proton's output, whose `ERROR: ld.so: ...`
+/// preload noise is never the reason - and only the first line of a refusal
+/// that goes on to give advice.
+pub(crate) fn refusal_line(log: &str) -> Option<String> {
+    log.lines().find_map(|line| {
+        // `eidos_log`'s own level names; Proton's `ERROR:` (with the colon)
+        // does not parse as one.
+        let (level, msg) = line.split_once(' ')?;
+        eidos_log::Level::parse(level)?;
+        let msg = msg.trim();
+        (msg.starts_with("eidos") && msg.contains("refusing to")).then(|| msg.to_string())
+    })
 }
 
 pub(crate) fn selected_game(app: &App) -> Option<&DetectedGame> {
@@ -2374,7 +2424,14 @@ pub(crate) fn save_mods(app: &App) -> Option<String> {
         return Some(t("status_modlist_stale").to_string());
     }
     if let Err(e) = inst.save_modlist(&app.mods) {
-        return Some(tf("status_modlist_save_failed", &[("error", &e)]));
+        // InvalidData = the trust check refused a suspect list. Every edit lands
+        // here, so this is the status the user meets most often in that state:
+        // point at the Diagnostics card that holds the way out.
+        return Some(if e.kind() == std::io::ErrorKind::InvalidData {
+            tf("status_not_saved_modlist", &[("reason", &e)])
+        } else {
+            tf("status_modlist_save_failed", &[("error", &e)])
+        });
     }
     app.modlist_seen.set(Some(modlist_fingerprint(inst)));
     None
@@ -2753,7 +2810,7 @@ pub(crate) fn mods_changed(app: &mut App) -> bool {
 }
 
 /// Everything derived from the mod list, recomputed after it changed.
-fn mod_views_changed(app: &mut App) {
+pub(crate) fn mod_views_changed(app: &mut App) {
     // The merged view depends on which mods are enabled and in what order, not
     // just on their contents.
     bump_views(app);

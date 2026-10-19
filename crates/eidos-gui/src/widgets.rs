@@ -386,7 +386,10 @@ pub(crate) fn nav<'a>(label: &'a str, msg: Option<Message>, primary: bool) -> El
     }
 }
 
-pub(crate) fn tool_btn<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
+pub(crate) fn tool_btn<'a>(
+    label: impl iced::widget::text::IntoFragment<'a>,
+    msg: Message,
+) -> Element<'a, Message> {
     button(text(label).size(sz(12)))
         .padding(6)
         .on_press(msg)

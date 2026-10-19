@@ -350,8 +350,12 @@ pub(crate) fn run_through_view(
     if let Some(why) = trust.reason() {
         eidos_log::warn!(
             "eidos play: refusing to start - the mod list cannot be trusted: {why}\n\
-             \x20 Nothing has been written. Fix the mods folder (permissions, a mount that is \
-             not mounted) and try again; the profile's load order is untouched."
+             \x20 Nothing has been written; the profile's load order is untouched. If a drive \
+             holds your mods, mount it (or fix the folder's permissions) and try again. If \
+             you deleted those mods yourself, open the Eidos window (press F5 if it was \
+             already open), Diagnostics tab, and press \"Forget the missing mods\": it \
+             appears only while the mods folder can be read. If modlist.txt itself is \
+             damaged, restore it from Backups (Mod list)."
         );
         exit(1);
     }

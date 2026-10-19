@@ -1126,6 +1126,60 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.status = Some(status);
             mods_changed(app);
         }
+        Message::ForgetMissingMods => {
+            // No confirmation step, unlike Remove: nothing on disk but list lines
+            // goes, every profile it edits is backed up first (Backups in that
+            // profile undoes it), and the case a second click would guard - the
+            // unmounted drive, where everything looks missing - never gets here:
+            // `missing_mods` refuses an unreadable or empty `mods/`.
+            let Some(inst) = app.created.as_ref() else {
+                return Task::none();
+            };
+            // Held across the recheck, the backups and the edit, so no other
+            // process rewrites a list between being backed up and being edited.
+            let _lock = match inst.try_lock("the Eidos window") {
+                Ok(l) => l,
+                Err(e) => {
+                    app.status = Some(tf("status_cannot_do_that", &[("error", &e)]));
+                    return Task::none();
+                }
+            };
+            // Recomputed, not taken from the card: it may predate a refresh,
+            // and an unreadable folder may be the drive that is not mounted.
+            // Same rule as the card: only when the active list's own mods are
+            // missing, or the verdict is about modlist.txt itself, which this
+            // cannot fix.
+            let missing = match inst.missing_mods() {
+                Ok(m) if !inst.active().listed_mods().iter().any(|n| m.contains(n)) => {
+                    app.status = Some(t("status_forget_missing_none").to_string());
+                    return Task::none();
+                }
+                Ok(m) => m,
+                Err(e) => {
+                    app.status = Some(tf("status_forget_missing_unreadable", &[("error", &e)]));
+                    return Task::none();
+                }
+            };
+            for name in inst.profiles() {
+                let profile = inst.profile(&name);
+                if !profile.listed_mods().iter().any(|n| missing.contains(n)) {
+                    continue;
+                }
+                if let Err(e) = profile.create_backup(eidos_instance::BackupKind::ModList) {
+                    app.status = Some(tf("status_forget_missing_failed", &[("error", &e)]));
+                    return Task::none();
+                }
+            }
+            app.status = Some(match forget_removed_mods(app, &missing) {
+                Some(Err(e)) => tf("status_forget_missing_failed", &[("error", &e)]),
+                _ => tf("status_forgot_missing", &[("n", &missing.len())]),
+            });
+            // The window never held these rows (the scan drops them), so there
+            // is no in-memory edit to save: re-read the lists and what derives
+            // from them, the way a refused stale save does.
+            reload_mods(app);
+            mod_views_changed(app);
+        }
         Message::BatchSendTop => {
             // Lift the whole selection (keeping its relative order) to the top.
             let mut targets = move_selection(app);

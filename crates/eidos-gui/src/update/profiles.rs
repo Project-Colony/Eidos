@@ -12,8 +12,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // the profile that was LAUNCHED, and the profile's plugins dir is
             // bind-mounted into the live session - switching under it corrupted
             // the profile that was never played.
-            if app.running.is_some() {
-                app.status = Some(t("status_switch_while_running").to_string());
+            if let Some(r) = &app.running {
+                app.status = Some(tf("status_switch_while_running", &[("title", &r.title)]));
                 return Task::none();
             }
             // One shared path (switch_to_profile) so the reload steps - incl.
@@ -79,10 +79,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     // no-op: just close the editor
                     app.profile_rename = None;
                     app.profile_menu = None;
-                } else if app.running.is_some() {
+                } else if let Some(r) = &app.running {
                     // A rename mid-run would pull the played profile out from
                     // under the session's post-exit steps (and the bound dirs).
-                    app.status = Some(t("status_rename_profile_while_running").to_string());
+                    app.status = Some(tf(
+                        "status_rename_profile_while_running",
+                        &[("title", &r.title)],
+                    ));
                 } else if let Err(e) = probe_lock(inst) {
                     // app.running only sees runs THIS window started; the flock
                     // also covers a session launched from the CLI or Steam.

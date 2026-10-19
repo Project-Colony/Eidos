@@ -522,6 +522,9 @@ pub(crate) enum Message {
     BatchRemoveMods,
     /// Second click: actually remove every selected mod from disk.
     ConfirmBatchRemove,
+    /// Drop from every profile's list the mods whose folders were deleted
+    /// outside Eidos (the Diagnostics card's one-click answer to a suspect list).
+    ForgetMissingMods,
     /// Move the whole selection to the top / bottom of the load order.
     BatchSendTop,
     BatchSendBottom,

@@ -157,7 +157,9 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
     let _lock = match inst.try_lock("installing tool prerequisites") {
         Ok(lock) => lock,
         Err(e) => {
-            eidos_log::warn!("Cannot install prerequisites: {e}");
+            // "eidos ...: refusing to" is what the window lifts into its status
+            // bar (`refusal_line`), instead of a bare "exited with an error".
+            eidos_log::warn!("eidos prereqs: refusing to install: {e}");
             exit(1);
         }
     };
@@ -176,7 +178,7 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
             .flatten();
         let busy = eidos_gamefeatures::prefix_busy_at(prefix, compat);
         if !busy.is_empty() {
-            eidos_log::warn!("The prefix is still in use by {} process(es); close the game and its tools before installing prerequisites.", busy.len());
+            eidos_log::warn!("eidos prereqs: refusing to install: the prefix is still in use by {} process(es); close the game and its tools first.", busy.len());
             exit(1);
         }
     }

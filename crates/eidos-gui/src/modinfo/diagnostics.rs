@@ -21,7 +21,7 @@ pub(crate) struct Diagnostic {
     /// inform; the ones that can FIX what they found carry the fix with them, so
     /// recovery is not a file-manager expedition. More than one when the finding
     /// has two honest outcomes (restore vs accept).
-    pub(crate) actions: Vec<(&'static str, Message)>,
+    pub(crate) actions: Vec<(String, Message)>,
 }
 
 /// Run every health check for the current setup - MO2's problems panel, plus the
@@ -63,16 +63,46 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
     // the mod list Eidos is working from does not match what is on disk, so the
     // conflict map, the load order and the layer stack are all built from a
     // partial picture. Saving is refused for as long as this is true.
-    if let Some(why) = app
-        .created
-        .as_ref()
-        .and_then(|i| i.modlist_checked().1.reason().map(str::to_string))
-    {
+    if let Some((inst, why)) = app.created.as_ref().and_then(|i| {
+        i.modlist_checked()
+            .1
+            .reason()
+            .map(|why| (i, why.to_string()))
+    }) {
+        // The way out when the user deleted those mods on purpose. Never offered
+        // while `mods/` cannot be read or holds no mod at all (`missing_mods`
+        // errs): that is the unmounted drive, and forgetting would erase the
+        // order it is waiting to come back to. Nor when the active list's own
+        // mods are all there: then the verdict is about modlist.txt itself
+        // (unreadable, emptied), which forgetting other profiles' lines cannot
+        // fix, so the card points at Backups instead.
+        let mut detail = tf("diag_modlist_mismatch_detail", &[("reason", &why)]);
+        let actions = match inst.missing_mods() {
+            Ok(missing)
+                if inst
+                    .active()
+                    .listed_mods()
+                    .iter()
+                    .any(|n| missing.contains(n)) =>
+            {
+                detail.push(' ');
+                detail.push_str(t("diag_modlist_mismatch_forget_hint"));
+                vec![(
+                    tf("diag_action_forget_missing", &[("n", &missing.len())]),
+                    Message::ForgetMissingMods,
+                )]
+            }
+            _ => {
+                detail.push(' ');
+                detail.push_str(t("diag_modlist_mismatch_backup_hint"));
+                Vec::new()
+            }
+        };
         out.push(Diagnostic {
             level: DiagLevel::Problem,
             title: t("diag_modlist_mismatch").to_string(),
-            detail: tf("diag_modlist_mismatch_detail", &[("reason", &why)]),
-            actions: Vec::new(),
+            detail,
+            actions,
         });
     }
 
@@ -470,7 +500,10 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 // directory and wishing the user luck. This one can only ever
                 // remove `mods/.eidos-install*`, which Eidos created itself and
                 // which nothing else reads.
-                actions: vec![(t("diag_action_delete_them"), Message::CleanInstallDebris)],
+                actions: vec![(
+                    t("diag_action_delete_them").into(),
+                    Message::CleanInstallDebris,
+                )],
             });
         }
     }
@@ -500,10 +533,10 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 detail: tf("diag_plugin_loss_detail", &[("reason", &reason)]),
                 actions: vec![
                     (
-                        t("diag_action_restore_presession"),
+                        t("diag_action_restore_presession").into(),
                         Message::RestorePreSessionPlugins,
                     ),
-                    (t("diag_action_keep_set"), Message::AcceptPluginState),
+                    (t("diag_action_keep_set").into(), Message::AcceptPluginState),
                 ],
             });
         }
