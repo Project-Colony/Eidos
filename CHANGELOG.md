@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.5](https://github.com/Project-Colony/Eidos/compare/v1.19.4...v1.19.5) (2026-10-19)
+
+
+### Fixes
+
+* **gui:** offer to forget mods deleted outside Eidos and track the prerequisite install ([#103](https://github.com/Project-Colony/Eidos/issues/103)) ([df9ed2f](https://github.com/Project-Colony/Eidos/commit/df9ed2ffb92247aa709bd34f6ab3b95033617cc6))
+
 ## [1.19.4](https://github.com/Project-Colony/Eidos/compare/v1.19.3...v1.19.4) (2026-10-16)
 
 
