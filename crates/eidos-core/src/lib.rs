@@ -398,17 +398,28 @@ fn walk_layer(
         // backstop.
         //
         // Only a symlink needs the following `stat`. For anything else `d_type`
-        // is the same answer (a bind mount keeps the kind of what it covers),
-        // and the `stat` was more than half the cost of the build: a full path
-        // walk in the kernel per entry, plus a read of the inode table on a cold
-        // cache that nothing else in the build needs. An entry whose type could
-        // not be read keeps the `stat` too.
+        // gives the same answer whenever the `stat` succeeds (a bind mount keeps
+        // the kind of what it covers), and the `stat` was more than half the
+        // cost of the build: a full path walk in the kernel per entry, plus a
+        // read of the inode table on a cold cache that nothing else in the build
+        // needs. An entry whose type could not be read keeps the `stat` too.
         let is_dir = match file_type {
             Some(kind) if !kind.is_symlink() => kind.is_dir(),
             _ => real.is_dir(),
         };
         if is_dir {
-            walk_layer(&real, rel, depth + 1, build, unindexed_subtree)?;
+            if let Err(e) = walk_layer(&real, rel, depth + 1, build, unindexed_subtree) {
+                // `d_type` said directory, but a `stat` cannot reach it: the
+                // parent can be listed but not searched (a mod archive packed
+                // with 0644 directories), or it went away since the readdir.
+                // The `stat` this replaced made that a leaf, and `ci_lookup`
+                // cannot descend into it either, so keep it a leaf rather than
+                // lose the whole index. Only this failure path pays the `stat`;
+                // when it succeeds the error came from inside and still stands.
+                if real.is_dir() {
+                    return Err(e);
+                }
+            }
         }
         rel.truncate(mark);
     }
@@ -445,8 +456,8 @@ impl LayerStack {
     /// A stack that never builds the lower index, for a caller asking it a
     /// handful of shallow questions and then dropping it.
     ///
-    /// The index costs a full recursive walk of every layer up front - a stat
-    /// and several allocations per file, ~300 ms on a 300-mod list - which only
+    /// The index costs a full recursive walk of every layer up front - a
+    /// readdir per directory and several allocations per file - which only
     /// pays for itself over the thousands of lookups a mount serves. The GUI's
     /// health checks build a throwaway stack on every mod toggle to read one
     /// root listing or one `SKSE/Plugins` directory, and its Data tab rebuilds
@@ -2169,6 +2180,44 @@ mod tests {
     }
 
     #[test]
+    fn a_directory_that_can_be_listed_but_not_searched_keeps_the_index() {
+        use std::os::unix::fs::PermissionsExt;
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "Data/base.esm", "base");
+        put(&game, "Data/Meshes/Actors/body.nif", "body");
+        // 0644 on a directory, as a mod archive packed with `chmod -R 644`
+        // extracts it: readdir works and reports `Actors` as a directory, but
+        // nothing can `stat` it, so it is a leaf for the walk as well.
+        let meshes = game.join("Data/Meshes");
+        fs::set_permissions(&meshes, fs::Permissions::from_mode(0o644)).unwrap();
+        let stack = LayerStack::new(vec![game.clone()], over.clone());
+        assert_eq!(stack.index_declined(), None);
+        assert!(stack.lower.is_some());
+        let mut reference = LayerStack::new(vec![game], over);
+        reference.lower = None;
+        for path in [
+            "DATA/BASE.ESM",
+            "Data/meshes/actors",
+            "Data/Meshes/Actors/body.nif",
+        ] {
+            assert_eq!(
+                stack.resolve_read(path),
+                reference.resolve_read(path),
+                "{path}"
+            );
+        }
+        for dir in ["Data", "Data/Meshes"] {
+            assert_eq!(
+                stack.list_dir_typed(dir),
+                reference.list_dir_typed(dir),
+                "{dir}"
+            );
+        }
+        fs::set_permissions(&meshes, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[test]
     fn non_utf8_names_are_listed_but_do_not_disable_the_index() {
         use std::ffi::OsString;
         use std::os::unix::ffi::OsStringExt;
@@ -2301,6 +2350,17 @@ mod tests {
         // stops following, the walk must stop too.
         std::os::unix::fs::symlink(".", game.join("Data/loop")).unwrap();
         let cyclic = LayerStack::new(vec![game.clone()], over.clone());
+        // Without this the asserts below compare the walk with itself.
+        let index = cyclic
+            .lower
+            .as_ref()
+            .expect("a symlink cycle does not decline the index");
+        assert!(
+            index
+                .entries
+                .contains_key(b"data/loop/loop/plain.esp".as_slice()),
+            "the cycle was descended"
+        );
         let mut reference = LayerStack::new(vec![game], over);
         reference.lower = None;
         for depth in [1, 2, 38, 39, 40, 41, 63, 64, 65, 70] {
