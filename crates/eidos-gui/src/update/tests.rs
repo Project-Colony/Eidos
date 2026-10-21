@@ -4263,6 +4263,77 @@ fn a_queued_drop_waits_for_a_copy_step_and_its_own_answer() {
     assert_eq!(app.status.as_deref(), Some("refused"));
 }
 
+/// A Merge that stops halfway leaves the live mod's meta.ini with its
+/// checkpoint warning. Diagnostics read the cached row, so a failed `Placed`
+/// has to drop it, or the Health card stays hidden until F5.
+#[test]
+fn a_failed_copy_step_refreshes_the_target_row() {
+    let root = temp_portable("skyrimse");
+    let mut app = app_for_game("skyrimse");
+    let inst = Instance::portable(root.clone());
+    inst.create().unwrap();
+    fs::create_dir_all(inst.mods_dir().join("SkyUI")).unwrap();
+    app.created = Some(inst.clone());
+    app.mods = mods(&["SkyUI"]);
+    app.screen = Screen::Main;
+    crate::state::refresh_meta_cache(&mut app);
+    assert!(app.meta_cache["SkyUI"].install_warning.is_none());
+
+    let mut meta = eidos_instance::ModMeta::default();
+    meta.set_install_warning("Merge did not complete; installed content is unverified.");
+    meta.write(&inst.mods_dir().join("SkyUI").join("meta.ini"))
+        .unwrap();
+    let outcome = std::sync::Arc::new(std::sync::Mutex::new(Some((
+        Err("Install failed: no space left".to_string()),
+        crate::Restore::Nothing,
+    ))));
+    app.place_job = Some(crate::PlaceJob {
+        id: 3,
+        name: "SkyUI".into(),
+        target: update::collection_target(&app).unwrap(),
+        archive: root.join("SkyUI.7z"),
+        choice: None,
+        outcome,
+    });
+    let _ = update_inner(&mut app, Message::Placed(3));
+    assert!(app.place_job.is_none());
+    assert!(
+        app.meta_cache["SkyUI"].install_warning.is_some(),
+        "the half-merged mod's warning reaches the row Health reads"
+    );
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// An update check that fails midway has already rewritten the meta.ini of
+/// the mods before the failure, so the count must come back from disk.
+#[test]
+fn a_failed_update_check_still_recounts_updates() {
+    let root = temp_portable("skyrimse");
+    let mut app = app_for_game("skyrimse");
+    let inst = Instance::portable(root.clone());
+    inst.create().unwrap();
+    fs::create_dir_all(inst.mods_dir().join("a")).unwrap();
+    app.created = Some(inst.clone());
+    app.mods = mods(&["a"]);
+    app.screen = Screen::Main;
+    crate::state::refresh_meta_cache(&mut app);
+    crate::state::recompute_counts(&mut app);
+    assert_eq!(app.updated_count, 0);
+
+    fs::write(
+        inst.mods_dir().join("a").join("meta.ini"),
+        "[General]\nversion=1.0\nnewestVersion=2.0\n",
+    )
+    .unwrap();
+    app.update_in_progress = true;
+    let _ = update_inner(&mut app, Message::UpdatesChecked(Err("lock held".into())));
+    assert_eq!(
+        app.updated_count, 1,
+        "the mod rewritten before the failure counts"
+    );
+    let _ = fs::remove_dir_all(&root);
+}
+
 /// A copy step that panics still answers. `unblock` would otherwise re-raise
 /// the panic in a task the executor drops, no `Placed` would come back, and
 /// the modal (which has no dismiss) would stay up for the session.
@@ -4408,6 +4479,45 @@ fn an_empty_mod_can_be_created_at_a_position() {
         "everything after it shifted, not got overwritten"
     );
     assert!(app.selected_mods.is_empty(), "stale indices are dropped");
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_toolbar_separator_card_opens_at_the_click_not_at_an_old_menu() {
+    let root = temp_portable("skyrimse");
+    let mut app = app_for_game("skyrimse");
+    let inst = Instance::portable(root.clone());
+    inst.create().unwrap();
+    app.created = Some(inst);
+    app.mods = mods(&["a", "b"]);
+    let mut list = PluginList::default();
+    list.plugins.push(plugin_row("A.esp", "a"));
+    app.plugins = Some(list);
+    app.screen = Screen::Main;
+    let old = iced::Point::new(900.0, 300.0);
+    let click = iced::Point::new(40.0, 20.0);
+
+    // A plugin menu dismissed by an outside click leaves its anchor behind.
+    let _ = update_inner(&mut app, Message::PointerAt(old));
+    let _ = update_inner(&mut app, Message::OpenPluginMenu(0));
+    let _ = update_inner(&mut app, Message::ClosePluginMenu);
+    let _ = update_inner(&mut app, Message::PointerAt(click));
+    let _ = update_inner(&mut app, Message::AddSeparator(0));
+    assert!(app.rename.is_some(), "the separator was created");
+    assert_eq!(
+        app.menu_at,
+        Some(click),
+        "the card opens at the toolbar click"
+    );
+
+    // From a mod's context menu the card keeps that menu's frozen anchor.
+    let _ = update_inner(&mut app, Message::CloseMenu);
+    let _ = update_inner(&mut app, Message::PointerAt(old));
+    let _ = update_inner(&mut app, Message::OpenModMenu(1));
+    let _ = update_inner(&mut app, Message::PointerAt(click));
+    let _ = update_inner(&mut app, Message::CreateEmptyModAt(1));
+    assert!(app.rename.is_some(), "the mod was created");
+    assert_eq!(app.menu_at, Some(old), "the menu's own anchor is kept");
     let _ = fs::remove_dir_all(&root);
 }
 

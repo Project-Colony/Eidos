@@ -676,12 +676,10 @@ pub(crate) fn nexus_sign_in() -> Result<eidos_nexus::Account, String> {
         std::time::Duration::from_secs(300),
     )?;
     let tokens = oauth::exchange_code(&cfg, &code, &pkce)?;
-    let mut creds = eidos_instance::settings::load_nexus_creds();
-    creds.access_token = Some(tokens.access_token.clone());
-    creds.refresh_token = Some(tokens.refresh_token);
-    creds.expires_at = tokens.expires_at;
-    eidos_instance::settings::save_nexus_creds(&creds)
-        .map_err(|e| tf("nexus_store_failed", &[("error", &e)]))?;
+    // Under the same turn as a renewal in Nexus::connect: a startup check
+    // that is still renewing the old grant would otherwise save its stale copy
+    // over this new session and put the previous account back.
+    eidos_nexus::store_session(&tokens).map_err(|e| tf("nexus_store_failed", &[("error", &e)]))?;
     // The account comes from the token, NOT from `users/validate`. That endpoint
     // belongs to the personal-API-key era and answers 401 to a Bearer, so calling
     // it here failed every OAuth sign-in at the last step - after the browser had

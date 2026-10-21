@@ -670,6 +670,30 @@ pub(crate) fn pick_mirror(mirrors: &[(String, String)], preferred: &[String]) ->
     mirrors.first().map(|(_, uri)| uri.clone())
 }
 
+/// One credentials read-modify-write at a time, process-wide.
+///
+/// Nexus rotates the refresh token on every renewal, so two jobs that both saw
+/// an expired token (the startup account check and a click, say, now that the
+/// GUI runs them on a blocking pool rather than one after another) would both
+/// spend the same refresh token, and the second would fail or get the session
+/// revoked. A browser sign-in that stores its new session while a renewal is
+/// in flight would also be overwritten by the renewal's stale copy, putting the
+/// previous account back. Everything that loads, edits and saves `nexus.ini`
+/// in this process holds this turn for the whole span.
+static CREDS_TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Store a freshly granted session (a browser sign-in) under the credentials
+/// turn, so a renewal running at the same moment either finishes first and is
+/// replaced by this, or waits and re-reads this.
+pub fn store_session(tokens: &oauth::Tokens) -> io::Result<()> {
+    let _turn = CREDS_TURN.lock().unwrap_or_else(|e| e.into_inner());
+    let mut creds = eidos_instance::settings::load_nexus_creds();
+    creds.access_token = Some(tokens.access_token.clone());
+    creds.refresh_token = Some(tokens.refresh_token.clone());
+    creds.expires_at = tokens.expires_at;
+    eidos_instance::settings::save_nexus_creds(&creds)
+}
+
 /// What every part of Eidos says when offline mode is on.
 ///
 /// One sentence, in one place, because it appears wherever a Nexus call would
@@ -840,14 +864,9 @@ impl Nexus {
             return Err(OFFLINE_MESSAGE.to_string());
         }
         // One renewal at a time, process-wide, and the credentials read under
-        // that turn. Nexus rotates the refresh token on every renewal, so two
-        // jobs that both saw an expired token (the startup account check and a
-        // click, say, now that the GUI runs them on a blocking pool rather than
-        // one after another) would both spend the same refresh token, and the
-        // second would fail or get the session revoked. Whoever waits re-reads
-        // the file the first one rewrote and finds a fresh Bearer.
-        static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+        // that turn (see CREDS_TURN). Whoever waits re-reads the file the
+        // first one rewrote and finds a fresh Bearer.
+        let _turn = CREDS_TURN.lock().unwrap_or_else(|e| e.into_inner());
         let mut creds = eidos_instance::settings::load_nexus_creds();
         let cfg = oauth::Config::from_env();
         match choose_credential(&creds, oauth::now_unix(), cfg.is_some()) {

@@ -369,8 +369,10 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
             .filter(|m| !m.unmanaged && !m.is_separator())
         {
             // The row cache holds it, and every install that writes it drops
-            // that row first, so this is not a second `meta.ini` read per mod
-            // on every edit. A row not cached yet is read from disk.
+            // that row afterwards, a failed one included (a stopped Merge
+            // leaves its checkpoint warning), so this is not a second
+            // `meta.ini` read per mod on every edit. A row not cached yet is
+            // read from disk.
             let warning = match app.meta_cache.get(&m.name) {
                 Some(row) => row.install_warning.clone(),
                 None => inst.mod_meta(&m.name).install_warning(),

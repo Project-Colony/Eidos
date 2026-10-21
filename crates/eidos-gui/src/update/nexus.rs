@@ -249,7 +249,15 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     }
                     app.status = Some(msg);
                 }
-                Err(e) => app.status = Some(tf("status_update_check_failed", &[("error", &e)])),
+                Err(e) => {
+                    // The check writes meta.ini mod by mod, so one that stopped
+                    // midway already changed the mods before it. Reload the map
+                    // as the Ok arm does, or the Updates count stays stale.
+                    app.meta_cache.clear();
+                    refresh_meta_cache(app);
+                    recompute_counts(app);
+                    app.status = Some(tf("status_update_check_failed", &[("error", &e)]));
+                }
             }
         }
         // ---- Nexus collections ------------------------------------------------

@@ -279,6 +279,12 @@ pub(crate) fn run_collision_install(
     // A FOMOD reinstall: the wizard (with the user's choices) is still open in
     // app.fomod - resolve through finish_fomod, never by re-extracting with
     // default selections.
+    // The folder the copy goes into, for the progress card and the status:
+    // after a Rename that is the new name, not the one that collided.
+    let shown = match &policy {
+        eidos_install::OverwritePolicy::Rename(new) => new.clone(),
+        _ => c.name.clone(),
+    };
     if c.fomod {
         // A Rename onto another existing mod re-opens the prompt BEFORE the
         // session is consumed (its drop would delete the extracted tree).
@@ -293,7 +299,7 @@ pub(crate) fn run_collision_install(
             return Task::none();
         };
         let archive = w.archive.clone();
-        return place_on_worker(app, c.target, c.name, archive, None, move |dir| {
+        return place_on_worker(app, c.target, shown, archive, None, move |dir| {
             let mods_dir = match dir {
                 Ok(dir) => dir,
                 Err(refused) => return (Err(refused), crate::Restore::Fomod(Box::new(w))),
@@ -315,8 +321,8 @@ pub(crate) fn run_collision_install(
     let ctx = current_fomod_context(app);
     // Remembered only for the picker replay below, as before.
     let choice = c.pick.clone().filter(|_| c.tree.is_some());
-    let (target, name, archive) = (c.target.clone(), c.name.clone(), c.archive.clone());
-    place_on_worker(app, target, name, archive, choice, move |dir| {
+    let (target, archive) = (c.target.clone(), c.archive.clone());
+    place_on_worker(app, target, shown, archive, choice, move |dir| {
         let mods_dir = match dir {
             Ok(dir) => dir,
             Err(refused) => return (Err(refused), crate::Restore::Collision(Box::new(c))),

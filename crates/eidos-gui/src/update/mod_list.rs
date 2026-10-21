@@ -582,6 +582,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::AddSeparator(i) => {
+            // Read before the menu closes: a context-menu call keeps the anchor
+            // its menu froze, a toolbar call has none of its own.
+            let from_menu = app.menu_mod.is_some();
             app.menu_mod = None;
             // Under the lock and before the folder exists, as Rename does: a
             // refused save after it reloads the list, and the new folder comes
@@ -636,9 +639,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             app.rename = Some((idx, display));
                             app.menu_mod = Some(idx);
                             // From the toolbar no menu was open, so nothing froze
-                            // where the card goes: freeze it at the click, or it
-                            // lands wherever the last menu was summoned.
-                            app.menu_at.get_or_insert(crate::subscription::pointer(app));
+                            // where the card goes: freeze it at the click. Not
+                            // get_or_insert: a plugin menu, or a mod menu closed
+                            // by one of its actions, leaves its anchor set, and
+                            // the card would land wherever that menu was.
+                            if !from_menu {
+                                app.menu_at = Some(crate::subscription::pointer(app));
+                            }
                         }
                     }
                     Err(e) => app.status = Some(tf("status_separator_failed", &[("error", &e)])),
@@ -773,6 +780,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         // ---- mod creation (Create empty mod / Install from folder) ----------
         Message::CreateEmptyMod => return update(app, Message::CreateEmptyModAt(app.mods.len())),
         Message::CreateEmptyModAt(at) => {
+            let from_menu = app.menu_mod.is_some();
             app.menu_mod = None;
             // Same as AddSeparator: checked under the lock, before the folder
             // is created.
@@ -825,7 +833,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             app.menu_mod = Some(idx);
                             // Frozen at the click when no menu was open, as in
                             // AddSeparator.
-                            app.menu_at.get_or_insert(crate::subscription::pointer(app));
+                            if !from_menu {
+                                app.menu_at = Some(crate::subscription::pointer(app));
+                            }
                         }
                     }
                     Err(e) => app.status = Some(tf("status_create_mod_failed", &[("error", &e)])),

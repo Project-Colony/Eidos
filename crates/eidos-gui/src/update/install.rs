@@ -264,7 +264,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
             let job = app.place_job.take().expect("just checked");
             let Some((result, restore)) = job.outcome.lock().ok().and_then(|mut o| o.take()) else {
-                app.status = Some(tf("status_install_worker_stopped", &[("name", &job.name)]));
+                refresh_failed_target(app, &job.name);
+                app.status = Some(tf("status_place_worker_stopped", &[("name", &job.name)]));
                 return Task::none();
             };
             match restore {
@@ -287,7 +288,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     }
                     after_install_report(app, report, &job.archive);
                 }
-                Err(status) => app.status = Some(status),
+                Err(status) => {
+                    refresh_failed_target(app, &job.name);
+                    app.status = Some(status);
+                }
             }
         }
         Message::FomodCancel => {
@@ -525,4 +529,17 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         _ => unreachable!("routed by update_inner"),
     }
     Task::none()
+}
+
+/// A copy that failed or whose worker died may still have touched the target:
+/// a Merge that stopped halfway leaves the live mod's meta.ini with its
+/// "unverified" checkpoint warning and part of the new files. Diagnostics and
+/// the list read that mod's cached row, and the conflict map its cached walk,
+/// so both are dropped here or the Health card stays hidden until F5. One row
+/// and one walk, harmless when the folder was never touched.
+fn refresh_failed_target(app: &mut App, name: &str) {
+    invalidate_meta(app, name);
+    drop_files_cache(app, Some(name));
+    refresh_meta_cache(app);
+    app.conflicts = compute_conflicts(app);
 }
