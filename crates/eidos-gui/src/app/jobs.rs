@@ -133,6 +133,10 @@ pub(crate) struct TransferJob {
     /// and the view is asked to draw it ten times a second for all of those
     /// minutes.
     pub(crate) percent: std::sync::Arc<std::sync::atomic::AtomicU8>,
+    /// What the percentage is a percentage OF. The worker resets `percent` to
+    /// 0 when it changes, since each phase counts from 0 again. A collection
+    /// install never moves it off [`eidos_transfer::Phase::Archive`].
+    pub(crate) phase: std::sync::Arc<std::sync::Mutex<eidos_transfer::Phase>>,
     pub(crate) outcome: std::sync::Arc<std::sync::Mutex<Option<Result<String, String>>>>,
     pub(crate) done: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// What the worker said, once the poll has taken it. `None` while running.

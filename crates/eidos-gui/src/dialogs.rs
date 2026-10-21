@@ -2296,6 +2296,27 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
         .size(sz(13))
         .text_size(sz(12));
 
+    // Disabled, not hidden, without par2: the line saying which package to
+    // install is how anybody finds out the option exists.
+    let mut recovery = checkbox(state.recovery)
+        .label(tf(
+            "pack_recovery",
+            &[("pct", &eidos_transfer::REDUNDANCY_PERCENT)],
+        ))
+        .size(sz(13))
+        .text_size(sz(12));
+    if state.par2 {
+        recovery = recovery.on_toggle(|_| Message::PackToggleRecovery);
+    }
+    let mut recovery = Column::new().spacing(2).push(recovery);
+    if !state.par2 {
+        recovery = recovery.push(
+            text(t("pack_recovery_missing"))
+                .size(sz(10))
+                .color(text_muted()),
+        );
+    }
+
     let mut levels = Row::new().spacing(4).align_y(iced::Alignment::Center).push(
         text(t("pack_compression"))
             .size(sz(11))
@@ -2408,6 +2429,7 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
         .push(blurb)
         .push(dest)
         .push(downloads)
+        .push(recovery)
         .push(levels)
         .push(preview)
         .push(notes)
@@ -2587,24 +2609,36 @@ pub(crate) fn transfer_dialog<'a>(job: &crate::TransferJob) -> Element<'a, Messa
         .push(text(job.title.clone()).size(sz(15)));
     match &job.finished {
         None => {
-            let pct = job
+            use eidos_transfer::Phase;
+            let mut pct = job
                 .percent
                 .load(std::sync::atomic::Ordering::SeqCst)
                 .min(100);
+            let phase = job.phase.lock().map(|p| *p).unwrap_or(Phase::Archive);
+            // par2 reports no percentage. Its phases draw a full bar under
+            // their own label, as "Finishing up..." does, rather than a bar
+            // stuck at 0 that reads as nothing happening.
+            let label = match phase {
+                Phase::Archive if pct >= 100 => t("transfer_finishing").to_string(),
+                Phase::Archive => format!("{pct}%"),
+                Phase::Check => tf("transfer_checking", &[("pct", &pct)]),
+                Phase::Verify | Phase::Recovery | Phase::Repair => {
+                    pct = 100;
+                    t(match phase {
+                        Phase::Verify => "transfer_verifying",
+                        Phase::Recovery => "transfer_writing_recovery",
+                        _ => "transfer_repairing",
+                    })
+                    .to_string()
+                }
+            };
             card = card
                 .push(
                     iced::widget::progress_bar(0.0..=100.0, pct as f32)
                         .length(Length::Fill)
                         .girth(Length::Fixed(10.0)),
                 )
-                .push(
-                    text(if pct >= 100 {
-                        t("transfer_finishing").to_string()
-                    } else {
-                        format!("{pct}%")
-                    })
-                    .size(sz(12)),
-                )
+                .push(text(label).size(sz(12)))
                 .push(text(t("transfer_note")).size(sz(10)).color(text_muted()));
         }
         Some(result) => {

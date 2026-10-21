@@ -755,6 +755,8 @@ pub(crate) enum Message {
     PackDestChanged(String),
     /// Include `downloads/` (the archives the mods were installed from).
     PackToggleDownloads,
+    /// Write PAR2 recovery data beside the archive.
+    PackToggleRecovery,
     /// One of 7-Zip's compression levels.
     PackLevelChanged(u8),
     /// Open a native save dialog for the destination.

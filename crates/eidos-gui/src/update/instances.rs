@@ -241,10 +241,16 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 .join(eidos_transfer::default_file_name(&game_id))
                 .to_string_lossy()
                 .into_owned();
+            // One fork+exec, on this thread like the 7-Zip probe the Unpack
+            // dialog makes when a file is chosen. The worker probes again
+            // before it takes the lock, so this only decides what the box shows.
+            let par2 = eidos_transfer::par2_installed();
             app.pack = Some(PackDialogState {
                 dest,
                 downloads: opt.downloads,
                 level: eidos_transfer::DEFAULT_LEVEL,
+                recovery: opt.recovery && par2,
+                par2,
                 plan,
             });
         }
@@ -261,6 +267,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // checkbox should feel like.
             if let Some(d) = &mut app.pack {
                 d.downloads = !d.downloads;
+            }
+        }
+        Message::PackToggleRecovery => {
+            if let Some(d) = app.pack.as_mut().filter(|d| d.par2) {
+                d.recovery = !d.recovery;
             }
         }
         Message::PackLevelChanged(n) => {
@@ -316,14 +327,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             };
             let dest = std::path::PathBuf::from(d.dest.trim());
-            let opt = eidos_transfer::Options {
-                downloads: d.downloads,
-                level: d.level,
-                // The window asked before it got here (the dialog says so when
-                // the file exists), so the worker must not refuse it again.
-                force: true,
-            };
-            app.transfer_job = Some(spawn_pack(inst, dest, opt));
+            app.transfer_job = Some(spawn_pack(inst, dest, pack_options(&d)));
         }
         Message::ShowUnpackDialog => {
             app.file_menu_open = false;
@@ -483,4 +487,19 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         _ => unreachable!("routed by update_inner"),
     }
     Task::none()
+}
+
+/// What the Pack dialog's choices mean to the library.
+///
+/// Its own function so a test can see that each box reaches the worker: the
+/// worker takes these options and nothing else from the dialog.
+pub(super) fn pack_options(d: &PackDialogState) -> eidos_transfer::Options {
+    eidos_transfer::Options {
+        downloads: d.downloads,
+        level: d.level,
+        // The window asked before it got here (the dialog says so when the
+        // file exists), so the worker must not refuse it again.
+        force: true,
+        recovery: d.recovery,
+    }
 }

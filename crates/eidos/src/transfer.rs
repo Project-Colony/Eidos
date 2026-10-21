@@ -9,7 +9,7 @@ use std::process::exit;
 use std::time::Instant;
 
 use eidos_instance::Instance;
-use eidos_transfer::{human_bytes, human_secs, Options, Transfer, EXTENSION, LEVELS};
+use eidos_transfer::{human_bytes, human_secs, Options, Phase, Transfer, EXTENSION, LEVELS};
 
 use crate::*;
 
@@ -22,12 +22,53 @@ use crate::*;
 ///
 /// 7-Zip's percentages are NOT monotonic - a second pass restarts the count - so
 /// they are clamped here to a running maximum. A bar that goes backwards reads as
-/// a bug in the thing being measured.
-fn progress_line() -> impl FnMut(u8) {
+/// a bug in the thing being measured. A new phase is a new count, so it gets a
+/// line of its own saying what it is, and a fresh bar if it has percentages.
+fn progress_line() -> impl FnMut(Phase, u8) {
     let tty = std::io::stdout().is_terminal();
+    let mut phase = Phase::Archive;
     let mut high = 0u8;
     let mut announced = 0i16 - 1;
-    move |p| {
+    // Whether the terminal's cursor sits at the end of a bar or a label.
+    let mut open = false;
+    move |ph, p| {
+        if ph != phase {
+            phase = ph;
+            high = 0;
+            announced = -1;
+            let (label, bar) = match ph {
+                Phase::Archive => ("extracting", true),
+                Phase::Check => ("checking the backup", true),
+                Phase::Verify => (
+                    "checking the backup against its recovery data (par2)...",
+                    false,
+                ),
+                Phase::Recovery => ("writing recovery data (par2)...", false),
+                Phase::Repair => (
+                    "repairing the backup from its recovery data (par2)...",
+                    false,
+                ),
+            };
+            if tty {
+                // Closes the previous bar. A phase without a bar stays on its
+                // label's line, which `end_progress` or the next phase closes.
+                if open {
+                    println!();
+                }
+                if bar {
+                    println!("  {label}");
+                } else {
+                    print!("  {label}");
+                    let _ = std::io::stdout().flush();
+                }
+                open = !bar;
+            } else {
+                println!("  {label}");
+            }
+        }
+        if matches!(phase, Phase::Verify | Phase::Recovery | Phase::Repair) {
+            return;
+        }
         high = high.max(p.min(100));
         if tty {
             let filled = (high as usize * 40) / 100;
@@ -37,6 +78,7 @@ fn progress_line() -> impl FnMut(u8) {
                 " ".repeat(40 - filled)
             );
             let _ = std::io::stdout().flush();
+            open = true;
         } else if (high as i16) / 10 > announced {
             announced = (high as i16) / 10;
             println!("  {high}%");
@@ -88,6 +130,7 @@ fn parse_pack_args(args: &[String]) -> Result<PackArgs, String> {
         };
         match a {
             "--no-downloads" => out.opt.downloads = false,
+            "--no-recovery" => out.opt.recovery = false,
             "--force" => out.opt.force = true,
             "--dry-run" => out.dry_run = true,
             "--level" => {
@@ -142,6 +185,8 @@ fn pack_usage() -> ! {
          \x20 --dry-run        list what would be packed and stop\n\
          \x20 --no-downloads   leave downloads/ out (the archives mods came from)\n\
          \x20 --level <n>      7-Zip compression, one of 0 1 3 5 7 9 (default 1)\n\
+         \x20 --no-recovery    write no PAR2 recovery data (default: written when\n\
+         \x20                  par2 is installed)\n\
          \x20 --force          replace an existing file\n\
          \n\
          The destination may be a folder, in which case the backup is named after\n\
@@ -209,7 +254,7 @@ pub(crate) fn cmd_pack(args: &[String]) {
     let scan = Instant::now();
     let plan = eidos_transfer::plan(&inst, &parsed.opt);
     println!("{}", human_secs(scan.elapsed().as_secs()));
-    print_plan(&plan, &dest, parsed.opt.level);
+    print_plan(&plan, &dest, &transfer, &parsed.opt);
 
     if parsed.dry_run {
         // The same checks the real run makes, so the preview is a preview and
@@ -238,10 +283,30 @@ pub(crate) fn cmd_pack(args: &[String]) {
                 human_bytes(r.bytes),
                 human_secs(started.elapsed().as_secs())
             );
+            if !r.recovery.is_empty() {
+                let bytes: u64 = r
+                    .recovery
+                    .iter()
+                    .filter_map(|f| std::fs::metadata(f).ok())
+                    .map(|m| m.len())
+                    .sum();
+                println!(
+                    "Recovery data: {} PAR2 file(s), {}, beside it as {}*.par2. Copy them \
+                     with the backup.",
+                    r.recovery.len(),
+                    human_bytes(bytes),
+                    r.path.display()
+                );
+            }
             println!(
                 "On the other machine: eidos unpack {} <folder>",
                 r.path.display()
             );
+            // Not a reason for exit 1: the archive is complete and was read
+            // back, it only lacks the extra copy.
+            if let Some(w) = &r.recovery_warning {
+                println!("WARNING: {w}");
+            }
             // An incomplete backup is not a success, and this is a command
             // people put in front of `&&`. The archive is real and worth
             // keeping - it is named above - but the exit code has to say that
@@ -268,9 +333,28 @@ pub(crate) fn cmd_pack(args: &[String]) {
     }
 }
 
+/// Whether recovery data will be written, and if not, why not - with the
+/// package to install when par2 is what is missing.
+fn print_recovery(transfer: &Transfer, opt: &Options) {
+    if transfer.writes_recovery() {
+        println!(
+            "  + PAR2 recovery data, {}% of the archive, beside it (--no-recovery leaves it out)",
+            eidos_transfer::REDUNDANCY_PERCENT
+        );
+    } else if !opt.recovery {
+        println!("  no recovery data (--no-recovery)");
+    } else {
+        println!(
+            "  no recovery data: par2 is not installed (install the par2cmdline package to \
+             have it written)"
+        );
+    }
+}
+
 /// The part of the output `--dry-run` and a real run share, so the preview is
 /// the same text as the thing it previews.
-fn print_plan(plan: &eidos_transfer::Plan, dest: &Path, level: u8) {
+fn print_plan(plan: &eidos_transfer::Plan, dest: &Path, transfer: &Transfer, opt: &Options) {
+    let level = opt.level;
     println!(
         "  {} file(s), {} folder(s) ({} empty), {}",
         plan.files,
@@ -292,6 +376,7 @@ fn print_plan(plan: &eidos_transfer::Plan, dest: &Path, level: u8) {
         "LZMA2, solid in 16 MB blocks"
     };
     println!("  -> {} ({method}, -mx{level})", dest.display());
+    print_recovery(transfer, opt);
     if !plan.left.is_empty() {
         println!("Left out:");
         for l in plan.left.iter().take(20) {
@@ -584,7 +669,7 @@ mod tests {
     #[test]
     fn the_flags_that_change_what_is_packed() {
         let p = parse_pack_args(&v(&["skyrimse", "out.eidos"])).unwrap();
-        assert!(p.opt.downloads && !p.opt.force && !p.dry_run);
+        assert!(p.opt.downloads && !p.opt.force && !p.dry_run && p.opt.recovery);
         assert_eq!(p.opt.level, eidos_transfer::DEFAULT_LEVEL);
         let p = parse_pack_args(&v(&[
             "skyrimse",
@@ -592,9 +677,10 @@ mod tests {
             "--no-downloads",
             "--force",
             "--dry-run",
+            "--no-recovery",
         ]))
         .unwrap();
-        assert!(!p.opt.downloads && p.opt.force && p.dry_run);
+        assert!(!p.opt.downloads && p.opt.force && p.dry_run && !p.opt.recovery);
     }
 
     #[test]

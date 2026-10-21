@@ -310,6 +310,11 @@ pub(crate) struct PackDialogState {
     pub(crate) downloads: bool,
     /// 7-Zip's `-mx` level.
     pub(crate) level: u8,
+    /// Write PAR2 recovery data beside the archive.
+    pub(crate) recovery: bool,
+    /// Whether par2 was found when the dialog opened. Without it the box
+    /// cannot be ticked, and says which package to install.
+    pub(crate) par2: bool,
     /// What the walk found, so the dialog can say how many files and how big
     /// BEFORE the user commits twenty minutes to it. Recomputed when an option
     /// changes, because `downloads` moves the numbers.
