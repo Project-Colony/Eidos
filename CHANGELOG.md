@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.6](https://github.com/Project-Colony/Eidos/compare/v1.19.5...v1.19.6) (2026-10-21)
+
+
+### Performance
+
+* keep the layer index alive, cut FUSE round trips, and move file walks off the GUI click path ([#105](https://github.com/Project-Colony/Eidos/issues/105)) ([6316a45](https://github.com/Project-Colony/Eidos/commit/6316a4560f62ba19b33bef44cec95d684f923c48))
+
 ## [1.19.5](https://github.com/Project-Colony/Eidos/compare/v1.19.4...v1.19.5) (2026-10-19)
 
 
