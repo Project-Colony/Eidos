@@ -59,12 +59,13 @@ pub(crate) fn conflict_layers(app: &App) -> Option<Vec<Layer>> {
 /// bracketed display names).
 pub(crate) fn build_conflicts_cached(app: &App, layers: Vec<Layer>) -> ConflictMap {
     let mut cache = app.files_cache.borrow_mut();
-    let parts: Vec<(Layer, (Vec<String>, bool))> = layers
+    // A pointer per layer, not a copy of its list: `build_from` only reads.
+    let parts: Vec<(Layer, LayerWalk)> = layers
         .into_iter()
         .map(|l| {
             let files = cache
                 .entry(l.name.clone())
-                .or_insert_with(|| eidos_conflicts::collect_files(&l.root))
+                .or_insert_with(|| eidos_conflicts::collect_files(&l.root).into())
                 .clone();
             (l, files)
         })

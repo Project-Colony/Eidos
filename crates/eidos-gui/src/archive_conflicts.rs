@@ -52,7 +52,8 @@ pub(crate) fn schedule_archive_conflicts(app: &mut App) {
         return;
     };
     let epoch = app.archive_epoch.get();
-    let cache = app.files_cache.borrow().clone();
+    // Pointers: the lists are copied below, on the worker.
+    let mut cache = app.files_cache.borrow().clone();
     let plugins = app.plugins.clone();
     let tweaks = inst.enabled_ini_tweaks(&app.mods);
     let (sender, receiver) = mpsc::channel();
@@ -69,9 +70,11 @@ pub(crate) fn schedule_archive_conflicts(app: &mut App) {
             if cancel.load(Ordering::Relaxed) {
                 return;
             }
+            // Owned, because `visible_conflict_parts` edits the lists; the UI
+            // still holds each one, so this is the copy, made off its thread.
             let files = cache
-                .get(&l.name)
-                .cloned()
+                .remove(&l.name)
+                .map(Arc::unwrap_or_clone)
                 .unwrap_or_else(|| eidos_conflicts::collect_files(&l.root));
             parts.push((l, files));
         }
@@ -476,8 +479,8 @@ pub(crate) fn resolve_provider(
                 .files_cache
                 .borrow()
                 .get(&layer.name)
-                .and_then(|(files, _)| {
-                    files
+                .and_then(|walk| {
+                    walk.0
                         .iter()
                         .find(|name| name.eq_ignore_ascii_case(relative))
                         .cloned()

@@ -449,8 +449,9 @@ impl LayerStack {
     /// and several allocations per file, ~300 ms on a 300-mod list - which only
     /// pays for itself over the thousands of lookups a mount serves. The GUI's
     /// health checks build a throwaway stack on every mod toggle to read one
-    /// root listing or one `SKSE/Plugins` directory; for them the walk IS the
-    /// cost. Every answer is the one `new` gives: no index is the same complete
+    /// root listing or one `SKSE/Plugins` directory, and its Data tab rebuilds
+    /// one per toggle to list the root and a few open folders; for them the
+    /// walk IS the cost. Every answer is the one `new` gives: no index is the same complete
     /// fallback `EIDOS_NO_INDEX` forces.
     pub fn new_unindexed(layers: Vec<PathBuf>, overwrite: PathBuf) -> Self {
         // Built over no layers, so the index walk has nothing to visit; the

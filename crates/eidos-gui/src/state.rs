@@ -1233,6 +1233,7 @@ pub(crate) fn start_run_with_log(
         outcome,
         log,
         lock,
+        game: false,
     });
     app.status = Some(if lock {
         tf("status_running_locked", &[("title", &title)])
@@ -1254,8 +1255,19 @@ pub(crate) fn finish_run(app: &mut App) {
     let run = app.running.take();
     reload_mods(app);
     if app.created.is_some() {
-        // The session wrote into the Overwrite (and tools may have edited mods).
-        drop_files_cache(app, None);
+        // A game run under `eidos play` writes only into the Overwrite: the mods
+        // are read-only lowers of the union, and game-root writes land in
+        // `overwrite/Root`, inside the same layer. So only its walk is stale, and
+        // re-walking every mod (77 ms at 90k files on tmpfs, more on a disk and
+        // with more files) froze the window exactly when the player came back.
+        // A tool can write into a mod folder by absolute path or capture its
+        // output into one, so a tool run (and the prerequisite install, which
+        // is rare) still drops every walk. Unlike MO2's afterRun, a mod edited
+        // by hand outside Eidos during the session is no longer picked up here;
+        // F5 re-reads it, as it already must for an edit made while the window
+        // sits idle.
+        let game = run.as_ref().is_some_and(|r| r.game);
+        drop_files_cache(app, game.then_some("Overwrite"));
         invalidate_plugins(app);
         app.conflicts = compute_conflicts(app);
         refresh_meta_cache(app);
@@ -2816,6 +2828,10 @@ pub(crate) fn mod_views_changed(app: &mut App) {
     // just on their contents.
     bump_views(app);
     invalidate_plugins(app);
+    // The replaced map is freed here, on the UI thread, on purpose. Handing it
+    // to a helper thread looked free (2 ms inline at 90k files), but glibc then
+    // serialises that thread's frees and this thread's allocations on one
+    // arena lock: a map rebuild running alongside went from 15 to 37 ms.
     app.conflicts = compute_conflicts(app);
     refresh_meta_cache(app);
     recompute_counts(app);

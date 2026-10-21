@@ -465,7 +465,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 // next tick of a checkbox does - writes the members straight
                 // back out of the profile, and the rule-derived order with them.
                 reload_mods(app);
-                refresh_after_tree_change(app);
+                refresh_after_tree_change(app, None);
                 refresh_meta_cache(app);
             }
             // Set LAST: `open_unpacked` calls `open_instance`, which resets a

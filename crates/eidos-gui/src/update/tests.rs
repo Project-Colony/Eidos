@@ -243,7 +243,14 @@ fn switching_instance_drops_the_previous_games_merged_view() {
     );
     app.files_cache
         .borrow_mut()
-        .insert("OldMod".into(), (vec!["a.esp".into()], false));
+        .insert("OldMod".into(), (vec!["a.esp".into()], false).into());
+    // The walks are keyed by layer name with no instance in the key, so the
+    // old instance's game layer answers for the new one's unless it is gone
+    // BEFORE the new conflict map is built.
+    app.files_cache.borrow_mut().insert(
+        "[stellarblade]".into(),
+        (vec!["stale.esp".into()], false).into(),
+    );
     app.data_expanded.insert("meshes".to_string());
 
     let _ = update(&mut app, Message::Finish);
@@ -258,8 +265,20 @@ fn switching_instance_drops_the_previous_games_merged_view() {
         "a directory listing survived the switch"
     );
     assert!(
-        app.files_cache.borrow().is_empty(),
+        !app.files_cache.borrow().contains_key("OldMod"),
         "a mod's file list survived the switch"
+    );
+    assert!(
+        app.conflicts
+            .as_ref()
+            .is_some_and(|c| !c.files.contains_key("stale.esp")),
+        "the new map was built from the old instance's walk"
+    );
+    // And the walks the new map was just built from are kept, or the first
+    // toggle walks every layer again on the UI thread.
+    assert!(
+        app.files_cache.borrow().contains_key("[stellarblade]"),
+        "the fresh walk was thrown away"
     );
     assert!(
         app.data_expanded.is_empty(),
@@ -1971,6 +1990,39 @@ fn deleting_from_the_filetree_takes_two_clicks() {
         Message::ConfirmFiletreeDelete("Armour".to_string(), "Meshes/a.nif".to_string()),
     );
     assert!(!modd.join("Meshes").join("a.nif").exists());
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_filetree_delete_rewalks_only_the_mod_it_changed() {
+    // It dropped every mod's walk, so the conflict map after one delete
+    // re-read every enabled mod on the UI thread.
+    let (mut app, root) = list_app(&["Armour", "Other"]);
+    let modd = root.join("mods").join("Armour");
+    fs::create_dir_all(modd.join("Meshes")).unwrap();
+    fs::write(modd.join("Meshes").join("a.nif"), b"a").unwrap();
+    // A sentinel only an unwalked cache entry still holds.
+    app.files_cache
+        .borrow_mut()
+        .insert("Other".into(), (vec!["cached.esp".into()], false).into());
+    let _ = update_inner(
+        &mut app,
+        Message::ConfirmFiletreeDelete("Armour".to_string(), "Meshes/a.nif".to_string()),
+    );
+    assert!(!modd.join("Meshes").join("a.nif").exists());
+    let cache = app.files_cache.borrow();
+    assert_eq!(
+        cache.get("Other").map(|walk| walk.0.clone()),
+        Some(vec!["cached.esp".to_string()]),
+        "an untouched mod was walked again"
+    );
+    assert!(
+        cache
+            .get("Armour")
+            .is_some_and(|walk| !walk.0.iter().any(|p| p.ends_with("a.nif"))),
+        "the changed mod still lists the deleted file"
+    );
+    drop(cache);
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -5280,6 +5332,38 @@ fn a_run_with_an_explicit_log_writes_its_header_and_exit_there() {
     assert!(text.starts_with("# eidos: running"), "{text}");
     assert!(text.contains("exited with code 0"), "{text}");
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_game_exit_rewalks_only_the_overwrite_and_a_tool_exit_everything() {
+    // A game under `eidos play` writes only into the Overwrite, so re-walking
+    // every mod after it froze the window for nothing. A tool can write into
+    // a mod folder, so its exit still drops every walk.
+    for game in [true, false] {
+        let (mut app, root) = list_app(&["Keep"]);
+        start_run(
+            &mut app,
+            "Skyrim".into(),
+            std::process::Command::new("/bin/true"),
+        );
+        app.running.as_mut().unwrap().game = game;
+        {
+            let mut cache = app.files_cache.borrow_mut();
+            cache.insert("Keep".into(), (vec!["kept.esp".into()], false).into());
+            cache.insert("Overwrite".into(), (vec!["stale.esp".into()], false).into());
+        }
+        finish_tracked_run(&mut app);
+        let cache = app.files_cache.borrow();
+        let has = |layer: &str, file: &str| {
+            cache
+                .get(layer)
+                .is_some_and(|walk| walk.0.iter().any(|f| f == file))
+        };
+        assert!(!has("Overwrite", "stale.esp"), "game={game}");
+        assert_eq!(has("Keep", "kept.esp"), game, "game={game}");
+        drop(cache);
+        let _ = fs::remove_dir_all(root);
+    }
 }
 
 #[test]

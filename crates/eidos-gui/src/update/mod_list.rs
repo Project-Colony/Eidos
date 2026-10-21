@@ -1386,8 +1386,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             if restored {
                 reload_mods(app);
+                // Its meta.ini came back with the folder, and the refresh only
+                // computes rows it does not already hold.
+                invalidate_meta(app, &orig);
                 refresh_meta_cache(app);
-                refresh_after_tree_change(app);
+                refresh_after_tree_change(app, Some(&orig));
                 app.status = Some(tf("status_restored", &[("name", &orig)]));
             }
         }

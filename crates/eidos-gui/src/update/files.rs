@@ -71,7 +71,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             unmanaged: false,
                         });
                     }
-                    drop_files_cache(app, None);
+                    // Only the two folders the move touched: the Overwrite it
+                    // emptied and the mod it filled.
+                    drop_files_cache(app, Some("Overwrite"));
+                    drop_files_cache(app, Some(&name));
                     // Before mods_changed, which replaces it with the reason if
                     // the save is refused.
                     app.status = Some(if existing {
@@ -529,7 +532,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 }
             };
             if done {
-                refresh_after_tree_change(app);
+                refresh_after_tree_change(app, Some(&mod_name));
                 app.status = Some(tf("status_renamed_plain", &[("name", &name)]));
             }
         }
@@ -586,7 +589,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             match r {
                 Ok(()) => {
-                    refresh_after_tree_change(app);
+                    refresh_after_tree_change(app, Some(&name));
                     app.status = Some(tf("status_deleted", &[("path", &rel)]));
                 }
                 Err(e) => {
@@ -645,7 +648,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             match r {
                 Ok(()) => {
-                    refresh_after_tree_change(app);
+                    refresh_after_tree_change(app, Some(&mod_name));
                     app.status = Some(tf("status_created_folder", &[("name", &name)]));
                 }
                 Err(e) => {

@@ -114,5 +114,19 @@ reported 516,301 of the former against 26,999 of the latter, and the number that
 mattered - how much of that was Wine probing rather than enumerating - was
 invisible until they were counted apart.
 
+The window has its own switch:
+
+```sh
+EIDOS_GUI_TIMING=1     # GUI steps over 16 ms, written to the gui log
+```
+
+It logs each message handler, the archive-worker scheduling and the health
+checks that run after it, and the building of each frame's widget tree, when one
+of them takes longer than 16 ms. Lines name the message variant only, never its
+contents. At most eight such lines are written per second. Once a second, a
+summary line gives the number of frames built, the slowest one, and how many slow
+steps were left out. Layout and drawing happen inside iced and
+are not timed. A dev build with iced's `debug` feature covers those.
+
 See [architecture.md](architecture.md) for how the resolver and the index are
 built, and [troubleshooting.md](../guide/troubleshooting.md) for the environment switches.

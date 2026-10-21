@@ -127,4 +127,9 @@ pub(crate) struct RunningState {
     /// clicked Unlock): the run is still TRACKED (exit refresh, double-launch
     /// guard, error reporting) but the window stays interactive.
     pub(crate) lock: bool,
+    /// Whether this is the game through `eidos play` rather than a tool or the
+    /// prerequisite install. Set by the Run arm that launched it, never derived
+    /// from `tool_choice` at exit: an unlocked run lets the user change that
+    /// pick while it runs.
+    pub(crate) game: bool,
 }

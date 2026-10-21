@@ -17,6 +17,7 @@ pub use archives::{
     MAX_LZ4_BLOCK_BYTES,
 };
 
+use std::borrow::Borrow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -131,13 +132,18 @@ impl ConflictMap {
     /// (the output of [`collect_files`]). Lets a caller cache the expensive
     /// filesystem walks and re-derive winners in memory - toggling a mod then
     /// costs no I/O at all.
-    pub fn build_from(parts: &[(Layer, (Vec<String>, bool))]) -> ConflictMap {
+    ///
+    /// The lists are only read, so a caller holding them in a cache passes
+    /// references or shared pointers rather than a deep copy of every path: the
+    /// GUI rebuilds this map on the UI thread after every toggle.
+    pub fn build_from<P: Borrow<(Vec<String>, bool)>>(parts: &[(Layer, P)]) -> ConflictMap {
         let mut files: BTreeMap<String, FileNode> = BTreeMap::new();
 
         // Highest priority first: the first layer to provide a path wins it; the
         // rest become alternatives, accumulating in descending-priority order.
         let mut layer_hidden: HashMap<OriginId, bool> = HashMap::new();
-        for (layer, (rels, hidden)) in parts {
+        for (layer, part) in parts {
+            let (rels, hidden): &(Vec<String>, bool) = part.borrow();
             if *hidden {
                 layer_hidden.insert(layer.origin, true);
             }

@@ -85,6 +85,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 let (cmd, se_warning) =
                     play_command(id, &inst_arg, &game.install_path, inst, &app.launch_command);
                 start_run(app, game_name, cmd);
+                // Marked here, where the game is the thing launched: its exit
+                // re-walks only the Overwrite (see `finish_run`).
+                if let Some(r) = app.running.as_mut() {
+                    r.game = true;
+                }
                 // Prepend advisories to whatever status start_run set.
                 for note in [
                     se_warning,

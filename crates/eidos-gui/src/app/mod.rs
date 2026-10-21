@@ -119,13 +119,19 @@ pub(crate) struct DataRow {
 /// "cache" allocate proportionally to its own payload).
 pub(crate) type CachedListing = (u64, std::rc::Rc<Vec<String>>);
 
+/// One layer's cached file walk, as `eidos_conflicts::collect_files` returned
+/// it (see `App::files_cache`).
+pub(crate) type LayerWalk = std::sync::Arc<(Vec<String>, bool)>;
+
 /// The same for one directory of the Data tab's merged view.
 pub(crate) type CachedDataListing = (u64, std::rc::Rc<Vec<DataRow>>);
 
 /// The Data tab's union and its layer labels, with the generation they were
-/// built at (see [`view::data_stack`]).
+/// built at and whether the stack carries the lower index (see
+/// [`view::data_stack`]).
 pub(crate) type CachedDataStack = (
     u64,
+    bool,
     std::rc::Rc<eidos_core::LayerStack>,
     std::rc::Rc<view::DataSources>,
 );
@@ -605,7 +611,12 @@ pub(crate) struct App {
     /// `compute_conflicts(&App)` can fill missing entries; a toggle or reorder
     /// then rebuilds the map without touching the filesystem at all. Entries are
     /// dropped when a layer's contents change (install/remove/rename/run).
-    pub(crate) files_cache: std::cell::RefCell<HashMap<String, (Vec<String>, bool)>>,
+    ///
+    /// Shared, because two readers on the UI thread copied every path in the
+    /// load order per toggle: the map rebuild, and the archive worker's input,
+    /// which took the whole cache. Each list is written once by its walk and
+    /// never edited, so a pointer is as good as a copy.
+    pub(crate) files_cache: std::cell::RefCell<HashMap<String, LayerWalk>>,
     // ---- view memoisation (these listings ran on EVERY redraw) ----
     /// Bumped whenever the mod list or anything on disk changes; the memoised
     /// listings below rebuild only when it moves.
