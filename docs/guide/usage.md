@@ -274,15 +274,17 @@ there is very little left for a bigger dictionary to find. `--level` (0, 1, 3,
 5, 7, 9) overrides that if you disagree on your own content, and
 `--no-downloads` leaves `downloads/` out.
 
-The files go into **solid blocks of at most 16 MB**. Pulling one file out of a
-70 GB backup decodes at most the block it sits in, never everything in front of
-it. At the default level 1, packing game content runs 2 to 5 times faster than
-with every file compressed on its own (unpacking 2 to 4 times); at level 5 and
-above the blocks bring little or no speed. The cost is on damage: one
-corrupt byte can take every file in its block with it, up to 16 MB of
-neighbouring files, where a non-solid archive would lose one file. The recovery
-data described below covers that. Level 0 stores the files and stays
-non-solid.
+At the default level 1 the files go into **solid blocks of at most 16 MB**.
+Pulling one file out of a 70 GB backup decodes at most the block it sits in,
+never everything in front of it, and packing game content runs 2 to 5 times
+faster than with every file compressed on its own (unpacking 2 to 4 times). The
+cost is on damage: one corrupt byte can take every file in its block with it, up
+to 16 MB of neighbouring files. The recovery data described below covers that.
+Every other level stays non-solid: each file is its own stream, and a corrupt
+byte costs that one file. Level 0 stores the files. From level 3 up, LZMA2
+already works in chunks of 16 MB or more, and solid blocks measured slower
+there: at level 5, packing meshes took 1.4 times as long and unpacking textures
+6.8 times as long.
 
 Packing takes the instance lock, so it cannot run while the game or another
 Eidos is writing to that instance - the backup is a snapshot, not a smear. It is

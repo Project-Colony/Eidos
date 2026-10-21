@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=2e356d1263b56f984090eea9a73d03429d0529ff -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
 
 # Eidos gebruiken
 
@@ -297,15 +297,18 @@ blijft heel weinig over voor een groter woordenboek om te vinden. `--level` (0,
 1, 3, 5, 7, 9) overstemt dat als je het voor je eigen inhoud oneens bent, en
 `--no-downloads` laat `downloads/` weg.
 
-De bestanden gaan in **solide blokken van hoogstens 16 MB**. Eén bestand uit een
-back-up van 70 GB halen decodeert hoogstens het blok waarin het staat, nooit
-alles wat ervoor staat. Op het standaardniveau 1 gaat het packen van game-inhoud
-2 tot 5 keer sneller dan met elk bestand apart gecomprimeerd (uitpakken 2 tot 4
-keer); vanaf niveau 5 leveren de blokken weinig of geen snelheid op. De prijs
-betaal je bij schade: één corrupte byte kan elk bestand in zijn blok meenemen,
-tot 16 MB aan naburige bestanden, waar een niet-solide archief één bestand zou
-verliezen. De herstelgegevens hieronder dekken dat af. Niveau 0 slaat de
-bestanden ongecomprimeerd op en blijft niet-solide.
+Op het standaardniveau 1 gaan de bestanden in
+**solide blokken van hoogstens 16 MB**. Eén bestand uit een back-up van 70 GB
+halen decodeert hoogstens het blok waarin het staat, nooit alles wat ervoor
+staat, en het packen van game-inhoud gaat 2 tot 5 keer sneller dan met elk
+bestand apart gecomprimeerd (uitpakken 2 tot 4 keer). De prijs betaal je bij
+schade: één corrupte byte kan elk bestand in zijn blok meenemen, tot 16 MB aan
+naburige bestanden. De herstelgegevens hieronder dekken dat af. Alle andere
+niveaus blijven niet-solide: elk bestand is een eigen stroom, en een corrupte
+byte kost alleen dat ene bestand. Niveau 0 slaat de bestanden ongecomprimeerd
+op. Vanaf niveau 3 werkt LZMA2 al in stukken van 16 MB of meer, en daar waren
+solide blokken bij het meten trager: op niveau 5 duurde het packen van meshes
+1,4 keer zo lang en het uitpakken van texturen 6,8 keer zo lang.
 
 Packen neemt het slot van de instantie, dus het kan niet draaien terwijl het
 spel of een andere Eidos naar die instantie schrijft - de back-up is een

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=2e356d1263b56f984090eea9a73d03429d0529ff -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
 
 # Używanie Eidos
 
@@ -293,15 +293,18 @@ skompresowane; zostaje bardzo niewiele do znalezienia dla większego słownika.
 `--level` (0, 1, 3, 5, 7, 9) nadpisuje to, jeśli nie zgadzasz się co do własnej
 zawartości, a `--no-downloads` zostawia `downloads/` poza kopią.
 
-Pliki trafiają do **bloków ciągłych (solid) po najwyżej 16 MB**. Wyciągnięcie
-jednego pliku z kopii ważącej 70 GB dekoduje najwyżej blok, w którym on leży,
-nigdy wszystko, co stoi przed nim. Na domyślnym poziomie 1 pakowanie zawartości
-gier idzie 2 do 5 razy szybciej niż z każdym plikiem kompresowanym osobno
-(rozpakowywanie 2 do 4 razy); od poziomu 5 w górę bloki dają niewiele szybkości
-albo nic. Cenę płaci się przy uszkodzeniu: jeden zepsuty bajt może zabrać ze
-sobą każdy plik ze swojego bloku, do 16 MB sąsiednich plików, tam gdzie archiwum
-niesolidne straciłoby jeden plik. Opisane niżej dane naprawcze pokrywają ten
-przypadek. Poziom 0 zapisuje pliki bez kompresji i pozostaje niesolidny.
+Na domyślnym poziomie 1 pliki trafiają do
+**bloków ciągłych (solid) po najwyżej 16 MB**. Wyciągnięcie jednego pliku z
+kopii ważącej 70 GB dekoduje najwyżej blok, w którym on leży, nigdy wszystko, co
+stoi przed nim, a pakowanie zawartości gier idzie 2 do 5 razy szybciej niż z
+każdym plikiem kompresowanym osobno (rozpakowywanie 2 do 4 razy). Cenę płaci się
+przy uszkodzeniu: jeden zepsuty bajt może zabrać ze sobą każdy plik ze swojego
+bloku, do 16 MB sąsiednich plików. Opisane niżej dane naprawcze pokrywają ten
+przypadek. Wszystkie pozostałe poziomy zostają niesolidne: każdy plik to osobny
+strumień, a zepsuty bajt kosztuje tylko ten jeden plik. Poziom 0 zapisuje pliki
+bez kompresji. Od poziomu 3 w górę LZMA2 i tak pracuje kawałkami po 16 MB lub
+więcej, a bloki ciągłe wypadły tam w pomiarach wolniej: na poziomie 5 pakowanie
+siatek trwało 1,4 raza dłużej, a rozpakowywanie tekstur 6,8 raza dłużej.
 
 Pakowanie bierze blokadę instancji, więc nie może działać, gdy gra albo inny
 Eidos pisze do tej instancji - kopia jest migawką, nie rozmazem. Zapisuje się

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=2e356d1263b56f984090eea9a73d03429d0529ff -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
 
 # Používání Eidosu
 
@@ -277,15 +277,17 @@ Textury a meshe jsou už komprimované formáty; pro větší slovník toho zbý
 nalezení jen velmi málo. `--level` (0, 1, 3, 5, 7, 9) to přebije, pokud u
 vlastního obsahu nesouhlasíte, a `--no-downloads` vynechá `downloads/`.
 
-Soubory jdou do **solidních bloků o nejvýš 16 MB**. Vytažení jednoho souboru ze
-70GB zálohy dekóduje nanejvýš blok, ve kterém leží, nikdy všechno před ním. Na
-výchozí úrovni 1 je balení herního obsahu 2 až 5krát rychlejší než s každým
-souborem komprimovaným zvlášť (rozbalení 2 až 4krát); od úrovně 5 výš bloky
-rychlost přidají málo nebo vůbec. Cena se platí při poškození: jediný vadný bajt
-může vzít s sebou všechny soubory ve svém bloku, až 16 MB sousedních souborů,
-kde by nesolidní archiv přišel o jediný soubor. Data pro obnovu popsaná níže
-tenhle případ kryjí. Úroveň 0 soubory jen ukládá bez komprese a zůstává
-nesolidní.
+Na výchozí úrovni 1 jdou soubory do **solidních bloků o nejvýš 16 MB**. Vytažení
+jednoho souboru ze 70GB zálohy dekóduje nanejvýš blok, ve kterém leží, nikdy
+všechno před ním, a balení herního obsahu je 2 až 5krát rychlejší než s každým
+souborem komprimovaným zvlášť (rozbalení 2 až 4krát). Cena se platí při
+poškození: jediný vadný bajt může vzít s sebou všechny soubory ve svém bloku, až
+16 MB sousedních souborů. Data pro obnovu popsaná níže tenhle případ kryjí.
+Všechny ostatní úrovně zůstávají nesolidní: každý soubor má vlastní proud a
+vadný bajt stojí jen ten jeden soubor. Úroveň 0 soubory jen ukládá bez komprese.
+Od úrovně 3 výš už LZMA2 pracuje po kusech o 16 MB a víc a solidní bloky tam v
+měření vyšly pomalejší: na úrovni 5 trvalo balení meshů 1,4krát déle a rozbalení
+textur 6,8krát déle.
 
 Balení bere zámek instance, takže nemůže běžet ve chvíli, kdy do té instance
 zapisuje hra nebo jiný Eidos - záloha je snímek, ne šmouha. Zapisuje se pod

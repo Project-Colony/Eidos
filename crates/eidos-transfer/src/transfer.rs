@@ -256,7 +256,7 @@ fn list_file_body(entries: &[String]) -> Result<String, TransferError> {
 
 /// The 7-Zip command line for one add pass at `level`.
 ///
-/// Compressed levels are solid in blocks of at most 16 MB (`-ms=16m`). Fully
+/// Level 1, the default, is solid in blocks of at most 16 MB (`-ms=16m`). Fully
 /// non-solid (`-ms=off`) compressed every file as its own stream, and on game
 /// content that was the slow part: measured with 7-Zip 26.04 at level 1, solid
 /// 16 MB blocks packed `.dds` files 2.4 times faster and unpacked them 2.2
@@ -267,8 +267,13 @@ fn list_file_body(entries: &[String]) -> Result<String, TransferError> {
 /// one file. The manifest goes in by its own pass, so it stays a block of its
 /// own and [`Transfer::peek`] still decodes nothing else.
 ///
-/// Level 0 stores, and keeps `-ms=off`: a solid block of stored files saves
-/// nothing and would only widen what one bad byte takes with it.
+/// Every other level keeps `-ms=off`. From level 3 up the LZMA2 chunk (four
+/// times the dictionary, 16 MB and more) is already as large as the block, so a
+/// block cannot spread over threads and gives up the parallel decode of
+/// separate files. At level 5 it packed `.nif` files 1.4 times slower and
+/// unpacked `.dds` files 6.8 times slower; only the `.nif` unpack gained, 1.4
+/// times. Level 0 stores, and a solid block of stored files saves nothing and
+/// would only widen what one bad byte takes.
 fn add_args(level: u8, spd: bool, archive: &Path, list: &Path) -> Vec<OsString> {
     let mut args: Vec<OsString> = vec!["a".into(), "-t7z".into()];
     // Level 0 means stored. An explicit method overrides what -mx0 picks, so
@@ -278,7 +283,7 @@ fn add_args(level: u8, spd: bool, archive: &Path, list: &Path) -> Vec<OsString> 
         args.push("-m0=LZMA2".into());
     }
     args.push(format!("-mx{level}").into());
-    args.push(if level > 0 { "-ms=16m" } else { "-ms=off" }.into());
+    args.push(if level == 1 { "-ms=16m" } else { "-ms=off" }.into());
     args.extend(
         [
             "-mmt=on",
@@ -1285,7 +1290,7 @@ mod tests {
     }
 
     #[test]
-    fn compressed_levels_pack_in_16_mb_solid_blocks_and_level_zero_stays_non_solid() {
+    fn only_level_one_packs_in_16_mb_solid_blocks() {
         let args = |level, spd| -> Vec<String> {
             add_args(
                 level,
@@ -1297,15 +1302,23 @@ mod tests {
             .map(|a| a.to_string_lossy().into_owned())
             .collect()
         };
-        for level in [1, 3, 5, 7, 9] {
+        for (level, solid) in [
+            (0, "-ms=off"),
+            (1, "-ms=16m"),
+            (3, "-ms=off"),
+            (5, "-ms=off"),
+            (7, "-ms=off"),
+            (9, "-ms=off"),
+        ] {
             let a = args(level, true);
-            assert!(a.contains(&"-ms=16m".to_string()), "{a:?}");
-            assert!(!a.contains(&"-ms=off".to_string()), "{a:?}");
-            assert!(a.contains(&"-m0=LZMA2".to_string()), "{a:?}");
+            let switches: Vec<&String> = a.iter().filter(|s| s.starts_with("-ms=")).collect();
+            assert_eq!(switches, [solid], "level {level}: {a:?}");
             assert!(a.contains(&format!("-mx{level}")), "{a:?}");
+            if level > 0 {
+                assert!(a.contains(&"-m0=LZMA2".to_string()), "{a:?}");
+            }
         }
         let stored = args(0, true);
-        assert!(stored.contains(&"-ms=off".to_string()), "{stored:?}");
         assert!(!stored.iter().any(|a| a.starts_with("-m0=")), "{stored:?}");
         assert!(stored.contains(&"-mx0".to_string()), "{stored:?}");
         // The archive and the list file come last, in that order, and -spd

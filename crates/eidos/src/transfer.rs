@@ -368,12 +368,12 @@ fn print_plan(plan: &eidos_transfer::Plan, dest: &Path, transfer: &Transfer, opt
             human_bytes(plan.downloads_bytes)
         );
     }
-    // Says what a damaged byte costs: one file when stored, up to a 16 MB
-    // block of neighbours when compressed.
-    let method = if level == 0 {
-        "Copy, non-solid"
-    } else {
-        "LZMA2, solid in 16 MB blocks"
+    // Says what a damaged byte costs: up to a 16 MB block of neighbours at
+    // level 1, one file at every other level.
+    let method = match level {
+        0 => "Copy, non-solid",
+        1 => "LZMA2, solid in 16 MB blocks",
+        _ => "LZMA2, non-solid",
     };
     println!("  -> {} ({method}, -mx{level})", dest.display());
     print_recovery(transfer, opt);

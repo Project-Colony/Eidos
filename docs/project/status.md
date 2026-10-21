@@ -202,13 +202,16 @@ not certify later releases in gameplay.
 - [x] Whole-instance transfer (`eidos pack` / `eidos unpack`, `eidos-transfer`) -
       an entire instance in ONE `.eidos` file: mods, load order, every profile,
       the Overwrite with its saves, and the archives it was all installed from.
-      A 7-Zip archive under a name of its own, in solid blocks of at most 16 MB
-      so one file can be pulled out of a 70 GB backup by decoding its block
-      only (one bad byte can cost that whole block), LZMA2 `-mx1` (43.0% of
+      A 7-Zip archive under a name of its own, LZMA2 `-mx1` (43.0% of
       1199 MB of measured real dds/nif content, where `-mx9` spends ten times
-      the time to reach ~38%). Each pack is read back with `7z t` before it gets
-      its name, and with par2cmdline installed it carries 5% of PAR2 recovery
-      data that `eidos unpack` uses to repair the archive before extracting.
+      the time to reach ~38%), in solid blocks of at most 16 MB at that level,
+      so one file can be pulled out of a 70 GB backup by decoding its block
+      only (one bad byte can cost that whole block). The other levels stay
+      non-solid: from level 3 up a solid block runs on one thread, and at
+      level 5 it unpacked dds 6.8 times slower. Each pack is read back with
+      `7z t` before it gets its name, and with par2cmdline installed it
+      carries 5% of PAR2 recovery data that `eidos unpack` uses to repair the
+      archive before extracting.
       The parts a `cp -r` gets wrong are the point: empty directories, which a
       file-only list drops (64 of them in a real 57 000-file instance); names
       7-Zip would read as patterns; symlinks it would FOLLOW into a foreign tree;

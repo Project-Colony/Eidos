@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=2e356d1263b56f984090eea9a73d03429d0529ff -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
 
 # Eidos kullanımı
 
@@ -290,16 +290,18 @@ bulabileceği pek bir şey kalmaz. Kendi içeriğinizde başka düşünüyorsan�
 `--level` (0, 1, 3, 5, 7, 9) bunu geçersiz kılar, `--no-downloads` ise
 `downloads/` dizinini dışarıda bırakır.
 
-Dosyalar **en fazla 16 MB'lık solid bloklara** yerleştirilir. 70 GB'lık bir
-yedekten tek bir dosyayı çıkarmak en fazla o dosyanın bulunduğu bloğu çözer,
-asla önündeki her şeyi değil. Varsayılan düzey 1'de oyun içeriğini paketlemek,
-her dosyanın ayrı ayrı sıkıştırıldığı duruma göre 2 ila 5 kat daha hızlıdır
-(açma 2 ila 4 kat); düzey 5 ve üstünde bloklar hıza ya çok az katkı sağlar ya da
-hiç sağlamaz. Bunun bedeli hasar durumunda ödenir: tek bir bozuk bayt,
-bloğundaki bütün dosyaları, yani 16 MB'a kadar komşu dosyayı yanında
-götürebilir; non-solid bir arşiv ise tek bir dosya kaybederdi. Aşağıda anlatılan
-kurtarma verisi bu durumu karşılar. Düzey 0 dosyaları sıkıştırmadan saklar ve
-non-solid kalır.
+Varsayılan düzey 1'de dosyalar **en fazla 16 MB'lık solid bloklara**
+yerleştirilir. 70 GB'lık bir yedekten tek bir dosyayı çıkarmak en fazla o
+dosyanın bulunduğu bloğu çözer, asla önündeki her şeyi değil; oyun içeriğini
+paketlemek de her dosyanın ayrı ayrı sıkıştırıldığı duruma göre 2 ila 5 kat daha
+hızlıdır (açma 2 ila 4 kat). Bunun bedeli hasar durumunda ödenir: tek bir bozuk
+bayt, bloğundaki bütün dosyaları, yani 16 MB'a kadar komşu dosyayı yanında
+götürebilir. Aşağıda anlatılan kurtarma verisi bu durumu karşılar. Diğer bütün
+düzeyler non-solid kalır: her dosya kendi akışıdır ve bozuk bir bayt yalnızca o
+dosyaya mal olur. Düzey 0 dosyaları sıkıştırmadan saklar. Düzey 3 ve üstünde
+LZMA2 zaten 16 MB ve daha büyük parçalarla çalışır; orada solid bloklar
+ölçümlerde daha yavaş çıktı: düzey 5'te mesh'leri paketlemek 1,4 kat, dokuları
+açmak 6,8 kat daha uzun sürdü.
 
 Paketleme örnek kilidini alır, yani oyun ya da başka bir Eidos o örneğe yazarken
 çalışamaz - yedek bir anlık görüntüdür, hareket halinde alınmış bulanık bir kare

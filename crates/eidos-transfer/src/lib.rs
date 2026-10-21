@@ -27,12 +27,15 @@
 //! deliberate choice rather than a disguise: 7-Zip is already a hard requirement
 //! for Eidos (no mod installs without it), so packing adds no dependency, and
 //! anybody who ever loses this tool can still open their own backup with the
-//! archiver they already have. It is solid in blocks of at most 16 MB
-//! (`-ms=16m`): pulling one file out of a 70 GB backup decodes at most the
-//! block it sits in, never everything before it. The price is on damage. In a
-//! non-solid archive one corrupt byte costs one file; here it can cost every
-//! file in that byte's block, up to 16 MB of neighbours. Level 0 stores and
-//! stays non-solid, since a block of stored files gains nothing.
+//! archiver they already have. At level 1, the default, it is solid in blocks
+//! of at most 16 MB (`-ms=16m`): pulling one file out of a 70 GB backup decodes
+//! at most the block it sits in, never everything before it. The price is on
+//! damage. In a non-solid archive one corrupt byte costs one file; here it can
+//! cost every file in that byte's block, up to 16 MB of neighbours. Every other
+//! level stays non-solid. Level 0 stores, and a block of stored files gains
+//! nothing. From level 3 up the LZMA2 chunk is already 16 MB or more, so a
+//! block runs on one thread: measured with 7-Zip 26.04 at level 5, it unpacked
+//! `.dds` files 6.8 times slower than non-solid.
 
 use std::fmt;
 use std::path::{Path, PathBuf};

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=2e356d1263b56f984090eea9a73d03429d0529ff -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
 
 # Usare Eidos
 
@@ -304,16 +304,19 @@ pochissimo da trovare. `--level` (0, 1, 3, 5, 7, 9) scavalca quella scelta se
 non sei d'accordo sui tuoi contenuti, e `--no-downloads` lascia fuori
 `downloads/`.
 
-I file finiscono in **blocchi solidi da 16 MB al massimo**. Tirare fuori un file
-da una copia da 70 GB decodifica al più il blocco in cui si trova, mai tutto
-quello che lo precede. Al livello 1, quello predefinito, l'impacchettamento dei
-contenuti di gioco va da 2 a 5 volte più veloce che con ogni file compresso a sé
-(lo spacchettamento da 2 a 4 volte); dal livello 5 in su i blocchi portano poca
-o nessuna velocità. Il prezzo si paga in caso di danni: un solo byte corrotto
-può portarsi via tutti i file del suo blocco, fino a 16 MB di file vicini, dove
-un archivio non solido perderebbe un solo file. I dati di recupero descritti più
-sotto coprono questo caso. Il livello 0 archivia i file senza comprimerli e
-resta non solido.
+Al livello 1, quello predefinito, i file finiscono in
+**blocchi solidi da 16 MB al massimo**. Tirare fuori un file da una copia da
+70 GB decodifica al più il blocco in cui si trova, mai tutto quello che lo
+precede, e l'impacchettamento dei contenuti di gioco va da 2 a 5 volte più
+veloce che con ogni file compresso a sé (lo spacchettamento da 2 a 4 volte). Il
+prezzo si paga in caso di danni: un solo byte corrotto può portarsi via tutti i
+file del suo blocco, fino a 16 MB di file vicini. I dati di recupero descritti
+più sotto coprono questo caso. Tutti gli altri livelli restano non solidi: ogni
+file è un flusso a sé, e un byte corrotto costa solo quel file. Il livello 0
+archivia i file senza comprimerli. Dal livello 3 in su LZMA2 lavora già a pezzi
+da 16 MB o più, e lì i blocchi solidi sono risultati più lenti nelle misure: al
+livello 5 l'impacchettamento delle mesh era 1,4 volte più lento e lo
+spacchettamento delle texture 6,8 volte più lento.
 
 L'impacchettamento prende il lock dell'istanza, quindi non può girare mentre il
 gioco o un altro Eidos sta scrivendo su quell'istanza - la copia è

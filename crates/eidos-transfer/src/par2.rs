@@ -2,8 +2,9 @@
 //!
 //! A `.eidos` file is written once and read once, often years apart, from a
 //! disk nobody has looked at since. 7-Zip can say that a byte went bad but not
-//! put it back, and with 16 MB solid blocks one bad byte costs up to 16 MB of
-//! mods. Five percent of PAR2 recovery blocks beside the archive puts it back.
+//! put it back, and with the 16 MB solid blocks of the default level one bad
+//! byte costs up to 16 MB of mods. Five percent of PAR2 recovery blocks beside
+//! the archive puts it back.
 //!
 //! par2cmdline is optional. Without it a pack writes no recovery data and an
 //! unpack extracts as it always did, with a warning when recovery files are

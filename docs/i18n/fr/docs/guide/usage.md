@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=2e356d1263b56f984090eea9a73d03429d0529ff -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
 
 # Utiliser Eidos
 
@@ -312,16 +312,19 @@ compressés ; il ne reste presque rien à trouver pour un dictionnaire plus gran
 `--level` (0, 1, 3, 5, 7, 9) passe outre si vous n'êtes pas d'accord sur votre
 propre contenu, et `--no-downloads` laisse `downloads/` de côté.
 
-Les fichiers sont rangés dans des **blocs solides de 16 Mo au plus**. Extraire
-un fichier d'une sauvegarde de 70 Go décode au plus le bloc où il se trouve,
-jamais tout ce qui le précède. Au niveau 1, celui par défaut, l'empaquetage de
-contenu de jeu va 2 à 5 fois plus vite qu'avec chaque fichier compressé à part
-(la restauration 2 à 4 fois) ; à partir du niveau 5, les blocs n'apportent que
-peu ou pas de vitesse. Le prix se paie en cas d'avarie : un seul octet corrompu
-peut emporter tous les fichiers de son bloc, jusqu'à 16 Mo de fichiers voisins,
-là où une archive non solide perdrait un seul fichier. Les données de
-récupération décrites plus bas couvrent ce cas. Le niveau 0 stocke les fichiers
-sans les compresser et reste non solide.
+Au niveau 1, celui par défaut, les fichiers sont rangés dans des
+**blocs solides de 16 Mo au plus**. Extraire un fichier d'une sauvegarde de
+70 Go décode au plus le bloc où il se trouve, jamais tout ce qui le précède, et
+l'empaquetage de contenu de jeu va 2 à 5 fois plus vite qu'avec chaque fichier
+compressé à part (la restauration 2 à 4 fois). Le prix se paie en cas d'avarie :
+un seul octet corrompu peut emporter tous les fichiers de son bloc, jusqu'à
+16 Mo de fichiers voisins. Les données de récupération décrites plus bas
+couvrent ce cas. Tous les autres niveaux restent non solides : chaque fichier
+forme son propre flux, et un octet corrompu ne coûte que ce fichier. Le niveau 0
+stocke les fichiers sans les compresser. À partir du niveau 3, LZMA2 travaille
+déjà par morceaux de 16 Mo ou plus, et les blocs solides s'y sont montrés plus
+lents à la mesure : au niveau 5, l'empaquetage des meshes était 1,4 fois plus
+lent et la restauration des textures 6,8 fois plus lente.
 
 L'empaquetage prend le verrou de l'instance, il ne peut donc pas tourner pendant
 que le jeu ou un autre Eidos écrit dans cette instance - la sauvegarde est un

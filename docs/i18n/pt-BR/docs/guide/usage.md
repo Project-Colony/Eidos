@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=2e356d1263b56f984090eea9a73d03429d0529ff -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
 
 # Usar o Eidos
 
@@ -291,16 +291,18 @@ dicionário maior encontrar. O `--level` (0, 1, 3, 5, 7, 9) sobrepõe isso se vo
 discordar para o seu próprio conteúdo, e o `--no-downloads` deixa `downloads/`
 de fora.
 
-Os arquivos vão em **blocos sólidos de no máximo 16 MB**. Tirar um arquivo de um
-backup de 70 GB decodifica no máximo o bloco em que ele está, nunca tudo o que
-vem antes. No nível 1, o padrão, empacotar conteúdo de jogo fica de 2 a 5 vezes
-mais rápido do que com cada arquivo comprimido separadamente (o
-desempacotamento, de 2 a 4 vezes); do nível 5 para cima os blocos trazem pouca
-ou nenhuma velocidade. O preço aparece quando há dano: um único byte corrompido
-pode levar junto todos os arquivos do bloco dele, até 16 MB de arquivos
-vizinhos, onde um arquivo não sólido perderia um só arquivo. Os dados de
-recuperação descritos abaixo cobrem isso. O nível 0 guarda os arquivos sem
-comprimir e continua não sólido.
+No nível 1, o padrão, os arquivos vão em **blocos sólidos de no máximo 16 MB**.
+Tirar um arquivo de um backup de 70 GB decodifica no máximo o bloco em que ele
+está, nunca tudo o que vem antes, e empacotar conteúdo de jogo fica de 2 a 5
+vezes mais rápido do que com cada arquivo comprimido separadamente (o
+desempacotamento, de 2 a 4 vezes). O preço aparece quando há dano: um único byte
+corrompido pode levar junto todos os arquivos do bloco dele, até 16 MB de
+arquivos vizinhos. Os dados de recuperação descritos abaixo cobrem isso. Os
+outros níveis continuam não sólidos: cada arquivo é um fluxo próprio, e um byte
+corrompido custa só esse arquivo. O nível 0 guarda os arquivos sem comprimir. Do
+nível 3 para cima, o LZMA2 já trabalha em pedaços de 16 MB ou mais, e ali os
+blocos sólidos se mostraram mais lentos na medição: no nível 5, empacotar meshes
+foi 1,4 vez mais lento e desempacotar texturas, 6,8 vezes mais lento.
 
 Empacotar toma o lock da instância, então não pode rodar enquanto o jogo ou
 outro Eidos está escrevendo naquela instância - o backup é um instantâneo, não

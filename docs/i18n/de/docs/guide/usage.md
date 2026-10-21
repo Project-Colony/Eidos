@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=2e356d1263b56f984090eea9a73d03429d0529ff -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
 
 # Eidos verwenden
 
@@ -311,16 +311,19 @@ wenig zu finden. `--level` (0, 1, 3, 5, 7, 9) überschreibt das, falls Sie bei
 Ihren eigenen Inhalten anderer Meinung sind, und `--no-downloads` lässt
 `downloads/` weg.
 
-Die Dateien landen in **soliden Blöcken von höchstens 16 MB**. Eine einzelne
-Datei aus einer 70 GB großen Sicherung zu ziehen dekodiert höchstens den Block,
-in dem sie liegt, nie alles davor. Auf der Standardstufe 1 läuft das Packen von
-Spielinhalten 2- bis 5-mal schneller als mit jeder Datei einzeln komprimiert
-(das Entpacken 2- bis 4-mal); ab Stufe 5 bringen die Blöcke wenig oder keinen
-Geschwindigkeitsgewinn. Der Preis zeigt sich bei Schäden: Ein einziges defektes
-Byte kann jede Datei in seinem Block mitnehmen, bis zu 16 MB benachbarter
-Dateien, wo ein nicht solides Archiv eine einzige Datei verlöre. Die weiter
-unten beschriebenen Wiederherstellungsdaten decken das ab. Stufe 0 speichert die
-Dateien unkomprimiert und bleibt nicht solide.
+Auf der Standardstufe 1 landen die Dateien in
+**soliden Blöcken von höchstens 16 MB**. Eine einzelne Datei aus einer 70 GB
+großen Sicherung zu ziehen dekodiert höchstens den Block, in dem sie liegt, nie
+alles davor, und das Packen von Spielinhalten läuft 2- bis 5-mal schneller als
+mit jeder Datei einzeln komprimiert (das Entpacken 2- bis 4-mal). Der Preis
+zeigt sich bei Schäden: Ein einziges defektes Byte kann jede Datei in seinem
+Block mitnehmen, bis zu 16 MB benachbarter Dateien. Die weiter unten
+beschriebenen Wiederherstellungsdaten decken das ab. Alle anderen Stufen bleiben
+nicht solide: Jede Datei ist ein eigener Datenstrom, und ein defektes Byte
+kostet nur diese eine Datei. Stufe 0 speichert die Dateien unkomprimiert. Ab
+Stufe 3 arbeitet LZMA2 ohnehin in Stücken von 16 MB oder mehr, und solide Blöcke
+waren dort in der Messung langsamer: Auf Stufe 5 dauerte das Packen von Meshes
+1,4-mal und das Entpacken von Texturen 6,8-mal so lange.
 
 Das Packen nimmt die Sperre der Instanz, es kann also nicht laufen, während das
 Spiel oder ein anderes Eidos in diese Instanz schreibt - die Sicherung ist eine

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=2e356d1263b56f984090eea9a73d03429d0529ff -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
 
 # Usar Eidos
 
@@ -299,16 +299,19 @@ poco por encontrar para un diccionario mayor. `--level` (0, 1, 3, 5, 7, 9) anula
 eso si no estás de acuerdo con tu propio contenido, y `--no-downloads` deja
 `downloads/` fuera.
 
-Los ficheros van en **bloques sólidos de 16 MB como máximo**. Sacar un fichero
-de una copia de 70 GB descodifica como mucho el bloque en el que está, nunca
-todo lo que va por delante. En el nivel 1, el predeterminado, empaquetar
-contenido de juegos va de 2 a 5 veces más rápido que con cada fichero comprimido
-por separado (desempaquetar, de 2 a 4 veces); a partir del nivel 5 los bloques
-apenas aportan velocidad o no aportan ninguna. El precio se paga cuando hay
-daños: un solo byte corrupto puede llevarse todos los ficheros de su bloque,
-hasta 16 MB de ficheros vecinos, donde un archivo no sólido perdería un solo
-fichero. Los datos de recuperación que se describen más abajo cubren ese caso.
-El nivel 0 guarda los ficheros sin comprimir y sigue siendo no sólido.
+En el nivel 1, el predeterminado, los ficheros van en
+**bloques sólidos de 16 MB como máximo**. Sacar un fichero de una copia de 70 GB
+descodifica como mucho el bloque en el que está, nunca todo lo que va por
+delante, y empaquetar contenido de juegos va de 2 a 5 veces más rápido que con
+cada fichero comprimido por separado (desempaquetar, de 2 a 4 veces). El precio
+se paga cuando hay daños: un solo byte corrupto puede llevarse todos los
+ficheros de su bloque, hasta 16 MB de ficheros vecinos. Los datos de
+recuperación que se describen más abajo cubren ese caso. Los demás niveles
+siguen siendo no sólidos: cada fichero es un flujo propio, y un byte corrupto
+cuesta solo ese fichero. El nivel 0 guarda los ficheros sin comprimir. A partir
+del nivel 3, LZMA2 ya trabaja en trozos de 16 MB o más, y ahí los bloques
+sólidos resultaron más lentos en las mediciones: en el nivel 5, empaquetar
+mallas fue 1,4 veces más lento y desempaquetar texturas, 6,8 veces más lento.
 
 Empaquetar toma el bloqueo de la instancia, así que no puede ejecutarse mientras
 el juego u otro Eidos escribe en esa instancia - la copia de seguridad es una
