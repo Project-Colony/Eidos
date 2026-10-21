@@ -122,7 +122,9 @@ EIDOS_GUI_TIMING=1     # GUI steps over 16 ms, written to the gui log
 
 It logs each message handler, the archive-worker scheduling and the health
 checks that run after it, and the building of each frame's widget tree, when one
-of them takes longer than 16 ms. Lines name the message variant only, never its
+of them takes longer than 16 ms. Startup gets two lines of its own: the whole of
+`App::new`, and the conflict walk inside it, which reads every layer before the
+first frame. Lines name the message variant only, never its
 contents. At most eight such lines are written per second. Once a second, a
 summary line gives the number of frames built, the slowest one, and how many slow
 steps were left out. Layout and drawing happen inside iced and

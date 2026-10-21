@@ -126,7 +126,13 @@ fn main() -> iced::Result {
         .into_iter()
         .fold(
             iced::application(
-                move || new(launch_command.clone()),
+                // Timed whole as well, so the log shows what the conflict walk
+                // leaves of the wait before the window appears.
+                move || {
+                    timing::time("App::new", timing::on().then_some("startup"), || {
+                        new(launch_command.clone())
+                    })
+                },
                 update,
                 timing::timed_view,
             ),

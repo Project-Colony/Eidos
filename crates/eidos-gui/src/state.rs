@@ -561,8 +561,15 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     }
     load_tools(&mut app);
     // Conflicts feed the mod-list emblems, so compute them as soon as the
-    // instance opens instead of waiting for the Conflicts tab.
-    app.conflicts = compute_conflicts(&app);
+    // instance opens instead of waiting for the Conflicts tab. Timed on its own
+    // under `EIDOS_GUI_TIMING`: it walks every layer before the first frame, and
+    // F5's `update for Refresh` line cannot stand in for it because that one
+    // also covers the meta-cache rescan.
+    app.conflicts = crate::timing::time(
+        "conflicts",
+        crate::timing::on().then_some("startup"),
+        || compute_conflicts(&app),
+    );
     schedule_archive_conflicts(&mut app);
     refresh_meta_cache(&mut app);
     app.collapsed = load_collapsed(&app);
