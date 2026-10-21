@@ -388,12 +388,20 @@ design was chosen over faster ones that needed it.
 
 Two rules keep it honest:
 
-- **All-or-nothing, no exemptions.** An unreadable directory, a name that is not
-  UTF-8, a tree too deep or too large, and the whole index is discarded and every
-  query walks the layers as before. The index answers "no layer provides this" as
-  confidently as it answers "layer 7 does", and that is only sound if the walk
-  that built it completed. Slow is a cost; a mod file that silently is not there
-  is a corruption.
+- **All-or-nothing, no exemptions.** An unreadable directory or a tree too deep
+  or too large, and the whole index is discarded and every query walks the layers
+  as before. The index answers "no layer provides this" as confidently as it
+  answers "layer 7 does", and that is only sound if the walk that built it
+  completed. Slow is a cost; a mod file that silently is not there is a
+  corruption. The mount prints the reason and the path once at startup
+  (`eidos-fuse: layer index off (...)`), because the fallback never fails and is
+  otherwise invisible.
+- **A name that is not UTF-8 is listed, not indexed.** 7-Zip extracts ZIP
+  entries that lack the UTF-8 flag as raw bytes, so these names do reach the
+  layers. The walk cannot resolve them either (queries are UTF-8, and
+  `eq_ignore_case` compares raw bytes when one side is not), so leaving them out
+  of the map changes no answer. Listings carry them under their lossy spelling,
+  deduplicated the same way the walk does.
 - **Ambiguity defers.** Two names in one directory differing only by case cannot
   be represented by a folded key, because `ci_lookup` prefers the exact spelling
   and so the winner depends on the query. Those keys hand the question back to

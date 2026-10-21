@@ -93,6 +93,11 @@ pub struct LayerStack {
     /// behaviour that existed before this field, kept reachable because it is
     /// the one that is never wrong.
     lower: Option<std::sync::Arc<LowerIndex>>,
+    /// Why `lower` is `None`, when it is: the first thing the build could not
+    /// vouch for, with its path. Kept because the fallback is silent and costs a
+    /// save load about three times its indexed time, and without the reason the
+    /// only symptom left is "the game got slower". See [`LayerStack::index_declined`].
+    index_off: Option<Box<str>>,
     /// A shared Overwrite, read-only for this session, below the private upper.
     /// Reuse its deletion rules without copying payloads or translating markers.
     readonly_overwrite: Option<Box<LayerStack>>,
@@ -188,9 +193,9 @@ impl LowerIndex {
     fn build(
         layers: &[PathBuf],
         unindexed_subtree: Option<Box<[u8]>>,
-    ) -> Option<std::sync::Arc<LowerIndex>> {
+    ) -> Result<std::sync::Arc<LowerIndex>, String> {
         if std::env::var("EIDOS_NO_INDEX").is_ok_and(|v| v != "0") {
-            return None;
+            return Err("EIDOS_NO_INDEX is set".into());
         }
         let mut build = IndexBuild::default();
         // Highest priority first, and `or_insert` keeps the first writer - the
@@ -209,7 +214,7 @@ impl LowerIndex {
             .into_iter()
             .map(|(k, v)| (k, v.into_boxed_slice()))
             .collect();
-        Some(std::sync::Arc::new(LowerIndex {
+        Ok(std::sync::Arc::new(LowerIndex {
             entries: build.entries,
             dirs,
             unindexed_subtree,
@@ -253,40 +258,74 @@ impl LowerIndex {
 
 /// One layer's subtree, added to `entries` under folded virtual paths.
 ///
-/// Returns `None` on ANY doubt - an unreadable directory, a name that is not
-/// UTF-8, a tree too deep or too large. The caller discards the whole index.
+/// Returns `Err` on ANY doubt - an unreadable directory, a tree too deep or too
+/// large - naming what and where. The caller discards the whole index.
 fn walk_layer(
     dir: &Path,
     rel: &mut Vec<u8>,
     depth: usize,
     build: &mut IndexBuild,
     unindexed_subtree: Option<&[u8]>,
-) -> Option<()> {
+) -> Result<(), String> {
     if unindexed_subtree == Some(rel.as_slice()) {
-        return Some(());
+        return Ok(());
     }
-    if depth > MAX_INDEX_DEPTH || build.entries.len() > MAX_INDEX_ENTRIES {
-        return None;
+    if depth > MAX_INDEX_DEPTH {
+        return Err(format!(
+            "{} is more than {MAX_INDEX_DEPTH} directories deep",
+            dir.display()
+        ));
+    }
+    if build.entries.len() > MAX_INDEX_ENTRIES {
+        return Err(format!(
+            "more than {MAX_INDEX_ENTRIES} entries, stopped at {}",
+            dir.display()
+        ));
     }
     // `rel` is this directory's own folded path until the loop appends a child
     // to it, so capture it once: it is the key every entry below files under.
     let parent: Box<[u8]> = rel.as_slice().into();
     // An unreadable directory is not "an empty directory": the walk cannot know
     // what is inside, so it cannot claim the paths under it do not exist.
-    let read = fs::read_dir(dir).ok()?;
+    let read = fs::read_dir(dir).map_err(|e| format!("cannot list {}: {e}", dir.display()))?;
     // Names that fold to the same key inside THIS directory: the exact-case
     // preference in `ci_lookup` makes the winner depend on the query, so the
     // key is handed back to the walk instead of guessed at.
     let mut seen_here: HashSet<Vec<u8>> = HashSet::new();
     for entry in read {
-        let entry = entry.ok()?;
+        let entry = entry.map_err(|e| format!("cannot read an entry of {}: {e}", dir.display()))?;
         let name = entry.file_name();
-        // Non-UTF-8 names compare by raw bytes in `eq_ignore_case` while UTF-8
-        // ones ASCII-fold, so one folded key cannot represent both without
-        // risking a collision between two genuinely different names. They do not
-        // occur in practice; when they do, the walk handles them and this does
-        // not have to.
-        let text = name.to_str()?;
+        // A name that is not UTF-8 is LISTED, never indexed. They do occur: 7-Zip
+        // extracts a ZIP entry without the UTF-8 flag as its raw bytes, so a
+        // Windows-made archive with an accented, Cyrillic or CJK file name lands
+        // here as CP850 or CP932, and the installer keeps it on purpose.
+        //
+        // Skipping it from `entries` is exact, not a shortcut. Every query is a
+        // `&str` (FUSE builds them with `to_string_lossy`), and `eq_ignore_case`
+        // compares raw bytes as soon as either side is not UTF-8, so the walk can
+        // never resolve such a name or anything below it either. The only trace
+        // the walk leaves is in a listing, under the lossy spelling, deduplicated
+        // by that spelling folded: `list_dir_typed` does exactly what this does.
+        // No folded key goes into `entries` or `seen_here`, so two different raw
+        // names cannot collide on one. Declining the whole index for one readme
+        // used to put every lookup of the session back on the layer walk.
+        let Some(text) = name.to_str() else {
+            let lossy = name.to_string_lossy().into_owned();
+            if !is_hidden_name(&lossy)
+                && build
+                    .claimed
+                    .entry(parent.clone())
+                    .or_default()
+                    .insert(lossy.to_ascii_lowercase().into_bytes())
+            {
+                build.dirs.entry(parent.clone()).or_default().push((
+                    lossy,
+                    entry.path(),
+                    entry.file_type().ok(),
+                ));
+            }
+            continue;
+        };
         let folded_name = text.to_ascii_lowercase().into_bytes();
 
         let mark = rel.len();
@@ -334,7 +373,7 @@ fn walk_layer(
         }
         rel.truncate(mark);
     }
-    Some(())
+    Ok(())
 }
 
 /// Fold a virtual path the way `eq_ignore_case` compares its components.
@@ -380,6 +419,7 @@ impl LayerStack {
         let mut stack = Self::new(Vec::new(), overwrite);
         stack.layers = layers;
         stack.lower = None;
+        stack.index_off = Some("not built for a short-lived stack".into());
         stack
     }
 
@@ -426,10 +466,16 @@ impl LayerStack {
         // Built here, synchronously, so "is the index ready" is never a question
         // any caller can ask. `None` is a complete answer: it means every query
         // walks the layers exactly as it did before this existed.
-        let lower = if readonly_overwrite.is_some() {
-            None
+        //
+        // A stack over a shared Overwrite answers through that stack's index, so
+        // it keeps no reason of its own: `index_declined` asks the shared one.
+        let (lower, index_off) = if readonly_overwrite.is_some() {
+            (None, None)
         } else {
-            LowerIndex::build(&layers, unindexed_subtree)
+            match LowerIndex::build(&layers, unindexed_subtree) {
+                Ok(index) => (Some(index), None),
+                Err(why) => (None, Some(why.into_boxed_str())),
+            }
         };
         Self {
             layers,
@@ -438,8 +484,22 @@ impl LayerStack {
             rename_lock: Default::default(),
             resolve: Default::default(),
             lower,
+            index_off,
             readonly_overwrite,
             ow: std::sync::Arc::new(std::sync::Mutex::new(None)),
+        }
+    }
+
+    /// Why this stack resolves by walking every layer instead of through the
+    /// lower index, or `None` when the index is active.
+    ///
+    /// For the mount to say once, at startup: the fallback is always correct and
+    /// so never errors, which is exactly what made it invisible. Not printed from
+    /// the build itself because the GUI builds throwaway stacks by the dozen.
+    pub fn index_declined(&self) -> Option<&str> {
+        match &self.readonly_overwrite {
+            Some(shared) => shared.index_declined(),
+            None => self.index_off.as_deref(),
         }
     }
 
@@ -580,6 +640,9 @@ impl LayerStack {
         }
         let mut slot = self.ow.lock().unwrap_or_else(|p| p.into_inner());
         if slot.is_none() {
+            self.resolve
+                .ow_rebuilds
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             *slot = Some(std::sync::Arc::new(OwIndex::build(&self.overwrite)));
         }
         slot.clone()
@@ -1542,6 +1605,11 @@ pub struct ResolveStats {
     pub idx_fallbacks: AtomicU64,
     /// No index at all (build declined or disabled): every query walks.
     pub idx_absent: AtomicU64,
+    /// Full walks of the Overwrite to rebuild its index, the first build
+    /// included. Every delete, rename and truncating rewrite schedules one, and
+    /// `OwIndex` assumes a tree small enough for that to be cheap; a tool that
+    /// rewrites thousands of outputs is where that assumption gets tested.
+    pub ow_rebuilds: AtomicU64,
 }
 
 /// What the overwrite holds, as three folded-key sets, so the per-resolve
@@ -1935,26 +2003,119 @@ mod tests {
 
     #[test]
     fn unindexed_subtree_does_not_discard_the_other_root_entries() {
-        use std::os::unix::ffi::OsStringExt;
+        use std::os::unix::fs::PermissionsExt;
         let t = TempTree::new();
         let (game, over) = (t.sub("game"), t.sub("over"));
         put(&game, "Data/base.esm", "base");
         put(&game, "loader.exe", "loader");
-        fs::write(
-            game.join("Data")
-                .join(std::ffi::OsString::from_vec(vec![0xff])),
-            "odd name",
-        )
-        .unwrap();
-        assert!(LayerStack::new(vec![game.clone()], over.clone())
-            .lower
-            .is_none());
+        // An unreadable directory: something under Data that still makes a
+        // full build give up, so the boundary is what keeps the root indexed.
+        let locked = game.join("Data/locked");
+        fs::create_dir(&locked).unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0)).unwrap();
+        let full = LayerStack::new(vec![game.clone()], over.clone());
+        assert!(full.lower.is_none());
+        let why = full.index_declined().unwrap();
+        assert!(
+            why.starts_with("cannot list ") && why.contains("locked"),
+            "{why}"
+        );
         let stack =
             LayerStack::new_with_unindexed_subtree(vec![game], over, Some(Path::new("Data")));
+        assert_eq!(stack.index_declined(), None);
         assert_eq!(stack.lower.as_ref().unwrap().entries.len(), 2);
         assert_eq!(read(&stack.resolve_read("DATA/BASE.ESM").unwrap()), "base");
         assert_eq!(read(&stack.resolve_read("LOADER.EXE").unwrap()), "loader");
         assert_eq!(stack.list_dir("Data").len(), 2);
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[test]
+    fn non_utf8_names_are_listed_but_do_not_disable_the_index() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+        let t = TempTree::new();
+        let (high, low, over) = (t.sub("high"), t.sub("low"), t.sub("over"));
+        put(&high, "Data/a.esp", "a");
+        put(&low, "Data/b.esp", "b");
+        let raw = |dir: &Path, name: &[u8]| dir.join(OsString::from_vec(name.to_vec()));
+        // CP850 `Lisez-moi Français.txt` and a sibling differing only in the
+        // undecodable byte: both read `Lisez-moi Fran\u{FFFD}ais.txt` lossily, so
+        // the listing keeps the higher layer's and drops the other.
+        fs::write(
+            raw(&high.join("Data"), b"Lisez-moi Fran\x87ais.txt"),
+            "high",
+        )
+        .unwrap();
+        fs::write(raw(&low.join("Data"), b"Lisez-moi Fran\x88ais.txt"), "low").unwrap();
+        // A CP1251 `Тест` directory with a child: nothing under it is reachable
+        // by a UTF-8 query, through the walk or the index.
+        let cyrillic: &[u8] = b"\xd2\xe5\xf1\xf2";
+        let odd_dir = raw(&low.join("Data"), cyrillic);
+        fs::create_dir(&odd_dir).unwrap();
+        fs::write(odd_dir.join("inside.esp"), "inside").unwrap();
+        // Hidden under its lossy spelling, exactly as the walk filters it.
+        fs::write(raw(&low.join("Data"), b"x\xff.esp.mohidden"), "").unwrap();
+
+        let layers = vec![high.clone(), low.clone()];
+        let stack = LayerStack::new(layers.clone(), over.clone());
+        assert!(stack.lower.is_some(), "{:?}", stack.index_declined());
+        assert_eq!(stack.index_declined(), None);
+        let mut reference = LayerStack::new(layers, over);
+        reference.lower = None;
+
+        let lossy_txt = "Lisez-moi Fran\u{FFFD}ais.txt";
+        let lossy_dir = String::from_utf8_lossy(cyrillic).into_owned();
+        for path in [
+            "Data/a.esp",
+            "DATA/B.ESP",
+            "data/missing.esp",
+            &format!("Data/{lossy_txt}"),
+            &format!("Data/{lossy_dir}"),
+            &format!("Data/{lossy_dir}/inside.esp"),
+        ] {
+            assert_eq!(
+                stack.resolve_read(path),
+                reference.resolve_read(path),
+                "{path}"
+            );
+        }
+        for dir in ["", "Data", &format!("Data/{lossy_dir}")] {
+            assert_eq!(
+                stack.list_dir_typed(dir),
+                reference.list_dir_typed(dir),
+                "{dir}"
+            );
+        }
+        let listed = stack.list_dir("Data");
+        assert_eq!(listed.len(), 4, "{listed:?}");
+        let txt = listed.iter().find(|(n, _)| n == lossy_txt).unwrap();
+        assert_eq!(read(&txt.1), "high", "first claimer wins the lossy name");
+        assert!(listed.iter().any(|(n, _)| *n == lossy_dir));
+    }
+
+    #[test]
+    fn readonly_overwrite_reports_the_shared_index_state() {
+        use std::os::unix::fs::PermissionsExt;
+        let t = TempTree::new();
+        let (game, shared, private) = (t.sub("game"), t.sub("shared"), t.sub("private"));
+        put(&game, "Data/base.esm", "base");
+        let clean = LayerStack::new_with_readonly_overwrite(
+            vec![game.clone()],
+            private.clone(),
+            None,
+            Some(shared.clone()),
+        );
+        // `lower` is None by design here; that is not a declined index.
+        assert!(clean.lower.is_none());
+        assert_eq!(clean.index_declined(), None);
+        let locked = game.join("Data/locked");
+        fs::create_dir(&locked).unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0)).unwrap();
+        let declined =
+            LayerStack::new_with_readonly_overwrite(vec![game], private, None, Some(shared));
+        assert!(declined.index_declined().is_some());
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
     }
 
     #[test]
@@ -3358,11 +3519,11 @@ mod tests {
         fs::create_dir_all(&over).unwrap();
 
         let indexed = LayerStack::new(vec![a.clone(), b.clone()], over.clone());
-        // SAFETY: single-threaded here, and the variable is read once per
-        // LayerStack::new. Restored immediately below.
-        unsafe { std::env::set_var("EIDOS_NO_INDEX", "1") };
-        let walked = LayerStack::new(vec![a.clone(), b.clone()], over);
-        unsafe { std::env::remove_var("EIDOS_NO_INDEX") };
+        // The state `EIDOS_NO_INDEX` leaves, set directly. Setting the variable
+        // here raced every other test building a stack on another thread, and
+        // their indexes came out declined.
+        let mut walked = LayerStack::new(vec![a.clone(), b.clone()], over);
+        walked.lower = None;
 
         for q in [
             "shared.esp",
@@ -3453,10 +3614,9 @@ mod tests {
         fs::write(layer.join("Meshes/actors/real.nif"), b"real").unwrap();
         let over = dir.sub("over");
         fs::create_dir_all(&over).unwrap();
-        // SAFETY: single-threaded test, read once per LayerStack::new.
-        unsafe { std::env::set_var("EIDOS_NO_INDEX", "1") };
-        let walked = LayerStack::new(vec![layer], over);
-        unsafe { std::env::remove_var("EIDOS_NO_INDEX") };
+        // No index, set directly: see `no_index_means_the_old_behaviour_and_the_same_answers`.
+        let mut walked = LayerStack::new(vec![layer], over);
+        walked.lower = None;
 
         for p in [
             "meshes/actors/real.nif",

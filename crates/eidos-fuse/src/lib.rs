@@ -604,4 +604,53 @@ impl Eidos {
             self.invalidate_dir_cache(&v);
         }
     }
+
+    /// How big the daemon's own tables grew, next to its resident memory, for
+    /// the unmount report. Two readings of the same code disagreed on whether
+    /// `readdir` pins inodes the kernel never looks up; `inodes - counted` is
+    /// that population, measured instead of argued. Lengths only, one lock at
+    /// a time: nothing contends at unmount.
+    fn table_sizes(&self) -> String {
+        let (inodes, counted) = {
+            let t = self.inodes.lock_recover();
+            (t.by_ino.len(), t.counts.len())
+        };
+        let (alias_inodes, spellings) = {
+            let a = self.aliases.lock_recover();
+            (a.len(), a.values().map(Vec::len).sum::<usize>())
+        };
+        let (negative_dirs, negative_names) = {
+            let n = self.negatives.lock_recover();
+            (n.len(), n.values().map(Vec::len).sum::<usize>())
+        };
+        let (listings, children) = {
+            let c = self.dir_cache.lock_recover();
+            let children = c
+                .entries
+                .values()
+                .filter_map(|e| e.children.as_ref())
+                .map(|l| l.len())
+                .sum::<usize>();
+            (c.entries.len(), children)
+        };
+        let enumerations = self.enumerations.lock_recover().len();
+        // Read here rather than from outside, so the sizes and the memory are
+        // one snapshot of one process.
+        let rss = std::fs::read_to_string("/proc/self/status")
+            .ok()
+            .and_then(|s| {
+                s.lines()
+                    .find_map(|l| l.strip_prefix("VmRSS:"))
+                    .map(|v| v.trim().to_string())
+            })
+            .unwrap_or_else(|| "unknown".into());
+        format!(
+            "eidos-fuse tables: {inodes} inodes ({counted} kernel-counted, {} listed only), \
+             {spellings} alias spelling(s) on {alias_inodes} inode(s), {negative_names} \
+             negative name(s) under {negative_dirs} dir(s), {listings} cached listing(s) \
+             holding {children} entries, {enumerations} enumeration(s) in flight; VmRSS {rss}",
+            // The root is in the table but never counted: it is never looked up.
+            inodes.saturating_sub(counted + 1),
+        )
+    }
 }

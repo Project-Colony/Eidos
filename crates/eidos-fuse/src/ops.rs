@@ -57,6 +57,7 @@ impl Filesystem for Eidos {
             let (stats, inodes) = (&self.stats, &self.inodes);
             let path_of = |ino: u64| inodes.lock_recover().path(ino);
             eprintln!("{}", stats.report(self.stack.resolve_stats(), &path_of));
+            eprintln!("{}", self.table_sizes());
         }
     }
 
@@ -115,6 +116,14 @@ impl Filesystem for Eidos {
         // soft limit to the hard limit; best-effort, since a failure here only
         // returns us to the status quo.
         raise_fd_limit();
+
+        // Said once per mount, here and not where the index is built: the GUI
+        // builds throwaway stacks by the dozen, and only a mount pays for the
+        // fallback - about three times the indexed save-load time, with nothing
+        // else in the log to show it.
+        if let Some(why) = self.stack.index_declined() {
+            eprintln!("eidos-fuse: layer index off ({why}); every lookup walks all layers");
+        }
         Ok(())
     }
 
@@ -274,6 +283,7 @@ impl Filesystem for Eidos {
         _flush: bool,
         reply: ReplyEmpty,
     ) {
+        let _t = self.stats.release.start();
         // Drops the cached fd and any passthrough registration (no-op for fh 0).
         self.open_files.lock_recover().remove(&fh.0);
         match self.flush_projected_times() {
@@ -357,6 +367,7 @@ impl Filesystem for Eidos {
     }
 
     fn readlink(&self, _req: &Request, ino: INodeNo, reply: ReplyData) {
+        let _t = self.stats.readlink.start();
         let vpath = match self.inodes.lock_recover().path(ino.0) {
             Some(p) => p,
             None => {
@@ -614,6 +625,7 @@ impl Filesystem for Eidos {
         _flags: i32,
         reply: ReplyCreate,
     ) {
+        let _t = self.stats.create.start();
         let Some(parent_vpath) = self.inodes.lock_recover().path(parent.0) else {
             reply.error(Errno::ENOENT);
             return;
@@ -746,6 +758,7 @@ impl Filesystem for Eidos {
         _umask: u32,
         reply: ReplyEntry,
     ) {
+        let _t = self.stats.mkdir.start();
         let Some(parent_vpath) = self.inodes.lock_recover().path(parent.0) else {
             reply.error(Errno::ENOENT);
             return;
@@ -771,6 +784,7 @@ impl Filesystem for Eidos {
         target: &Path,
         reply: ReplyEntry,
     ) {
+        let _t = self.stats.symlink.start();
         let Some(parent_vpath) = self.inodes.lock_recover().path(parent.0) else {
             reply.error(Errno::ENOENT);
             return;
@@ -810,6 +824,7 @@ impl Filesystem for Eidos {
         _flags: Option<BsdFileFlags>,
         reply: ReplyAttr,
     ) {
+        let _t = self.stats.setattr.start();
         let vpath = match self.inodes.lock_recover().path(ino.0) {
             Some(p) => p,
             None => {
@@ -890,6 +905,7 @@ impl Filesystem for Eidos {
         _lock: LockOwner,
         reply: ReplyEmpty,
     ) {
+        let _t = self.stats.flush.start();
         match self.flush_projected_times() {
             Ok(()) => reply.ok(),
             Err(e) => reply.error(e.into()),
@@ -904,6 +920,7 @@ impl Filesystem for Eidos {
         _datasync: bool,
         reply: ReplyEmpty,
     ) {
+        let _t = self.stats.fsync.start();
         // Make saves durable: flush the backing fd if this handle has one.
         let cached = self
             .open_files
@@ -918,6 +935,7 @@ impl Filesystem for Eidos {
     }
 
     fn unlink(&self, _req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEmpty) {
+        let _t = self.stats.unlink.start();
         let Some(vpath) = self.child(parent, name) else {
             reply.error(Errno::ENOENT);
             return;
@@ -942,6 +960,7 @@ impl Filesystem for Eidos {
     }
 
     fn rmdir(&self, _req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEmpty) {
+        let _t = self.stats.rmdir.start();
         let Some(vpath) = self.child(parent, name) else {
             reply.error(Errno::ENOENT);
             return;
@@ -977,6 +996,7 @@ impl Filesystem for Eidos {
         flags: RenameFlags,
         reply: ReplyEmpty,
     ) {
+        let _t = self.stats.rename.start();
         let (Some(from), Some(to)) = (self.child(parent, name), self.child(newparent, newname))
         else {
             reply.error(Errno::ENOENT);
@@ -1046,6 +1066,10 @@ impl Filesystem for Eidos {
     }
 
     fn getxattr(&self, _req: &Request, ino: INodeNo, name: &OsStr, size: u32, reply: ReplyXattr) {
+        let _t = self.stats.getxattr.start();
+        if name.as_bytes().starts_with(b"security.") {
+            Stats::bump(&self.stats.getxattr_security);
+        }
         let Some(vpath) = self.inodes.lock_recover().path(ino.0) else {
             reply.error(Errno::ENOENT);
             return;
@@ -1054,7 +1078,11 @@ impl Filesystem for Eidos {
             reply.error(Errno::ENOENT);
             return;
         };
-        match xattr_get(&real, name) {
+        let got = xattr_get(&real, name);
+        if got.is_ok() {
+            Stats::bump(&self.stats.getxattr_found);
+        }
+        match got {
             // Two-phase: size 0 = probe the length; otherwise return the bytes.
             Ok(val) if size == 0 => reply.size(val.len() as u32),
             Ok(val) if val.len() as u32 <= size => reply.data(&val),
@@ -1073,6 +1101,7 @@ impl Filesystem for Eidos {
         _position: u32,
         reply: ReplyEmpty,
     ) {
+        let _t = self.stats.setxattr.start();
         // Wine stores Windows attributes (hidden/system/readonly) in
         // user.DOSATTRIB; proxy the write to the copied-up backing file.
         let Some(vpath) = self.inodes.lock_recover().path(ino.0) else {
@@ -1098,6 +1127,7 @@ impl Filesystem for Eidos {
     }
 
     fn listxattr(&self, _req: &Request, ino: INodeNo, size: u32, reply: ReplyXattr) {
+        let _t = self.stats.listxattr.start();
         let Some(vpath) = self.inodes.lock_recover().path(ino.0) else {
             reply.error(Errno::ENOENT);
             return;
@@ -1115,6 +1145,7 @@ impl Filesystem for Eidos {
     }
 
     fn removexattr(&self, _req: &Request, ino: INodeNo, name: &OsStr, reply: ReplyEmpty) {
+        let _t = self.stats.removexattr.start();
         let Some(vpath) = self.inodes.lock_recover().path(ino.0) else {
             reply.error(Errno::ENOENT);
             return;
@@ -1139,6 +1170,7 @@ impl Filesystem for Eidos {
     // casts are no-ops here but keep the conversion correct on 32-bit targets.
     #[allow(clippy::unnecessary_cast)]
     fn statfs(&self, _req: &Request, _ino: INodeNo, reply: ReplyStatfs) {
+        let _t = self.stats.statfs.start();
         match statvfs_of(self.stack.overwrite_root()) {
             Ok(s) => reply.statfs(
                 s.f_blocks as u64,

@@ -64,6 +64,35 @@ pub(crate) struct Stats {
     pub(crate) ns_readdir: AtomicU64,
     pub(crate) ns_write: AtomicU64,
     pub(crate) write: AtomicU64,
+    /// Every other handler, counted and timed the same way. They were left out
+    /// while the question was "why is a load slow", and that left real traffic
+    /// invisible: Wine reads `user.DOSATTRIB` once per enumerated entry and per
+    /// attribute query, FUSE never caches xattrs, and the kernel asks
+    /// `security.capability` before every write. One stored session spent 153 ms
+    /// of path resolution in handlers nothing timed.
+    pub(crate) getxattr: Op,
+    /// `getxattr` for a `security.*` name: the kernel's own probe before a write
+    /// or truncate, not Wine's attribute read. Split out because the two would
+    /// be fixed in different places.
+    pub(crate) getxattr_security: AtomicU64,
+    /// `getxattr` that found a value. The rest answered ENODATA or an error,
+    /// which on mod and game files is nearly all of them.
+    pub(crate) getxattr_found: AtomicU64,
+    pub(crate) setxattr: Op,
+    pub(crate) listxattr: Op,
+    pub(crate) removexattr: Op,
+    pub(crate) create: Op,
+    pub(crate) setattr: Op,
+    pub(crate) flush: Op,
+    pub(crate) release: Op,
+    pub(crate) fsync: Op,
+    pub(crate) mkdir: Op,
+    pub(crate) symlink: Op,
+    pub(crate) unlink: Op,
+    pub(crate) rmdir: Op,
+    pub(crate) rename: Op,
+    pub(crate) readlink: Op,
+    pub(crate) statfs: Op,
     /// How many times each directory was opened, by path.
     ///
     /// The totals say a session opened directories half a million times. They
@@ -96,6 +125,21 @@ pub(crate) struct Stats {
     /// streams, and that would have burned a chunk of the timeline on an idle
     /// mount.
     pub(crate) read_origin: std::sync::OnceLock<std::time::Instant>,
+}
+
+/// One handler's call count and summed nanoseconds.
+#[derive(Default)]
+pub(crate) struct Op {
+    pub(crate) n: AtomicU64,
+    pub(crate) ns: AtomicU64,
+}
+
+impl Op {
+    /// Count the call, and time it until the guard drops while stats are on.
+    pub(crate) fn start(&self) -> Option<Timed<'_>> {
+        Stats::bump(&self.n);
+        Timed::start(&self.ns)
+    }
 }
 
 /// Upper bounds of the read-size buckets, in bytes; the last is the catch-all.
@@ -283,6 +327,28 @@ impl Drop for Timed<'_> {
 }
 
 impl Stats {
+    /// The handlers outside the original six, by name, for the report.
+    fn more_ops(&self) -> [(&'static str, &Op); 16] {
+        [
+            ("getxattr", &self.getxattr),
+            ("setxattr", &self.setxattr),
+            ("listxattr", &self.listxattr),
+            ("removexattr", &self.removexattr),
+            ("create", &self.create),
+            ("setattr", &self.setattr),
+            ("flush", &self.flush),
+            ("release", &self.release),
+            ("fsync", &self.fsync),
+            ("mkdir", &self.mkdir),
+            ("symlink", &self.symlink),
+            ("unlink", &self.unlink),
+            ("rmdir", &self.rmdir),
+            ("rename", &self.rename),
+            ("readlink", &self.readlink),
+            ("statfs", &self.statfs),
+        ]
+    }
+
     pub(crate) fn bump(c: &AtomicU64) {
         c.fetch_add(1, Ordering::Relaxed);
     }
@@ -640,13 +706,40 @@ impl Stats {
             g(&self.open),
             g(&self.read),
             g(&self.write),
-        ) + &self.timings(r)
+        ) + &self.more_counts()
+            + &self.timings(r)
             + &self.read_shape(path_of)
             + &self.dir_shape()
     }
 }
 
 impl Stats {
+    /// Counts for the handlers outside the original six, the ones that ran.
+    fn more_counts(&self) -> String {
+        let g = |c: &AtomicU64| c.load(Ordering::Relaxed);
+        let ran: Vec<String> = self
+            .more_ops()
+            .iter()
+            .filter(|(_, op)| g(&op.n) > 0)
+            .map(|(name, op)| {
+                if *name == "getxattr" {
+                    format!(
+                        "getxattr {} ({} security.*, {} with a value)",
+                        g(&op.n),
+                        g(&self.getxattr_security),
+                        g(&self.getxattr_found),
+                    )
+                } else {
+                    format!("{name} {}", g(&op.n))
+                }
+            })
+            .collect();
+        if ran.is_empty() {
+            return String::new();
+        }
+        format!("\n  other ops: {}", ran.join(", "))
+    }
+
     /// Where the time actually went, in milliseconds.
     ///
     /// The point of the whole counter set: an operation count says how often the
@@ -656,7 +749,8 @@ impl Stats {
     pub(crate) fn timings(&self, r: &eidos_core::ResolveStats) -> String {
         let g = |c: &AtomicU64| c.load(Ordering::Relaxed);
         let ms = |ns: u64| ns as f64 / 1_000_000.0;
-        let parts = [
+        // The six that always print, then any other handler that took time.
+        let mut parts = vec![
             ("lookup", g(&self.ns_lookup)),
             ("getattr", g(&self.ns_getattr)),
             ("open", g(&self.ns_open)),
@@ -664,6 +758,12 @@ impl Stats {
             ("readdir", g(&self.ns_readdir)),
             ("write", g(&self.ns_write)),
         ];
+        parts.extend(
+            self.more_ops()
+                .iter()
+                .map(|(name, op)| (*name, g(&op.ns)))
+                .filter(|(_, ns)| *ns > 0),
+        );
         let total: u64 = parts.iter().map(|(_, n)| n).sum();
         if total == 0 {
             return String::new();
@@ -674,10 +774,12 @@ impl Stats {
             .collect();
         // The counts lead, because they are the only exact figures here. Both
         // millisecond totals are sums over concurrent FUSE worker threads, so
-        // neither is wall-clock, and resolution is NOT a subset of the handlers
-        // above - it also runs while listings are built. An earlier version
-        // divided one by the other and printed "960%", which is what a ratio
-        // between two things that do not nest looks like.
+        // neither is wall-clock. Resolution milliseconds are measured inside
+        // `resolve_read` only, and every handler that calls it is timed, so they
+        // are a SUBSET of the handler total. The probe and scan counts are not:
+        // they also count listings and copy-ups, which never go through
+        // `resolve_read`. An earlier version divided resolution time by a
+        // handler time that did not contain it and printed "960%".
         // The thread count is printed, not implied. It is the one thing an A/B run
         // varies that the report otherwise cannot show (`EIDOS_FUSE_THREADS` is an
         // environment variable, so it leaves no trace in the recorded command
@@ -685,13 +787,25 @@ impl Stats {
         // afterwards - which is exactly how one comparison was already lost.
         format!(
             "\n  time in handlers: {:.0} ms, summed across {} thread(s) ({})\
-             \n  path resolution: {} probes, {} directory scans, {:.0} ms (also summed)",
+             \n  path resolution: {} probes, {} directory scans, {:.0} ms (also summed)\
+             \n  layer index: {} hit, {} absent, {} walked (ambiguous), {} unindexed; \
+             overwrite index built {} time(s)",
             ms(total),
             crate::config::fuse_threads(),
             each.join(", "),
-            r.probes.load(Ordering::Relaxed),
-            r.scans.load(Ordering::Relaxed),
-            ms(r.ns.load(Ordering::Relaxed)),
+            g(&r.probes),
+            g(&r.scans),
+            ms(g(&r.ns)),
+            // `unindexed` is every resolve that found no index at all. Non-zero
+            // on a mount that should have one means the index was declined, and
+            // the line printed at mount time says why. A stack over a shared
+            // Overwrite (the root union of a tool run) asks that stack's index,
+            // so its own index counters stay at zero.
+            g(&r.idx_hits),
+            g(&r.idx_negatives),
+            g(&r.idx_fallbacks),
+            g(&r.idx_absent),
+            g(&r.ow_rebuilds),
         )
     }
 }

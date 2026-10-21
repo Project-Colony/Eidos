@@ -6,11 +6,11 @@
 //!     ~/.local/share/Colony/Eidos/instances/skyrimse/overwrite
 //! ```
 //!
-//! The index is all-or-nothing and built in silence: `LayerStack::new` either
-//! gets a complete map of the read-only layers or `None`, and every caller then
-//! walks the layers exactly as it did before the index existed. Nothing in a
-//! session log distinguishes the two, so a stack that quietly falls back looks
-//! identical to one that is working - while paying the old cost.
+//! The index is all-or-nothing: `LayerStack::new` either gets a complete map of
+//! the read-only layers or `None`, and every caller then walks the layers exactly
+//! as it did before the index existed. A mount says so once in the session log
+//! (`eidos-fuse: layer index off (...)`); this checks it without launching
+//! anything, and without trusting the code that would print that line.
 //!
 //! This asks the question the only way that cannot be fooled: resolve real paths
 //! with the index, then again with `EIDOS_NO_INDEX=1`, and compare the DIRECTORY
@@ -84,9 +84,10 @@ fn main() {
         );
     } else {
         println!("VERDICT: the index is NOT in use - every resolve is walking the layers.");
-        println!("  `LayerStack::new` discarded it. It is abandoned on ANY doubt:");
-        println!("  an unreadable directory, a non-UTF-8 name, a tree deeper than 64,");
-        println!("  or more than 4,000,000 entries.");
+        println!(
+            "  `LayerStack::new` discarded it: {}",
+            indexed.index_declined().unwrap_or("no reason recorded")
+        );
     }
 }
 

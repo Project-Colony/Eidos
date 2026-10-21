@@ -211,6 +211,41 @@ fn timings_report_milliseconds_and_a_total() {
     assert!(out.contains("write 0"), "{out}");
 }
 
+#[test]
+fn the_other_handlers_and_the_index_verdicts_are_reported() {
+    // getxattr, setattr and the rest were neither counted nor timed, so their
+    // traffic showed up only as resolution time no handler accounted for.
+    let s = Stats::default();
+    s.ns_lookup.fetch_add(10_000_000, Ordering::Relaxed);
+    for _ in 0..3 {
+        drop(s.getxattr.start());
+    }
+    s.getxattr.ns.fetch_add(50_000_000, Ordering::Relaxed); // 50 ms
+    Stats::bump(&s.getxattr_security);
+    Stats::bump(&s.getxattr_found);
+    drop(s.setattr.start());
+    let r = eidos_core::ResolveStats::default();
+    r.idx_hits.fetch_add(7, Ordering::Relaxed);
+    r.idx_absent.fetch_add(2, Ordering::Relaxed);
+    r.ow_rebuilds.fetch_add(4, Ordering::Relaxed);
+    let out = s.report(&r, &|_| None);
+    assert!(
+        out.contains("getxattr 3 (1 security.*, 1 with a value)"),
+        "{out}"
+    );
+    assert!(out.contains("setattr 1"), "{out}");
+    // A handler that never ran stays out of the extra list.
+    assert!(!out.contains("statfs"), "{out}");
+    // Its time joins the total, which the parts must still add up to.
+    assert!(out.contains("time in handlers: 60 ms"), "{out}");
+    assert!(out.contains("getxattr 50"), "{out}");
+    assert!(
+        out.contains("7 hit, 0 absent, 0 walked (ambiguous), 2 unindexed"),
+        "{out}"
+    );
+    assert!(out.contains("overwrite index built 4 time(s)"), "{out}");
+}
+
 // ---- The read-shape survey -------------------------------------------------
 //
 // The survey exists to answer four questions the totals cannot: what sizes the
