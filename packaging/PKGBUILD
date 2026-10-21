@@ -32,6 +32,7 @@ optdepends=(
 	'winetricks: tier-2 tool prerequisites (.NET / vcrun for Synthesis, FNIS, Pandora)'
 	'xdg-desktop-portal: native file dialogs in the GUI'
 	'vulkan-icd-loader: GPU rendering for the GUI'
+	'par2cmdline: PAR2 recovery data for eidos pack and eidos unpack'
 )
 provides=("$_pkgname")
 conflicts=("$_pkgname")

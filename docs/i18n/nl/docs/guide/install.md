@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=40f02a87874c44292179b6dff322d0f623c307ff -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=bc05db1de00bb7c80224f065c3f730f3adc542dc -->
 
 # Eidos installeren
 
@@ -11,6 +11,7 @@ Vier manieren om binnen te komen. Colony installeert één bestand, `eidos-linux
 | **Linux met FUSE** | `fusermount3` in je PATH. Elke huidige distributie levert het mee. |
 | **Een Proton-spel dat één keer gestart is** | Steam maakt het Wine-prefix van het spel pas bij de eerste start aan, en Eidos werkt daarbinnen. |
 | **`7z`** | Voor het installeren van modarchieven. `p7zip` op de meeste distributies. |
+| **`par2`** (optioneel) | PAR2-herstelgegevens voor back-ups met `eidos pack`. `par2cmdline` op Arch en Fedora, `par2` op Debian en Ubuntu. |
 
 Geen root, geen daemon, geen aanpassing van `/etc/fuse.conf` en niets om aan je
 groepen toe te voegen. Eidos koppelt binnen een privénaamruimte die van het

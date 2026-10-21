@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=7d8aa469a39312780cd84b6f2e42182d41274116 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2e356d1263b56f984090eea9a73d03429d0529ff -->
 
 # Używanie Eidos
 
@@ -295,10 +295,11 @@ zawartości, a `--no-downloads` zostawia `downloads/` poza kopią.
 
 Pliki trafiają do **bloków ciągłych (solid) po najwyżej 16 MB**. Wyciągnięcie
 jednego pliku z kopii ważącej 70 GB dekoduje najwyżej blok, w którym on leży,
-nigdy wszystko, co stoi przed nim, a na zawartości gier pakowanie idzie 2 do 5
-razy szybciej niż z każdym plikiem kompresowanym osobno (rozpakowywanie 2 do 4
-razy). Cenę płaci się przy uszkodzeniu: jeden zepsuty bajt może zabrać ze sobą
-każdy plik ze swojego bloku, do 16 MB sąsiednich plików, tam gdzie archiwum
+nigdy wszystko, co stoi przed nim. Na domyślnym poziomie 1 pakowanie zawartości
+gier idzie 2 do 5 razy szybciej niż z każdym plikiem kompresowanym osobno
+(rozpakowywanie 2 do 4 razy); od poziomu 5 w górę bloki dają niewiele szybkości
+albo nic. Cenę płaci się przy uszkodzeniu: jeden zepsuty bajt może zabrać ze
+sobą każdy plik ze swojego bloku, do 16 MB sąsiednich plików, tam gdzie archiwum
 niesolidne straciłoby jeden plik. Opisane niżej dane naprawcze pokrywają ten
 przypadek. Poziom 0 zapisuje pliki bez kompresji i pozostaje niesolidny.
 
@@ -307,25 +308,33 @@ Eidos pisze do tej instancji - kopia jest migawką, nie rozmazem. Zapisuje się
 pod nazwą z `.part`, zostaje zrzucona na dysk i w całości odczytana z powrotem
 przez `7z t`, zanim dostanie wybraną przez ciebie nazwę. Ta kontrola dekoduje
 każdy blok i porównuje każdą sumę kontrolną, czyli robi to samo, co rozpakowanie
-na drugiej maszynie. Jeśli się nie powiedzie, plik `.part` jest usuwany, pod
-twoją nazwą nic nie zostaje zapisane, a `eidos pack` cytuje linię, w której
-7-Zip znalazł uszkodzenie. Przerwane lub nieudane pakowanie zostawia coś
-oczywiście niedokończonego albo nic, a nie plik `.eidos`, który wygląda na
-kompletny i taki nie jest.
+na drugiej maszynie. Pokazuje, co dysk oddał tuż po zapisie, a nie że nośnik to
+zachowa; od tego są opisane niżej dane naprawcze. Jeśli się nie powiedzie, plik
+`.part` jest usuwany, pod twoją nazwą nic nie zostaje zapisane, a `eidos pack`
+cytuje linię, w której 7-Zip znalazł uszkodzenie. Przerwane lub nieudane
+pakowanie zostawia coś oczywiście niedokończonego albo nic, a nie plik `.eidos`,
+który wygląda na kompletny i taki nie jest.
 
 Gdy par2cmdline jest zainstalowany (`sudo pacman -S par2cmdline` na Archu,
 `sudo apt install par2` na Debianie i Ubuntu, `sudo dnf install par2cmdline` na
 Fedorze), `eidos pack` zapisuje też obok archiwum dane naprawcze PAR2:
 `backup.eidos.par2` i kilka plików `backup.eidos.volNN+MM.par2`, razem 5%
-archiwum plus mały indeks. Trzymaj je w tym samym folderze co plik `.eidos` i
-kopiuj razem z nim, bo kopia przeniesiona bez nich nie ma z czego zostać
-naprawiona. `eidos unpack` znajduje je po nazwie i sprawdza nimi archiwum, zanim
-cokolwiek rozpakuje. Jeśli kilka bajtów się zepsuło, par2 najpierw naprawia
-archiwum i zachowuje uszkodzoną kopię jako `backup.eidos.1`; uszkodzenie
-większe, niż pokrywa te 5%, zatrzymuje rozpakowywanie, zanim zostanie zapisany
-choć jeden plik. Na maszynie bez par2 rozpakowywanie i tak rusza, z
-ostrzeżeniem, że dane naprawcze nie zostały użyte. `--no-recovery` pakuje bez
-nich, a `eidos pack --dry-run` mówi, czy zostaną zapisane.
+archiwum plus mały indeks. Trzymaj je w tym samym folderze co plik `.eidos`, pod
+nazwami, z którymi zostały zapisane, i kopiuj razem z nim: kopia przeniesiona
+bez nich nie ma z czego zostać naprawiona, a dane naprawcze zapisują nazwę
+archiwum, więc kopia o zmienionej nazwie przestaje do nich pasować.
+`eidos unpack` znajduje je po nazwie i sprawdza nimi archiwum, zanim cokolwiek
+rozpakuje, także kopię, której koniec został ucięty tak, że 7-Zip nie może jej
+otworzyć. Jeśli kilka bajtów się zepsuło, par2 najpierw naprawia archiwum i
+zachowuje uszkodzoną kopię jako `backup.eidos.1`, do czego potrzeba w jego
+folderze tyle wolnego miejsca, ile zajmuje archiwum; uszkodzenie większe, niż
+pokrywa te 5%, zatrzymuje rozpakowywanie, zanim zostanie zapisany choć jeden
+plik. Pliki naprawcze, które nie pasują do archiwum, na przykład pliki starszej
+kopii o tej samej nazwie, nie są używane, gdy 7-Zip odczyta archiwum i uzna je
+za nienaruszone, a rozpakowywanie to zgłasza. Na maszynie bez par2
+rozpakowywanie i tak rusza, z ostrzeżeniem, że dane naprawcze nie zostały użyte.
+`--no-recovery` pakuje bez nich, a `eidos pack --dry-run` mówi, czy zostaną
+zapisane.
 
 ### Czego w niej nie ma i dlaczego
 

@@ -333,6 +333,10 @@ pub(crate) struct UnpackDialogState {
     /// welcome screen does not draw.
     pub(crate) manifest: Option<eidos_transfer::BackupManifest>,
     pub(crate) error: Option<String>,
+    /// The manifest could not be read, but recovery data this machine can use
+    /// sits beside the archive, so the unpack may still go ahead: it repairs
+    /// the archive first.
+    pub(crate) repairable: bool,
     /// Unpack into a folder that is not empty.
     pub(crate) force: bool,
 }

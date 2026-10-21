@@ -343,6 +343,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 dest: String::new(),
                 manifest: None,
                 error: None,
+                repairable: false,
                 force: false,
             });
         }
@@ -366,11 +367,15 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             d.archive = path.to_string_lossy().into_owned();
             d.manifest = None;
             d.error = None;
+            d.repairable = false;
             // Reading the manifest is a HEADER read - measured at 39 ms on a
             // 57 000-entry archive - so it happens here rather than through the
             // worker machinery. It is also what tells a backup from any other
             // file, and the answer decides what the dialog can offer.
-            match eidos_transfer::Transfer::new(eidos_transfer::Options::default())
+            let transfer = eidos_transfer::Transfer::new(eidos_transfer::Options::default());
+            match transfer
+                .as_ref()
+                .map_err(Clone::clone)
                 .and_then(|t| t.peek(&path))
             {
                 Ok(m) => {
@@ -385,7 +390,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     }
                     d.manifest = Some(m);
                 }
-                Err(e) => d.error = Some(e.to_string()),
+                Err(e) => {
+                    d.repairable = transfer.is_ok_and(|t| t.can_repair(&path));
+                    d.error = Some(e.to_string());
+                }
             }
         }
         Message::UnpackBrowseDest => {

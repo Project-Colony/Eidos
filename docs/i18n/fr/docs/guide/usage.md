@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=7d8aa469a39312780cd84b6f2e42182d41274116 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2e356d1263b56f984090eea9a73d03429d0529ff -->
 
 # Utiliser Eidos
 
@@ -314,20 +314,23 @@ propre contenu, et `--no-downloads` laisse `downloads/` de côté.
 
 Les fichiers sont rangés dans des **blocs solides de 16 Mo au plus**. Extraire
 un fichier d'une sauvegarde de 70 Go décode au plus le bloc où il se trouve,
-jamais tout ce qui le précède, et sur du contenu de jeu l'empaquetage va 2 à 5
-fois plus vite qu'avec chaque fichier compressé à part (la restauration 2 à 4
-fois). Le prix se paie en cas d'avarie : un seul octet corrompu peut emporter
-tous les fichiers de son bloc, jusqu'à 16 Mo de fichiers voisins, là où une
-archive non solide perdrait un seul fichier. Les données de récupération
-décrites plus bas couvrent ce cas. Le niveau 0 stocke les fichiers sans les
-compresser et reste non solide.
+jamais tout ce qui le précède. Au niveau 1, celui par défaut, l'empaquetage de
+contenu de jeu va 2 à 5 fois plus vite qu'avec chaque fichier compressé à part
+(la restauration 2 à 4 fois) ; à partir du niveau 5, les blocs n'apportent que
+peu ou pas de vitesse. Le prix se paie en cas d'avarie : un seul octet corrompu
+peut emporter tous les fichiers de son bloc, jusqu'à 16 Mo de fichiers voisins,
+là où une archive non solide perdrait un seul fichier. Les données de
+récupération décrites plus bas couvrent ce cas. Le niveau 0 stocke les fichiers
+sans les compresser et reste non solide.
 
 L'empaquetage prend le verrou de l'instance, il ne peut donc pas tourner pendant
 que le jeu ou un autre Eidos écrit dans cette instance - la sauvegarde est un
 instantané, pas un flou. Elle est écrite sous un nom en `.part`, vidée sur le
 disque, puis relue en entier avec `7z t` avant de recevoir le nom que vous avez
 choisi. Cette vérification décode chaque bloc et compare chaque somme de
-contrôle, soit le même travail qu'une restauration sur l'autre machine. Si elle
+contrôle, soit le même travail qu'une restauration sur l'autre machine. Elle
+montre ce que le disque a rendu juste après l'écriture, pas que le support le
+gardera : c'est le rôle des données de récupération décrites plus bas. Si elle
 échoue, le `.part` est supprimé, rien n'est écrit sous votre nom, et
 `eidos pack` cite la ligne où 7-Zip a trouvé l'avarie. Un empaquetage interrompu
 ou raté laisse quelque chose de manifestement inachevé, ou rien du tout, plutôt
@@ -338,16 +341,23 @@ Quand par2cmdline est installé (`sudo pacman -S par2cmdline` sur Arch,
 Fedora), `eidos pack` écrit aussi des données de récupération PAR2 à côté de
 l'archive : `backup.eidos.par2` et quelques fichiers
 `backup.eidos.volNN+MM.par2`, soit 5 % de l'archive plus un petit index.
-Gardez-les dans le même dossier que le fichier `.eidos` et copiez-les avec lui :
-une sauvegarde déplacée sans eux n'a rien pour être réparée. `eidos unpack` les
-trouve par leur nom et vérifie l'archive avec eux avant d'extraire quoi que ce
-soit. Si quelques octets se sont abîmés, par2 répare d'abord l'archive et garde
-la copie endommagée sous le nom `backup.eidos.1` ; une avarie plus étendue que
-ce que couvrent les 5 % arrête la restauration avant qu'un seul fichier soit
-écrit. Sur une machine sans par2, la restauration se fait quand même, avec un
-avertissement indiquant que les données de récupération n'ont pas servi.
-`--no-recovery` empaquette sans elles, et `eidos pack --dry-run` indique si
-elles seront écrites.
+Gardez-les dans le même dossier que le fichier `.eidos`, sous les noms qu'ils
+ont reçus, et copiez-les avec lui : une sauvegarde déplacée sans eux n'a rien
+pour être réparée, et les données de récupération enregistrent le nom de
+l'archive, si bien qu'une sauvegarde renommée ne leur correspond plus.
+`eidos unpack` les trouve par leur nom et vérifie l'archive avec eux avant
+d'extraire quoi que ce soit, y compris une sauvegarde dont la fin a été coupée
+au point que 7-Zip ne peut plus l'ouvrir. Si quelques octets se sont abîmés,
+par2 répare d'abord l'archive et garde la copie endommagée sous le nom
+`backup.eidos.1`, ce qui demande dans son dossier autant d'espace libre que la
+taille de l'archive ; une avarie plus étendue que ce que couvrent les 5 % arrête
+la restauration avant qu'un seul fichier soit écrit. Des fichiers de
+récupération qui ne correspondent pas à l'archive, comme ceux d'une sauvegarde
+plus ancienne du même nom, ne servent pas quand 7-Zip lit l'archive et la trouve
+intacte, et la restauration le signale. Sur une machine sans par2, la
+restauration se fait quand même, avec un avertissement indiquant que les données
+de récupération n'ont pas servi. `--no-recovery` empaquette sans elles, et
+`eidos pack --dry-run` indique si elles seront écrites.
 
 ### Ce qui n'y est pas, et pourquoi
 

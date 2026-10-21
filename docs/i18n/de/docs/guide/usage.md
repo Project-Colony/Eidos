@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=7d8aa469a39312780cd84b6f2e42182d41274116 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2e356d1263b56f984090eea9a73d03429d0529ff -->
 
 # Eidos verwenden
 
@@ -313,13 +313,14 @@ Ihren eigenen Inhalten anderer Meinung sind, und `--no-downloads` lässt
 
 Die Dateien landen in **soliden Blöcken von höchstens 16 MB**. Eine einzelne
 Datei aus einer 70 GB großen Sicherung zu ziehen dekodiert höchstens den Block,
-in dem sie liegt, nie alles davor, und bei Spielinhalten läuft das Packen 2- bis
-5-mal schneller als mit jeder Datei einzeln komprimiert (das Entpacken 2- bis
-4-mal). Der Preis zeigt sich bei Schäden: Ein einziges defektes Byte kann jede
-Datei in seinem Block mitnehmen, bis zu 16 MB benachbarter Dateien, wo ein nicht
-solides Archiv eine einzige Datei verlöre. Die weiter unten beschriebenen
-Wiederherstellungsdaten decken das ab. Stufe 0 speichert die Dateien
-unkomprimiert und bleibt nicht solide.
+in dem sie liegt, nie alles davor. Auf der Standardstufe 1 läuft das Packen von
+Spielinhalten 2- bis 5-mal schneller als mit jeder Datei einzeln komprimiert
+(das Entpacken 2- bis 4-mal); ab Stufe 5 bringen die Blöcke wenig oder keinen
+Geschwindigkeitsgewinn. Der Preis zeigt sich bei Schäden: Ein einziges defektes
+Byte kann jede Datei in seinem Block mitnehmen, bis zu 16 MB benachbarter
+Dateien, wo ein nicht solides Archiv eine einzige Datei verlöre. Die weiter
+unten beschriebenen Wiederherstellungsdaten decken das ab. Stufe 0 speichert die
+Dateien unkomprimiert und bleibt nicht solide.
 
 Das Packen nimmt die Sperre der Instanz, es kann also nicht laufen, während das
 Spiel oder ein anderes Eidos in diese Instanz schreibt - die Sicherung ist eine
@@ -327,7 +328,9 @@ Momentaufnahme, keine Schliere. Sie wird unter einem `.part`-Namen geschrieben,
 mit fsync auf die Platte gebracht und mit `7z t` vollständig zurückgelesen,
 bevor sie den Namen bekommt, den Sie gewählt haben. Diese Prüfung dekodiert
 jeden Block und vergleicht jede Prüfsumme, also dieselbe Arbeit, die ein
-Entpacken auf dem anderen Rechner leistet. Schlägt sie fehl, wird die
+Entpacken auf dem anderen Rechner leistet. Sie zeigt, was die Platte direkt nach
+dem Schreiben zurückgegeben hat, nicht, dass das Laufwerk es behält; dafür sind
+die Wiederherstellungsdaten weiter unten da. Schlägt sie fehl, wird die
 `.part`-Datei gelöscht, unter Ihrem Namen wird nichts geschrieben, und
 `eidos pack` zitiert die Zeile, in der 7-Zip den Schaden gefunden hat. Ein
 abgebrochenes oder fehlgeschlagenes Packen hinterlässt etwas offensichtlich
@@ -339,13 +342,20 @@ Ist par2cmdline installiert (`sudo pacman -S par2cmdline` unter Arch,
 unter Fedora), schreibt `eidos pack` zusätzlich PAR2-Wiederherstellungsdaten
 neben das Archiv: `backup.eidos.par2` und einige
 `backup.eidos.volNN+MM.par2`-Dateien, zusammen 5 % des Archivs plus ein kleiner
-Index. Lassen Sie sie im selben Ordner wie die `.eidos`-Datei und kopieren Sie
-sie mit ihr, denn eine Sicherung, die ohne sie umzieht, hat nichts, woraus sie
-repariert werden könnte. `eidos unpack` findet sie über den Namen und prüft das
-Archiv damit, bevor irgendetwas entpackt wird. Sind ein paar Bytes kaputt,
-repariert par2 das Archiv zuerst und behält die beschädigte Kopie als
-`backup.eidos.1`; ein Schaden, der über die 5 % hinausgeht, stoppt das
-Entpacken, bevor eine einzige Datei geschrieben ist. Auf einem Rechner ohne par2
+Index. Lassen Sie sie unter den Namen, mit denen sie geschrieben wurden, im
+selben Ordner wie die `.eidos`-Datei und kopieren Sie sie mit ihr: Eine
+Sicherung, die ohne sie umzieht, hat nichts, woraus sie repariert werden könnte,
+und die Wiederherstellungsdaten halten den Namen des Archivs fest, sodass eine
+umbenannte Sicherung nicht mehr zu ihnen passt. `eidos unpack` findet sie über
+den Namen und prüft das Archiv damit, bevor irgendetwas entpackt wird, auch eine
+Sicherung, deren Ende so abgeschnitten ist, dass 7-Zip sie nicht öffnen kann.
+Sind ein paar Bytes kaputt, repariert par2 das Archiv zuerst und behält die
+beschädigte Kopie als `backup.eidos.1`, wofür in ihrem Ordner so viel freier
+Platz nötig ist, wie das Archiv groß ist; ein Schaden, der über die 5 %
+hinausgeht, stoppt das Entpacken, bevor eine einzige Datei geschrieben ist.
+Wiederherstellungsdateien, die nicht zum Archiv passen, etwa die einer älteren
+Sicherung gleichen Namens, werden nicht verwendet, wenn 7-Zip das Archiv liest
+und es intakt findet, und das Entpacken sagt das. Auf einem Rechner ohne par2
 läuft das Entpacken trotzdem, mit einer Warnung, dass die
 Wiederherstellungsdaten nicht genutzt wurden. `--no-recovery` packt ohne sie,
 und `eidos pack --dry-run` sagt, ob sie geschrieben werden.

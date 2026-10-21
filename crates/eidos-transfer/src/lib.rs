@@ -147,7 +147,8 @@ pub struct Options {
 pub enum Phase {
     /// 7-Zip writing the archive, or extracting it.
     Archive,
-    /// Reading the written archive back with `7z t` before it gets its name.
+    /// Reading an archive back with `7z t`: a written one before it gets its
+    /// name, or one its recovery data calls damaged, before it is repaired.
     Check,
     /// Checking an archive against its PAR2 recovery data before extracting.
     /// par2 runs quietly, so no percentage follows: the phase is reported

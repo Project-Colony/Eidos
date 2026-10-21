@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=7d8aa469a39312780cd84b6f2e42182d41274116 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2e356d1263b56f984090eea9a73d03429d0529ff -->
 
 # Usare Eidos
 
@@ -306,39 +306,49 @@ non sei d'accordo sui tuoi contenuti, e `--no-downloads` lascia fuori
 
 I file finiscono in **blocchi solidi da 16 MB al massimo**. Tirare fuori un file
 da una copia da 70 GB decodifica al più il blocco in cui si trova, mai tutto
-quello che lo precede, e sui contenuti di gioco l'impacchettamento va da 2 a 5
-volte più veloce che con ogni file compresso a sé (lo spacchettamento da 2 a 4
-volte). Il prezzo si paga in caso di danni: un solo byte corrotto può portarsi
-via tutti i file del suo blocco, fino a 16 MB di file vicini, dove un archivio
-non solido perderebbe un solo file. I dati di recupero descritti più sotto
-coprono questo caso. Il livello 0 archivia i file senza comprimerli e resta non
-solido.
+quello che lo precede. Al livello 1, quello predefinito, l'impacchettamento dei
+contenuti di gioco va da 2 a 5 volte più veloce che con ogni file compresso a sé
+(lo spacchettamento da 2 a 4 volte); dal livello 5 in su i blocchi portano poca
+o nessuna velocità. Il prezzo si paga in caso di danni: un solo byte corrotto
+può portarsi via tutti i file del suo blocco, fino a 16 MB di file vicini, dove
+un archivio non solido perderebbe un solo file. I dati di recupero descritti più
+sotto coprono questo caso. Il livello 0 archivia i file senza comprimerli e
+resta non solido.
 
 L'impacchettamento prende il lock dell'istanza, quindi non può girare mentre il
 gioco o un altro Eidos sta scrivendo su quell'istanza - la copia è
 un'istantanea, non una sbavatura. Viene scritta sotto un nome `.part`, scaricata
 su disco e riletta per intero con `7z t` prima di ricevere il nome che hai
 scelto. Quel controllo decodifica ogni blocco e confronta ogni checksum, lo
-stesso lavoro che fa uno spacchettamento sull'altra macchina. Se fallisce, il
-`.part` viene cancellato, sotto il tuo nome non viene scritto nulla e
-`eidos pack` cita la riga in cui 7-Zip ha trovato il danno. Un impacchettamento
-interrotto o fallito lascia qualcosa di palesemente incompleto, o niente, invece
-di un file `.eidos` che sembra completo e non lo è.
+stesso lavoro che fa uno spacchettamento sull'altra macchina. Mostra ciò che il
+disco ha restituito subito dopo la scrittura, non che l'unità lo conserverà; a
+questo servono i dati di recupero descritti più sotto. Se fallisce, il `.part`
+viene cancellato, sotto il tuo nome non viene scritto nulla e `eidos pack` cita
+la riga in cui 7-Zip ha trovato il danno. Un impacchettamento interrotto o
+fallito lascia qualcosa di palesemente incompleto, o niente, invece di un file
+`.eidos` che sembra completo e non lo è.
 
 Quando par2cmdline è installato (`sudo pacman -S par2cmdline` su Arch,
 `sudo apt install par2` su Debian e Ubuntu, `sudo dnf install par2cmdline` su
 Fedora), `eidos pack` scrive anche dati di recupero PAR2 accanto all'archivio:
 `backup.eidos.par2` e alcuni file `backup.eidos.volNN+MM.par2`, il 5%
 dell'archivio più un piccolo indice. Tienili nella stessa cartella del file
-`.eidos` e copiali insieme a lui, perché una copia spostata senza di loro non ha
-nulla da cui essere riparata. `eidos unpack` li trova dal nome e verifica
-l'archivio con loro prima di estrarre qualsiasi cosa. Se qualche byte si è
-guastato, par2 ripara prima l'archivio e tiene la copia danneggiata come
-`backup.eidos.1`; un danno più esteso di quanto coprano quei 5% ferma lo
-spacchettamento prima che venga scritto un solo file. Su una macchina senza par2
-lo spacchettamento procede comunque, con un avviso che i dati di recupero non
-sono stati usati. `--no-recovery` impacchetta senza di loro, e
-`eidos pack --dry-run` dice se verranno scritti.
+`.eidos`, con i nomi con cui sono stati scritti, e copiali insieme a lui: una
+copia spostata senza di loro non ha nulla da cui essere riparata, e i dati di
+recupero registrano il nome dell'archivio, quindi una copia rinominata non vi
+corrisponde più. `eidos unpack` li trova dal nome e verifica l'archivio con loro
+prima di estrarre qualsiasi cosa, anche una copia la cui fine è stata tagliata
+al punto che 7-Zip non riesce ad aprirla. Se qualche byte si è guastato, par2
+ripara prima l'archivio e tiene la copia danneggiata come `backup.eidos.1`, il
+che richiede nella sua cartella tanto spazio libero quanto è grande l'archivio;
+un danno più esteso di quanto coprano quei 5% ferma lo spacchettamento prima che
+venga scritto un solo file. I file di recupero che non corrispondono
+all'archivio, come quelli di una copia più vecchia con lo stesso nome, non
+vengono usati quando 7-Zip legge l'archivio e lo trova integro, e lo
+spacchettamento lo segnala. Su una macchina senza par2 lo spacchettamento
+procede comunque, con un avviso che i dati di recupero non sono stati usati.
+`--no-recovery` impacchetta senza di loro, e `eidos pack --dry-run` dice se
+verranno scritti.
 
 ### Cosa non c'è dentro, e perché
 

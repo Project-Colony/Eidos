@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=7d8aa469a39312780cd84b6f2e42182d41274116 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2e356d1263b56f984090eea9a73d03429d0529ff -->
 
 # Usar o Eidos
 
@@ -293,37 +293,46 @@ de fora.
 
 Os arquivos vão em **blocos sólidos de no máximo 16 MB**. Tirar um arquivo de um
 backup de 70 GB decodifica no máximo o bloco em que ele está, nunca tudo o que
-vem antes, e com conteúdo de jogo o empacotamento fica de 2 a 5 vezes mais
-rápido do que com cada arquivo comprimido separadamente (o desempacotamento, de
-2 a 4 vezes). O preço aparece quando há dano: um único byte corrompido pode
-levar junto todos os arquivos do bloco dele, até 16 MB de arquivos vizinhos,
-onde um arquivo não sólido perderia um só arquivo. Os dados de recuperação
-descritos abaixo cobrem isso. O nível 0 guarda os arquivos sem comprimir e
-continua não sólido.
+vem antes. No nível 1, o padrão, empacotar conteúdo de jogo fica de 2 a 5 vezes
+mais rápido do que com cada arquivo comprimido separadamente (o
+desempacotamento, de 2 a 4 vezes); do nível 5 para cima os blocos trazem pouca
+ou nenhuma velocidade. O preço aparece quando há dano: um único byte corrompido
+pode levar junto todos os arquivos do bloco dele, até 16 MB de arquivos
+vizinhos, onde um arquivo não sólido perderia um só arquivo. Os dados de
+recuperação descritos abaixo cobrem isso. O nível 0 guarda os arquivos sem
+comprimir e continua não sólido.
 
 Empacotar toma o lock da instância, então não pode rodar enquanto o jogo ou
 outro Eidos está escrevendo naquela instância - o backup é um instantâneo, não
 um borrão. Ele é escrito sob um nome `.part`, gravado no disco e relido inteiro
 com `7z t` antes de receber o nome que você escolheu. Essa verificação
 decodifica cada bloco e compara cada checksum, o mesmo trabalho que um unpack
-faz na outra máquina. Se ela falhar, o `.part` é apagado, nada é escrito com o
-seu nome e o `eidos pack` cita a linha em que o 7-Zip encontrou o dano. Um pack
-interrompido ou que falhou deixa algo obviamente inacabado, ou nada, em vez de
-um arquivo `.eidos` que parece completo e não é.
+faz na outra máquina. Ela mostra o que o disco devolveu logo depois da gravação,
+não que a unidade vai guardar isso; é para isso que servem os dados de
+recuperação descritos abaixo. Se ela falhar, o `.part` é apagado, nada é escrito
+com o seu nome e o `eidos pack` cita a linha em que o 7-Zip encontrou o dano. Um
+pack interrompido ou que falhou deixa algo obviamente inacabado, ou nada, em vez
+de um arquivo `.eidos` que parece completo e não é.
 
 Quando o par2cmdline está instalado (`sudo pacman -S par2cmdline` no Arch,
 `sudo apt install par2` no Debian e no Ubuntu, `sudo dnf install par2cmdline` no
 Fedora), o `eidos pack` também escreve dados de recuperação PAR2 ao lado do
 arquivo: `backup.eidos.par2` e alguns arquivos `backup.eidos.volNN+MM.par2`, 5%
 do arquivo mais um pequeno índice. Mantenha-os na mesma pasta do arquivo
-`.eidos` e copie-os junto com ele, porque um backup movido sem eles não tem de
-onde ser reparado. O `eidos unpack` os encontra pelo nome e verifica o arquivo
-com eles antes de extrair qualquer coisa. Se alguns bytes estragaram, o par2
-repara o arquivo primeiro e guarda a cópia danificada como `backup.eidos.1`; um
-dano maior do que esses 5% cobrem interrompe o unpack antes que um único arquivo
-seja escrito. Numa máquina sem par2 o unpack roda mesmo assim, com um aviso de
-que os dados de recuperação não foram usados. O `--no-recovery` empacota sem
-eles, e o `eidos pack --dry-run` diz se eles vão ser escritos.
+`.eidos`, com os nomes com que foram escritos, e copie-os junto com ele: um
+backup movido sem eles não tem de onde ser reparado, e os dados de recuperação
+registram o nome do arquivo, então um backup renomeado deixa de bater com eles.
+O `eidos unpack` os encontra pelo nome e verifica o arquivo com eles antes de
+extrair qualquer coisa, inclusive um backup cujo final foi cortado a ponto de o
+7-Zip não conseguir abri-lo. Se alguns bytes estragaram, o par2 repara o arquivo
+primeiro e guarda a cópia danificada como `backup.eidos.1`, o que exige na pasta
+dele tanto espaço livre quanto o tamanho do arquivo; um dano maior do que esses
+5% cobrem interrompe o unpack antes que um único arquivo seja escrito. Arquivos
+de recuperação que não batem com o arquivo, como os de um backup mais antigo com
+o mesmo nome, não são usados quando o 7-Zip lê o arquivo e o encontra intacto, e
+o unpack avisa isso. Numa máquina sem par2 o unpack roda mesmo assim, com um
+aviso de que os dados de recuperação não foram usados. O `--no-recovery`
+empacota sem eles, e o `eidos pack --dry-run` diz se eles vão ser escritos.
 
 ### O que não está nele, e por quê
 

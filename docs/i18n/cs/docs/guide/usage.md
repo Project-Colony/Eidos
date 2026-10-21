@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=7d8aa469a39312780cd84b6f2e42182d41274116 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2e356d1263b56f984090eea9a73d03429d0529ff -->
 
 # Používání Eidosu
 
@@ -278,9 +278,10 @@ nalezení jen velmi málo. `--level` (0, 1, 3, 5, 7, 9) to přebije, pokud u
 vlastního obsahu nesouhlasíte, a `--no-downloads` vynechá `downloads/`.
 
 Soubory jdou do **solidních bloků o nejvýš 16 MB**. Vytažení jednoho souboru ze
-70GB zálohy dekóduje nanejvýš blok, ve kterém leží, nikdy všechno před ním, a na
-herním obsahu je balení 2 až 5krát rychlejší než s každým souborem komprimovaným
-zvlášť (rozbalení 2 až 4krát). Cena se platí při poškození: jediný vadný bajt
+70GB zálohy dekóduje nanejvýš blok, ve kterém leží, nikdy všechno před ním. Na
+výchozí úrovni 1 je balení herního obsahu 2 až 5krát rychlejší než s každým
+souborem komprimovaným zvlášť (rozbalení 2 až 4krát); od úrovně 5 výš bloky
+rychlost přidají málo nebo vůbec. Cena se platí při poškození: jediný vadný bajt
 může vzít s sebou všechny soubory ve svém bloku, až 16 MB sousedních souborů,
 kde by nesolidní archiv přišel o jediný soubor. Data pro obnovu popsaná níže
 tenhle případ kryjí. Úroveň 0 soubory jen ukládá bez komprese a zůstává
@@ -291,23 +292,30 @@ zapisuje hra nebo jiný Eidos - záloha je snímek, ne šmouha. Zapisuje se pod
 názvem s `.part`, propíše se na disk a celá se přečte zpátky přes `7z t`, než
 dostane název, který jste zvolili. Ta kontrola dekóduje každý blok a porovná
 každý kontrolní součet, tedy udělá stejnou práci jako rozbalení na druhém
-stroji. Když selže, soubor `.part` se smaže, pod vaším názvem se nic nezapíše a
-`eidos pack` ocituje řádek, kde 7-Zip poškození našel. Přerušené nebo nepovedené
-balení zanechá něco zjevně nedokončeného, nebo nic, místo souboru `.eidos`,
-který vypadá kompletní a není.
+stroji. Ukazuje, co disk vrátil hned po zápisu, ne že to disk udrží; na to jsou
+data pro obnovu popsaná níže. Když selže, soubor `.part` se smaže, pod vaším
+názvem se nic nezapíše a `eidos pack` ocituje řádek, kde 7-Zip poškození našel.
+Přerušené nebo nepovedené balení zanechá něco zjevně nedokončeného, nebo nic,
+místo souboru `.eidos`, který vypadá kompletní a není.
 
 Když je nainstalovaný par2cmdline (`sudo pacman -S par2cmdline` na Archu,
 `sudo apt install par2` na Debianu a Ubuntu, `sudo dnf install par2cmdline` na
 Fedoře), `eidos pack` zapíše vedle archivu i data pro obnovu PAR2:
 `backup.eidos.par2` a několik souborů `backup.eidos.volNN+MM.par2`, dohromady 5
-% archivu plus malý index. Nechte je ve stejné složce jako soubor `.eidos` a
-kopírujte je spolu s ním, protože záloha přesunutá bez nich nemá z čeho se
-opravit. `eidos unpack` je najde podle názvu a archiv s nimi zkontroluje, než
-cokoli rozbalí. Pokud se pár bajtů pokazilo, par2 archiv nejdřív opraví a
-poškozenou kopii si nechá jako `backup.eidos.1`; poškození větší, než pokryje
-těch 5 %, zastaví rozbalení dřív, než se zapíše jediný soubor. Na stroji bez
-par2 rozbalení i tak proběhne, s varováním, že data pro obnovu nebyla použita.
-`--no-recovery` balí bez nich a `eidos pack --dry-run` řekne, jestli se zapíšou.
+% archivu plus malý index. Nechte je ve stejné složce jako soubor `.eidos`, pod
+názvy, se kterými byly zapsány, a kopírujte je spolu s ním: záloha přesunutá bez
+nich nemá z čeho se opravit a data pro obnovu si pamatují název archivu, takže
+přejmenovaná záloha už k nim nesedí. `eidos unpack` je najde podle názvu a
+archiv s nimi zkontroluje, než cokoli rozbalí, i zálohu, jejíž konec byl
+useknutý tak, že ji 7-Zip neotevře. Pokud se pár bajtů pokazilo, par2 archiv
+nejdřív opraví a poškozenou kopii si nechá jako `backup.eidos.1`, k čemuž
+potřebuje v jeho složce tolik volného místa, kolik zabírá archiv; poškození
+větší, než pokryje těch 5 %, zastaví rozbalení dřív, než se zapíše jediný
+soubor. Soubory pro obnovu, které k archivu nesedí, třeba ty ze starší zálohy se
+stejným názvem, se nepoužijí, když 7-Zip archiv přečte a najde ho neporušený, a
+rozbalení to oznámí. Na stroji bez par2 rozbalení i tak proběhne, s varováním,
+že data pro obnovu nebyla použita. `--no-recovery` balí bez nich a
+`eidos pack --dry-run` řekne, jestli se zapíšou.
 
 ### Co v ní není a proč
 

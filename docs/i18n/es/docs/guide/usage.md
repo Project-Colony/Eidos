@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=7d8aa469a39312780cd84b6f2e42182d41274116 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2e356d1263b56f984090eea9a73d03429d0529ff -->
 
 # Usar Eidos
 
@@ -301,20 +301,23 @@ eso si no estás de acuerdo con tu propio contenido, y `--no-downloads` deja
 
 Los ficheros van en **bloques sólidos de 16 MB como máximo**. Sacar un fichero
 de una copia de 70 GB descodifica como mucho el bloque en el que está, nunca
-todo lo que va por delante, y con contenido de juegos empaquetar va de 2 a 5
-veces más rápido que con cada fichero comprimido por separado (desempaquetar, de
-2 a 4 veces). El precio se paga cuando hay daños: un solo byte corrupto puede
-llevarse todos los ficheros de su bloque, hasta 16 MB de ficheros vecinos, donde
-un archivo no sólido perdería un solo fichero. Los datos de recuperación que se
-describen más abajo cubren ese caso. El nivel 0 guarda los ficheros sin
-comprimir y sigue siendo no sólido.
+todo lo que va por delante. En el nivel 1, el predeterminado, empaquetar
+contenido de juegos va de 2 a 5 veces más rápido que con cada fichero comprimido
+por separado (desempaquetar, de 2 a 4 veces); a partir del nivel 5 los bloques
+apenas aportan velocidad o no aportan ninguna. El precio se paga cuando hay
+daños: un solo byte corrupto puede llevarse todos los ficheros de su bloque,
+hasta 16 MB de ficheros vecinos, donde un archivo no sólido perdería un solo
+fichero. Los datos de recuperación que se describen más abajo cubren ese caso.
+El nivel 0 guarda los ficheros sin comprimir y sigue siendo no sólido.
 
 Empaquetar toma el bloqueo de la instancia, así que no puede ejecutarse mientras
 el juego u otro Eidos escribe en esa instancia - la copia de seguridad es una
 instantánea, no un borrón. Se escribe con un nombre `.part`, se vuelca al disco
 y se relee entera con `7z t` antes de recibir el nombre que elegiste. Esa
 comprobación descodifica cada bloque y compara cada suma de verificación, el
-mismo trabajo que hace un desempaquetado en la otra máquina. Si falla, el
+mismo trabajo que hace un desempaquetado en la otra máquina. Muestra lo que
+devolvió el disco justo después de escribir, no que la unidad lo vaya a
+conservar; para eso están los datos de recuperación de más abajo. Si falla, el
 `.part` se borra, no se escribe nada con tu nombre y `eidos pack` cita la línea
 en la que 7-Zip encontró el daño. Un empaquetado interrumpido o fallido deja
 algo obviamente inacabado, o nada, en vez de un fichero `.eidos` que parece
@@ -325,15 +328,22 @@ Cuando par2cmdline está instalado (`sudo pacman -S par2cmdline` en Arch,
 Fedora), `eidos pack` escribe además datos de recuperación PAR2 junto al
 archivo: `backup.eidos.par2` y unos cuantos ficheros
 `backup.eidos.volNN+MM.par2`, el 5 % del archivo más un pequeño índice. Déjalos
-en la misma carpeta que el fichero `.eidos` y cópialos con él, porque una copia
-que se mueve sin ellos no tiene de dónde repararse. `eidos unpack` los encuentra
-por su nombre y comprueba el archivo con ellos antes de extraer nada. Si se
+en la misma carpeta que el fichero `.eidos`, con los nombres con los que se
+escribieron, y cópialos con él: una copia que se mueve sin ellos no tiene de
+dónde repararse, y los datos de recuperación guardan el nombre del archivo, así
+que una copia renombrada ya no coincide con ellos. `eidos unpack` los encuentra
+por su nombre y comprueba el archivo con ellos antes de extraer nada, también
+una copia cuyo final se cortó de modo que 7-Zip no puede abrirla. Si se
 estropearon unos pocos bytes, par2 repara primero el archivo y guarda la copia
-dañada como `backup.eidos.1`; un daño mayor de lo que cubre ese 5 % detiene el
-desempaquetado antes de escribir un solo fichero. En una máquina sin par2 el
-desempaquetado sigue adelante, con un aviso de que los datos de recuperación no
-se usaron. `--no-recovery` empaqueta sin ellos, y `eidos pack --dry-run` dice si
-se van a escribir.
+dañada como `backup.eidos.1`, para lo que necesita en su carpeta tanto espacio
+libre como ocupa el archivo; un daño mayor de lo que cubre ese 5 % detiene el
+desempaquetado antes de escribir un solo fichero. Los ficheros de recuperación
+que no coinciden con el archivo, como los de una copia más antigua con el mismo
+nombre, no se usan cuando 7-Zip lee el archivo y lo encuentra intacto, y el
+desempaquetado lo avisa. En una máquina sin par2 el desempaquetado sigue
+adelante, con un aviso de que los datos de recuperación no se usaron.
+`--no-recovery` empaqueta sin ellos, y `eidos pack --dry-run` dice si se van a
+escribir.
 
 ### Qué no va dentro, y por qué
 

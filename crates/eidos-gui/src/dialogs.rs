@@ -2563,7 +2563,9 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
         .size(sz(13))
         .text_size(sz(12));
 
-    let ready = state.manifest.is_some() && !state.dest.trim().is_empty();
+    // A backup whose manifest cannot be read may still be repaired from its
+    // recovery data, which the unpack does first.
+    let ready = (state.manifest.is_some() || state.repairable) && !state.dest.trim().is_empty();
     let run = button(text(t("unpack_run")).size(sz(12)))
         .padding([4, 16])
         .style(button::primary);
@@ -2610,34 +2612,30 @@ pub(crate) fn transfer_dialog<'a>(job: &crate::TransferJob) -> Element<'a, Messa
     match &job.finished {
         None => {
             use eidos_transfer::Phase;
-            let mut pct = job
+            let pct = job
                 .percent
                 .load(std::sync::atomic::Ordering::SeqCst)
                 .min(100);
             let phase = job.phase.lock().map(|p| *p).unwrap_or(Phase::Archive);
-            // par2 reports no percentage. Its phases draw a full bar under
-            // their own label, as "Finishing up..." does, rather than a bar
-            // stuck at 0 that reads as nothing happening.
-            let label = match phase {
-                Phase::Archive if pct >= 100 => t("transfer_finishing").to_string(),
-                Phase::Archive => format!("{pct}%"),
-                Phase::Check => tf("transfer_checking", &[("pct", &pct)]),
-                Phase::Verify | Phase::Recovery | Phase::Repair => {
-                    pct = 100;
-                    t(match phase {
-                        Phase::Verify => "transfer_verifying",
-                        Phase::Recovery => "transfer_writing_recovery",
-                        _ => "transfer_repairing",
-                    })
-                    .to_string()
-                }
+            // par2 reports no percentage, and on a large backup its phases run
+            // for minutes. They show their label alone: a bar that never moves
+            // reads as finished, or as hung.
+            let (label, bar) = match phase {
+                Phase::Archive if pct >= 100 => (t("transfer_finishing").to_string(), true),
+                Phase::Archive => (format!("{pct}%"), true),
+                Phase::Check => (tf("transfer_checking", &[("pct", &pct)]), true),
+                Phase::Verify => (t("transfer_verifying").to_string(), false),
+                Phase::Recovery => (t("transfer_writing_recovery").to_string(), false),
+                Phase::Repair => (t("transfer_repairing").to_string(), false),
             };
-            card = card
-                .push(
+            if bar {
+                card = card.push(
                     iced::widget::progress_bar(0.0..=100.0, pct as f32)
                         .length(Length::Fill)
                         .girth(Length::Fixed(10.0)),
-                )
+                );
+            }
+            card = card
                 .push(text(label).size(sz(12)))
                 .push(text(t("transfer_note")).size(sz(10)).color(text_muted()));
         }

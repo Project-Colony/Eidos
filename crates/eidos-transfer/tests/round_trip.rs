@@ -726,3 +726,222 @@ fn recovery_off_writes_no_par2_files() {
     assert!(!base.join("b.eidos.par2").exists());
     let _ = fs::remove_dir_all(&base);
 }
+
+#[test]
+fn recovery_data_repairs_a_damaged_end_before_the_manifest_is_read() {
+    if eidos_sevenzip::find_7z().is_none() || !eidos_transfer::par2_installed() {
+        eprintln!("SKIPPED: needs both 7-Zip and par2 (package par2cmdline) on this machine.");
+        return;
+    }
+    let (base, inst) = par2_case("par2-tail");
+    let opt = Options::default();
+    let t = Transfer::new(opt).unwrap();
+    let archive = base.join("b.eidos");
+    t.pack(&inst, &plan(&inst, &opt), &archive, &mut |_, _| {})
+        .unwrap();
+    // 7-Zip's table of contents is at the end: one byte there and nothing
+    // opens, not even the manifest.
+    let len = fs::metadata(&archive).unwrap().len() as usize;
+    flip_bytes(&archive, len - 20, 1);
+    assert!(t.peek(&archive).is_err());
+    assert!(t.can_repair(&archive));
+    let dest = base.join("restored");
+    let out = t
+        .unpack(&archive, &dest, &mut |_, _| {})
+        .expect("repaired, then unpacked");
+    assert!(
+        out.warnings
+            .iter()
+            .any(|w| w.contains("repaired from its recovery data")),
+        "{:?}",
+        out.warnings
+    );
+    assert_eq!(
+        fs::read(dest.join("mods/Big/textures/big.dds")).unwrap(),
+        noise(256 * 1024, 7)
+    );
+    let _ = fs::remove_dir_all(&base);
+}
+
+/// A stand-in for par2 that answers `verify` with exit code `verdict` and runs
+/// `repair` as the shell lines given, with `$a` the archive. A create writes an
+/// empty index and one empty volume under the name it is given.
+///
+/// What these tests check is what Eidos does with par2's answers, and par2 is
+/// optional on the machines they run on; the real thing is tested above.
+fn fake_par2(dir: &Path, verdict: u8, repair: &str) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    let path = dir.join(format!("fake-par2-{verdict}"));
+    fs::write(
+        &path,
+        format!(
+            "#!/bin/sh\n\
+             for last; do :; done\n\
+             a=\"${{last%.par2}}\"\n\
+             case \"$1\" in\n\
+             -V) exit 0 ;;\n\
+             create) : > \"$4\"; : > \"${{4%.par2}}.vol00+01.par2\"; exit 0 ;;\n\
+             verify) exit {verdict} ;;\n\
+             repair) {repair} ;;\n\
+             esac\n\
+             exit 99\n"
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    path.to_string_lossy().into_owned()
+}
+
+/// A [`Transfer`] driving `bin`. Retried because a script exec'd right after it
+/// was written can fail with "text file busy" while another test thread forks.
+fn transfer_with(bin: &str) -> Transfer {
+    for _ in 0..50 {
+        let t = Transfer::with_par2(Options::default(), bin).unwrap();
+        if t.writes_recovery() {
+            return t;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    panic!("{bin} never ran");
+}
+
+/// The backup the fake-par2 tests start from, packed without recovery data.
+fn packed_without_recovery(name: &str) -> (PathBuf, PathBuf) {
+    let (base, inst) = par2_case(name);
+    let opt = Options {
+        recovery: false,
+        ..Options::default()
+    };
+    let archive = base.join("b.eidos");
+    Transfer::new(opt)
+        .unwrap()
+        .pack(&inst, &plan(&inst, &opt), &archive, &mut |_, _| {})
+        .unwrap();
+    (base, archive)
+}
+
+#[test]
+fn a_recovery_set_that_calls_an_intact_backup_damaged_is_not_believed() {
+    if eidos_sevenzip::find_7z().is_none() {
+        eprintln!("SKIPPED: no 7-Zip on this machine.");
+        return;
+    }
+    // A set left from an older backup of the same name finds most of its
+    // blocks in the new one (repairable), or few of them (beyond repair). A
+    // "repair" would rebuild the old backup, so the fake one clobbers it.
+    for verdict in [1, 2] {
+        let (base, inst) = par2_case(&format!("par2-stale-{verdict}"));
+        let t = transfer_with(&fake_par2(
+            &base,
+            verdict,
+            "echo clobbered > \"$a\"; exit 0",
+        ));
+        let archive = base.join("b.eidos");
+        let report = t
+            .pack(
+                &inst,
+                &plan(&inst, &Options::default()),
+                &archive,
+                &mut |_, _| {},
+            )
+            .unwrap();
+        // Written under a hidden name, and renamed once par2 was done.
+        let names: Vec<String> = fs::read_dir(&base)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.contains("par2") && !n.starts_with("fake"))
+            .collect();
+        assert_eq!(report.recovery.len(), 2, "{names:?}");
+        assert!(names.iter().all(|n| n.starts_with("b.eidos.")), "{names:?}");
+        let dest = base.join("restored");
+        let mut phases = Vec::new();
+        let out = t
+            .unpack(&archive, &dest, &mut |ph, _| phases.push(ph))
+            .expect("an intact backup unpacks");
+        assert!(
+            out.warnings.iter().any(|w| w.contains("do not match it")),
+            "{:?}",
+            out.warnings
+        );
+        assert!(phases.contains(&Phase::Check), "{phases:?}");
+        assert!(!phases.contains(&Phase::Repair), "{phases:?}");
+        assert_eq!(
+            fs::read(dest.join("mods/Big/textures/big.dds")).unwrap(),
+            noise(256 * 1024, 7)
+        );
+        assert!(!base.join("b.eidos.1").exists());
+        let _ = fs::remove_dir_all(&base);
+    }
+}
+
+#[test]
+fn a_repair_that_fails_puts_the_backup_back_and_extracts_nothing() {
+    if eidos_sevenzip::find_7z().is_none() {
+        eprintln!("SKIPPED: no 7-Zip on this machine.");
+        return;
+    }
+    let (base, archive) = packed_without_recovery("par2-repair-fails");
+    let len = fs::metadata(&archive).unwrap().len() as usize;
+    flip_bytes(&archive, len / 2, 1);
+    let damaged = fs::read(&archive).unwrap();
+    fs::write(base.join("b.eidos.par2"), b"set").unwrap();
+    // What par2 does on a full disk: set the original aside, fail, and leave
+    // it under the numbered name.
+    let t = transfer_with(&fake_par2(
+        &base,
+        1,
+        "mv \"$a\" \"$a.1\"; echo 'No space left on device' >&2; exit 2",
+    ));
+    let dest = base.join("restored");
+    let err = t
+        .unpack(&archive, &dest, &mut |_, _| {})
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("could not repair it"), "{err}");
+    assert!(err.contains("left as it was"), "{err}");
+    assert_eq!(fs::read(&archive).unwrap(), damaged);
+    assert!(!base.join("b.eidos.1").exists());
+    assert!(!dest.exists());
+    let _ = fs::remove_dir_all(&base);
+}
+
+#[test]
+fn a_backup_whose_end_is_damaged_is_repaired_before_its_manifest_is_read() {
+    if eidos_sevenzip::find_7z().is_none() {
+        eprintln!("SKIPPED: no 7-Zip on this machine.");
+        return;
+    }
+    let (base, archive) = packed_without_recovery("par2-early");
+    let good = base.join("good.copy");
+    fs::copy(&archive, &good).unwrap();
+    let len = fs::metadata(&archive).unwrap().len() as usize;
+    flip_bytes(&archive, len - 20, 1);
+    fs::write(base.join("b.eidos.par2"), b"set").unwrap();
+    let t = transfer_with(&fake_par2(
+        &base,
+        1,
+        &format!("mv \"$a\" \"$a.1\"; cp '{}' \"$a\"; exit 0", good.display()),
+    ));
+    let err = t.peek(&archive).unwrap_err().to_string();
+    assert!(err.contains("will first try to repair it"), "{err}");
+    let dest = base.join("restored");
+    let mut phases = Vec::new();
+    let out = t
+        .unpack(&archive, &dest, &mut |ph, _| phases.push(ph))
+        .expect("repaired, then unpacked");
+    assert!(phases.contains(&Phase::Repair), "{phases:?}");
+    assert!(
+        out.warnings
+            .iter()
+            .any(|w| w.contains("repaired from its recovery data")),
+        "{:?}",
+        out.warnings
+    );
+    assert_eq!(
+        fs::read(dest.join("mods/Big/textures/big.dds")).unwrap(),
+        noise(256 * 1024, 7)
+    );
+    assert!(base.join("b.eidos.1").is_file());
+    let _ = fs::remove_dir_all(&base);
+}

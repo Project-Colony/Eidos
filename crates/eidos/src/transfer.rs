@@ -345,8 +345,8 @@ fn print_recovery(transfer: &Transfer, opt: &Options) {
         println!("  no recovery data (--no-recovery)");
     } else {
         println!(
-            "  no recovery data: par2 is not installed (install the par2cmdline package to \
-             have it written)"
+            "  no recovery data: par2 is not installed (install par2cmdline, package par2 \
+             on Debian and Ubuntu, to have it written)"
         );
     }
 }
@@ -457,6 +457,27 @@ pub(crate) fn cmd_unpack(args: &[String]) {
     };
     let manifest = match transfer.peek(&archive) {
         Ok(m) => m,
+        // The end of the file, where 7-Zip keeps its table of contents, is
+        // what an interrupted copy loses, and then nothing can be read until
+        // the recovery data has put it back. `--info` only looks.
+        Err(e) if !info && transfer.can_repair(&archive) => {
+            eidos_log::warn!("eidos unpack: {e}");
+            let mut on_progress = progress_line();
+            let repaired = transfer.repair_from_recovery(&archive, &mut on_progress);
+            end_progress();
+            match repaired.and_then(|note| {
+                if let Some(note) = note {
+                    eidos_log::warn!("  {note}");
+                }
+                transfer.peek(&archive)
+            }) {
+                Ok(m) => m,
+                Err(e) => {
+                    eidos_log::warn!("eidos unpack: {e}");
+                    exit(1);
+                }
+            }
+        }
         Err(e) => {
             eidos_log::warn!("eidos unpack: {e}");
             exit(1);

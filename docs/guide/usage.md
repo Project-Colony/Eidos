@@ -276,8 +276,9 @@ there is very little left for a bigger dictionary to find. `--level` (0, 1, 3,
 
 The files go into **solid blocks of at most 16 MB**. Pulling one file out of a
 70 GB backup decodes at most the block it sits in, never everything in front of
-it, and on game content packing runs 2 to 5 times faster than with every file
-compressed on its own (unpacking 2 to 4 times). The cost is on damage: one
+it. At the default level 1, packing game content runs 2 to 5 times faster than
+with every file compressed on its own (unpacking 2 to 4 times); at level 5 and
+above the blocks bring little or no speed. The cost is on damage: one
 corrupt byte can take every file in its block with it, up to 16 MB of
 neighbouring files, where a non-solid archive would lose one file. The recovery
 data described below covers that. Level 0 stores the files and stays
@@ -287,8 +288,9 @@ Packing takes the instance lock, so it cannot run while the game or another
 Eidos is writing to that instance - the backup is a snapshot, not a smear. It is
 written under a `.part` name, flushed to disk, and read back whole with
 `7z t` before it gets the name you chose. That check decodes every block and
-compares every checksum, the same work an unpack does on the other machine. If
-it fails, the `.part` is deleted, nothing is written under your name, and
+compares every checksum, the same work an unpack does on the other machine. It
+shows what the disk gave back right after the write, not that the drive will
+keep it; the recovery data below is for that. If it fails, the `.part` is deleted, nothing is written under your name, and
 `eidos pack` quotes the line where 7-Zip found the damage. An interrupted or
 failed pack leaves something obviously unfinished, or nothing, rather than a
 `.eidos` file that looks complete and is not.
@@ -297,12 +299,18 @@ When par2cmdline is installed (`sudo pacman -S par2cmdline` on Arch,
 `sudo apt install par2` on Debian and Ubuntu, `sudo dnf install par2cmdline` on
 Fedora), `eidos pack` also writes PAR2 recovery data beside the archive:
 `backup.eidos.par2` and a few `backup.eidos.volNN+MM.par2` files, 5% of the
-archive plus a small index. Keep them in the same folder as the `.eidos` file
-and copy them with it, because a backup moved without them has nothing to be
-repaired from. `eidos unpack` finds them by name and checks the archive against
-them before extracting anything. If a few bytes went bad, par2 repairs the
-archive first and keeps the damaged copy as `backup.eidos.1`; damage beyond what
-the 5% covers stops the unpack before a single file is written. On a machine
+archive plus a small index. Keep them in the same folder as the `.eidos` file,
+under the names they were written with, and copy them with it: a backup moved
+without them has nothing to be repaired from, and the recovery data records the
+archive's name, so a renamed backup no longer matches it. `eidos unpack` finds
+them by name and checks the archive against them before extracting anything,
+including a backup whose end was cut off so that 7-Zip cannot open it. If a few
+bytes went bad, par2 repairs the archive first and keeps the damaged copy as
+`backup.eidos.1`, which needs free space the size of the archive in its folder;
+damage beyond what the 5% covers stops the unpack before a single file is
+written. Recovery files that do not match the archive, such as those of an
+older backup with the same name, are not used when 7-Zip reads the archive and
+finds it intact, and the unpack says so. On a machine
 without par2 the unpack still runs, with a warning that the recovery data was
 not used. `--no-recovery` packs without it, and `eidos pack --dry-run` says
 whether it will be written.

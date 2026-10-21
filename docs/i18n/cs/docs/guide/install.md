@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=40f02a87874c44292179b6dff322d0f623c307ff -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=bc05db1de00bb7c80224f065c3f730f3adc542dc -->
 
 # Instalace Eidosu
 
@@ -14,6 +14,7 @@ tlačítko „Mod Manager Download“ na Nexusu přistane ve vaší instanci.
 | **Linux s FUSE** | `fusermount3` v PATH. Dodává jej každá současná distribuce. |
 | **Hra pod Protonem, jednou spuštěná** | Steam vytvoří Wine prefix hry až při prvním spuštění a Eidos pracuje uvnitř něj. |
 | **`7z`** | Pro instalaci archivů s módy. Ve většině distribucí `p7zip`. |
+| **`par2`** (volitelné) | Data pro obnovu PAR2 pro zálohy z `eidos pack`. `par2cmdline` na Archu a Fedoře, `par2` na Debianu a Ubuntu. |
 
 Žádný root, žádný démon, žádná úprava `/etc/fuse.conf` a nic, co byste museli
 přidávat do svých skupin. Eidos připojuje uvnitř soukromého jmenného prostoru,

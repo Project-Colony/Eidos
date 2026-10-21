@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=40f02a87874c44292179b6dff322d0f623c307ff -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=bc05db1de00bb7c80224f065c3f730f3adc542dc -->
 
 # Installare Eidos
 
@@ -15,6 +15,7 @@ Download" di Nexus.
 | **Linux con FUSE** | `fusermount3` nel PATH. Ogni distribuzione attuale lo fornisce. |
 | **Un gioco Proton, avviato una volta** | Steam crea il prefisso Wine del gioco solo al primo avvio, ed Eidos lavora al suo interno. |
 | **`7z`** | Per installare gli archivi delle mod. `p7zip` nella maggior parte delle distribuzioni. |
+| **`par2`** (facoltativo) | Dati di recupero PAR2 per le copie di `eidos pack`. `par2cmdline` su Arch e Fedora, `par2` su Debian e Ubuntu. |
 
 Niente root, niente demone, nessuna modifica a `/etc/fuse.conf` e niente da
 aggiungere ai tuoi gruppi. Eidos monta dentro uno spazio dei nomi privato che

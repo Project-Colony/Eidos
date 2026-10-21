@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=7d8aa469a39312780cd84b6f2e42182d41274116 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2e356d1263b56f984090eea9a73d03429d0529ff -->
 
 # Eidos kullanımı
 
@@ -292,37 +292,45 @@ bulabileceği pek bir şey kalmaz. Kendi içeriğinizde başka düşünüyorsan�
 
 Dosyalar **en fazla 16 MB'lık solid bloklara** yerleştirilir. 70 GB'lık bir
 yedekten tek bir dosyayı çıkarmak en fazla o dosyanın bulunduğu bloğu çözer,
-asla önündeki her şeyi değil; oyun içeriğinde paketleme, her dosyanın ayrı ayrı
-sıkıştırıldığı duruma göre 2 ila 5 kat daha hızlıdır (açma 2 ila 4 kat). Bunun
-bedeli hasar durumunda ödenir: tek bir bozuk bayt, bloğundaki bütün dosyaları,
-yani 16 MB'a kadar komşu dosyayı yanında götürebilir; non-solid bir arşiv ise
-tek bir dosya kaybederdi. Aşağıda anlatılan kurtarma verisi bu durumu karşılar.
-Düzey 0 dosyaları sıkıştırmadan saklar ve non-solid kalır.
+asla önündeki her şeyi değil. Varsayılan düzey 1'de oyun içeriğini paketlemek,
+her dosyanın ayrı ayrı sıkıştırıldığı duruma göre 2 ila 5 kat daha hızlıdır
+(açma 2 ila 4 kat); düzey 5 ve üstünde bloklar hıza ya çok az katkı sağlar ya da
+hiç sağlamaz. Bunun bedeli hasar durumunda ödenir: tek bir bozuk bayt,
+bloğundaki bütün dosyaları, yani 16 MB'a kadar komşu dosyayı yanında
+götürebilir; non-solid bir arşiv ise tek bir dosya kaybederdi. Aşağıda anlatılan
+kurtarma verisi bu durumu karşılar. Düzey 0 dosyaları sıkıştırmadan saklar ve
+non-solid kalır.
 
 Paketleme örnek kilidini alır, yani oyun ya da başka bir Eidos o örneğe yazarken
 çalışamaz - yedek bir anlık görüntüdür, hareket halinde alınmış bulanık bir kare
 değil. Bir `.part` adı altında yazılır, diske boşaltılır ve seçtiğiniz adı
 almadan önce `7z t` ile baştan sona geri okunur. Bu denetim her bloğu çözer ve
 her sağlama toplamını karşılaştırır; diğer makinedeki bir açma işleminin
-yapacağı işin aynısı. Başarısız olursa `.part` silinir, sizin verdiğiniz adla
-hiçbir şey yazılmaz ve `eidos pack`, 7-Zip'in hasarı bulduğu satırı aktarır.
-Yarıda kesilen ya da başarısız olan bir paketleme, tam görünen ama olmayan bir
-`.eidos` dosyası yerine açıkça yarım kalmış bir şey bırakır ya da hiçbir şey
-bırakmaz.
+yapacağı işin aynısı. Diskin yazmadan hemen sonra geri verdiğini gösterir,
+sürücünün onu saklayacağını değil; bunun için aşağıdaki kurtarma verisi vardır.
+Başarısız olursa `.part` silinir, sizin verdiğiniz adla hiçbir şey yazılmaz ve
+`eidos pack`, 7-Zip'in hasarı bulduğu satırı aktarır. Yarıda kesilen ya da
+başarısız olan bir paketleme, tam görünen ama olmayan bir `.eidos` dosyası
+yerine açıkça yarım kalmış bir şey bırakır ya da hiçbir şey bırakmaz.
 
 par2cmdline kuruluysa (Arch'ta `sudo pacman -S par2cmdline`, Debian ve Ubuntu'da
 `sudo apt install par2`, Fedora'da `sudo dnf install par2cmdline`), `eidos pack`
 arşivin yanına PAR2 kurtarma verisi de yazar: `backup.eidos.par2` ve birkaç
 `backup.eidos.volNN+MM.par2` dosyası, toplamda arşivin %5'i artı küçük bir
-dizin. Bunları `.eidos` dosyasıyla aynı klasörde tutun ve onunla birlikte
-kopyalayın; onlar olmadan taşınan bir yedeğin onarılacağı hiçbir kaynak yoktur.
-`eidos unpack` onları adlarından bulur ve herhangi bir şeyi çıkarmadan önce
-arşivi onlarla denetler. Birkaç bayt bozulmuşsa par2 önce arşivi onarır ve
-hasarlı kopyayı `backup.eidos.1` olarak saklar; %5'in karşılayabileceğinden
-büyük bir hasar, tek bir dosya yazılmadan açma işlemini durdurur. par2 olmayan
-bir makinede açma yine de çalışır ve kurtarma verisinin kullanılmadığına dair
-bir uyarı verir. `--no-recovery` onlarsız paketler, `eidos pack --dry-run` ise
-yazılıp yazılmayacaklarını söyler.
+dizin. Bunları `.eidos` dosyasıyla aynı klasörde, yazıldıkları adlarla tutun ve
+onunla birlikte kopyalayın: onlar olmadan taşınan bir yedeğin onarılacağı hiçbir
+kaynak yoktur, ayrıca kurtarma verisi arşivin adını kaydeder, bu yüzden adı
+değiştirilmiş bir yedek artık onlarla eşleşmez. `eidos unpack` onları adlarından
+bulur ve herhangi bir şeyi çıkarmadan önce arşivi onlarla denetler; sonu
+7-Zip'in açamayacağı kadar kesilmiş bir yedek de buna dahildir. Birkaç bayt
+bozulmuşsa par2 önce arşivi onarır ve hasarlı kopyayı `backup.eidos.1` olarak
+saklar, bunun için arşivin klasöründe arşiv boyutu kadar boş alan gerekir; %5'in
+karşılayabileceğinden büyük bir hasar, tek bir dosya yazılmadan açma işlemini
+durdurur. Arşivle eşleşmeyen kurtarma dosyaları, örneğin aynı adı taşıyan daha
+eski bir yedeğinkiler, 7-Zip arşivi okuyup sağlam bulduğunda kullanılmaz ve açma
+işlemi bunu bildirir. par2 olmayan bir makinede açma yine de çalışır ve kurtarma
+verisinin kullanılmadığına dair bir uyarı verir. `--no-recovery` onlarsız
+paketler, `eidos pack --dry-run` ise yazılıp yazılmayacaklarını söyler.
 
 ### İçinde ne yok ve neden
 

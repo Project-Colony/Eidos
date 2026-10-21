@@ -431,18 +431,32 @@ impl Transfer {
         // the floor is the whole size. Recovery data adds its share of the
         // archive on top, written after it.
         if let Some(free) = free_bytes(&anchor) {
-            let mut floor = if self.opt.level == 0 {
+            let floor = if self.opt.level == 0 {
                 plan.bytes
             } else {
                 plan.bytes / 4
             };
-            if self.writes_recovery() {
-                floor += floor * par2::REDUNDANCY_PERCENT / 100;
-            }
-            if free < floor {
+            let recovery = if self.writes_recovery() {
+                floor * par2::REDUNDANCY_PERCENT / 100
+            } else {
+                0
+            };
+            if free < floor + recovery {
+                // The recovery share is named on its own: it is not compression,
+                // and it is the part the user can leave out.
+                let extra = if recovery > 0 {
+                    format!(
+                        ", plus about {} of PAR2 recovery data ({}%; --no-recovery, or \
+                         unticking it in the window, leaves it out)",
+                        human_bytes(recovery),
+                        par2::REDUNDANCY_PERCENT
+                    )
+                } else {
+                    String::new()
+                };
                 return Err(TransferError::Refused(format!(
                     "Not enough room at '{}': {} free, and {} of mods cannot compress \
-                     below about {}.",
+                     below about {}{extra}.",
                     anchor.display(),
                     human_bytes(free),
                     human_bytes(plan.bytes),
@@ -617,34 +631,35 @@ impl Transfer {
     /// as it was: no file ever gets the final name without passing the check.
     ///
     /// The fsync before the check is what makes a power cut after the rename
-    /// leave either the old file or the whole new one. The check itself mostly
-    /// reads the page cache, so it catches what 7-Zip and the filesystem got
-    /// wrong on the way in, not a disk that drops data later.
+    /// leave either the old file or the whole new one. After it the written
+    /// pages are clean but still cached, and `7z t` would decode memory rather
+    /// than the disk, so they are dropped first and the check reads what the
+    /// device returns. That is a hint the kernel may ignore (FUSE and network
+    /// filesystems can), and a drive's own cache can still answer some reads,
+    /// so the check proves what 7-Zip wrote and what the disk gave back once,
+    /// not that the disk will keep it.
     fn seal(
         &self,
         part: &Path,
         dest: &Path,
         on_progress: &mut impl FnMut(Phase, u8),
     ) -> Result<(), TransferError> {
-        if let Err(e) = fs::File::open(part).and_then(|f| f.sync_all()) {
+        let flushed = fs::File::open(part).and_then(|f| {
+            f.sync_all()?;
+            use std::os::fd::AsRawFd;
+            // SAFETY: a valid open descriptor; the call only advises the
+            // kernel about its cached pages, and its result is not needed.
+            unsafe { libc::posix_fadvise(f.as_raw_fd(), 0, 0, libc::POSIX_FADV_DONTNEED) };
+            Ok(())
+        });
+        if let Err(e) = flushed {
             discard_partial(part);
             return Err(TransferError::Io(format!(
                 "could not flush the finished backup to disk: {e}. Nothing was kept."
             )));
         }
-        on_progress(Phase::Check, 0);
-        let args: Vec<OsString> = vec![
-            "t".into(),
-            "-bso0".into(),
-            "-bsp1".into(),
-            part.as_os_str().to_os_string(),
-        ];
-        if let Err(e) = eidos_sevenzip::run(self.bin, args, &mut |p| on_progress(Phase::Check, p)) {
+        if let Err(said) = self.test_archive(part, &mut |p| on_progress(Phase::Check, p)) {
             discard_partial(part);
-            let said = match e {
-                eidos_sevenzip::SevenZipError::Failed(s) => decisive_line(&s),
-                other => other.to_string(),
-            };
             return Err(TransferError::Io(format!(
                 "The backup was written but failed its check when 7-Zip read it back: \
                  {said}. The unfinished file was removed and nothing was written to '{}'. \
@@ -655,9 +670,9 @@ impl Transfer {
             )));
         }
         // Recovery files left from the file this one replaces describe another
-        // archive, and an unpack would refuse this one as damaged beyond repair.
-        // Removed BEFORE the rename, so no moment exists where they sit beside
-        // the new file.
+        // archive, and an unpack would have to read this one twice to find out
+        // they are of no use. Removed BEFORE the rename, with any half-written
+        // set, so no moment exists where they sit beside the new file.
         par2::remove(dest);
         fs::rename(part, dest).map_err(io("could not put the finished backup in place"))?;
         // The rename is only durable once the directory is. Best effort: some
@@ -668,6 +683,45 @@ impl Transfer {
         };
         let _ = fs::File::open(dir).and_then(|d| d.sync_all());
         Ok(())
+    }
+
+    /// `7z t`: decode every block of `archive` and check every CRC. Reported
+    /// as [`Phase::Check`], starting at 0. The error is 7-Zip's decisive line.
+    fn test_archive(&self, archive: &Path, on_progress: &mut impl FnMut(u8)) -> Result<(), String> {
+        on_progress(0);
+        let args: Vec<OsString> = vec![
+            "t".into(),
+            "-bso0".into(),
+            "-bsp1".into(),
+            archive.as_os_str().to_os_string(),
+        ];
+        eidos_sevenzip::run(self.bin, args, on_progress).map_err(|e| match e {
+            eidos_sevenzip::SevenZipError::Failed(s) => decisive_line(&s),
+            other => other.to_string(),
+        })
+    }
+
+    /// Whether `archive` has recovery data beside it that this machine can
+    /// use, so a backup that cannot be read is worth repairing before giving up.
+    pub fn can_repair(&self, archive: &Path) -> bool {
+        self.par2.is_some() && par2::index(archive).is_file()
+    }
+
+    /// Check `archive` against its recovery data and repair it if it needs it,
+    /// as [`Transfer::unpack`] does before extracting. Returns the sentence to
+    /// show, if any.
+    ///
+    /// For a front end whose [`Transfer::peek`] failed where
+    /// [`Transfer::can_repair`] says yes: 7-Zip keeps its table of contents at
+    /// the end of the file, where an interrupted copy cuts it short, and then
+    /// not even the manifest can be read until the file is repaired.
+    pub fn repair_from_recovery(
+        &self,
+        archive: &Path,
+        on_progress: &mut impl FnMut(Phase, u8),
+    ) -> Result<Option<String>, TransferError> {
+        self.check_recovery(archive, on_progress)
+            .map(|(note, _)| note)
     }
 
     /// Read a backup's manifest without extracting it.
@@ -710,12 +764,16 @@ impl Transfer {
                 ))
             }),
             Err(_) => Err(TransferError::Refused(match failed {
+                Some(why) if self.can_repair(archive) => format!(
+                    "'{}' could not be read as an Eidos backup: {why}\nRecovery data sits \
+                     beside it, so unpacking it will first try to repair it from that.",
+                    archive.display()
+                ),
                 Some(why) if par2::index(archive).is_file() => format!(
                     "'{}' could not be read as an Eidos backup: {why}\nRecovery data sits \
-                     beside it. If the backup is damaged, `par2 repair '{}'` may put it \
-                     back; then try again.",
-                    archive.display(),
-                    par2::index(archive).display()
+                     beside it, but par2 is not installed. Install par2cmdline (par2 on \
+                     Debian and Ubuntu) and try again: unpacking will then try to repair it.",
+                    archive.display()
                 ),
                 Some(why) => format!(
                     "'{}' could not be read as an Eidos backup: {why}",
@@ -862,69 +920,130 @@ impl Transfer {
 
     /// Check `archive` against its PAR2 recovery data, repairing it if it can.
     ///
-    /// Runs after the preflight, so a refusal that costs nothing (a folder
-    /// that is not empty) is not made to wait for a verify that reads the
-    /// whole archive. The preflight's listing stays valid: a repair restores
-    /// the exact bytes the recovery data was made from.
+    /// Runs after the preflight when the archive opens, so a refusal that
+    /// costs nothing (a folder that is not empty) is not made to wait for a
+    /// verify that reads the whole archive.
     ///
-    /// Returns the sentence the report should carry, if any. Damage par2
-    /// cannot repair stops the unpack here, before a byte is extracted. Every
-    /// other way par2 can fail to answer is a warning and the extraction goes
-    /// ahead, because 7-Zip checks every file's CRC as it extracts and refuses
-    /// a damaged one on its own.
+    /// Returns the sentence the report should carry, if any, and whether the
+    /// archive was repaired. Damage par2 cannot repair stops the unpack here,
+    /// before a byte is extracted. Every other way par2 can fail to answer is
+    /// a warning and the extraction goes ahead, because 7-Zip checks every
+    /// file's CRC as it extracts and refuses a damaged one on its own.
     fn check_recovery(
         &self,
         archive: &Path,
         on_progress: &mut impl FnMut(Phase, u8),
-    ) -> Result<Option<String>, TransferError> {
+    ) -> Result<(Option<String>, bool), TransferError> {
         let index = par2::index(archive);
         if !index.is_file() {
-            return Ok(None);
+            return Ok((None, false));
         }
         let Some(bin) = &self.par2 else {
-            return Ok(Some(format!(
-                "Recovery data sits beside the backup ({}), but par2 is not installed, so \
-                 the backup was not checked against it. Install the par2cmdline package to \
-                 use it next time.",
-                index.display()
-            )));
+            return Ok((
+                Some(format!(
+                    "Recovery data sits beside the backup ({}), but par2 is not installed, so \
+                     the backup was not checked against it. Install par2cmdline (par2 on \
+                     Debian and Ubuntu) to use it next time.",
+                    index.display()
+                )),
+                false,
+            ));
         };
         on_progress(Phase::Verify, 0);
-        match par2::verify(bin, archive) {
-            par2::Verdict::Intact => Ok(None),
-            par2::Verdict::Unknown(why) => Ok(Some(format!(
-                "par2 could not use the recovery data beside the backup ({why}), so the \
-                 backup was not checked against it. 7-Zip still checked every file as it \
-                 extracted."
-            ))),
-            par2::Verdict::Unrepairable(why) => Err(TransferError::Refused(format!(
+        let beyond = match par2::verify(bin, archive) {
+            par2::Verdict::Intact => return Ok((None, false)),
+            par2::Verdict::Unknown(why) => {
+                return Ok((
+                    Some(format!(
+                        "par2 could not use the recovery data beside the backup ({why}), so \
+                         the backup was not checked against it. 7-Zip still checked every \
+                         file as it extracted."
+                    )),
+                    false,
+                ))
+            }
+            par2::Verdict::Unrepairable(why) => Some(why),
+            par2::Verdict::Repairable => None,
+        };
+        // par2 looks for its blocks anywhere in the file, so a set left beside
+        // a newer backup of the same name finds most of them in it and calls
+        // it repairable: a "repair" would then rebuild the OLD backup over the
+        // new one. A renamed backup reads as wholly missing. So par2's verdict
+        // is only believed once 7-Zip's own CRCs say the archive is damaged.
+        if self
+            .test_archive(archive, &mut |p| on_progress(Phase::Check, p))
+            .is_ok()
+        {
+            return Ok((
+                Some(format!(
+                    "The recovery files beside the backup ({}) do not match it, and 7-Zip \
+                     read the whole backup and found it intact, so they were not used. They \
+                     belong to another file: an older backup under the same name, or this \
+                     one under the name it had when it was packed. Delete them, or move \
+                     them to the file they belong to.",
+                    index.display()
+                )),
+                false,
+            ));
+        }
+        if let Some(why) = beyond {
+            return Err(TransferError::Refused(format!(
                 "'{}' is damaged beyond what its recovery data can repair: {why}. Nothing \
-                 was extracted. If the recovery files belong to another version of this \
-                 backup, move them away and unpack again.",
+                 was extracted. If the backup or its recovery files were renamed after \
+                 packing, give them back their original names; if the recovery files \
+                 belong to another version of this backup, move them away. Then unpack \
+                 again.",
                 archive.display()
-            ))),
-            par2::Verdict::Repairable => {
-                on_progress(Phase::Repair, 0);
-                match par2::repair(bin, archive) {
-                    Ok(set_aside) => Ok(Some(format!(
-                        "The backup was damaged and has been repaired from its recovery data \
-                         before unpacking.{} The disk it was stored on may be failing.",
-                        set_aside
-                            .map(|p| format!(
-                                " par2 kept the damaged copy as '{}'; delete it once you \
-                                 have checked the restore.",
-                                p.display()
-                            ))
-                            .unwrap_or_default()
-                    ))),
-                    Err(why) => Err(TransferError::Refused(format!(
-                        "'{}' is damaged and par2 could not repair it: {why}. Nothing was \
-                         extracted. par2 may have renamed the damaged file to '{}.1' (or the next \
-                         free number).",
-                        archive.display(),
-                        archive.display()
-                    ))),
-                }
+            )));
+        }
+        // par2 renames the damaged file and writes a whole repaired copy beside
+        // it, so a disk without room for a second copy fails halfway. Asked
+        // first, while nothing has been touched.
+        let size = fs::metadata(archive).map(|m| m.len()).unwrap_or(0);
+        let dir = match archive.parent() {
+            Some(p) if !p.as_os_str().is_empty() => p,
+            _ => Path::new("."),
+        };
+        if let Some(free) = free_bytes(dir).filter(|&f| f < size) {
+            return Err(TransferError::Refused(format!(
+                "'{}' is damaged and its recovery data can repair it, but a repair writes \
+                 a repaired copy beside it, which needs {} free there, and only {} is. \
+                 Nothing was changed. Copy the .eidos file and its .par2 files to a disk \
+                 with room and unpack from there.",
+                archive.display(),
+                human_bytes(size),
+                human_bytes(free)
+            )));
+        }
+        on_progress(Phase::Repair, 0);
+        match par2::repair(bin, archive) {
+            Ok(set_aside) => Ok((
+                Some(format!(
+                    "The backup was damaged and has been repaired from its recovery data \
+                     before unpacking.{} The disk it was stored on may be failing.",
+                    set_aside
+                        .map(|p| format!(
+                            " par2 kept the damaged copy as '{}'; delete it once you have \
+                             checked the restore.",
+                            p.display()
+                        ))
+                        .unwrap_or_default()
+                )),
+                true,
+            )),
+            Err(why) => {
+                let left = if archive.is_file() {
+                    "The backup file was left as it was."
+                } else {
+                    "par2 moved the damaged file to a numbered name beside it ('.1' or the \
+                     next free number), and it could not be moved back."
+                };
+                Err(TransferError::Refused(format!(
+                    "'{}' is damaged and par2 could not repair it: {why}. Nothing was \
+                     extracted. {left} If the disk is full or read-only, copy the .eidos \
+                     file and its .par2 files to a disk with room and unpack from there.",
+                    archive.display()
+                )))
             }
         }
     }
@@ -932,18 +1051,44 @@ impl Transfer {
     /// Put a backup back, and repair what a plain copy would have broken.
     ///
     /// When recovery files sit beside the archive, the archive is checked
-    /// against them after the preflight and before anything is extracted, and
-    /// repaired if it needs it (see [`Transfer::check_recovery`]).
+    /// against them before anything is extracted, and repaired if it needs it
+    /// (see [`Transfer::check_recovery`]).
     pub fn unpack(
         &self,
         archive: &Path,
         dest: &Path,
         on_progress: &mut impl FnMut(Phase, u8),
     ) -> Result<UnpackReport, TransferError> {
-        let manifest = self.peek(archive)?;
-        let contents = self.preflight_unpack(archive, &manifest, dest)?;
+        // 7-Zip keeps its table of contents at the END of the file, where an
+        // interrupted copy cuts it short, and then not even the manifest opens.
+        // Recovery data repairs that end as well as any other part.
+        let mut early = None;
+        let mut manifest = match self.peek(archive) {
+            Ok(m) => m,
+            Err(_) if self.can_repair(archive) => {
+                early = Some(self.check_recovery(archive, on_progress)?.0);
+                self.peek(archive)?
+            }
+            Err(e) => return Err(e),
+        };
+        let mut contents = self.preflight_unpack(archive, &manifest, dest)?;
+        let note = match early {
+            Some(note) => note,
+            None => {
+                let (note, repaired) = self.check_recovery(archive, on_progress)?;
+                if repaired {
+                    // The preflight read the damaged file. The entries, the
+                    // escape and symlink checks and the free space have to be
+                    // about the file that will be extracted, and the repaired
+                    // copy now takes room on the disk too.
+                    manifest = self.peek(archive)?;
+                    contents = self.preflight_unpack(archive, &manifest, dest)?;
+                }
+                note
+            }
+        };
         let mut warnings = contents.warnings;
-        warnings.extend(self.check_recovery(archive, on_progress)?);
+        warnings.extend(note);
         fs::create_dir_all(dest).map_err(io("could not create the destination folder"))?;
 
         let mut out = OsString::from("-o");

@@ -397,7 +397,7 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("pack_file", "File"),
     ("pack_include_downloads", "Include downloads/ ({size})"),
     ("pack_recovery", "Write recovery data beside it (PAR2, {pct}% of the archive)"),
-    ("pack_recovery_missing", "Recovery data needs par2: install the par2cmdline package."),
+    ("pack_recovery_missing", "Recovery data needs par2: install par2cmdline (par2 on Debian and Ubuntu)."),
     ("pack_compression", "Compression"),
     ("pack_level_default", "smaller costs far more time than it saves"),
     ("pack_level_stored", "stored, not compressed"),
