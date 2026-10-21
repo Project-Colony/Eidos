@@ -633,3 +633,85 @@ fn warmed_main_view_construction_and_layout_medians() {
         assert!(messages.is_empty());
     }
 }
+
+/// Rows aim a drag only while one is live. Without a drag, crossing rows
+/// publishes nothing (each message would be a whole-window rebuild); once a
+/// press arms one, entering another row aims at it, and the row already under
+/// the pointer fires no false enter. Mod rows and plugin rows both.
+#[test]
+fn rows_aim_only_during_a_drag() {
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    let mods_dir = app.created.as_ref().unwrap().mods_dir();
+    app.mods = ["Aim A", "Aim B", "Aim C"]
+        .iter()
+        .map(|name| ModEntry {
+            name: name.to_string(),
+            enabled: true,
+            path: mods_dir.join(name),
+            unmanaged: false,
+        })
+        .collect();
+    app.view_generation.set(app.view_generation.get() + 1);
+    let mut renderer = renderer();
+    let moved = |at: Point| [Event::Mouse(mouse::Event::CursorMoved { position: at })];
+    let aimed = |messages: &[Message]| -> Vec<usize> {
+        messages
+            .iter()
+            .filter_map(|m| match m {
+                Message::DragOverGap(i) | Message::PluginDragOverGap(i) => Some(*i),
+                _ => None,
+            })
+            .collect()
+    };
+
+    let a = label(crate::view(&app), &mut renderer, "Aim A", 0);
+    let c = label(crate::view(&app), &mut renderer, "Aim C", 0);
+    let (cache, messages) = frame(
+        crate::view(&app),
+        &mut renderer,
+        Cache::new(),
+        &moved(a),
+        a,
+        None,
+    );
+    assert!(messages.is_empty(), "{messages:?}");
+    let (cache, messages) = frame(crate::view(&app), &mut renderer, cache, &moved(c), c, None);
+    assert!(messages.is_empty(), "no drag, no message: {messages:?}");
+    let (cache, _) = frame(crate::view(&app), &mut renderer, cache, &moved(a), a, None);
+
+    let _ = crate::update::update_inner(&mut app, Message::DragStart(0));
+    assert!(app.drag_state.is_some(), "the press armed a drag");
+    let (cache, messages) = frame(crate::view(&app), &mut renderer, cache, &moved(a), a, None);
+    assert!(aimed(&messages).is_empty(), "no false enter: {messages:?}");
+    let (_, messages) = frame(crate::view(&app), &mut renderer, cache, &moved(c), c, None);
+    assert_eq!(aimed(&messages), vec![2], "{messages:?}");
+
+    let mut list = eidos_plugins::PluginList::default();
+    for name in ["AimA.esp", "AimB.esp", "AimC.esp"] {
+        list.plugins
+            .push(crate::test_support::plugin_row(name, "Aim A"));
+    }
+    app.plugins = Some(list);
+    let panel = || crate::modinfo::plugins_panel(&app);
+    let a = label(panel(), &mut renderer, "AimA.esp", 0);
+    let c = label(panel(), &mut renderer, "AimC.esp", 0);
+    let (cache, _) = frame(panel(), &mut renderer, Cache::new(), &moved(a), a, None);
+    let (cache, messages) = frame(panel(), &mut renderer, cache, &moved(c), c, None);
+    assert!(
+        aimed(&messages).is_empty(),
+        "no plugin drag, no aim: {messages:?}"
+    );
+    let (cache, _) = frame(panel(), &mut renderer, cache, &moved(a), a, None);
+
+    let _ = crate::update::update_inner(&mut app, Message::PluginDragStart(0));
+    assert!(app.plugin_drag.is_some(), "the press armed a plugin drag");
+    // The drag puts its range line above the list, which moves every row
+    // down, so the rows are found again and the pointer settled on one first.
+    let panel = || crate::modinfo::plugins_panel(&app);
+    let a = label(panel(), &mut renderer, "AimA.esp", 0);
+    let c = label(panel(), &mut renderer, "AimC.esp", 0);
+    let (cache, _) = frame(panel(), &mut renderer, cache, &moved(a), a, None);
+    let (_, messages) = frame(panel(), &mut renderer, cache, &moved(c), c, None);
+    assert_eq!(aimed(&messages), vec![2], "{messages:?}");
+}

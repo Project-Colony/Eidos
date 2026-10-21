@@ -693,6 +693,7 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("status_identifying", "Identifying {name} by checksum..."),
     ("status_identify_read_failed", "could not read the archive: {error}"),
     ("status_identify_sidecar_failed", "identified it, but could not write the sidecar: {error}"),
+    ("status_lookup_stopped", "the lookup stopped unexpectedly"),
     ("status_identified", "Identified as '{name}'."),
     ("status_identify_failed", "Could not identify it: {error}"),
     ("status_connect_nexus_first", "Connect a Nexus account first (Preferences, or `eidos nexus key <KEY>`)."),

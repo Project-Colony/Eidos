@@ -4263,6 +4263,35 @@ fn a_queued_drop_waits_for_a_copy_step_and_its_own_answer() {
     assert_eq!(app.status.as_deref(), Some("refused"));
 }
 
+/// A copy step that panics still answers. `unblock` would otherwise re-raise
+/// the panic in a task the executor drops, no `Placed` would come back, and
+/// the modal (which has no dismiss) would stay up for the session.
+#[test]
+fn a_panicking_copy_step_still_closes_its_modal() {
+    let (mut app, root) = collection_app(&[], &[]);
+    let target = update::collection_target(&app).unwrap();
+    let task = crate::modinfo::place_on_worker(
+        &mut app,
+        target,
+        "Odd Archive".into(),
+        root.join("odd.7z"),
+        None,
+        |_| panic!("synthetic copy-step panic"),
+    );
+    assert!(app.place_job.is_some());
+    crate::installers::tests::drive(&mut app, task);
+    assert!(app.place_job.is_none(), "the modal closed");
+    assert!(
+        app.status
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Odd Archive"),
+        "{:?}",
+        app.status
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// Polling before the worker is done must leave the job alone - taking the
 /// (empty) outcome would drop the install on the floor.
 #[test]

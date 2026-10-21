@@ -86,9 +86,10 @@ ureq = "3.4.2"
 #
 # `panic = "abort"` is deliberately absent and should stay absent: there are
 # ~15 worker threads in production paths (archive extraction, the game-exit
-# watcher, downloads) and no `catch_unwind`. Aborting would turn a panic in any
-# one of them into the whole window dying, where today the poll reports it and
-# the window survives.
+# watcher, downloads), and `catch_unwind` only around the two jobs on smol's
+# blocking pool whose panic would otherwise be lost (an install's copy step,
+# download identify). Aborting would turn a panic in any one of them into the
+# whole window dying, where today the poll reports it and the window survives.
 codegen-units = 1
 lto = "thin"
 strip = "symbols"

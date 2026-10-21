@@ -33,17 +33,26 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // would repaint this row. `unblock` runs it on smol's blocking pool
             // and the future only waits. A thread plus a blocking `recv()` here
             // looked equivalent and was not: the `recv()` itself held the
-            // executor for the whole hash and round trip.
+            // executor for the whole hash and round trip. A panic is caught
+            // inside: `unblock` would re-raise it in a detached task that
+            // drops it, `IdentifiedDownload` would never arrive, and the guard
+            // above would refuse every later identify for the session.
             return Task::perform(
                 smol::unblock(move || {
-                    let md5 = eidos_nexus::md5_file(&path)
-                        .map_err(|e| tf("status_identify_read_failed", &[("error", &e)]))?;
-                    let nexus = eidos_nexus::Nexus::connect()?;
-                    let found = nexus.md5_search(domain, &md5)?;
-                    let label = found.remote.name.clone();
-                    eidos_nexus::write_recovered_meta(&path, short, &found)
-                        .map_err(|e| tf("status_identify_sidecar_failed", &[("error", &e)]))?;
-                    Ok(label)
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+                        || -> Result<String, String> {
+                            let md5 = eidos_nexus::md5_file(&path)
+                                .map_err(|e| tf("status_identify_read_failed", &[("error", &e)]))?;
+                            let nexus = eidos_nexus::Nexus::connect()?;
+                            let found = nexus.md5_search(domain, &md5)?;
+                            let label = found.remote.name.clone();
+                            eidos_nexus::write_recovered_meta(&path, short, &found).map_err(
+                                |e| tf("status_identify_sidecar_failed", &[("error", &e)]),
+                            )?;
+                            Ok(label)
+                        },
+                    ))
+                    .unwrap_or_else(|_| Err(t("status_lookup_stopped").into()))
                 }),
                 Message::IdentifiedDownload,
             );

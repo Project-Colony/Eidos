@@ -65,21 +65,29 @@ pub(crate) fn place_on_worker(
     });
     Task::perform(
         smol::unblock(move || {
-            let placed = match inst.try_lock("installing a mod") {
-                Err(error) => work(Err(tf("status_cannot_install_now", &[("error", &error)]))),
-                // Held for the copy and released at the end of this arm, before
-                // the window hears of it: `after_install` takes its own there.
-                Ok(_guard) => {
-                    if crate::update::collection_target_for(&inst, &game, &candidates).as_ref()
-                        == Some(&worker_target)
-                    {
-                        work(Ok(inst.mods_dir()))
-                    } else {
-                        work(Err(t("installer_target_changed_reopen_short").to_string()))
+            // A panic must still end in `Placed`. `unblock` re-raises it inside
+            // iced's future, and the executor drops it with the detached task,
+            // so no message would ever come back: the modal would stay up for
+            // the session. Caught here, the slot stays empty and the `Placed`
+            // arm reports the worker as stopped.
+            let placed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                match inst.try_lock("installing a mod") {
+                    Err(error) => work(Err(tf("status_cannot_install_now", &[("error", &error)]))),
+                    // Held for the copy and released at the end of this arm, before
+                    // the window hears of it: `after_install` takes its own there.
+                    Ok(_guard) => {
+                        if crate::update::collection_target_for(&inst, &game, &candidates).as_ref()
+                            == Some(&worker_target)
+                        {
+                            work(Ok(inst.mods_dir()))
+                        } else {
+                            work(Err(t("installer_target_changed_reopen_short").to_string()))
+                        }
                     }
                 }
-            };
-            if let Ok(mut s) = slot.lock() {
+            }))
+            .ok();
+            if let (Some(placed), Ok(mut s)) = (placed, slot.lock()) {
                 *s = Some(placed);
             }
             id

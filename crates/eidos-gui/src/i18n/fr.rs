@@ -693,6 +693,7 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("status_identifying", "Identification de {name} par somme de contrôle..."),
     ("status_identify_read_failed", "impossible de lire l'archive : {error}"),
     ("status_identify_sidecar_failed", "identifiée, mais impossible d'écrire le fichier d'accompagnement : {error}"),
+    ("status_lookup_stopped", "la recherche s'est arrêtée de façon inattendue"),
     ("status_identified", "Identifiée comme « {name} »."),
     ("status_identify_failed", "Impossible de l'identifier : {error}"),
     ("status_connect_nexus_first", "Connectez d'abord un compte Nexus (Préférences, ou `eidos nexus key <KEY>`)."),

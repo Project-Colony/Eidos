@@ -566,10 +566,10 @@ pub(crate) struct App {
     ///
     /// iced's `on_right_press` carries no coordinates, so a context menu has no
     /// way to know where it was summoned from unless the position is tracked
-    /// separately. Both are fed by the event subscription. `cursor` moves on a
-    /// press and during a divider drag only, never per mouse move: menus read
-    /// the live position through `subscription::pointer`, and this is its
-    /// fallback.
+    /// separately. Both are fed by the event subscription. `cursor` moves
+    /// during a divider drag only (and in tests), never per mouse move or
+    /// press: menus read the live position through `subscription::pointer`,
+    /// and this is its fallback.
     pub(crate) cursor: iced::Point,
     pub(crate) window: iced::Size,
     /// Where the open context menu was summoned from, frozen at that moment - the

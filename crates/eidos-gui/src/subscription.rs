@@ -103,16 +103,17 @@ pub(crate) fn subscription(app: &App) -> iced::Subscription<Message> {
     // Where the pointer is, and how big the window is. Needed because iced's
     // right-press carries no coordinates, so a context menu cannot otherwise be
     // placed where it was summoned from. A move only updates `POINTER` and
-    // publishes nothing (see there for why); a press publishes the position
-    // once, which costs nothing extra because the click rebuilds anyway, and
-    // keeps `app.cursor` current for the menus that fall back on it.
+    // publishes nothing (see there for why), and neither does a press: every
+    // menu reads `pointer()` when it opens. A press used to publish
+    // `PointerAt` too, on the belief that it rode along with the click's own
+    // rebuild. It did not: a listener's message comes back through the proxy
+    // on a later loop turn, so each press paid a second update, view and
+    // layout (1.7 ms at 1000 rows, 26 ms at 10000) that nothing read. Only the
+    // divider drag's own stream sends `PointerAt` now.
     let pointer = iced::event::listen_with(|event, _status, _window| match event {
         iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
             POINTER.store(pack(position), std::sync::atomic::Ordering::Relaxed);
             None
-        }
-        iced::Event::Mouse(iced::mouse::Event::ButtonPressed(_)) => {
-            last_pointer().map(Message::PointerAt)
         }
         // A release ANYWHERE ends a drag. `mouse_area::on_release` only fires
         // while the cursor is over its bounds, so without this a drag let go

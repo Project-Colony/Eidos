@@ -310,7 +310,9 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         if i < app.mods.len() {
             let catcher = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
                 .on_press(Message::CloseMenu);
-            let at = app.menu_at.unwrap_or(app.cursor);
+            let at = app
+                .menu_at
+                .unwrap_or_else(|| crate::subscription::pointer(app));
             let card = floating_at(mod_menu_card(app, i), at, app.window);
             layers = layers.push(catcher).push(card);
         }
@@ -328,9 +330,11 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
 
     // The extraction dialog. No scrim catcher: there is nothing to cancel yet -
     // 7-Zip is mid-archive - and a click that dismissed it would leave the job
-    // running with nothing watching for its result.
+    // running with nothing watching for its result. The scrim is `opaque`
+    // here and below: a `mouse_area` with no handler captures nothing, so the
+    // press, hover and scroll all went through to the screen underneath.
     if let Some(job) = &app.install_job {
-        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill));
+        let scrim = iced::widget::opaque(Space::new().width(Length::Fill).height(Length::Fill));
         layers = layers
             .push(scrim)
             .push(container(install_progress_dialog(job)).center(Length::Fill));
@@ -340,7 +344,7 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
     // reason: its worker holds the instance lock, so anything clicked behind it
     // would be refused.
     if let Some(job) = &app.place_job {
-        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill));
+        let scrim = iced::widget::opaque(Space::new().width(Length::Fill).height(Length::Fill));
         layers = layers
             .push(scrim)
             .push(container(place_progress_dialog(job)).center(Length::Fill));
@@ -352,7 +356,7 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
     // and one more - while it is FINISHED, a stray click would throw away the
     // report before it had been read.
     if let Some(job) = &app.transfer_job {
-        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill));
+        let scrim = iced::widget::opaque(Space::new().width(Length::Fill).height(Length::Fill));
         let card = container(mouse_area(transfer_dialog(job)).on_press(Message::Noop))
             .center(Length::Fill);
         layers = layers.push(scrim).push(card);
@@ -414,7 +418,9 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
             .on_press(Message::ClosePluginMenu)
             .on_right_press(Message::ClosePluginMenu);
         // From the frozen anchor, not the live cursor.
-        let at = app.menu_at.unwrap_or(app.cursor);
+        let at = app
+            .menu_at
+            .unwrap_or_else(|| crate::subscription::pointer(app));
         let card = floating_at(plugin_menu_card(app, i), at, app.window);
         layers = layers.push(catcher).push(card);
     }
@@ -577,7 +583,9 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
     if let Some(name) = app.profile_menu.clone() {
         let catcher = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
             .on_press(Message::ProfileCloseMenu);
-        let at = app.menu_at.unwrap_or(app.cursor);
+        let at = app
+            .menu_at
+            .unwrap_or_else(|| crate::subscription::pointer(app));
         let card = floating_at(profile_menu_card(app, &name), at, app.window);
         layers = layers.push(catcher).push(card);
     }
