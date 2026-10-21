@@ -63,7 +63,7 @@ pub(crate) fn schedule_archive_conflicts(app: &mut App) {
         cancel: cancel.clone(),
     });
     app.archive_warnings.clear();
-    std::thread::spawn(move || {
+    let work = move || {
         let mut parts: Parts = Vec::with_capacity(layers.len());
         for l in layers {
             if cancel.load(Ordering::Relaxed) {
@@ -78,18 +78,23 @@ pub(crate) fn schedule_archive_conflicts(app: &mut App) {
         if cancel.load(Ordering::Relaxed) {
             return;
         }
-        let stack = eidos_core::LayerStack::new(
-            parts
-                .iter()
-                .filter(|(l, _)| l.origin != u32::MAX)
-                .map(|(l, _)| l.root.clone())
-                .collect(),
-            inst.overwrite_dir(),
-        );
+        // Asked only the Overwrite's whiteout and opacity question, which its
+        // own Overwrite index answers, so it gets no lower layers and no lower
+        // index. Building that index walked every file of every layer on each
+        // toggle, only to resolve paths the cached lists already hold: over
+        // 95k files the run took ~500 ms with it and ~220 ms without, and its
+        // peak heap halved (85 to 45 MB). With no lower layers, nothing here
+        // can fall back to the per-layer walk either.
+        let stack = eidos_core::LayerStack::new_unindexed(Vec::new(), inst.overwrite_dir());
+        let parts = visible_conflict_parts(parts, &stack, &cancel);
         if cancel.load(Ordering::Relaxed) {
             return;
         }
-        let parts = visible_conflict_parts(parts, &stack, &cancel);
+        // Built once, here: it answers the plugin check below, gives the plan
+        // its archive names, and becomes the final map once the archives are
+        // added. It used to be built a second time inside
+        // `build_with_archives_from`, a full map's CPU and memory per toggle.
+        let loose = ConflictMap::build_from(&parts);
         if cancel.load(Ordering::Relaxed) {
             return;
         }
@@ -113,12 +118,12 @@ pub(crate) fn schedule_archive_conflicts(app: &mut App) {
                 list
             })
         });
+        // A plugin is there when a visible file provides it. `loose` holds
+        // exactly the files that survived the Overwrite's whiteouts, keyed by
+        // lowercased path, and a plugin lives at the Data root.
         if let Some(list) = &mut plugins {
-            list.plugins.retain(|p| {
-                stack
-                    .resolve_read(&p.name)
-                    .is_some_and(|path| path.is_file())
-            });
+            list.plugins
+                .retain(|p| loose.files.contains_key(&p.name.to_ascii_lowercase()));
         }
         let active: Vec<_> = plugins
             .as_ref()
@@ -137,10 +142,6 @@ pub(crate) fn schedule_archive_conflicts(app: &mut App) {
             } else {
                 warnings.push(tf("archc_tweak_unreadable", &[("path", &path.display())]));
             }
-        }
-        let loose = ConflictMap::build_from(&parts);
-        if cancel.load(Ordering::Relaxed) {
-            return;
         }
         let available: Vec<_> = loose
             .files
@@ -178,7 +179,8 @@ pub(crate) fn schedule_archive_conflicts(app: &mut App) {
         if cancel.load(Ordering::Relaxed) {
             return;
         }
-        let map = ConflictMap::build_with_archives_from(&parts, &active);
+        let mut map = loose;
+        map.add_archives(&parts, &active);
         if cancel.load(Ordering::Relaxed) {
             return;
         }
@@ -193,6 +195,19 @@ pub(crate) fn schedule_archive_conflicts(app: &mut App) {
                 .map(|d| format!("{}: {}", d.archive, d.error)),
         );
         let _ = sender.send(Ok((map, plan, warnings, sources)));
+    };
+    std::thread::spawn(move || {
+        work();
+        // Every list and map the run built is freed by now, but glibc keeps a
+        // thread arena's high-water mark resident, so each toggle's transient
+        // peak (one more copy of every path in the load order) stayed in the
+        // GUI's RSS for the session. Here and not in `poll_archive_conflicts`:
+        // the worker frees after it sends, so a trim there would race it.
+        #[cfg(target_env = "gnu")]
+        // SAFETY: no arguments to uphold; it only returns free pages to the OS.
+        unsafe {
+            libc::malloc_trim(0);
+        }
     });
 }
 
@@ -250,18 +265,16 @@ fn visible_conflict_parts(
         if cancel.load(Ordering::Relaxed) {
             return Vec::new();
         }
+        // One spelling per path and layer: the first `collect_files` met,
+        // which is the one the union's index keeps too (both walk depth first
+        // in `read_dir` order, and the index keeps its first insert). The lists
+        // are the layer's own files, so nothing else needs resolving here.
         let mut seen = HashSet::new();
         files.retain(|p| {
             if cancel.load(Ordering::Relaxed) {
                 return false;
             }
             if layer.origin != u32::MAX && !stack.lower_path_visible(p) {
-                return false;
-            }
-            let Some(winner) = stack.resolve_read(p) else {
-                return false;
-            };
-            if winner.starts_with(&layer.root) && winner != layer.root.join(p) {
                 return false;
             }
             seen.insert(p.to_ascii_lowercase())
@@ -942,6 +955,132 @@ mod tests {
             );
             fs::remove_dir_all(root).unwrap();
         }
+    }
+
+    /// The filter the worker used before it stopped building the lower index:
+    /// the union's own winner for each path, which dropped a second spelling
+    /// of a path inside one layer.
+    fn parts_via_lower_index(parts: Parts, ow: &Path) -> Parts {
+        let roots = parts
+            .iter()
+            .filter(|(l, _)| l.origin != u32::MAX)
+            .map(|(l, _)| l.root.clone())
+            .collect();
+        let stack = eidos_core::LayerStack::new(roots, ow.to_path_buf());
+        let mut parts = parts;
+        for (layer, (files, _)) in &mut parts {
+            let mut seen = HashSet::new();
+            files.retain(|p| {
+                (layer.origin == u32::MAX || stack.lower_path_visible(p))
+                    && stack.resolve_read(p).is_some_and(|winner| {
+                        !winner.starts_with(&layer.root) || winner == layer.root.join(p)
+                    })
+                    && seen.insert(p.to_ascii_lowercase())
+            });
+        }
+        parts
+    }
+
+    #[test]
+    fn visible_parts_match_the_union_without_its_lower_index() {
+        let root = temp_portable("skyrimse");
+        let ow = root.join("overwrite");
+        let write = |rel: &str| {
+            let p = root.join(rel);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(p, b"x").unwrap();
+        };
+        for rel in [
+            // One mod with the same folder in two spellings, as XP32 ships.
+            "mods/A/meshes/a.nif",
+            "mods/A/Meshes/a.nif",
+            "mods/A/Meshes/b.nif",
+            "mods/A/textures/gone.dds",
+            "mods/A/textures/kept.dds",
+            "mods/B/textures/gone.dds",
+            "mods/B/Meshes/a.nif",
+            // Deleted through the mount: hidden in every lower layer.
+            "overwrite/textures/.eidoswh.gone.dds",
+            "overwrite/new.esp",
+        ] {
+            write(rel);
+        }
+        let layer = |origin, name: &str, root: PathBuf| {
+            let files = eidos_conflicts::collect_files(&root);
+            (
+                Layer {
+                    origin,
+                    name: name.into(),
+                    root,
+                },
+                files,
+            )
+        };
+        let parts: Parts = vec![
+            layer(u32::MAX, "Overwrite", ow.clone()),
+            layer(2, "B", root.join("mods/B")),
+            layer(1, "A", root.join("mods/A")),
+        ];
+        let first_a_spelling = parts[2]
+            .1
+             .0
+            .iter()
+            .find(|p| p.eq_ignore_ascii_case("meshes/a.nif"))
+            .cloned()
+            .unwrap();
+
+        let stack = eidos_core::LayerStack::new_unindexed(Vec::new(), ow.clone());
+        let got = visible_conflict_parts(parts.clone(), &stack, &AtomicBool::new(false));
+        let files = |parts: &Parts, i: usize| {
+            let mut f = parts[i].1 .0.clone();
+            f.sort();
+            f
+        };
+        assert_eq!(files(&got, 0), ["new.esp"]);
+        assert_eq!(files(&got, 1), ["Meshes/a.nif"]);
+        let mut want_a = vec![
+            first_a_spelling,
+            "Meshes/b.nif".into(),
+            "textures/kept.dds".into(),
+        ];
+        want_a.sort();
+        assert_eq!(files(&got, 2), want_a);
+
+        let old = parts_via_lower_index(parts, &ow);
+        for i in 0..3 {
+            assert_eq!(files(&got, i), files(&old, i), "layer {i}");
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_whited_out_plugin_loads_none_of_its_archives() {
+        let (mut app, root) = data_app(
+            &[("A.esp", "plugin"), ("B.esp", "plugin")],
+            &[(".eidoswh.A.esp", "")],
+        );
+        let mod_root = app.mods[0].path.clone();
+        fs::write(mod_root.join("A.bsa"), archive_bsa_fixture()).unwrap();
+        fs::write(mod_root.join("B.bsa"), archive_bsa_fixture()).unwrap();
+        let mut plugins = PluginList::default();
+        plugins.plugins = vec![plugin_row("A.esp", "AAA"), plugin_row("B.esp", "AAA")];
+        for p in &mut plugins.plugins {
+            p.enabled = true
+        }
+        app.plugins = Some(plugins);
+        schedule_archive_conflicts(&mut app);
+        finish_archive_worker(&mut app);
+        let node = &app.conflicts.as_ref().unwrap().asset_files["textures/shared.dds"];
+        assert_eq!(node.winner.plugin.as_deref(), Some("B.esp"));
+        assert!(node.alternatives.is_empty(), "{:?}", node.alternatives);
+        assert!(app
+            .archive_plan
+            .as_ref()
+            .unwrap()
+            .archives
+            .iter()
+            .all(|a| a.plugin.as_deref() != Some("A.esp")));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

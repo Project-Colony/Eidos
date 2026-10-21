@@ -630,6 +630,15 @@ pub(crate) struct App {
     /// hundred `read_dir` calls per frame while the tab was open. The same memo
     /// the merged listing uses, keyed the same way.
     pub(crate) archives_cache: std::cell::RefCell<Option<(u64, Option<Vec<ArchiveRow>>)>>,
+    /// The selected mod's contested loose paths, keyed by the conflict map's
+    /// build stamp and the mod's origin (see `modinfo::contested`).
+    ///
+    /// Both Conflicts panels draw from `view()`, and finding those paths meant
+    /// scanning every file of the map on every pointer move while a panel is
+    /// open: 0.3 ms at 67k paths, several ms at 300-500k. Not keyed by
+    /// `view_generation`: the archive worker swaps the map without bumping it.
+    pub(crate) contested_cache:
+        std::cell::RefCell<Option<(u64, u32, std::rc::Rc<crate::modinfo::Contested>)>>,
     /// The union the Data tab reads, built once per view generation.
     ///
     /// The SAME `LayerStack` the mount serves from, rather than a hand-rolled

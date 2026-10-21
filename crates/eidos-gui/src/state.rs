@@ -469,6 +469,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         data_listing: std::cell::RefCell::new(HashMap::new()),
         profiles_cache: std::cell::RefCell::new(None),
         archives_cache: std::cell::RefCell::new(None),
+        contested_cache: std::cell::RefCell::new(None),
         data_stack: std::cell::RefCell::new(None),
         data_query: String::new(),
         data_conflicts_only: false,
