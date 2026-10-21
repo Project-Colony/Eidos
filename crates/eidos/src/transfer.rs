@@ -284,8 +284,14 @@ fn print_plan(plan: &eidos_transfer::Plan, dest: &Path, level: u8) {
             human_bytes(plan.downloads_bytes)
         );
     }
-    let method = if level == 0 { "Copy" } else { "LZMA2" };
-    println!("  -> {} ({method} -mx{level}, non-solid)", dest.display());
+    // Says what a damaged byte costs: one file when stored, up to a 16 MB
+    // block of neighbours when compressed.
+    let method = if level == 0 {
+        "Copy, non-solid"
+    } else {
+        "LZMA2, solid in 16 MB blocks"
+    };
+    println!("  -> {} ({method}, -mx{level})", dest.display());
     if !plan.left.is_empty() {
         println!("Left out:");
         for l in plan.left.iter().take(20) {

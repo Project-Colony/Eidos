@@ -27,8 +27,12 @@
 //! deliberate choice rather than a disguise: 7-Zip is already a hard requirement
 //! for Eidos (no mod installs without it), so packing adds no dependency, and
 //! anybody who ever loses this tool can still open their own backup with the
-//! archiver they already have. It is NON-SOLID (`-ms=off`) so a single file can
-//! be pulled out of a 70 GB backup without decompressing everything before it.
+//! archiver they already have. It is solid in blocks of at most 16 MB
+//! (`-ms=16m`): pulling one file out of a 70 GB backup decodes at most the
+//! block it sits in, never everything before it. The price is on damage. In a
+//! non-solid archive one corrupt byte costs one file; here it can cost every
+//! file in that byte's block, up to 16 MB of neighbours. Level 0 stores and
+//! stays non-solid, since a block of stored files gains nothing.
 
 use std::fmt;
 use std::path::{Path, PathBuf};

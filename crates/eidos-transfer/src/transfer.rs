@@ -223,6 +223,57 @@ fn list_file_body(entries: &[String]) -> Result<String, TransferError> {
     Ok(s)
 }
 
+/// The 7-Zip command line for one add pass at `level`.
+///
+/// Compressed levels are solid in blocks of at most 16 MB (`-ms=16m`). Fully
+/// non-solid (`-ms=off`) compressed every file as its own stream, and on game
+/// content that was the slow part: measured with 7-Zip 26.04 at level 1, solid
+/// 16 MB blocks packed `.dds` files 2.4 times faster and unpacked them 2.2
+/// times faster, `.nif` files 4.9 and 3.7 times, into a slightly smaller
+/// archive. Pulling one file out still decodes at most its own block, never
+/// everything before it. What it costs is damage: one corrupt byte loses every
+/// file in that byte's block, up to 16 MB of neighbours, where non-solid lost
+/// one file. The manifest goes in by its own pass, so it stays a block of its
+/// own and [`Transfer::peek`] still decodes nothing else.
+///
+/// Level 0 stores, and keeps `-ms=off`: a solid block of stored files saves
+/// nothing and would only widen what one bad byte takes with it.
+fn add_args(level: u8, spd: bool, archive: &Path, list: &Path) -> Vec<OsString> {
+    let mut args: Vec<OsString> = vec!["a".into(), "-t7z".into()];
+    // Level 0 means stored. An explicit method overrides what -mx0 picks, so
+    // `-m0=LZMA2 -mx0` was LZMA2 with a 64 KiB dictionary: about as slow as
+    // level 1 and a little larger. Without it, -mx0 selects Copy.
+    if level > 0 {
+        args.push("-m0=LZMA2".into());
+    }
+    args.push(format!("-mx{level}").into());
+    args.push(if level > 0 { "-ms=16m" } else { "-ms=off" }.into());
+    args.extend(
+        [
+            "-mmt=on",
+            "-y",
+            // Progress on stdout, and nothing else on it, so the percentages
+            // are all that has to be parsed.
+            "-bso0",
+            "-bsp1",
+            // The list file is ours and it is UTF-8; saying so means a machine
+            // with a Latin-1 locale reads the same names we wrote.
+            "-scsUTF-8",
+        ]
+        .map(OsString::from),
+    );
+    if spd {
+        // Names in a list file are patterns unless this says otherwise, and a
+        // mod really can be called `Weapons * Armour`.
+        args.push("-spd".into());
+    }
+    args.push(archive.as_os_str().to_os_string());
+    let mut at = OsString::from("@");
+    at.push(list.as_os_str());
+    args.push(at);
+    args
+}
+
 fn io(what: &str) -> impl Fn(std::io::Error) -> TransferError + '_ {
     move |e| TransferError::Io(format!("{what}: {e}"))
 }
@@ -257,8 +308,7 @@ impl Transfer {
     ///
     /// 7-Zip stores the paths it is GIVEN, so running it from the instance root
     /// with relative names is what produces an archive whose entries are
-    /// instance-relative. `-ms=off` makes it non-solid: one file can be pulled
-    /// out of a 70 GB backup without decompressing everything before it.
+    /// instance-relative. The switches themselves are in [`add_args`].
     /// Returns whatever 7-Zip warned about, which for an add means files it
     /// could not read - so the caller can say which ones are not in the backup
     /// instead of throwing away an otherwise complete archive.
@@ -270,41 +320,9 @@ impl Transfer {
         spd: bool,
         on_progress: &mut impl FnMut(u8),
     ) -> Result<Option<String>, TransferError> {
-        let mut args: Vec<OsString> = vec!["a".into(), "-t7z".into()];
-        // Level 0 means stored. An explicit method overrides what -mx0 picks, so
-        // `-m0=LZMA2 -mx0` was LZMA2 with a 64 KiB dictionary: about as slow as
-        // level 1 and a little larger. Without it, -mx0 selects Copy.
-        if self.opt.level > 0 {
-            args.push("-m0=LZMA2".into());
-        }
-        args.push(format!("-mx{}", self.opt.level).into());
-        args.extend(
-            [
-                "-ms=off",
-                "-mmt=on",
-                "-y",
-                // Progress on stdout, and nothing else on it, so the percentages
-                // are all that has to be parsed.
-                "-bso0",
-                "-bsp1",
-                // The list file is ours and it is UTF-8; saying so means a machine
-                // with a Latin-1 locale reads the same names we wrote.
-                "-scsUTF-8",
-            ]
-            .map(OsString::from),
-        );
-        if spd {
-            // Names in a list file are patterns unless this says otherwise, and a
-            // mod really can be called `Weapons * Armour`.
-            args.push("-spd".into());
-        }
-        args.push(archive.as_os_str().to_os_string());
-        let mut at = OsString::from("@");
-        at.push(list.as_os_str());
-        args.push(at);
         Ok(eidos_sevenzip::run_in_tolerating_warnings(
             self.bin,
-            args,
+            add_args(self.opt.level, spd, archive, list),
             Some(cwd),
             on_progress,
         )?)
@@ -901,6 +919,39 @@ mod tests {
             w.contains("downloads - a symbolic link (to back up without it, pass --no-downloads"),
             "{w}"
         );
+    }
+
+    #[test]
+    fn compressed_levels_pack_in_16_mb_solid_blocks_and_level_zero_stays_non_solid() {
+        let args = |level, spd| -> Vec<String> {
+            add_args(
+                level,
+                spd,
+                Path::new("/x/b.eidos.part"),
+                Path::new("/s/bulk.lst"),
+            )
+            .into_iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+        };
+        for level in [1, 3, 5, 7, 9] {
+            let a = args(level, true);
+            assert!(a.contains(&"-ms=16m".to_string()), "{a:?}");
+            assert!(!a.contains(&"-ms=off".to_string()), "{a:?}");
+            assert!(a.contains(&"-m0=LZMA2".to_string()), "{a:?}");
+            assert!(a.contains(&format!("-mx{level}")), "{a:?}");
+        }
+        let stored = args(0, true);
+        assert!(stored.contains(&"-ms=off".to_string()), "{stored:?}");
+        assert!(!stored.iter().any(|a| a.starts_with("-m0=")), "{stored:?}");
+        assert!(stored.contains(&"-mx0".to_string()), "{stored:?}");
+        // The archive and the list file come last, in that order, and -spd
+        // only when asked for.
+        assert_eq!(
+            &stored[stored.len() - 3..],
+            ["-spd", "/x/b.eidos.part", "@/s/bulk.lst"]
+        );
+        assert!(!args(1, false).contains(&"-spd".to_string()));
     }
 
     #[test]
