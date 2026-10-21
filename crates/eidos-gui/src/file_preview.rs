@@ -156,12 +156,21 @@ fn from_bytes_cancel(path: &Path, bytes: Vec<u8>, truncated: bool, cancel: &Atom
         .to_ascii_lowercase();
     if ext == "dds" {
         return match dds_preview::inspect(&bytes) {
-            Ok(info) => dds(
-                path,
-                Arc::new(bytes),
-                info,
-                dds_preview::Selection::default(),
-            ),
+            // Open at the first mip of at most 2048 px. The pane is a fixed 760x560
+            // with no zoom, so it never shows more than about 1448 physical px, and
+            // 2048 is iced_wgpu's atlas page: one fragment and one staging chunk,
+            // which the belt keeps for the life of the GUI. A 4K BC7 then decodes
+            // 4 Mpx instead of 16.8 (measured ~28 ms instead of ~132 ms, 16 MiB
+            // instead of 64), and an 8K one opens instead of failing the 64 MiB
+            // bound. Only the first open picks: Mip -/+ requests arrive through
+            // `start` with the user's own selection, so mip 0 stays one click away.
+            Ok(info) => {
+                let selection = dds_preview::Selection {
+                    mip: dds_preview::fit_mip(&info, 2048),
+                    ..Default::default()
+                };
+                dds(path, Arc::new(bytes), info, selection)
+            }
             Err(error) => unsupported(path, tf("preview_dds_unreadable", &[("error", &error)])),
         };
     }

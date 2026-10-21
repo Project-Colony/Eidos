@@ -1834,12 +1834,25 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
                 Err(error) => container(text(error.clone())).center(Length::Fill).into(),
             };
             let note = if info.hdr { t("preview_hdr_note") } else { "" };
+            // The preview may open below mip 0, so say what is on screen as well as
+            // the texture's own size.
+            let shown = if selection.mip > 0 {
+                format!(
+                    " ({} {}: {} × {})",
+                    t("preview_mip"),
+                    selection.mip,
+                    (info.width >> selection.mip).max(1),
+                    (info.height >> selection.mip).max(1)
+                )
+            } else {
+                String::new()
+            };
             Column::new()
                 .spacing(8)
                 .push(controls)
                 .push(
                     text(format!(
-                        "{} × {} · {}{note}",
+                        "{} × {}{shown} · {}{note}",
                         info.width, info.height, info.format
                     ))
                     .size(sz(10)),

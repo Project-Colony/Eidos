@@ -289,12 +289,18 @@ fn read_texture(
     if info.layers != 1 || info.faces != 1 {
         return Err(t("nif_texture_cube").into());
     }
-    let mut selection = dds_preview::Selection::default();
-    while (info.width >> selection.mip).max(info.height >> selection.mip) > 4096 {
-        if selection.mip + 1 >= info.mips {
-            return Err(t("nif_texture_too_large").into());
-        }
-        selection.mip += 1;
+    // Aim at 1024 px. The 640x420 frame draws the model about 357 px across at zoom
+    // 1 with nearest sampling, so a 4K mip 0 lands ~11 texels on each pixel and
+    // fills the whole 64 MiB budget alone, leaving every later mesh grey. At 1024 a
+    // texture is 4 MiB, 16 fit, and texels reach 1:1 near zoom 3.5. The 4096 refusal
+    // only fires when no smaller mip exists, exactly as before, so no texture that
+    // used to load is refused now.
+    let selection = dds_preview::Selection {
+        mip: dds_preview::fit_mip(&info, 1024),
+        ..Default::default()
+    };
+    if (info.width >> selection.mip).max(info.height >> selection.mip) > 4096 {
+        return Err(t("nif_texture_too_large").into());
     }
     let required = (info.width >> selection.mip).max(1) as usize
         * (info.height >> selection.mip).max(1) as usize
@@ -576,6 +582,26 @@ pub(crate) mod tests {
         crate::file_preview::complete(&mut app, next, preview);
         assert!(app.preview.is_none());
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_4k_texture_with_mips_decodes_at_1024_and_leaves_budget_for_more() {
+        // Before, mip 0 of a 4K texture took all 64 MiB and the next one was refused.
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("4k.dds");
+        std::fs::write(&path, crate::dds_preview::tests::bc1_chain(4096, 4096)).unwrap();
+        let mut input = 0;
+        let mut pixels = 0;
+        for _ in 0..2 {
+            let (texture, _) = read_texture(
+                &ProviderSource::Loose(path.clone()),
+                &mut input,
+                &mut pixels,
+            )
+            .unwrap();
+            assert_eq!((texture.width, texture.height), (1024, 1024));
+        }
+        assert_eq!(pixels, 2 * 4 * 1024 * 1024);
     }
 
     #[test]

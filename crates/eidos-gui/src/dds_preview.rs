@@ -44,6 +44,16 @@ pub struct DecodedDds {
 pub const MAX_DDS_BYTES: usize = 128 * 1024 * 1024;
 pub const MAX_RGBA_BYTES: usize = 64 * 1024 * 1024;
 
+/// First mip whose larger side is at most `max_side`, or the last mip when even
+/// that one is larger (a texture without a chain stays at mip 0).
+pub fn fit_mip(info: &DdsInfo, max_side: u32) -> u32 {
+    let mut mip = 0;
+    while (info.width >> mip).max(info.height >> mip) > max_side && mip + 1 < info.mips {
+        mip += 1;
+    }
+    mip
+}
+
 /// Checks headers and complete subresource sizes without decoding or copying pixels.
 pub fn inspect(bytes: &[u8]) -> Result<DdsInfo, String> {
     Ok(parse(bytes)?.info)
@@ -368,13 +378,13 @@ fn hdr_channel(value: f32) -> u8 {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     fn put(b: &mut [u8], at: usize, n: u32) {
         b[at..at + 4].copy_from_slice(&n.to_le_bytes());
     }
-    fn dx10(
+    pub(crate) fn dx10(
         format: u32,
         width: u32,
         height: u32,
@@ -755,6 +765,50 @@ mod tests {
             .rgba,
             [4, 40, 20, 255].repeat(4)
         );
+    }
+
+    /// A zero-filled BC1 texture with its full mip chain.
+    pub(crate) fn bc1_chain(width: u32, height: u32) -> Vec<u8> {
+        let mips = 32 - width.max(height).leading_zeros();
+        let size: u32 = (0..mips)
+            .map(|m| (width >> m).max(1).div_ceil(4) * (height >> m).max(1).div_ceil(4) * 8)
+            .sum();
+        dx10(71, width, height, mips, 1, false, &vec![0; size as usize])
+    }
+
+    #[test]
+    fn dds_preview_opens_at_the_first_mip_that_fits_2048() {
+        let info = |width, height, mips| DdsInfo {
+            width,
+            height,
+            mips,
+            layers: 1,
+            faces: 1,
+            format: String::new(),
+            hdr: false,
+        };
+        assert_eq!(fit_mip(&info(4096, 4096, 13), 2048), 1);
+        assert_eq!(fit_mip(&info(8192, 4096, 14), 2048), 2);
+        assert_eq!(fit_mip(&info(2048, 2048, 12), 2048), 0);
+        assert_eq!(fit_mip(&info(512, 4096, 13), 1024), 2);
+        // No chain to step down: stay on what exists.
+        assert_eq!(fit_mip(&info(8192, 8192, 1), 2048), 0);
+        assert_eq!(fit_mip(&info(8192, 8192, 2), 2048), 1);
+
+        // The first open picks it; a thin texture keeps the decode cheap here.
+        let preview = crate::file_preview::from_bytes(
+            std::path::Path::new("wide.dds"),
+            bc1_chain(4096, 16),
+            false,
+        );
+        let crate::file_preview::Preview::Dds {
+            selection, image, ..
+        } = preview
+        else {
+            panic!("not a DDS preview");
+        };
+        assert_eq!(selection.mip, 1);
+        assert!(image.is_ok());
     }
 
     #[test]
