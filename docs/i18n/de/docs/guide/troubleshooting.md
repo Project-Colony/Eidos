@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
 
 # Fehlersuche und Diagnose
 
@@ -82,11 +82,27 @@ Mod mitbringt (ENB/ReShade/`.asi`-Loader).
 
 ### Wird der Schichtindex tatsächlich benutzt?
 
-Der Index ist alles oder nichts und wird schweigend aufgebaut: `LayerStack::new`
-bekommt entweder eine vollständige Karte der Nur-Lese-Schichten oder `None`, wonach
-jede Abfrage sie genau wie vorher durchläuft. Nichts in einem Sitzungsprotokoll
-unterscheidet die beiden, sodass ein Stapel, der still zurückgefallen ist,
-identisch zu einem funktionierenden aussieht - während er die alten Kosten zahlt.
+`LayerStack::new` baut entweder eine vollständige Karte der Nur-Lese-Schichten
+oder gar keine. Ohne Karte durchläuft jede Abfrage die Schichten wie vorher: Die
+Antworten sind dieselben, ein Spielstand lädt etwa dreimal so lange, und sonst
+sieht nichts anders aus.
+
+Ist der Index aus, nennt der Mount den Grund, einmal, beim Start:
+
+```
+eidos-fuse: layer index off (<reason>); every lookup walks all layers
+```
+
+Der Grund nennt ein unlesbares Verzeichnis, eine Schicht mit mehr als 64
+Verzeichnisebenen, mehr als 4.000.000 Einträge oder `EIDOS_NO_INDEX`. Die Zeile
+landet im Protokoll des Laufs: im `logs/run-*.log` der Instanz bei einem Start aus
+dem Fenster, in der Steam-Konsole bei einem Start über Steam. Mit
+`EIDOS_FUSE_STATS=1` enthält die Ausgabe beim Aushängen außerdem eine Zeile
+`layer index:`, und ein `unindexed`-Zähler ungleich null bei einem normalen Mount
+heißt, dass der Index aus war.
+
+Die Beispiele unten prüfen dasselbe offline, an den Ordnern einer Instanz, ohne
+Mount:
 
 ```sh
 cargo run --release -p eidos-core --example index_health -- <mods-dir> <overwrite-dir>

@@ -79,11 +79,26 @@ loaders).
 
 ### Is the layer index actually in use?
 
-The index is all-or-nothing and built in silence: `LayerStack::new` either gets a
-complete map of the read-only layers or `None`, after which every query walks
-them exactly as before. Nothing in a session log tells the two apart, so a stack
-that quietly fell back looks identical to one that is working - while paying the
-old cost.
+`LayerStack::new` either builds a complete map of the read-only layers or none
+at all. Without one, every query walks the layers as before: the answers are the
+same, a save load takes about three times as long, and nothing else looks
+different.
+
+When the index is off, the mount says why, once, at startup:
+
+```
+eidos-fuse: layer index off (<reason>); every lookup walks all layers
+```
+
+The reason names an unreadable directory, a layer more than 64 directories
+deep, more than 4,000,000 entries, or `EIDOS_NO_INDEX`. The line goes to the
+run's log: the instance's `logs/run-*.log` for a window launch, Steam's console
+for a Steam launch. With `EIDOS_FUSE_STATS=1`, the dump at unmount also has a
+`layer index:` line, and a non-zero `unindexed` count on a normal mount means the
+index was off.
+
+The examples below check the same thing offline, against an instance's folders,
+with no mount:
 
 ```sh
 cargo run --release -p eidos-core --example index_health -- <mods-dir> <overwrite-dir>

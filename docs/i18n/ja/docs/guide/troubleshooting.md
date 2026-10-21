@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
 
 # トラブルシューティングと診断
 
@@ -83,11 +83,26 @@ eidos play skyrimse -- %command%
 
 ### レイヤのインデックスは本当に使われているのか?
 
-インデックスは全か無かで、しかも黙って作られます。`LayerStack::new` は読み取り
-専用レイヤの完全なマップを得るか `None` を得るかで、後者ならすべての問い合わせ
-は以前とまったく同じようにレイヤを歩きます。セッションログに両者を見分けるもの
-は何もないので、黙ってフォールバックしたスタックは動いているものと見分けが
-つきません - 昔のコストを払いながら。
+`LayerStack::new` は読み取り専用レイヤの完全なマップを作るか、まったく作らない
+かのどちらかです。マップがなければ、すべての問い合わせは以前と同じようにレイヤを
+歩きます。答えは同じで、セーブのロードに約 3 倍の時間がかかり、それ以外に違いは
+見えません。
+
+インデックスが無効なときは、マウントが起動時に一度だけ理由を出力します。
+
+```
+eidos-fuse: layer index off (<reason>); every lookup walks all layers
+```
+
+理由には、読めないディレクトリ、64 階層より深いレイヤ、4,000,000 を超える
+エントリ、または `EIDOS_NO_INDEX` のいずれかが入ります。この行は実行のログに出ます。
+ウィンドウからの起動ならインスタンスの `logs/run-*.log`、Steam からの起動なら
+Steam のコンソールです。`EIDOS_FUSE_STATS=1` を付けると、アンマウント時の出力にも
+`layer index:` の行が入り、通常のマウントで `unindexed` が 0 でなければインデックス
+は無効でした。
+
+以下の例は同じことをオフラインで、インスタンスのフォルダに対し、マウントなしで
+確かめます。
 
 ```sh
 cargo run --release -p eidos-core --example index_health -- <mods-dir> <overwrite-dir>

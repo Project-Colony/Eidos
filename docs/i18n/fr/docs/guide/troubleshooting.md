@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
 
 # Dépannage et diagnostics
 
@@ -84,11 +84,28 @@ ENB/ReShade/`.asi`).
 
 ### L'index des couches est-il réellement utilisé ?
 
-L'index est tout ou rien, et il se construit en silence : `LayerStack::new`
-obtient soit une carte complète des couches en lecture seule, soit `None`, après
-quoi chaque requête les parcourt exactement comme avant. Rien dans un journal de
-session ne distingue les deux, donc une pile qui a discrètement basculé sur le
-repli ressemble à une pile qui fonctionne - tout en payant l'ancien coût.
+`LayerStack::new` construit soit une carte complète des couches en lecture
+seule, soit aucune. Sans carte, chaque requête parcourt les couches comme avant :
+les réponses sont les mêmes, un chargement de sauvegarde prend environ trois fois
+plus longtemps, et rien d'autre ne change en apparence.
+
+Quand l'index est désactivé, le montage en donne la raison, une fois, au
+démarrage :
+
+```
+eidos-fuse: layer index off (<reason>); every lookup walks all layers
+```
+
+La raison nomme un dossier illisible, une couche à plus de 64 niveaux de
+profondeur, plus de 4 000 000 d'entrées, ou `EIDOS_NO_INDEX`. La ligne va dans le
+journal de l'exécution : le `logs/run-*.log` de l'instance pour un lancement
+depuis la fenêtre, la console de Steam pour un lancement Steam. Avec
+`EIDOS_FUSE_STATS=1`, le relevé au démontage contient aussi une ligne
+`layer index:`, et un compteur `unindexed` non nul sur un montage normal signifie
+que l'index était désactivé.
+
+Les exemples ci-dessous vérifient la même chose hors ligne, sur les dossiers
+d'une instance, sans montage :
 
 ```sh
 cargo run --release -p eidos-core --example index_health -- <mods-dir> <overwrite-dir>

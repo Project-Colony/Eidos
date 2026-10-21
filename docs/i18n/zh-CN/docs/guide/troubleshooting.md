@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
 
 # 排查与诊断
 
@@ -70,10 +70,23 @@ eidos play skyrimse -- %command%
 
 ### 层索引真的在起作用吗?
 
-索引是全有或全无,而且建立时悄无声息:`LayerStack::new` 要么拿到只读各层的完整映射,
-要么拿到 `None`,此后每次查询都和从前一模一样地逐层遍历。会话日志里没有任何东西能
-区分这两种情况,于是一个悄悄退回遍历的层栈,看上去和正常工作的一模一样 —— 却在付
-旧账。
+`LayerStack::new` 要么为只读各层建出完整映射,要么一个也不建。没有映射时,每次
+查询都和从前一样逐层遍历:答案相同,读一次存档大约要三倍的时间,其他方面看不出任何
+区别。
+
+索引关闭时,挂载会在启动时说明一次原因:
+
+```
+eidos-fuse: layer index off (<reason>); every lookup walks all layers
+```
+
+原因会指出一个无法读取的目录、一个超过 64 层目录深的层、超过 4,000,000 个条目,
+或 `EIDOS_NO_INDEX`。这一行写进本次运行的日志:从窗口启动时是实例的
+`logs/run-*.log`,从 Steam 启动时是 Steam 的控制台。设置 `EIDOS_FUSE_STATS=1` 后,
+卸载时的输出里还有一行 `layer index:`,普通挂载上 `unindexed` 不为零,就说明索引
+当时是关闭的。
+
+下面的示例离线检查同一件事,针对实例的文件夹,不需要挂载:
 
 ```sh
 cargo run --release -p eidos-core --example index_health -- <mods-dir> <overwrite-dir>

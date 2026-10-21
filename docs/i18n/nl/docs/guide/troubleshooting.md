@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
 
 # Probleemoplossing en diagnostiek
 
@@ -85,11 +85,26 @@ meelevert (ENB/ReShade/`.asi`-loaders).
 
 ### Wordt de laagindex ook echt gebruikt?
 
-De index is alles-of-niets en wordt in stilte gebouwd: `LayerStack::new` krijgt
-ofwel een volledige kaart van de alleen-lezen lagen ofwel `None`, waarna elke
-bevraging ze precies zoals vroeger doorloopt. Niets in een sessielog houdt die
-twee uit elkaar, dus een stack die stilletjes teruggevallen is, ziet er identiek
-uit aan een die werkt - terwijl hij de oude kosten betaalt.
+`LayerStack::new` bouwt een volledige kaart van de alleen-lezen lagen of
+helemaal geen. Zonder kaart doorloopt elke bevraging de lagen zoals vroeger: de
+antwoorden zijn dezelfde, een save laden duurt ongeveer drie keer zo lang, en
+verder ziet niets er anders uit.
+
+Staat de index uit, dan zegt de mount waarom, één keer, bij het starten:
+
+```
+eidos-fuse: layer index off (<reason>); every lookup walks all layers
+```
+
+De reden noemt een onleesbare map, een laag van meer dan 64 mappen diep, meer dan
+4.000.000 items, of `EIDOS_NO_INDEX`. De regel komt in het log van de run: de
+`logs/run-*.log` van de instantie bij een start vanuit het venster, de console van
+Steam bij een start via Steam. Met `EIDOS_FUSE_STATS=1` heeft de dump bij het
+ontkoppelen ook een regel `layer index:`, en een `unindexed`-teller die niet nul
+is op een normale mount betekent dat de index uit stond.
+
+De voorbeelden hieronder controleren hetzelfde offline, op de mappen van een
+instantie, zonder mount:
 
 ```sh
 cargo run --release -p eidos-core --example index_health -- <mods-dir> <overwrite-dir>

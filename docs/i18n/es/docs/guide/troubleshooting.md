@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
 
 # Solución de problemas y diagnóstico
 
@@ -83,11 +83,27 @@ ENB/ReShade/`.asi`).
 
 ### ¿Se está usando de verdad el índice de capas?
 
-El índice es todo o nada y se construye en silencio: `LayerStack::new` obtiene o
-bien un mapa completo de las capas de sólo lectura, o bien `None`, tras lo cual cada
-consulta las recorre exactamente como antes. Nada en el registro de una sesión
-distingue ambos casos, así que una pila que cayó calladamente al recorrido parece
-idéntica a una que funciona - mientras paga el coste antiguo.
+`LayerStack::new` construye un mapa completo de las capas de sólo lectura o
+ninguno. Sin mapa, cada consulta recorre las capas como antes: las respuestas son
+las mismas, cargar una partida tarda unas tres veces más y nada más cambia a la
+vista.
+
+Cuando el índice está desactivado, el montaje dice por qué, una vez, al arrancar:
+
+```
+eidos-fuse: layer index off (<reason>); every lookup walks all layers
+```
+
+El motivo nombra un directorio ilegible, una capa con más de 64 niveles de
+directorios, más de 4.000.000 de entradas o `EIDOS_NO_INDEX`. La línea va al
+registro de la ejecución: el `logs/run-*.log` de la instancia para un lanzamiento
+desde la ventana, la consola de Steam para un lanzamiento por Steam. Con
+`EIDOS_FUSE_STATS=1`, el volcado al desmontar también tiene una línea
+`layer index:`, y un contador `unindexed` distinto de cero en un montaje normal
+significa que el índice estaba desactivado.
+
+Los ejemplos de abajo comprueban lo mismo sin conexión, sobre las carpetas de una
+instancia, sin montar nada:
 
 ```sh
 cargo run --release -p eidos-core --example index_health -- <mods-dir> <overwrite-dir>
