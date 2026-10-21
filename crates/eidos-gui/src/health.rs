@@ -25,8 +25,11 @@
 //! a sixth of this project's fixes have been one mistake made in several
 //! places; this module is not allowed to become another.
 //!
-//! Cost: three `stat`s, one `readlink` and one read of `system.reg` per refresh
-//! of a tab the user has to open. No timer, no polling, nothing walking the mod
+//! Cost: a few `stat`s and one `readlink` per diagnostics run, which is every
+//! mod or plugin edit, not only a visit to the tab. `system.reg` (4.6 MB on a
+//! real Skyrim prefix, 1-3 ms to read and scan warm) is read again only when
+//! it, the `S:` link or `user.reg` changed since the last run: see
+//! [`registry_status_memo`]. No timer, no polling, nothing walking the mod
 //! pool - see the test at the bottom that says so.
 
 use std::path::PathBuf;
@@ -64,15 +67,65 @@ pub(crate) fn prefix_facts(game: &DetectedGame) -> Option<PrefixFacts> {
     let gamedrive_found = std::fs::read_link(compat.join("pfx/dosdevices/s:")).ok();
     Some(PrefixFacts {
         game_name: game.def.name.to_string(),
-        registry: eidos_gamefeatures::registry_status(
-            compat,
-            &game.install_path,
-            game.def.registry_name,
-            gamedrive_found.as_deref(),
-        ),
+        registry: registry_status_memo(compat, game, gamedrive_found.as_deref()),
         gamedrive_found,
         gamedrive_want: eidos_games::library_path(&game.install_path),
     })
+}
+
+/// [`eidos_gamefeatures::registry_status`], answered from the last call when
+/// none of its inputs moved.
+///
+/// The diagnostics run on every mod toggle, and the answer depends on a file
+/// Wine rewrites only when the prefix runs. So the key is everything the
+/// answer reads: the prefix and install paths, the registry name, where `S:`
+/// points, whether `user.reg` exists, and `system.reg`'s inode, size and
+/// nanosecond mtime. Any rewrite moves the mtime, and Wine's write to a temp
+/// file and rename moves the inode as well. The predicate is still the shared one, called
+/// unchanged on a miss, so this cannot drift from `ensure_registry`.
+fn registry_status_memo(
+    compat: &std::path::Path,
+    game: &DetectedGame,
+    s_drive: Option<&std::path::Path>,
+) -> RegistryStatus {
+    use std::os::unix::fs::MetadataExt;
+    type Key = (
+        PathBuf,
+        PathBuf,
+        &'static str,
+        Option<PathBuf>,
+        bool,
+        Option<(u64, u64, i64, i64)>,
+    );
+    static LAST: std::sync::Mutex<Option<(Key, RegistryStatus)>> = std::sync::Mutex::new(None);
+    let pfx = compat.join("pfx");
+    let key: Key = (
+        compat.to_path_buf(),
+        game.install_path.clone(),
+        game.def.registry_name,
+        s_drive.map(std::path::Path::to_path_buf),
+        pfx.join("user.reg").is_file(),
+        std::fs::metadata(pfx.join("system.reg"))
+            .ok()
+            .map(|m| (m.ino(), m.len(), m.mtime(), m.mtime_nsec())),
+    );
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((k, status)) = last.as_ref() {
+        if *k == key {
+            return status.clone();
+        }
+    }
+    // A write between the `stat` above and the read below stores a fresh answer
+    // under the old key, so the next call misses and reads again: the memo can
+    // be one run late, never stuck.
+    let status = eidos_gamefeatures::registry_status(
+        compat,
+        &game.install_path,
+        game.def.registry_name,
+        s_drive,
+    );
+    *last = Some((key, status.clone()));
+    status
 }
 
 /// Turn the facts into cards. Pure: no I/O, no `App`, so the interesting cases
@@ -340,6 +393,51 @@ mod tests {
         assert_eq!(d.len(), 2);
     }
 
+    /// The memo must never outlive the file it read: Wine rewrites
+    /// `system.reg` when the prefix runs, and the card has to follow.
+    #[test]
+    fn the_registry_answer_follows_a_rewritten_system_reg() {
+        let root = crate::test_support::temp_portable("fallout4");
+        let compat = root.join("compatdata");
+        let pfx = compat.join("pfx");
+        std::fs::create_dir_all(&pfx).unwrap();
+        std::fs::write(pfx.join("user.reg"), "WINE REGISTRY Version 2\n").unwrap();
+        std::fs::write(pfx.join("system.reg"), "WINE REGISTRY Version 2\n").unwrap();
+        let install = root.join("Fallout 4");
+        let game = DetectedGame {
+            def: eidos_games::GameDef::for_id("fallout4").expect("in the catalog"),
+            install_path: install.clone(),
+            data_path: install.join("Data"),
+            compatdata: Some(compat.clone()),
+            source: Default::default(),
+            steam_name: "Fallout 4".to_string(),
+        };
+        let first = prefix_facts(&game).unwrap().registry;
+        assert!(
+            matches!(first, RegistryStatus::Stale { found: None, .. }),
+            "{first:?}"
+        );
+        // Asked again with nothing changed: the same answer.
+        assert_eq!(prefix_facts(&game).unwrap().registry, first);
+
+        let value = format!("Z:{}\\", install.display())
+            .replace('/', "\\")
+            .replace('\\', "\\\\");
+        let mut reg = String::from("WINE REGISTRY Version 2\n");
+        for view in ["Software", "Software\\\\Wow6432Node"] {
+            reg.push_str(&format!(
+                "\n[{view}\\\\Bethesda Softworks\\\\Fallout4] 1\n\"installed path\"=\"{value}\"\n"
+            ));
+        }
+        std::fs::write(pfx.join("system.reg"), reg).unwrap();
+        assert_eq!(
+            prefix_facts(&game).unwrap().registry,
+            RegistryStatus::Correct,
+            "a rewritten system.reg is read again"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn the_checks_do_no_io() {
         // The property that keeps this cheap enough to run on every refresh of
@@ -348,10 +446,18 @@ mod tests {
         // imported and this assertion is the note explaining why it must not be.
         let src = include_str!("health.rs");
         let body = src.split("#[cfg(test)]").next().unwrap_or("");
-        assert!(
-            !body.contains("std::fs::") || body.matches("std::fs::").count() == 1,
-            "filesystem access belongs in prefix_facts, not in the checks"
-        );
+        for check in ["pub(crate) fn prefix_checks", "pub(crate) fn nexus_checks"] {
+            let fn_body = body
+                .split(check)
+                .nth(1)
+                .and_then(|rest| rest.split("\n}\n").next())
+                .unwrap_or("");
+            assert!(!fn_body.is_empty(), "{check} is still in this file");
+            assert!(
+                !fn_body.contains("fs::"),
+                "filesystem access belongs in prefix_facts, not in {check}"
+            );
+        }
         // And nothing here may walk a directory tree: that is the one thing that
         // would make the Diagnostics tab expensive on a large mod pool.
         for forbidden in ["read_dir", "WalkDir", "walkdir", "rglob"] {

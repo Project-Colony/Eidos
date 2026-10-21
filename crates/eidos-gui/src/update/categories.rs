@@ -159,10 +159,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             app.status = Some(t("status_fetching_categories").to_string());
             return Task::perform(
-                async move {
+                smol::unblock(move || {
                     let nexus = eidos_nexus::Nexus::connect()?;
                     nexus.game_categories(&domain)
-                },
+                }),
                 Message::NexusCategoriesFetched,
             );
         }

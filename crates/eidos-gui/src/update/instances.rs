@@ -437,8 +437,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             };
             // `done` is read before anything is taken, and `finished` guards a
-            // second collection: the poll rides a 60 Hz tick, so it arrives
-            // again the frame after it has already done its work.
+            // second collection: the poll rides a repeating tick, so it arrives
+            // again the tick after it has already done its work.
             if job.finished.is_some() || !job.done.load(std::sync::atomic::Ordering::SeqCst) {
                 return Task::none();
             }
@@ -466,6 +466,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 // back out of the profile, and the rule-derived order with them.
                 reload_mods(app);
                 refresh_after_tree_change(app, None);
+                // Whole, not appended: a member installed over a folder of the
+                // same name rewrote a `meta.ini` this cache already holds, and
+                // the health check and the counts now read it from here.
+                app.meta_cache.clear();
                 refresh_meta_cache(app);
             }
             // Set LAST: `open_unpacked` calls `open_instance`, which resets a

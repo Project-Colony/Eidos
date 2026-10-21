@@ -255,7 +255,7 @@ fn pack_on_worker(
             // Clamped to its own maximum HERE rather than in the view. 7-Zip's
             // percentage is not monotonic and a pack makes two passes into one
             // archive, so the raw value climbs, resets and climbs again - and
-            // the view is asked to draw it sixty times a second.
+            // the view is asked to draw it ten times a second for minutes.
             percent.fetch_max(pct, Ordering::SeqCst);
         })
         .map_err(|e| e.to_string())?;
@@ -987,6 +987,8 @@ pub(crate) fn update(app: &mut App, message: Message) -> Task<Message> {
         && app.collision.is_none()
         // Re-armed by the poll that finishes the job, not while it runs.
         && app.install_job.is_none()
+        // Likewise for a copy step, by its `Placed`.
+        && app.place_job.is_none()
         // And not while a pack is reading the instance: a queued drop would
         // install a mod into the very tree being archived, halfway through.
         && app.transfer_job.is_none()
@@ -1025,7 +1027,7 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         | Message::SavesTick
         | Message::LogRefresh
         // And the frame timer, for exactly the same reason and more sharply:
-        // it fires SIXTY times a second, so leaving it out would not merely
+        // it fires up to SIXTY times a second, so leaving it out would not merely
         // shorten a confirmation's life, it would end it before the finger
         // came back down.
         | Message::AnimationTick
@@ -1033,10 +1035,12 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         // Reached from that same tick, at the same rate, for the same reason.
         | Message::InstallPoll
         // And its twin for a pack or an unpack, which runs for twenty minutes -
-        // long enough that a confirmation disarmed sixty times a second would
+        // long enough that a confirmation disarmed ten times a second would
         // look like a window that had simply stopped working.
         | Message::TransferPoll
         | Message::PreviewReady(..)
+        // A worker's answer arriving, not a click.
+        | Message::Placed(..)
         | Message::ArchiveExportFinished(..)
         | Message::CollectionInstallChecked { .. }
         // And the hover-to-expand timer, which fires only while a drag rests on
@@ -1315,6 +1319,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::FomodNext
         | Message::FomodBack
         | Message::FomodInstall
+        | Message::Placed(..)
         | Message::FomodCancel
         | Message::CollisionBackupChanged(..)
         | Message::CollisionMerge
@@ -1372,6 +1377,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::PreviewDdsSelection(..)
         | Message::ClosePreview
         | Message::FiletreeOpen(..)
+        | Message::FiletreePreview(..)
         | Message::FiletreeRenameStart(..)
         | Message::FiletreeRenameChanged(..)
         | Message::FiletreeRenameCancel

@@ -995,14 +995,17 @@ with zipfile.ZipFile(sys.argv[1],'w') as z:
                 );
             }
             "manual" => {
-                crate::modinfo::run_picker_install(&mut app);
+                let task = crate::modinfo::run_picker_install(&mut app);
+                drive(&mut app, task);
                 assert!(
                     app.picker.is_some(),
                     "retain manual choices on target refusal"
                 );
             }
             "collision" => {
-                crate::modinfo::run_collision_install(&mut app, OverwritePolicy::Replace);
+                let task =
+                    crate::modinfo::run_collision_install(&mut app, OverwritePolicy::Replace);
+                drive(&mut app, task);
                 assert!(
                     app.collision.is_some(),
                     "retain collision choices on target refusal"
@@ -1040,9 +1043,14 @@ with zipfile.ZipFile(sys.argv[1],'w') as z:
                     let task = crate::update::update_inner(&mut app, Message::FomodInstall);
                     drive(&mut app, task);
                 }
-                "manual" => crate::modinfo::run_picker_install(&mut app),
+                "manual" => {
+                    let task = crate::modinfo::run_picker_install(&mut app);
+                    drive(&mut app, task);
+                }
                 "collision" => {
-                    crate::modinfo::run_collision_install(&mut app, OverwritePolicy::Replace)
+                    let task =
+                        crate::modinfo::run_collision_install(&mut app, OverwritePolicy::Replace);
+                    drive(&mut app, task);
                 }
                 _ => unreachable!(),
             }
@@ -1141,7 +1149,8 @@ with zipfile.ZipFile(sys.argv[1],'w') as z:
                             root: String::new(),
                         },
                     });
-                    crate::modinfo::run_picker_install(&mut app);
+                    let task = crate::modinfo::run_picker_install(&mut app);
+                    drive(&mut app, task);
                     assert!(app.picker.is_some(), "Keep the choices on lock refusal");
                 }
                 (_, opened) => {

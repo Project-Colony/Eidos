@@ -191,7 +191,7 @@ fn registry_matches(system_reg: &str, registry_name: &str, want: &str) -> bool {
 /// Deliberately built on `registry_matches`, the same predicate `ensure_registry`
 /// decides with: the health check must never be able to disagree with the code
 /// it is watching.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RegistryStatus {
     /// This game registers no path (Enderal, Stellar Blade). Nothing to report.
     NotApplicable,

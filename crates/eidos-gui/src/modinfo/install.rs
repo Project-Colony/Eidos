@@ -28,30 +28,95 @@ pub(crate) fn parsed_tree(tree: &eidos_install::ExtractedTree) -> eidos_install:
     eidos_install::ArchiveTree::from_dir(tree.path()).unwrap_or_default()
 }
 
+/// Run an install's copy step on a worker, behind a modal, and report through
+/// `Message::Placed`.
+///
+/// The caller has already checked the target on this thread with
+/// `lock_install_target` and DROPPED that guard: a refusal there keeps the
+/// dialog, and the worker cannot take a lock this thread still holds. The
+/// worker then takes its own and checks the target again, because the profile
+/// can change in between. `work` gets the mods directory, or the refusal, so it
+/// can hand its dialog back either way.
+pub(crate) fn place_on_worker(
+    app: &mut App,
+    target: CollectionTarget,
+    name: String,
+    archive: PathBuf,
+    choice: Option<PickerChoice>,
+    work: impl FnOnce(Result<PathBuf, String>) -> crate::Placed + Send + 'static,
+) -> Task<Message> {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let (Some(inst), Some(game)) = (app.created.clone(), selected_game(app).cloned()) else {
+        app.status = Some(t("installer_target_changed_reopen_short").to_string());
+        return Task::none();
+    };
+    let candidates = app.games.clone();
+    let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let outcome = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let slot = outcome.clone();
+    let worker_target = target.clone();
+    app.place_job = Some(crate::PlaceJob {
+        id,
+        name,
+        target,
+        archive,
+        choice,
+        outcome,
+    });
+    Task::perform(
+        smol::unblock(move || {
+            let placed = match inst.try_lock("installing a mod") {
+                Err(error) => work(Err(tf("status_cannot_install_now", &[("error", &error)]))),
+                // Held for the copy and released at the end of this arm, before
+                // the window hears of it: `after_install` takes its own there.
+                Ok(_guard) => {
+                    if crate::update::collection_target_for(&inst, &game, &candidates).as_ref()
+                        == Some(&worker_target)
+                    {
+                        work(Ok(inst.mods_dir()))
+                    } else {
+                        work(Err(t("installer_target_changed_reopen_short").to_string()))
+                    }
+                }
+            };
+            if let Ok(mut s) = slot.lock() {
+                *s = Some(placed);
+            }
+            id
+        }),
+        Message::Placed,
+    )
+}
+
+/// The status line for a failed install.
+fn install_failed(e: &eidos_install::InstallError) -> String {
+    tf("status_install_failed", &[("error", e)])
+}
+
 /// Install what the manual / BAIN picker currently has selected.
 ///
 /// A name collision hands off to the existing Merge / Replace / Rename prompt,
 /// carrying the picks so resolving it does not re-ask them. On any other failure
-/// the picker stays open with the reason, so a bad data root can just be
+/// the picker comes back with the reason, so a bad data root can just be
 /// re-picked instead of re-extracting the archive.
-pub(crate) fn run_picker_install(app: &mut App) {
-    let Some(p) = app.picker.as_ref() else { return };
-    let _guard = match crate::update::lock_install_target(app, &p.target) {
-        Ok(guard) => guard,
+///
+/// On a worker: two or more BAIN sub-packages are copied file by file, and even
+/// a lone source leaves the rest of the extraction to delete.
+pub(crate) fn run_picker_install(app: &mut App) -> Task<Message> {
+    let Some(p) = app.picker.as_ref() else {
+        return Task::none();
+    };
+    match crate::update::lock_install_target(app, &p.target) {
+        Ok(guard) => drop(guard),
         Err(error) => {
             app.status = Some(error);
-            return;
+            return Task::none();
         }
-    };
-    let mods_dir = app
-        .created
-        .as_ref()
-        .expect("validated install target")
-        .mods_dir();
+    }
     let name = p.name.trim().to_string();
     if name.is_empty() {
         app.status = Some(t("status_mod_needs_name").to_string());
-        return;
+        return Task::none();
     }
     let choice = match &p.mode {
         PickerMode::Bain {
@@ -67,48 +132,61 @@ pub(crate) fn run_picker_install(app: &mut App) {
                 .collect();
             if chosen.is_empty() {
                 app.status = Some(t("status_tick_subpackage").to_string());
-                return;
+                return Task::none();
             }
             PickerChoice::Bain(chosen)
         }
         PickerMode::Manual { root } => PickerChoice::Manual(root.clone()),
     };
-    let result = install_with_choice(
-        &p.tree,
-        &choice,
-        &p.archive,
-        &mods_dir,
-        &name,
-        &p.game_id,
-        eidos_install::OverwritePolicy::Fail,
-    );
-    match result {
-        Ok(r) => {
-            let archive = p.archive.clone();
-            // A successful install may have consumed the tree (a lone source is
-            // moved, not copied), so the picker must go before anything else.
-            app.picker = None;
-            remember_bain_options(app, &r.name, &choice);
-            after_install(app, &r.name, r.dest, r.fomod, Some(&archive));
-        }
-        Err(eidos_install::InstallError::Exists(_)) => {
-            let Some(p) = app.picker.take() else { return };
-            let rename_to = suggest_free_name(&mods_dir, &name);
-            app.collision = Some(CollisionPrompt {
-                target: p.target,
-                backup: app.prefs.retain_install_backup,
-                archive: p.archive,
-                name: name.clone(),
-                game_id: p.game_id,
-                rename_to,
-                fomod: false,
-                tree: Some(p.tree),
-                pick: Some(choice),
-            });
-            app.status = Some(tf("status_already_exists_choose", &[("name", &name)]));
-        }
-        Err(e) => app.status = Some(tf("status_install_failed", &[("error", &e)])),
-    }
+    let Some(p) = app.picker.take() else {
+        return Task::none();
+    };
+    let backup = app.prefs.retain_install_backup;
+    let (target, archive) = (p.target.clone(), p.archive.clone());
+    place_on_worker(
+        app,
+        target,
+        name.clone(),
+        archive,
+        Some(choice.clone()),
+        move |dir| {
+            let mods_dir = match dir {
+                Ok(dir) => dir,
+                Err(refused) => return (Err(refused), crate::Restore::Picker(Box::new(p))),
+            };
+            match install_with_choice(
+                &p.tree,
+                &choice,
+                &p.archive,
+                &mods_dir,
+                &name,
+                &p.game_id,
+                eidos_install::OverwritePolicy::Fail,
+            ) {
+                // A successful install may have consumed the tree (a lone source
+                // is moved, not copied), so the picker is not given back: it is
+                // dropped here, with the rest of the extraction, on this thread.
+                Ok(r) => (Ok(r), crate::Restore::Nothing),
+                Err(eidos_install::InstallError::Exists(_)) => {
+                    let rename_to = suggest_free_name(&mods_dir, &name);
+                    let status = tf("status_already_exists_choose", &[("name", &name)]);
+                    let prompt = CollisionPrompt {
+                        target: p.target,
+                        backup,
+                        archive: p.archive,
+                        name,
+                        game_id: p.game_id,
+                        rename_to,
+                        fomod: false,
+                        tree: Some(p.tree),
+                        pick: Some(choice),
+                    };
+                    (Err(status), crate::Restore::Collision(Box::new(prompt)))
+                }
+                Err(e) => (Err(install_failed(&e)), crate::Restore::Picker(Box::new(p))),
+            }
+        },
+    )
 }
 
 /// Dispatch one picker choice to the matching installer.
@@ -160,9 +238,14 @@ pub(crate) fn after_install_report(
     }
 }
 
-pub(crate) fn run_collision_install(app: &mut App, policy: eidos_install::OverwritePolicy) {
+/// On a worker for the same reason as the picker: Merge copies every file, and
+/// a backup copies the existing mod first.
+pub(crate) fn run_collision_install(
+    app: &mut App,
+    policy: eidos_install::OverwritePolicy,
+) -> Task<Message> {
     let Some(c) = app.collision.take() else {
-        return;
+        return Task::none();
     };
     let policy = match (c.backup, policy) {
         (true, eidos_install::OverwritePolicy::Merge) => {
@@ -173,90 +256,91 @@ pub(crate) fn run_collision_install(app: &mut App, policy: eidos_install::Overwr
         }
         (_, policy) => policy,
     };
-    let _lock = match crate::update::lock_install_target(app, &c.target) {
-        Ok(lock) => lock,
+    match crate::update::lock_install_target(app, &c.target) {
+        Ok(lock) => drop(lock),
         Err(error) => {
             app.status = Some(error);
             app.collision = Some(c);
-            return;
+            return Task::none();
         }
+    }
+    let Some(mods_dir) = app.created.as_ref().map(|i| i.mods_dir()) else {
+        app.status = Some(t("status_open_instance_first").to_string());
+        return Task::none();
     };
     // A FOMOD reinstall: the wizard (with the user's choices) is still open in
     // app.fomod - resolve through finish_fomod, never by re-extracting with
     // default selections.
     if c.fomod {
-        let Some(mods_dir) = app.created.as_ref().map(|i| i.mods_dir()) else {
-            return;
-        };
         // A Rename onto another existing mod re-opens the prompt BEFORE the
         // session is consumed (its drop would delete the extracted tree).
         if let eidos_install::OverwritePolicy::Rename(new) = &policy {
             if eidos_install::collision_name(&mods_dir, new).is_some() {
                 app.status = Some(t("status_name_taken").to_string());
                 app.collision = Some(c);
-                return;
+                return Task::none();
             }
         }
-        let Some(w) = app.fomod.take() else { return };
+        let Some(w) = app.fomod.take() else {
+            return Task::none();
+        };
         let archive = w.archive.clone();
-        match eidos_install::finish_fomod(
-            w.session,
-            &w.selection,
-            &mods_dir,
-            &w.game_id,
-            &w.ctx,
-            policy,
-        ) {
-            Ok(r) => after_install_report(app, r, &archive),
-            Err(e) => app.status = Some(tf("status_install_failed", &[("error", &e)])),
-        }
-        return;
+        return place_on_worker(app, c.target, c.name, archive, None, move |dir| {
+            let mods_dir = match dir {
+                Ok(dir) => dir,
+                Err(refused) => return (Err(refused), crate::Restore::Fomod(Box::new(w))),
+            };
+            let result = eidos_install::finish_fomod(
+                w.session,
+                &w.selection,
+                &mods_dir,
+                &w.game_id,
+                &w.ctx,
+                policy,
+            );
+            (
+                result.map_err(|e| install_failed(&e)),
+                crate::Restore::Nothing,
+            )
+        });
     }
-    let Some(inst) = app.created.as_ref() else {
-        app.status = Some(t("status_open_instance_first").to_string());
-        return;
-    };
-    let mods_dir = inst.mods_dir();
     let ctx = current_fomod_context(app);
-    let archive = c.archive.clone();
-    // A collision raised by the manual / BAIN picker: replay the SAME picks. The
-    // tree alone does not say which sub-packages were ticked, so re-running the
-    // plain installer here would quietly install something else.
-    if let (Some(choice), Some(tree)) = (c.pick.as_ref(), c.tree.as_ref()) {
-        match install_with_choice(
-            tree, choice, &c.archive, &mods_dir, &c.name, &c.game_id, policy,
-        ) {
-            Ok(r) => {
-                remember_bain_options(app, &r.name, choice);
-                after_install_report(app, r, &archive);
-            }
-            Err(eidos_install::InstallError::Exists(_)) => {
-                app.status = Some(t("status_name_taken").to_string());
-                app.collision = Some(c);
-            }
-            Err(e) => app.status = Some(tf("status_install_failed", &[("error", &e)])),
+    // Remembered only for the picker replay below, as before.
+    let choice = c.pick.clone().filter(|_| c.tree.is_some());
+    let (target, name, archive) = (c.target.clone(), c.name.clone(), c.archive.clone());
+    place_on_worker(app, target, name, archive, choice, move |dir| {
+        let mods_dir = match dir {
+            Ok(dir) => dir,
+            Err(refused) => return (Err(refused), crate::Restore::Collision(Box::new(c))),
+        };
+        let result = match (c.pick.as_ref(), c.tree.as_ref()) {
+            // A collision raised by the manual / BAIN picker: replay the SAME
+            // picks. The tree alone does not say which sub-packages were
+            // ticked, so re-running the plain installer here would quietly
+            // install something else.
+            (Some(choice), Some(tree)) => install_with_choice(
+                tree, choice, &c.archive, &mods_dir, &c.name, &c.game_id, policy,
+            ),
+            // Reuse the tree extracted when the collision was raised; only fall
+            // back to a fresh extraction if it is gone.
+            (_, Some(tree)) => eidos_install::install_extracted(
+                tree, &c.archive, &mods_dir, &c.name, &c.game_id, policy, &ctx,
+            ),
+            (_, None) => eidos_install::install_archive_with_policy(
+                &c.archive, &mods_dir, &c.name, &c.game_id, policy, &ctx,
+            ),
+        };
+        match result {
+            Ok(r) => (Ok(r), crate::Restore::Nothing),
+            // A Rename target that also exists: the prompt comes back for
+            // another try.
+            Err(eidos_install::InstallError::Exists(_)) => (
+                Err(t("status_name_taken").to_string()),
+                crate::Restore::Collision(Box::new(c)),
+            ),
+            Err(e) => (Err(install_failed(&e)), crate::Restore::Nothing),
         }
-        return;
-    }
-    // Reuse the tree extracted when the collision was raised; only fall back to a
-    // fresh extraction if it is gone.
-    let result = match c.tree.as_ref() {
-        Some(tree) => eidos_install::install_extracted(
-            tree, &c.archive, &mods_dir, &c.name, &c.game_id, policy, &ctx,
-        ),
-        None => eidos_install::install_archive_with_policy(
-            &c.archive, &mods_dir, &c.name, &c.game_id, policy, &ctx,
-        ),
-    };
-    match result {
-        Ok(r) => after_install_report(app, r, &archive),
-        Err(eidos_install::InstallError::Exists(_)) => {
-            // A Rename target that also exists: keep the prompt open for another try.
-            app.status = Some(t("status_name_taken").to_string());
-            app.collision = Some(c);
-        }
-        Err(e) => app.status = Some(tf("status_install_failed", &[("error", &e)])),
-    }
+    })
 }
 
 /// Recursively copy the CONTENTS of `src` into `dst` (creating `dst`), MO2's
@@ -420,6 +504,25 @@ pub(crate) fn install_progress_dialog<'a>(job: &crate::InstallJob) -> Element<'a
             })
             .size(sz(12)),
         )
+        .push(
+            text(t("install_large_archives"))
+                .size(sz(10))
+                .color(text_muted()),
+        );
+    container(card)
+        .max_width(420.0)
+        .padding(16)
+        .style(card_style)
+        .into()
+}
+
+/// The card shown while a placement worker copies. No bar: the installers
+/// report no progress for this step, and a bar that never moved would say
+/// less than this sentence.
+pub(crate) fn place_progress_dialog<'a>(job: &crate::PlaceJob) -> Element<'a, Message> {
+    let card = Column::new()
+        .spacing(10)
+        .push(text(tf("install_placing", &[("name", &job.name)])).size(sz(15)))
         .push(
             text(t("install_large_archives"))
                 .size(sz(10))

@@ -1015,6 +1015,7 @@ pub(crate) fn name_cell<'a>(name: String, bg: Color) -> Element<'a, Message> {
         .into()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn mod_row<'a>(
     i: usize,
     m: &ModEntry,
@@ -1023,6 +1024,7 @@ pub(crate) fn mod_row<'a>(
     hidden_icon: Option<&'static [u8]>,
     bg: Color,
     columns: &[ModColumn],
+    aim: bool,
 ) -> Element<'a, Message> {
     // Unmanaged content - the game's own DLCs and Creation Club plugins - is
     // listed so the mod list matches what will actually load, but none of it is
@@ -1207,10 +1209,18 @@ pub(crate) fn mod_row<'a>(
         // anything, and offering one only invites the question of why it failed.
         return container(row).into();
     }
-    mouse_area(row)
-        .on_press(Message::DragStart(i))
-        .on_enter(Message::DragOverGap(i))
-        .on_release(Message::DragDrop)
+    // `on_enter` only while a mod drag is live, like `drop_gap`'s strips:
+    // without a drag the handler does nothing, but each row the pointer
+    // crossed was still a message and so a whole-window rebuild. A row gains
+    // it on the press that arms the drag; `mouse_area` tracks hover with or
+    // without the callback, so the row under the pointer fires no false enter.
+    let area = mouse_area(row).on_press(Message::DragStart(i));
+    let area = if aim {
+        area.on_enter(Message::DragOverGap(i))
+    } else {
+        area
+    };
+    area.on_release(Message::DragDrop)
         // MO2's three: plain opens Information, Ctrl opens the folder, Shift
         // opens the Nexus page. A double-click still delivers both presses, so
         // this arrives AFTER a drag has been armed and dropped on itself - which
@@ -1273,6 +1283,7 @@ pub(crate) fn separator_row<'a>(
     color: Option<[u8; 3]>,
     collapsed: bool,
     selected: bool,
+    aim: bool,
 ) -> Element<'a, Message> {
     let bg = color
         .map(|[r, g, b]| Color::from_rgb8(r, g, b))
@@ -1305,11 +1316,15 @@ pub(crate) fn separator_row<'a>(
         .push(text(format!("{:>2}", i + 1)).size(sz(12)).width(C_PRIO))
         .push(name);
 
+    // `on_enter` only during a mod drag, as on `mod_row`.
+    let area = mouse_area(row).on_press(Message::DragStart(i));
+    let area = if aim {
+        area.on_enter(Message::DragOverGap(i))
+    } else {
+        area
+    };
     container(
-        mouse_area(row)
-            .on_press(Message::DragStart(i))
-            .on_enter(Message::DragOverGap(i))
-            .on_release(Message::DragDrop)
+        area.on_release(Message::DragDrop)
             .on_right_press(Message::OpenModMenu(i)),
     )
     .width(Length::Fill)
@@ -1559,7 +1574,14 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
                     drop_msg.clone(),
                 ));
             }
-            list = list.push(separator_row(i, m, color, collapsed, selected));
+            list = list.push(separator_row(
+                i,
+                m,
+                color,
+                collapsed,
+                selected,
+                app.drag_state.is_some(),
+            ));
             tints.push(None); // a separator has no conflict of its own
             continue;
         }
@@ -1617,7 +1639,16 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
             .map(|rgb| mod_tint(rgb, i % 2 == 0));
         let bg = row_background(i % 2 == 0, selected, conflict, tint);
         list = list.push(list_row(
-            mod_row(i, m, meta, flag_icon, hidden_icon, bg, &app.mod_columns),
+            mod_row(
+                i,
+                m,
+                meta,
+                flag_icon,
+                hidden_icon,
+                bg,
+                &app.mod_columns,
+                app.drag_state.is_some(),
+            ),
             i % 2 == 0,
             selected,
             conflict,

@@ -839,6 +839,15 @@ impl Nexus {
         if prefs.offline {
             return Err(OFFLINE_MESSAGE.to_string());
         }
+        // One renewal at a time, process-wide, and the credentials read under
+        // that turn. Nexus rotates the refresh token on every renewal, so two
+        // jobs that both saw an expired token (the startup account check and a
+        // click, say, now that the GUI runs them on a blocking pool rather than
+        // one after another) would both spend the same refresh token, and the
+        // second would fail or get the session revoked. Whoever waits re-reads
+        // the file the first one rewrote and finds a fresh Bearer.
+        static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
         let mut creds = eidos_instance::settings::load_nexus_creds();
         let cfg = oauth::Config::from_env();
         match choose_credential(&creds, oauth::now_unix(), cfg.is_some()) {
@@ -1669,8 +1678,8 @@ pub struct UpdateCheckResult {
 /// back to its `meta.ini`; the GUI re-reads `update_available()` afterward to
 /// refresh its row markers. The loop stops on the first 429, returning what it had.
 ///
-/// This is blocking I/O (`ureq`); the GUI runs it inside a `Task::perform` closure
-/// on iced's executor, exactly like the plugin-sort task. The `Instance` is
+/// This is blocking I/O (`ureq`); the GUI runs it through `smol::unblock`,
+/// exactly like the plugin-sort task, and never on iced's executor thread. The `Instance` is
 /// `Clone`, so the closure can own a clone and complete harmlessly even if the
 /// user switches instances mid-check.
 pub fn check_updates(

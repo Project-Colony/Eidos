@@ -47,7 +47,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         // ---- profile management (rename / delete / named copy) --------------
         Message::ProfileMenuOpen(name) => {
             app.profile_menu = Some(name);
-            app.menu_at = Some(app.cursor);
+            app.menu_at = Some(crate::subscription::pointer(app));
             app.profile_rename = None;
             app.profile_copy = None;
             app.profile_delete_confirm = None;

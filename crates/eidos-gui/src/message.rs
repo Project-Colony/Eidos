@@ -156,6 +156,9 @@ pub(crate) enum Message {
     ConfirmModRestoreBackup(String),
     /// Filetree: open the entry with the desktop's handler.
     FiletreeOpen(usize, String),
+    /// Filetree: preview the entry (mod index, relative path). Resolved when
+    /// clicked, like `FiletreeOpen`, not while the row is drawn.
+    FiletreePreview(usize, String),
     /// Filetree: start renaming an entry (mod index, relative path).
     FiletreeRenameStart(usize, String),
     FiletreeRenameChanged(String),
@@ -775,7 +778,10 @@ pub(crate) enum Message {
     UnpackToggleForce,
     /// Start unpacking on a worker thread.
     UnpackRun,
-    /// The 60 Hz look at a running pack or unpack. Reached from `AnimationTick`,
+    /// A copy step's worker finished (its `PlaceJob` id); the result is in the
+    /// job's slot.
+    Placed(u64),
+    /// The periodic look at a running pack or unpack. Reached from `AnimationTick`,
     /// like `InstallPoll`, because iced's timer needs a non-capturing closure.
     TransferPoll,
     /// Dismiss the card showing what a finished pack or unpack did.

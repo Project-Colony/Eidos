@@ -455,6 +455,16 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             return update(app, Message::OpenFolder(path));
         }
+        Message::FiletreePreview(i, rel) => {
+            let Some(base) = app.mods.get(i).map(|m| m.path.clone()) else {
+                return Task::none();
+            };
+            let Some(path) = resolve_in_mod(&base, &rel) else {
+                app.error = Some(tf("status_refused_preview", &[("path", &rel)]));
+                return Task::none();
+            };
+            return update(app, Message::PreviewFile(path));
+        }
         Message::FiletreeRenameStart(i, rel) => {
             // Prefill with the NAME, not the path: a rename box holding
             // `Meshes/armour/x.nif` invites somebody to edit the directories,

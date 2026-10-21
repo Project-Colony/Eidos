@@ -55,7 +55,10 @@ pub(crate) fn schedule_archive_conflicts(app: &mut App) {
     // Pointers: the lists are copied below, on the worker.
     let mut cache = app.files_cache.borrow().clone();
     let plugins = app.plugins.clone();
-    let tweaks = inst.enabled_ini_tweaks(&app.mods);
+    // The tweak list is a `meta.ini` read, a `read_dir` and an `is_file` per
+    // active mod, so it is gathered on the worker from a copy of the list. A
+    // tweak toggled meanwhile bumps the epoch, which discards this run.
+    let mods = app.mods.clone();
     let (sender, receiver) = mpsc::channel();
     let cancel = Arc::new(AtomicBool::new(false));
     app.archive_job = Some(ArchiveWorker {
@@ -65,6 +68,7 @@ pub(crate) fn schedule_archive_conflicts(app: &mut App) {
     });
     app.archive_warnings.clear();
     let work = move || {
+        let tweaks = inst.enabled_ini_tweaks(&mods);
         let mut parts: Parts = Vec::with_capacity(layers.len());
         for l in layers {
             if cancel.load(Ordering::Relaxed) {

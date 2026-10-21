@@ -336,6 +336,16 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
             .push(container(install_progress_dialog(job)).center(Length::Fill));
     }
 
+    // The copy step of an install. Modal like the extraction, and for one more
+    // reason: its worker holds the instance lock, so anything clicked behind it
+    // would be refused.
+    if let Some(job) = &app.place_job {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill));
+        layers = layers
+            .push(scrim)
+            .push(container(place_progress_dialog(job)).center(Length::Fill));
+    }
+
     // A pack or unpack, and afterwards its report. Above the extraction dialog
     // because it is the longer job of the two and the one that must not be
     // covered; no scrim catcher either, for the same reason as the extraction

@@ -24,6 +24,46 @@ const DOWNLOAD_TICK: std::time::Duration = std::time::Duration::from_millis(500)
 /// another process, launched by the browser, with no way to reach this one.
 const DOWNLOAD_IDLE_TICK: std::time::Duration = std::time::Duration::from_secs(2);
 
+/// The last pointer position seen by the event listener, as the bits of two
+/// `f32` (x high, y low). All ones, two NaNs, means none seen yet.
+///
+/// Kept OUT of the message loop. In iced every message is a full `update`,
+/// `view` and layout of the window, and a `PointerAt` per mouse move made
+/// every event-loop turn with motion in it a rebuild: at a 144 Hz display and
+/// ~1.7 ms of view plus layout for 1000 rows (GUI_BENCH, release), a quarter
+/// of a core spent on a pointer merely crossing the window, for a value read
+/// only when a menu opens. The
+/// listener is a plain `fn` on the executor thread, so it may write a static
+/// and nothing else; only it writes this one, so the tests, which never run
+/// the listener, see it unset and stay deterministic.
+static POINTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(u64::MAX);
+
+fn pack(p: iced::Point) -> u64 {
+    (u64::from(p.x.to_bits()) << 32) | u64::from(p.y.to_bits())
+}
+
+fn unpack(bits: u64) -> Option<iced::Point> {
+    (bits != u64::MAX).then(|| {
+        iced::Point::new(
+            f32::from_bits((bits >> 32) as u32),
+            f32::from_bits(bits as u32),
+        )
+    })
+}
+
+fn last_pointer() -> Option<iced::Point> {
+    unpack(POINTER.load(std::sync::atomic::Ordering::Relaxed))
+}
+
+/// Where the pointer is now, for placing a menu that is being opened. The
+/// listener's position when it has one, else the last `PointerAt`. Messages
+/// from the listener land one loop turn AFTER the widget message of the same
+/// press, so a menu opened from `app.cursor` alone would appear at the
+/// previous click.
+pub(crate) fn pointer(app: &App) -> iced::Point {
+    last_pointer().unwrap_or(app.cursor)
+}
+
 /// Keyboard subscription: surface global shortcuts and keep the live modifier state
 /// in sync so a plain mod-row click can branch to Ctrl-toggle / Shift-extend.
 ///
@@ -33,19 +73,19 @@ const DOWNLOAD_IDLE_TICK: std::time::Duration = std::time::Duration::from_secs(2
 pub(crate) fn subscription(app: &App) -> iced::Subscription<Message> {
     use iced::keyboard::{self, key::Named, Key};
 
-    // 60 Hz, and ONLY while something is actually moving. An idle window
-    // subscribes to nothing here, so the cost of having animations at all is
-    // zero rather than small - which is the whole reason this is a condition
-    // and not an always-on timer that most frames ignore.
-    // One timer, two reasons to want it: something is animating, or an archive
-    // is extracting on a worker thread and its dialog has to repaint (and its
-    // completion be noticed). iced 0.14 requires a non-capturing closure here,
-    // so the tick always carries `AnimationTick` and the handler forwards to
-    // `InstallPoll` when there is a job - which also keeps that message
-    // separately testable.
-    let frames = anim::needs_frames(app).then(|| {
-        iced::time::every(std::time::Duration::from_millis(16)).map(|_| Message::AnimationTick)
-    });
+    // ONLY while something is actually moving or a job is running. An idle
+    // window subscribes to nothing here, so the cost of having animations at
+    // all is zero rather than small - which is the whole reason this is a
+    // condition and not an always-on timer that most frames ignore.
+    // One timer, two reasons to want it: something is animating (60 Hz), or an
+    // archive is extracting or a pack is running on a worker thread and its
+    // dialog has to repaint and its completion be noticed (10 Hz is plenty for
+    // a percentage, see `anim::frame_period`). iced 0.14 requires a
+    // non-capturing closure here, so the period is picked outside it, the tick
+    // always carries `AnimationTick`, and the handler forwards to `InstallPoll`
+    // when there is a job - which also keeps that message separately testable.
+    let frames = anim::needs_frames(app)
+        .then(|| iced::time::every(anim::frame_period(app)).map(|_| Message::AnimationTick));
 
     // Track held modifiers from every key press AND release (a release with no
     // remaining keys still carries the updated modifier set).
@@ -62,10 +102,17 @@ pub(crate) fn subscription(app: &App) -> iced::Subscription<Message> {
 
     // Where the pointer is, and how big the window is. Needed because iced's
     // right-press carries no coordinates, so a context menu cannot otherwise be
-    // placed where it was summoned from. The handlers do nothing but store.
+    // placed where it was summoned from. A move only updates `POINTER` and
+    // publishes nothing (see there for why); a press publishes the position
+    // once, which costs nothing extra because the click rebuilds anyway, and
+    // keeps `app.cursor` current for the menus that fall back on it.
     let pointer = iced::event::listen_with(|event, _status, _window| match event {
         iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
-            Some(Message::PointerAt(position))
+            POINTER.store(pack(position), std::sync::atomic::Ordering::Relaxed);
+            None
+        }
+        iced::Event::Mouse(iced::mouse::Event::ButtonPressed(_)) => {
+            last_pointer().map(Message::PointerAt)
         }
         // A release ANYWHERE ends a drag. `mouse_area::on_release` only fires
         // while the cursor is over its bounds, so without this a drag let go
@@ -179,6 +226,19 @@ pub(crate) fn subscription(app: &App) -> iced::Subscription<Message> {
     });
 
     let mut subs = vec![track, pointer];
+    // Dragging the pane divider is the one thing that needs every move, and
+    // only while it lasts. A separate `fn`, because the subscription is keyed
+    // on the function: the same one could not be subscribed twice.
+    if app.split_drag {
+        subs.push(iced::event::listen_with(
+            |event, _status, _window| match event {
+                iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
+                    Some(Message::PointerAt(position))
+                }
+                _ => None,
+            },
+        ));
+    }
     // Archive analysis only reports completion; it does not animate at frame rate.
     if app.archive_job.is_some() {
         subs.push(
@@ -244,6 +304,9 @@ pub(crate) fn subscription(app: &App) -> iced::Subscription<Message> {
         // was thirty seconds; it is the same defect as the rest, and it is one
         // clause.
         && app.install_job.is_none()
+        // And the copy step after it, which holds the instance lock: Ctrl+R
+        // could not launch, and Delete would arm a removal it cannot do.
+        && app.place_job.is_none()
     {
         subs.push(shortcuts);
     }
@@ -342,4 +405,24 @@ pub(crate) fn subscription(app: &App) -> iced::Subscription<Message> {
     // they watch is actually happening.
     subs.extend(frames);
     iced::Subscription::batch(subs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{pack, unpack};
+
+    /// Both halves survive, signs included: a pointer left of a second monitor
+    /// has a negative x, and a lost sign bit would open the menu off screen.
+    #[test]
+    fn a_pointer_position_round_trips_through_the_static() {
+        for p in [
+            iced::Point::new(0.0, 0.0),
+            iced::Point::new(1919.5, 1079.25),
+            iced::Point::new(-3.75, 12.0),
+            iced::Point::new(640.0, -0.5),
+        ] {
+            assert_eq!(unpack(pack(p)), Some(p));
+        }
+        assert_eq!(unpack(u64::MAX), None, "nothing seen yet");
+    }
 }

@@ -36,11 +36,49 @@ impl Drop for InstallJob {
     }
 }
 
+/// The copy step of an install, on a worker: a FOMOD selection, a BAIN pick, or
+/// a collision answered with Merge, Replace or Rename.
+///
+/// Extraction already ran on a worker, but this step then ran in `update()`:
+/// every selected file `fs::copy`'d (ext4 has no reflink), then the extraction
+/// temp removed, on the window's thread. A 2-4 GB texture FOMOD froze the
+/// window for one to three seconds with nothing on screen to say why.
+///
+/// The worker takes the instance lock itself, because the lock is keyed by
+/// thread: a guard taken here and dropped there would wedge the instance for
+/// the session. It drops it before reporting, so `after_install` can take its
+/// own on this thread.
+pub(crate) struct PlaceJob {
+    pub(crate) id: u64,
+    /// The mod's name, for the dialog text.
+    pub(crate) name: String,
+    pub(crate) target: CollectionTarget,
+    pub(crate) archive: PathBuf,
+    /// The BAIN or manual pick, remembered in the mod's `meta.ini` on success.
+    pub(crate) choice: Option<PickerChoice>,
+    /// The worker's answer. A slot rather than the message's payload, because
+    /// what it can hand back (a wizard, an extracted tree) cannot be cloned.
+    pub(crate) outcome: std::sync::Arc<std::sync::Mutex<Option<Placed>>>,
+}
+
+/// What a placement worker reports: the install, or the status line saying why
+/// not, and the dialog to put back when that dialog can still act on it.
+pub(crate) type Placed = (Result<eidos_install::InstallReport, String>, Restore);
+
+/// The dialog a failed placement gives back, so its choices are not lost.
+pub(crate) enum Restore {
+    Nothing,
+    Fomod(Box<crate::FomodWizard>),
+    Picker(Box<InstallPicker>),
+    Collision(Box<CollisionPrompt>),
+}
+
 // The worker hands `Opened` back across a thread; if that ever stops holding,
 // fail here at compile time rather than at the `spawn` call site.
 const _: fn() = || {
     fn assert_send<T: Send>() {}
     assert_send::<eidos_install::Opened>();
+    assert_send::<Placed>();
     assert_send::<eidos_install::InstallError>();
     // A pack hands back sentences, not library types (see `TransferJob`), but
     // the worker owns an Instance and a Plan while it runs.
@@ -92,7 +130,8 @@ pub(crate) struct TransferJob {
     /// archive, so the bar would climb, reset and climb again. `fetch_max` in
     /// the worker is the whole fix, and it belongs there rather than in the
     /// view: a bar that walks backwards for minutes reads as a broken program,
-    /// and the view is asked to draw sixty times a second.
+    /// and the view is asked to draw it ten times a second for all of those
+    /// minutes.
     pub(crate) percent: std::sync::Arc<std::sync::atomic::AtomicU8>,
     pub(crate) outcome: std::sync::Arc<std::sync::Mutex<Option<Result<String, String>>>>,
     pub(crate) done: std::sync::Arc<std::sync::atomic::AtomicBool>,

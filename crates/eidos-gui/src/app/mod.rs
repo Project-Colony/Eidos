@@ -290,6 +290,8 @@ pub(crate) struct App {
     pub(crate) install_gap: Option<usize>,
     /// The archive currently being extracted on a worker thread, if any.
     pub(crate) install_job: Option<InstallJob>,
+    /// The copy step of a FOMOD, BAIN or collision install running on a worker.
+    pub(crate) place_job: Option<PlaceJob>,
     /// Two-click guard for the bulk enable/disable, holding the TARGET state so
     /// arming "Enable all" and then clicking "Disable all" does not fire.
     pub(crate) confirm_set_all: Option<bool>,
@@ -442,12 +444,12 @@ pub(crate) struct App {
     pub(crate) nexus_daily_left: Option<i64>,
     /// A Nexus mod-update check is in flight (guards the Update button).
     pub(crate) update_in_progress: bool,
-    /// A LOOT sort is in flight. iced runs on smol's single-threaded executor
-    /// here, so a second sort does not race the first - it QUEUES behind it, and
-    /// every queued completion re-opens the report modal and overwrites the
-    /// status with its own (idempotent, so "nothing moved") result. A masterlist
-    /// download is several seconds with no other visible sign of work, which is
-    /// long enough to invite exactly that.
+    /// A LOOT sort is in flight. The sort runs on smol's blocking pool, so
+    /// without this flag a second click would start a second sort that RUNS
+    /// beside the first, and every completion would re-open the report modal
+    /// and overwrite the status with its own (idempotent, so "nothing moved")
+    /// result. A masterlist download is several seconds with no other visible
+    /// sign of work, which is long enough to invite exactly that.
     pub(crate) sorting: bool,
     // ---- menu-bar UI toggles + About ----
     /// The toolbar / status bar are visible (View menu toggles).
@@ -564,8 +566,10 @@ pub(crate) struct App {
     ///
     /// iced's `on_right_press` carries no coordinates, so a context menu has no
     /// way to know where it was summoned from unless the position is tracked
-    /// separately. Both are fed by the event subscription and read only when a
-    /// menu opens.
+    /// separately. Both are fed by the event subscription. `cursor` moves on a
+    /// press and during a divider drag only, never per mouse move: menus read
+    /// the live position through `subscription::pointer`, and this is its
+    /// fallback.
     pub(crate) cursor: iced::Point,
     pub(crate) window: iced::Size,
     /// Where the open context menu was summoned from, frozen at that moment - the
@@ -712,6 +716,8 @@ pub(crate) struct RowMeta {
     /// ships (P/A/T/M/S/K/I/U/F), empty if none.
     pub(crate) content_tags: String,
     pub(crate) update: bool,
+    /// The user endorsed it on Nexus (`endorsed=`), for the status-bar count.
+    pub(crate) endorsed: bool,
     /// The row's display colour (MO2's `color=@Variant(...)`), if set. Stored per
     /// mod, not only per separator.
     pub(crate) color: Option<[u8; 3]>,

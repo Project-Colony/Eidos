@@ -118,7 +118,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 p.name = s;
             }
         }
-        Message::PickerInstall => run_picker_install(app),
+        Message::PickerInstall => return run_picker_install(app),
         Message::PickerCancel => {
             // Dropping the picker drops the ExtractedTree, which removes the temp.
             app.picker = None;
@@ -200,13 +200,15 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let Some(target) = app.fomod.as_ref().map(|w| w.target.clone()) else {
                 return Task::none();
             };
-            let _guard = match lock_install_target(app, &target) {
-                Ok(guard) => guard,
+            // Checked here so a refusal keeps the wizard, then released: the
+            // copy runs on a worker that takes its own (see `place_on_worker`).
+            match lock_install_target(app, &target) {
+                Ok(guard) => drop(guard),
                 Err(error) => {
                     app.status = Some(error);
                     return Task::none();
                 }
-            };
+            }
             let inst = app.created.as_ref().expect("validated install target");
             let mods_dir = inst.mods_dir();
             // Collision check BEFORE consuming the wizard: a reinstall must offer
@@ -232,18 +234,60 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 }
             }
             if let Some(w) = app.fomod.take() {
-                let archive = w.archive.clone();
-                match eidos_install::finish_fomod(
-                    w.session,
-                    &w.selection,
-                    &mods_dir,
-                    &w.game_id,
-                    &w.ctx,
-                    eidos_install::OverwritePolicy::Fail,
-                ) {
-                    Ok(r) => after_install(app, &r.name, r.dest, true, Some(&archive)),
-                    Err(e) => app.status = Some(tf("status_install_failed", &[("error", &e)])),
+                let (name, archive) = (w.session.mod_name().to_string(), w.archive.clone());
+                // Every selected file is copied, never moved, so a texture
+                // FOMOD is gigabytes of `fs::copy` and then the removal of the
+                // whole extraction: on a worker, behind a modal.
+                return place_on_worker(app, target, name, archive, None, move |dir| {
+                    let mods_dir = match dir {
+                        Ok(dir) => dir,
+                        Err(refused) => return (Err(refused), crate::Restore::Fomod(Box::new(w))),
+                    };
+                    let result = eidos_install::finish_fomod(
+                        w.session,
+                        &w.selection,
+                        &mods_dir,
+                        &w.game_id,
+                        &w.ctx,
+                        eidos_install::OverwritePolicy::Fail,
+                    );
+                    (
+                        result.map_err(|e| tf("status_install_failed", &[("error", &e)])),
+                        crate::Restore::Nothing,
+                    )
+                });
+            }
+        }
+        Message::Placed(id) => {
+            if app.place_job.as_ref().is_none_or(|j| j.id != id) {
+                return Task::none();
+            }
+            let job = app.place_job.take().expect("just checked");
+            let Some((result, restore)) = job.outcome.lock().ok().and_then(|mut o| o.take()) else {
+                app.status = Some(tf("status_install_worker_stopped", &[("name", &job.name)]));
+                return Task::none();
+            };
+            match restore {
+                crate::Restore::Nothing => {}
+                crate::Restore::Fomod(w) => app.fomod = Some(*w),
+                crate::Restore::Picker(p) => app.picker = Some(*p),
+                crate::Restore::Collision(c) => app.collision = Some(*c),
+            }
+            match result {
+                Ok(report) => {
+                    // The worker checked the target under its lock, but the
+                    // lock is gone now and registration runs here: an outside
+                    // profile switch in between must not get the mod.
+                    if collection_target(app).as_ref() != Some(&job.target) {
+                        app.status = Some(t("installer_target_changed_reopen_short").into());
+                        return Task::none();
+                    }
+                    if let Some(choice) = &job.choice {
+                        remember_bain_options(app, &report.name, choice);
+                    }
+                    after_install_report(app, report, &job.archive);
                 }
+                Err(status) => app.status = Some(status),
             }
         }
         Message::FomodCancel => {
@@ -267,11 +311,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::CollisionMerge => {
             app.install_at = None;
-            run_collision_install(app, eidos_install::OverwritePolicy::Merge)
+            return run_collision_install(app, eidos_install::OverwritePolicy::Merge);
         }
         Message::CollisionReplace => {
             app.install_at = None;
-            run_collision_install(app, eidos_install::OverwritePolicy::Replace)
+            return run_collision_install(app, eidos_install::OverwritePolicy::Replace);
         }
         Message::CollisionRenameChanged(s) => {
             if let Some(c) = &mut app.collision {
@@ -287,7 +331,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 if new.is_empty() {
                     app.status = Some(t("status_enter_install_name").to_string());
                 } else {
-                    run_collision_install(app, eidos_install::OverwritePolicy::Rename(new));
+                    return run_collision_install(app, eidos_install::OverwritePolicy::Rename(new));
                 }
             }
         }
@@ -318,6 +362,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 || app.install_job.is_some()
                 // Same reason, over twenty minutes rather than thirty seconds.
                 || app.transfer_job.is_some()
+                // And a copy step: its worker holds the instance lock.
+                || app.place_job.is_some()
             {
                 return Task::none();
             }

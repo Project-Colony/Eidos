@@ -68,6 +68,7 @@ pub(crate) fn refresh_meta_cache(app: &mut App) {
                 category_name,
                 content_tags: eidos_install::classify_content_dir(&path).tags(),
                 update: meta.update_available(),
+                endorsed: meta.endorsed(),
                 color: meta.color(),
                 notes: meta.notes(),
                 nexus_gone: meta.nexus_available() == Some(false),
@@ -348,6 +349,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         install_at: None,
         install_gap: None,
         install_job: None,
+        place_job: None,
         pack: None,
         unpack: None,
         transfer_job: None,
@@ -574,7 +576,9 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     // so the status bar shows the account instead of "not logged in" every session.
     let startup = if eidos_nexus::Nexus::have_credentials() {
         Task::perform(
-            async move { eidos_nexus::Nexus::connect().and_then(|n| n.account()) },
+            // A token renewal plus a round trip: on the blocking pool, so the
+            // first seconds of the session keep their timers.
+            smol::unblock(|| eidos_nexus::Nexus::connect().and_then(|n| n.account())),
             Message::NexusSignInResult,
         )
     } else {
@@ -2912,13 +2916,19 @@ pub(crate) fn recompute_counts(app: &mut App) {
             if !m.enabled || m.is_separator() {
                 continue;
             }
-            let meta = inst.mod_meta(&m.name);
-            if meta.endorsed() {
-                endorsed += 1;
-            }
-            if meta.update_available() {
-                updated += 1;
-            }
+            // From the row cache, which every caller has just brought in step:
+            // a `meta.ini` read per enabled mod here was ~900 opens per click on
+            // a large list, for two numbers the cache already held. A row that
+            // is not cached yet is read, so the count is never short.
+            let (e, u) = match app.meta_cache.get(&m.name) {
+                Some(row) => (row.endorsed, row.update),
+                None => {
+                    let meta = inst.mod_meta(&m.name);
+                    (meta.endorsed(), meta.update_available())
+                }
+            };
+            endorsed += usize::from(e);
+            updated += usize::from(u);
         }
     }
     app.endorsed_count = endorsed;

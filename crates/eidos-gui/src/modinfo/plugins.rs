@@ -595,11 +595,17 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         } else {
             striped(row.into(), i % 2 == 0)
         };
+        // `on_enter` only during a plugin drag, as on the mod rows: without
+        // one it does nothing, and each row crossed was a window rebuild.
         let grab = mouse_area(painted)
             .on_right_press(Message::OpenPluginMenu(i))
-            .on_press(Message::SelectPlugin(i))
-            .on_enter(Message::PluginDragOverGap(i))
-            .on_release(Message::PluginDragDrop);
+            .on_press(Message::SelectPlugin(i));
+        let grab = if dragging {
+            grab.on_enter(Message::PluginDragOverGap(i))
+        } else {
+            grab
+        };
+        let grab = grab.on_release(Message::PluginDragDrop);
         rows = rows.push(drop_gap(
             i,
             live_gap == Some(i),

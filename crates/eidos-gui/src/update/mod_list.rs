@@ -300,7 +300,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.menu_mod = Some(i);
             // Frozen here: the pointer keeps moving and a menu that followed it
             // would be impossible to aim at.
-            app.menu_at = Some(app.cursor);
+            app.menu_at = Some(crate::subscription::pointer(app));
             app.rename = None;
             app.confirm_remove = None;
             app.drag_state = None;
@@ -635,6 +635,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             // Open its rename editor so the user names it straight away.
                             app.rename = Some((idx, display));
                             app.menu_mod = Some(idx);
+                            // From the toolbar no menu was open, so nothing froze
+                            // where the card goes: freeze it at the click, or it
+                            // lands wherever the last menu was summoned.
+                            app.menu_at.get_or_insert(crate::subscription::pointer(app));
                         }
                     }
                     Err(e) => app.status = Some(tf("status_separator_failed", &[("error", &e)])),
@@ -819,6 +823,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             // Open its rename editor so the user names it straight away.
                             app.rename = Some((idx, name));
                             app.menu_mod = Some(idx);
+                            // Frozen at the click when no menu was open, as in
+                            // AddSeparator.
+                            app.menu_at.get_or_insert(crate::subscription::pointer(app));
                         }
                     }
                     Err(e) => app.status = Some(tf("status_create_mod_failed", &[("error", &e)])),

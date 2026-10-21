@@ -130,9 +130,9 @@ pub fn ensure_masterlist(repo: &str, update: bool) -> Result<(PathBuf, PathBuf),
 
 fn fetch(url: &str, dest: &Path) -> Result<(), LootError> {
     // Bounded timeouts: a stalled connection must fail the fetch, not hang the
-    // caller forever. It would hang more than the fetch: the GUI sorts on iced's
-    // executor, which is smol's single-threaded one, so a stalled download also
-    // holds up every other Task and every timer subscription behind it.
+    // caller forever. The GUI runs the sort on smol's blocking pool, so a hang
+    // no longer freezes its timers, but it would leave the sort (and its
+    // one-at-a-time guard) stuck for the rest of the session.
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_connect(Some(std::time::Duration::from_secs(10)))
         // `timeout_global` is ureq 2's plain `timeout`: the whole exchange, not

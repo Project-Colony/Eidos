@@ -1993,6 +1993,47 @@ fn deleting_from_the_filetree_takes_two_clicks() {
     let _ = fs::remove_dir_all(&root);
 }
 
+/// The View button no longer resolves its path while the row is drawn, so the
+/// symlink refusal has to happen on the click instead, before anything reads.
+#[test]
+fn a_filetree_preview_is_resolved_on_the_click_and_refuses_a_symlink() {
+    let root = temp_portable("skyrimse");
+    let modd = root.join("mods").join("Armour");
+    let outside = root.join("elsewhere");
+    fs::create_dir_all(modd.join("Meshes")).unwrap();
+    fs::create_dir_all(&outside).unwrap();
+    fs::write(modd.join("Meshes").join("a.nif"), b"a").unwrap();
+    fs::write(outside.join("secret.txt"), b"not ours").unwrap();
+    std::os::unix::fs::symlink(&outside, modd.join("Away")).unwrap();
+    let mut app = app_for_game("skyrimse");
+    app.mods = vec![ModEntry {
+        name: "Armour".to_string(),
+        enabled: true,
+        path: modd.clone(),
+        unmanaged: false,
+    }];
+    app.screen = Screen::Main;
+
+    let _ = update_inner(
+        &mut app,
+        Message::FiletreePreview(0, "Away/secret.txt".to_string()),
+    );
+    assert!(app.error.is_some(), "a path through a link is refused");
+    assert!(app.preview_pending.is_none() && app.preview.is_none());
+
+    app.error = None;
+    let _ = update_inner(
+        &mut app,
+        Message::FiletreePreview(0, "Meshes/a.nif".to_string()),
+    );
+    assert!(app.error.is_none(), "{:?}", app.error);
+    assert!(
+        app.preview_pending.is_some(),
+        "a real file inside starts a preview"
+    );
+    let _ = fs::remove_dir_all(&root);
+}
+
 #[test]
 fn a_filetree_delete_rewalks_only_the_mod_it_changed() {
     // It dropped every mod's walk, so the conflict map after one delete
@@ -3892,6 +3933,23 @@ fn the_window_keeps_receiving_frames_while_an_archive_extracts() {
     assert!(anim::needs_frames(&app));
 }
 
+/// A job alone shows a whole-number percentage, so it is polled at 10 Hz
+/// rather than at the animation rate: every tick rebuilds the whole window
+/// behind the modal. Something that moves gets its 60 Hz back, job or not.
+#[test]
+fn a_job_alone_is_polled_at_ten_hertz_and_an_animation_restores_sixty() {
+    use std::time::Duration;
+    let mut app = nav_app(&[]);
+    app.ui_prefs.standard.animations = true;
+    app.ui_prefs.standard.reduce_motion = false;
+    app.install_job = Some(fake_job(None));
+    assert!(!anim::animating(&app));
+    assert_eq!(anim::frame_period(&app), Duration::from_millis(100));
+    app.status_anim.start();
+    assert!(anim::needs_frames(&app));
+    assert_eq!(anim::frame_period(&app), Duration::from_millis(16));
+}
+
 /// A pack or unpack with no worker behind it. `outcome` decides whether it
 /// reads as finished, so the whole state machine can be driven without
 /// 7-Zip, which CI does not have.
@@ -4101,7 +4159,8 @@ fn collision_backup_choice_preserves_payload_metadata_and_disabled_state() {
         let _ = update_inner(&mut app, Message::CollisionBackupChanged(true));
         assert!(app.prefs.retain_install_backup);
         assert!(eidos_instance::Settings::parse(&app.prefs.to_ini()).retain_install_backup);
-        let _ = update_inner(
+        // The copy runs on a worker now; drive its task to the `Placed`.
+        let task = update_inner(
             &mut app,
             if merge {
                 Message::CollisionMerge
@@ -4109,6 +4168,9 @@ fn collision_backup_choice_preserves_payload_metadata_and_disabled_state() {
                 Message::CollisionReplace
             },
         );
+        assert!(app.place_job.is_some(), "the copy left the window's thread");
+        crate::installers::tests::drive(&mut app, task);
+        assert!(app.place_job.is_none());
         assert_eq!(
             fs::read(root.join("mods/Existing/chosen.esp")).unwrap(),
             b"new payload",
@@ -4165,6 +4227,40 @@ fn nothing_else_starts_while_a_transfer_runs() {
     let _ = update_inner(&mut app, Message::DrainDrops);
     assert_eq!(app.dropped.len(), 1, "the drop waits its turn");
     assert!(app.install_job.is_none());
+}
+
+/// A copy step's worker holds the instance lock, so a queued drop must wait
+/// for its `Placed` rather than start an install the lock would refuse; and a
+/// `Placed` for another job is not this one's answer.
+#[test]
+fn a_queued_drop_waits_for_a_copy_step_and_its_own_answer() {
+    let mut app = nav_app(&[]);
+    let outcome = std::sync::Arc::new(std::sync::Mutex::new(Some((
+        Err("refused".to_string()),
+        crate::Restore::Nothing,
+    ))));
+    app.place_job = Some(crate::PlaceJob {
+        id: 7,
+        name: "Big Textures".into(),
+        target: CollectionTarget {
+            instance: PathBuf::from("/tmp/eidos-gui-test-nowhere"),
+            profile: "Default".into(),
+            installation: String::new(),
+        },
+        archive: PathBuf::from("/tmp/Big Textures.7z"),
+        choice: None,
+        outcome,
+    });
+    app.dropped = vec![PathBuf::from("/tmp/a.7z")];
+    let _ = update_inner(&mut app, Message::DrainDrops);
+    assert_eq!(app.dropped.len(), 1, "the drop waits its turn");
+    assert!(app.install_job.is_none());
+
+    let _ = update_inner(&mut app, Message::Placed(8));
+    assert!(app.place_job.is_some(), "another job's answer");
+    let _ = update_inner(&mut app, Message::Placed(7));
+    assert!(app.place_job.is_none());
+    assert_eq!(app.status.as_deref(), Some("refused"));
 }
 
 /// Polling before the worker is done must leave the job alone - taking the

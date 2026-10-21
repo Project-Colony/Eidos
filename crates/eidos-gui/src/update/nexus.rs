@@ -26,16 +26,16 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 (row.path.clone(), game.def.nexus_game, game.def.short_name);
             app.identifying_download = Some(name.clone());
             app.status = Some(tf("status_identifying", &[("name", &name)]));
-            // Hashing hundreds of megabytes and a round trip to Nexus: off the
-            // draw thread, or the window freezes for the duration.
             // Hashing hundreds of megabytes and a blocking HTTP round trip do
             // not belong on the async executor iced drives the window with:
-            // held there they freeze every other task, including the one that
-            // would repaint this row. A thread does the work and the channel
-            // carries the answer back.
-            let (tx, rx) = std::sync::mpsc::channel();
-            std::thread::spawn(move || {
-                let outcome = (|| {
+            // it is smol's single thread, so work held there freezes every
+            // timer, input subscription and other task, including the one that
+            // would repaint this row. `unblock` runs it on smol's blocking pool
+            // and the future only waits. A thread plus a blocking `recv()` here
+            // looked equivalent and was not: the `recv()` itself held the
+            // executor for the whole hash and round trip.
+            return Task::perform(
+                smol::unblock(move || {
                     let md5 = eidos_nexus::md5_file(&path)
                         .map_err(|e| tf("status_identify_read_failed", &[("error", &e)]))?;
                     let nexus = eidos_nexus::Nexus::connect()?;
@@ -44,14 +44,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     eidos_nexus::write_recovered_meta(&path, short, &found)
                         .map_err(|e| tf("status_identify_sidecar_failed", &[("error", &e)]))?;
                     Ok(label)
-                })();
-                let _ = tx.send(outcome);
-            });
-            return Task::perform(
-                async move {
-                    rx.recv()
-                        .unwrap_or_else(|_| Err(t("status_lookup_stopped").into()))
-                },
+                }),
                 Message::IdentifiedDownload,
             );
         }
@@ -109,9 +102,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 t("status_abstaining").to_string()
             });
             return Task::perform(
-                async move {
+                smol::unblock(move || {
                     eidos_nexus::Nexus::connect()?.set_endorsed(&domain, mod_id, &version, endorse)
-                },
+                }),
                 move |r| Message::ModEndorsed(instance.clone(), folder.clone(), mod_id, r),
             );
         }
@@ -159,6 +152,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             &[("name", &m.display_name())],
                         ));
                     }
+                    // The count reads the row cache, so the row this rewrote
+                    // has to be dropped and read again first.
+                    invalidate_meta(app, &folder);
+                    refresh_meta_cache(app);
                     recompute_counts(app);
                 }
                 Err(e) => app.status = Some(tf("status_endorse_failed", &[("error", &e)])),
@@ -183,10 +180,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.update_in_progress = true;
             app.status = Some(t("status_checking_nexus_updates").to_string());
             return Task::perform(
-                async move {
+                // One `mod_info` request per stale mod, one after another:
+                // tens of seconds on a freshly rebuilt list, so on the blocking
+                // pool, never on the executor that runs the timers.
+                smol::unblock(move || {
                     let nexus = eidos_nexus::Nexus::connect()?;
                     eidos_nexus::check_updates(&nexus, &inst, &domain)
-                },
+                }),
                 Message::UpdatesChecked,
             );
         }
@@ -331,10 +331,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             };
             return Task::perform(
-                async move {
+                smol::unblock(move || {
                     let nexus = eidos_nexus::Nexus::connect()?;
                     nexus.collection_revision(&parsed)
-                },
+                }),
                 move |r| Message::CollectionFetched(instance.clone(), request_link.clone(), r),
             );
         }
@@ -492,7 +492,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             c.error = None;
             let worker_link = link.clone();
             return Task::perform(
-                async move { collection_runtime_on_worker(&inst, &game, &worker_link) },
+                // The instance lock it takes is per thread, and `unblock` runs
+                // the whole closure on one pool thread, so it is taken and
+                // dropped on the same one.
+                smol::unblock(move || collection_runtime_on_worker(&inst, &game, &worker_link)),
                 move |result| Message::CollectionInstallChecked {
                     request,
                     target: target.clone(),

@@ -406,7 +406,12 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
                     button(text(t("info_view")).size(sz(10)))
                         .padding([1, 5])
                         .style(button::text)
-                        .on_press_maybe(resolve_in_mod(&m.path, e).map(Message::PreviewFile)),
+                        // Resolved on the click, not here: `resolve_in_mod` is
+                        // an lstat per path component, and up to 2000 rows of
+                        // it on every rebuild was ~8k syscalls (~10 ms) per
+                        // frame on a large mod. Checking at click time also
+                        // narrows the gap between the check and the read.
+                        .on_press(Message::FiletreePreview(i, e.clone())),
                 )
                 .push(
                     button(text(t("common_open")).size(sz(10)))
