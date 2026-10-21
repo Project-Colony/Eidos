@@ -8,7 +8,7 @@
 
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::io::{self, Read};
+use std::io;
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
@@ -25,7 +25,10 @@ pub(crate) struct ArchiveOrigin {
     file: fs::File,
     path: PathBuf,
     stamp: [u64; 7],
-    sha256: String,
+    /// Filled by the first `sha256()` call. A scripted OMOD asks for its
+    /// receipt on every evaluation (each wizard answer, then twice more at
+    /// install), so without this each click re-read the whole archive.
+    sha256: std::sync::OnceLock<String>,
 }
 
 fn archive_stamp(meta: &fs::Metadata) -> [u64; 7] {
@@ -56,7 +59,7 @@ impl ArchiveOrigin {
             ));
         }
         let path = path.canonicalize()?;
-        let mut file = fs::OpenOptions::new()
+        let file = fs::OpenOptions::new()
             .read(true)
             .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
             .open(&path)?;
@@ -66,30 +69,50 @@ impl ArchiveOrigin {
                 "Archive is not a regular file within the size limit".into(),
             ));
         }
-        let mut origin = Self {
-            file: file.try_clone()?,
+        let origin = Self {
+            file,
             path,
             stamp: archive_stamp(&meta),
-            sha256: String::new(),
+            sha256: std::sync::OnceLock::new(),
         };
         origin.verify_current(cancel)?;
+        Ok(origin)
+    }
+
+    /// The archive's SHA-256, read through the held descriptor between two
+    /// stamp checks, so it binds the same bytes 7-Zip reads. Computed on demand
+    /// because only custom-helper and OMOD receipts record it: hashing every
+    /// archive at capture cost about 0.5 s per GB of dead time at 0% before
+    /// 7-Zip started, for FOMOD, Simple and BAIN installs that never read it.
+    /// `read_at` leaves the descriptor's shared offset alone. Later calls
+    /// return the cached digest, but only after the same stamp check: a byte
+    /// change bumps ctime, so a cached value never vouches for a replaced or
+    /// rewritten archive.
+    pub(crate) fn sha256(&self, cancel: &AtomicBool) -> Result<String, InstallError> {
+        use std::os::unix::fs::FileExt;
+        self.verify_current(cancel)?;
+        if let Some(done) = self.sha256.get() {
+            return Ok(done.clone());
+        }
         let mut hash = Sha256::new();
         let mut buffer = [0u8; 64 * 1024];
-        let mut remaining = meta.len();
-        while remaining != 0 {
-            origin.verify_cancel(cancel)?;
-            let count = file.read(&mut buffer[..remaining.min(64 * 1024) as usize])?;
+        let len = self.stamp[2];
+        let mut offset = 0u64;
+        while offset < len {
+            self.verify_cancel(cancel)?;
+            let want = (len - offset).min(buffer.len() as u64) as usize;
+            let count = self.file.read_at(&mut buffer[..want], offset)?;
             if count == 0 {
                 return Err(InstallError::BadSelection(
                     "Archive changed while reading".into(),
                 ));
             }
             hash.update(&buffer[..count]);
-            remaining -= count as u64;
+            offset += count as u64;
         }
-        origin.verify_current(cancel)?;
-        origin.sha256 = hash.finalize().iter().map(|b| format!("{b:02x}")).collect();
-        Ok(origin)
+        self.verify_current(cancel)?;
+        let digest: String = hash.finalize().iter().map(|b| format!("{b:02x}")).collect();
+        Ok(self.sha256.get_or_init(|| digest).clone())
     }
 
     fn verify_cancel(&self, cancel: &AtomicBool) -> Result<(), InstallError> {
@@ -124,9 +147,6 @@ impl ArchiveOrigin {
             ));
         }
         Ok(())
-    }
-    pub(crate) fn sha256(&self) -> &str {
-        &self.sha256
     }
     pub(crate) fn path(&self) -> &Path {
         &self.path
@@ -375,19 +395,32 @@ mod backslash_tests {
         let cancel = AtomicBool::new(false);
         let origin = ArchiveOrigin::capture(&archive, &cancel).unwrap();
         assert_eq!(
-            origin.sha256(),
+            origin.sha256(&cancel).unwrap(),
             "0682c5f2076f099c34cfdd15a9e063849ed437a49677e6fcc5b4198c76575be5"
+        );
+        assert_eq!(
+            origin.sha256(&cancel).unwrap(),
+            "0682c5f2076f099c34cfdd15a9e063849ed437a49677e6fcc5b4198c76575be5",
+            "the cached digest matches the first pass"
         );
         fs::rename(&archive, root.path().join("saved.zip")).unwrap();
         fs::write(&archive, b"replacement").unwrap();
         assert_eq!(fs::read(origin.pinned_path()).unwrap(), b"original");
         assert!(origin.verify_current(&cancel).is_err());
+        assert!(
+            origin.sha256(&cancel).is_err(),
+            "a digest taken after capture must not vouch for a replaced archive"
+        );
         fs::remove_file(&archive).unwrap();
         fs::rename(root.path().join("saved.zip"), &archive).unwrap();
         assert_eq!(fs::read(origin.pinned_path()).unwrap(), b"original");
         // Even an in-place rewrite restored to the original bytes cannot restore ctime.
         fs::write(&archive, b"original").unwrap();
         assert!(origin.verify_current(&cancel).is_err());
+        assert!(
+            origin.sha256(&cancel).is_err(),
+            "the cache sits behind the stamp check"
+        );
         assert!(ArchiveOrigin::capture_bounded(&archive, &cancel, 1).is_err());
         assert!(ArchiveOrigin::capture(&archive, &AtomicBool::new(true)).is_err());
         assert!(ArchiveOrigin::capture(root.path(), &cancel).is_err());

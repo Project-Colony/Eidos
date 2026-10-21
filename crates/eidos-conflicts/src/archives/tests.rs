@@ -381,4 +381,41 @@ fn incomplete_archive_scans_cannot_prove_redundancy_or_a_lower_archive_winner() 
     std::fs::remove_dir_all(root).unwrap();
 }
 
+#[test]
+fn member_conflicts_are_listed_for_mods_never_for_the_base_game() {
+    let root = std::env::temp_dir().join(format!("eidos-archive-base-{}", std::process::id()));
+    let game = root.join("Data");
+    let a = root.join("A");
+    std::fs::create_dir_all(game.join("textures")).unwrap();
+    std::fs::create_dir_all(a.join("textures")).unwrap();
+    std::fs::write(game.join("Base.bsa"), bsa_fixture(105, "textures/x.dds")).unwrap();
+    std::fs::write(a.join("textures/x.dds"), b"loose override").unwrap();
+    let parts: Vec<_> = [(1, "A", &a), (BASE_ORIGIN, "[game]", &game)]
+        .into_iter()
+        .map(|(origin, name, root)| {
+            (
+                Layer {
+                    origin,
+                    name: name.into(),
+                    root: root.clone(),
+                },
+                crate::collect_files(root),
+            )
+        })
+        .collect();
+    let active = [ActiveArchive {
+        name: "Base.bsa".into(),
+        plugin: None,
+        order_uncertain: false,
+    }];
+    let map = ConflictMap::build_with_archives_from(&parts, &active);
+    let n = &map.asset_files["textures/x.dds"];
+    assert_eq!(n.winner.origin, 1);
+    assert_eq!(n.alternatives[0].archive.as_deref(), Some("Base.bsa"));
+    assert_eq!(map.asset_conflicts[&1], ["textures/x.dds"]);
+    // No panel ever asks for origin 0's rows, so none are kept for it.
+    assert!(!map.asset_conflicts.contains_key(&BASE_ORIGIN));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 include!("payload_tests.rs");

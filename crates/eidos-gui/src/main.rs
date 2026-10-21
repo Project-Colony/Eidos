@@ -57,6 +57,7 @@ mod subscription;
 #[cfg(test)]
 mod test_support;
 mod theme;
+mod timing;
 mod update;
 mod view;
 mod widgets;
@@ -124,7 +125,17 @@ fn main() -> iced::Result {
     colony_ui::fonts::BYTES
         .into_iter()
         .fold(
-            iced::application(move || new(launch_command.clone()), update, view),
+            iced::application(
+                // Timed whole as well, so the log shows what the conflict walk
+                // leaves of the wait before the window appears.
+                move || {
+                    timing::time("App::new", timing::on().then_some("startup"), || {
+                        new(launch_command.clone())
+                    })
+                },
+                update,
+                timing::timed_view,
+            ),
             |app, font| app.font(font),
         )
         .default_font(colony_ui::ui_font())

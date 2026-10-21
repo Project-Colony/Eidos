@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
 
 # 문제 해결과 진단
 
@@ -76,10 +76,24 @@ eidos play skyrimse -- %command%
 
 ### 레이어 인덱스가 실제로 쓰이고 있는가?
 
-인덱스는 전부 아니면 전무이고 조용히 만들어집니다. `LayerStack::new`는 읽기 전용
-레이어의 완전한 맵을 얻거나 `None`을 얻으며, 후자면 모든 조회는 예전과 똑같이
-레이어를 훑습니다. 세션 로그의 어떤 것도 둘을 구별해 주지 않으므로, 조용히 폴백한
-스택은 제대로 동작하는 스택과 똑같아 보입니다 - 옛 비용을 치르면서 말입니다.
+`LayerStack::new`는 읽기 전용 레이어의 완전한 맵을 만들거나 아예 만들지
+않습니다. 맵이 없으면 모든 조회는 예전처럼 레이어를 훑습니다. 답은 같고, 세이브
+로드에 약 3배의 시간이 걸리며, 그 밖에 달라 보이는 것은 없습니다.
+
+인덱스가 꺼져 있으면 마운트가 시작할 때 한 번 이유를 알려 줍니다.
+
+```
+eidos-fuse: layer index off (<reason>); every lookup walks all layers
+```
+
+이유에는 읽을 수 없는 디렉터리, 64단계보다 깊은 레이어, 4,000,000개를 넘는 항목,
+또는 `EIDOS_NO_INDEX`가 적힙니다. 이 줄은 실행 로그로 갑니다. 창에서 실행했다면
+인스턴스의 `logs/run-*.log`, Steam에서 실행했다면 Steam 콘솔입니다.
+`EIDOS_FUSE_STATS=1`을 주면 언마운트 때의 출력에도 `layer index:` 줄이 있고, 일반
+마운트에서 `unindexed`가 0이 아니면 인덱스가 꺼져 있었다는 뜻입니다.
+
+아래 예제는 같은 것을 오프라인으로, 인스턴스의 폴더를 대상으로, 마운트 없이
+확인합니다.
 
 ```sh
 cargo run --release -p eidos-core --example index_health -- <mods-dir> <overwrite-dir>

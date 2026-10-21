@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
 
 # Řešení potíží a diagnostika
 
@@ -83,11 +83,23 @@ nativní a sloučí to s jakýmikoli DLL overrides, které přináší mód
 
 ### Používá se vlastně index vrstev?
 
-Index je všechno nebo nic a staví se mlčky: `LayerStack::new` buď dostane
-úplnou mapu vrstev jen pro čtení, nebo `None`, načež je každý dotaz prochází
-přesně jako dřív. Nic v logu relace ty dva stavy nerozliší, takže zásobník,
-který tiše spadl zpátky, vypadá stejně jako ten, který funguje - a přitom platí
-starou cenu.
+`LayerStack::new` buď postaví úplnou mapu vrstev jen pro čtení, nebo žádnou.
+Bez mapy každý dotaz prochází vrstvy jako dřív: odpovědi jsou stejné, načtení
+uložené hry trvá zhruba třikrát déle a nic jiného nevypadá jinak.
+
+Když je index vypnutý, připojení řekne proč, jednou, při startu:
+
+```
+eidos-fuse: layer index off (<reason>); every lookup walks all layers
+```
+
+Důvod jmenuje nečitelný adresář, vrstvu hlubší než 64 adresářů, více než
+4 000 000 položek, nebo `EIDOS_NO_INDEX`. Řádek jde do logu běhu: do
+`logs/run-*.log` instance při spuštění z okna, do konzole Steamu při spuštění přes
+Steam. S `EIDOS_FUSE_STATS=1` má výpis při odpojení také řádek `layer index:` a
+nenulový počet `unindexed` na běžném připojení znamená, že index byl vypnutý.
+
+Příklady níže kontrolují totéž offline, nad složkami instance, bez připojení:
 
 ```sh
 cargo run --release -p eidos-core --example index_health -- <mods-dir> <overwrite-dir>

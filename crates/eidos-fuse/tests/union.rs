@@ -567,6 +567,89 @@ fn a_walk_survives_the_directory_changing_under_it() {
     );
 }
 
+/// The same walk, but the directory only GROWS mid-walk. The balanced +1/-1 above
+/// keeps the length, so it cannot see what happens at the very end: the kernel
+/// asks once more at offset == len to learn EOF, and if that request were served
+/// from a rebuilt listing instead of the pinned one, the two names that sort
+/// last in the longer list would come back a second time.
+fn a_walk_that_grows_under_it_does_not_repeat_its_tail() {
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    let original: Vec<String> = (0..3000)
+        .map(|i| format!("entry_{i:05}_with_a_deliberately_long_name_to_fill_the_buffer.dat"))
+        .collect();
+    for n in &original {
+        put(&game, n, b"x");
+    }
+    let _s = mounted!(vec![game], over, &mnt);
+
+    let mut seen: Vec<String> = Vec::new();
+    let mut rd = fs::read_dir(&mnt).unwrap();
+    if let Some(e) = rd.next() {
+        seen.push(e.unwrap().file_name().to_string_lossy().into_owned());
+    }
+    // Two names that sort BEFORE every original one, so the longer list's tail
+    // is made of names the walk has already been sent.
+    fs::write(mnt.join("appeared_a.dat"), b"n").unwrap();
+    fs::write(mnt.join("appeared_b.dat"), b"n").unwrap();
+    for e in rd {
+        seen.push(e.unwrap().file_name().to_string_lossy().into_owned());
+    }
+
+    let mut dedup = seen.clone();
+    dedup.sort();
+    dedup.dedup();
+    assert_eq!(
+        dedup.len(),
+        seen.len(),
+        "the walk repeated entries: {} vs {}",
+        seen.len(),
+        dedup.len()
+    );
+    for n in &original {
+        assert!(seen.contains(n), "the walk lost {n}");
+    }
+}
+
+/// Many writes and truncates through ONE handle on a copied-up file, the shape of
+/// a BodySlide batch. The mount negotiates `FUSE_HANDLE_KILLPRIV_V2` (the kernel
+/// stops probing `security.capability` before each write) and declines FLUSH
+/// with ENOSYS; neither may change what lands in Overwrite or what close(2)
+/// returns.
+fn repeated_writes_and_truncates_on_one_handle_land_in_overwrite() {
+    use std::io::Write;
+    use std::os::fd::IntoRawFd;
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    put(&game, "out.nif", b"vanilla");
+    let s = mounted!(vec![game.clone()], over.clone(), &mnt);
+
+    let mut f = fs::OpenOptions::new()
+        .append(true)
+        .open(mnt.join("out.nif"))
+        .unwrap();
+    for _ in 0..200 {
+        f.write_all(b"0123456789").unwrap();
+    }
+    f.set_len(7).unwrap();
+    for _ in 0..3 {
+        f.write_all(b"+").unwrap();
+    }
+    // The kernel turns a declined FLUSH into success, so close() reports 0.
+    // SAFETY: the fd was just taken out of the File and is closed exactly once.
+    assert_eq!(unsafe { libc::close(f.into_raw_fd()) }, 0, "close failed");
+    assert_eq!(fs::read(mnt.join("out.nif")).unwrap(), b"vanilla+++");
+    // A later close on the same connection, once the kernel has stopped
+    // sending FLUSH, reports 0 too.
+    let r = fs::File::open(mnt.join("out.nif")).unwrap();
+    // SAFETY: as above.
+    assert_eq!(unsafe { libc::close(r.into_raw_fd()) }, 0, "close failed");
+
+    drop(s);
+    assert_eq!(fs::read(game.join("out.nif")).unwrap(), b"vanilla");
+    assert_eq!(fs::read(over.join("out.nif")).unwrap(), b"vanilla+++");
+}
+
 /// The merged listing is memoised by path, so every mutation must drop it. Each
 /// case here ENUMERATES FIRST - that is what fills the cache - then mutates, then
 /// enumerates again. Without the drop the second listing is the first one, and the
@@ -1230,6 +1313,16 @@ fn main() {
             "a_walk_survives_the_directory_changing_under_it",
             a_walk_survives_the_directory_changing_under_it,
             true,
+        ),
+        (
+            "a_walk_that_grows_under_it_does_not_repeat_its_tail",
+            a_walk_that_grows_under_it_does_not_repeat_its_tail,
+            true,
+        ),
+        (
+            "repeated_writes_and_truncates_on_one_handle_land_in_overwrite",
+            repeated_writes_and_truncates_on_one_handle_land_in_overwrite,
+            false,
         ),
         (
             "a_recreated_directory_does_not_inherit_the_old_listing",

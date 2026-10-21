@@ -234,7 +234,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::SplitGrab => app.split_drag = true,
         Message::AnimationTick => {
-            // The same 60 Hz tick drives every worker-thread dialog, and it has
+            // The same frame tick drives every worker-thread dialog, and it has
             // to reach ALL of them. An early return on the first was fine while
             // there was only one; with two, a pack finishing while an extraction
             // was in flight would never be noticed, and its dialog would sit

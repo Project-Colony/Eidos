@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::Path;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActiveArchive {
@@ -11,11 +12,15 @@ pub struct ActiveArchive {
     pub plugin: Option<String>,
     pub order_uncertain: bool,
 }
+/// `archive` and `plugin` are shared: every member of one archive points at
+/// the same two names. The active vanilla Skyrim SE archives hold ~180k
+/// members, and a private copy of the names per member measured ~11 MiB that
+/// the GUI kept for its whole session. Equality still compares the text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssetProvider {
     pub origin: OriginId,
-    pub archive: Option<String>,
-    pub plugin: Option<String>,
+    pub archive: Option<Arc<str>>,
+    pub plugin: Option<Arc<str>>,
 }
 #[derive(Debug, Clone)]
 pub struct AssetNode {
@@ -464,6 +469,21 @@ impl ConflictMap {
         archives: &[ActiveArchive],
     ) -> Self {
         let mut map = Self::build_from(parts);
+        map.add_archives(parts, archives);
+        map
+    }
+
+    /// The archive half of [`build_with_archives_from`](Self::build_with_archives_from),
+    /// on a map [`build_from`](Self::build_from) already made from the same
+    /// `parts`. The archive worker needs the loose map first (for the archive
+    /// names and the plugin check), and building it a second time cost a full
+    /// map's CPU and memory on every toggle.
+    pub fn add_archives(
+        &mut self,
+        parts: &[(Layer, (Vec<String>, bool))],
+        archives: &[ActiveArchive],
+    ) {
+        let map = self;
         for (key, n) in &map.files {
             let provider = |origin| AssetProvider {
                 origin,
@@ -510,6 +530,9 @@ impl ConflictMap {
             let Some((layer, _)) = parts.iter().find(|(l, _)| l.origin == origin) else {
                 continue;
             };
+            // One shared copy of each name for all of this archive's members.
+            let archive: Arc<str> = n.display_path.as_str().into();
+            let plugin: Option<Arc<str>> = a.plugin.as_deref().map(Arc::from);
             match read_archive_members(&layer.root.join(&n.display_path)) {
                 Err(error) => {
                     unreadable_origins.insert(origin);
@@ -524,15 +547,15 @@ impl ConflictMap {
                     for display in paths {
                         let provider = AssetProvider {
                             origin,
-                            archive: Some(n.display_path.clone()),
-                            plugin: a.plugin.clone(),
+                            archive: Some(archive.clone()),
+                            plugin: plugin.clone(),
                         };
                         map.asset_files
                             .entry(display.to_ascii_lowercase())
                             .and_modify(|n| {
                                 if n.winner.archive.is_some()
                                     && a.order_uncertain
-                                    && n.winner.plugin == a.plugin
+                                    && n.winner.plugin == plugin
                                 {
                                     n.precedence_uncertain = true;
                                 }
@@ -560,9 +583,12 @@ impl ConflictMap {
             {
                 continue;
             }
+            // The game's own data is never a row anyone asks for: the panels
+            // list a mod's (or Overwrite's) members, never origin 0's.
             let origins: BTreeSet<_> = std::iter::once(&node.winner)
                 .chain(&node.alternatives)
                 .map(|p| p.origin)
+                .filter(|&o| o != BASE_ORIGIN)
                 .collect();
             for origin in origins {
                 map.asset_conflicts
@@ -571,7 +597,6 @@ impl ConflictMap {
                     .push(key.clone());
             }
         }
-        map
     }
 }
 fn asset_mods(

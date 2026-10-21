@@ -117,22 +117,81 @@ pub(crate) fn checked_destination(root: &Path, path: &Path) -> io::Result<PathBu
                 current = destination_child(&current, component.as_os_str())?;
             }
         }
-        match fs::symlink_metadata(&current) {
-            Ok(meta) if meta.file_type().is_symlink() => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    format!(
-                        "refusing install through destination symlink: {}",
-                        current.display()
-                    ),
-                ))
+        refuse_destination_link(&current)?;
+    }
+    Ok(current)
+}
+
+/// The check [`checked_destination`] applies to every component: an existing
+/// link is refused, a missing entry is fine.
+fn refuse_destination_link(path: &Path) -> io::Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "refusing install through destination symlink: {}",
+                path.display()
+            ),
+        )),
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
+/// [`destination_child`] for every child of one directory, from a single
+/// listing. Calling destination_child per entry re-read the whole directory each
+/// time, so filling it with n entries scanned n^2/2 names: 4k files in one
+/// FaceGen folder took 1.5 s, 10k took 8 s. The listing stays exact only while
+/// nothing else adds names to `dir`, which is destination_child's own premise:
+/// "The caller owns the mod directory for the duration of installation". Each
+/// name is recorded before the caller creates it, so a later case variant of
+/// the same name resolves to it, as a rescan would.
+struct DestinationListing {
+    dir: PathBuf,
+    /// ASCII-folded name -> first real spelling and how many entries fold to it.
+    names: std::collections::HashMap<Vec<u8>, (std::ffi::OsString, usize)>,
+}
+
+impl DestinationListing {
+    fn read(dir: &Path) -> io::Result<Self> {
+        let mut names = std::collections::HashMap::<_, (std::ffi::OsString, usize)>::new();
+        match fs::read_dir(dir) {
+            Ok(entries) => {
+                for entry in entries {
+                    let name = entry?.file_name();
+                    names
+                        .entry(name.as_encoded_bytes().to_ascii_lowercase())
+                        .or_insert((name, 0))
+                        .1 += 1;
+                }
             }
-            Ok(_) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => return Err(error),
         }
+        Ok(Self {
+            dir: dir.to_path_buf(),
+            names,
+        })
     }
-    Ok(current)
+
+    fn child(&mut self, name: &std::ffi::OsStr) -> io::Result<PathBuf> {
+        let key = name.as_encoded_bytes().to_ascii_lowercase();
+        match self.names.get(&key) {
+            Some((_, count)) if *count > 1 => Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                format!(
+                    "ambiguous case-insensitive install destination: {}",
+                    self.dir.join(name).display()
+                ),
+            )),
+            Some((existing, _)) => Ok(self.dir.join(existing)),
+            None => {
+                self.names.insert(key, (name.to_owned(), 1));
+                Ok(self.dir.join(name))
+            }
+        }
+    }
 }
 
 pub(crate) fn source_within(root: &Path, source: &Path) -> bool {
@@ -144,6 +203,12 @@ pub(crate) fn source_within(root: &Path, source: &Path) -> bool {
 
 /// Copy a FOMOD source within its archive boundary. Internal source links are
 /// allowed, while links escaping the extraction tree and directory cycles fail.
+///
+/// The item's own destination comes from FOMOD XML, so it gets the full
+/// per-component [`checked_destination`]. Below it every directory was checked
+/// or created by this walk, which only ever makes real directories and copies
+/// contents, so a child needs its own name resolved and its own link refusal,
+/// not a rescan of every ancestor.
 pub(crate) fn copy_plan_source(
     archive_root: &Path,
     src: &Path,
@@ -151,14 +216,7 @@ pub(crate) fn copy_plan_source(
     dst: &Path,
     folder: bool,
 ) -> io::Result<()> {
-    fn copy(
-        root: &Path,
-        src: &Path,
-        mod_root: &Path,
-        dst: &Path,
-        folder: bool,
-        parents: &mut std::collections::HashSet<PathBuf>,
-    ) -> io::Result<()> {
+    fn within(root: &Path, src: &Path) -> io::Result<PathBuf> {
         let actual = fs::canonicalize(src)?;
         if !actual.starts_with(root) {
             return Err(io::Error::new(
@@ -169,7 +227,16 @@ pub(crate) fn copy_plan_source(
                 ),
             ));
         }
-        let dst = checked_destination(mod_root, dst)?;
+        Ok(actual)
+    }
+    fn copy(
+        root: &Path,
+        src: &Path,
+        actual: PathBuf,
+        dst: &Path,
+        folder: bool,
+        parents: &mut std::collections::HashSet<PathBuf>,
+    ) -> io::Result<()> {
         if folder {
             if !parents.insert(actual.clone()) {
                 return Err(io::Error::new(
@@ -177,36 +244,38 @@ pub(crate) fn copy_plan_source(
                     "FOMOD source contains a directory cycle",
                 ));
             }
-            fs::create_dir_all(&dst)?;
+            fs::create_dir_all(dst)?;
+            let mut listing = DestinationListing::read(dst)?;
             for entry in fs::read_dir(src)? {
                 let entry = entry?;
                 let from = entry.path();
-                copy(
-                    root,
-                    &from,
-                    mod_root,
-                    &dst.join(entry.file_name()),
-                    from.is_dir(),
-                    parents,
-                )?;
+                let kind = entry.file_type()?;
+                // Only a link can lead elsewhere. A plain child of a canonical
+                // directory is already canonical, so canonicalize (one readlink
+                // per component) is kept for links, where the escape and cycle
+                // checks need it.
+                let (child_actual, is_dir) = if kind.is_symlink() {
+                    (within(root, &from)?, from.is_dir())
+                } else {
+                    (actual.join(entry.file_name()), kind.is_dir())
+                };
+                let to = listing.child(&entry.file_name())?;
+                refuse_destination_link(&to)?;
+                copy(root, &from, child_actual, &to, is_dir, parents)?;
             }
             parents.remove(&actual);
         } else {
             if let Some(parent) = dst.parent() {
                 fs::create_dir_all(parent)?;
             }
-            fs::copy(src, &dst)?;
+            fs::copy(src, dst)?;
         }
         Ok(())
     }
-    copy(
-        &fs::canonicalize(archive_root)?,
-        src,
-        mod_root,
-        dst,
-        folder,
-        &mut Default::default(),
-    )
+    let root = fs::canonicalize(archive_root)?;
+    let actual = within(&root, src)?;
+    let dst = checked_destination(mod_root, dst)?;
+    copy(&root, src, actual, &dst, folder, &mut Default::default())
 }
 
 /// Copy every entry of `src` over `dst`, later-wins. Unlike [`copy_dir_all`] this
@@ -219,9 +288,13 @@ pub(crate) fn copy_plan_source(
 /// inside a crafted archive cannot make this recurse forever.
 pub(crate) fn overlay_dir(src: &Path, dst: &Path) -> io::Result<()> {
     fs::create_dir_all(dst)?;
+    // One listing for the whole directory instead of a rescan per entry. Every
+    // name below is either an existing entry's or recreated at the same path
+    // after its occupant is removed, so the listing stays exact.
+    let mut listing = DestinationListing::read(dst)?;
     for e in fs::read_dir(src)?.flatten() {
         let from = e.path();
-        let to = destination_child(dst, &e.file_name())?;
+        let to = listing.child(&e.file_name())?;
         // Whatever occupies the name loses, unless both sides are directories (which
         // merge). `symlink_metadata` deliberately does not follow: a DANGLING symlink
         // still occupies the name, and - the reason this matters - removing the link

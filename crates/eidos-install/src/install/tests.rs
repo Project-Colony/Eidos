@@ -2095,6 +2095,35 @@ fn fomod_folder_copy_allows_internal_links_but_refuses_cycles() {
 }
 
 #[test]
+fn a_large_flat_folder_resolves_names_like_a_rescan_would() {
+    // One listing per destination directory must still land each name where a
+    // rescan per entry did: under an earlier item's spelling, and never into a
+    // folder where two entries already fold to the same name.
+    let root = TempDir::new("fomod-flat");
+    let dest = TempDir::new("fomod-flat-dest");
+    for i in 0..3000 {
+        write_at(root.path(), &format!("facegeom/face{i:04}.nif"), b"new");
+    }
+    write_at(root.path(), "early/FACE0007.NIF", b"early");
+    let early = file_item("early/FACE0007.NIF", "Meshes/FaceGeom/FACE0007.NIF");
+    let mut flat = file_item("facegeom", "meshes/facegeom");
+    flat.is_folder = true;
+    apply_plan(root.path(), &[early, flat.clone()], dest.path()).unwrap();
+    let folder = dest.path().join("Meshes/FaceGeom");
+    assert_eq!(fs::read_dir(&folder).unwrap().count(), 3000);
+    assert_eq!(
+        fs::read(folder.join("FACE0007.NIF")).unwrap(),
+        b"new",
+        "the later item wins under the earlier spelling"
+    );
+    assert!(!dest.path().join("meshes").exists());
+    fs::write(folder.join("face0042.NIF"), b"twin").unwrap();
+    let error = apply_plan(root.path(), &[flat], dest.path()).unwrap_err();
+    assert!(error.to_string().contains("ambiguous"), "{error}");
+    assert_eq!(fs::read(folder.join("face0042.NIF")).unwrap(), b"twin");
+}
+
+#[test]
 fn merge_metadata_failure_keeps_incomplete_checkpoint_after_payload() {
     let mods = TempDir::new("merge-metadata-failure");
     let archive = mods.path().join("Update.7z");

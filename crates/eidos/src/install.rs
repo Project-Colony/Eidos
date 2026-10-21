@@ -246,13 +246,10 @@ pub(crate) fn cmd_install(args: &[String]) {
         .unwrap_or_else(|| eidos_install::mod_name_for(&options.archive));
     // Same fallback as the GUI: the install root for Morrowind and root-mode
     // Oblivion, where AppData has no state and every plugin would read active.
+    // The FOMOD context itself is built in the Fomod arm only, as the GUI does:
+    // it reads the plugin state of every enabled mod, and no other archive kind
+    // ever looks at it.
     let fallback = game.plugin_state_dir();
-    let fomod = eidos_install::fomod_context_for_instance(
-        &inst,
-        &game.data_path,
-        &target.game_id,
-        fallback.as_deref(),
-    );
     let addons = eidos_addons::load_addons();
 
     let cancel = std::sync::atomic::AtomicBool::new(false);
@@ -451,6 +448,12 @@ pub(crate) fn cmd_install(args: &[String]) {
                         options.policy.clone(),
                     ),
                     Opened::Fomod(session) => {
+                        let fomod = eidos_install::fomod_context_for_instance(
+                            &inst,
+                            &game.data_path,
+                            &target.game_id,
+                            fallback.as_deref(),
+                        );
                         let selection = eidos_fomod::default_selection(&session.config, &fomod);
                         eidos_install::finish_fomod(
                             *session,
@@ -461,6 +464,8 @@ pub(crate) fn cmd_install(args: &[String]) {
                             options.policy.clone(),
                         )
                     }
+                    // `classify_extracted` returns these only when the tree has no
+                    // FOMOD wizard, and the context is read only for one.
                     Opened::Simple(tree) | Opened::Manual(tree) | Opened::Bain { tree, .. } => {
                         eidos_install::install_extracted(
                             &tree,
@@ -469,7 +474,7 @@ pub(crate) fn cmd_install(args: &[String]) {
                             &name,
                             &target.game_id,
                             options.policy.clone(),
-                            &fomod,
+                            &eidos_fomod::Context::default(),
                         )
                     }
                     Opened::Custom(_) => unreachable!(),

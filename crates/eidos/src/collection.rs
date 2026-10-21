@@ -197,6 +197,7 @@ pub(crate) fn cmd_collection(args: &[String]) {
         game_id: target.game_id.clone(),
         payload_root: dir.clone(),
         allow_runtime_mismatch: args.iter().any(|arg| arg == "--allow-runtime-mismatch"),
+        checked_archive: None,
         say: &mut say,
         collection_domain: c.info.domain_name.clone(),
         owner: format!("{}:{}:{}", state.game_domain, state.slug, state.revision),

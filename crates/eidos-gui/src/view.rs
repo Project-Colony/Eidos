@@ -299,12 +299,32 @@ pub(crate) fn cached_merged_listing(app: &App, dir: &str) -> std::rc::Rc<Vec<Dat
     entries
 }
 
+/// How many expanded folders the Data tab re-lists before an index is cheaper.
+///
+/// Without the index a listing reads each layer's copy of every path component.
+/// On a synthetic 251-layer, 90k-file tree (tmpfs, warm) the root cost 1.6 ms,
+/// a folder two or three levels down about 5.5 ms, and the index build 64 ms.
+/// The index grows with the file count, a listing with the layer count, so the
+/// break-even is about a dozen folders there and more on bigger lists.
+/// `data_expanded` survives every generation bump, so after Expand All each
+/// click would re-list all of them.
+const DATA_UNINDEXED_MAX_EXPANDED: usize = 8;
+
 /// The union the Data tab reads, built once per view generation, with the label
 /// of every layer root (see [`DataSources`]).
 ///
-/// The same `LayerStack` `eidos-launch` mounts: same layers, same order, same
-/// overwrite. Building it walks every enabled mod once, which is why it is
-/// cached against the view generation rather than rebuilt per directory.
+/// The same layers, order and overwrite `eidos-launch` mounts. Plain browsing
+/// gets it WITHOUT the lower index: the tab lists the root and a few open
+/// folders, and the index is a recursive walk of every enabled mod with a map
+/// entry per file (64 ms against 1.6 ms for the root alone, on the tree
+/// described at [`DATA_UNINDEXED_MAX_EXPANDED`]), redone on the UI thread after
+/// every toggle, reorder, install and game exit because each one bumps the
+/// generation, and then kept in the GUI's heap. A filter, conflicts-only or a wide expansion crosses
+/// the whole tree, where an unindexed walk would cost dirs x layers x depth
+/// directory reads (minutes), so those upgrade to the indexed stack for the
+/// rest of the generation. Both answer every question identically
+/// ([`eidos_core::LayerStack::new_unindexed`]), so the per-directory listings
+/// already memoised stay valid across the upgrade and are not dropped.
 pub(crate) fn data_stack(
     app: &App,
 ) -> Option<(
@@ -312,8 +332,13 @@ pub(crate) fn data_stack(
     std::rc::Rc<DataSources>,
 )> {
     let gen = app.view_generation.get();
-    if let Some((at, stack, sources)) = app.data_stack.borrow().as_ref() {
-        if *at == gen {
+    let want_index = !app.data_query.trim().is_empty()
+        || app.data_conflicts_only
+        || app.data_expanded.len() > DATA_UNINDEXED_MAX_EXPANDED;
+    if let Some((at, indexed, stack, sources)) = app.data_stack.borrow().as_ref() {
+        // An indexed stack is never traded back down within a generation:
+        // clearing and retyping a filter would otherwise pay the walk twice.
+        if *at == gen && (*indexed || !want_index) {
             return Some((stack.clone(), sources.clone()));
         }
     }
@@ -323,7 +348,11 @@ pub(crate) fn data_stack(
     // mods, separators and unmanaged rows - exactly what the mount is handed.
     let mut layers = inst.load_order();
     layers.push(game.data_path.clone());
-    let stack = std::rc::Rc::new(eidos_core::LayerStack::new(layers, inst.overwrite_dir()));
+    let stack = std::rc::Rc::new(if want_index {
+        eidos_core::LayerStack::new(layers, inst.overwrite_dir())
+    } else {
+        eidos_core::LayerStack::new_unindexed(layers, inst.overwrite_dir())
+    });
 
     // Where each real path came from, so a winner can be named.
     let mut sources = DataSources::new();
@@ -341,7 +370,7 @@ pub(crate) fn data_stack(
     }
     sources.insert(game.data_path.clone(), format!("[{}]", game.def.id));
     let sources = std::rc::Rc::new(sources);
-    *app.data_stack.borrow_mut() = Some((gen, stack.clone(), sources.clone()));
+    *app.data_stack.borrow_mut() = Some((gen, want_index, stack.clone(), sources.clone()));
     Some((stack, sources))
 }
 
@@ -986,6 +1015,7 @@ pub(crate) fn name_cell<'a>(name: String, bg: Color) -> Element<'a, Message> {
         .into()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn mod_row<'a>(
     i: usize,
     m: &ModEntry,
@@ -994,6 +1024,7 @@ pub(crate) fn mod_row<'a>(
     hidden_icon: Option<&'static [u8]>,
     bg: Color,
     columns: &[ModColumn],
+    aim: bool,
 ) -> Element<'a, Message> {
     // Unmanaged content - the game's own DLCs and Creation Club plugins - is
     // listed so the mod list matches what will actually load, but none of it is
@@ -1178,10 +1209,18 @@ pub(crate) fn mod_row<'a>(
         // anything, and offering one only invites the question of why it failed.
         return container(row).into();
     }
-    mouse_area(row)
-        .on_press(Message::DragStart(i))
-        .on_enter(Message::DragOverGap(i))
-        .on_release(Message::DragDrop)
+    // `on_enter` only while a mod drag is live, like `drop_gap`'s strips:
+    // without a drag the handler does nothing, but each row the pointer
+    // crossed was still a message and so a whole-window rebuild. A row gains
+    // it on the press that arms the drag; `mouse_area` tracks hover with or
+    // without the callback, so the row under the pointer fires no false enter.
+    let area = mouse_area(row).on_press(Message::DragStart(i));
+    let area = if aim {
+        area.on_enter(Message::DragOverGap(i))
+    } else {
+        area
+    };
+    area.on_release(Message::DragDrop)
         // MO2's three: plain opens Information, Ctrl opens the folder, Shift
         // opens the Nexus page. A double-click still delivers both presses, so
         // this arrives AFTER a drag has been armed and dropped on itself - which
@@ -1244,6 +1283,7 @@ pub(crate) fn separator_row<'a>(
     color: Option<[u8; 3]>,
     collapsed: bool,
     selected: bool,
+    aim: bool,
 ) -> Element<'a, Message> {
     let bg = color
         .map(|[r, g, b]| Color::from_rgb8(r, g, b))
@@ -1276,11 +1316,15 @@ pub(crate) fn separator_row<'a>(
         .push(text(format!("{:>2}", i + 1)).size(sz(12)).width(C_PRIO))
         .push(name);
 
+    // `on_enter` only during a mod drag, as on `mod_row`.
+    let area = mouse_area(row).on_press(Message::DragStart(i));
+    let area = if aim {
+        area.on_enter(Message::DragOverGap(i))
+    } else {
+        area
+    };
     container(
-        mouse_area(row)
-            .on_press(Message::DragStart(i))
-            .on_enter(Message::DragOverGap(i))
-            .on_release(Message::DragDrop)
+        area.on_release(Message::DragDrop)
             .on_right_press(Message::OpenModMenu(i)),
     )
     .width(Length::Fill)
@@ -1530,7 +1574,14 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
                     drop_msg.clone(),
                 ));
             }
-            list = list.push(separator_row(i, m, color, collapsed, selected));
+            list = list.push(separator_row(
+                i,
+                m,
+                color,
+                collapsed,
+                selected,
+                app.drag_state.is_some(),
+            ));
             tints.push(None); // a separator has no conflict of its own
             continue;
         }
@@ -1588,7 +1639,16 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
             .map(|rgb| mod_tint(rgb, i % 2 == 0));
         let bg = row_background(i % 2 == 0, selected, conflict, tint);
         list = list.push(list_row(
-            mod_row(i, m, meta, flag_icon, hidden_icon, bg, &app.mod_columns),
+            mod_row(
+                i,
+                m,
+                meta,
+                flag_icon,
+                hidden_icon,
+                bg,
+                &app.mod_columns,
+                app.drag_state.is_some(),
+            ),
             i % 2 == 0,
             selected,
             conflict,
@@ -2807,6 +2867,57 @@ mod tests {
         // No map means nothing is KNOWN to conflict. Reporting rows as
         // contested on no evidence would be worse than an empty list.
         assert!(data_tree_rows(&app, 500).is_empty());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn plain_browsing_skips_the_index_and_a_whole_tree_walk_builds_it() {
+        // The indexed stack walked every enabled mod on the UI thread after each
+        // toggle while the Data tab was open, to answer one root listing.
+        let (mut app, root) = data_app(&[("meshes/actors/thing.nif", "x")], &[]);
+        let indexed = |app: &App| {
+            let cached = app.data_stack.borrow();
+            let (_, indexed, stack, _) = cached.as_ref().expect("built by the walk");
+            assert_eq!(*indexed, stack.index_declined().is_none());
+            *indexed
+        };
+        let browsed = data_tree_rows(&app, 500);
+        assert!(!indexed(&app), "browsing the root needs no index");
+
+        // A filter crosses every folder: unindexed, that is a read of each
+        // layer's copy of every path component, per folder.
+        app.data_query = "thing".to_string();
+        let hits: Vec<String> = data_tree_rows(&app, 500)
+            .into_iter()
+            .map(|r| r.rel)
+            .collect();
+        assert!(indexed(&app), "a filter upgrades the stack");
+        assert!(
+            hits.contains(&"meshes/actors/thing.nif".to_string()),
+            "{hits:?}"
+        );
+        // And keeps it for the generation: clearing the filter does not drop
+        // back, or retyping it would pay the walk again.
+        app.data_query.clear();
+        let again = data_tree_rows(&app, 500);
+        assert!(indexed(&app));
+        assert_eq!(
+            browsed.iter().map(|r| &r.rel).collect::<Vec<_>>(),
+            again.iter().map(|r| &r.rel).collect::<Vec<_>>(),
+            "both stacks answer alike"
+        );
+
+        // A new generation starts unindexed again; a wide expansion upgrades.
+        app.view_generation.set(app.view_generation.get() + 1);
+        data_tree_rows(&app, 500);
+        assert!(!indexed(&app));
+        app.data_expanded = (0..=DATA_UNINDEXED_MAX_EXPANDED)
+            .map(|i| format!("dir{i}"))
+            .collect();
+        // Asked directly: the root listing is already memoised for this
+        // generation, and these folders do not exist to be listed.
+        data_stack(&app);
+        assert!(indexed(&app), "many open folders cost more than one index");
         let _ = fs::remove_dir_all(&root);
     }
 }

@@ -481,3 +481,47 @@ fn a_newline_in_a_filename_cannot_add_outside_files_to_the_backup() {
     assert_eq!(fs::read(&outside).unwrap(), b"private outside bytes");
     fs::remove_dir_all(base).unwrap();
 }
+
+#[test]
+fn level_zero_stores_and_still_comes_back() {
+    let Some(seven) = eidos_sevenzip::find_7z() else {
+        eprintln!("SKIPPED: no 7-Zip on this machine.");
+        return;
+    };
+    let base = tmp("stored");
+    let src = base.join("source");
+    fs::create_dir_all(&src).unwrap();
+    build_instance(&src);
+    let inst = Instance::portable(src.clone());
+    let opt = Options {
+        level: 0,
+        ..Options::default()
+    };
+    let archive = base.join("stored.eidos");
+    let t = Transfer::new(opt).unwrap();
+    t.pack(&inst, &plan(&inst, &opt), &archive, &mut |_| {})
+        .unwrap();
+    // The dialog promises that level 0 stores; an explicit LZMA2 method made
+    // -mx0 compress with a 64 KiB dictionary instead.
+    let listing = std::process::Command::new(seven)
+        .args(["l", "-slt"])
+        .arg(&archive)
+        .output()
+        .unwrap();
+    let listing = String::from_utf8_lossy(&listing.stdout);
+    let methods: Vec<&str> = listing
+        .lines()
+        .filter_map(|line| line.strip_prefix("Method = "))
+        // Directories and empty files carry no method.
+        .filter(|method| !method.is_empty())
+        .collect();
+    assert!(!methods.is_empty(), "{listing}");
+    assert!(methods.iter().all(|m| *m == "Copy"), "{methods:?}");
+    let dest = base.join("dest");
+    t.unpack(&archive, &dest, &mut |_| {}).unwrap();
+    assert_eq!(
+        fs::read_to_string(dest.join("mods/스크린아처메뉴/x.esp")).unwrap(),
+        "esp"
+    );
+    let _ = fs::remove_dir_all(&base);
+}

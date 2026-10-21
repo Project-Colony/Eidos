@@ -270,22 +270,29 @@ impl Transfer {
         spd: bool,
         on_progress: &mut impl FnMut(u8),
     ) -> Result<Option<String>, TransferError> {
-        let mut args: Vec<OsString> = vec![
-            "a".into(),
-            "-t7z".into(),
-            "-m0=LZMA2".into(),
-            format!("-mx{}", self.opt.level).into(),
-            "-ms=off".into(),
-            "-mmt=on".into(),
-            "-y".into(),
-            // Progress on stdout, and nothing else on it, so the percentages are
-            // all that has to be parsed.
-            "-bso0".into(),
-            "-bsp1".into(),
-            // The list file is ours and it is UTF-8; saying so means a machine
-            // with a Latin-1 locale reads the same names we wrote.
-            "-scsUTF-8".into(),
-        ];
+        let mut args: Vec<OsString> = vec!["a".into(), "-t7z".into()];
+        // Level 0 means stored. An explicit method overrides what -mx0 picks, so
+        // `-m0=LZMA2 -mx0` was LZMA2 with a 64 KiB dictionary: about as slow as
+        // level 1 and a little larger. Without it, -mx0 selects Copy.
+        if self.opt.level > 0 {
+            args.push("-m0=LZMA2".into());
+        }
+        args.push(format!("-mx{}", self.opt.level).into());
+        args.extend(
+            [
+                "-ms=off",
+                "-mmt=on",
+                "-y",
+                // Progress on stdout, and nothing else on it, so the percentages
+                // are all that has to be parsed.
+                "-bso0",
+                "-bsp1",
+                // The list file is ours and it is UTF-8; saying so means a machine
+                // with a Latin-1 locale reads the same names we wrote.
+                "-scsUTF-8",
+            ]
+            .map(OsString::from),
+        );
         if spd {
             // Names in a list file are patterns unless this says otherwise, and a
             // mod really can be called `Weapons * Armour`.
@@ -356,9 +363,14 @@ impl Transfer {
         }
         // A floor, not an estimate: no realistic mod corpus - textures and meshes
         // are already-compressed formats - comes out under a quarter of its size,
-        // so less than this free cannot possibly work.
+        // so less than this free cannot possibly work. Level 0 stores, so there
+        // the floor is the whole size.
         if let Some(free) = free_bytes(&anchor) {
-            let floor = plan.bytes / 4;
+            let floor = if self.opt.level == 0 {
+                plan.bytes
+            } else {
+                plan.bytes / 4
+            };
             if free < floor {
                 return Err(TransferError::Refused(format!(
                     "Not enough room at '{}': {} free, and {} of mods cannot compress \
@@ -587,8 +599,18 @@ impl Transfer {
         }
         // Lexically safe members can still escape through an existing destination
         // link. Validate every ancestor and leaf before extracting any payload.
+        // Each directory once: thousands of entries share their parents, dest
+        // and dest's own ancestors, and re-checking them per entry was about
+        // ten lstat calls per entry, 5M and ~4 s for a 500k-entry backup. A
+        // parent already in the set had its own ancestors checked when it went
+        // in, so the walk up stops there.
+        let mut checked_dirs = std::collections::HashSet::new();
         for entry in &entries {
-            for path in dest.join(&entry.path).ancestors() {
+            let leaf = dest.join(&entry.path);
+            for (depth, path) in leaf.ancestors().enumerate() {
+                if depth > 0 && checked_dirs.contains(path) {
+                    break;
+                }
                 match fs::symlink_metadata(path) {
                     Ok(metadata) if metadata.is_symlink() => {
                         return Err(TransferError::Refused(format!(
@@ -604,6 +626,9 @@ impl Transfer {
                             path.display()
                         )))
                     }
+                }
+                if depth > 0 {
+                    checked_dirs.insert(path.to_path_buf());
                 }
             }
         }

@@ -300,7 +300,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.menu_mod = Some(i);
             // Frozen here: the pointer keeps moving and a menu that followed it
             // would be impossible to aim at.
-            app.menu_at = Some(app.cursor);
+            app.menu_at = Some(crate::subscription::pointer(app));
             app.rename = None;
             app.confirm_remove = None;
             app.drag_state = None;
@@ -582,6 +582,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::AddSeparator(i) => {
+            // Read before the menu closes: a context-menu call keeps the anchor
+            // its menu froze, a toolbar call has none of its own.
+            let from_menu = app.menu_mod.is_some();
             app.menu_mod = None;
             // Under the lock and before the folder exists, as Rename does: a
             // refused save after it reloads the list, and the new folder comes
@@ -635,6 +638,14 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             // Open its rename editor so the user names it straight away.
                             app.rename = Some((idx, display));
                             app.menu_mod = Some(idx);
+                            // From the toolbar no menu was open, so nothing froze
+                            // where the card goes: freeze it at the click. Not
+                            // get_or_insert: a plugin menu, or a mod menu closed
+                            // by one of its actions, leaves its anchor set, and
+                            // the card would land wherever that menu was.
+                            if !from_menu {
+                                app.menu_at = Some(crate::subscription::pointer(app));
+                            }
                         }
                     }
                     Err(e) => app.status = Some(tf("status_separator_failed", &[("error", &e)])),
@@ -769,6 +780,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         // ---- mod creation (Create empty mod / Install from folder) ----------
         Message::CreateEmptyMod => return update(app, Message::CreateEmptyModAt(app.mods.len())),
         Message::CreateEmptyModAt(at) => {
+            let from_menu = app.menu_mod.is_some();
             app.menu_mod = None;
             // Same as AddSeparator: checked under the lock, before the folder
             // is created.
@@ -819,6 +831,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             // Open its rename editor so the user names it straight away.
                             app.rename = Some((idx, name));
                             app.menu_mod = Some(idx);
+                            // Frozen at the click when no menu was open, as in
+                            // AddSeparator.
+                            if !from_menu {
+                                app.menu_at = Some(crate::subscription::pointer(app));
+                            }
                         }
                     }
                     Err(e) => app.status = Some(tf("status_create_mod_failed", &[("error", &e)])),
@@ -1386,8 +1403,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             if restored {
                 reload_mods(app);
+                // Its meta.ini came back with the folder, and the refresh only
+                // computes rows it does not already hold.
+                invalidate_meta(app, &orig);
                 refresh_meta_cache(app);
-                refresh_after_tree_change(app);
+                refresh_after_tree_change(app, Some(&orig));
                 app.status = Some(tf("status_restored", &[("name", &orig)]));
             }
         }

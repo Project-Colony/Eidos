@@ -1,5 +1,6 @@
 //! Game-specific archive activation, separate from directory parsing and mod layers.
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Bound;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArchiveActivation {
@@ -184,8 +185,19 @@ pub fn archive_plan(
         });
     }
     for plugin in active_plugins {
+        // Every rule in `archive_matches_plugin` needs the archive name to start
+        // with the plugin's stem, so only the keys from the stem onward can
+        // match, and the map is sorted by that same lowercase name. Testing each
+        // plugin against every archive was P x A calls with four allocations
+        // each, run on the UI thread after every mod or plugin toggle (16 ms
+        // for 236 plugins and 300 archives). The rule stays the filter; the
+        // range only skips names it would reject, in the same order.
+        let lower = plugin.to_ascii_lowercase();
+        let stem = lower.rsplit_once('.').map_or("", |(stem, _)| stem);
         let mut matched: Vec<_> = available
-            .values()
+            .range::<str, _>((Bound::Included(stem), Bound::Unbounded))
+            .take_while(|(key, _)| key.starts_with(stem))
+            .map(|(_, name)| name)
             .filter(|name| archive_matches_plugin(game_id, name, plugin, language))
             .cloned()
             .collect();
@@ -381,6 +393,44 @@ mod tests {
         );
         assert_eq!(plan.archives[0].name, "A - Voices_fr.ba2");
         assert_eq!(plan.archives.len(), 1);
+    }
+    #[test]
+    fn a_stem_that_prefixes_another_plugin_keeps_each_rules_matches() {
+        let files = names(&[
+            "Fo.bsa",
+            "FooBar.bsa",
+            "Foo - Textures.bsa",
+            "Fop.bsa",
+            "Foo.bsa",
+        ]);
+        let plugins = names(&["Foo.esp", "FooBar.esp", "NoExtension"]);
+        let plan = |game| {
+            archive_plan(game, &files, &plugins, &[], "en")
+                .archives
+                .into_iter()
+                .map(|a| (a.name, a.plugin.unwrap_or_default()))
+                .collect::<Vec<_>>()
+        };
+        let pair = |a: &str, p: &str| (a.to_string(), p.to_string());
+        // Exact names: FooBar.bsa belongs to FooBar.esp, not to Foo.esp.
+        assert_eq!(
+            plan("skyrimse"),
+            [
+                pair("Foo.bsa", "Foo.esp"),
+                pair("Foo - Textures.bsa", "Foo.esp"),
+                pair("FooBar.bsa", "FooBar.esp"),
+            ]
+        );
+        // Prefix rule: Foo.esp claims every name it prefixes, FooBar.bsa
+        // included, and nothing outside the "foo" range.
+        assert_eq!(
+            plan("fallout3"),
+            [
+                pair("Foo - Textures.bsa", "Foo.esp"),
+                pair("Foo.bsa", "Foo.esp"),
+                pair("FooBar.bsa", "Foo.esp"),
+            ]
+        );
     }
     #[test]
     fn morrowind_ini_numbering_missing_and_unsupported_are_explicit() {

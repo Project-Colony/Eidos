@@ -173,8 +173,14 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             app.sorting = true;
             app.status = Some(t("status_sorting").to_string());
+            // `unblock`, not an `async` block: every step below is blocking
+            // download, file walk and libloot work, and iced polls futures on
+            // smol's single executor thread, so in a bare `async` block the
+            // sort froze every timer and input subscription for its duration.
+            // Not `background_work::run` either: its one slot belongs to
+            // previews, and a sort must not queue behind a NIF render.
             return Task::perform(
-                async move {
+                smol::unblock(move || {
                     // `is_supported(id)` was checked above and loot_support is a pure
                     // map, so this is always Some here; handle None gracefully anyway
                     // rather than unwrap (robust to any future refactor of the guard).
@@ -229,7 +235,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     let report =
                         eidos_loot::report(&view, &enabled_lower).map_err(|e| e.to_string());
                     Ok((fingerprint, order, report))
-                },
+                }),
                 Message::PluginsSorted,
             );
         }
@@ -419,7 +425,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.plugin_send_priority = None;
             // Freeze where it was summoned from. Drawn at the LIVE cursor the
             // card chases the pointer, and its own items can never be reached.
-            app.menu_at = Some(app.cursor);
+            app.menu_at = Some(crate::subscription::pointer(app));
             app.focus = Pane::Plugins;
         }
         Message::ClosePluginMenu => {

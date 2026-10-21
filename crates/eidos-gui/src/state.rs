@@ -68,6 +68,7 @@ pub(crate) fn refresh_meta_cache(app: &mut App) {
                 category_name,
                 content_tags: eidos_install::classify_content_dir(&path).tags(),
                 update: meta.update_available(),
+                endorsed: meta.endorsed(),
                 color: meta.color(),
                 notes: meta.notes(),
                 nexus_gone: meta.nexus_available() == Some(false),
@@ -348,6 +349,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         install_at: None,
         install_gap: None,
         install_job: None,
+        place_job: None,
         pack: None,
         unpack: None,
         transfer_job: None,
@@ -469,6 +471,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         data_listing: std::cell::RefCell::new(HashMap::new()),
         profiles_cache: std::cell::RefCell::new(None),
         archives_cache: std::cell::RefCell::new(None),
+        contested_cache: std::cell::RefCell::new(None),
         data_stack: std::cell::RefCell::new(None),
         data_query: String::new(),
         data_conflicts_only: false,
@@ -558,8 +561,15 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     }
     load_tools(&mut app);
     // Conflicts feed the mod-list emblems, so compute them as soon as the
-    // instance opens instead of waiting for the Conflicts tab.
-    app.conflicts = compute_conflicts(&app);
+    // instance opens instead of waiting for the Conflicts tab. Timed on its own
+    // under `EIDOS_GUI_TIMING`: it walks every layer before the first frame, and
+    // F5's `update for Refresh` line cannot stand in for it because that one
+    // also covers the meta-cache rescan.
+    app.conflicts = crate::timing::time(
+        "conflicts",
+        crate::timing::on().then_some("startup"),
+        || compute_conflicts(&app),
+    );
     schedule_archive_conflicts(&mut app);
     refresh_meta_cache(&mut app);
     app.collapsed = load_collapsed(&app);
@@ -573,7 +583,9 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     // so the status bar shows the account instead of "not logged in" every session.
     let startup = if eidos_nexus::Nexus::have_credentials() {
         Task::perform(
-            async move { eidos_nexus::Nexus::connect().and_then(|n| n.account()) },
+            // A token renewal plus a round trip: on the blocking pool, so the
+            // first seconds of the session keep their timers.
+            smol::unblock(|| eidos_nexus::Nexus::connect().and_then(|n| n.account())),
             Message::NexusSignInResult,
         )
     } else {
@@ -664,12 +676,10 @@ pub(crate) fn nexus_sign_in() -> Result<eidos_nexus::Account, String> {
         std::time::Duration::from_secs(300),
     )?;
     let tokens = oauth::exchange_code(&cfg, &code, &pkce)?;
-    let mut creds = eidos_instance::settings::load_nexus_creds();
-    creds.access_token = Some(tokens.access_token.clone());
-    creds.refresh_token = Some(tokens.refresh_token);
-    creds.expires_at = tokens.expires_at;
-    eidos_instance::settings::save_nexus_creds(&creds)
-        .map_err(|e| tf("nexus_store_failed", &[("error", &e)]))?;
+    // Under the same turn as a renewal in Nexus::connect: a startup check
+    // that is still renewing the old grant would otherwise save its stale copy
+    // over this new session and put the previous account back.
+    eidos_nexus::store_session(&tokens).map_err(|e| tf("nexus_store_failed", &[("error", &e)]))?;
     // The account comes from the token, NOT from `users/validate`. That endpoint
     // belongs to the personal-API-key era and answers 401 to a Bearer, so calling
     // it here failed every OAuth sign-in at the last step - after the browser had
@@ -1232,6 +1242,7 @@ pub(crate) fn start_run_with_log(
         outcome,
         log,
         lock,
+        game: false,
     });
     app.status = Some(if lock {
         tf("status_running_locked", &[("title", &title)])
@@ -1253,8 +1264,19 @@ pub(crate) fn finish_run(app: &mut App) {
     let run = app.running.take();
     reload_mods(app);
     if app.created.is_some() {
-        // The session wrote into the Overwrite (and tools may have edited mods).
-        drop_files_cache(app, None);
+        // A game run under `eidos play` writes only into the Overwrite: the mods
+        // are read-only lowers of the union, and game-root writes land in
+        // `overwrite/Root`, inside the same layer. So only its walk is stale, and
+        // re-walking every mod (77 ms at 90k files on tmpfs, more on a disk and
+        // with more files) froze the window exactly when the player came back.
+        // A tool can write into a mod folder by absolute path or capture its
+        // output into one, so a tool run (and the prerequisite install, which
+        // is rare) still drops every walk. Unlike MO2's afterRun, a mod edited
+        // by hand outside Eidos during the session is no longer picked up here;
+        // F5 re-reads it, as it already must for an edit made while the window
+        // sits idle.
+        let game = run.as_ref().is_some_and(|r| r.game);
+        drop_files_cache(app, game.then_some("Overwrite"));
         invalidate_plugins(app);
         app.conflicts = compute_conflicts(app);
         refresh_meta_cache(app);
@@ -2815,6 +2837,10 @@ pub(crate) fn mod_views_changed(app: &mut App) {
     // just on their contents.
     bump_views(app);
     invalidate_plugins(app);
+    // The replaced map is freed here, on the UI thread, on purpose. Handing it
+    // to a helper thread looked free (2 ms inline at 90k files), but glibc then
+    // serialises that thread's frees and this thread's allocations on one
+    // arena lock: a map rebuild running alongside went from 15 to 37 ms.
     app.conflicts = compute_conflicts(app);
     refresh_meta_cache(app);
     recompute_counts(app);
@@ -2895,13 +2921,19 @@ pub(crate) fn recompute_counts(app: &mut App) {
             if !m.enabled || m.is_separator() {
                 continue;
             }
-            let meta = inst.mod_meta(&m.name);
-            if meta.endorsed() {
-                endorsed += 1;
-            }
-            if meta.update_available() {
-                updated += 1;
-            }
+            // From the row cache, which every caller has just brought in step:
+            // a `meta.ini` read per enabled mod here was ~900 opens per click on
+            // a large list, for two numbers the cache already held. A row that
+            // is not cached yet is read, so the count is never short.
+            let (e, u) = match app.meta_cache.get(&m.name) {
+                Some(row) => (row.endorsed, row.update),
+                None => {
+                    let meta = inst.mod_meta(&m.name);
+                    (meta.endorsed(), meta.update_available())
+                }
+            };
+            endorsed += usize::from(e);
+            updated += usize::from(u);
         }
     }
     app.endorsed_count = endorsed;

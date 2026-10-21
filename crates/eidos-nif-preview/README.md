@@ -21,8 +21,10 @@ model after refreshing providers. Rendering is a 640×420 orthographic static
 view with approximate lighting, alpha testing and basic transparency, not an
 engine shader or animation preview. Normal maps and material effects are not
 evaluated. At most 64 diffuse textures are attempted, within 256 MiB of input
-and 64 MiB of decoded pixels. A texture larger than 4096 pixels uses an existing
-smaller mip or is reported unsupported. Cube/array diffuse textures are unsupported.
+and 64 MiB of decoded pixels. Each texture is drawn from its first mip of at most
+1024 pixels when the file has one, so a 4K texture with a mip chain takes 4 MiB of
+that budget. A texture whose smallest mip is still larger than 4096 pixels is
+reported unsupported. Cube/array diffuse textures are unsupported.
 
 `nif-preview-fixtures output-directory` creates synthetic LE/SSE files for tests and GUI smoke checks. They contain a triangle and synthetic texture references, with no redistributed game content. Tests assert fixed world-space coordinates, rather than merely round-tripping parser output.
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
 
 # Rozwiązywanie problemów i diagnostyka
 
@@ -80,11 +80,26 @@ ENB/ReShade/`.asi`).
 
 ### Czy indeks warstw jest naprawdę używany?
 
-Indeks działa na zasadzie wszystko albo nic i budowany jest w ciszy:
-`LayerStack::new` dostaje albo kompletną mapę warstw tylko do odczytu, albo `None`,
-po czym każde zapytanie przechodzi je dokładnie tak jak wcześniej. Nic w dzienniku
-sesji nie rozróżnia tych dwóch przypadków, więc stos, który po cichu wrócił do
-przechodzenia, wygląda identycznie jak działający - płacąc przy tym starą cenę.
+`LayerStack::new` buduje albo kompletną mapę warstw tylko do odczytu, albo
+żadnej. Bez mapy każde zapytanie przechodzi warstwy tak jak wcześniej: odpowiedzi
+są te same, wczytanie zapisu trwa mniej więcej trzy razy dłużej, a poza tym nic
+nie wygląda inaczej.
+
+Gdy indeks jest wyłączony, montowanie podaje powód, raz, przy starcie:
+
+```
+eidos-fuse: layer index off (<reason>); every lookup walks all layers
+```
+
+Powód wskazuje nieczytelny katalog, warstwę głębszą niż 64 katalogi, ponad
+4 000 000 wpisów albo `EIDOS_NO_INDEX`. Wiersz trafia do dziennika uruchomienia:
+do `logs/run-*.log` instancji przy uruchomieniu z okna, do konsoli Steama przy
+uruchomieniu przez Steam. Z `EIDOS_FUSE_STATS=1` zrzut przy odmontowaniu ma też
+wiersz `layer index:`, a niezerowy licznik `unindexed` na zwykłym montowaniu
+oznacza, że indeks był wyłączony.
+
+Poniższe przykłady sprawdzają to samo offline, na folderach instancji, bez
+montowania:
 
 ```sh
 cargo run --release -p eidos-core --example index_health -- <mods-dir> <overwrite-dir>

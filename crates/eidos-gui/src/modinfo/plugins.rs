@@ -28,11 +28,10 @@ pub(crate) fn compute_plugins(app: &App) -> Option<PluginList> {
     let mut list = PluginList::discover(&sources, &spec);
     if let Some(inst) = app.created.as_ref() {
         // Plugins only live at the root, so ONE merged root listing answers for
-        // all of them: a read of each layer's top directory, whiteouts and hidden
-        // names applied. This runs on every mod toggle (via `diagnostics`), so the
-        // stack is unindexed - an index walks every file of every enabled mod
-        // first, hundreds of milliseconds of frozen window on a large list.
-        let stack = eidos_core::LayerStack::new_unindexed(
+        // all of them. This runs on every mod toggle (via `diagnostics`), and it
+        // is the launch path's own helper, so the tab and the game cannot
+        // disagree about which plugin is visible.
+        let root = eidos_instance::root_listing(
             sources
                 .iter()
                 .rev()
@@ -41,11 +40,6 @@ pub(crate) fn compute_plugins(app: &App) -> Option<PluginList> {
                 .collect(),
             inst.overwrite_dir(),
         );
-        let root: HashMap<String, PathBuf> = stack
-            .list_dir("")
-            .into_iter()
-            .map(|(name, path)| (name.to_ascii_lowercase(), path))
-            .collect();
         list.plugins.retain(|plugin| {
             root.get(&plugin.name.to_ascii_lowercase())
                 .is_some_and(|path| path.is_file())
@@ -601,11 +595,17 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         } else {
             striped(row.into(), i % 2 == 0)
         };
+        // `on_enter` only during a plugin drag, as on the mod rows: without
+        // one it does nothing, and each row crossed was a window rebuild.
         let grab = mouse_area(painted)
             .on_right_press(Message::OpenPluginMenu(i))
-            .on_press(Message::SelectPlugin(i))
-            .on_enter(Message::PluginDragOverGap(i))
-            .on_release(Message::PluginDragDrop);
+            .on_press(Message::SelectPlugin(i));
+        let grab = if dragging {
+            grab.on_enter(Message::PluginDragOverGap(i))
+        } else {
+            grab
+        };
+        let grab = grab.on_release(Message::PluginDragDrop);
         rows = rows.push(drop_gap(
             i,
             live_gap == Some(i),

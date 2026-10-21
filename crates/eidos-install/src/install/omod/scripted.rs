@@ -101,7 +101,7 @@ pub fn new_omod_receipt(
     session.verify_archive(cancel)?;
     Ok(OmodReplayReceipt {
         version: 1,
-        archive_sha256: session.origin.sha256().to_owned(),
+        archive_sha256: session.origin.sha256(cancel)?,
         script_sha256: digest(&session.script.as_ref().unwrap().bytes),
         handler,
         origin: context.origin.clone(),

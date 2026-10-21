@@ -17,9 +17,11 @@ pub use archives::{
     MAX_LZ4_BLOCK_BYTES,
 };
 
+use std::borrow::Borrow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Identifies a layer: `0` is conventionally the game's own data; mods get any
 /// stable non-zero ids. Priority is the layer ORDER passed to [`ConflictMap::build`],
@@ -106,6 +108,13 @@ pub struct ConflictMap {
     /// Member-conflict paths by provider, precomputed so UI frames do not scan archives.
     pub asset_conflicts: HashMap<OriginId, Vec<String>>,
     pub archive_diagnostics: Vec<ArchiveDiagnostic>,
+    /// Which build this map came from: a fresh value for every
+    /// [`build_from`](Self::build_from), `0` for a map assembled by hand
+    /// (`Default`). Nothing edits `files` after the build, so a view may
+    /// memoise what it derives from `files` under this stamp instead of
+    /// scanning every path on every redraw. Code that ever edits `files` in
+    /// place must reset this to `0`.
+    pub stamp: u64,
 }
 
 impl ConflictMap {
@@ -123,13 +132,18 @@ impl ConflictMap {
     /// (the output of [`collect_files`]). Lets a caller cache the expensive
     /// filesystem walks and re-derive winners in memory - toggling a mod then
     /// costs no I/O at all.
-    pub fn build_from(parts: &[(Layer, (Vec<String>, bool))]) -> ConflictMap {
+    ///
+    /// The lists are only read, so a caller holding them in a cache passes
+    /// references or shared pointers rather than a deep copy of every path: the
+    /// GUI rebuilds this map on the UI thread after every toggle.
+    pub fn build_from<P: Borrow<(Vec<String>, bool)>>(parts: &[(Layer, P)]) -> ConflictMap {
         let mut files: BTreeMap<String, FileNode> = BTreeMap::new();
 
         // Highest priority first: the first layer to provide a path wins it; the
         // rest become alternatives, accumulating in descending-priority order.
         let mut layer_hidden: HashMap<OriginId, bool> = HashMap::new();
-        for (layer, (rels, hidden)) in parts {
+        for (layer, part) in parts {
+            let (rels, hidden): &(Vec<String>, bool) = part.borrow();
             if *hidden {
                 layer_hidden.insert(layer.origin, true);
             }
@@ -217,10 +231,13 @@ impl ConflictMap {
             .iter()
             .map(|(l, _)| (l.origin, l.name.clone()))
             .collect();
+        // Global, not per App: the archive worker builds maps on its own thread.
+        static NEXT_STAMP: AtomicU64 = AtomicU64::new(1);
         ConflictMap {
             files,
             mods,
             names,
+            stamp: NEXT_STAMP.fetch_add(1, Ordering::Relaxed),
             ..Default::default()
         }
     }
@@ -270,7 +287,20 @@ pub fn collect_files(root: &Path) -> (Vec<String>, bool) {
                 *hidden = true;
                 continue;
             }
-            if p.is_dir() {
+            // The type `readdir` already returned (`d_type`), so a plain file or
+            // directory costs no syscall. This walk runs on the UI thread at
+            // startup, on F5 and after every game exit, and the stat that
+            // `p.is_dir()` made for EVERY entry was most of its time: 265 ms
+            // against 92 ms over 95k files on tmpfs. Only a symlink, an error or a
+            // DT_UNKNOWN filesystem (where std falls back to `lstat`) still
+            // stats the target, so a link to a directory is classified exactly
+            // as before.
+            let file_type = e.file_type();
+            let is_dir = match &file_type {
+                Ok(t) if !t.is_symlink() => t.is_dir(),
+                _ => p.is_dir(),
+            };
+            if is_dir {
                 if depth == 0 && name == "fomod" {
                     continue;
                 }
@@ -278,7 +308,7 @@ pub fn collect_files(root: &Path) -> (Vec<String>, bool) {
                 // would recurse forever (hanging the GUI on every recompute).
                 // Never descend THROUGH a symlink; a linked file is still listed
                 // below, which is what the union serves anyway.
-                if e.file_type().map(|t| t.is_symlink()).unwrap_or(true) {
+                if file_type.map(|t| t.is_symlink()).unwrap_or(true) {
                     continue;
                 }
                 // Depth guard for the pathological case a symlink can't cause
@@ -546,5 +576,25 @@ mod tests {
         let (files, _) = collect_files(&layer.root);
         // Terminates, and still reports the real file.
         assert!(files.iter().any(|f| f == "meshes/a.nif"), "got {files:?}");
+    }
+
+    #[test]
+    fn symlinked_files_are_listed_and_symlinked_dirs_are_not_descended() {
+        let t = Tmp::new();
+        let layer = t.layer(1, "Links", &["meshes/a.nif"]);
+        let elsewhere = t.layer(2, "Elsewhere", &["textures/b.dds"]);
+        let link = |target: &Path, at: &str| {
+            std::os::unix::fs::symlink(target, layer.root.join(at)).unwrap()
+        };
+        // A link to a file is content the union serves: listed under its own name.
+        link(&elsewhere.root.join("textures/b.dds"), "linked.dds");
+        // A link to a directory is never walked, even when it does not loop.
+        link(&elsewhere.root.join("textures"), "textures");
+        // A dangling link is still listed, as `is_dir()` on it is false.
+        link(&t.0.join("missing"), "dangling.dds");
+
+        let (mut files, _) = collect_files(&layer.root);
+        files.sort();
+        assert_eq!(files, ["dangling.dds", "linked.dds", "meshes/a.nif"]);
     }
 }

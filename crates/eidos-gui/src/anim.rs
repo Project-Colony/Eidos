@@ -144,7 +144,7 @@ pub(crate) fn animating(app: &crate::App) -> bool {
 /// Wider than [`animating`]: work running on a worker thread has no animation,
 /// but its progress dialog has to repaint and its completion has to be noticed,
 /// and neither happens in a window that subscribed to nothing. This is the ONLY
-/// thing that subscribes the 16 ms timer, so a job missing from here does not
+/// thing that subscribes the frame timer, so a job missing from here does not
 /// run slowly - it never reports and never finishes as far as the window is
 /// concerned, silently.
 ///
@@ -155,6 +155,21 @@ pub(crate) fn needs_frames(app: &crate::App) -> bool {
     animating(app)
         || app.install_job.is_some()
         || app.transfer_job.as_ref().is_some_and(|j| j.running())
+}
+
+/// How often the frame timer fires, once [`needs_frames`] has said it must.
+///
+/// 60 Hz only while something is moving. A job alone gets 10 Hz: its dialog
+/// shows a whole-number percentage, and every tick is a message, which in
+/// iced means a full `view` and layout of the main screen behind the modal.
+/// At 60 Hz that was sixty rebuilds a second for the length of a pack or a
+/// collection install, hours for a large collection, to redraw a bar that
+/// moves at most a hundred times in all. Archive analysis already polls at
+/// the same 100 ms. A job is still noticed finishing within one tick, and an
+/// animation that starts mid-job brings the 16 ms period back on the next
+/// message, because `subscription` reads this again after every one.
+pub(crate) fn frame_period(app: &crate::App) -> std::time::Duration {
+    std::time::Duration::from_millis(if animating(app) { 16 } else { 100 })
 }
 
 /// How far a phase should be DRAWN, honouring the motion preference.

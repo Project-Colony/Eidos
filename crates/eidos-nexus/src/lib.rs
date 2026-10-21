@@ -670,6 +670,30 @@ pub(crate) fn pick_mirror(mirrors: &[(String, String)], preferred: &[String]) ->
     mirrors.first().map(|(_, uri)| uri.clone())
 }
 
+/// One credentials read-modify-write at a time, process-wide.
+///
+/// Nexus rotates the refresh token on every renewal, so two jobs that both saw
+/// an expired token (the startup account check and a click, say, now that the
+/// GUI runs them on a blocking pool rather than one after another) would both
+/// spend the same refresh token, and the second would fail or get the session
+/// revoked. A browser sign-in that stores its new session while a renewal is
+/// in flight would also be overwritten by the renewal's stale copy, putting the
+/// previous account back. Everything that loads, edits and saves `nexus.ini`
+/// in this process holds this turn for the whole span.
+static CREDS_TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Store a freshly granted session (a browser sign-in) under the credentials
+/// turn, so a renewal running at the same moment either finishes first and is
+/// replaced by this, or waits and re-reads this.
+pub fn store_session(tokens: &oauth::Tokens) -> io::Result<()> {
+    let _turn = CREDS_TURN.lock().unwrap_or_else(|e| e.into_inner());
+    let mut creds = eidos_instance::settings::load_nexus_creds();
+    creds.access_token = Some(tokens.access_token.clone());
+    creds.refresh_token = Some(tokens.refresh_token.clone());
+    creds.expires_at = tokens.expires_at;
+    eidos_instance::settings::save_nexus_creds(&creds)
+}
+
 /// What every part of Eidos says when offline mode is on.
 ///
 /// One sentence, in one place, because it appears wherever a Nexus call would
@@ -839,6 +863,10 @@ impl Nexus {
         if prefs.offline {
             return Err(OFFLINE_MESSAGE.to_string());
         }
+        // One renewal at a time, process-wide, and the credentials read under
+        // that turn (see CREDS_TURN). Whoever waits re-reads the file the
+        // first one rewrote and finds a fresh Bearer.
+        let _turn = CREDS_TURN.lock().unwrap_or_else(|e| e.into_inner());
         let mut creds = eidos_instance::settings::load_nexus_creds();
         let cfg = oauth::Config::from_env();
         match choose_credential(&creds, oauth::now_unix(), cfg.is_some()) {
@@ -1669,8 +1697,8 @@ pub struct UpdateCheckResult {
 /// back to its `meta.ini`; the GUI re-reads `update_available()` afterward to
 /// refresh its row markers. The loop stops on the first 429, returning what it had.
 ///
-/// This is blocking I/O (`ureq`); the GUI runs it inside a `Task::perform` closure
-/// on iced's executor, exactly like the plugin-sort task. The `Instance` is
+/// This is blocking I/O (`ureq`); the GUI runs it through `smol::unblock`,
+/// exactly like the plugin-sort task, and never on iced's executor thread. The `Instance` is
 /// `Clone`, so the closure can own a clone and complete harmlessly even if the
 /// user switches instances mid-check.
 pub fn check_updates(
@@ -2120,14 +2148,18 @@ pub fn write_download_meta(
 /// Streamed in chunks rather than read whole: a mod archive is routinely
 /// hundreds of megabytes and this runs on the GUI's behalf.
 pub fn md5_file(path: &Path) -> io::Result<String> {
-    use md5::{Digest, Md5};
-    use std::io::Read;
+    md5_reader(fs::File::open(path)?, &mut vec![0u8; 1 << 20])
+}
 
-    let mut file = fs::File::open(path)?;
+/// [`md5_file`] over an already open reader, with the caller's buffer. A walk
+/// that hashes a whole mod tree reuses one buffer instead of zeroing a fresh
+/// megabyte per file, and hashing an open descriptor lets the caller stat that
+/// same descriptor before and after.
+pub fn md5_reader(mut reader: impl io::Read, buf: &mut [u8]) -> io::Result<String> {
+    use md5::{Digest, Md5};
     let mut hasher = Md5::new();
-    let mut buf = vec![0u8; 1 << 20];
     loop {
-        let n = file.read(&mut buf)?;
+        let n = reader.read(buf)?;
         if n == 0 {
             break;
         }

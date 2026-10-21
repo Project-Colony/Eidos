@@ -259,35 +259,32 @@ pub(crate) fn info_conflicts<'a>(app: &App, i: usize) -> Element<'a, Message> {
         return text(t("info_conflicts_not_computed")).size(sz(12)).into();
     };
     let origin = (i + 1) as u32;
-    // Only what will be DRAWN is materialised. This runs in view(), once per
-    // redraw, over every file in the conflict map - and it used to clone a path
-    // String (plus a joined loser list) for every match while the panel shows at
-    // most 300 of each. A texture pack winning 50k paths allocated 100k Strings
-    // per pointer event; now it allocates 300 and counts the rest.
-    const SHOWN: usize = 300;
+    // Only what will be DRAWN is materialised: at most 300 rows of each side,
+    // with the counts for the rest. The paths come from `contested`, which
+    // scans the whole conflict map once per map and mod instead of on every
+    // redraw; a texture pack winning 50k paths used to clone 100k Strings per
+    // pointer event here, and then still walked every file of the map.
+    let found = contested(app, cmap, origin);
+    let (wins_n, loses_n) = (found.won, found.lost);
     let mut wins: Vec<(String, String)> = Vec::new();
     let mut loses: Vec<(String, String)> = Vec::new();
-    let (mut wins_n, mut loses_n) = (0usize, 0usize);
-    for node in cmap.files.values() {
-        if node.winner == origin && node.is_conflicted() {
-            wins_n += 1;
-            if wins.len() < SHOWN {
-                let losers: Vec<&str> = node
-                    .alternatives
-                    .iter()
-                    .filter(|&&a| a != 0)
-                    .map(|&a| cmap.name(a))
-                    .collect();
-                wins.push((node.display_path.clone(), losers.join(", ")));
-            }
-        } else if node.winner != origin && node.winner != 0 && node.alternatives.contains(&origin) {
-            loses_n += 1;
-            if loses.len() < SHOWN {
-                loses.push((
-                    node.display_path.clone(),
-                    cmap.name(node.winner).to_string(),
-                ));
-            }
+    for (key, won) in &found.rows {
+        let Some(node) = cmap.files.get(key) else {
+            continue;
+        };
+        if *won {
+            let losers: Vec<&str> = node
+                .alternatives
+                .iter()
+                .filter(|&&a| a != 0)
+                .map(|&a| cmap.name(a))
+                .collect();
+            wins.push((node.display_path.clone(), losers.join(", ")));
+        } else {
+            loses.push((
+                node.display_path.clone(),
+                cmap.name(node.winner).to_string(),
+            ));
         }
     }
     let mut col = Column::new().spacing(2);
@@ -409,7 +406,12 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
                     button(text(t("info_view")).size(sz(10)))
                         .padding([1, 5])
                         .style(button::text)
-                        .on_press_maybe(resolve_in_mod(&m.path, e).map(Message::PreviewFile)),
+                        // Resolved on the click, not here: `resolve_in_mod` is
+                        // an lstat per path component, and up to 2000 rows of
+                        // it on every rebuild was ~8k syscalls (~10 ms) per
+                        // frame on a large mod. Checking at click time also
+                        // narrows the gap between the check and the read.
+                        .on_press(Message::FiletreePreview(i, e.clone())),
                 )
                 .push(
                     button(text(t("common_open")).size(sz(10)))

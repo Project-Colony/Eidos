@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
 
 # Solução de problemas e diagnóstico
 
@@ -80,11 +80,26 @@ traga (carregadores ENB/ReShade/`.asi`).
 
 ### O índice de camadas está mesmo em uso?
 
-O índice é tudo ou nada e é construído em silêncio: `LayerStack::new` recebe ou um
-mapa completo das camadas somente-leitura ou `None`, após o que cada consulta as
-percorre exatamente como antes. Nada num log de sessão distingue os dois, então uma
-pilha que caiu caladamente para o percurso parece idêntica a uma que funciona -
-enquanto paga o custo antigo.
+`LayerStack::new` constrói um mapa completo das camadas somente-leitura ou
+nenhum. Sem mapa, cada consulta percorre as camadas como antes: as respostas são
+as mesmas, carregar um save leva cerca de três vezes mais tempo e nada mais
+parece diferente.
+
+Quando o índice está desligado, a montagem diz por quê, uma vez, ao iniciar:
+
+```
+eidos-fuse: layer index off (<reason>); every lookup walks all layers
+```
+
+O motivo nomeia um diretório ilegível, uma camada com mais de 64 níveis de
+diretório, mais de 4.000.000 de entradas ou `EIDOS_NO_INDEX`. A linha vai para o
+log da execução: o `logs/run-*.log` da instância num lançamento pela janela, o
+console da Steam num lançamento pela Steam. Com `EIDOS_FUSE_STATS=1`, o relatório
+ao desmontar também tem uma linha `layer index:`, e um contador `unindexed`
+diferente de zero numa montagem normal significa que o índice estava desligado.
+
+Os exemplos abaixo verificam a mesma coisa offline, nas pastas de uma instância,
+sem montagem:
 
 ```sh
 cargo run --release -p eidos-core --example index_health -- <mods-dir> <overwrite-dir>

@@ -284,7 +284,8 @@ fn print_plan(plan: &eidos_transfer::Plan, dest: &Path, level: u8) {
             human_bytes(plan.downloads_bytes)
         );
     }
-    println!("  -> {} (LZMA2 -mx{level}, non-solid)", dest.display());
+    let method = if level == 0 { "Copy" } else { "LZMA2" };
+    println!("  -> {} ({method} -mx{level}, non-solid)", dest.display());
     if !plan.left.is_empty() {
         println!("Left out:");
         for l in plan.left.iter().take(20) {

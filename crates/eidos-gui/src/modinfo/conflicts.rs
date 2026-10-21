@@ -59,12 +59,13 @@ pub(crate) fn conflict_layers(app: &App) -> Option<Vec<Layer>> {
 /// bracketed display names).
 pub(crate) fn build_conflicts_cached(app: &App, layers: Vec<Layer>) -> ConflictMap {
     let mut cache = app.files_cache.borrow_mut();
-    let parts: Vec<(Layer, (Vec<String>, bool))> = layers
+    // A pointer per layer, not a copy of its list: `build_from` only reads.
+    let parts: Vec<(Layer, LayerWalk)> = layers
         .into_iter()
         .map(|l| {
             let files = cache
                 .entry(l.name.clone())
-                .or_insert_with(|| eidos_conflicts::collect_files(&l.root))
+                .or_insert_with(|| eidos_conflicts::collect_files(&l.root).into())
                 .clone();
             (l, files)
         })
@@ -145,6 +146,59 @@ pub(crate) fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
         .into()
 }
 
+/// How many paths of each side (won, lost) [`Contested`] keeps: what the
+/// mod-info dialog shows, and more than the Conflicts tab's 40.
+const CONTESTED_KEPT: usize = 300;
+
+/// One mod's contested loose paths, derived from one conflict map.
+pub(crate) struct Contested {
+    /// Keys into `map.files`, in map order, each with whether this mod wins
+    /// it. A path is kept while its side holds fewer than [`CONTESTED_KEPT`],
+    /// so the first N rows of either side, or of both together, are exact.
+    pub(crate) rows: Vec<(String, bool)>,
+    pub(crate) won: usize,
+    pub(crate) lost: usize,
+}
+
+/// The paths `origin` fights over in `map`, scanned once per (map, mod).
+///
+/// The scan visits every file of the map, and both Conflicts panels run it from
+/// `view()` on every redraw. A map's `files` never change after its build, so
+/// its stamp is a sound key; a stamp of 0 (a hand-built map) is never cached.
+/// Kept as keys and flags, never text, so a language switch still redraws.
+///
+/// "Contested" is one set for both panels: a conflicted path the mod wins, or
+/// one where it is among the losers. Losing implies the winner is not the base
+/// game, which is always the lowest layer.
+pub(crate) fn contested(app: &App, map: &ConflictMap, origin: u32) -> std::rc::Rc<Contested> {
+    if let Some((stamp, o, hit)) = app.contested_cache.borrow().as_ref() {
+        if map.stamp != 0 && *stamp == map.stamp && *o == origin {
+            return hit.clone();
+        }
+    }
+    let mut c = Contested {
+        rows: Vec::new(),
+        won: 0,
+        lost: 0,
+    };
+    for (key, node) in &map.files {
+        let wins = node.winner == origin;
+        if !node.is_conflicted() || !(wins || node.alternatives.contains(&origin)) {
+            continue;
+        }
+        let side = if wins { &mut c.won } else { &mut c.lost };
+        if *side < CONTESTED_KEPT {
+            c.rows.push((key.clone(), wins));
+        }
+        *side += 1;
+    }
+    let c = std::rc::Rc::new(c);
+    if map.stamp != 0 {
+        *app.contested_cache.borrow_mut() = Some((map.stamp, origin, c.clone()));
+    }
+    c
+}
+
 /// The FILES the selected mod is fighting over, and who wins each.
 ///
 /// The list above says a mod won "1/2" and stops there, which is where every
@@ -168,23 +222,14 @@ pub(crate) fn conflicting_files<'a>(app: &App, map: &ConflictMap) -> Element<'a,
         .unwrap_or_default();
 
     let mut rows = Column::new().spacing(1);
-    let mut n = 0usize;
-    for node in map.files.values() {
-        // No Vec: this loop visits every file in the conflict map on every
-        // redraw, and materialising a heap-allocated provider list per node made
-        // each pointer event allocate and free once per file in the instance -
-        // several hundred thousand times for a real load order. Two comparisons
-        // answer the same question.
-        let contested =
-            node.is_conflicted() && (node.winner == origin || node.alternatives.contains(&origin));
-        if !contested {
-            continue;
-        }
-        n += 1;
-        if n > SHOWN {
-            continue;
-        }
-        let wins = node.winner == origin;
+    let found = contested(app, map, origin);
+    let n = found.won + found.lost;
+    let shown = found
+        .rows
+        .iter()
+        .take(SHOWN)
+        .filter_map(|(key, wins)| Some((map.files.get(key)?, *wins)));
+    for (i, (node, wins)) in shown.enumerate() {
         // Who this file actually comes from, when it is not us.
         let verdict = if wins {
             t("conflicts_wins_it").to_string()
@@ -208,7 +253,7 @@ pub(crate) fn conflicting_files<'a>(app: &App, map: &ConflictMap) -> Element<'a,
                         conflict_loses_fg()
                     }),
             );
-        rows = rows.push(striped(row.into(), n.is_multiple_of(2)));
+        rows = rows.push(striped(row.into(), i % 2 == 1));
     }
 
     let head = if n == 0 {

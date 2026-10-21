@@ -733,3 +733,56 @@ fn preflight_diagnostics_preserve_interrupted_runs_and_warn_when_inputs_change()
             && d.detail.contains("Patch.esp")));
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn contested_paths_are_scanned_once_per_map_and_mod() {
+    let app = app_for_game("skyrimse");
+    let layer = |origin, name: &str, files: Vec<String>| {
+        (
+            Layer {
+                origin,
+                name: name.into(),
+                root: PathBuf::new(),
+            },
+            (files, false),
+        )
+    };
+    let wins: Vec<String> = (0..400).map(|i| format!("w{i:03}.dds")).collect();
+    let loses: Vec<String> = (0..10).map(|i| format!("l{i}.dds")).collect();
+    let parts = vec![
+        layer(3, "C", loses.clone()),
+        layer(2, "A", wins.iter().chain(&loses).cloned().collect()),
+        layer(1, "B", wins.clone()),
+    ];
+    let map = ConflictMap::build_from(&parts);
+
+    let found = contested(&app, &map, 2);
+    assert_eq!((found.won, found.lost), (400, 10));
+    // Every loss is kept, and the wins stop at the cap, in map order.
+    let lost: Vec<_> = found.rows.iter().filter(|(_, w)| !w).collect();
+    assert_eq!(lost.len(), 10);
+    let won: Vec<_> = found
+        .rows
+        .iter()
+        .filter(|(_, w)| *w)
+        .map(|(k, _)| k)
+        .collect();
+    assert_eq!(won.len(), 300);
+    assert_eq!(won[0], "w000.dds");
+    assert_eq!(won[299], "w299.dds");
+
+    // Same map, same mod: the memo, not a second scan.
+    assert!(std::rc::Rc::ptr_eq(&found, &contested(&app, &map, 2)));
+    // Another mod, or a rebuilt map with the same files, scans again.
+    assert!(!std::rc::Rc::ptr_eq(&found, &contested(&app, &map, 1)));
+    let rebuilt = ConflictMap::build_from(&parts);
+    assert_ne!(rebuilt.stamp, map.stamp);
+    let again = contested(&app, &rebuilt, 2);
+    assert!(!std::rc::Rc::ptr_eq(&found, &again));
+    assert_eq!(again.rows, found.rows);
+
+    // A hand-built map has no stamp and is never cached.
+    let hand = ConflictMap::default();
+    let a = contested(&app, &hand, 2);
+    assert!(!std::rc::Rc::ptr_eq(&a, &contested(&app, &hand, 2)));
+}

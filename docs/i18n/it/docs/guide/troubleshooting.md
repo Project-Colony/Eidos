@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
 
 # Risoluzione dei problemi e diagnostica
 
@@ -82,11 +82,26 @@ con sé (loader ENB/ReShade/`.asi`).
 
 ### L'indice degli strati è davvero in uso?
 
-L'indice è tutto o niente e viene costruito in silenzio: `LayerStack::new` ottiene o
-una mappa completa degli strati in sola lettura o `None`, dopodiché ogni
-interrogazione li percorre esattamente come prima. Nulla in un log di sessione
-distingue i due casi, quindi uno stack che è silenziosamente ricaduto sul percorso
-appare identico a uno che funziona - pagando però il vecchio costo.
+`LayerStack::new` costruisce una mappa completa degli strati in sola lettura
+oppure nessuna. Senza mappa, ogni interrogazione percorre gli strati come prima:
+le risposte sono le stesse, caricare un salvataggio richiede circa tre volte il
+tempo e nient'altro appare diverso.
+
+Quando l'indice è spento, il mount ne dice il motivo, una volta, all'avvio:
+
+```
+eidos-fuse: layer index off (<reason>); every lookup walks all layers
+```
+
+Il motivo indica una directory illeggibile, uno strato profondo più di 64
+directory, più di 4.000.000 di voci oppure `EIDOS_NO_INDEX`. La riga finisce nel
+log dell'esecuzione: il `logs/run-*.log` dell'istanza per un avvio dalla finestra,
+la console di Steam per un avvio da Steam. Con `EIDOS_FUSE_STATS=1`, il riepilogo
+allo smontaggio contiene anche una riga `layer index:`, e un contatore
+`unindexed` diverso da zero su un mount normale significa che l'indice era spento.
+
+Gli esempi qui sotto verificano la stessa cosa offline, sulle cartelle di
+un'istanza, senza mount:
 
 ```sh
 cargo run --release -p eidos-core --example index_health -- <mods-dir> <overwrite-dir>

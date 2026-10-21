@@ -69,6 +69,7 @@
 //!   u16  lightPluginCount         when pluginInfoSize says bytes remain
 //! ```
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
@@ -105,6 +106,11 @@ const COMPRESSED_WINDOW: u64 = 1024 * 1024;
 /// file, so a corrupt u32 must never turn into a multi-gigabyte allocation; the
 /// plugin table needs a few kilobytes at most.
 const DECOMPRESS_CAP: usize = 4 * 1024 * 1024;
+
+/// Decoded bytes tried first. Ten times the largest table measured on real saves
+/// (6,479 bytes for 238 plugins); a table that does not fit is re-read at
+/// `DECOMPRESS_CAP`, so this only sets how often the cheap pass is enough.
+const FIRST_PASS_CAP: usize = 64 * 1024;
 
 /// Seconds between the FILETIME epoch (1601-01-01) and the Unix epoch.
 const FILETIME_TO_UNIX_SECS: i64 = 11_644_473_600;
@@ -379,17 +385,36 @@ pub fn parse_save(path: &Path) -> Result<SaveInfo, SaveParseError> {
     }
     file.seek(SeekFrom::Start(payload_start))?;
 
-    let payload = read_payload(&mut file, info.compression)?;
+    let block = read_block(&mut file, info.compression)?;
+    // First pass over a short prefix. Measured on real saves the table ends by byte
+    // 3,784 (103 plugins) or 6,479 (238 plugins), while decoding the whole window
+    // inflated ~3 MB of LZ4 and took ~6.8 ms per selected save. A table that parses
+    // whole and untruncated from the prefix is the table: every byte either decoder
+    // emits is a byte of the real stream, so the full decode would only add bytes past
+    // its end. Anything else (an error, a cut light block) is parsed again from a
+    // fresh SaveInfo at the full cap, so a huge table or a half-written save gets
+    // exactly the old answer and nothing from the first attempt leaks into it.
+    let first = decode_prefix(&block, info.compression, FIRST_PASS_CAP)
+        .ok()
+        .and_then(|payload| {
+            let mut first = info.clone();
+            read_plugin_table(&payload, &mut first).ok()?;
+            (!first.truncated).then_some(first)
+        });
+    if let Some(first) = first {
+        return Ok(first);
+    }
+    let payload = decode_prefix(&block, info.compression, DECOMPRESS_CAP)?;
     read_plugin_table(&payload, &mut info)?;
     Ok(info)
 }
 
-/// Read and, if needed, decompress the front of the block that holds the plugin
-/// table. Deliberately a PREFIX: a real save's payload is tens of megabytes and the
-/// plugin table is the first thing in it, so both the input read and the
-/// decompressed output stop at a fixed cap. Everything downstream is written to
-/// cope with a payload that ends early.
-fn read_payload(
+/// Read the front of the block that holds the plugin table: the raw payload, or the
+/// compressed block for `decode_prefix`. Deliberately a PREFIX: a real save's payload
+/// is tens of megabytes and the plugin table is the first thing in it, so both the
+/// input read and the decompressed output stop at a fixed cap. Everything downstream
+/// is written to cope with a payload that ends early.
+fn read_block(
     file: &mut fs::File,
     compression: SaveCompression,
 ) -> Result<Vec<u8>, SaveParseError> {
@@ -415,22 +440,31 @@ fn read_payload(
     let want = u64::from(compressed_size).min(COMPRESSED_WINDOW);
     let mut compressed = Vec::new();
     file.by_ref().take(want).read_to_end(&mut compressed)?;
+    Ok(compressed)
+}
 
+/// Decode at most `limit` bytes of the payload out of what `read_block` returned. An
+/// uncompressed block is borrowed, cut to `limit`.
+fn decode_prefix(
+    block: &[u8],
+    compression: SaveCompression,
+    limit: usize,
+) -> Result<Cow<'_, [u8]>, SaveParseError> {
     // Both decoders keep whatever they produced before hitting a fault or the end of
     // a short input, which is what lets a half-written save still yield its table.
     // Their success flag is deliberately ignored here: stopping early is the normal
-    // case (we asked for a prefix), and the plugin-table reader below is what decides
+    // case (we asked for a prefix), and the plugin-table reader is what decides
     // whether what came out is usable.
     let mut out = Vec::new();
     let _fully_decoded = match compression {
-        SaveCompression::Lz4 => lz4_block_decompress(&compressed, DECOMPRESS_CAP, &mut out),
-        SaveCompression::Zlib => inflate_prefix(&compressed, DECOMPRESS_CAP, &mut out),
-        SaveCompression::None => true,
+        SaveCompression::None => return Ok(Cow::Borrowed(&block[..block.len().min(limit)])),
+        SaveCompression::Lz4 => lz4_block_decompress(block, limit, &mut out),
+        SaveCompression::Zlib => inflate_prefix(block, limit, &mut out),
     };
     if out.is_empty() {
         return Err(SaveParseError::Corrupt("compressed block did not decode"));
     }
-    Ok(out)
+    Ok(Cow::Owned(out))
 }
 
 /// Fill `buf` from `file`, tolerating short reads. Returns how many bytes landed.
@@ -1434,6 +1468,27 @@ mod tests {
             "a pre-78 save has no ESL block to be short of"
         );
         let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn a_table_past_the_first_pass_is_reparsed_whole_from_a_fresh_info() {
+        // About 40 KB of normal names, then 40 KB of ESLs: the short first pass reads
+        // the whole normal table and cuts the light block, flagging the save
+        // truncated. The full-cap retry must start over, or the flag (and nothing
+        // else) would survive into a save that is actually complete.
+        let long = |prefix: &str, i: usize| format!("{prefix}{i:03}{}.esp", "x".repeat(390));
+        for compression in [0u16, 1, 2] {
+            let mut b = Build::new();
+            b.compression = compression;
+            b.plugins = (0..100).map(|i| long("Normal", i)).collect();
+            b.light = (0..100).map(|i| long("Light", i)).collect();
+            let p = b.write();
+            let info = parse_save(&p).unwrap();
+            assert_eq!(info.plugins, b.plugins, "compression {compression}");
+            assert_eq!(info.light_plugins, b.light, "compression {compression}");
+            assert!(!info.truncated, "compression {compression}");
+            let _ = fs::remove_file(&p);
+        }
     }
 
     #[test]

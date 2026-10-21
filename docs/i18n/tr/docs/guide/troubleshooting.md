@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
 
 # Sorun giderme ve tanılama
 
@@ -85,11 +85,26 @@ olmaya zorlar ve bunu bir modun getirdiği DLL geçersiz kılmalarıyla birleşt
 
 ### Katman indeksi gerçekten kullanılıyor mu?
 
-İndeks ya hep ya hiçtir ve sessizce kurulur: `LayerStack::new` ya salt okunur
-katmanların eksiksiz bir haritasını alır ya da `None`; ardından her sorgu onları
-tam eskisi gibi dolaşır. Oturum günlüğünde ikisini ayırt eden hiçbir şey yoktur,
-dolayısıyla sessizce geri düşmüş bir yığın, çalışan biriyle birebir aynı görünür
-- üstelik eski bedeli öderken.
+`LayerStack::new` salt okunur katmanların ya eksiksiz bir haritasını kurar
+ya da hiç kurmaz. Harita yoksa her sorgu katmanları eskisi gibi dolaşır: yanıtlar
+aynıdır, bir kaydın yüklenmesi yaklaşık üç kat uzun sürer ve başka hiçbir şey
+farklı görünmez.
+
+İndeks kapalıyken bağlama, başlangıçta bir kez nedenini yazar:
+
+```
+eidos-fuse: layer index off (<reason>); every lookup walks all layers
+```
+
+Neden; okunamayan bir dizini, 64 dizinden derin bir katmanı, 4.000.000'dan fazla
+girdiyi ya da `EIDOS_NO_INDEX`'i adlandırır. Satır çalıştırmanın günlüğüne gider:
+pencereden başlatmada örneğin `logs/run-*.log` dosyasına, Steam'den başlatmada
+Steam konsoluna. `EIDOS_FUSE_STATS=1` ile ayırma sırasındaki dökümde bir
+`layer index:` satırı da bulunur; normal bir bağlamada `unindexed` sayacının sıfır
+olmaması, indeksin kapalı olduğu anlamına gelir.
+
+Aşağıdaki örnekler aynı şeyi çevrimdışı, bir örneğin klasörleri üzerinde,
+bağlama yapmadan denetler:
 
 ```sh
 cargo run --release -p eidos-core --example index_health -- <mods-dir> <overwrite-dir>

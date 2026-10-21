@@ -57,6 +57,7 @@ impl Filesystem for Eidos {
             let (stats, inodes) = (&self.stats, &self.inodes);
             let path_of = |ino: u64| inodes.lock_recover().path(ino);
             eprintln!("{}", stats.report(self.stack.resolve_stats(), &path_of));
+            eprintln!("{}", self.table_sizes());
         }
     }
 
@@ -104,6 +105,20 @@ impl Filesystem for Eidos {
         // traffic the extra event loops were added to absorb - measured: the
         // threads buy nothing until this is negotiated.
         let _ = config.add_capabilities(InitFlags::FUSE_PARALLEL_DIROPS);
+        // Without this the kernel clears SB_NOSEC on a FUSE mount, so every
+        // write(2) and truncate first asks GETXATTR `security.capability` to
+        // learn whether it must strip privileges: one more synchronous round
+        // trip per write, about 170k in a BodySlide batch. KILLPRIV_V2 sets
+        // SB_NOSEC, and an inode then skips the probe after its first write
+        // until its attributes are next refreshed. Best-effort, no capability
+        // needed.
+        //
+        // V2 hands the clearing of suid/sgid to the server (FUSE_WRITE_KILL_SUIDGID,
+        // FATTR_KILL_SUIDGID, FUSE_OPEN_KILL_SUIDGID), and this daemon ignores
+        // those flags. That is acceptable here: an unprivileged FUSE mount is
+        // forced nosuid, and the user namespace maps a single uid, so a suid bit
+        // on this mount can never raise anyone's privilege.
+        let _ = config.add_capabilities(InitFlags::FUSE_HANDLE_KILLPRIV_V2);
         let _ = config.set_max_readahead(1 << 20);
         let _ = config.set_max_write(1 << 20);
 
@@ -115,6 +130,14 @@ impl Filesystem for Eidos {
         // soft limit to the hard limit; best-effort, since a failure here only
         // returns us to the status quo.
         raise_fd_limit();
+
+        // Said once per mount, here and not where the index is built: the GUI
+        // builds throwaway stacks by the dozen, and only a mount pays for the
+        // fallback - about three times the indexed save-load time, with nothing
+        // else in the log to show it.
+        if let Some(why) = self.stack.index_declined() {
+            eprintln!("eidos-fuse: layer index off ({why}); every lookup walks all layers");
+        }
         Ok(())
     }
 
@@ -274,6 +297,7 @@ impl Filesystem for Eidos {
         _flush: bool,
         reply: ReplyEmpty,
     ) {
+        let _t = self.stats.release.start();
         // Drops the cached fd and any passthrough registration (no-op for fh 0).
         self.open_files.lock_recover().remove(&fh.0);
         match self.flush_projected_times() {
@@ -357,6 +381,7 @@ impl Filesystem for Eidos {
     }
 
     fn readlink(&self, _req: &Request, ino: INodeNo, reply: ReplyData) {
+        let _t = self.stats.readlink.start();
         let vpath = match self.inodes.lock_recover().path(ino.0) {
             Some(p) => p,
             None => {
@@ -573,12 +598,20 @@ impl Filesystem for Eidos {
             }
             sent += 1;
         }
-        // The buffer was not filled, so this chunk carried the tail: the walk is
-        // over and the pin can go. A caller that abandons one mid-way leaves an
-        // entry behind, which the next `offset == 0` on that inode replaces - the
-        // map is bounded by the number of directories, not by walks.
-        if !full {
-            let _ = sent;
+        // The walk is over only on the reply that sent NOTHING. The kernel marks
+        // EOF (and completes its readdir cache) on an empty reply, so a chunk that
+        // carried the tail is always followed by one more request at offset ==
+        // len. Dropping the pin on the tail chunk made that request rebuild the
+        // whole listing to send zero entries (every stored session showed exactly
+        // 50% "cached" listings, which was this and nothing else), and if the
+        // directory had grown in between, the rebuilt list sent entries the walk
+        // had already seen.
+        //
+        // A caller that abandons a walk, including one that reads the tail and
+        // never asks for EOF, leaves an entry behind, which the next
+        // `offset == 0` on that inode replaces - the map is bounded by the number
+        // of directories, not by walks.
+        if !full && sent == 0 {
             self.enumerations.lock_recover().remove(&ino.0);
         }
         reply.ok();
@@ -614,6 +647,7 @@ impl Filesystem for Eidos {
         _flags: i32,
         reply: ReplyCreate,
     ) {
+        let _t = self.stats.create.start();
         let Some(parent_vpath) = self.inodes.lock_recover().path(parent.0) else {
             reply.error(Errno::ENOENT);
             return;
@@ -746,6 +780,7 @@ impl Filesystem for Eidos {
         _umask: u32,
         reply: ReplyEntry,
     ) {
+        let _t = self.stats.mkdir.start();
         let Some(parent_vpath) = self.inodes.lock_recover().path(parent.0) else {
             reply.error(Errno::ENOENT);
             return;
@@ -771,6 +806,7 @@ impl Filesystem for Eidos {
         target: &Path,
         reply: ReplyEntry,
     ) {
+        let _t = self.stats.symlink.start();
         let Some(parent_vpath) = self.inodes.lock_recover().path(parent.0) else {
             reply.error(Errno::ENOENT);
             return;
@@ -810,6 +846,7 @@ impl Filesystem for Eidos {
         _flags: Option<BsdFileFlags>,
         reply: ReplyAttr,
     ) {
+        let _t = self.stats.setattr.start();
         let vpath = match self.inodes.lock_recover().path(ino.0) {
             Some(p) => p,
             None => {
@@ -890,6 +927,22 @@ impl Filesystem for Eidos {
         _lock: LockOwner,
         reply: ReplyEmpty,
     ) {
+        let _t = self.stats.flush.start();
+        // Without a timestamp projection there is nothing to do here, and the
+        // kernel sends FLUSH synchronously from EVERY close(2), dups included:
+        // one stored game session paid about 9.5k of these round trips, a
+        // BodySlide batch about 85k. ENOSYS is deliberate: the kernel treats it
+        // as success and sets `no_flush` for this connection, so close() stops
+        // waiting on us. It is safe because writeback cache is off (writes are
+        // already synchronous WRITEs, and the kernel still syncs dirty mmap
+        // pages before it checks `no_flush`) and no lock handlers are
+        // negotiated, so FLUSH carries no lock-owner duty. The projection is
+        // fixed before the mount, so the latch can never be wrong for it.
+        // Revisit if POSIX locks or FUSE_WRITEBACK_CACHE are ever added.
+        if self.plugin_timestamps.is_none() {
+            reply.error(Errno::ENOSYS);
+            return;
+        }
         match self.flush_projected_times() {
             Ok(()) => reply.ok(),
             Err(e) => reply.error(e.into()),
@@ -904,6 +957,7 @@ impl Filesystem for Eidos {
         _datasync: bool,
         reply: ReplyEmpty,
     ) {
+        let _t = self.stats.fsync.start();
         // Make saves durable: flush the backing fd if this handle has one.
         let cached = self
             .open_files
@@ -918,6 +972,7 @@ impl Filesystem for Eidos {
     }
 
     fn unlink(&self, _req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEmpty) {
+        let _t = self.stats.unlink.start();
         let Some(vpath) = self.child(parent, name) else {
             reply.error(Errno::ENOENT);
             return;
@@ -942,6 +997,7 @@ impl Filesystem for Eidos {
     }
 
     fn rmdir(&self, _req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEmpty) {
+        let _t = self.stats.rmdir.start();
         let Some(vpath) = self.child(parent, name) else {
             reply.error(Errno::ENOENT);
             return;
@@ -977,6 +1033,7 @@ impl Filesystem for Eidos {
         flags: RenameFlags,
         reply: ReplyEmpty,
     ) {
+        let _t = self.stats.rename.start();
         let (Some(from), Some(to)) = (self.child(parent, name), self.child(newparent, newname))
         else {
             reply.error(Errno::ENOENT);
@@ -1046,6 +1103,10 @@ impl Filesystem for Eidos {
     }
 
     fn getxattr(&self, _req: &Request, ino: INodeNo, name: &OsStr, size: u32, reply: ReplyXattr) {
+        let _t = self.stats.getxattr.start();
+        if name.as_bytes().starts_with(b"security.") {
+            Stats::bump(&self.stats.getxattr_security);
+        }
         let Some(vpath) = self.inodes.lock_recover().path(ino.0) else {
             reply.error(Errno::ENOENT);
             return;
@@ -1054,7 +1115,11 @@ impl Filesystem for Eidos {
             reply.error(Errno::ENOENT);
             return;
         };
-        match xattr_get(&real, name) {
+        let got = xattr_get(&real, name);
+        if got.is_ok() {
+            Stats::bump(&self.stats.getxattr_found);
+        }
+        match got {
             // Two-phase: size 0 = probe the length; otherwise return the bytes.
             Ok(val) if size == 0 => reply.size(val.len() as u32),
             Ok(val) if val.len() as u32 <= size => reply.data(&val),
@@ -1073,6 +1138,7 @@ impl Filesystem for Eidos {
         _position: u32,
         reply: ReplyEmpty,
     ) {
+        let _t = self.stats.setxattr.start();
         // Wine stores Windows attributes (hidden/system/readonly) in
         // user.DOSATTRIB; proxy the write to the copied-up backing file.
         let Some(vpath) = self.inodes.lock_recover().path(ino.0) else {
@@ -1098,6 +1164,7 @@ impl Filesystem for Eidos {
     }
 
     fn listxattr(&self, _req: &Request, ino: INodeNo, size: u32, reply: ReplyXattr) {
+        let _t = self.stats.listxattr.start();
         let Some(vpath) = self.inodes.lock_recover().path(ino.0) else {
             reply.error(Errno::ENOENT);
             return;
@@ -1115,6 +1182,7 @@ impl Filesystem for Eidos {
     }
 
     fn removexattr(&self, _req: &Request, ino: INodeNo, name: &OsStr, reply: ReplyEmpty) {
+        let _t = self.stats.removexattr.start();
         let Some(vpath) = self.inodes.lock_recover().path(ino.0) else {
             reply.error(Errno::ENOENT);
             return;
@@ -1139,6 +1207,7 @@ impl Filesystem for Eidos {
     // casts are no-ops here but keep the conversion correct on 32-bit targets.
     #[allow(clippy::unnecessary_cast)]
     fn statfs(&self, _req: &Request, _ino: INodeNo, reply: ReplyStatfs) {
+        let _t = self.stats.statfs.start();
         match statvfs_of(self.stack.overwrite_root()) {
             Ok(s) => reply.statfs(
                 s.f_blocks as u64,

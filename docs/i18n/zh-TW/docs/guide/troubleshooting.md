@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=bff43d2b4d067019782d6480125d0784a8421649 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
 
 # 疑難排解與診斷
 
@@ -73,10 +73,23 @@ Eidos 會把自己隨附的那份部署進前綴、強制它以原生方式載�
 
 ### 層索引真的有在用嗎?
 
-這個索引要嘛全有要嘛全無,而且是靜悄悄建起來的:`LayerStack::new` 拿到的不是唯讀
-各層的完整對照表,就是 `None`,之後每一次查詢都跟以前一樣逐層走過。工作階段日誌裡
-沒有任何東西能分辨這兩者,所以一個默默退回舊路的堆疊,看起來跟正常運作的一模一樣
-- 只是照舊付出以前那份成本。
+`LayerStack::new` 要嘛為唯讀各層建出完整對照表,要嘛一個也不建。沒有對照表時,
+每一次查詢都跟以前一樣逐層走過:答案相同,讀一次存檔大約要三倍的時間,其他地方看不
+出任何差別。
+
+索引關閉時,掛載會在啟動時說明一次原因:
+
+```
+eidos-fuse: layer index off (<reason>); every lookup walks all layers
+```
+
+原因會指出一個無法讀取的目錄、一個超過 64 層目錄深的層、超過 4,000,000 筆項目,
+或 `EIDOS_NO_INDEX`。這一行寫進這次執行的日誌:從視窗啟動時是實例的
+`logs/run-*.log`,從 Steam 啟動時是 Steam 的主控台。設定 `EIDOS_FUSE_STATS=1` 後,
+卸載時的輸出裡還有一行 `layer index:`,一般掛載上 `unindexed` 不為零,就表示索引
+當時是關閉的。
+
+下面的範例離線檢查同一件事,針對實例的資料夾,不需要掛載:
 
 ```sh
 cargo run --release -p eidos-core --example index_health -- <mods-dir> <overwrite-dir>

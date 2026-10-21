@@ -243,7 +243,14 @@ fn switching_instance_drops_the_previous_games_merged_view() {
     );
     app.files_cache
         .borrow_mut()
-        .insert("OldMod".into(), (vec!["a.esp".into()], false));
+        .insert("OldMod".into(), (vec!["a.esp".into()], false).into());
+    // The walks are keyed by layer name with no instance in the key, so the
+    // old instance's game layer answers for the new one's unless it is gone
+    // BEFORE the new conflict map is built.
+    app.files_cache.borrow_mut().insert(
+        "[stellarblade]".into(),
+        (vec!["stale.esp".into()], false).into(),
+    );
     app.data_expanded.insert("meshes".to_string());
 
     let _ = update(&mut app, Message::Finish);
@@ -258,8 +265,20 @@ fn switching_instance_drops_the_previous_games_merged_view() {
         "a directory listing survived the switch"
     );
     assert!(
-        app.files_cache.borrow().is_empty(),
+        !app.files_cache.borrow().contains_key("OldMod"),
         "a mod's file list survived the switch"
+    );
+    assert!(
+        app.conflicts
+            .as_ref()
+            .is_some_and(|c| !c.files.contains_key("stale.esp")),
+        "the new map was built from the old instance's walk"
+    );
+    // And the walks the new map was just built from are kept, or the first
+    // toggle walks every layer again on the UI thread.
+    assert!(
+        app.files_cache.borrow().contains_key("[stellarblade]"),
+        "the fresh walk was thrown away"
     );
     assert!(
         app.data_expanded.is_empty(),
@@ -1971,6 +1990,80 @@ fn deleting_from_the_filetree_takes_two_clicks() {
         Message::ConfirmFiletreeDelete("Armour".to_string(), "Meshes/a.nif".to_string()),
     );
     assert!(!modd.join("Meshes").join("a.nif").exists());
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// The View button no longer resolves its path while the row is drawn, so the
+/// symlink refusal has to happen on the click instead, before anything reads.
+#[test]
+fn a_filetree_preview_is_resolved_on_the_click_and_refuses_a_symlink() {
+    let root = temp_portable("skyrimse");
+    let modd = root.join("mods").join("Armour");
+    let outside = root.join("elsewhere");
+    fs::create_dir_all(modd.join("Meshes")).unwrap();
+    fs::create_dir_all(&outside).unwrap();
+    fs::write(modd.join("Meshes").join("a.nif"), b"a").unwrap();
+    fs::write(outside.join("secret.txt"), b"not ours").unwrap();
+    std::os::unix::fs::symlink(&outside, modd.join("Away")).unwrap();
+    let mut app = app_for_game("skyrimse");
+    app.mods = vec![ModEntry {
+        name: "Armour".to_string(),
+        enabled: true,
+        path: modd.clone(),
+        unmanaged: false,
+    }];
+    app.screen = Screen::Main;
+
+    let _ = update_inner(
+        &mut app,
+        Message::FiletreePreview(0, "Away/secret.txt".to_string()),
+    );
+    assert!(app.error.is_some(), "a path through a link is refused");
+    assert!(app.preview_pending.is_none() && app.preview.is_none());
+
+    app.error = None;
+    let _ = update_inner(
+        &mut app,
+        Message::FiletreePreview(0, "Meshes/a.nif".to_string()),
+    );
+    assert!(app.error.is_none(), "{:?}", app.error);
+    assert!(
+        app.preview_pending.is_some(),
+        "a real file inside starts a preview"
+    );
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_filetree_delete_rewalks_only_the_mod_it_changed() {
+    // It dropped every mod's walk, so the conflict map after one delete
+    // re-read every enabled mod on the UI thread.
+    let (mut app, root) = list_app(&["Armour", "Other"]);
+    let modd = root.join("mods").join("Armour");
+    fs::create_dir_all(modd.join("Meshes")).unwrap();
+    fs::write(modd.join("Meshes").join("a.nif"), b"a").unwrap();
+    // A sentinel only an unwalked cache entry still holds.
+    app.files_cache
+        .borrow_mut()
+        .insert("Other".into(), (vec!["cached.esp".into()], false).into());
+    let _ = update_inner(
+        &mut app,
+        Message::ConfirmFiletreeDelete("Armour".to_string(), "Meshes/a.nif".to_string()),
+    );
+    assert!(!modd.join("Meshes").join("a.nif").exists());
+    let cache = app.files_cache.borrow();
+    assert_eq!(
+        cache.get("Other").map(|walk| walk.0.clone()),
+        Some(vec!["cached.esp".to_string()]),
+        "an untouched mod was walked again"
+    );
+    assert!(
+        cache
+            .get("Armour")
+            .is_some_and(|walk| !walk.0.iter().any(|p| p.ends_with("a.nif"))),
+        "the changed mod still lists the deleted file"
+    );
+    drop(cache);
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -3840,6 +3933,23 @@ fn the_window_keeps_receiving_frames_while_an_archive_extracts() {
     assert!(anim::needs_frames(&app));
 }
 
+/// A job alone shows a whole-number percentage, so it is polled at 10 Hz
+/// rather than at the animation rate: every tick rebuilds the whole window
+/// behind the modal. Something that moves gets its 60 Hz back, job or not.
+#[test]
+fn a_job_alone_is_polled_at_ten_hertz_and_an_animation_restores_sixty() {
+    use std::time::Duration;
+    let mut app = nav_app(&[]);
+    app.ui_prefs.standard.animations = true;
+    app.ui_prefs.standard.reduce_motion = false;
+    app.install_job = Some(fake_job(None));
+    assert!(!anim::animating(&app));
+    assert_eq!(anim::frame_period(&app), Duration::from_millis(100));
+    app.status_anim.start();
+    assert!(anim::needs_frames(&app));
+    assert_eq!(anim::frame_period(&app), Duration::from_millis(16));
+}
+
 /// A pack or unpack with no worker behind it. `outcome` decides whether it
 /// reads as finished, so the whole state machine can be driven without
 /// 7-Zip, which CI does not have.
@@ -4049,7 +4159,8 @@ fn collision_backup_choice_preserves_payload_metadata_and_disabled_state() {
         let _ = update_inner(&mut app, Message::CollisionBackupChanged(true));
         assert!(app.prefs.retain_install_backup);
         assert!(eidos_instance::Settings::parse(&app.prefs.to_ini()).retain_install_backup);
-        let _ = update_inner(
+        // The copy runs on a worker now; drive its task to the `Placed`.
+        let task = update_inner(
             &mut app,
             if merge {
                 Message::CollisionMerge
@@ -4057,6 +4168,9 @@ fn collision_backup_choice_preserves_payload_metadata_and_disabled_state() {
                 Message::CollisionReplace
             },
         );
+        assert!(app.place_job.is_some(), "the copy left the window's thread");
+        crate::installers::tests::drive(&mut app, task);
+        assert!(app.place_job.is_none());
         assert_eq!(
             fs::read(root.join("mods/Existing/chosen.esp")).unwrap(),
             b"new payload",
@@ -4113,6 +4227,140 @@ fn nothing_else_starts_while_a_transfer_runs() {
     let _ = update_inner(&mut app, Message::DrainDrops);
     assert_eq!(app.dropped.len(), 1, "the drop waits its turn");
     assert!(app.install_job.is_none());
+}
+
+/// A copy step's worker holds the instance lock, so a queued drop must wait
+/// for its `Placed` rather than start an install the lock would refuse; and a
+/// `Placed` for another job is not this one's answer.
+#[test]
+fn a_queued_drop_waits_for_a_copy_step_and_its_own_answer() {
+    let mut app = nav_app(&[]);
+    let outcome = std::sync::Arc::new(std::sync::Mutex::new(Some((
+        Err("refused".to_string()),
+        crate::Restore::Nothing,
+    ))));
+    app.place_job = Some(crate::PlaceJob {
+        id: 7,
+        name: "Big Textures".into(),
+        target: CollectionTarget {
+            instance: PathBuf::from("/tmp/eidos-gui-test-nowhere"),
+            profile: "Default".into(),
+            installation: String::new(),
+        },
+        archive: PathBuf::from("/tmp/Big Textures.7z"),
+        choice: None,
+        outcome,
+    });
+    app.dropped = vec![PathBuf::from("/tmp/a.7z")];
+    let _ = update_inner(&mut app, Message::DrainDrops);
+    assert_eq!(app.dropped.len(), 1, "the drop waits its turn");
+    assert!(app.install_job.is_none());
+
+    let _ = update_inner(&mut app, Message::Placed(8));
+    assert!(app.place_job.is_some(), "another job's answer");
+    let _ = update_inner(&mut app, Message::Placed(7));
+    assert!(app.place_job.is_none());
+    assert_eq!(app.status.as_deref(), Some("refused"));
+}
+
+/// A Merge that stops halfway leaves the live mod's meta.ini with its
+/// checkpoint warning. Diagnostics read the cached row, so a failed `Placed`
+/// has to drop it, or the Health card stays hidden until F5.
+#[test]
+fn a_failed_copy_step_refreshes_the_target_row() {
+    let root = temp_portable("skyrimse");
+    let mut app = app_for_game("skyrimse");
+    let inst = Instance::portable(root.clone());
+    inst.create().unwrap();
+    fs::create_dir_all(inst.mods_dir().join("SkyUI")).unwrap();
+    app.created = Some(inst.clone());
+    app.mods = mods(&["SkyUI"]);
+    app.screen = Screen::Main;
+    crate::state::refresh_meta_cache(&mut app);
+    assert!(app.meta_cache["SkyUI"].install_warning.is_none());
+
+    let mut meta = eidos_instance::ModMeta::default();
+    meta.set_install_warning("Merge did not complete; installed content is unverified.");
+    meta.write(&inst.mods_dir().join("SkyUI").join("meta.ini"))
+        .unwrap();
+    let outcome = std::sync::Arc::new(std::sync::Mutex::new(Some((
+        Err("Install failed: no space left".to_string()),
+        crate::Restore::Nothing,
+    ))));
+    app.place_job = Some(crate::PlaceJob {
+        id: 3,
+        name: "SkyUI".into(),
+        target: update::collection_target(&app).unwrap(),
+        archive: root.join("SkyUI.7z"),
+        choice: None,
+        outcome,
+    });
+    let _ = update_inner(&mut app, Message::Placed(3));
+    assert!(app.place_job.is_none());
+    assert!(
+        app.meta_cache["SkyUI"].install_warning.is_some(),
+        "the half-merged mod's warning reaches the row Health reads"
+    );
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// An update check that fails midway has already rewritten the meta.ini of
+/// the mods before the failure, so the count must come back from disk.
+#[test]
+fn a_failed_update_check_still_recounts_updates() {
+    let root = temp_portable("skyrimse");
+    let mut app = app_for_game("skyrimse");
+    let inst = Instance::portable(root.clone());
+    inst.create().unwrap();
+    fs::create_dir_all(inst.mods_dir().join("a")).unwrap();
+    app.created = Some(inst.clone());
+    app.mods = mods(&["a"]);
+    app.screen = Screen::Main;
+    crate::state::refresh_meta_cache(&mut app);
+    crate::state::recompute_counts(&mut app);
+    assert_eq!(app.updated_count, 0);
+
+    fs::write(
+        inst.mods_dir().join("a").join("meta.ini"),
+        "[General]\nversion=1.0\nnewestVersion=2.0\n",
+    )
+    .unwrap();
+    app.update_in_progress = true;
+    let _ = update_inner(&mut app, Message::UpdatesChecked(Err("lock held".into())));
+    assert_eq!(
+        app.updated_count, 1,
+        "the mod rewritten before the failure counts"
+    );
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// A copy step that panics still answers. `unblock` would otherwise re-raise
+/// the panic in a task the executor drops, no `Placed` would come back, and
+/// the modal (which has no dismiss) would stay up for the session.
+#[test]
+fn a_panicking_copy_step_still_closes_its_modal() {
+    let (mut app, root) = collection_app(&[], &[]);
+    let target = update::collection_target(&app).unwrap();
+    let task = crate::modinfo::place_on_worker(
+        &mut app,
+        target,
+        "Odd Archive".into(),
+        root.join("odd.7z"),
+        None,
+        |_| panic!("synthetic copy-step panic"),
+    );
+    assert!(app.place_job.is_some());
+    crate::installers::tests::drive(&mut app, task);
+    assert!(app.place_job.is_none(), "the modal closed");
+    assert!(
+        app.status
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Odd Archive"),
+        "{:?}",
+        app.status
+    );
+    fs::remove_dir_all(root).unwrap();
 }
 
 /// Polling before the worker is done must leave the job alone - taking the
@@ -4231,6 +4479,45 @@ fn an_empty_mod_can_be_created_at_a_position() {
         "everything after it shifted, not got overwritten"
     );
     assert!(app.selected_mods.is_empty(), "stale indices are dropped");
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_toolbar_separator_card_opens_at_the_click_not_at_an_old_menu() {
+    let root = temp_portable("skyrimse");
+    let mut app = app_for_game("skyrimse");
+    let inst = Instance::portable(root.clone());
+    inst.create().unwrap();
+    app.created = Some(inst);
+    app.mods = mods(&["a", "b"]);
+    let mut list = PluginList::default();
+    list.plugins.push(plugin_row("A.esp", "a"));
+    app.plugins = Some(list);
+    app.screen = Screen::Main;
+    let old = iced::Point::new(900.0, 300.0);
+    let click = iced::Point::new(40.0, 20.0);
+
+    // A plugin menu dismissed by an outside click leaves its anchor behind.
+    let _ = update_inner(&mut app, Message::PointerAt(old));
+    let _ = update_inner(&mut app, Message::OpenPluginMenu(0));
+    let _ = update_inner(&mut app, Message::ClosePluginMenu);
+    let _ = update_inner(&mut app, Message::PointerAt(click));
+    let _ = update_inner(&mut app, Message::AddSeparator(0));
+    assert!(app.rename.is_some(), "the separator was created");
+    assert_eq!(
+        app.menu_at,
+        Some(click),
+        "the card opens at the toolbar click"
+    );
+
+    // From a mod's context menu the card keeps that menu's frozen anchor.
+    let _ = update_inner(&mut app, Message::CloseMenu);
+    let _ = update_inner(&mut app, Message::PointerAt(old));
+    let _ = update_inner(&mut app, Message::OpenModMenu(1));
+    let _ = update_inner(&mut app, Message::PointerAt(click));
+    let _ = update_inner(&mut app, Message::CreateEmptyModAt(1));
+    assert!(app.rename.is_some(), "the mod was created");
+    assert_eq!(app.menu_at, Some(old), "the menu's own anchor is kept");
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -5280,6 +5567,38 @@ fn a_run_with_an_explicit_log_writes_its_header_and_exit_there() {
     assert!(text.starts_with("# eidos: running"), "{text}");
     assert!(text.contains("exited with code 0"), "{text}");
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_game_exit_rewalks_only_the_overwrite_and_a_tool_exit_everything() {
+    // A game under `eidos play` writes only into the Overwrite, so re-walking
+    // every mod after it froze the window for nothing. A tool can write into
+    // a mod folder, so its exit still drops every walk.
+    for game in [true, false] {
+        let (mut app, root) = list_app(&["Keep"]);
+        start_run(
+            &mut app,
+            "Skyrim".into(),
+            std::process::Command::new("/bin/true"),
+        );
+        app.running.as_mut().unwrap().game = game;
+        {
+            let mut cache = app.files_cache.borrow_mut();
+            cache.insert("Keep".into(), (vec!["kept.esp".into()], false).into());
+            cache.insert("Overwrite".into(), (vec!["stale.esp".into()], false).into());
+        }
+        finish_tracked_run(&mut app);
+        let cache = app.files_cache.borrow();
+        let has = |layer: &str, file: &str| {
+            cache
+                .get(layer)
+                .is_some_and(|walk| walk.0.iter().any(|f| f == file))
+        };
+        assert!(!has("Overwrite", "stale.esp"), "game={game}");
+        assert_eq!(has("Keep", "kept.esp"), game, "game={game}");
+        drop(cache);
+        let _ = fs::remove_dir_all(root);
+    }
 }
 
 #[test]

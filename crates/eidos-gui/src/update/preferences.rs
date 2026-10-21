@@ -51,10 +51,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.nexus_signing_in = true;
             app.nexus_error = None;
             app.status = Some(t("status_nexus_opening_browser").to_string());
-            // The whole dance on a worker: browser hand-off, loopback listener,
-            // code exchange. Blocking calls inside the async closure, like the
-            // other network work here.
-            return Task::perform(async move { nexus_sign_in() }, Message::NexusSignInResult);
+            // The whole dance on smol's blocking pool: browser hand-off,
+            // loopback listener, code exchange. An `async` block would NOT be
+            // a worker: iced polls it on smol's single executor thread, and the
+            // listener waits up to five minutes for the browser, every timer
+            // and input subscription frozen behind it.
+            return Task::perform(smol::unblock(nexus_sign_in), Message::NexusSignInResult);
         }
         Message::NexusSignInResult(result) => {
             app.nexus_signing_in = false;

@@ -47,7 +47,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         // ---- profile management (rename / delete / named copy) --------------
         Message::ProfileMenuOpen(name) => {
             app.profile_menu = Some(name);
-            app.menu_at = Some(app.cursor);
+            app.menu_at = Some(crate::subscription::pointer(app));
             app.profile_rename = None;
             app.profile_copy = None;
             app.profile_delete_confirm = None;
@@ -224,10 +224,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     app.backups = None;
                     drop(_lock);
                     // Both lists are read from disk again: the restore changed
-                    // them underneath every cache the window holds.
+                    // them underneath every cache the window holds. No mod
+                    // folder changed, so the file walks stay; the views derived
+                    // from the list and the plugin order are recomputed.
                     reload_mods(app);
-                    refresh_after_tree_change(app);
-                    recompute_counts(app);
+                    mod_views_changed(app);
                 }
                 Err(e) => {
                     app.status = Some(tf(

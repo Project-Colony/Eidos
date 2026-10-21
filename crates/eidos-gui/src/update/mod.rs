@@ -255,7 +255,7 @@ fn pack_on_worker(
             // Clamped to its own maximum HERE rather than in the view. 7-Zip's
             // percentage is not monotonic and a pack makes two passes into one
             // archive, so the raw value climbs, resets and climbs again - and
-            // the view is asked to draw it sixty times a second.
+            // the view is asked to draw it ten times a second for minutes.
             percent.fetch_max(pct, Ordering::SeqCst);
         })
         .map_err(|e| e.to_string())?;
@@ -458,6 +458,7 @@ fn collection_on_worker(
         payload_root: dir.clone(),
         allow_runtime_mismatch: approved
             == Some(&eidos_collections::recipe::runtime_check(c, game)),
+        checked_archive: None,
         say: &mut say,
         collection_domain: c.info.domain_name.clone(),
         owner: format!("{}:{}:{}", state.game_domain, state.slug, state.revision),
@@ -955,9 +956,15 @@ pub(crate) fn update(app: &mut App, message: Message) -> Task<Message> {
     // Whether we were mid-drain BEFORE the message ran: a `DrainDrops` that
     // popped the last item must not re-arm itself off its own empty queue.
     let draining = !app.dropped.is_empty();
-    let task = update_inner(app, message);
-    schedule_archive_conflicts(app);
-    refresh_diagnostics(app);
+    // `EIDOS_GUI_TIMING`: the variant name is taken here, because the handler
+    // consumes the message (see `timing`).
+    let what = crate::timing::on().then(|| crate::timing::variant(&message));
+    let what = what.as_deref();
+    let task = crate::timing::time("update", what, || update_inner(app, message));
+    crate::timing::time("archive scheduling", what, || {
+        schedule_archive_conflicts(app)
+    });
+    crate::timing::time("diagnostics", what, || refresh_diagnostics(app));
     // A new status message fades in. Detected by comparison HERE rather than by
     // starting the phase at each assignment: `app.status` is written from about
     // a dozen places across `state.rs`, and "remember to also start the fade" is
@@ -981,6 +988,8 @@ pub(crate) fn update(app: &mut App, message: Message) -> Task<Message> {
         && app.collision.is_none()
         // Re-armed by the poll that finishes the job, not while it runs.
         && app.install_job.is_none()
+        // Likewise for a copy step, by its `Placed`.
+        && app.place_job.is_none()
         // And not while a pack is reading the instance: a queued drop would
         // install a mod into the very tree being archived, halfway through.
         && app.transfer_job.is_none()
@@ -1019,7 +1028,7 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         | Message::SavesTick
         | Message::LogRefresh
         // And the frame timer, for exactly the same reason and more sharply:
-        // it fires SIXTY times a second, so leaving it out would not merely
+        // it fires up to SIXTY times a second, so leaving it out would not merely
         // shorten a confirmation's life, it would end it before the finger
         // came back down.
         | Message::AnimationTick
@@ -1027,10 +1036,12 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         // Reached from that same tick, at the same rate, for the same reason.
         | Message::InstallPoll
         // And its twin for a pack or an unpack, which runs for twenty minutes -
-        // long enough that a confirmation disarmed sixty times a second would
+        // long enough that a confirmation disarmed ten times a second would
         // look like a window that had simply stopped working.
         | Message::TransferPoll
         | Message::PreviewReady(..)
+        // A worker's answer arriving, not a click.
+        | Message::Placed(..)
         | Message::ArchiveExportFinished(..)
         | Message::CollectionInstallChecked { .. }
         // And the hover-to-expand timer, which fires only while a drag rests on
@@ -1309,6 +1320,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::FomodNext
         | Message::FomodBack
         | Message::FomodInstall
+        | Message::Placed(..)
         | Message::FomodCancel
         | Message::CollisionBackupChanged(..)
         | Message::CollisionMerge
@@ -1366,6 +1378,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::PreviewDdsSelection(..)
         | Message::ClosePreview
         | Message::FiletreeOpen(..)
+        | Message::FiletreePreview(..)
         | Message::FiletreeRenameStart(..)
         | Message::FiletreeRenameChanged(..)
         | Message::FiletreeRenameCancel
@@ -1606,8 +1619,13 @@ fn nexus_category_of(inst: &eidos_instance::Instance, mod_name: &str) -> Option<
 /// second descriptor even to the process that already owns one, so a refresh
 /// inside a locked block deadlocks the handler against itself - which is
 /// exactly what happened, and what the flake in `a_backup_is_inert...` was.
-fn refresh_after_tree_change(app: &mut App) {
-    drop_files_cache(app, None);
+///
+/// `layer` names the one mod whose folder changed, so only its walk is redone:
+/// on a synthetic 250-mod, 90k-file tree the walk of every layer took 77 ms
+/// and one mod's 0.3 ms, for a rename that touched one folder. `None` when
+/// many folders may have moved.
+fn refresh_after_tree_change(app: &mut App, layer: Option<&str>) {
+    drop_files_cache(app, layer);
     invalidate_plugins(app);
     app.conflicts = compute_conflicts(app);
 }
@@ -1750,6 +1768,18 @@ pub(crate) fn open_instance(app: &mut App, inst: Instance) {
     app.error = None;
     app.screen = Screen::Main;
     load_tools(app);
+    // The merged-view caches too, which the list below kept missing: they are
+    // keyed by directory and validated against `view_generation`, so without a
+    // bump the Data tab answers every already-listed directory out of the
+    // PREVIOUS instance. Switching from Skyrim to a game with no mods at all
+    // still showed Skyrim's merged Data tree, provenance labels and all.
+    //
+    // BEFORE the conflict map, not after: the file walks are keyed by layer
+    // name with no instance in the key, and every instance has an "Overwrite"
+    // and may share mod names, so the map was built from the other instance's
+    // walks. Dropping them afterwards also threw away the walks just made, and
+    // the first toggle then walked every layer again on the UI thread.
+    drop_files_cache(app, None);
     app.conflicts = compute_conflicts(app);
     // BEFORE the refresh, not after: the cache is keyed by mod FOLDER NAME with
     // no instance in the key, so a name that exists in both instances counted
@@ -1771,13 +1801,7 @@ pub(crate) fn open_instance(app: &mut App, inst: Instance) {
     app.drag_state = None;
     app.menu_mod = None;
     app.collapsed = load_collapsed(app);
-    // The merged-view caches too, which the list above kept missing: they are
-    // keyed by directory and validated against `view_generation`, so without a
-    // bump the Data tab answers every already-listed directory out of the
-    // PREVIOUS instance. Switching from Skyrim to a game with no mods at all
-    // still showed Skyrim's merged Data tree, provenance labels and all.
-    drop_files_cache(app, None);
-    // And the tree's own navigation state, which names paths that need not
+    // And the Data tree's own navigation state, which names paths that need not
     // exist in this game at all.
     app.data_expanded.clear();
     recompute_counts(app);

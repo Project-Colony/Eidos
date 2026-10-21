@@ -346,7 +346,8 @@ impl ShaderSession {
     /// inputs, changed request membership, and changed generated output bytes.
     pub fn validate_sources(&self, cancel: &AtomicBool) -> io::Result<()> {
         cancelled(cancel)?;
-        let view = LayerStack::new(self.layers.clone(), self.overwrite.clone());
+        // Unindexed, like `prepare`'s view: a live walk is at least as current.
+        let view = LayerStack::new_unindexed(self.layers.clone(), self.overwrite.clone());
         if requests(&view)? != self.requests {
             return Err(invalid("Shader requests changed before launch"));
         }
@@ -431,7 +432,10 @@ pub fn prepare(
     cancel: &AtomicBool,
 ) -> io::Result<Option<ShaderSession>> {
     cancelled(cancel)?;
-    let view = LayerStack::new(layers.clone(), overwrite.clone());
+    // Unindexed: the view answers one `Shaders/OMOD` listing, its package
+    // listings and a lookup per source, on every Oblivion launch. An index
+    // would walk every file of every mod first to answer those few questions.
+    let view = LayerStack::new_unindexed(layers.clone(), overwrite.clone());
     let requests = requests(&view)?;
     if requests.is_empty() {
         return Ok(None);

@@ -119,13 +119,19 @@ pub(crate) struct DataRow {
 /// "cache" allocate proportionally to its own payload).
 pub(crate) type CachedListing = (u64, std::rc::Rc<Vec<String>>);
 
+/// One layer's cached file walk, as `eidos_conflicts::collect_files` returned
+/// it (see `App::files_cache`).
+pub(crate) type LayerWalk = std::sync::Arc<(Vec<String>, bool)>;
+
 /// The same for one directory of the Data tab's merged view.
 pub(crate) type CachedDataListing = (u64, std::rc::Rc<Vec<DataRow>>);
 
 /// The Data tab's union and its layer labels, with the generation they were
-/// built at (see [`view::data_stack`]).
+/// built at and whether the stack carries the lower index (see
+/// [`view::data_stack`]).
 pub(crate) type CachedDataStack = (
     u64,
+    bool,
     std::rc::Rc<eidos_core::LayerStack>,
     std::rc::Rc<view::DataSources>,
 );
@@ -284,6 +290,8 @@ pub(crate) struct App {
     pub(crate) install_gap: Option<usize>,
     /// The archive currently being extracted on a worker thread, if any.
     pub(crate) install_job: Option<InstallJob>,
+    /// The copy step of a FOMOD, BAIN or collision install running on a worker.
+    pub(crate) place_job: Option<PlaceJob>,
     /// Two-click guard for the bulk enable/disable, holding the TARGET state so
     /// arming "Enable all" and then clicking "Disable all" does not fire.
     pub(crate) confirm_set_all: Option<bool>,
@@ -436,12 +444,12 @@ pub(crate) struct App {
     pub(crate) nexus_daily_left: Option<i64>,
     /// A Nexus mod-update check is in flight (guards the Update button).
     pub(crate) update_in_progress: bool,
-    /// A LOOT sort is in flight. iced runs on smol's single-threaded executor
-    /// here, so a second sort does not race the first - it QUEUES behind it, and
-    /// every queued completion re-opens the report modal and overwrites the
-    /// status with its own (idempotent, so "nothing moved") result. A masterlist
-    /// download is several seconds with no other visible sign of work, which is
-    /// long enough to invite exactly that.
+    /// A LOOT sort is in flight. The sort runs on smol's blocking pool, so
+    /// without this flag a second click would start a second sort that RUNS
+    /// beside the first, and every completion would re-open the report modal
+    /// and overwrite the status with its own (idempotent, so "nothing moved")
+    /// result. A masterlist download is several seconds with no other visible
+    /// sign of work, which is long enough to invite exactly that.
     pub(crate) sorting: bool,
     // ---- menu-bar UI toggles + About ----
     /// The toolbar / status bar are visible (View menu toggles).
@@ -558,8 +566,10 @@ pub(crate) struct App {
     ///
     /// iced's `on_right_press` carries no coordinates, so a context menu has no
     /// way to know where it was summoned from unless the position is tracked
-    /// separately. Both are fed by the event subscription and read only when a
-    /// menu opens.
+    /// separately. Both are fed by the event subscription. `cursor` moves
+    /// during a divider drag only (and in tests), never per mouse move or
+    /// press: menus read the live position through `subscription::pointer`,
+    /// and this is its fallback.
     pub(crate) cursor: iced::Point,
     pub(crate) window: iced::Size,
     /// Where the open context menu was summoned from, frozen at that moment - the
@@ -605,7 +615,12 @@ pub(crate) struct App {
     /// `compute_conflicts(&App)` can fill missing entries; a toggle or reorder
     /// then rebuilds the map without touching the filesystem at all. Entries are
     /// dropped when a layer's contents change (install/remove/rename/run).
-    pub(crate) files_cache: std::cell::RefCell<HashMap<String, (Vec<String>, bool)>>,
+    ///
+    /// Shared, because two readers on the UI thread copied every path in the
+    /// load order per toggle: the map rebuild, and the archive worker's input,
+    /// which took the whole cache. Each list is written once by its walk and
+    /// never edited, so a pointer is as good as a copy.
+    pub(crate) files_cache: std::cell::RefCell<HashMap<String, LayerWalk>>,
     // ---- view memoisation (these listings ran on EVERY redraw) ----
     /// Bumped whenever the mod list or anything on disk changes; the memoised
     /// listings below rebuild only when it moves.
@@ -630,6 +645,15 @@ pub(crate) struct App {
     /// hundred `read_dir` calls per frame while the tab was open. The same memo
     /// the merged listing uses, keyed the same way.
     pub(crate) archives_cache: std::cell::RefCell<Option<(u64, Option<Vec<ArchiveRow>>)>>,
+    /// The selected mod's contested loose paths, keyed by the conflict map's
+    /// build stamp and the mod's origin (see `modinfo::contested`).
+    ///
+    /// Both Conflicts panels draw from `view()`, and finding those paths meant
+    /// scanning every file of the map on every pointer move while a panel is
+    /// open: 0.3 ms at 67k paths, several ms at 300-500k. Not keyed by
+    /// `view_generation`: the archive worker swaps the map without bumping it.
+    pub(crate) contested_cache:
+        std::cell::RefCell<Option<(u64, u32, std::rc::Rc<crate::modinfo::Contested>)>>,
     /// The union the Data tab reads, built once per view generation.
     ///
     /// The SAME `LayerStack` the mount serves from, rather than a hand-rolled
@@ -692,6 +716,8 @@ pub(crate) struct RowMeta {
     /// ships (P/A/T/M/S/K/I/U/F), empty if none.
     pub(crate) content_tags: String,
     pub(crate) update: bool,
+    /// The user endorsed it on Nexus (`endorsed=`), for the status-bar count.
+    pub(crate) endorsed: bool,
     /// The row's display colour (MO2's `color=@Variant(...)`), if set. Stored per
     /// mod, not only per separator.
     pub(crate) color: Option<[u8; 3]>,

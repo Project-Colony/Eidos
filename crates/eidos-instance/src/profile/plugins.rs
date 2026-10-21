@@ -381,8 +381,8 @@ impl Profile {
             .into_iter()
             // Unmanaged content is already IN the directory we mount over, so
             // mounting it again as a layer would stack the game's own Data on
-            // top of itself. `modlist()` never yields one, but the filter states
-            // the invariant where it matters rather than relying on that.
+            // top of itself. `modlist()` does yield them, one per `*` line of
+            // modlist.txt with an empty path, so this filter is load-bearing.
             .filter(|m| m.is_active() && !m.unmanaged)
             .map(|m| m.path)
             .collect();
