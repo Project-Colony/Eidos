@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ae08652e5ffe8559a077d6c4321b7d834bb793f1 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
 
 # Utiliser Eidos
 
@@ -301,24 +301,66 @@ peine d'être gardée - mais `eidos pack` sort avec le code **1** et dit ce qui
 manque. Une sauvegarde incomplète n'est pas un succès, et
 c'est une commande que les gens mettent devant un `&&`.
 
-Un fichier `.eidos` est une archive 7-Zip sous un nom à elle, ce qui est un choix
-plutôt qu'un déguisement : 7-Zip est déjà nécessaire pour installer un mod tout
-court, cela n'ajoute donc aucune dépendance, et si vous perdez un jour Eidos
-votre sauvegarde s'ouvre toujours dans n'importe quel archiveur que vous avez.
-Elle est **non solide**, si bien qu'un fichier peut être extrait d'une sauvegarde
-de 70 Go sans décompresser tout ce qui le précède, et elle est compressée en
-LZMA2 avec `-mx1` - environ 43 % de l'original sur une liste chargée en textures,
-en une fraction du temps que `-mx9` passe à gagner quelques points de plus. Les
-textures et les meshes sont déjà des formats compressés ; il ne reste presque
-rien à trouver pour un dictionnaire plus grand. `--level` (0, 1, 3, 5, 7, 9)
-passe outre si vous n'êtes pas d'accord sur votre propre contenu, et
-`--no-downloads` laisse `downloads/` de côté.
+Un fichier `.eidos` est une archive 7-Zip sous un nom à elle, ce qui est un
+choix plutôt qu'un déguisement : 7-Zip est déjà nécessaire pour installer un mod
+tout court, cela n'ajoute donc aucune dépendance, et si vous perdez un jour
+Eidos votre sauvegarde s'ouvre toujours dans n'importe quel archiveur que vous
+avez. Elle est compressée en LZMA2 avec `-mx1` - environ 43 % de l'original sur
+une liste chargée en textures, en une fraction du temps que `-mx9` passe à
+gagner quelques points de plus. Les textures et les meshes sont déjà des formats
+compressés ; il ne reste presque rien à trouver pour un dictionnaire plus grand.
+`--level` (0, 1, 3, 5, 7, 9) passe outre si vous n'êtes pas d'accord sur votre
+propre contenu, et `--no-downloads` laisse `downloads/` de côté.
+
+Au niveau 1, celui par défaut, les fichiers sont rangés dans des
+**blocs solides de 16 Mo au plus**. Extraire un fichier d'une sauvegarde de
+70 Go décode au plus le bloc où il se trouve, jamais tout ce qui le précède, et
+l'empaquetage de contenu de jeu va 2 à 5 fois plus vite qu'avec chaque fichier
+compressé à part (la restauration 2 à 4 fois). Le prix se paie en cas d'avarie :
+un seul octet corrompu peut emporter tous les fichiers de son bloc, jusqu'à
+16 Mo de fichiers voisins. Les données de récupération décrites plus bas
+couvrent ce cas. Tous les autres niveaux restent non solides : chaque fichier
+forme son propre flux, et un octet corrompu ne coûte que ce fichier. Le niveau 0
+stocke les fichiers sans les compresser. À partir du niveau 3, LZMA2 travaille
+déjà par morceaux de 16 Mo ou plus, et les blocs solides s'y sont montrés plus
+lents à la mesure : au niveau 5, l'empaquetage des meshes était 1,4 fois plus
+lent et la restauration des textures 6,8 fois plus lente.
 
 L'empaquetage prend le verrou de l'instance, il ne peut donc pas tourner pendant
 que le jeu ou un autre Eidos écrit dans cette instance - la sauvegarde est un
-instantané, pas un flou. Elle est écrite sous un nom en `.part` et renommée à la
-fin, si bien qu'un empaquetage interrompu laisse quelque chose de manifestement
-inachevé plutôt qu'un fichier `.eidos` qui a l'air complet et ne l'est pas.
+instantané, pas un flou. Elle est écrite sous un nom en `.part`, vidée sur le
+disque, puis relue en entier avec `7z t` avant de recevoir le nom que vous avez
+choisi. Cette vérification décode chaque bloc et compare chaque somme de
+contrôle, soit le même travail qu'une restauration sur l'autre machine. Elle
+montre ce que le disque a rendu juste après l'écriture, pas que le support le
+gardera : c'est le rôle des données de récupération décrites plus bas. Si elle
+échoue, le `.part` est supprimé, rien n'est écrit sous votre nom, et
+`eidos pack` cite la ligne où 7-Zip a trouvé l'avarie. Un empaquetage interrompu
+ou raté laisse quelque chose de manifestement inachevé, ou rien du tout, plutôt
+qu'un fichier `.eidos` qui a l'air complet et ne l'est pas.
+
+Quand par2cmdline est installé (`sudo pacman -S par2cmdline` sur Arch,
+`sudo apt install par2` sur Debian et Ubuntu, `sudo dnf install par2cmdline` sur
+Fedora), `eidos pack` écrit aussi des données de récupération PAR2 à côté de
+l'archive : `backup.eidos.par2` et quelques fichiers
+`backup.eidos.volNN+MM.par2`, soit 5 % de l'archive plus un petit index.
+Gardez-les dans le même dossier que le fichier `.eidos`, sous les noms qu'ils
+ont reçus, et copiez-les avec lui : une sauvegarde déplacée sans eux n'a rien
+pour être réparée, et les données de récupération enregistrent le nom de
+l'archive, si bien qu'une sauvegarde renommée ne leur correspond plus.
+`eidos unpack` les trouve par leur nom et vérifie l'archive avec eux avant
+d'extraire quoi que ce soit, y compris une sauvegarde dont la fin a été coupée
+au point que 7-Zip ne peut plus l'ouvrir. Si quelques octets se sont abîmés,
+par2 répare d'abord l'archive et garde la copie endommagée sous le nom
+`backup.eidos.1`, ce qui demande dans son dossier autant d'espace libre que la
+taille de l'archive ; une avarie plus étendue que ce que couvrent les 5 % arrête
+la restauration avant qu'un seul fichier soit écrit. Des fichiers de
+récupération qui ne correspondent pas à l'archive, comme ceux d'une sauvegarde
+plus ancienne du même nom, ne servent pas quand 7-Zip lit l'archive et la trouve
+intacte, et la restauration le signale. Sur une machine sans par2, la
+restauration se fait quand même, avec un avertissement indiquant que les données
+de récupération n'ont pas servi. `--no-recovery` empaquette sans elles, et
+`eidos pack --dry-run` indique si elles seront écrites.
 
 ### Ce qui n'y est pas, et pourquoi
 
@@ -355,11 +397,13 @@ aucune instance.
 
 La boîte de dialogue Pack prévisualise avant de s'engager : combien de fichiers,
 quelle taille, quelle part de cela est `downloads/`, à peu près ce que fera
-l'archive, et quels outils sont nommés mais pas emportés. La boîte de dialogue
-Unpack lit le manifeste de la sauvegarde dès l'instant où vous choisissez le
-fichier, si bien qu'elle peut vous dire quel jeu elle contient, quand elle a été
-faite, où elle vivait et lesquels de ses outils manquent ici - avant que vous ne
-lui donniez un dossier.
+l'archive, et quels outils sont nommés mais pas emportés. Sa case *Write
+recovery data* est cochée quand par2 est installé, et grisée avec le nom du
+paquet à installer quand il ne l'est pas. La boîte de dialogue Unpack lit le
+manifeste de la sauvegarde dès l'instant où vous choisissez le fichier, si bien
+qu'elle peut vous dire quel jeu elle contient, quand elle a été faite, où elle
+vivait et lesquels de ses outils manquent ici - avant que vous ne lui donniez un
+dossier.
 
 Les deux tournent sur un fil de travail avec une barre de progression, si bien
 que la fenêtre continue de répondre pendant qu'ils travaillent, et la barre

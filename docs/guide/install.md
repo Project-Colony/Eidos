@@ -12,6 +12,7 @@ preview helper side by side, plus the `nxm://` handler that makes the Nexus
 | **Linux with FUSE** | `fusermount3` on your PATH. Every current distribution ships it. |
 | **A Proton game, launched once** | Steam only creates the game's Wine prefix on first launch, and Eidos works inside it. |
 | **`7z`** | For installing mod archives. `p7zip` on most distributions. |
+| **`par2`** (optional) | PAR2 recovery data for `eidos pack` backups. `par2cmdline` on Arch and Fedora, `par2` on Debian and Ubuntu. |
 
 No root, no daemon, no `/etc/fuse.conf` edit, and nothing to add to your groups.
 Eidos mounts inside a private namespace that belongs to the game process.

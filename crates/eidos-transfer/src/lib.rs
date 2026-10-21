@@ -27,20 +27,29 @@
 //! deliberate choice rather than a disguise: 7-Zip is already a hard requirement
 //! for Eidos (no mod installs without it), so packing adds no dependency, and
 //! anybody who ever loses this tool can still open their own backup with the
-//! archiver they already have. It is NON-SOLID (`-ms=off`) so a single file can
-//! be pulled out of a 70 GB backup without decompressing everything before it.
+//! archiver they already have. At level 1, the default, it is solid in blocks
+//! of at most 16 MB (`-ms=16m`): pulling one file out of a 70 GB backup decodes
+//! at most the block it sits in, never everything before it. The price is on
+//! damage. In a non-solid archive one corrupt byte costs one file; here it can
+//! cost every file in that byte's block, up to 16 MB of neighbours. Every other
+//! level stays non-solid. Level 0 stores, and a block of stored files gains
+//! nothing. From level 3 up the LZMA2 chunk is already 16 MB or more, so a
+//! block runs on one thread: measured with 7-Zip 26.04 at level 5, it unpacked
+//! `.dds` files 6.8 times slower than non-solid.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
 
 mod manifest;
 mod migrate;
+mod par2;
 mod plan;
 mod relocate;
 mod transfer;
 
 pub use manifest::BackupManifest;
 pub use migrate::{migrate_global_instances, migrate_global_instances_in};
+pub use par2::REDUNDANCY_PERCENT;
 pub use plan::{plan, Left, Outside, Plan, Why};
 pub use relocate::{relocate, Relocated};
 pub use transfer::{PackReport, Transfer, UnpackReport};
@@ -125,6 +134,40 @@ pub struct Options {
     pub level: u8,
     /// Overwrite an existing destination.
     pub force: bool,
+    /// Write PAR2 recovery data beside the archive, when par2 is installed.
+    ///
+    /// On by default: it costs 5% of the archive and turns a bad byte years
+    /// later from a lost block of mods into a repair. Without par2 on `PATH`
+    /// it has no effect, and the front ends say so before the pack starts.
+    pub recovery: bool,
+}
+
+/// What a pack or unpack is doing, for the progress the caller draws.
+///
+/// The percentage that comes with each call belongs to the phase it comes
+/// with: it starts again from 0 when the phase changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Phase {
+    /// 7-Zip writing the archive, or extracting it.
+    Archive,
+    /// Reading an archive back with `7z t`: a written one before it gets its
+    /// name, or one its recovery data calls damaged, before it is repaired.
+    Check,
+    /// Checking an archive against its PAR2 recovery data before extracting.
+    /// par2 runs quietly, so no percentage follows: the phase is reported
+    /// once, with 0.
+    Verify,
+    /// Writing PAR2 recovery data. Reported once, with 0, like
+    /// [`Phase::Verify`].
+    Recovery,
+    /// Repairing a damaged archive from its recovery data. Reported once, with
+    /// 0, like [`Phase::Recovery`].
+    Repair,
+}
+
+/// Whether par2cmdline's `par2` is on `PATH`. One fork+exec: ask once.
+pub fn par2_installed() -> bool {
+    par2::probe(par2::BIN)
 }
 
 impl Default for Options {
@@ -133,6 +176,7 @@ impl Default for Options {
             downloads: true,
             level: DEFAULT_LEVEL,
             force: false,
+            recovery: true,
         }
     }
 }

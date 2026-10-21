@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=40f02a87874c44292179b6dff322d0f623c307ff -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=bc05db1de00bb7c80224f065c3f730f3adc542dc -->
 
 # Eidos kurulumu
 
@@ -11,6 +11,7 @@ Dört giriş yolu. Colony, programın tamamı olan tek bir dosya kurar: `eidos-l
 | **FUSE'lu Linux** | PATH'inizde `fusermount3`. Güncel her dağıtım onu getirir. |
 | **Bir kez başlatılmış bir Proton oyunu** | Steam oyunun Wine önekini yalnızca ilk açılışta oluşturur ve Eidos onun içinde çalışır. |
 | **`7z`** | Mod arşivlerini kurmak için. Çoğu dağıtımda `p7zip`. |
+| **`par2`** (isteğe bağlı) | `eidos pack` yedekleri için PAR2 kurtarma verisi. Arch ve Fedora'da `par2cmdline`, Debian ve Ubuntu'da `par2`. |
 
 root yok, artalan süreci yok, `/etc/fuse.conf` düzenlemesi yok, gruplarınıza
 eklenecek bir şey yok. Eidos, oyun sürecine ait özel bir ad alanının içinde

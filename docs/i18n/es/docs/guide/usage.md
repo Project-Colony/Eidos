@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ae08652e5ffe8559a077d6c4321b7d834bb793f1 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
 
 # Usar Eidos
 
@@ -291,20 +291,62 @@ delante de `&&`.
 Un fichero `.eidos` es un archivo 7-Zip bajo un nombre propio, lo que es una
 elección y no un disfraz: 7-Zip ya hace falta para instalar un mod siquiera, así
 que esto no añade ninguna dependencia, y si algún día pierdes Eidos tu copia de
-seguridad se sigue abriendo en cualquier archivador que tengas. Es **no sólido**,
-así que se puede sacar un fichero de una copia de 70 GB sin descomprimir todo lo
-que va por delante, y va comprimido con LZMA2 en `-mx1` - alrededor del 43 % del
-original en una lista cargada de texturas, en una fracción del tiempo que `-mx9`
-gasta para ahorrar unos pocos puntos más. Las texturas y las mallas ya son
-formatos comprimidos; queda muy poco por encontrar para un diccionario mayor.
-`--level` (0, 1, 3, 5, 7, 9) anula eso si no estás de acuerdo con tu propio
-contenido, y `--no-downloads` deja `downloads/` fuera.
+seguridad se sigue abriendo en cualquier archivador que tengas. Va comprimido
+con LZMA2 en `-mx1` - alrededor del 43 % del original en una lista cargada de
+texturas, en una fracción del tiempo que `-mx9` gasta para ahorrar unos pocos
+puntos más. Las texturas y las mallas ya son formatos comprimidos; queda muy
+poco por encontrar para un diccionario mayor. `--level` (0, 1, 3, 5, 7, 9) anula
+eso si no estás de acuerdo con tu propio contenido, y `--no-downloads` deja
+`downloads/` fuera.
+
+En el nivel 1, el predeterminado, los ficheros van en
+**bloques sólidos de 16 MB como máximo**. Sacar un fichero de una copia de 70 GB
+descodifica como mucho el bloque en el que está, nunca todo lo que va por
+delante, y empaquetar contenido de juegos va de 2 a 5 veces más rápido que con
+cada fichero comprimido por separado (desempaquetar, de 2 a 4 veces). El precio
+se paga cuando hay daños: un solo byte corrupto puede llevarse todos los
+ficheros de su bloque, hasta 16 MB de ficheros vecinos. Los datos de
+recuperación que se describen más abajo cubren ese caso. Los demás niveles
+siguen siendo no sólidos: cada fichero es un flujo propio, y un byte corrupto
+cuesta solo ese fichero. El nivel 0 guarda los ficheros sin comprimir. A partir
+del nivel 3, LZMA2 ya trabaja en trozos de 16 MB o más, y ahí los bloques
+sólidos resultaron más lentos en las mediciones: en el nivel 5, empaquetar
+mallas fue 1,4 veces más lento y desempaquetar texturas, 6,8 veces más lento.
 
 Empaquetar toma el bloqueo de la instancia, así que no puede ejecutarse mientras
 el juego u otro Eidos escribe en esa instancia - la copia de seguridad es una
-instantánea, no un borrón. Se escribe con un nombre `.part` y se renombra al
-final, de modo que un empaquetado interrumpido deja algo obviamente inacabado en
-vez de un fichero `.eidos` que parece completo y no lo está.
+instantánea, no un borrón. Se escribe con un nombre `.part`, se vuelca al disco
+y se relee entera con `7z t` antes de recibir el nombre que elegiste. Esa
+comprobación descodifica cada bloque y compara cada suma de verificación, el
+mismo trabajo que hace un desempaquetado en la otra máquina. Muestra lo que
+devolvió el disco justo después de escribir, no que la unidad lo vaya a
+conservar; para eso están los datos de recuperación de más abajo. Si falla, el
+`.part` se borra, no se escribe nada con tu nombre y `eidos pack` cita la línea
+en la que 7-Zip encontró el daño. Un empaquetado interrumpido o fallido deja
+algo obviamente inacabado, o nada, en vez de un fichero `.eidos` que parece
+completo y no lo está.
+
+Cuando par2cmdline está instalado (`sudo pacman -S par2cmdline` en Arch,
+`sudo apt install par2` en Debian y Ubuntu, `sudo dnf install par2cmdline` en
+Fedora), `eidos pack` escribe además datos de recuperación PAR2 junto al
+archivo: `backup.eidos.par2` y unos cuantos ficheros
+`backup.eidos.volNN+MM.par2`, el 5 % del archivo más un pequeño índice. Déjalos
+en la misma carpeta que el fichero `.eidos`, con los nombres con los que se
+escribieron, y cópialos con él: una copia que se mueve sin ellos no tiene de
+dónde repararse, y los datos de recuperación guardan el nombre del archivo, así
+que una copia renombrada ya no coincide con ellos. `eidos unpack` los encuentra
+por su nombre y comprueba el archivo con ellos antes de extraer nada, también
+una copia cuyo final se cortó de modo que 7-Zip no puede abrirla. Si se
+estropearon unos pocos bytes, par2 repara primero el archivo y guarda la copia
+dañada como `backup.eidos.1`, para lo que necesita en su carpeta tanto espacio
+libre como ocupa el archivo; un daño mayor de lo que cubre ese 5 % detiene el
+desempaquetado antes de escribir un solo fichero. Los ficheros de recuperación
+que no coinciden con el archivo, como los de una copia más antigua con el mismo
+nombre, no se usan cuando 7-Zip lee el archivo y lo encuentra intacto, y el
+desempaquetado lo avisa. En una máquina sin par2 el desempaquetado sigue
+adelante, con un aviso de que los datos de recuperación no se usaron.
+`--no-recovery` empaqueta sin ellos, y `eidos pack --dry-run` dice si se van a
+escribir.
 
 ### Qué no va dentro, y por qué
 
@@ -339,12 +381,15 @@ Desempaquetar está además en la pantalla de bienvenida, bajo la lista de
 instancias, porque la máquina que más lo necesita es la que todavía no tiene
 ninguna instancia.
 
-El diálogo de empaquetado enseña una vista previa antes de comprometerse: cuántos
-ficheros, cuánto ocupan, cuánto de eso es `downloads/`, en cuánto quedará más o
-menos el archivo y qué herramientas se nombran pero no se llevan. El diálogo de
-desempaquetado lee el manifiesto de la copia de seguridad en cuanto eliges el
-fichero, así que puede decirte qué juego contiene, cuándo se hizo, dónde vivía
-antes y cuáles de sus herramientas faltan aquí - antes de que le des una carpeta.
+El diálogo de empaquetado enseña una vista previa antes de comprometerse:
+cuántos ficheros, cuánto ocupan, cuánto de eso es `downloads/`, en cuánto
+quedará más o menos el archivo y qué herramientas se nombran pero no se llevan.
+Su casilla *Write recovery data* está marcada cuando par2 está instalado, y
+aparece en gris con el paquete que hay que instalar cuando no lo está. El
+diálogo de desempaquetado lee el manifiesto de la copia de seguridad en cuanto
+eliges el fichero, así que puede decirte qué juego contiene, cuándo se hizo,
+dónde vivía antes y cuáles de sus herramientas faltan aquí - antes de que le des
+una carpeta.
 
 Ambos se ejecutan en un hilo de trabajo con una barra de progreso, así que la
 ventana sigue respondiendo mientras trabajan, y la barra se convierte en el

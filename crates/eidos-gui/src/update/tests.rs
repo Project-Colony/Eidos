@@ -3962,6 +3962,7 @@ fn fake_transfer(kind: TransferKind, outcome: Option<Result<String, String>>) ->
         title: "Packing Eidos-Skyrim".into(),
         target: PathBuf::from("/tmp/eidos-gui-test-nowhere/skyrimse.eidos"),
         percent: Arc::new(AtomicU8::new(0)),
+        phase: Arc::new(Mutex::new(eidos_transfer::Phase::Archive)),
         outcome: Arc::new(Mutex::new(outcome)),
         done: Arc::new(AtomicBool::new(done)),
         finished: None,
@@ -4034,6 +4035,35 @@ fn the_unpack_dialog_opens_with_no_instance_and_the_pack_dialog_does_not() {
     let _ = update_inner(&mut app, Message::ShowPackDialog);
     assert!(app.pack.is_none());
     assert!(app.status.unwrap_or_default().contains("instance"));
+}
+
+/// The recovery box is the one Pack option the library cannot see in the
+/// dialog's state: it only arrives through the options the worker is given.
+#[test]
+fn the_recovery_box_reaches_the_pack_worker_and_is_dead_without_par2() {
+    let (mut app, _root) = collection_app(&[], &[]);
+    let _ = update_inner(&mut app, Message::ShowPackDialog);
+    let d = app.pack.as_mut().expect("an instance is open");
+    assert_eq!(
+        d.recovery, d.par2,
+        "on by default exactly when par2 is there"
+    );
+    // Both states, whatever this machine has installed.
+    d.par2 = true;
+    d.recovery = true;
+    assert!(instances::pack_options(d).recovery);
+    let _ = update_inner(&mut app, Message::PackToggleRecovery);
+    let d = app.pack.as_ref().unwrap();
+    assert!(!d.recovery);
+    assert!(
+        !instances::pack_options(d).recovery,
+        "the untick reaches the worker"
+    );
+    // Without par2 the box cannot be ticked.
+    let d = app.pack.as_mut().unwrap();
+    d.par2 = false;
+    let _ = update_inner(&mut app, Message::PackToggleRecovery);
+    assert!(!app.pack.as_ref().unwrap().recovery);
 }
 
 /// A collection install is the third long job, and it shares the one slot

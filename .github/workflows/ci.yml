@@ -97,6 +97,12 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --locked -- -D warnings
 
+      # par2cmdline for the PAR2 recovery tests in eidos-transfer. Without it
+      # they print SKIPPED and pass, which would leave the repair path
+      # untested on every run.
+      - name: Install par2 for the recovery-data tests
+        run: sudo apt-get update && sudo apt-get install -y par2
+
       # Runs the union integration test too. It prints its own
       # "N passed, M failed, K skipped" summary line - read K when a FUSE
       # regression suspiciously fails to show up.

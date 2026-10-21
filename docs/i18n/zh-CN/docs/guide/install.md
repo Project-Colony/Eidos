@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=40f02a87874c44292179b6dff322d0f623c307ff -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=bc05db1de00bb7c80224f065c3f730f3adc542dc -->
 
 # 安装 Eidos
 
@@ -11,6 +11,7 @@
 | **带 FUSE 的 Linux** | PATH 中要有 `fusermount3`。任何当前发行版都自带。 |
 | **一款用 Proton 启动过一次的游戏** | Steam 只在首次启动时创建游戏的 Wine 前缀,而 Eidos 在其中工作。 |
 | **`7z`** | 用于安装模组压缩包。多数发行版里叫 `p7zip`。 |
+| **`par2`**(可选) | 给 `eidos pack` 的备份写 PAR2 恢复数据。Arch 和 Fedora 上是 `par2cmdline`,Debian 和 Ubuntu 上是 `par2`。 |
 
 不需要 root,不需要守护进程,不需要改 `/etc/fuse.conf`,也不需要把你加进任何用户组。
 Eidos 挂载在属于游戏进程的私有命名空间里。

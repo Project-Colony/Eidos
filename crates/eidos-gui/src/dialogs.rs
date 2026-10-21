@@ -2296,6 +2296,27 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
         .size(sz(13))
         .text_size(sz(12));
 
+    // Disabled, not hidden, without par2: the line saying which package to
+    // install is how anybody finds out the option exists.
+    let mut recovery = checkbox(state.recovery)
+        .label(tf(
+            "pack_recovery",
+            &[("pct", &eidos_transfer::REDUNDANCY_PERCENT)],
+        ))
+        .size(sz(13))
+        .text_size(sz(12));
+    if state.par2 {
+        recovery = recovery.on_toggle(|_| Message::PackToggleRecovery);
+    }
+    let mut recovery = Column::new().spacing(2).push(recovery);
+    if !state.par2 {
+        recovery = recovery.push(
+            text(t("pack_recovery_missing"))
+                .size(sz(10))
+                .color(text_muted()),
+        );
+    }
+
     let mut levels = Row::new().spacing(4).align_y(iced::Alignment::Center).push(
         text(t("pack_compression"))
             .size(sz(11))
@@ -2408,6 +2429,7 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
         .push(blurb)
         .push(dest)
         .push(downloads)
+        .push(recovery)
         .push(levels)
         .push(preview)
         .push(notes)
@@ -2541,7 +2563,9 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
         .size(sz(13))
         .text_size(sz(12));
 
-    let ready = state.manifest.is_some() && !state.dest.trim().is_empty();
+    // A backup whose manifest cannot be read may still be repaired from its
+    // recovery data, which the unpack does first.
+    let ready = (state.manifest.is_some() || state.repairable) && !state.dest.trim().is_empty();
     let run = button(text(t("unpack_run")).size(sz(12)))
         .padding([4, 16])
         .style(button::primary);
@@ -2587,24 +2611,32 @@ pub(crate) fn transfer_dialog<'a>(job: &crate::TransferJob) -> Element<'a, Messa
         .push(text(job.title.clone()).size(sz(15)));
     match &job.finished {
         None => {
+            use eidos_transfer::Phase;
             let pct = job
                 .percent
                 .load(std::sync::atomic::Ordering::SeqCst)
                 .min(100);
-            card = card
-                .push(
+            let phase = job.phase.lock().map(|p| *p).unwrap_or(Phase::Archive);
+            // par2 reports no percentage, and on a large backup its phases run
+            // for minutes. They show their label alone: a bar that never moves
+            // reads as finished, or as hung.
+            let (label, bar) = match phase {
+                Phase::Archive if pct >= 100 => (t("transfer_finishing").to_string(), true),
+                Phase::Archive => (format!("{pct}%"), true),
+                Phase::Check => (tf("transfer_checking", &[("pct", &pct)]), true),
+                Phase::Verify => (t("transfer_verifying").to_string(), false),
+                Phase::Recovery => (t("transfer_writing_recovery").to_string(), false),
+                Phase::Repair => (t("transfer_repairing").to_string(), false),
+            };
+            if bar {
+                card = card.push(
                     iced::widget::progress_bar(0.0..=100.0, pct as f32)
                         .length(Length::Fill)
                         .girth(Length::Fixed(10.0)),
-                )
-                .push(
-                    text(if pct >= 100 {
-                        t("transfer_finishing").to_string()
-                    } else {
-                        format!("{pct}%")
-                    })
-                    .size(sz(12)),
-                )
+                );
+            }
+            card = card
+                .push(text(label).size(sz(12)))
                 .push(text(t("transfer_note")).size(sz(10)).color(text_muted()));
         }
         Some(result) => {

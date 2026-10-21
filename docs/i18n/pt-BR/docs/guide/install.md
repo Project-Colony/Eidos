@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=40f02a87874c44292179b6dff322d0f623c307ff -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=bc05db1de00bb7c80224f065c3f730f3adc542dc -->
 
 # Instalar o Eidos
 
@@ -11,6 +11,7 @@ Quatro caminhos de entrada. A Colony instala um único arquivo, `eidos-linux`, q
 | **Linux com FUSE** | `fusermount3` no seu PATH. Toda distribuição atual já traz. |
 | **Um jogo no Proton, iniciado uma vez** | O Steam só cria o prefixo Wine do jogo no primeiro início, e o Eidos trabalha dentro dele. |
 | **`7z`** | Para instalar arquivos de mods. `p7zip` na maioria das distribuições. |
+| **`par2`** (opcional) | Dados de recuperação PAR2 para os backups do `eidos pack`. `par2cmdline` no Arch e no Fedora, `par2` no Debian e no Ubuntu. |
 
 Sem root, sem daemon, sem editar `/etc/fuse.conf` e sem nada para acrescentar aos
 seus grupos. O Eidos monta dentro de um espaço de nomes privado que pertence ao

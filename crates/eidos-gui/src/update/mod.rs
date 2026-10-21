@@ -190,9 +190,15 @@ fn spawn_pack(
     use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
     use std::sync::{Arc, Mutex};
     let percent = Arc::new(AtomicU8::new(0));
+    let phase = Arc::new(Mutex::new(eidos_transfer::Phase::Archive));
     let outcome = Arc::new(Mutex::new(None));
     let done = Arc::new(AtomicBool::new(false));
-    let (p, o, d) = (percent.clone(), outcome.clone(), done.clone());
+    let (p, ph, o, d) = (
+        percent.clone(),
+        phase.clone(),
+        outcome.clone(),
+        done.clone(),
+    );
     let title = tf(
         "transfer_packing",
         &[(
@@ -206,7 +212,7 @@ fn spawn_pack(
     );
     let target = dest.clone();
     std::thread::spawn(move || {
-        let r = pack_on_worker(&inst, &dest, opt, &p);
+        let r = pack_on_worker(&inst, &dest, opt, &p, &ph);
         if let Ok(mut slot) = o.lock() {
             *slot = Some(r);
         }
@@ -217,9 +223,33 @@ fn spawn_pack(
         title,
         target,
         percent,
+        phase,
         outcome,
         done,
         finished: None,
+    }
+}
+
+/// The worker's side of the bar, for a pack or an unpack.
+///
+/// Clamped to its own maximum HERE rather than in the view. 7-Zip's percentage
+/// is not monotonic and a pack makes two passes into one archive, so the raw
+/// value climbs, resets and climbs again - and the view is asked to draw it ten
+/// times a second for minutes. A new phase is the one legitimate restart: the
+/// read-back after the write counts from 0 again, under its own label.
+fn phase_progress<'a>(
+    percent: &'a std::sync::Arc<std::sync::atomic::AtomicU8>,
+    phase: &'a std::sync::Arc<std::sync::Mutex<eidos_transfer::Phase>>,
+) -> impl FnMut(eidos_transfer::Phase, u8) + 'a {
+    use std::sync::atomic::Ordering;
+    move |now, pct| {
+        if let Ok(mut current) = phase.lock() {
+            if *current != now {
+                *current = now;
+                percent.store(0, Ordering::SeqCst);
+            }
+        }
+        percent.fetch_max(pct, Ordering::SeqCst);
     }
 }
 
@@ -229,8 +259,8 @@ fn pack_on_worker(
     dest: &std::path::Path,
     opt: eidos_transfer::Options,
     percent: &std::sync::Arc<std::sync::atomic::AtomicU8>,
+    phase: &std::sync::Arc<std::sync::Mutex<eidos_transfer::Phase>>,
 ) -> Result<String, String> {
-    use std::sync::atomic::Ordering;
     let started = std::time::Instant::now();
     // 7-Zip FIRST. Finding it costs up to three fork+exec, and a fork briefly
     // shares every open descriptor - the instance lock included - so a probe
@@ -251,13 +281,7 @@ fn pack_on_worker(
         .check_pack(inst, &plan, dest)
         .map_err(|e| e.to_string())?;
     let report = transfer
-        .pack(inst, &plan, dest, &mut |pct| {
-            // Clamped to its own maximum HERE rather than in the view. 7-Zip's
-            // percentage is not monotonic and a pack makes two passes into one
-            // archive, so the raw value climbs, resets and climbs again - and
-            // the view is asked to draw it ten times a second for minutes.
-            percent.fetch_max(pct, Ordering::SeqCst);
-        })
+        .pack(inst, &plan, dest, &mut phase_progress(percent, phase))
         .map_err(|e| e.to_string())?;
     let ratio = report
         .percent_of_source()
@@ -271,7 +295,7 @@ fn pack_on_worker(
             )
         })
         .unwrap_or_default();
-    let head = tf(
+    let mut head = tf(
         "transfer_packed",
         &[
             ("n", &report.entries),
@@ -284,6 +308,29 @@ fn pack_on_worker(
             ),
         ],
     );
+    if !report.recovery.is_empty() {
+        let bytes: u64 = report
+            .recovery
+            .iter()
+            .filter_map(|f| std::fs::metadata(f).ok())
+            .map(|m| m.len())
+            .sum();
+        head.push_str(&format!(
+            "\n{}",
+            tf(
+                "transfer_recovery_written",
+                &[
+                    ("n", &report.recovery.len()),
+                    ("size", &eidos_transfer::human_bytes(bytes)),
+                ],
+            )
+        ));
+    }
+    // Shown, but on the Ok side: the archive is complete and was read back,
+    // it only lacks the extra copy, as `eidos pack` exits 0 for it.
+    if let Some(w) = &report.recovery_warning {
+        head.push_str(&format!("\n\n{w}"));
+    }
     if report.warnings.is_empty() {
         return Ok(head);
     }
@@ -393,6 +440,7 @@ fn spawn_collection(
         title: t("transfer_installing_collection").to_string(),
         target,
         percent,
+        phase: Arc::new(Mutex::new(eidos_transfer::Phase::Archive)),
         outcome,
         done,
         finished: None,
@@ -582,9 +630,15 @@ fn spawn_unpack(
     use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
     use std::sync::{Arc, Mutex};
     let percent = Arc::new(AtomicU8::new(0));
+    let phase = Arc::new(Mutex::new(eidos_transfer::Phase::Archive));
     let outcome = Arc::new(Mutex::new(None));
     let done = Arc::new(AtomicBool::new(false));
-    let (p, o, d) = (percent.clone(), outcome.clone(), done.clone());
+    let (p, ph, o, d) = (
+        percent.clone(),
+        phase.clone(),
+        outcome.clone(),
+        done.clone(),
+    );
     let title = tf(
         "transfer_unpacking",
         &[(
@@ -597,7 +651,7 @@ fn spawn_unpack(
     );
     let target = dest.clone();
     std::thread::spawn(move || {
-        let r = unpack_on_worker(&archive, &dest, opt, &p);
+        let r = unpack_on_worker(&archive, &dest, opt, &p, &ph);
         if let Ok(mut slot) = o.lock() {
             *slot = Some(r);
         }
@@ -608,6 +662,7 @@ fn spawn_unpack(
         title,
         target,
         percent,
+        phase,
         outcome,
         done,
         finished: None,
@@ -619,8 +674,8 @@ fn unpack_on_worker(
     dest: &std::path::Path,
     opt: eidos_transfer::Options,
     percent: &std::sync::Arc<std::sync::atomic::AtomicU8>,
+    phase: &std::sync::Arc<std::sync::Mutex<eidos_transfer::Phase>>,
 ) -> Result<String, String> {
-    use std::sync::atomic::Ordering;
     let started = std::time::Instant::now();
     let transfer = eidos_transfer::Transfer::new(opt).map_err(|e| e.to_string())?;
     // Only when the folder is already there: nothing can be holding one that
@@ -637,9 +692,7 @@ fn unpack_on_worker(
         None
     };
     let report = transfer
-        .unpack(archive, dest, &mut |pct| {
-            percent.fetch_max(pct, Ordering::SeqCst);
-        })
+        .unpack(archive, dest, &mut phase_progress(percent, phase))
         .map_err(|e| e.to_string())?;
     let mut lines = vec![tf(
         "transfer_unpacked",
@@ -1496,6 +1549,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::ClosePackDialog
         | Message::PackDestChanged(..)
         | Message::PackToggleDownloads
+        | Message::PackToggleRecovery
         | Message::PackLevelChanged(..)
         | Message::PackBrowse
         | Message::PackDestPicked(..)

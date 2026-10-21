@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=40f02a87874c44292179b6dff322d0f623c307ff -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=bc05db1de00bb7c80224f065c3f730f3adc542dc -->
 
 # Eidos のインストール
 
@@ -11,6 +11,7 @@
 | **FUSE のある Linux** | PATH に `fusermount3`。現行のディストリビューションはどれも同梱しています。 |
 | **一度起動した Proton のゲーム** | Steam はゲームの Wine プレフィックスを初回起動時にしか作らず、Eidos はその中で動きます。 |
 | **`7z`** | MOD 書庫の展開に使います。多くのディストリビューションでは `p7zip`。 |
+| **`par2`**(任意) | `eidos pack` のバックアップ用の PAR2 修復データ。Arch と Fedora では `par2cmdline`、Debian と Ubuntu では `par2`。 |
 
 root も、デーモンも、`/etc/fuse.conf` の編集も、グループへの追加も要りません。
 Eidos はゲームのプロセスに属するプライベートな名前空間の中でマウントします。
