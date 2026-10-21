@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ae08652e5ffe8559a077d6c4321b7d834bb793f1 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=7d8aa469a39312780cd84b6f2e42182d41274116 -->
 
 # Eidos verwenden
 
@@ -301,24 +301,54 @@ den Leute vor ein `&&` setzen.
 
 Eine `.eidos`-Datei ist ein 7-Zip-Archiv unter einem eigenen Namen, und das ist
 eine Entscheidung, keine Verkleidung: 7-Zip wird ohnehin gebraucht, um überhaupt
-eine Mod zu installieren, das fügt also keine Abhängigkeit hinzu, und sollten Sie
-Eidos je verlieren, öffnet Ihre Sicherung sich immer noch in jedem
-Archivprogramm, das Sie haben. Sie ist **nicht solide**, sodass eine einzelne
-Datei aus einer 70 GB großen Sicherung gezogen werden kann, ohne alles davor zu
-entpacken, und sie ist mit LZMA2 auf `-mx1` komprimiert - rund 43 % des
-Originals bei einer texturlastigen Liste, in einem Bruchteil der Zeit, die `-mx9`
-aufwendet, um ein paar Punkte mehr herauszuholen. Texturen und Meshes sind
-bereits komprimierte Formate; für ein größeres Wörterbuch bleibt da sehr wenig zu
-finden. `--level` (0, 1, 3, 5, 7, 9) überschreibt das, falls Sie bei Ihren
-eigenen Inhalten anderer Meinung sind, und `--no-downloads` lässt `downloads/`
-weg.
+eine Mod zu installieren, das fügt also keine Abhängigkeit hinzu, und sollten
+Sie Eidos je verlieren, öffnet Ihre Sicherung sich immer noch in jedem
+Archivprogramm, das Sie haben. Sie ist mit LZMA2 auf `-mx1` komprimiert - rund
+43 % des Originals bei einer texturlastigen Liste, in einem Bruchteil der Zeit,
+die `-mx9` aufwendet, um ein paar Punkte mehr herauszuholen. Texturen und Meshes
+sind bereits komprimierte Formate; für ein größeres Wörterbuch bleibt da sehr
+wenig zu finden. `--level` (0, 1, 3, 5, 7, 9) überschreibt das, falls Sie bei
+Ihren eigenen Inhalten anderer Meinung sind, und `--no-downloads` lässt
+`downloads/` weg.
+
+Die Dateien landen in **soliden Blöcken von höchstens 16 MB**. Eine einzelne
+Datei aus einer 70 GB großen Sicherung zu ziehen dekodiert höchstens den Block,
+in dem sie liegt, nie alles davor, und bei Spielinhalten läuft das Packen 2- bis
+5-mal schneller als mit jeder Datei einzeln komprimiert (das Entpacken 2- bis
+4-mal). Der Preis zeigt sich bei Schäden: Ein einziges defektes Byte kann jede
+Datei in seinem Block mitnehmen, bis zu 16 MB benachbarter Dateien, wo ein nicht
+solides Archiv eine einzige Datei verlöre. Die weiter unten beschriebenen
+Wiederherstellungsdaten decken das ab. Stufe 0 speichert die Dateien
+unkomprimiert und bleibt nicht solide.
 
 Das Packen nimmt die Sperre der Instanz, es kann also nicht laufen, während das
 Spiel oder ein anderes Eidos in diese Instanz schreibt - die Sicherung ist eine
-Momentaufnahme, keine Schliere. Sie wird unter einem `.part`-Namen geschrieben
-und am Ende umbenannt, sodass ein abgebrochenes Packen etwas offensichtlich
-Unfertiges hinterlässt statt einer `.eidos`-Datei, die vollständig aussieht und
-es nicht ist.
+Momentaufnahme, keine Schliere. Sie wird unter einem `.part`-Namen geschrieben,
+mit fsync auf die Platte gebracht und mit `7z t` vollständig zurückgelesen,
+bevor sie den Namen bekommt, den Sie gewählt haben. Diese Prüfung dekodiert
+jeden Block und vergleicht jede Prüfsumme, also dieselbe Arbeit, die ein
+Entpacken auf dem anderen Rechner leistet. Schlägt sie fehl, wird die
+`.part`-Datei gelöscht, unter Ihrem Namen wird nichts geschrieben, und
+`eidos pack` zitiert die Zeile, in der 7-Zip den Schaden gefunden hat. Ein
+abgebrochenes oder fehlgeschlagenes Packen hinterlässt etwas offensichtlich
+Unfertiges oder gar nichts, statt einer `.eidos`-Datei, die vollständig aussieht
+und es nicht ist.
+
+Ist par2cmdline installiert (`sudo pacman -S par2cmdline` unter Arch,
+`sudo apt install par2` unter Debian und Ubuntu, `sudo dnf install par2cmdline`
+unter Fedora), schreibt `eidos pack` zusätzlich PAR2-Wiederherstellungsdaten
+neben das Archiv: `backup.eidos.par2` und einige
+`backup.eidos.volNN+MM.par2`-Dateien, zusammen 5 % des Archivs plus ein kleiner
+Index. Lassen Sie sie im selben Ordner wie die `.eidos`-Datei und kopieren Sie
+sie mit ihr, denn eine Sicherung, die ohne sie umzieht, hat nichts, woraus sie
+repariert werden könnte. `eidos unpack` findet sie über den Namen und prüft das
+Archiv damit, bevor irgendetwas entpackt wird. Sind ein paar Bytes kaputt,
+repariert par2 das Archiv zuerst und behält die beschädigte Kopie als
+`backup.eidos.1`; ein Schaden, der über die 5 % hinausgeht, stoppt das
+Entpacken, bevor eine einzige Datei geschrieben ist. Auf einem Rechner ohne par2
+läuft das Entpacken trotzdem, mit einer Warnung, dass die
+Wiederherstellungsdaten nicht genutzt wurden. `--no-recovery` packt ohne sie,
+und `eidos pack --dry-run` sagt, ob sie geschrieben werden.
 
 ### Was nicht darin ist, und warum
 
@@ -355,11 +385,13 @@ Instanz ist.
 
 Der Pack-Dialog zeigt eine Vorschau, bevor er sich festlegt: wie viele Dateien,
 wie groß, wie viel davon `downloads/` ist, worauf das Archiv ungefähr
-hinausläuft und welche Tools benannt, aber nicht mitgenommen werden. Der
-Unpack-Dialog liest das Manifest der Sicherung in dem Moment, in dem Sie die
-Datei auswählen, und kann Ihnen daher sagen, welches Spiel sie enthält, wann
-sie erstellt wurde, wo sie früher lag und welche ihrer Tools hier fehlen - bevor
-Sie ihm einen Ordner geben.
+hinausläuft und welche Tools benannt, aber nicht mitgenommen werden. Sein
+Kästchen *Write recovery data* ist angehakt, wenn par2 installiert ist, und
+ausgegraut mit dem zu installierenden Paket, wenn nicht. Der Unpack-Dialog liest
+das Manifest der Sicherung in dem Moment, in dem Sie die Datei auswählen, und
+kann Ihnen daher sagen, welches Spiel sie enthält, wann sie erstellt wurde, wo
+sie früher lag und welche ihrer Tools hier fehlen - bevor Sie ihm einen Ordner
+geben.
 
 Beide laufen auf einem Worker-Thread mit Fortschrittsbalken, sodass das Fenster
 weiter reagiert, während sie arbeiten, und der Balken wird zum Bericht, wenn sie

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ae08652e5ffe8559a077d6c4321b7d834bb793f1 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=7d8aa469a39312780cd84b6f2e42182d41274116 -->
 
 # Eidos kullanımı
 
@@ -282,20 +282,47 @@ eksik olduğunu söyler. Eksik bir yedek bir başarı değildir ve bu, insanlar�
 Bir `.eidos` dosyası, kendine ait bir ad altındaki bir 7-Zip arşividir; bu bir
 kılık değil, bir tercihtir: bir modu kurabilmek için zaten 7-Zip gerekiyor, yani
 bu hiçbir bağımlılık eklemez ve Eidos'u bir gün yitirseniz de yedeğiniz
-elinizdeki herhangi bir arşivleyicide yine açılır. **Non-solid**'dir, yani 70
-GB'lık bir yedekten tek bir dosya, önündeki her şeyi açmadan çekilip
-çıkarılabilir; ve LZMA2 ile `-mx1` düzeyinde sıkıştırılır - doku ağırlıklı bir
-listede özgün boyutun yaklaşık %43'ü, hem de `-mx9`'un birkaç puan daha kazanmak
-için harcadığı sürenin küçük bir bölümünde. Dokular ve mesh'ler zaten
-sıkıştırılmış biçimlerdir; daha büyük bir sözlüğün bulabileceği pek bir şey
-kalmaz. Kendi içeriğinizde başka düşünüyorsanız `--level` (0, 1, 3, 5, 7, 9)
-bunu geçersiz kılar, `--no-downloads` ise `downloads/` dizinini dışarıda bırakır.
+elinizdeki herhangi bir arşivleyicide yine açılır. LZMA2 ile `-mx1` düzeyinde
+sıkıştırılır - doku ağırlıklı bir listede özgün boyutun yaklaşık %43'ü, hem de
+`-mx9`'un birkaç puan daha kazanmak için harcadığı sürenin küçük bir bölümünde.
+Dokular ve mesh'ler zaten sıkıştırılmış biçimlerdir; daha büyük bir sözlüğün
+bulabileceği pek bir şey kalmaz. Kendi içeriğinizde başka düşünüyorsanız
+`--level` (0, 1, 3, 5, 7, 9) bunu geçersiz kılar, `--no-downloads` ise
+`downloads/` dizinini dışarıda bırakır.
+
+Dosyalar **en fazla 16 MB'lık solid bloklara** yerleştirilir. 70 GB'lık bir
+yedekten tek bir dosyayı çıkarmak en fazla o dosyanın bulunduğu bloğu çözer,
+asla önündeki her şeyi değil; oyun içeriğinde paketleme, her dosyanın ayrı ayrı
+sıkıştırıldığı duruma göre 2 ila 5 kat daha hızlıdır (açma 2 ila 4 kat). Bunun
+bedeli hasar durumunda ödenir: tek bir bozuk bayt, bloğundaki bütün dosyaları,
+yani 16 MB'a kadar komşu dosyayı yanında götürebilir; non-solid bir arşiv ise
+tek bir dosya kaybederdi. Aşağıda anlatılan kurtarma verisi bu durumu karşılar.
+Düzey 0 dosyaları sıkıştırmadan saklar ve non-solid kalır.
 
 Paketleme örnek kilidini alır, yani oyun ya da başka bir Eidos o örneğe yazarken
 çalışamaz - yedek bir anlık görüntüdür, hareket halinde alınmış bulanık bir kare
-değil. Bir `.part` adı altında yazılır ve sonunda yeniden adlandırılır, böylece
-yarıda kesilen bir paketleme, tam görünen ama olmayan bir `.eidos` dosyası
-yerine açıkça yarım kalmış bir şey bırakır.
+değil. Bir `.part` adı altında yazılır, diske boşaltılır ve seçtiğiniz adı
+almadan önce `7z t` ile baştan sona geri okunur. Bu denetim her bloğu çözer ve
+her sağlama toplamını karşılaştırır; diğer makinedeki bir açma işleminin
+yapacağı işin aynısı. Başarısız olursa `.part` silinir, sizin verdiğiniz adla
+hiçbir şey yazılmaz ve `eidos pack`, 7-Zip'in hasarı bulduğu satırı aktarır.
+Yarıda kesilen ya da başarısız olan bir paketleme, tam görünen ama olmayan bir
+`.eidos` dosyası yerine açıkça yarım kalmış bir şey bırakır ya da hiçbir şey
+bırakmaz.
+
+par2cmdline kuruluysa (Arch'ta `sudo pacman -S par2cmdline`, Debian ve Ubuntu'da
+`sudo apt install par2`, Fedora'da `sudo dnf install par2cmdline`), `eidos pack`
+arşivin yanına PAR2 kurtarma verisi de yazar: `backup.eidos.par2` ve birkaç
+`backup.eidos.volNN+MM.par2` dosyası, toplamda arşivin %5'i artı küçük bir
+dizin. Bunları `.eidos` dosyasıyla aynı klasörde tutun ve onunla birlikte
+kopyalayın; onlar olmadan taşınan bir yedeğin onarılacağı hiçbir kaynak yoktur.
+`eidos unpack` onları adlarından bulur ve herhangi bir şeyi çıkarmadan önce
+arşivi onlarla denetler. Birkaç bayt bozulmuşsa par2 önce arşivi onarır ve
+hasarlı kopyayı `backup.eidos.1` olarak saklar; %5'in karşılayabileceğinden
+büyük bir hasar, tek bir dosya yazılmadan açma işlemini durdurur. par2 olmayan
+bir makinede açma yine de çalışır ve kurtarma verisinin kullanılmadığına dair
+bir uyarı verir. `--no-recovery` onlarsız paketler, `eidos pack --dry-run` ise
+yazılıp yazılmayacaklarını söyler.
 
 ### İçinde ne yok ve neden
 
@@ -331,10 +358,12 @@ hiç örneği olmayandır.
 
 Pack iletişim kutusu, işe girişmeden önce önizler: kaç dosya, ne kadar büyük,
 bunun ne kadarı `downloads/`, arşivin kabaca ne tutacağı ve hangi araçların adı
-geçtiği halde taşınmadığı. Unpack iletişim kutusu, dosyayı seçtiğiniz anda
-yedeğin manifest'ini okur; böylece daha ona bir klasör vermeden hangi oyunu
-barındırdığını, ne zaman alındığını, eskiden nerede olduğunu ve araçlarından
-hangilerinin burada eksik olduğunu size söyleyebilir.
+geçtiği halde taşınmadığı. *Write recovery data* kutusu par2 kuruluysa
+işaretlidir, kurulu değilse kurulacak paketin adıyla birlikte grileşir. Unpack
+iletişim kutusu, dosyayı seçtiğiniz anda yedeğin manifest'ini okur; böylece daha
+ona bir klasör vermeden hangi oyunu barındırdığını, ne zaman alındığını, eskiden
+nerede olduğunu ve araçlarından hangilerinin burada eksik olduğunu size
+söyleyebilir.
 
 İkisi de bir ilerleme çubuğuyla birlikte bir çalışan iş parçacığında koşar,
 böylece onlar çalışırken pencere yanıt vermeyi sürdürür ve bitirdiklerinde

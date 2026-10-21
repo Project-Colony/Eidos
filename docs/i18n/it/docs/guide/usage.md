@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ae08652e5ffe8559a077d6c4321b7d834bb793f1 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=7d8aa469a39312780cd84b6f2e42182d41274116 -->
 
 # Usare Eidos
 
@@ -296,21 +296,49 @@ gente mette davanti a un `&&`.
 Un file `.eidos` è un archivio 7-Zip sotto un nome tutto suo, cosa che è una
 scelta e non un travestimento: 7-Zip serve già per installare una mod, quindi
 questo non aggiunge nessuna dipendenza, e se un giorno perdi Eidos la tua copia
-si apre comunque in qualsiasi archiviatore tu abbia. È **non solido**, così un
-singolo file può essere tirato fuori da una copia da 70 GB senza decomprimere
-tutto quello che lo precede, ed è compresso con LZMA2 a `-mx1` - circa il 43%
-dell'originale su una lista carica di texture, in una frazione del tempo che
-`-mx9` impiega per guadagnare qualche punto in più. Texture e mesh sono formati
-già compressi; a un dizionario più grande resta pochissimo da trovare.
-`--level` (0, 1, 3, 5, 7, 9) scavalca quella scelta se non sei d'accordo sui
-tuoi contenuti, e `--no-downloads` lascia fuori `downloads/`.
+si apre comunque in qualsiasi archiviatore tu abbia. È compresso con LZMA2 a
+`-mx1` - circa il 43% dell'originale su una lista carica di texture, in una
+frazione del tempo che `-mx9` impiega per guadagnare qualche punto in più.
+Texture e mesh sono formati già compressi; a un dizionario più grande resta
+pochissimo da trovare. `--level` (0, 1, 3, 5, 7, 9) scavalca quella scelta se
+non sei d'accordo sui tuoi contenuti, e `--no-downloads` lascia fuori
+`downloads/`.
+
+I file finiscono in **blocchi solidi da 16 MB al massimo**. Tirare fuori un file
+da una copia da 70 GB decodifica al più il blocco in cui si trova, mai tutto
+quello che lo precede, e sui contenuti di gioco l'impacchettamento va da 2 a 5
+volte più veloce che con ogni file compresso a sé (lo spacchettamento da 2 a 4
+volte). Il prezzo si paga in caso di danni: un solo byte corrotto può portarsi
+via tutti i file del suo blocco, fino a 16 MB di file vicini, dove un archivio
+non solido perderebbe un solo file. I dati di recupero descritti più sotto
+coprono questo caso. Il livello 0 archivia i file senza comprimerli e resta non
+solido.
 
 L'impacchettamento prende il lock dell'istanza, quindi non può girare mentre il
 gioco o un altro Eidos sta scrivendo su quell'istanza - la copia è
-un'istantanea, non una sbavatura. Viene scritta sotto un nome `.part` e
-rinominata alla fine, così un impacchettamento interrotto lascia qualcosa di
-palesemente incompleto invece di un file `.eidos` che sembra completo e non lo
-è.
+un'istantanea, non una sbavatura. Viene scritta sotto un nome `.part`, scaricata
+su disco e riletta per intero con `7z t` prima di ricevere il nome che hai
+scelto. Quel controllo decodifica ogni blocco e confronta ogni checksum, lo
+stesso lavoro che fa uno spacchettamento sull'altra macchina. Se fallisce, il
+`.part` viene cancellato, sotto il tuo nome non viene scritto nulla e
+`eidos pack` cita la riga in cui 7-Zip ha trovato il danno. Un impacchettamento
+interrotto o fallito lascia qualcosa di palesemente incompleto, o niente, invece
+di un file `.eidos` che sembra completo e non lo è.
+
+Quando par2cmdline è installato (`sudo pacman -S par2cmdline` su Arch,
+`sudo apt install par2` su Debian e Ubuntu, `sudo dnf install par2cmdline` su
+Fedora), `eidos pack` scrive anche dati di recupero PAR2 accanto all'archivio:
+`backup.eidos.par2` e alcuni file `backup.eidos.volNN+MM.par2`, il 5%
+dell'archivio più un piccolo indice. Tienili nella stessa cartella del file
+`.eidos` e copiali insieme a lui, perché una copia spostata senza di loro non ha
+nulla da cui essere riparata. `eidos unpack` li trova dal nome e verifica
+l'archivio con loro prima di estrarre qualsiasi cosa. Se qualche byte si è
+guastato, par2 ripara prima l'archivio e tiene la copia danneggiata come
+`backup.eidos.1`; un danno più esteso di quanto coprano quei 5% ferma lo
+spacchettamento prima che venga scritto un solo file. Su una macchina senza par2
+lo spacchettamento procede comunque, con un avviso che i dati di recupero non
+sono stati usati. `--no-recovery` impacchetta senza di loro, e
+`eidos pack --dry-run` dice se verranno scritti.
 
 ### Cosa non c'è dentro, e perché
 
@@ -348,10 +376,11 @@ non ha ancora nessuna istanza.
 La finestra di dialogo Pack mostra un'anteprima prima di impegnarsi: quanti
 file, quanto occupano, quanta parte di questo è `downloads/`, all'incirca a
 quanto verrà l'archivio e quali strumenti sono nominati ma non portati dentro.
-La finestra di dialogo Unpack legge il manifest della copia nel momento stesso
-in cui scegli il file, così può dirti quale gioco contiene, quando è stata
-fatta, dove stava prima e quali dei suoi strumenti mancano qui - prima che tu le
-dia una cartella.
+La sua casella *Write recovery data* è spuntata quando par2 è installato, e
+grigia con il pacchetto da installare quando non lo è. La finestra di dialogo
+Unpack legge il manifest della copia nel momento stesso in cui scegli il file,
+così può dirti quale gioco contiene, quando è stata fatta, dove stava prima e
+quali dei suoi strumenti mancano qui - prima che tu le dia una cartella.
 
 Entrambi girano su un thread di lavoro con una barra di avanzamento, così la
 finestra continua a rispondere mentre lavorano, e alla fine la barra diventa il

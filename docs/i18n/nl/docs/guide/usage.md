@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ae08652e5ffe8559a077d6c4321b7d834bb793f1 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=7d8aa469a39312780cd84b6f2e42182d41274116 -->
 
 # Eidos gebruiken
 
@@ -288,22 +288,49 @@ een opdracht die mensen vóór `&&` zetten.
 
 Een `.eidos`-bestand is een 7-Zip-archief onder een eigen naam, en dat is een
 keuze, geen vermomming: 7-Zip is toch al nodig om überhaupt een mod te
-installeren, dus dit voegt geen afhankelijkheid toe, en raak je Eidos ooit kwijt,
-dan opent je back-up nog steeds in elk archiefprogramma dat je hebt. Het is
-**niet-solide**, dus één bestand kan uit een back-up van 70 GB gehaald worden
-zonder alles wat ervoor staat uit te pakken, en het wordt gecomprimeerd met LZMA2
-op `-mx1` - ongeveer 43% van het origineel bij een textuurzware lijst, in een
-fractie van de tijd die `-mx9` besteedt om een paar punten meer te winnen.
-Texturen en meshes zijn al gecomprimeerde formaten; er blijft heel weinig over
-voor een groter woordenboek om te vinden. `--level` (0, 1, 3, 5, 7, 9) overstemt
-dat als je het voor je eigen inhoud oneens bent, en `--no-downloads` laat
-`downloads/` weg.
+installeren, dus dit voegt geen afhankelijkheid toe, en raak je Eidos ooit
+kwijt, dan opent je back-up nog steeds in elk archiefprogramma dat je hebt. Het
+wordt gecomprimeerd met LZMA2 op `-mx1` - ongeveer 43% van het origineel bij een
+textuurzware lijst, in een fractie van de tijd die `-mx9` besteedt om een paar
+punten meer te winnen. Texturen en meshes zijn al gecomprimeerde formaten; er
+blijft heel weinig over voor een groter woordenboek om te vinden. `--level` (0,
+1, 3, 5, 7, 9) overstemt dat als je het voor je eigen inhoud oneens bent, en
+`--no-downloads` laat `downloads/` weg.
 
-Packen neemt het slot van de instantie, dus het kan niet draaien terwijl het spel
-of een andere Eidos naar die instantie schrijft - de back-up is een momentopname,
-geen veeg. Ze wordt onder een `.part`-naam geschreven en op het eind hernoemd,
-zodat een onderbroken pack iets zichtbaar onafs achterlaat in plaats van een
+De bestanden gaan in **solide blokken van hoogstens 16 MB**. Eén bestand uit een
+back-up van 70 GB halen decodeert hoogstens het blok waarin het staat, nooit
+alles wat ervoor staat, en bij game-inhoud gaat packen 2 tot 5 keer sneller dan
+met elk bestand apart gecomprimeerd (uitpakken 2 tot 4 keer). De prijs betaal je
+bij schade: één corrupte byte kan elk bestand in zijn blok meenemen, tot 16 MB
+aan naburige bestanden, waar een niet-solide archief één bestand zou verliezen.
+De herstelgegevens hieronder dekken dat af. Niveau 0 slaat de bestanden
+ongecomprimeerd op en blijft niet-solide.
+
+Packen neemt het slot van de instantie, dus het kan niet draaien terwijl het
+spel of een andere Eidos naar die instantie schrijft - de back-up is een
+momentopname, geen veeg. Ze wordt onder een `.part`-naam geschreven, naar de
+schijf weggeschreven en met `7z t` volledig teruggelezen voordat ze de naam
+krijgt die je gekozen hebt. Die controle decodeert elk blok en vergelijkt elke
+checksum, hetzelfde werk dat uitpakken op de andere machine doet. Mislukt ze,
+dan wordt de `.part` verwijderd, wordt er niets onder jouw naam geschreven en
+citeert `eidos pack` de regel waarin 7-Zip de schade vond. Een onderbroken of
+mislukte pack laat iets zichtbaar onafs achter, of niets, in plaats van een
 `.eidos`-bestand dat compleet lijkt en het niet is.
+
+Als par2cmdline geïnstalleerd is (`sudo pacman -S par2cmdline` op Arch,
+`sudo apt install par2` op Debian en Ubuntu, `sudo dnf install par2cmdline` op
+Fedora), schrijft `eidos pack` ook PAR2-herstelgegevens naast het archief:
+`backup.eidos.par2` en een paar `backup.eidos.volNN+MM.par2`-bestanden, samen 5%
+van het archief plus een kleine index. Houd ze in dezelfde map als het
+`.eidos`-bestand en kopieer ze mee, want een back-up die zonder ze verhuist,
+heeft niets om uit hersteld te worden. `eidos unpack` vindt ze op naam en
+controleert het archief ermee voordat er iets uitgepakt wordt. Zijn er een paar
+bytes kapot, dan herstelt par2 eerst het archief en houdt de beschadigde kopie
+als `backup.eidos.1`; schade die verder gaat dan die 5% dekt, stopt het
+uitpakken voordat er één bestand geschreven is. Op een machine zonder par2 gaat
+het uitpakken toch door, met een waarschuwing dat de herstelgegevens niet
+gebruikt zijn. `--no-recovery` packt zonder, en `eidos pack --dry-run` zegt of
+ze geschreven worden.
 
 ### Wat er niet in zit, en waarom
 
@@ -340,10 +367,12 @@ instanties.
 
 De Pack-dialoog toont een voorbeeld voordat ze zich vastlegt: hoeveel bestanden,
 hoe groot, hoeveel daarvan `downloads/` is, ruwweg waar het archief op uitkomt,
-en welke tools wel benoemd maar niet meegenomen worden. De Unpack-dialoog leest
-het manifest van de back-up zodra je het bestand kiest, zodat ze je kan vertellen
-welk spel erin zit, wanneer ze gemaakt is, waar ze vroeger stond en welke van
-haar tools hier ontbreken - voordat je haar een map geeft.
+en welke tools wel benoemd maar niet meegenomen worden. Het vakje *Write
+recovery data* is aangevinkt als par2 geïnstalleerd is, en grijs met het te
+installeren pakket als dat niet zo is. De Unpack-dialoog leest het manifest van
+de back-up zodra je het bestand kiest, zodat ze je kan vertellen welk spel erin
+zit, wanneer ze gemaakt is, waar ze vroeger stond en welke van haar tools hier
+ontbreken - voordat je haar een map geeft.
 
 Beide draaien op een werkthread met een voortgangsbalk, zodat het venster blijft
 antwoorden terwijl ze bezig zijn, en de balk wordt het verslag zodra ze klaar

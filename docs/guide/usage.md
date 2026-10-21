@@ -267,19 +267,45 @@ incomplete backup is not a success, and this is a command people put in front of
 A `.eidos` file is a 7-Zip archive under a name of its own, which is a choice
 rather than a disguise: 7-Zip is already required to install a mod at all, so
 this adds no dependency, and if you ever lose Eidos your backup still opens in
-any archiver you have. It is **non-solid**, so one file can be pulled out of a
-70 GB backup without decompressing everything in front of it, and it is
-compressed with LZMA2 at `-mx1` - about 43% of the original on a texture-heavy
-list, in a fraction of the time `-mx9` spends to save a few points more.
-Textures and meshes are already-compressed formats; there is very little left
-for a bigger dictionary to find. `--level` (0, 1, 3, 5, 7, 9) overrides that if
-you disagree on your own content, and `--no-downloads` leaves `downloads/` out.
+any archiver you have. It is compressed with LZMA2 at `-mx1` - about 43% of
+the original on a texture-heavy list, in a fraction of the time `-mx9` spends
+to save a few points more. Textures and meshes are already-compressed formats;
+there is very little left for a bigger dictionary to find. `--level` (0, 1, 3,
+5, 7, 9) overrides that if you disagree on your own content, and
+`--no-downloads` leaves `downloads/` out.
+
+The files go into **solid blocks of at most 16 MB**. Pulling one file out of a
+70 GB backup decodes at most the block it sits in, never everything in front of
+it, and on game content packing runs 2 to 5 times faster than with every file
+compressed on its own (unpacking 2 to 4 times). The cost is on damage: one
+corrupt byte can take every file in its block with it, up to 16 MB of
+neighbouring files, where a non-solid archive would lose one file. The recovery
+data described below covers that. Level 0 stores the files and stays
+non-solid.
 
 Packing takes the instance lock, so it cannot run while the game or another
 Eidos is writing to that instance - the backup is a snapshot, not a smear. It is
-written under a `.part` name and renamed at the end, so an interrupted pack
-leaves something obviously unfinished rather than a `.eidos` file that looks
-complete and is not.
+written under a `.part` name, flushed to disk, and read back whole with
+`7z t` before it gets the name you chose. That check decodes every block and
+compares every checksum, the same work an unpack does on the other machine. If
+it fails, the `.part` is deleted, nothing is written under your name, and
+`eidos pack` quotes the line where 7-Zip found the damage. An interrupted or
+failed pack leaves something obviously unfinished, or nothing, rather than a
+`.eidos` file that looks complete and is not.
+
+When par2cmdline is installed (`sudo pacman -S par2cmdline` on Arch,
+`sudo apt install par2` on Debian and Ubuntu, `sudo dnf install par2cmdline` on
+Fedora), `eidos pack` also writes PAR2 recovery data beside the archive:
+`backup.eidos.par2` and a few `backup.eidos.volNN+MM.par2` files, 5% of the
+archive plus a small index. Keep them in the same folder as the `.eidos` file
+and copy them with it, because a backup moved without them has nothing to be
+repaired from. `eidos unpack` finds them by name and checks the archive against
+them before extracting anything. If a few bytes went bad, par2 repairs the
+archive first and keeps the damaged copy as `backup.eidos.1`; damage beyond what
+the 5% covers stops the unpack before a single file is written. On a machine
+without par2 the unpack still runs, with a warning that the recovery data was
+not used. `--no-recovery` packs without it, and `eidos pack --dry-run` says
+whether it will be written.
 
 ### What is not in it, and why
 
@@ -313,10 +339,11 @@ the machine that needs it most is the one that has no instances yet.
 
 The Pack dialog previews before it commits: how many files, how big, how much of
 that is `downloads/`, roughly what the archive will come to, and which tools are
-named but not carried. The Unpack dialog reads the backup's manifest the moment
-you choose the file, so it can tell you which game it holds, when it was made,
-where it used to live and which of its tools are missing here - before you give
-it a folder.
+named but not carried. Its *Write recovery data* box is ticked when par2 is
+installed, and greyed out with the package to install when it is not. The Unpack
+dialog reads the backup's manifest the moment you choose the file, so it can
+tell you which game it holds, when it was made, where it used to live and which
+of its tools are missing here - before you give it a folder.
 
 Both run on a worker thread with a progress bar, so the window keeps answering
 while they work, and the bar becomes the report when they finish. Packing holds

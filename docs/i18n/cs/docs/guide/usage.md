@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ae08652e5ffe8559a077d6c4321b7d834bb793f1 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=7d8aa469a39312780cd84b6f2e42182d41274116 -->
 
 # Používání Eidosu
 
@@ -269,20 +269,45 @@ co chybí. Neúplná záloha není úspěch a tohle je příkaz, který lidé d�
 
 Soubor `.eidos` je archiv 7-Zip pod vlastním názvem, což je volba, ne
 přestrojení: 7-Zip je stejně potřeba už k tomu, aby šlo mód vůbec nainstalovat,
-takže to nepřidává žádnou závislost, a kdybyste o Eidos někdy přišli, vaše záloha
-se pořád otevře v jakémkoli archivátoru, který máte. Je **nesolidní**
-(non-solid), takže jeden soubor lze ze 70GB zálohy vytáhnout, aniž byste
-rozbalili všechno před ním, a komprimovaný je LZMA2 na úrovni `-mx1` - asi 43 %
-původní velikosti na seznamu bohatém na textury, ve zlomku času, který `-mx9`
-stráví, aby ušetřil o pár bodů víc. Textury a meshe jsou už komprimované formáty;
-pro větší slovník toho zbývá k nalezení jen velmi málo. `--level` (0, 1, 3, 5, 7,
-9) to přebije, pokud u vlastního obsahu nesouhlasíte, a `--no-downloads` vynechá
-`downloads/`.
+takže to nepřidává žádnou závislost, a kdybyste o Eidos někdy přišli, vaše
+záloha se pořád otevře v jakémkoli archivátoru, který máte. Komprimovaný je
+LZMA2 na úrovni `-mx1` - asi 43 % původní velikosti na seznamu bohatém na
+textury, ve zlomku času, který `-mx9` stráví, aby ušetřil o pár bodů víc.
+Textury a meshe jsou už komprimované formáty; pro větší slovník toho zbývá k
+nalezení jen velmi málo. `--level` (0, 1, 3, 5, 7, 9) to přebije, pokud u
+vlastního obsahu nesouhlasíte, a `--no-downloads` vynechá `downloads/`.
+
+Soubory jdou do **solidních bloků o nejvýš 16 MB**. Vytažení jednoho souboru ze
+70GB zálohy dekóduje nanejvýš blok, ve kterém leží, nikdy všechno před ním, a na
+herním obsahu je balení 2 až 5krát rychlejší než s každým souborem komprimovaným
+zvlášť (rozbalení 2 až 4krát). Cena se platí při poškození: jediný vadný bajt
+může vzít s sebou všechny soubory ve svém bloku, až 16 MB sousedních souborů,
+kde by nesolidní archiv přišel o jediný soubor. Data pro obnovu popsaná níže
+tenhle případ kryjí. Úroveň 0 soubory jen ukládá bez komprese a zůstává
+nesolidní.
 
 Balení bere zámek instance, takže nemůže běžet ve chvíli, kdy do té instance
 zapisuje hra nebo jiný Eidos - záloha je snímek, ne šmouha. Zapisuje se pod
-názvem s `.part` a na konci se přejmenuje, takže přerušené balení zanechá něco
-zjevně nedokončeného místo souboru `.eidos`, který vypadá kompletní a není.
+názvem s `.part`, propíše se na disk a celá se přečte zpátky přes `7z t`, než
+dostane název, který jste zvolili. Ta kontrola dekóduje každý blok a porovná
+každý kontrolní součet, tedy udělá stejnou práci jako rozbalení na druhém
+stroji. Když selže, soubor `.part` se smaže, pod vaším názvem se nic nezapíše a
+`eidos pack` ocituje řádek, kde 7-Zip poškození našel. Přerušené nebo nepovedené
+balení zanechá něco zjevně nedokončeného, nebo nic, místo souboru `.eidos`,
+který vypadá kompletní a není.
+
+Když je nainstalovaný par2cmdline (`sudo pacman -S par2cmdline` na Archu,
+`sudo apt install par2` na Debianu a Ubuntu, `sudo dnf install par2cmdline` na
+Fedoře), `eidos pack` zapíše vedle archivu i data pro obnovu PAR2:
+`backup.eidos.par2` a několik souborů `backup.eidos.volNN+MM.par2`, dohromady 5
+% archivu plus malý index. Nechte je ve stejné složce jako soubor `.eidos` a
+kopírujte je spolu s ním, protože záloha přesunutá bez nich nemá z čeho se
+opravit. `eidos unpack` je najde podle názvu a archiv s nimi zkontroluje, než
+cokoli rozbalí. Pokud se pár bajtů pokazilo, par2 archiv nejdřív opraví a
+poškozenou kopii si nechá jako `backup.eidos.1`; poškození větší, než pokryje
+těch 5 %, zastaví rozbalení dřív, než se zapíše jediný soubor. Na stroji bez
+par2 rozbalení i tak proběhne, s varováním, že data pro obnovu nebyla použita.
+`--no-recovery` balí bez nich a `eidos pack --dry-run` řekne, jestli se zapíšou.
 
 ### Co v ní není a proč
 
@@ -317,10 +342,11 @@ ho potřebuje nejvíc, je ten, který zatím žádnou instanci nemá.
 
 Dialog balení nejdřív ukáže náhled, než se k čemukoli zaváže: kolik souborů, jak
 velkých, kolik z toho je `downloads/`, na kolik archiv zhruba vyjde a které
-nástroje jsou pojmenované, ale s sebou nejedou. Dialog rozbalení přečte manifest
-zálohy ve chvíli, kdy soubor zvolíte, takže vám dokáže říct, kterou hru obsahuje,
-kdy vznikla, kde dřív žila a které z jejích nástrojů tu chybí - ještě než mu
-dáte složku.
+nástroje jsou pojmenované, ale s sebou nejedou. Jeho políčko *Write recovery
+data* je zaškrtnuté, když je par2 nainstalovaný, a zašedlé s balíčkem k
+instalaci, když není. Dialog rozbalení přečte manifest zálohy ve chvíli, kdy
+soubor zvolíte, takže vám dokáže říct, kterou hru obsahuje, kdy vznikla, kde
+dřív žila a které z jejích nástrojů tu chybí - ještě než mu dáte složku.
 
 Obojí běží v pracovním vlákně s ukazatelem průběhu, takže okno během práce dál
 odpovídá a z ukazatele se po dokončení stane zpráva o výsledku. Balení drží zámek

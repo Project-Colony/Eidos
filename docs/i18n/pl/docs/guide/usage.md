@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ae08652e5ffe8559a077d6c4321b7d834bb793f1 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=7d8aa469a39312780cd84b6f2e42182d41274116 -->
 
 # Używanie Eidos
 
@@ -286,20 +286,46 @@ polecenie ludzie stawiają przed `&&`.
 Plik `.eidos` to archiwum 7-Zip pod własną nazwą, co jest wyborem, a nie
 przebraniem: 7-Zip i tak jest wymagany, żeby w ogóle zainstalować mod, więc nie
 dokłada to żadnej zależności, a jeśli kiedyś stracisz Eidos, twoja kopia nadal
-otworzy się w dowolnym archiwizatorze, jaki masz. Archiwum jest **niesolidne**,
-więc jeden plik da się wyciągnąć z kopii ważącej 70 GB bez rozpakowywania
-wszystkiego, co stoi przed nim, a kompresja to LZMA2 na `-mx1` - około 43%
-oryginału na liście obciążonej teksturami, w ułamku czasu, jaki `-mx9` spędza,
-by zyskać kilka punktów więcej. Tekstury i siatki to formaty już skompresowane;
-zostaje bardzo niewiele do znalezienia dla większego słownika. `--level`
-(0, 1, 3, 5, 7, 9) nadpisuje to, jeśli nie zgadzasz się co do własnej
+otworzy się w dowolnym archiwizatorze, jaki masz. Kompresja to LZMA2 na `-mx1` -
+około 43% oryginału na liście obciążonej teksturami, w ułamku czasu, jaki `-mx9`
+spędza, by zyskać kilka punktów więcej. Tekstury i siatki to formaty już
+skompresowane; zostaje bardzo niewiele do znalezienia dla większego słownika.
+`--level` (0, 1, 3, 5, 7, 9) nadpisuje to, jeśli nie zgadzasz się co do własnej
 zawartości, a `--no-downloads` zostawia `downloads/` poza kopią.
+
+Pliki trafiają do **bloków ciągłych (solid) po najwyżej 16 MB**. Wyciągnięcie
+jednego pliku z kopii ważącej 70 GB dekoduje najwyżej blok, w którym on leży,
+nigdy wszystko, co stoi przed nim, a na zawartości gier pakowanie idzie 2 do 5
+razy szybciej niż z każdym plikiem kompresowanym osobno (rozpakowywanie 2 do 4
+razy). Cenę płaci się przy uszkodzeniu: jeden zepsuty bajt może zabrać ze sobą
+każdy plik ze swojego bloku, do 16 MB sąsiednich plików, tam gdzie archiwum
+niesolidne straciłoby jeden plik. Opisane niżej dane naprawcze pokrywają ten
+przypadek. Poziom 0 zapisuje pliki bez kompresji i pozostaje niesolidny.
 
 Pakowanie bierze blokadę instancji, więc nie może działać, gdy gra albo inny
 Eidos pisze do tej instancji - kopia jest migawką, nie rozmazem. Zapisuje się
-pod nazwą z `.part` i na końcu jest przemianowywana, więc przerwane pakowanie
-zostawia coś oczywiście niedokończonego, a nie plik `.eidos`, który wygląda na
+pod nazwą z `.part`, zostaje zrzucona na dysk i w całości odczytana z powrotem
+przez `7z t`, zanim dostanie wybraną przez ciebie nazwę. Ta kontrola dekoduje
+każdy blok i porównuje każdą sumę kontrolną, czyli robi to samo, co rozpakowanie
+na drugiej maszynie. Jeśli się nie powiedzie, plik `.part` jest usuwany, pod
+twoją nazwą nic nie zostaje zapisane, a `eidos pack` cytuje linię, w której
+7-Zip znalazł uszkodzenie. Przerwane lub nieudane pakowanie zostawia coś
+oczywiście niedokończonego albo nic, a nie plik `.eidos`, który wygląda na
 kompletny i taki nie jest.
+
+Gdy par2cmdline jest zainstalowany (`sudo pacman -S par2cmdline` na Archu,
+`sudo apt install par2` na Debianie i Ubuntu, `sudo dnf install par2cmdline` na
+Fedorze), `eidos pack` zapisuje też obok archiwum dane naprawcze PAR2:
+`backup.eidos.par2` i kilka plików `backup.eidos.volNN+MM.par2`, razem 5%
+archiwum plus mały indeks. Trzymaj je w tym samym folderze co plik `.eidos` i
+kopiuj razem z nim, bo kopia przeniesiona bez nich nie ma z czego zostać
+naprawiona. `eidos unpack` znajduje je po nazwie i sprawdza nimi archiwum, zanim
+cokolwiek rozpakuje. Jeśli kilka bajtów się zepsuło, par2 najpierw naprawia
+archiwum i zachowuje uszkodzoną kopię jako `backup.eidos.1`; uszkodzenie
+większe, niż pokrywa te 5%, zatrzymuje rozpakowywanie, zanim zostanie zapisany
+choć jeden plik. Na maszynie bez par2 rozpakowywanie i tak rusza, z
+ostrzeżeniem, że dane naprawcze nie zostały użyte. `--no-recovery` pakuje bez
+nich, a `eidos pack --dry-run` mówi, czy zostaną zapisane.
 
 ### Czego w niej nie ma i dlaczego
 
@@ -334,10 +360,12 @@ która potrzebuje go najbardziej, to ta, która nie ma jeszcze żadnej instancji
 
 Okno pakowania pokazuje podgląd, zanim się do czegokolwiek zobowiąże: ile
 plików, jak dużych, ile z tego to `downloads/`, na ile mniej więcej wyjdzie
-archiwum i które narzędzia są wymienione z nazwy, ale nie niesione. Okno
-rozpakowania czyta manifest kopii w chwili, gdy wybierasz plik, więc potrafi
-powiedzieć, którą grę ona zawiera, kiedy powstała, gdzie leżała wcześniej i
-których jej narzędzi tutaj brakuje - zanim wskażesz mu folder.
+archiwum i które narzędzia są wymienione z nazwy, ale nie niesione. Jego pole
+*Write recovery data* jest zaznaczone, gdy par2 jest zainstalowany, a wyszarzone
+z nazwą pakietu do zainstalowania, gdy nie jest. Okno rozpakowania czyta
+manifest kopii w chwili, gdy wybierasz plik, więc potrafi powiedzieć, którą grę
+ona zawiera, kiedy powstała, gdzie leżała wcześniej i których jej narzędzi tutaj
+brakuje - zanim wskażesz mu folder.
 
 Oba działają na wątku roboczym z paskiem postępu, więc okno dalej odpowiada,
 kiedy pracują, a pasek na koniec staje się raportem. Pakowanie trzyma blokadę
