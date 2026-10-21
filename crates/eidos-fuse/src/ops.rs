@@ -105,6 +105,20 @@ impl Filesystem for Eidos {
         // traffic the extra event loops were added to absorb - measured: the
         // threads buy nothing until this is negotiated.
         let _ = config.add_capabilities(InitFlags::FUSE_PARALLEL_DIROPS);
+        // Without this the kernel clears SB_NOSEC on a FUSE mount, so every
+        // write(2) and truncate first asks GETXATTR `security.capability` to
+        // learn whether it must strip privileges: one more synchronous round
+        // trip per write, about 170k in a BodySlide batch. KILLPRIV_V2 sets
+        // SB_NOSEC, and an inode then skips the probe after its first write
+        // until its attributes are next refreshed. Best-effort, no capability
+        // needed.
+        //
+        // V2 hands the clearing of suid/sgid to the server (FUSE_WRITE_KILL_SUIDGID,
+        // FATTR_KILL_SUIDGID, FUSE_OPEN_KILL_SUIDGID), and this daemon ignores
+        // those flags. That is acceptable here: an unprivileged FUSE mount is
+        // forced nosuid, and the user namespace maps a single uid, so a suid bit
+        // on this mount can never raise anyone's privilege.
+        let _ = config.add_capabilities(InitFlags::FUSE_HANDLE_KILLPRIV_V2);
         let _ = config.set_max_readahead(1 << 20);
         let _ = config.set_max_write(1 << 20);
 
@@ -584,12 +598,20 @@ impl Filesystem for Eidos {
             }
             sent += 1;
         }
-        // The buffer was not filled, so this chunk carried the tail: the walk is
-        // over and the pin can go. A caller that abandons one mid-way leaves an
-        // entry behind, which the next `offset == 0` on that inode replaces - the
-        // map is bounded by the number of directories, not by walks.
-        if !full {
-            let _ = sent;
+        // The walk is over only on the reply that sent NOTHING. The kernel marks
+        // EOF (and completes its readdir cache) on an empty reply, so a chunk that
+        // carried the tail is always followed by one more request at offset ==
+        // len. Dropping the pin on the tail chunk made that request rebuild the
+        // whole listing to send zero entries (every stored session showed exactly
+        // 50% "cached" listings, which was this and nothing else), and if the
+        // directory had grown in between, the rebuilt list sent entries the walk
+        // had already seen.
+        //
+        // A caller that abandons a walk, including one that reads the tail and
+        // never asks for EOF, leaves an entry behind, which the next
+        // `offset == 0` on that inode replaces - the map is bounded by the number
+        // of directories, not by walks.
+        if !full && sent == 0 {
             self.enumerations.lock_recover().remove(&ino.0);
         }
         reply.ok();
@@ -906,6 +928,21 @@ impl Filesystem for Eidos {
         reply: ReplyEmpty,
     ) {
         let _t = self.stats.flush.start();
+        // Without a timestamp projection there is nothing to do here, and the
+        // kernel sends FLUSH synchronously from EVERY close(2), dups included:
+        // one stored game session paid about 9.5k of these round trips, a
+        // BodySlide batch about 85k. ENOSYS is deliberate: the kernel treats it
+        // as success and sets `no_flush` for this connection, so close() stops
+        // waiting on us. It is safe because writeback cache is off (writes are
+        // already synchronous WRITEs, and the kernel still syncs dirty mmap
+        // pages before it checks `no_flush`) and no lock handlers are
+        // negotiated, so FLUSH carries no lock-owner duty. The projection is
+        // fixed before the mount, so the latch can never be wrong for it.
+        // Revisit if POSIX locks or FUSE_WRITEBACK_CACHE are ever added.
+        if self.plugin_timestamps.is_none() {
+            reply.error(Errno::ENOSYS);
+            return;
+        }
         match self.flush_projected_times() {
             Ok(()) => reply.ok(),
             Err(e) => reply.error(e.into()),

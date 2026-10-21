@@ -353,7 +353,11 @@ impl Eidos {
     /// case rather than a real one.
     fn record_alias(&self, ino: u64, parent: u64, name: &str) {
         let mut aliases = self.aliases.lock_recover();
-        let entry = aliases.entry(ino).or_default();
+        // Capacity 1, not the 4 a first push picks for a 32 B element: nearly
+        // every inode only ever gets one spelling, and the entry lives until
+        // FORGET, which a machine with free RAM rarely sends. About 96 B per
+        // looked-up inode; a second spelling grows it as before.
+        let entry = aliases.entry(ino).or_insert_with(|| Vec::with_capacity(1));
         if entry.len() < 16 && !entry.iter().any(|(p, n)| *p == parent && n == name) {
             entry.push((parent, name.to_string()));
         }
