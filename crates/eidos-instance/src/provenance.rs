@@ -133,29 +133,44 @@ impl GeneratedStore {
         if self.files.is_empty() {
             return Ok(());
         }
+        // One pass per phase instead of a find and a retain per path: the old
+        // loop was O(moved x stored) and froze "Create mod from Overwrite" for
+        // seconds after a BodySlide-sized batch. Batching gives the same Vec,
+        // order included, because the moved paths are distinct snapshot keys:
+        // each per-path step only ever touched entries for its own path, and
+        // the Some(owner) entries it pushed are never matched by the None-only
+        // receipt lookup. Keys are the exact PathBuf, as the old `==` was.
+        let owners: HashMap<&PathBuf, &String> =
+            moved.iter().map(|(owner, path)| (path, owner)).collect();
+        debug_assert_eq!(owners.len(), moved.len(), "moved paths must be unique");
+        let mut receipts = HashMap::<&PathBuf, &String>::new();
+        for file in &self.files {
+            if file.mod_name.is_none()
+                && owners.contains_key(&file.path)
+                && before.files.get(&file.path) == Some(&file.stamp)
+            {
+                receipts.entry(&file.path).or_insert(&file.receipt);
+            }
+        }
+        // Stamp every destination before mutating anything, in `moved` order,
+        // so a failing stat returns before save() exactly as it did before.
+        let mut attributed = Vec::new();
         for (owner, path) in moved {
-            let receipt = self
-                .files
-                .iter()
-                .find(|file| {
-                    file.mod_name.is_none()
-                        && file.path == *path
-                        && before.files.get(path) == Some(&file.stamp)
-                })
-                .map(|file| file.receipt.clone());
-            self.files.retain(|file| {
-                !(file.path == *path
-                    && (file.mod_name.is_none() || file.mod_name.as_deref() == Some(owner)))
-            });
-            if let Some(receipt) = receipt {
-                self.files.push(StoredOutput {
+            if let Some(receipt) = receipts.get(path) {
+                attributed.push(StoredOutput {
                     mod_name: Some(owner.clone()),
                     path: path.clone(),
-                    receipt,
+                    receipt: (*receipt).clone(),
                     stamp: file_stamp(&instance.mods_dir().join(owner).join(path))?,
                 });
             }
         }
+        self.files.retain(|file| {
+            !owners.get(&file.path).is_some_and(|owner| {
+                file.mod_name.is_none() || file.mod_name.as_deref() == Some(owner.as_str())
+            })
+        });
+        self.files.extend(attributed);
         self.save(instance)
     }
 }
@@ -295,22 +310,29 @@ impl Instance {
         }
         store.pending.remove(&run.receipt.id);
         let after = self.overwrite_snapshot();
-        let mut count = 0;
-        for (path, stamp) in &after.files {
-            if run.before.files.get(path) == Some(stamp) {
-                continue;
-            }
-            store
-                .files
-                .retain(|file| file.mod_name.is_some() || file.path != *path);
-            store.files.push(StoredOutput {
+        // One retain over the store for all changed paths, not one per path:
+        // that was O(changed x stored), seconds after a generator wrote a few
+        // thousand files. Changed paths are distinct snapshot keys, so the
+        // result is the same Vec in the same order.
+        let changed: Vec<_> = after
+            .files
+            .iter()
+            .filter(|(path, stamp)| run.before.files.get(*path) != Some(*stamp))
+            .collect();
+        let hit: std::collections::HashSet<&PathBuf> =
+            changed.iter().map(|(path, _)| *path).collect();
+        store
+            .files
+            .retain(|file| file.mod_name.is_some() || !hit.contains(&file.path));
+        store
+            .files
+            .extend(changed.iter().map(|(path, stamp)| StoredOutput {
                 mod_name: None,
-                path: path.clone(),
-                stamp: *stamp,
+                path: (*path).clone(),
+                stamp: **stamp,
                 receipt: run.receipt.id.clone(),
-            });
-            count += 1;
-        }
+            }));
+        let count = changed.len();
         if count > 0 {
             store.receipts.insert(run.receipt.id.clone(), run.receipt);
         }
@@ -617,6 +639,87 @@ mod tests {
             f.0.generated_output(Some("Existing")).unwrap()[0].paths,
             [PathBuf::from("blocked/file.esp")]
         );
+    }
+
+    /// Two overlapping runs, a partial capture of a third, then a full move:
+    /// the batched receipt bookkeeping must attribute every path exactly as the
+    /// old one-path-at-a-time loops did.
+    fn receipts_survive_a_batch(n: usize) -> [std::time::Duration; 3] {
+        let f = Fixture::new();
+        let paths = |dir: &str, range: std::ops::Range<usize>| -> Vec<PathBuf> {
+            range
+                .map(|i| PathBuf::from(format!("meshes/{dir}/part{i:05}.nif")))
+                .collect()
+        };
+        let receipt_paths = |owner: Option<&str>| {
+            let mut out: Vec<(String, Vec<PathBuf>)> =
+                f.0.generated_output(owner)
+                    .unwrap()
+                    .into_iter()
+                    .map(|o| (o.receipt.tool, o.paths))
+                    .collect();
+            out.sort();
+            out
+        };
+        let run = f.0.begin_tool_run("A", None, &[], &[]).unwrap();
+        for p in paths("a", 0..n) {
+            f.put(p.to_str().unwrap(), b"a");
+        }
+        let started = std::time::Instant::now();
+        assert_eq!(f.0.finish_tool_run(run).unwrap(), n);
+        let first = started.elapsed();
+        let run = f.0.begin_tool_run("B", None, &[], &[]).unwrap();
+        for p in paths("a", 0..n / 2).into_iter().chain(paths("b", 0..n / 3)) {
+            f.put(p.to_str().unwrap(), b"bb");
+        }
+        let started = std::time::Instant::now();
+        assert_eq!(f.0.finish_tool_run(run).unwrap(), n / 2 + n / 3);
+        let rerun = started.elapsed();
+        let mut b = paths("a", 0..n / 2);
+        b.extend(paths("b", 0..n / 3));
+        b.sort();
+        let overwrite = vec![
+            ("A".to_string(), paths("a", n / 2..n)),
+            ("B".to_string(), b.clone()),
+        ];
+        assert_eq!(receipt_paths(None), overwrite);
+
+        let run = f.0.begin_tool_run("C", None, &[], &[]).unwrap();
+        let before = run.before.clone();
+        for p in paths("c", 0..n / 5) {
+            f.put(p.to_str().unwrap(), b"c");
+        }
+        f.0.finish_tool_run(run).unwrap();
+        assert_eq!(
+            f.0.capture_overwrite_into_mod("Captured", &before).unwrap(),
+            n / 5
+        );
+        assert_eq!(
+            receipt_paths(Some("Captured")),
+            [("C".to_string(), paths("c", 0..n / 5))]
+        );
+        assert_eq!(receipt_paths(None), overwrite);
+
+        let started = std::time::Instant::now();
+        f.0.overwrite_into_mod("Generated").unwrap();
+        let moved = started.elapsed();
+        assert!(receipt_paths(None).is_empty());
+        assert_eq!(receipt_paths(Some("Generated")), overwrite);
+        assert_eq!(receipt_paths(Some("Captured")).len(), 1);
+        [first, rerun, moved]
+    }
+
+    #[test]
+    fn a_few_hundred_outputs_keep_per_path_receipts_through_batched_updates() {
+        receipts_survive_a_batch(300);
+    }
+
+    /// `cargo test -p eidos-instance --release -- --ignored --nocapture receipt_timing`
+    #[test]
+    #[ignore]
+    fn receipt_timing_at_ten_thousand_outputs() {
+        let [first, rerun, moved] = receipts_survive_a_batch(10_000);
+        eprintln!("finish {first:?}, finish over old receipts {rerun:?}, move {moved:?}");
     }
 
     #[test]

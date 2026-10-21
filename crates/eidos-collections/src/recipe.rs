@@ -12,6 +12,7 @@ const RECEIPT: &str = ".eidos-collection-recipe.json";
 // ponytail: patch/base/output capped at 512 MiB; raise after measuring larger real recipes.
 const PATCH_LIMIT: u64 = 512 * 1024 * 1024;
 const CONTROL_LIMIT: u64 = 16 * 1024 * 1024;
+const RECEIPT_LIMIT: u64 = 64 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RuntimeCheck {
@@ -108,16 +109,23 @@ fn installed_path(raw: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 fn unique_paths<'a>(paths: impl Iterator<Item = &'a str>) -> Result<(), String> {
-    let mut seen = BTreeSet::new();
+    // Two paths collide when equal or when one is the other's directory. Each
+    // path is checked against the earlier paths and their ancestors, n x depth,
+    // instead of against every earlier path with two allocations per pair:
+    // that was 26-40 s per call for a 20k-file replicate member, and a member
+    // is validated about seven times per run. Same order, same first error.
+    let mut seen = std::collections::HashSet::new();
+    let mut parents = std::collections::HashSet::new();
     for raw in paths {
         let path = installed_path(raw)?.to_string_lossy().to_lowercase();
-        if seen.iter().any(|old: &String| {
-            old == &path
-                || old.starts_with(&format!("{path}/"))
-                || path.starts_with(&format!("{old}/"))
-        }) {
+        let ancestors: Vec<&str> = path.match_indices('/').map(|(i, _)| &path[..i]).collect();
+        if seen.contains(&path)
+            || parents.contains(&path)
+            || ancestors.iter().any(|dir| seen.contains(*dir))
+        {
             return Err(format!("Colliding recipe destination: {raw}"));
         }
+        parents.extend(ancestors.into_iter().map(str::to_owned));
         seen.insert(path);
     }
     Ok(())
@@ -187,6 +195,44 @@ pub fn map_exclusions(m: &Mod, game_root: &Path, data_root: &Path) -> Result<Mod
     Ok(mapped)
 }
 pub fn validate_archive(m: &Mod, archive: &Path) -> Result<(), String> {
+    check_archive(m, archive, None).map(drop)
+}
+/// What a passed MD5 check proved: this file, with this identity, held the
+/// bytes of a member with this MD5 and size.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckedArchive {
+    path: PathBuf,
+    stamp: [u64; 7],
+    md5: String,
+    size: Option<u64>,
+}
+fn archive_stamp(meta: &fs::Metadata) -> [u64; 7] {
+    use std::os::unix::fs::MetadataExt;
+    [
+        meta.dev(),
+        meta.ino(),
+        meta.len(),
+        meta.mtime() as u64,
+        meta.mtime_nsec() as u64,
+        meta.ctime() as u64,
+        meta.ctime_nsec() as u64,
+    ]
+}
+/// [`validate_archive`], returning the proof of a passed MD5 check, and
+/// skipping the MD5 read when `known` already proves this exact file for this
+/// member's MD5 and size and its identity has not changed since.
+///
+/// A collection member's archive used to be hashed in full twice moments apart,
+/// once when it was obtained and again when it was installed, about 1.2 s per
+/// GB for the second pass. The identity is the stamp the installer pins an
+/// archive with (eidos-install ArchiveOrigin): any write, truncate or
+/// replacement changes it, and the stamp is only recorded when the descriptor
+/// that was hashed showed the same identity before and after the read.
+pub fn check_archive(
+    m: &Mod,
+    archive: &Path,
+    known: Option<&CheckedArchive>,
+) -> Result<Option<CheckedArchive>, String> {
     validate_member(m)?;
     let meta = fs::symlink_metadata(archive).map_err(|e| e.to_string())?;
     if !meta.file_type().is_file() {
@@ -200,17 +246,40 @@ pub fn validate_archive(m: &Mod, archive: &Path) -> Result<(), String> {
             meta.len()
         ));
     }
-    if !m.source.md5.is_empty()
-        && !eidos_nexus::md5_file(archive)
-            .map_err(|e| e.to_string())?
-            .eq_ignore_ascii_case(&m.source.md5)
-    {
+    if m.source.md5.is_empty() {
+        return Ok(None);
+    }
+    let path = fs::canonicalize(archive).map_err(|e| e.to_string())?;
+    if let Some(known) = known.filter(|known| {
+        known.path == path
+            && known.stamp == archive_stamp(&meta)
+            && known.md5.eq_ignore_ascii_case(&m.source.md5)
+            && known.size == m.source.file_size
+    }) {
+        return Ok(Some(known.clone()));
+    }
+    let mut file = fs::File::open(archive).map_err(|e| e.to_string())?;
+    let before = file.metadata().map_err(|e| e.to_string())?;
+    let md5 =
+        eidos_nexus::md5_reader(&mut file, &mut vec![0u8; 1 << 20]).map_err(|e| e.to_string())?;
+    if !md5.eq_ignore_ascii_case(&m.source.md5) {
         return Err(format!(
             "Archive MD5 mismatch for {}; archive retained",
             m.name
         ));
     }
-    Ok(())
+    let after = file.metadata().map_err(|e| e.to_string())?;
+    let stamp = archive_stamp(&meta);
+    Ok(
+        (archive_stamp(&before) == stamp && archive_stamp(&after) == stamp).then_some(
+            CheckedArchive {
+                path,
+                stamp,
+                md5,
+                size: m.source.file_size,
+            },
+        ),
+    )
 }
 fn child(root: &Path, relative: &Path) -> Result<PathBuf, String> {
     let mut current = root.to_path_buf();
@@ -570,27 +639,83 @@ fn patch_source(m: &Mod, payload: &Path, path: &str) -> Result<PathBuf, String> 
     )
 }
 fn tree_digests(root: &Path) -> Result<BTreeMap<String, String>, String> {
-    files(root, true)?
-        .into_iter()
-        .filter(|(p, _)| {
-            let p = p.to_ascii_lowercase();
-            p != "meta.ini"
-                && p != RECEIPT
-                && p != ".eidos-custom-installer.json"
-                && !p.starts_with(".eidos-omod.mohidden/")
-                && p != ".eidos-collection-installer.json"
-        })
-        .map(|(p, file)| {
-            Ok((
-                p.clone(),
-                if p.ends_with('/') {
-                    String::new()
-                } else {
-                    eidos_nexus::md5_file(&file).map_err(|e| e.to_string())?
-                },
-            ))
-        })
-        .collect()
+    tree_digests_with(root, None, None)
+}
+/// A file's identity for the receipt quick check: inode, length, mtime and
+/// ctime with nanoseconds, the same proof of "unchanged" the Overwrite capture
+/// trusts (eidos-instance FileStamp). No device number: NVMe numbering can swap
+/// between boots, and a different filesystem gives a different inode and ctime
+/// anyway.
+fn stamp(meta: &fs::Metadata) -> String {
+    use std::os::unix::fs::MetadataExt;
+    format!(
+        "{:x}:{:x}:{:x}.{:x}:{:x}.{:x}",
+        meta.ino(),
+        meta.len(),
+        meta.mtime(),
+        meta.mtime_nsec(),
+        meta.ctime(),
+        meta.ctime_nsec()
+    )
+}
+/// [`tree_digests`], optionally reusing a receipt's digest for every file whose
+/// current stamp still equals the one recorded when it was hashed, and
+/// optionally recording a stamp for every file it does hash.
+///
+/// Re-verifying an installed collection used to MD5 every installed byte on
+/// every run, about 1.4 s per GB, minutes for a large collection before the
+/// first missing member was even looked at. The walk and the key set are still
+/// current, so an added or removed file still fails verification; only the
+/// content of a file whose identity is unchanged is taken from the receipt.
+/// ctime cannot be set back from userspace, so any write, truncate, chmod or
+/// rename-over since the hash changes the stamp and that file is hashed again.
+fn tree_digests_with(
+    root: &Path,
+    known: Option<&Receipt>,
+    mut stamps: Option<&mut BTreeMap<String, String>>,
+) -> Result<BTreeMap<String, String>, String> {
+    let mut out = BTreeMap::new();
+    let mut buf = vec![0u8; 1 << 20];
+    for (p, file) in files(root, true)? {
+        let lower = p.to_ascii_lowercase();
+        if lower == "meta.ini"
+            || lower == RECEIPT
+            || lower == ".eidos-custom-installer.json"
+            || lower.starts_with(".eidos-omod.mohidden/")
+            || lower == ".eidos-collection-installer.json"
+        {
+            continue;
+        }
+        if p.ends_with('/') {
+            out.insert(p, String::new());
+            continue;
+        }
+        let reused = known.and_then(|receipt| {
+            let recorded = receipt.stamps.get(&p)?;
+            let current = fs::symlink_metadata(&file).ok().filter(|m| m.is_file())?;
+            (stamp(&current) == *recorded)
+                .then(|| receipt.files.get(&p).cloned())
+                .flatten()
+        });
+        if let Some(digest) = reused {
+            out.insert(p, digest);
+            continue;
+        }
+        // Stat the descriptor that is hashed, before and after: a stamp is
+        // recorded only when nothing changed the file while it was read, so a
+        // stamp can never vouch for bytes other than the ones digested.
+        let mut handle = fs::File::open(&file).map_err(|e| e.to_string())?;
+        let before = handle.metadata().map_err(|e| e.to_string())?;
+        let digest = eidos_nexus::md5_reader(&mut handle, &mut buf).map_err(|e| e.to_string())?;
+        if let Some(stamps) = stamps.as_deref_mut() {
+            let after = handle.metadata().map_err(|e| e.to_string())?;
+            if stamp(&before) == stamp(&after) {
+                stamps.insert(p.clone(), stamp(&after));
+            }
+        }
+        out.insert(p, digest);
+    }
+    Ok(out)
 }
 fn identity(m: &Mod, payload: &Path) -> Result<serde_json::Value, String> {
     let mut patches = BTreeMap::new();
@@ -614,6 +739,12 @@ struct Receipt {
     recipe: serde_json::Value,
     files: BTreeMap<String, String>,
     exclusions: BTreeMap<String, String>,
+    /// Path -> [`stamp`] taken when that file was hashed. Optional on both
+    /// sides: a receipt without it (older Eidos, or rewritten by an older
+    /// Eidos's transfer_receipt, which drops fields it does not know) is
+    /// verified by hashing everything, and older Eidos ignores the field.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    stamps: BTreeMap<String, String>,
 }
 pub fn finish(m: &Mod, payload: &Path, stage: &Path, owner: &str) -> Result<(), String> {
     validate_member(m)?;
@@ -676,19 +807,34 @@ pub fn finish(m: &Mod, payload: &Path, stage: &Path, owner: &str) -> Result<(), 
                 .to_string(),
         );
     }
-    let receipt = Receipt {
+    let mut stamps = BTreeMap::new();
+    let files = tree_digests_with(
+        stage,
+        None,
+        eidos_instance::ctime_is_reliable(stage).then_some(&mut stamps),
+    )?;
+    let mut receipt = Receipt {
         schema: 1,
         owner: owner.into(),
         recipe: identity(m, payload)?,
-        files: tree_digests(stage)?,
+        files,
         exclusions,
+        stamps,
     };
+    let mut bytes = serde_json::to_vec(&receipt).map_err(|e| e.to_string())?;
+    // Stamps roughly double each entry. A member so large that they would push
+    // the receipt past the read limit keeps a stamp-free receipt, verifiable by
+    // hashing as before, rather than one no run could read back.
+    if bytes.len() as u64 > RECEIPT_LIMIT && !receipt.stamps.is_empty() {
+        receipt.stamps.clear();
+        bytes = serde_json::to_vec(&receipt).map_err(|e| e.to_string())?;
+    }
     let mut output = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(stage.join(RECEIPT))
         .map_err(|e| e.to_string())?;
-    serde_json::to_writer(&mut output, &receipt).map_err(|e| e.to_string())?;
+    output.write_all(&bytes).map_err(|e| e.to_string())?;
     output.sync_all().map_err(|e| e.to_string())
 }
 pub fn verify_receipt(m: &Mod, payload: &Path, folder: &Path, owner: &str) -> Result<bool, String> {
@@ -698,14 +844,18 @@ pub fn verify_receipt(m: &Mod, payload: &Path, folder: &Path, owner: &str) -> Re
         Ok(meta) if meta.file_type().is_file() => {}
         _ => return Err("Collection receipt is not a readable regular file".into()),
     }
-    let receipt: Receipt = match serde_json::from_slice(&bounded_read(&path, 64 * 1024 * 1024)?) {
+    let receipt: Receipt = match serde_json::from_slice(&bounded_read(&path, RECEIPT_LIMIT)?) {
         Ok(r) => r,
         Err(_) => return Ok(false),
     };
+    // Never refreshes the stamps: a verified resume writes nothing, so a
+    // member whose stamps no longer match (a portable copy, an older receipt)
+    // is hashed in full on every run, as it always was.
+    let known = eidos_instance::ctime_is_reliable(folder).then_some(&receipt);
     Ok(receipt.schema == 1
         && receipt.owner == owner
         && receipt.recipe == identity(m, payload)?
-        && receipt.files == tree_digests(folder)?)
+        && receipt.files == tree_digests_with(folder, known, None)?)
 }
 /// Whether `folder` holds files its install receipt does not vouch for: a file
 /// the user edited, added or hid, files moved in by Sync to Mods, or content
@@ -721,7 +871,7 @@ pub fn holds_unreceipted_files(folder: &Path) -> Result<bool, String> {
         _ => return Ok(true),
     }
     Ok(
-        match serde_json::from_slice::<Receipt>(&bounded_read(&path, 64 * 1024 * 1024)?) {
+        match serde_json::from_slice::<Receipt>(&bounded_read(&path, RECEIPT_LIMIT)?) {
             Ok(receipt) => receipt.files != current,
             Err(_) => true,
         },
@@ -741,8 +891,7 @@ pub fn transfer_receipt(folder: &Path, from: &str, to: &str) -> Result<(), Strin
     if !fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_file()) {
         return Ok(());
     }
-    let Ok(mut receipt) =
-        serde_json::from_slice::<Receipt>(&bounded_read(&path, 64 * 1024 * 1024)?)
+    let Ok(mut receipt) = serde_json::from_slice::<Receipt>(&bounded_read(&path, RECEIPT_LIMIT)?)
     else {
         return Ok(());
     };

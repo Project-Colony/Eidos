@@ -708,7 +708,7 @@ pub fn try_custom_installers_with_receipt(
     }
     let sources = inventory(tree.path(), cancel)?;
     let source_sha256 = digest(&encoded(&sources)?);
-    let archive_sha256 = verify_origin(&tree, &archive, cancel)?.sha256().to_owned();
+    let archive_sha256 = verify_origin(&tree, &archive, cancel)?.sha256(cancel)?;
     let context_sha256 = context_stamp(game_id, context)?;
     let tmp = tree
         .path()

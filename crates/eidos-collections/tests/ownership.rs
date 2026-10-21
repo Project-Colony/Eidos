@@ -87,6 +87,7 @@ fn a_previously_unavailable_member_does_not_own_an_existing_personal_mod() {
     let mut hooks = RealHooks {
         payload_root: std::path::PathBuf::new(),
         allow_runtime_mismatch: false,
+        checked_archive: None,
         nexus: &nexus,
         inst: &inst,
         game: &game,
@@ -247,6 +248,7 @@ fn a_stale_download_sidecar_does_not_hide_a_later_complete_archive() {
     let mut hooks = RealHooks {
         payload_root: std::path::PathBuf::new(),
         allow_runtime_mismatch: false,
+        checked_archive: None,
         nexus: &nexus,
         inst: &inst,
         game: &game,
@@ -342,6 +344,7 @@ fn bundle_clone_patch_pipeline_resumes_and_failed_replacement_retains_owned_and_
     let mut hooks = RealHooks {
         payload_root: payload,
         allow_runtime_mismatch: false,
+        checked_archive: None,
         nexus: &nexus,
         inst: &inst,
         game: &game,
@@ -454,6 +457,7 @@ fn omod_recipes_patch_before_publication_and_hashes_use_decoded_sources() {
     let mut hooks = RealHooks {
         payload_root: payload,
         allow_runtime_mismatch: false,
+        checked_archive: None,
         nexus: &nexus,
         inst: &inst,
         game: &game,
@@ -559,6 +563,7 @@ fn replacing_a_member_keeps_a_folder_that_holds_files_its_receipt_never_saw() {
     let mut hooks = RealHooks {
         payload_root: std::path::PathBuf::new(),
         allow_runtime_mismatch: false,
+        checked_archive: None,
         nexus: &nexus,
         inst: &inst,
         game: &game,

@@ -108,8 +108,12 @@ pub fn capture_command(
                 stderr: err,
             });
         }
+        // The first idle tick is almost always paid: a helper that exits in
+        // 1-3 ms is only seen when it ends, so 5 ms made every diagnose add-on
+        // cost at least 5 ms on the window's thread. A 1 ms tick also answers
+        // a cancel sooner; the cost is idle wakeups for the helper's lifetime.
         if !progress {
-            std::thread::sleep(Duration::from_millis(5));
+            std::thread::sleep(Duration::from_millis(1));
         }
     }
 }

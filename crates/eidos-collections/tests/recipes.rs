@@ -561,6 +561,7 @@ fn actual_pe_runtime_evidence_gates_the_real_driver_before_member_mutation() {
     let mut hooks = RealHooks {
         payload_root: t.0.clone(),
         allow_runtime_mismatch: false,
+        checked_archive: None,
         nexus: &nexus,
         inst: &inst,
         game: &game,
@@ -618,4 +619,97 @@ fn actual_pe_runtime_evidence_gates_the_real_driver_before_member_mutation() {
         runtime_check(&c, &game),
         RuntimeCheck::Unknown { .. }
     ));
+}
+#[test]
+fn a_resume_trusts_unchanged_stamps_and_rehashes_a_replaced_file() {
+    let t = Temp::new();
+    let stage = t.0.join("stage");
+    put(&stage, "textures/a.dds", b"abcd");
+    put(&stage, "meshes/b.nif", b"wxyz");
+    let m = Mod::default();
+    finish(&m, &t.0, &stage, "owner").unwrap();
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&fs::read(stage.join(".eidos-collection-recipe.json")).unwrap())
+            .unwrap();
+    if eidos_instance::ctime_is_reliable(&stage) {
+        assert_eq!(
+            receipt["stamps"].as_object().map(|s| s.len()),
+            Some(2),
+            "each hashed file records the identity it was hashed under: {receipt}"
+        );
+    }
+    assert!(verify_receipt(&m, &t.0, &stage, "owner").unwrap());
+    // Same length, mtime put back, renamed over the original: only the inode
+    // tells it apart, and that is enough for the new bytes to be hashed.
+    let path = stage.join("textures/a.dds");
+    let mtime = fs::metadata(&path).unwrap().modified().unwrap();
+    let replacement = stage.join("textures/a.tmp");
+    fs::write(&replacement, b"ABCD").unwrap();
+    fs::File::options()
+        .write(true)
+        .open(&replacement)
+        .unwrap()
+        .set_modified(mtime)
+        .unwrap();
+    fs::rename(&replacement, &path).unwrap();
+    assert!(!verify_receipt(&m, &t.0, &stage, "owner").unwrap());
+}
+#[test]
+fn recipe_destinations_collide_in_either_order_and_any_case() {
+    let member = |paths: &[&str]| Mod {
+        hashes: paths
+            .iter()
+            .map(|path| FileHash {
+                path: (*path).into(),
+                md5: "900150983cd24fb0d6963f7d28e17f72".into(),
+            })
+            .collect(),
+        ..Default::default()
+    };
+    for paths in [
+        &["textures/a.dds", "textures/a.dds/b.dds"][..],
+        &["textures/a.dds/b.dds", "textures/a.dds"],
+        &["Textures/A.dds", "textures/a.DDS"],
+        &["meshes/x/y/z.nif", "Meshes/X"],
+        &["meshes/x", "MESHES/X/y/z.nif"],
+    ] {
+        let error = validate_member(&member(paths)).unwrap_err();
+        assert!(error.contains(paths[1]), "{paths:?}: {error}");
+    }
+    // A shared name prefix without a separator is not a directory relation.
+    validate_member(&member(&["meshes/x", "meshes/x.nif", "meshes/xy/z.nif"])).unwrap();
+    // A replicate member lists every file it ships; thousands of siblings and
+    // shared folders are not collisions, and checking them must stay cheap.
+    let many: Vec<String> = (0..20_000)
+        .map(|i| format!("textures/set{:02}/sub/file{i:05}.dds", i % 40))
+        .collect();
+    let many: Vec<&str> = many.iter().map(String::as_str).collect();
+    validate_member(&member(&many)).unwrap();
+}
+#[test]
+fn an_unchanged_archive_is_not_hashed_twice_and_a_replaced_one_is() {
+    let t = Temp::new();
+    let archive = t.0.join("member.7z");
+    fs::write(&archive, b"abc").unwrap();
+    let mut m = Mod::default();
+    m.source.md5 = "900150983cd24fb0d6963f7d28e17f72".into();
+    m.source.file_size = Some(3);
+    let proof = check_archive(&m, &archive, None)
+        .unwrap()
+        .expect("MD5 checked");
+    assert_eq!(
+        check_archive(&m, &archive, Some(&proof)).unwrap(),
+        Some(proof.clone())
+    );
+    // Another member with other bytes cannot borrow this proof.
+    let mut other = m.clone();
+    other.source.md5 = "00000000000000000000000000000000".into();
+    assert!(check_archive(&other, &archive, Some(&proof)).is_err());
+    // Same length, new inode: the stale proof no longer matches, so the new
+    // bytes are hashed and refused.
+    let replacement = t.0.join("member.tmp");
+    fs::write(&replacement, b"xyz").unwrap();
+    fs::rename(&replacement, &archive).unwrap();
+    let error = check_archive(&m, &archive, Some(&proof)).unwrap_err();
+    assert!(error.contains("MD5 mismatch"), "{error}");
 }

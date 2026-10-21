@@ -91,6 +91,7 @@ print(json.dumps({'protocol':1,'request_id':r['request_id'],'outcome':o}))
         kept: vec![],
         payload_root: root.clone(),
         allow_runtime_mismatch: false,
+        checked_archive: None,
     };
     // The actual collection caller holds this lock across member operations.
     let _lock = inst.try_lock("synthetic collection engine").unwrap();

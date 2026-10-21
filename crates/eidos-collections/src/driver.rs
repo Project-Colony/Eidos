@@ -114,6 +114,9 @@ pub struct RealHooks<'a> {
     pub kept: Vec<(String, PathBuf)>,
     pub payload_root: PathBuf,
     pub allow_runtime_mismatch: bool,
+    /// The archive obtain() last checked against its member's MD5, so install()
+    /// can skip a second full read of the same unchanged file. Start with None.
+    pub checked_archive: Option<crate::recipe::CheckedArchive>,
 }
 
 impl RealHooks<'_> {
@@ -748,7 +751,7 @@ impl Hooks for RealHooks<'_> {
             };
         }
         if let Some(p) = self.already_here(m) {
-            return checked_archive(m, p);
+            return checked_archive(m, p, &mut self.checked_archive);
         }
         match m.source.kind {
             SourceType::Nexus => {
@@ -802,7 +805,7 @@ impl Hooks for RealHooks<'_> {
                                         &dest, domain, &nxm, &url, &file, &remote,
                                     );
                                 }
-                                checked_archive(m, dest)
+                                checked_archive(m, dest, &mut self.checked_archive)
                             }
                             Err(e) => Obtained::Failed(e),
                         }
@@ -826,7 +829,7 @@ impl Hooks for RealHooks<'_> {
                     &format!("{}.archive", safe(&m.name)),
                 ));
                 match self.nexus.download(&m.source.url, &dest) {
-                    Ok(_) => checked_archive(m, dest),
+                    Ok(_) => checked_archive(m, dest, &mut self.checked_archive),
                     Err(e) => Obtained::Failed(e),
                 }
             }
@@ -912,7 +915,9 @@ impl Hooks for RealHooks<'_> {
                 },
             )
         } else {
-            if let Err(e) = crate::recipe::validate_archive(&mapped, archive) {
+            if let Err(e) =
+                crate::recipe::check_archive(&mapped, archive, self.checked_archive.as_ref())
+            {
                 return Installed::Failed(e);
             }
             let native_omod = match eidos_install::try_open_omod(archive, &mods_dir, |_| {}) {
@@ -1285,9 +1290,16 @@ impl Hooks for RealHooks<'_> {
     }
 }
 
-fn checked_archive(m: &Mod, archive: PathBuf) -> Obtained {
-    match crate::recipe::validate_archive(m, &archive) {
-        Ok(()) => Obtained::Ready(archive),
+fn checked_archive(
+    m: &Mod,
+    archive: PathBuf,
+    proof: &mut Option<crate::recipe::CheckedArchive>,
+) -> Obtained {
+    match crate::recipe::check_archive(m, &archive, None) {
+        Ok(checked) => {
+            *proof = checked;
+            Obtained::Ready(archive)
+        }
         Err(error) => Obtained::Failed(error),
     }
 }

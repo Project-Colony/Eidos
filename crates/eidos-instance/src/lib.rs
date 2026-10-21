@@ -1572,6 +1572,39 @@ pub struct FileStamp {
     ctime_ns: i64,
 }
 
+/// Whether the filesystem holding `path` keeps a real, kernel-owned ctime, the
+/// half of a [`FileStamp`]-style identity that no `utimes` can set back. FAT and
+/// exFAT store no change time at all, and FUSE or NTFS drivers vary, so a caller
+/// that would skip work on a matching stamp asks first. An allowlist: anything
+/// unknown, or a failing statfs, answers false and the caller does the full work.
+// The casts are no-ops on x86_64 and needed where libc types f_type and the
+// magics differently (c_long, c_uint, __fsword_t vary by target).
+#[allow(clippy::unnecessary_cast)]
+pub fn ctime_is_reliable(path: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    // libc has no constant for XFS; this is XFS_SUPER_MAGIC from linux/magic.h.
+    const XFS_SUPER_MAGIC: i64 = 0x5846_5342;
+    let Ok(path) = std::ffi::CString::new(path.as_os_str().as_bytes()) else {
+        return false;
+    };
+    // SAFETY: statfs only writes into the zeroed buffer it is handed, and the
+    // path is a NUL-terminated string that outlives the call.
+    let mut buf: libc::statfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statfs(path.as_ptr(), &mut buf) } != 0 {
+        return false;
+    }
+    let kind = buf.f_type as i64;
+    kind == XFS_SUPER_MAGIC
+        || [
+            libc::EXT4_SUPER_MAGIC,
+            libc::BTRFS_SUPER_MAGIC,
+            libc::TMPFS_MAGIC,
+            libc::F2FS_SUPER_MAGIC,
+        ]
+        .into_iter()
+        .any(|magic| kind == magic as i64)
+}
+
 /// A picture of the Overwrite before a run: every file's identity, plus the
 /// directories that were ALREADY empty (which the post-run sweep must not remove
 /// - see [`prune_empty_dirs`]).

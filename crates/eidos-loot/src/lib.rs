@@ -5,7 +5,7 @@
 //! own `PluginList` and re-runs the existing invariant pass, so LOOT's order is a
 //! suggestion that Eidos's master-before-dependent guard always backstops.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -1292,6 +1292,23 @@ pub fn build_case_bridge(
     let Ok(text) = fs::read_to_string(masterlist) else {
         return Ok(Vec::new());
     };
+    // Each base's root listing, read once and folded the way
+    // resolve_ignoring_case folds. A path resolves under a base, exactly or
+    // ignoring case, only when that root holds its first component, and most
+    // masterlist paths name plugins the user does not have: without this, every
+    // one of them stat'ed and listed every mod root, about 2 s per sort at 250
+    // mods. None when the root cannot be listed completely (x without r):
+    // exists() may still succeed there, so that base is never filtered.
+    let listings: Vec<Option<HashSet<String>>> = bases
+        .iter()
+        .map(|base| {
+            fs::read_dir(base).ok().and_then(|dir| {
+                dir.map(|e| e.map(|e| e.file_name().to_string_lossy().to_ascii_lowercase()))
+                    .collect::<std::io::Result<_>>()
+                    .ok()
+            })
+        })
+        .collect();
     let mut bridged = Vec::new();
     for rel in masterlist_literal_paths(&text) {
         // `..` is the game root; anything else is data-relative.
@@ -1299,14 +1316,30 @@ pub fn build_case_bridge(
             Some(t) => (game_path.to_path_buf(), t.to_string(), out.to_path_buf()),
             None => (PathBuf::new(), rel.clone(), data.clone()),
         };
-        let roots: Vec<PathBuf> = if search_root.as_os_str().is_empty() {
+        let data_relative = search_root.as_os_str().is_empty();
+        let roots: Vec<PathBuf> = if data_relative {
             bases.to_vec()
         } else {
             vec![search_root]
         };
+        // The first component as resolve_ignoring_case splits it. No filter for
+        // an absolute tail, `.`, `..` or a non-ASCII name: on a casefolded
+        // filesystem Unicode folding can make exists() true where the ASCII
+        // fold of the listing does not match.
+        let first = tail
+            .split('/')
+            .find(|p| !p.is_empty())
+            .filter(|p| !tail.starts_with('/') && p.is_ascii() && *p != "." && *p != "..")
+            .map(str::to_ascii_lowercase);
         // Resolve each layer in priority order. A lower layer with exact casing
         // must not replace the higher layer's differently spelled winning file.
-        let Some((real, exact)) = roots.iter().find_map(|b| {
+        let Some((real, exact)) = roots.iter().enumerate().find_map(|(i, b)| {
+            if let (true, Some(first), Some(Some(names))) = (data_relative, &first, listings.get(i))
+            {
+                if !names.contains(first) {
+                    return None;
+                }
+            }
             let exact = b.join(&tail);
             let real = if exact.exists() {
                 Some(exact.clone())
@@ -1555,6 +1588,28 @@ mod case_bridge_tests {
             "LOOT must inspect the union's winning file"
         );
         assert_eq!(result.general[0].text, "Winning mod was inspected");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_layer_whose_root_cannot_be_listed_still_wins() {
+        // The root-listing filter must not skip a layer it could not read: the
+        // exact file there is still reachable through exists(), and skipping it
+        // would bridge to the lower layer's differently spelled copy.
+        use std::os::unix::fs::PermissionsExt;
+        let root = tmp("unlistable");
+        let high = root.join("high");
+        let low = root.join("low");
+        fs::create_dir_all(&high).unwrap();
+        fs::create_dir_all(&low).unwrap();
+        fs::write(high.join("Plugin.esp"), b"high").unwrap();
+        fs::write(low.join("plugin.esp"), b"low").unwrap();
+        let ml = root.join("m.yaml");
+        fs::write(&ml, "condition: 'file(\"Plugin.esp\")'").unwrap();
+        fs::set_permissions(&high, fs::Permissions::from_mode(0o111)).unwrap();
+        let bridged = build_case_bridge(&ml, &[high.clone(), low], &root, &root.join("b"));
+        fs::set_permissions(&high, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(bridged.unwrap().is_empty());
         fs::remove_dir_all(root).unwrap();
     }
 

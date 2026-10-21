@@ -34,6 +34,7 @@ fn a_direct_member_preserves_unrelated_downloads_and_partials() {
     let mut hooks = RealHooks {
         payload_root: std::path::PathBuf::new(),
         allow_runtime_mismatch: false,
+        checked_archive: None,
         nexus: &nexus,
         inst: &inst,
         game: &game,

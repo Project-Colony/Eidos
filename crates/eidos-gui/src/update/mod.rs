@@ -458,6 +458,7 @@ fn collection_on_worker(
         payload_root: dir.clone(),
         allow_runtime_mismatch: approved
             == Some(&eidos_collections::recipe::runtime_check(c, game)),
+        checked_archive: None,
         say: &mut say,
         collection_domain: c.info.domain_name.clone(),
         owner: format!("{}:{}:{}", state.game_domain, state.slug, state.revision),

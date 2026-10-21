@@ -2129,14 +2129,18 @@ pub fn write_download_meta(
 /// Streamed in chunks rather than read whole: a mod archive is routinely
 /// hundreds of megabytes and this runs on the GUI's behalf.
 pub fn md5_file(path: &Path) -> io::Result<String> {
-    use md5::{Digest, Md5};
-    use std::io::Read;
+    md5_reader(fs::File::open(path)?, &mut vec![0u8; 1 << 20])
+}
 
-    let mut file = fs::File::open(path)?;
+/// [`md5_file`] over an already open reader, with the caller's buffer. A walk
+/// that hashes a whole mod tree reuses one buffer instead of zeroing a fresh
+/// megabyte per file, and hashing an open descriptor lets the caller stat that
+/// same descriptor before and after.
+pub fn md5_reader(mut reader: impl io::Read, buf: &mut [u8]) -> io::Result<String> {
+    use md5::{Digest, Md5};
     let mut hasher = Md5::new();
-    let mut buf = vec![0u8; 1 << 20];
     loop {
-        let n = file.read(&mut buf)?;
+        let n = reader.read(buf)?;
         if n == 0 {
             break;
         }
