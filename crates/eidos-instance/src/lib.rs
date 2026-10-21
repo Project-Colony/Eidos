@@ -164,6 +164,26 @@ fn is_plugin_name(name: &str) -> bool {
     n.ends_with(".esp") || n.ends_with(".esm") || n.ends_with(".esl")
 }
 
+/// The merged ROOT of a layer union, keyed by ASCII-lowercased name: every name
+/// visible at the top of `layers` (highest priority first) under `overwrite`,
+/// with the backing path that wins it. Whiteouts, the opaque marker and
+/// `.mohidden` names are applied, as the mount applies them.
+///
+/// For the callers that ask whether a root name (a plugin) is visible: the
+/// launch plugin list, the FOMOD context and the GUI's Plugins tab. One read of
+/// each layer's top directory answers all of them at once. An indexed stack
+/// would first walk every file of every enabled mod, ~0.5 s at 85k files, to
+/// answer a few hundred root names and then be dropped; an unindexed stack
+/// asked per name costs a stat and a root listing per name per layer on a
+/// miss, about as much again. So: unindexed, and ONE listing.
+pub fn root_listing(layers: Vec<PathBuf>, overwrite: PathBuf) -> HashMap<String, PathBuf> {
+    eidos_core::LayerStack::new_unindexed(layers, overwrite)
+        .list_dir("")
+        .into_iter()
+        .map(|(name, path)| (name.to_ascii_lowercase(), path))
+        .collect()
+}
+
 /// A modding instance rooted at a directory.
 #[derive(Debug, Clone)]
 pub struct Instance {
@@ -1026,16 +1046,20 @@ impl Instance {
     ) -> Option<eidos_plugins::PluginList> {
         let spec = eidos_plugins::GameSpec::for_id(game_id)?;
         let mut sources = vec![(String::new(), game_data.to_path_buf())];
+        // Unmanaged rows (MO2's `*` lines: DLC, Creation Club) are not layers.
+        // Their content is already in `game_data`, the first source, and their
+        // path is empty: as a layer that empty path made every probe a stat
+        // relative to the process's working directory.
         sources.extend(
             profile
                 .modlist()
                 .into_iter()
-                .filter(|m| m.is_active())
+                .filter(|m| m.is_active() && !m.is_unmanaged())
                 .map(|m| (m.name, m.path)),
         );
         sources.push(("overwrite".to_string(), self.overwrite_dir()));
         let mut list = eidos_plugins::PluginList::discover(&sources, &spec);
-        let stack = eidos_core::LayerStack::new(
+        let root = root_listing(
             sources
                 .iter()
                 .rev()
@@ -1045,8 +1069,7 @@ impl Instance {
             self.overwrite_dir(),
         );
         list.plugins.retain(|plugin| {
-            stack
-                .resolve_read(&plugin.name)
+            root.get(&plugin.name.to_ascii_lowercase())
                 .is_some_and(|path| path.is_file())
         });
         if profile.has_plugin_state() {
@@ -1841,6 +1864,71 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
         Instance::portable(root)
+    }
+
+    #[test]
+    fn plugin_list_reads_the_merged_root_with_unmanaged_rows_present() {
+        // The shape that used to send every plugin through a per-layer scan: a
+        // `*` row in modlist.txt (empty path, so not a layer), next to the
+        // visibility rules the root listing has to keep: an Overwrite whiteout
+        // over a Data plugin, a `.mohidden` plugin, a mod shadowing Data, and a
+        // root DIRECTORY named like a plugin over a Data file.
+        let inst = tmp_instance();
+        inst.ensure_manifest("skyrimse", InstanceKind::Portable)
+            .unwrap();
+        inst.create().unwrap();
+        let data = inst.root.join("game/Data");
+        let a = inst.mods_dir().join("ModA");
+        fs::create_dir_all(&data).unwrap();
+        fs::create_dir_all(a.join("Shadowed.esp")).unwrap();
+        for f in ["Skyrim.esm", "Dawnguard.esm", "Gone.esp", "Shadowed.esp"] {
+            fs::write(data.join(f), b"").unwrap();
+        }
+        for f in ["ModA.esp", "Hidden.esp.mohidden", "dawnguard.esm"] {
+            fs::write(a.join(f), b"").unwrap();
+        }
+        fs::write(inst.overwrite_dir().join(".eidoswh.gone.esp"), b"").unwrap();
+        let profile = inst.active().dir();
+        fs::create_dir_all(&profile).unwrap();
+        fs::write(profile.join("modlist.txt"), "+ModA\n*Dawnguard\n").unwrap();
+        assert!(inst.modlist().iter().any(|m| m.is_unmanaged()));
+
+        let list = inst.plugin_list(&data, "skyrimse", None).unwrap();
+        let mut names: Vec<_> = list
+            .plugins
+            .iter()
+            .map(|p| p.name.to_ascii_lowercase())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["dawnguard.esm", "moda.esp", "skyrim.esm"]);
+        let dawnguard = list
+            .plugins
+            .iter()
+            .find(|p| p.name.eq_ignore_ascii_case("dawnguard.esm"))
+            .unwrap();
+        assert!(dawnguard.path.starts_with(&a), "the mod's copy wins");
+
+        // And the listing answers each root name as the indexed lookup does.
+        let layers = vec![a.clone(), data.clone()];
+        let indexed = eidos_core::LayerStack::new(layers.clone(), inst.overwrite_dir());
+        let root = root_listing(layers, inst.overwrite_dir());
+        for name in [
+            "skyrim.esm",
+            "DAWNGUARD.ESM",
+            "gone.esp",
+            "shadowed.esp",
+            "ModA.esp",
+            "hidden.esp.mohidden",
+            "hidden.esp",
+            "absent.esp",
+        ] {
+            assert_eq!(
+                root.get(&name.to_ascii_lowercase()).filter(|p| p.is_file()),
+                indexed.resolve_read(name).filter(|p| p.is_file()).as_ref(),
+                "{name}"
+            );
+        }
+        let _ = fs::remove_dir_all(&inst.root);
     }
 
     #[test]

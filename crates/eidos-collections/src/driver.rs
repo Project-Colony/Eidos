@@ -854,13 +854,10 @@ impl Hooks for RealHooks<'_> {
         // Where the game keeps its activation state, as launch and the GUI
         // read it: the install root for Morrowind and root-mode Oblivion, where
         // AppData has nothing and every plugin would read as active.
+        // The FOMOD context is built in the Fomod arm only: it reads the plugin
+        // state of every enabled mod, and a bundle, hash-recipe, OMOD, custom or
+        // plain member never looks at it.
         let fallback = self.game.plugin_state_dir();
-        let ctx = eidos_install::fomod_context_for_instance(
-            self.inst,
-            &self.game.data_path,
-            &self.game_id,
-            fallback.as_deref(),
-        );
         let name = folder.to_string();
         let renamed_to = (name != safe(&m.name)).then(|| name.clone());
 
@@ -1196,6 +1193,12 @@ impl Hooks for RealHooks<'_> {
                     }
                 }
                 Ok(eidos_install::Opened::Fomod(session)) => {
+                    let ctx = eidos_install::fomod_context_for_instance(
+                        self.inst,
+                        &self.game.data_path,
+                        &self.game_id,
+                        fallback.as_deref(),
+                    );
                     let r = eidos_fomod::replay(&session.config, &ctx, &recorded_answers(&mapped));
                     unmatched = r.unmatched;
                     eidos_install::finish_fomod_with_finish(
@@ -1228,6 +1231,8 @@ impl Hooks for RealHooks<'_> {
                             },
                         )
                     } else {
+                        // `classify_extracted` returns these only when the tree has
+                        // no FOMOD wizard, and the context is read only for one.
                         eidos_install::install_extracted_with_finish(
                             &tree,
                             archive,
@@ -1235,7 +1240,7 @@ impl Hooks for RealHooks<'_> {
                             &name,
                             &self.game_id,
                             policy,
-                            &ctx,
+                            &eidos_fomod::Context::default(),
                             finish,
                         )
                     }

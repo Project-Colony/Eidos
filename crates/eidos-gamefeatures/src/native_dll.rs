@@ -166,6 +166,26 @@ fn scan_imports_for(roots: &[PathBuf], needle: &str) -> bool {
     roots.iter().any(|r| walk_imports(r, &needle, 0))
 }
 
+/// The engine's own data folders at a mod root. Together they hold almost every
+/// file of a mod list (textures and meshes alone are most of it), and no loader
+/// looks for a DLL in any of them: SKSE loads `SKSE/Plugins/`, a wrapper loads
+/// beside the executable (`Root/`). So the import scan does not descend into
+/// them. Matched at the mod root only, ASCII case-insensitively.
+const ASSET_DIRS: &[&str] = &[
+    "textures",
+    "meshes",
+    "sound",
+    "music",
+    "interface",
+    "scripts",
+    "seq",
+    "strings",
+    "grass",
+    "terrain",
+    "lodsettings",
+    "video",
+];
+
 /// Bounded (depth-capped, symlinked subdirs not followed - mod roots may be
 /// symlinks but their listed contents are real) recursive search.
 fn walk_imports(dir: &Path, needle: &str, depth: u32) -> bool {
@@ -178,6 +198,13 @@ fn walk_imports(dir: &Path, needle: &str, depth: u32) -> bool {
     for e in rd.flatten() {
         let Ok(ft) = e.file_type() else { continue };
         if ft.is_dir() {
+            if depth == 0 {
+                let name = e.file_name();
+                let name = name.to_string_lossy();
+                if ASSET_DIRS.iter().any(|d| name.eq_ignore_ascii_case(d)) {
+                    continue;
+                }
+            }
             // No-follow recursion: a symlinked subdir is skipped (avoids loops), while
             // a real subdir - e.g. SKSE/Plugins/ - is walked.
             if walk_imports(&e.path(), needle, depth + 1) {
@@ -600,6 +627,32 @@ mod tests {
             &[dir.clone()],
             "nothing_imports_this_zzz.dll"
         ));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn scan_skips_asset_folders_at_the_mod_root_only() {
+        let dir = tmp_dir();
+        let dll = blob("d3dcompiler_47", true);
+        // Any real import of the bundled DLL is the needle, as in the test above.
+        fs::write(dir.join("probe.dll"), dll).unwrap();
+        let any_import = imported_dlls(&dir.join("probe.dll"))
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        fs::remove_file(dir.join("probe.dll")).unwrap();
+        // A DLL under an engine asset folder at the mod root is never loaded,
+        // whatever the folder's case, so the scan must not count it.
+        let assets = dir.join("Textures/effects");
+        fs::create_dir_all(&assets).unwrap();
+        fs::write(assets.join("stray.dll"), dll).unwrap();
+        assert!(!scan_imports_for(&[dir.clone()], &any_import));
+        // The same folder name deeper down is not an asset root: still walked.
+        let nested = dir.join("SKSE/Plugins/textures");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("plugin.dll"), dll).unwrap();
+        assert!(scan_imports_for(&[dir.clone()], &any_import));
         let _ = fs::remove_dir_all(&dir);
     }
 

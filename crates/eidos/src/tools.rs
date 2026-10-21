@@ -223,9 +223,18 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 None => Vec::new(),
             };
 
-            let tools =
-                eidos_instance::merge_tools(inst.tools(), default_tools_for(&game, Some(&inst)));
-            let Some(tool) = tools.iter().find(|t| t.title.eq_ignore_ascii_case(title)) else {
+            // A user tool wins `merge_tools` over a default with the same title,
+            // so look there first: the defaults are detected by walking the game,
+            // the Root layers and the whole mods pool, wasted for a user tool.
+            let user = inst.tools();
+            let named = |t: &eidos_instance::Tool| t.title.eq_ignore_ascii_case(title);
+            let tool = match user.iter().find(|t| named(t)) {
+                Some(tool) => Some(tool.clone()),
+                None => eidos_instance::merge_tools(user, default_tools_for(&game, Some(&inst)))
+                    .into_iter()
+                    .find(|t| named(t)),
+            };
+            let Some(tool) = tool else {
                 eidos_log::info!("No tool named '{title}'. List them: eidos tool {id}");
                 exit(1);
             };

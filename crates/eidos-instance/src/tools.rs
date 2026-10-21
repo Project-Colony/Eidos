@@ -343,6 +343,11 @@ pub fn root_executable(
 
 /// The real backing file for a root executable, for validation and fingerprints
 /// before the launch mount projects it onto the game install.
+///
+/// Unindexed: the stack answers this one path and is dropped. `eidos tool run`
+/// passes every enabled mod here for a tool that lives in a mod, and an index
+/// would walk all their files first, only for the mount to walk them again.
+/// Unindexed, one lookup costs at most a stat and a root listing per layer.
 pub fn root_executable_source(
     install: &Path,
     root_layers: &[PathBuf],
@@ -351,7 +356,7 @@ pub fn root_executable_source(
 ) -> Option<PathBuf> {
     let mut layers = root_layers.to_vec();
     layers.push(install.to_path_buf());
-    eidos_core::LayerStack::new(layers, root_overwrite.to_path_buf())
+    eidos_core::LayerStack::new_unindexed(layers, root_overwrite.to_path_buf())
         .resolve_read(executable)
         .filter(|path| path.is_file())
 }

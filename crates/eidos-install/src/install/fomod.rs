@@ -18,9 +18,11 @@ pub fn fomod_context_for_instance(
     fallback_state: Option<&Path>,
 ) -> eidos_fomod::Context {
     let mods = instance.modlist();
+    // Unmanaged rows (`*` lines) are game content already in `game_data`, with
+    // an empty path: not a layer, as at launch.
     let enabled: Vec<_> = mods
         .iter()
-        .filter(|m| m.is_active())
+        .filter(|m| m.is_active() && !m.is_unmanaged())
         .map(|m| m.path.clone())
         .collect();
     let disabled: Vec<_> = mods
@@ -108,7 +110,9 @@ pub fn fomod_context_with_plugins<'a>(
         .cloned()
         .chain(std::iter::once(game_data.to_path_buf()))
         .collect();
-    let stack = eidos_core::LayerStack::new(lower, overwrite.to_path_buf());
+    // Every key is a root plugin name, so one merged root listing answers them
+    // all; see `root_listing` for why not an indexed stack.
+    let root = eidos_instance::root_listing(lower, overwrite.to_path_buf());
     let disabled: std::collections::HashSet<_> = disabled_mod_roots
         .iter()
         .flat_map(|root| fs::read_dir(root).into_iter().flatten())
@@ -116,9 +120,8 @@ pub fn fomod_context_with_plugins<'a>(
         .filter(|e| e.path().is_file())
         .map(|e| e.file_name().to_string_lossy().to_ascii_lowercase())
         .collect();
-    ctx.file_states.retain(|name, _| {
-        stack.resolve_read(name).is_some_and(|p| p.is_file()) || disabled.contains(name)
-    });
+    ctx.file_states
+        .retain(|name, _| root.get(name).is_some_and(|p| p.is_file()) || disabled.contains(name));
     for state in ctx.file_states.values_mut() {
         *state = "Inactive".into();
     }
