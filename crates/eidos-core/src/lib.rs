@@ -1539,8 +1539,21 @@ impl LayerStack {
         // one state of the index rather than locking it twice, and it is dropped
         // before the first syscall: a snapshot still held when another thread
         // notes a creation makes that `Arc::make_mut` clone the whole index.
+        //
+        // The root does not take a snapshot at all: the index cannot answer it
+        // and nothing hides the root, which `overwrite_hides("")` reports with
+        // no I/O. A fresh or dirty stack would otherwise walk the whole
+        // Overwrite only to throw the result away, and `root_listing` runs on
+        // one-shot stacks (plugin list, FOMOD context, each GUI mod toggle)
+        // whose Overwrite can hold tens of thousands of BodySlide or DynDOLOD
+        // outputs.
         let folded = fold_vpath(vpath);
-        let (verdict, mut hidden) = match self.ow_snapshot() {
+        let snapshot = if folded.is_empty() {
+            None
+        } else {
+            self.ow_snapshot()
+        };
+        let (verdict, mut hidden) = match snapshot {
             Some(idx) => (
                 (!folded.is_empty()
                     && !idx.ambiguous.contains(&folded)
@@ -2057,6 +2070,21 @@ mod tests {
         let times = [ts, ts];
         let c = std::ffi::CString::new(p.as_os_str().as_bytes()).unwrap();
         unsafe { libc::utimensat(libc::AT_FDCWD, c.as_ptr(), times.as_ptr(), 0) };
+    }
+
+    #[test]
+    fn root_listing_does_not_build_the_overwrite_index() {
+        let t = TempTree::new();
+        let (low, over) = (t.sub("low"), t.sub("over"));
+        put(&low, "Skyrim.esm", "low");
+        put(&low, "Gone.esp", "low");
+        put(&over, ".eidoswh.gone.esp", "");
+        put(&over, "meshes/out.nif", "tool output");
+        let stack = LayerStack::new_unindexed(vec![low], over);
+        let mut names: Vec<_> = stack.list_dir("").into_iter().map(|(n, _)| n).collect();
+        names.sort();
+        assert_eq!(names, ["Skyrim.esm", "meshes"]);
+        assert_eq!(stack.resolve_stats().ow_rebuilds.load(Ordering::Relaxed), 0);
     }
 
     #[test]
