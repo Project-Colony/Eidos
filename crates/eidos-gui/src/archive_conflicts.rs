@@ -82,6 +82,11 @@ pub(crate) fn schedule_archive_conflicts(app: &mut App) {
                 .unwrap_or_else(|| eidos_conflicts::collect_files(&l.root));
             parts.push((l, files));
         }
+        // What is left are the walks of inactive layers. The UI may drop its
+        // own pointers meanwhile (`drop_files_cache` on an install or a
+        // rescan), and these would then keep whole path lists alive until the
+        // run ends, through the map build and the archive reads.
+        drop(cache);
         if cancel.load(Ordering::Relaxed) {
             return;
         }
