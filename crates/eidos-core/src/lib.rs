@@ -581,6 +581,16 @@ impl LayerStack {
     /// deleting `FOO` then probing `foo` missed the marker and resurfaced the
     /// lower-layer file.
     fn find_whiteout(&self, vpath: &str) -> Option<PathBuf> {
+        // Every create and write-open asks this, and the answer is nearly always
+        // "no marker" - yet finding that out read the whole parent directory,
+        // so filling one flat directory (a shader cache) to N files cost O(N^2).
+        // The overwrite index already holds every marker's folded target, so a
+        // key it does not list has none. Only a warm index is trusted here: a
+        // dirty slot means the walk below, never a rebuild from the write path.
+        let folded = fold_vpath(vpath);
+        if !folded.is_empty() && self.ow_proves_no_whiteout(&folded) {
+            return None;
+        }
         let norm = normalize(vpath);
         let name = norm.file_name()?.to_string_lossy().to_ascii_lowercase();
         let parent = norm
@@ -685,6 +695,25 @@ impl LayerStack {
             *slot = Some(std::sync::Arc::new(OwIndex::build(&self.overwrite)));
         }
         slot.clone()
+    }
+
+    /// Whether the overwrite index, as it stands, proves no whiteout marker
+    /// names `folded`.
+    ///
+    /// Peeks at the slot instead of calling [`Self::ow_snapshot`]: that rebuilds
+    /// a dirty index, and a burst of creates between deletes would then pay a
+    /// full Overwrite walk per create. It answers under the lock and hands out
+    /// no `Arc`, so it never makes a concurrent `ow_note_created` deep-clone the
+    /// index either. A key below an overwrite symlink is not covered: the build
+    /// records the link without following it, while the walk follows it.
+    fn ow_proves_no_whiteout(&self, folded: &[u8]) -> bool {
+        *OW_INDEX_ON
+            && self
+                .ow
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .as_ref()
+                .is_some_and(|ow| !ow.walk_below(folded) && !ow.wh.contains(folded))
     }
 
     /// Drop the overwrite index: something changed in a way not worth modelling
@@ -963,7 +992,7 @@ impl LayerStack {
                                 .idx_absent
                                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
                         };
-                        self.read_lower(vpath)?
+                        self.walk_lower(vpath)?
                     }
                 }
             };
@@ -1030,7 +1059,7 @@ impl LayerStack {
                         self.resolve.probes.load(Relaxed),
                         self.resolve.scans.load(Relaxed),
                     );
-                    let found = self.read_lower(vpath);
+                    let found = self.walk_lower(vpath);
                     self.resolve
                         .walk_probes
                         .fetch_add(self.resolve.probes.load(Relaxed).wrapping_sub(p0), Relaxed);
@@ -1048,14 +1077,39 @@ impl LayerStack {
     }
 
     /// Read the lower view, retaining shared Overwrite deletion semantics.
+    ///
+    /// Asks the layer index first, under the same three-way contract as
+    /// [`Self::resolve_read_inner`]: a hit or a confirmed negative answers, and
+    /// an ambiguous key, an unindexed subtree or no index at all walks. Every
+    /// write door calls this (copy-up, remove, rename, make_dir, the orphaned
+    /// copy-up heal), and it used to walk every layer on each call: one `exists`
+    /// per component and a full `read_dir` per layer that missed, about 2.5 ms
+    /// on a 250-layer stack, two or three times per file a tool writes.
+    ///
+    /// The empty key always walks. It is the mount root (or a name that is not
+    /// UTF-8), which the walk resolves to the first layer root and the index,
+    /// mapping only the layers' children, reads as a negative. Answering `None`
+    /// there would make `open_for_write("")` skip the heal below.
     fn read_lower(&self, vpath: &str) -> Option<PathBuf> {
         if let Some(shared) = &self.readonly_overwrite {
-            shared.resolve_read(vpath)
-        } else {
-            self.layers
-                .iter()
-                .find_map(|layer| self.ci_lookup(layer, vpath))
+            return shared.resolve_read(vpath);
         }
+        let folded = fold_vpath(vpath);
+        if !folded.is_empty() {
+            if let Some(Ok(hit)) = self.lower.as_ref().map(|i| i.get(&folded)) {
+                return hit.map(Path::to_path_buf);
+            }
+        }
+        self.walk_lower(vpath)
+    }
+
+    /// The layer walk behind [`Self::read_lower`], for the resolve paths that
+    /// reach it only after the index has already declined: asking again there
+    /// would get the same refusal.
+    fn walk_lower(&self, vpath: &str) -> Option<PathBuf> {
+        self.layers
+            .iter()
+            .find_map(|layer| self.ci_lookup(layer, vpath))
     }
 
     /// The overwrite layer's root directory (for statfs / free-space queries).
@@ -1461,11 +1515,42 @@ impl LayerStack {
         let mut out: Vec<(String, PathBuf, Option<fs::FileType>)> = Vec::new();
 
         // Overwrite layer first: collect whiteouts (and hide the markers).
+        //
+        // Its directory comes from the overwrite index when the index can
+        // answer, as `resolve_read_inner` does it: this was the one read path
+        // still walking the Overwrite, one probe per component plus a
+        // backtracking scan per level whenever the path stopped part-way, on
+        // every listing the dir cache had to build. The same cases go back to
+        // the walk: the root, an ambiguous key, a key below a symlink, no index,
+        // and a stale entry, which also drops the index and takes the hide check
+        // below back to the walk. One snapshot serves both, so the listing reads
+        // one state of the index rather than locking it twice, and it is dropped
+        // before the first syscall: a snapshot still held when another thread
+        // notes a creation makes that `Arc::make_mut` clone the whole index.
+        let folded = fold_vpath(vpath);
+        let (verdict, mut hidden) = match self.ow_snapshot() {
+            Some(idx) => (
+                (!folded.is_empty()
+                    && !idx.ambiguous.contains(&folded)
+                    && !idx.walk_below(&folded))
+                .then(|| idx.entries.get(&folded).cloned()),
+                Some(idx.hides(&folded)),
+            ),
+            None => (None, None),
+        };
+        let ow_dir = match verdict {
+            Some(Some(real)) if fs::symlink_metadata(&real).is_ok() => Some(real),
+            // The overwrite provably has nothing here, so no entries, no markers.
+            Some(None) => None,
+            Some(Some(_)) => {
+                self.ow_dirty();
+                hidden = None;
+                self.ci_lookup(&self.overwrite, vpath)
+            }
+            None => self.ci_lookup(&self.overwrite, vpath),
+        };
         let mut opaque = false;
-        if let Some(dir) = self
-            .ci_lookup(&self.overwrite, vpath)
-            .filter(|d| d.is_dir())
-        {
+        if let Some(dir) = ow_dir.filter(|d| d.is_dir()) {
             if let Ok(entries) = fs::read_dir(&dir) {
                 for entry in entries.flatten() {
                     let name = entry.file_name().to_string_lossy().into_owned();
@@ -1490,7 +1575,8 @@ impl LayerStack {
         // If this directory was itself deleted and then re-created in the overwrite
         // layer it is opaque (a whiteout on it, or an opaque marker inside it): its
         // lower-layer contents stay hidden.
-        if opaque || !self.lower_path_visible(vpath) {
+        // `lower_path_visible`, on the snapshot above.
+        if opaque || under_hidden(vpath) || hidden.unwrap_or_else(|| self.overwrite_hides(vpath)) {
             return out;
         }
 
@@ -1512,7 +1598,7 @@ impl LayerStack {
             }
             Some(Ok(None))
         } else {
-            self.lower.as_ref().map(|i| i.children(&fold_vpath(vpath)))
+            self.lower.as_ref().map(|i| i.children(&folded))
         };
         match merged {
             Some(Ok(merged)) => {
@@ -3590,6 +3676,164 @@ mod tests {
                 "a resolve paid a scan after {v}"
             );
         }
+    }
+
+    /// Probes and scans spent by `f`, on `stack`'s own counters.
+    fn walk_cost(stack: &LayerStack, f: impl FnOnce()) -> (u64, u64) {
+        let st = stack.resolve_stats();
+        let (p0, s0) = (
+            st.probes.load(Ordering::Relaxed),
+            st.scans.load(Ordering::Relaxed),
+        );
+        f();
+        (
+            st.probes.load(Ordering::Relaxed) - p0,
+            st.scans.load(Ordering::Relaxed) - s0,
+        )
+    }
+
+    #[test]
+    fn the_write_doors_ask_the_layer_index_instead_of_walking() {
+        // `read_lower` walked every layer on every write door: a copy-up, the
+        // orphaned copy-up heal, a delete, a mkdir. With both indexes warm none
+        // of them may touch a directory to learn what the layers provide or
+        // whether a whiteout stands in the way.
+        let t = TempTree::new();
+        let (over, a, b) = (t.sub("ow"), t.sub("a"), t.sub("b"));
+        put(&b, "Meshes/Armor/body.nif", "lower");
+        put(&b, "Meshes/Armor/gone.nif", "lower");
+        fs::create_dir_all(a.join("meshes")).unwrap();
+        let stack = LayerStack::new(vec![a, b], over.clone());
+        assert!(stack.resolve_read("meshes/armor/body.nif").is_some()); // warm
+
+        let cost = walk_cost(&stack, || {
+            stack.open_for_write("meshes/armor/body.nif").unwrap(); // copy-up
+            stack.open_for_write("meshes/armor/body.nif").unwrap(); // heal branch
+            stack.make_dir("meshes/armor/new").unwrap();
+        });
+        assert_eq!(cost, (0, 0), "a write door walked the layers");
+        // New components take the requested casing in an empty overwrite.
+        assert_eq!(read(&over.join("meshes/armor/body.nif")), "lower");
+
+        // `remove` has to know a lower copy exists to leave its whiteout.
+        assert!(stack.resolve_read("meshes/armor/gone.nif").is_some()); // warm
+        let cost = walk_cost(&stack, || stack.remove("meshes/armor/gone.nif").unwrap());
+        assert_eq!(cost, (0, 0), "remove walked the layers");
+        assert_eq!(stack.resolve_read("meshes/armor/gone.nif"), None);
+    }
+
+    #[test]
+    fn read_lower_answers_what_the_layer_walk_answers() {
+        // The write doors now trust the index, so it has to agree with the walk
+        // on every shape the walk handles specially: the two-spellings layer,
+        // a dangling symlink (the walk finds it through its scan), a hidden
+        // file, an ambiguous key, the root, and paths no layer has. Not the
+        // directory `meshes/actors` itself: there the index keeps whichever
+        // spelling `readdir` listed first, as reads already do, and every write
+        // door only asks whether such a directory exists.
+        let build = |root: &Path| {
+            let (over, a, b) = (root.join("ow"), root.join("a"), root.join("b"));
+            put(&a, "meshes/actors/decoy.nif", "decoy");
+            put(&a, "Meshes/actors/real.nif", "real");
+            put(&a, "t/Skin.dds", "one");
+            put(&a, "t/SKIN.DDS", "two");
+            put(&b, "hidden.esp.mohidden", "h");
+            put(&b, "Shared.esp", "low");
+            put(&a, "shared.esp", "high");
+            std::os::unix::fs::symlink(root.join("nowhere"), b.join("Dangling.ini")).unwrap();
+            fs::create_dir_all(&over).unwrap();
+            (vec![a, b], over)
+        };
+        let (t1, t2) = (TempTree::new(), TempTree::new());
+        let (layers, over) = build(&t1.0);
+        let indexed = LayerStack::new(layers, over);
+        assert!(indexed.lower.is_some(), "the fixture must build an index");
+        let (layers, over) = build(&t2.0);
+        let mut walked = LayerStack::new(layers, over);
+        walked.lower = None;
+
+        let rel = |root: &Path, p: Option<PathBuf>| {
+            p.map(|p| p.strip_prefix(root).unwrap().to_path_buf())
+        };
+        for q in [
+            "",
+            "meshes/actors/real.nif",
+            "MESHES/ACTORS/REAL.NIF",
+            "meshes/actors/decoy.nif",
+            "t/Skin.dds",
+            "t/SKIN.DDS",
+            "t/skin.dds",
+            "dangling.INI",
+            "hidden.esp.mohidden",
+            "SHARED.esp",
+            "absent.esp",
+            "meshes/absent/deeper.nif",
+        ] {
+            assert_eq!(
+                rel(&t1.0, indexed.read_lower(q)),
+                rel(&t2.0, walked.read_lower(q)),
+                "read_lower: index and walk disagree on {q:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_create_reads_no_directory_when_the_index_rules_out_a_whiteout() {
+        // Every create used to read its whole parent looking for a marker, so
+        // filling one flat ShaderCache directory to N files cost O(N^2).
+        let t = TempTree::new();
+        let (over, l) = (t.sub("ow"), t.sub("l"));
+        put(&l, "Data/old.esp", "L");
+        fs::create_dir_all(&over).unwrap();
+        let stack = LayerStack::new(vec![l], over.clone());
+        stack.create_truncated("ShaderCache/first.bin").unwrap();
+        assert!(stack.resolve_read("ShaderCache/first.bin").is_some()); // warm
+
+        let cost = walk_cost(&stack, || {
+            for i in 0..20 {
+                stack
+                    .create_truncated(&format!("ShaderCache/e{i}.bin"))
+                    .unwrap();
+            }
+        });
+        assert_eq!(cost, (0, 0), "a create looked for a whiteout on disk");
+
+        // A marker the index knows about still goes: writing un-deletes.
+        stack.remove("Data/old.esp").unwrap();
+        assert!(stack.resolve_read("data/OLD.esp").is_none()); // warm, hidden
+        stack.create_truncated("DATA/old.ESP").unwrap();
+        assert!(
+            !over.join(format!("Data/{WHITEOUT_PREFIX}old.esp")).exists(),
+            "the re-create left its whiteout behind"
+        );
+        assert!(stack.resolve_read("data/old.esp").is_some());
+    }
+
+    #[test]
+    fn a_listing_finds_its_overwrite_directory_from_the_index() {
+        let t = TempTree::new();
+        let (over, l) = (t.sub("ow"), t.sub("l"));
+        put(&l, "Data/lower.esp", "L");
+        put(&l, "Data/deleted.esp", "D");
+        put(&over, "Data/Mine.ini", "M");
+        let stack = LayerStack::new(vec![l], over.clone());
+        stack.remove("Data/deleted.esp").unwrap();
+        assert!(stack.resolve_read("data").is_some()); // warm
+
+        let mut names = Vec::new();
+        let cost = walk_cost(&stack, || {
+            names = stack.list_dir("DATA").into_iter().map(|(n, _)| n).collect();
+            assert!(stack.list_dir("absent").is_empty());
+        });
+        assert_eq!(cost, (0, 0), "a listing walked the overwrite");
+        assert_eq!(names, ["lower.esp", "Mine.ini"], "whiteouts still apply");
+
+        // The belt: a directory removed behind the index's back must not empty
+        // the overwrite part of the listing, and the next one rebuilds.
+        fs::remove_dir_all(over.join("Data")).unwrap();
+        put(&over, "data/Moved.ini", "M");
+        let names: Vec<String> = stack.list_dir("Data").into_iter().map(|(n, _)| n).collect();
+        assert!(names.iter().any(|n| n == "Moved.ini"), "{names:?}");
     }
 
     #[test]
