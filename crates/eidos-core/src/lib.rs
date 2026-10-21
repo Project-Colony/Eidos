@@ -1534,7 +1534,7 @@ impl LayerStack {
         // backtracking scan per level whenever the path stopped part-way, on
         // every listing the dir cache had to build. The same cases go back to
         // the walk: the root, an ambiguous key, a key below a symlink, no index,
-        // and a stale entry, which also drops the index and takes the hide check
+        // a key the index does not hold, and a stale entry, which also drops the index and takes the hide check
         // below back to the walk. One snapshot serves both, so the listing reads
         // one state of the index rather than locking it twice, and it is dropped
         // before the first syscall: a snapshot still held when another thread
@@ -1552,8 +1552,13 @@ impl LayerStack {
         };
         let ow_dir = match verdict {
             Some(Some(real)) if fs::symlink_metadata(&real).is_ok() => Some(real),
-            // The overwrite provably has nothing here, so no entries, no markers.
-            Some(None) => None,
+            // A negative is not trusted here, unlike in `resolve_read`. A stack
+            // whose Overwrite another process writes (the GUI's Data tab while
+            // the mount runs, or a folder copied in by hand) never hears of the
+            // new directory, so its index would list a folder its parent showed
+            // as empty until F5. The walk costs one probe and a short scan, about
+            // 7 us per listing the dir cache builds; hits keep the gain.
+            Some(None) => self.ci_lookup(&self.overwrite, vpath),
             Some(Some(_)) => {
                 self.ow_dirty();
                 hidden = None;
@@ -3884,10 +3889,20 @@ mod tests {
         let mut names = Vec::new();
         let cost = walk_cost(&stack, || {
             names = stack.list_dir("DATA").into_iter().map(|(n, _)| n).collect();
-            assert!(stack.list_dir("absent").is_empty());
         });
         assert_eq!(cost, (0, 0), "a listing walked the overwrite");
         assert_eq!(names, ["lower.esp", "Mine.ini"], "whiteouts still apply");
+        assert!(stack.list_dir("absent").is_empty());
+
+        // A directory created behind the index's back, as the game does through
+        // the mount while the GUI's stack holds a warm index, must still list.
+        put(&over, "Data/New/x.ini", "N");
+        let names: Vec<String> = stack
+            .list_dir("data/new")
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert_eq!(names, ["x.ini"], "a stale negative hid the new directory");
 
         // The belt: a directory removed behind the index's back must not empty
         // the overwrite part of the listing, and the next one rebuilds.
