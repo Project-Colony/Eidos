@@ -1,0 +1,28 @@
+# Pearl Abyss's BlackSpace engine. The game reads no loose files: all data sits in
+# numbered PAZ groups (NNNN/0.pamt + N.paz), and meta/0.papgt registers each group
+# with a checksum of its 0.pamt. A data mod therefore needs a repack into a new
+# group plus a rebuilt 0.papgt. Eidos does not do that yet, and game 2.4.0
+# (October 2026) changed the 0.papgt layout in a way no public tool parses yet.
+#
+# What this definition covers is what deploys as plain files: code mods. ASI
+# plugins (.asi + .ini), the Ultimate ASI Loader proxy (winmm.dll, version.dll,
+# dinput8.dll...) and ReShade (dxgi.dll, .addon64, reshade-shaders/) all go next
+# to CrimsonDesert.exe, so the merge root is bin64. A loader DLL at a mod's top
+# level is picked up by forced_dll_overrides, which sets WINEDLLOVERRIDES=<dll>=n,b
+# so Wine loads the proxy instead of its builtin.
+#
+# A mod that replaces a vanilla group in place (it ships 0010/0.paz) lands under
+# Root/ and is served over the install without touching it. It breaks on the next
+# game update, as it does for every manager. Never ship meta/0.papgt in a mod: it
+# carries the checksum of every vanilla group and goes stale on each update.
+
+id = "crimsondesert"
+name = "Crimson Desert"
+short_name = "CrimsonDesert"
+nexus_game = "crimsondesert"
+steam_app_id = 3321460
+data_dir = "bin64"
+valid_suffixes = ["asi", "addon64", "dll"]
+valid_folders = ["reshade-shaders"]
+load_order = "None"
+game_binary = "bin64/CrimsonDesert.exe"

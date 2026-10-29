@@ -1541,6 +1541,28 @@ mod tests {
     }
 
     #[test]
+    fn crimson_desert_code_mods_deploy_into_bin64() {
+        // Nexus ASI mods ship the game's own bin64/ wrapper (LET ME SLEEP), or a
+        // bare .asi/.ini pair; ReShade ships its addon beside reshade-shaders/.
+        let cd = LayoutRules::for_game("crimsondesert");
+        let asi = tree(&["bin64/LETMESLEEP.asi", "bin64/LETMESLEEP.ini"]);
+        assert_eq!(
+            asi.simple_archive_base(cd.clone()).as_deref(),
+            Some("bin64/")
+        );
+        let bare = tree(&["MyMod/winmm.dll", "MyMod/scripts.asi"]);
+        assert_eq!(
+            bare.simple_archive_base(cd.clone()).as_deref(),
+            Some("MyMod/")
+        );
+        let reshade = tree(&[
+            "renodx-crimsondesert.addon64",
+            "reshade-shaders/Shaders/a.fx",
+        ]);
+        assert_eq!(reshade.simple_archive_base(cd).as_deref(), Some(""));
+    }
+
+    #[test]
     fn base_is_empty_when_already_valid() {
         let t = tree(&["meshes/a.nif", "MyMod.esp"]);
         assert_eq!(t.simple_archive_base(rules()).as_deref(), Some(""));
