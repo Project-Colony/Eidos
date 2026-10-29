@@ -155,6 +155,7 @@ const BUILTIN_DEFINITIONS: &[&str] = &[
     include_str!("../data/games/stellarblade.toml"),
     include_str!("../data/games/stardewvalley.toml"),
     include_str!("../data/games/7daystodie.toml"),
+    include_str!("../data/games/crimsondesert.toml"),
 ];
 
 /// Every game Eidos ships with, parsed once from [`BUILTIN_DEFINITIONS`].
@@ -464,6 +465,7 @@ mod tests {
             ("stellarblade", 3489700, LoadOrder::None, &[]),
             ("stardewvalley", 413150, LoadOrder::None, &[]),
             ("7daystodie", 251570, LoadOrder::None, &[]),
+            ("crimsondesert", 3321460, LoadOrder::None, &[]),
         ];
         let actual: Vec<_> = builtin()
             .iter()

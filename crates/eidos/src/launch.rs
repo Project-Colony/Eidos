@@ -803,6 +803,8 @@ pub(crate) fn forced_dll_overrides(
     // the SKSE plugins that need to run before SKSE itself. Wine implements
     // d3dx9_42, so without the override the builtin wins and the preloader never
     // runs - silently, which is the whole problem with this class of mod.
+    // `version` and `dsound` are two more names Ultimate ASI Loader ships under
+    // (Crimson Desert ASI mods use them beside winmm and dinput8).
     const SHIPPED_SHADOWS: &[&str] = &[
         "d3d8",
         "d3d9",
@@ -813,6 +815,8 @@ pub(crate) fn forced_dll_overrides(
         "dinput",
         "dinput8",
         "winmm",
+        "version",
+        "dsound",
         "xinput1_3",
         "x3daudio1_7",
         "opengl32",
