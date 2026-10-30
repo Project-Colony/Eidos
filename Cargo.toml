@@ -28,7 +28,7 @@ rust-version = "1.89"
 # defaults back off, and each member's manifest says why it needs the crate.
 [workspace.dependencies]
 base64 = "0.23.1"
-bcdec_rs = "=0.2.0"
+bcdec_rs = "=0.2.1"
 bzip2 = "0.6.1"
 colony-ui = "0.1.6"
 crc32fast = "1.5.2"
