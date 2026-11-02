@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.20.0](https://github.com/Project-Colony/Eidos/compare/v1.19.6...v1.20.0) (2026-10-29)
+
+
+### Features
+
+* **games:** add Crimson Desert for ASI and ReShade mods ([#109](https://github.com/Project-Colony/Eidos/issues/109)) ([8116ce7](https://github.com/Project-Colony/Eidos/commit/8116ce76854cba4ac1178e4dc5d534406b63c50d))
+* **transfer:** check each pack before naming it, add PAR2 recovery data, and pack level 1 in 16 MB solid blocks ([#107](https://github.com/Project-Colony/Eidos/issues/107)) ([fdf413a](https://github.com/Project-Colony/Eidos/commit/fdf413a9a8ae6b1e24e1569c19b3b00985731cdf))
+
 ## [1.19.6](https://github.com/Project-Colony/Eidos/compare/v1.19.5...v1.19.6) (2026-10-21)
 
 
