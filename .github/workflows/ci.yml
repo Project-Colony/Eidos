@@ -27,7 +27,7 @@ env:
   # red overnight for reasons nobody in the PR caused. Bumping this line is then
   # a normal, reviewable change that lands with whatever fixes it requires.
   # This is the version the project is developed against.
-  RUST_VERSION: "1.99.0"
+  RUST_VERSION: "1.99.1"
   CARGO_TERM_COLOR: always
   # A backtrace costs nothing on a green run and saves a whole re-run on a red one.
   RUST_BACKTRACE: "1"
