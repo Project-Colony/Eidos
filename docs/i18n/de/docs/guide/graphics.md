@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=ee3cee732aafbf91d8085d03a74f7d4e0cfa224d -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=a2dfee4604b4e78f8f22e935fab06fbfe6d4d301 -->
 
 # Community Shaders, DLSS und Frame Generation
 
@@ -99,8 +99,19 @@ Zwei Dinge vorab unter Linux:
   DynDOLOD, das die endgueltigen Meshes sehen muss. Aendern Sie spaeter Ihre
   Texturen, laufen beide erneut, in dieser Reihenfolge.
 
-Seine Ausgabe landet wie bei jedem Werkzeug im Overwrite, wo ein Klick daraus
-einen Mod macht. Geben Sie diesem Mod hohe Prioritaet: er soll gewinnen.
+Seine Ausgabe landet nicht im Overwrite. PGPatcher schreibt nur in die
+Output location, die in seinem Launcher eingestellt ist, und lehnt einen Ordner
+innerhalb von `Data` ab. Tragen Sie dort einen eigenen Ordner ein, etwa einen
+neuen Ordner `PGPatcher Output` unter `mods/` der Instanz. Lassen Sie diesen Mod
+deaktiviert, solange PGPatcher läuft, denn PGPatcher leert den Ordner, bevor es
+ihn neu schreibt, und Eidos erwartet, dass die aktivierten Mods unverändert
+bleiben, solange die Ansicht gemountet ist. Aktivieren Sie ihn danach mit hoher
+Priorität: er soll gewinnen.
+
+Verwenden Sie keinen Mod aus **Capture output into** als Output location. Eidos
+verschiebt nach jedem Lauf PGPatchers eigene Ordner `cfg/` und `log/` in diesen
+Mod, und PGPatcher bricht dann mit
+"Output directory has non-PGPatcher related files" ab.
 
 ## Die Zahlen danach lesen
 

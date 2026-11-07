@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=ee3cee732aafbf91d8085d03a74f7d4e0cfa224d -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=a2dfee4604b4e78f8f22e935fab06fbfe6d4d301 -->
 
 # Community Shaders, DLSS i generowanie klatek
 
@@ -97,8 +97,18 @@ Dwie rzeczy przed uruchomieniem na Linuksie:
   i **przed** DynDOLOD, ktory musi zobaczyc koncowe siatki. Pozniejsza zmiana
   tekstur oznacza ponowne uruchomienie obu, w tej kolejnosci.
 
-Wynik trafia do Overwrite jak u kazdego narzedzia, gdzie jedno klikniecie robi z
-niego moda. Nadaj temu modowi wysoki priorytet: ma wygrywac.
+Wynik nie trafia do Overwrite. PGPatcher zapisuje tylko do Output location
+ustawionej w swoim launcherze i odrzuca folder wewnątrz `Data`. Skieruj tę
+lokalizację do osobnego folderu, na przykład nowego folderu `PGPatcher Output` w
+`mods/` instancji. Trzymaj ten mod wyłączony, dopóki PGPatcher działa, bo
+PGPatcher opróżnia folder przed ponownym zapisem, a Eidos zakłada, że włączone
+mody nie zmieniają się, dopóki widok jest zamontowany. Potem włącz go z wysokim
+priorytetem: ma wygrywać.
+
+Nie używaj jako Output location moda wybranego w **Capture output into**. Eidos
+po każdym uruchomieniu przenosi do tego moda własne `cfg/` i `log/` PGPatchera,
+a PGPatcher zatrzymuje się wtedy z komunikatem
+„Output directory has non-PGPatcher related files".
 
 ## Odczytywanie liczb potem
 

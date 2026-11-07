@@ -92,8 +92,17 @@ Two things to know before running it on Linux:
   **before** DynDOLOD, which has to see the final meshes. Changing your textures
   later means running both again, in that order.
 
-Its output goes to the Overwrite like any other tool's, where one click turns it
-into a mod. Give that mod a high priority: it is meant to win.
+Its output does not go to the Overwrite. PGPatcher writes only to the Output
+location set in its launcher, and it refuses a folder inside `Data`. Point that
+location at a folder of its own, such as a new `PGPatcher Output` folder under
+the instance's `mods/`. Keep that mod disabled while PGPatcher runs, because
+PGPatcher empties the folder before writing it again and Eidos expects the
+enabled mods to stay unchanged while the view is mounted. Enable it afterwards
+with a high priority: it is meant to win.
+
+Do not use a **Capture output into** mod as the Output location. Eidos moves
+PGPatcher's own `cfg/` and `log/` into that mod after each run, and PGPatcher
+then stops with "Output directory has non-PGPatcher related files".
 
 ## Reading the numbers afterwards
 

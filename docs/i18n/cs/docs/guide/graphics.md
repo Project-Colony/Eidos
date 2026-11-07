@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=ee3cee732aafbf91d8085d03a74f7d4e0cfa224d -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=a2dfee4604b4e78f8f22e935fab06fbfe6d4d301 -->
 
 # Community Shaders, DLSS a generování snímků
 
@@ -92,8 +92,18 @@ Dve veci pred spustenim na Linuxu:
   DynDOLOD, ktery musi videt konecne site. Pozdejsi zmena textur znamena spustit
   oba znovu, v tomto poradi.
 
-Vystup miri do Overwrite jako u kazdeho nastroje, kde z nej jedno kliknuti udela
-modifikaci. Dejte te modifikaci vysokou prioritu: ma vyhravat.
+Výstup nemíří do Overwrite. PGPatcher zapisuje jen do složky zadané v poli
+Output location jeho spouštěče a složku uvnitř `Data` odmítne. Nasměrujte toto
+pole na vlastní složku, třeba na novou složku `PGPatcher Output` v `mods/`
+instance. Dokud PGPatcher běží, nechte tento mód vypnutý, protože PGPatcher
+složku před novým zápisem vyprázdní a Eidos počítá s tím, že se zapnuté módy
+nemění, dokud je pohled připojený. Potom ho zapněte s vysokou prioritou: má
+vyhrávat.
+
+Jako Output location nepoužívejte mód zvolený v **Capture output into**. Eidos
+po každém běhu přesune vlastní `cfg/` a `log/` PGPatcheru do tohoto módu a
+PGPatcher se pak zastaví s hláškou
+„Output directory has non-PGPatcher related files".
 
 ## Jak potom číst čísla
 
