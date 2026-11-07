@@ -142,6 +142,13 @@ impl Registry {
     /// save this file, and a FIXED temp name let two of them interleave into one
     /// - which is how a half-written `able=` line got into a real registry.
     pub fn save_to(&self, path: &Path) -> io::Result<()> {
+        // write_atomic leaves missing parents alone on purpose (a mod folder
+        // must not appear by accident), but the config folder is Eidos's own: on
+        // a fresh XDG_CONFIG_HOME it does not exist yet, and the first
+        // `eidos init` could not register its instance.
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
         crate::write_atomic(path, self.to_ini().as_bytes())
     }
 
@@ -250,6 +257,23 @@ mod tests {
             reg.last, None,
             "a forgotten root must not linger as the default"
         );
+    }
+
+    #[test]
+    fn saving_into_a_fresh_config_folder_creates_it() {
+        let root = std::env::temp_dir().join(format!("eidos-reg-fresh-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let path = root.join("Colony").join("Eidos").join("instances.ini");
+        let mut reg = Registry::default();
+        reg.set_last(InstanceRef::Portable("/mnt/Eidos-Skyrim".into()));
+
+        reg.save_to(&path).unwrap();
+
+        assert_eq!(
+            Registry::load_from(&path).last,
+            Some(InstanceRef::Portable("/mnt/Eidos-Skyrim".into()))
+        );
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
