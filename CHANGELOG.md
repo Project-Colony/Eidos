@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.21.0](https://github.com/Project-Colony/Eidos/compare/v1.20.0...v1.21.0) (2026-11-07)
+
+
+### Features
+
+* **instance:** write a ModOrganizer.ini so PGPatcher and PGLite can use their Mod Organizer 2 mode ([#117](https://github.com/Project-Colony/Eidos/issues/117)) ([cce916b](https://github.com/Project-Colony/Eidos/commit/cce916bbe1a5669af4b293a63a559405ba8bb727))
+
+
+### Fixes
+
+* **instance:** register a new instance on a fresh config, and answer eidos tool --help ([#118](https://github.com/Project-Colony/Eidos/issues/118)) ([41849f8](https://github.com/Project-Colony/Eidos/commit/41849f8504e3d477a5e9fe9e44a73a81b0f243b8))
+
+
+### Documentation
+
+* **guide:** PGPatcher writes to its own Output location, not the Overwrite ([#116](https://github.com/Project-Colony/Eidos/issues/116)) ([0ffd414](https://github.com/Project-Colony/Eidos/commit/0ffd414c00f68a2c6dc35a0e49cce7daa7348f41))
+
 ## [1.20.0](https://github.com/Project-Colony/Eidos/compare/v1.19.6...v1.20.0) (2026-10-29)
 
 
