@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f10a5437abda242ca6654c18a34358e156c71a93 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=dd5be435db2cb30d0f520a494cda2fe68754dd1e -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -226,6 +226,53 @@ uitvoerbare bestand. Laat Prereqs leeg.
 
 [pg716]: https://github.com/hakasapl/PGPatcher/issues/716
 [pg725]: https://github.com/hakasapl/PGPatcher/issues/725
+
+### PGPatcher en PGLite in de modus Mod Organizer 2
+
+Met Mod Manager op `None` ziet PGPatcher één samengevoegde map `Data` en kan het
+niet zien uit welke mod een mesh of texture komt, dus heeft het geen conflicten
+om te tonen en geen modvolgorde om te volgen. Zijn modus `Mod Organizer 2` leest
+de instantie zelf: de `modlist.txt` van het profiel, de ingeschakelde mods in hun
+prioriteitsvolgorde en de bestanden in de map van elke mod. PGLite, de versie in
+het spel, leest de instantie op dezelfde manier. Een Eidos-instantie heeft al de
+indeling van MO2 (`mods/`, `profiles/<name>/modlist.txt`, `overwrite/`), dus
+deze modus werkt ermee.
+
+In de launcher van PGPatcher:
+
+1. Zet **Mod Manager** op `Mod Organizer 2`.
+2. Zet **MO2 Options -> Instance Location** op de map van de Eidos-instantie,
+   geschreven als Windows-pad op het station `Z:` van Wine, dat `/` is. Een
+   draagbare instantie in `/mnt/Games/Eidos-Skyrim` wordt
+   `Z:\mnt\Games\Eidos-Skyrim`; een globale wordt
+   `Z:\home\<you>\.local\share\Colony\Eidos\instances\<game id>`.
+3. Houd `--ignore-mo2vfscheck` in de argumenten van de tool. In deze modus zoekt
+   PGPatcher naar usvfs en stopt het als dat ontbreekt.
+
+PGPatcher accepteert de map alleen als die een `modorganizer.ini` bevat. Daarom
+schrijft Eidos `ModOrganizer.ini` in de hoofdmap van de instantie telkens als
+het het spel of een tool start, voor het profiel dat start. Het bestand wordt
+alleen herschreven als de inhoud verandert. Het bevat:
+
+- in `[General]`: `gameName`, `gamePath` (de installatiemap van het spel als
+  `Z:`-pad) en `selected_profile`;
+- in `[Settings]`: `mod_directory`, `profiles_directory` en
+  `overwrite_directory` als absolute `Z:`-paden, plus `download_directory` als de
+  instantie een map `downloads/` heeft.
+
+De eerste regel is een commentaar dat zegt dat Eidos het bestand schreef. Een
+`ModOrganizer.ini` zonder die regel, in welke schrijfwijze van de naam ook, wordt
+nooit gewijzigd of verwijderd: een MO2-instantie die u in Eidos opende houdt de
+hare, en PGPatcher leest dat bestand zoals het is. MO2 laat commentaar weg
+wanneer het zijn instellingen opslaat, dus een bestand waar MO2 overheen heeft
+opgeslagen is vanaf dan van MO2.
+
+Eidos schrijft het bestand alleen wanneer het iets start, dus tussen twee starts
+noemt het het profiel van de laatste. Een tool die Eidos start vindt er altijd
+zijn eigen profiel.
+
+PGPatcher stopt met een fout als het profiel geen ingeschakelde mod heeft, en
+als zijn uitvoermap de map van een ingeschakelde mod is, net als onder MO2.
 
 ## Het spelpad in het prefix
 

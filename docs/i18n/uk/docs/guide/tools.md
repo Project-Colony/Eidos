@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f10a5437abda242ca6654c18a34358e156c71a93 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=dd5be435db2cb30d0f520a494cda2fe68754dd1e -->
 
 # Інструменти: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -222,6 +222,52 @@ Executables заповнює поле Arguments так само. Те, що ви
 
 [pg716]: https://github.com/hakasapl/PGPatcher/issues/716
 [pg725]: https://github.com/hakasapl/PGPatcher/issues/725
+
+### PGPatcher і PGLite у режимі Mod Organizer 2
+
+Коли Mod Manager має значення `None`, PGPatcher бачить одну об'єднану теку
+`Data` і не може визначити, з якого мода походить меш чи текстура, тож йому
+нічого показати в конфліктах і немає порядку модів, якого слід дотримуватися.
+Режим `Mod Organizer 2` читає сам екземпляр: `modlist.txt` профілю, увімкнені
+моди в порядку пріоритету та файли в теці кожного мода. PGLite, версія всередині
+гри, читає екземпляр так само. Екземпляр Eidos уже має структуру MO2 (`mods/`,
+`profiles/<name>/modlist.txt`, `overwrite/`), тому цей режим із ним працює.
+
+У лаунчері PGPatcher:
+
+1. Встановіть **Mod Manager** на `Mod Organizer 2`.
+2. Встановіть **MO2 Options -> Instance Location** на теку екземпляра Eidos,
+   записану як шлях Windows на диску `Z:` у Wine, яким є `/`. Портативний
+   екземпляр у `/mnt/Games/Eidos-Skyrim` записується як
+   `Z:\mnt\Games\Eidos-Skyrim`; глобальний як
+   `Z:\home\<you>\.local\share\Colony\Eidos\instances\<game id>`.
+3. Залиште `--ignore-mo2vfscheck` в аргументах інструмента. У цьому режимі
+   PGPatcher шукає usvfs і зупиняється, якщо його немає.
+
+PGPatcher приймає теку, лише якщо в ній є `modorganizer.ini`, тому Eidos
+записує `ModOrganizer.ini` у корінь екземпляра щоразу, коли запускає гру або
+інструмент, для профілю, що запускається. Файл перезаписується, лише коли
+змінюється його вміст. Він містить:
+
+- у `[General]`: `gameName`, `gamePath` (теку встановлення гри як шлях `Z:`) і
+  `selected_profile`;
+- у `[Settings]`: `mod_directory`, `profiles_directory` і
+  `overwrite_directory` як абсолютні шляхи `Z:`, а також `download_directory`,
+  якщо екземпляр має теку `downloads/`.
+
+Його перший рядок це коментар про те, що файл записав Eidos. Файл
+`ModOrganizer.ini` без цього рядка, з будь-яким регістром літер у назві, ніколи
+не змінюється й не видаляється: екземпляр MO2, який ви відкрили в Eidos,
+зберігає свій, і PGPatcher читає цей файл як є. MO2 відкидає коментарі, коли
+зберігає свої налаштування, тож файл, поверх якого зберіг MO2, відтоді належить
+MO2.
+
+Eidos записує файл лише під час запуску чогось, тож між запусками в ньому
+вказано профіль останнього. Інструмент, який запускає Eidos, завжди знаходить
+там свій профіль.
+
+PGPatcher зупиняється з помилкою, коли в профілі немає жодного увімкненого мода,
+і коли його тека виводу є текою увімкненого мода, так само як під MO2.
 
 ## Шлях до гри у префіксі
 

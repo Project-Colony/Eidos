@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f10a5437abda242ca6654c18a34358e156c71a93 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=dd5be435db2cb30d0f520a494cda2fe68754dd1e -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -226,6 +226,53 @@ yanina koyar. Prereqs alanini bos birakin.
 
 [pg716]: https://github.com/hakasapl/PGPatcher/issues/716
 [pg725]: https://github.com/hakasapl/PGPatcher/issues/725
+
+### Mod Organizer 2 modunda PGPatcher ve PGLite
+
+Mod Manager `None` olarak ayarlıyken PGPatcher tek bir birleşik `Data` klasörü
+görür ve bir mesh'in ya da dokunun hangi moddan geldiğini bilemez, bu yüzden
+gösterecek çakışması ve izleyecek mod sırası yoktur. `Mod Organizer 2` modu
+örneğin kendisini okur: profilin `modlist.txt` dosyasını, etkin modları öncelik
+sırasıyla ve her modun klasöründeki dosyaları. Oyun içi sürüm olan PGLite de
+örneği aynı şekilde okur. Bir Eidos örneği zaten MO2'nin düzenine sahiptir
+(`mods/`, `profiles/<name>/modlist.txt`, `overwrite/`), bu yüzden bu mod onunla
+çalışır.
+
+PGPatcher'ın başlatıcısında:
+
+1. **Mod Manager** ayarını `Mod Organizer 2` yapın.
+2. **MO2 Options -> Instance Location** ayarını Eidos örneğinin klasörü yapın;
+   bunu Wine'ın `/` olan `Z:` sürücüsünde bir Windows yolu olarak yazın.
+   `/mnt/Games/Eidos-Skyrim` konumundaki taşınabilir bir örnek
+   `Z:\mnt\Games\Eidos-Skyrim` olur; genel bir örnek
+   `Z:\home\<you>\.local\share\Colony\Eidos\instances\<game id>` olur.
+3. `--ignore-mo2vfscheck` bağımsız değişkenini aracın bağımsız değişkenlerinde
+   tutun. Bu modda PGPatcher usvfs'yi arar ve bulamazsa durur.
+
+PGPatcher klasörü yalnızca içinde bir `modorganizer.ini` varsa kabul eder; bu
+yüzden Eidos, oyunu ya da bir aracı her başlattığında, başlatılan profil için
+örneğin kök klasörüne `ModOrganizer.ini` yazar. Dosya yalnızca içeriği
+değiştiğinde yeniden yazılır. İçinde şunlar bulunur:
+
+- `[General]` içinde: `gameName`, `gamePath` (oyunun kurulum klasörü, `Z:` yolu
+  olarak) ve `selected_profile`;
+- `[Settings]` içinde: mutlak `Z:` yolları olarak `mod_directory`,
+  `profiles_directory` ve `overwrite_directory`, örneğin bir `downloads/`
+  klasörü varsa ayrıca `download_directory`.
+
+İlk satırı, dosyayı Eidos'un yazdığını söyleyen bir yorumdur. Bu satırı
+içermeyen bir `ModOrganizer.ini`, adı hangi büyük/küçük harfle yazılmış olursa
+olsun, asla değiştirilmez ya da silinmez: Eidos'ta açtığınız bir MO2 örneği
+kendi dosyasını korur ve PGPatcher o dosyayı olduğu gibi okur. MO2 ayarlarını
+kaydederken yorumları atar, bu yüzden MO2'nin üzerine kaydettiği bir dosya o
+andan itibaren MO2'nindir.
+
+Eidos dosyayı yalnızca bir şey başlatırken yazar, bu yüzden iki başlatma
+arasında dosya sonuncunun profilini gösterir. Eidos'un başlattığı bir araç orada
+her zaman kendi profilini bulur.
+
+PGPatcher, profilde etkin hiçbir mod olmadığında ve çıktı klasörü etkin bir
+modun klasörü olduğunda, MO2 altında olduğu gibi bir hatayla durur.
 
 ## Önekteki oyun yolu
 

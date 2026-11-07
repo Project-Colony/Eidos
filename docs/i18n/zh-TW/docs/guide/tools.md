@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f10a5437abda242ca6654c18a34358e156c71a93 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=dd5be435db2cb30d0f520a494cda2fe68754dd1e -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -192,6 +192,46 @@ DLL 放在執行檔旁邊。Prereqs 留空即可。
 
 [pg716]: https://github.com/hakasapl/PGPatcher/issues/716
 [pg725]: https://github.com/hakasapl/PGPatcher/issues/725
+
+### Mod Organizer 2 模式下的 PGPatcher 與 PGLite
+
+Mod Manager 設為 `None` 時，PGPatcher 只能看到一個合併後的 `Data` 資料夾，無法
+得知某個網格或材質來自哪個模組，因此既沒有衝突可顯示，也沒有模組順序可遵循。
+它的 `Mod Organizer 2` 模式直接讀取實例本身：設定檔的 `modlist.txt`、依優先順序
+排列的已啟用模組，以及每個模組資料夾裡的檔案。遊戲內版本 PGLite 也以同樣方式
+讀取實例。Eidos 實例本來就是 MO2 的配置（`mods/`、`profiles/<name>/modlist.txt`、
+`overwrite/`），所以這個模式可以直接用於它。
+
+在 PGPatcher 的啟動器中：
+
+1. 把 **Mod Manager** 設為 `Mod Organizer 2`。
+2. 把 **MO2 Options -> Instance Location** 設為 Eidos 實例資料夾，寫成 Wine
+   `Z:` 磁碟（即 `/`）上的 Windows 路徑。位於 `/mnt/Games/Eidos-Skyrim` 的可攜
+   實例寫作 `Z:\mnt\Games\Eidos-Skyrim`；全域實例寫作
+   `Z:\home\<you>\.local\share\Colony\Eidos\instances\<game id>`。
+3. 在工具的參數中保留 `--ignore-mo2vfscheck`。在這個模式下，PGPatcher 會尋找
+   usvfs，找不到就停止。
+
+PGPatcher 只接受含有 `modorganizer.ini` 的資料夾，所以 Eidos 每次啟動遊戲或
+工具時，都會為所啟動的設定檔在實例根目錄寫入 `ModOrganizer.ini`。只有內容
+變更時才會重寫。檔案包含：
+
+- `[General]` 中：`gameName`、`gamePath`（遊戲安裝資料夾，以 `Z:` 路徑表示）與
+  `selected_profile`；
+- `[Settings]` 中：以絕對 `Z:` 路徑表示的 `mod_directory`、`profiles_directory`
+  與 `overwrite_directory`，實例有 `downloads/` 資料夾時還有
+  `download_directory`。
+
+檔案第一行是一條註解，說明它由 Eidos 寫入。沒有這一行的 `ModOrganizer.ini`，
+無論檔名大小寫如何，Eidos 都不會修改或刪除：你在 Eidos 中開啟的 MO2 實例保留
+它自己的檔案，PGPatcher 照原樣讀取。MO2 儲存設定時會丟棄註解，所以被 MO2 覆寫
+儲存過的檔案從此歸 MO2 所有。
+
+Eidos 只在啟動某個東西時寫這個檔案，所以在兩次啟動之間，它記錄的是上一次啟動的
+設定檔。由 Eidos 啟動的工具總能在其中找到自己的設定檔。
+
+當設定檔中沒有任何已啟用的模組，或輸出資料夾就是某個已啟用模組的資料夾時，
+PGPatcher 會報錯並停止，和在 MO2 下一樣。
 
 ## 前綴裡的遊戲路徑
 

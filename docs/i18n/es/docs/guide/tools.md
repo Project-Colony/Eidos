@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f10a5437abda242ca6654c18a34358e156c71a93 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=dd5be435db2cb30d0f520a494cda2fe68754dd1e -->
 
 # Herramientas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -230,6 +230,54 @@ entrega las DLL del CRT de Microsoft junto a su ejecutable. Deje Prereqs vacio.
 
 [pg716]: https://github.com/hakasapl/PGPatcher/issues/716
 [pg725]: https://github.com/hakasapl/PGPatcher/issues/725
+
+### PGPatcher y PGLite en modo Mod Organizer 2
+
+Con Mod Manager en `None`, PGPatcher ve una sola carpeta `Data` combinada y no
+puede saber de qué mod viene un mesh o una textura, así que no tiene conflictos
+que mostrar ni orden de mods que seguir. Su modo `Mod Organizer 2` lee la
+instancia directamente: el `modlist.txt` del perfil, los mods activados en su
+orden de prioridad y los archivos de la carpeta de cada mod. PGLite, la versión
+dentro del juego, lee la instancia de la misma forma. Una instancia de Eidos ya
+tiene la estructura de MO2 (`mods/`, `profiles/<name>/modlist.txt`,
+`overwrite/`), por lo que este modo funciona con ella.
+
+En el lanzador de PGPatcher:
+
+1. Ponga **Mod Manager** en `Mod Organizer 2`.
+2. Ponga **MO2 Options -> Instance Location** en la carpeta de la instancia de
+   Eidos, escrita como ruta de Windows en la unidad `Z:` de Wine, que es `/`. Una
+   instancia portable en `/mnt/Games/Eidos-Skyrim` es
+   `Z:\mnt\Games\Eidos-Skyrim`; una global es
+   `Z:\home\<you>\.local\share\Colony\Eidos\instances\<game id>`.
+3. Mantenga `--ignore-mo2vfscheck` en los argumentos de la herramienta. En este
+   modo PGPatcher busca usvfs y se detiene si no lo encuentra.
+
+PGPatcher solo acepta la carpeta si contiene un `modorganizer.ini`, así que
+Eidos escribe `ModOrganizer.ini` en la raíz de la instancia cada vez que inicia
+el juego o una herramienta, para el perfil que se inicia. El archivo solo se
+reescribe cuando su contenido cambia. Contiene:
+
+- en `[General]`: `gameName`, `gamePath` (la carpeta de instalación del juego
+  como ruta `Z:`) y `selected_profile`;
+- en `[Settings]`: `mod_directory`, `profiles_directory` y
+  `overwrite_directory` como rutas `Z:` absolutas, más `download_directory`
+  cuando la instancia tiene una carpeta `downloads/`.
+
+Su primera línea es un comentario que dice que lo escribió Eidos. Un
+`ModOrganizer.ini` sin esa línea, con cualquier combinación de mayúsculas en el
+nombre, nunca se modifica ni se borra: una instancia de MO2 que abrió en Eidos
+conserva el suyo, y PGPatcher lee ese archivo tal cual. MO2 descarta los
+comentarios al guardar su configuración, así que un archivo sobre el que MO2 ha
+guardado pasa a ser de MO2.
+
+Eidos escribe el archivo solo cuando inicia algo, de modo que entre dos
+lanzamientos nombra el perfil del último. Una herramienta que Eidos inicia
+siempre encuentra ahí su propio perfil.
+
+PGPatcher se detiene con un error cuando el perfil no tiene ningún mod activado
+y cuando su carpeta de salida es la carpeta de un mod activado, igual que bajo
+MO2.
 
 ## La ruta del juego en el prefijo
 

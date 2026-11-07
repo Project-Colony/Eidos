@@ -215,6 +215,51 @@ ships the Microsoft CRT DLLs beside its executable. Leave Prereqs empty.
 [pg716]: https://github.com/hakasapl/PGPatcher/issues/716
 [pg725]: https://github.com/hakasapl/PGPatcher/issues/725
 
+### PGPatcher and PGLite in Mod Organizer 2 mode
+
+With Mod Manager set to `None`, PGPatcher sees one merged `Data` folder and
+cannot tell which mod a mesh or texture came from, so it has no conflicts to
+show and no mod order to follow. Its `Mod Organizer 2` mode reads the instance
+itself: the profile's `modlist.txt`, the enabled mods in their priority order,
+and the files in each mod's folder. PGLite, the in-game version, reads the
+instance the same way. An Eidos instance already has MO2's layout (`mods/`,
+`profiles/<name>/modlist.txt`, `overwrite/`), so this mode works on it.
+
+In PGPatcher's launcher:
+
+1. Set **Mod Manager** to `Mod Organizer 2`.
+2. Set **MO2 Options -> Instance Location** to the Eidos instance folder,
+   written as a Windows path on Wine's `Z:` drive, which is `/`. A portable
+   instance at `/mnt/Games/Eidos-Skyrim` is `Z:\mnt\Games\Eidos-Skyrim`; a
+   global one is
+   `Z:\home\<you>\.local\share\Colony\Eidos\instances\<game id>`.
+3. Keep `--ignore-mo2vfscheck` in the tool's arguments. In this mode PGPatcher
+   looks for usvfs and stops when it is missing.
+
+PGPatcher accepts the folder only if it holds a `modorganizer.ini`, so Eidos
+writes `ModOrganizer.ini` at the instance root each time it starts the game or
+a tool, for the profile being started. The file is rewritten only when its
+content changes. It holds:
+
+- in `[General]`: `gameName`, `gamePath` (the game's install folder as a `Z:`
+  path) and `selected_profile`;
+- in `[Settings]`: `mod_directory`, `profiles_directory` and
+  `overwrite_directory` as absolute `Z:` paths, plus `download_directory` when
+  the instance has a `downloads/` folder.
+
+Its first line is a comment saying Eidos wrote it. A `ModOrganizer.ini`
+without that line, under any spelling of the name, is never changed or
+deleted: an MO2 instance you opened in Eidos keeps its own, and PGPatcher reads
+that file as it is. MO2 drops comments when it saves its settings, so a file
+MO2 has saved over is MO2's from then on.
+
+Eidos writes the file only when it launches something, so between launches it
+names the profile of the last one. A tool that Eidos starts always finds its
+own profile there.
+
+PGPatcher stops with an error when the profile has no enabled mod, and when
+its output folder is the folder of an enabled mod, as it does under MO2.
+
 ## The game path in the prefix
 
 Windows tools find their game by reading

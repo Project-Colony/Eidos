@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f10a5437abda242ca6654c18a34358e156c71a93 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=dd5be435db2cb30d0f520a494cda2fe68754dd1e -->
 
 # Narzędzia: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -224,6 +224,51 @@ wykonywalnego. Zostaw Prereqs puste.
 
 [pg716]: https://github.com/hakasapl/PGPatcher/issues/716
 [pg725]: https://github.com/hakasapl/PGPatcher/issues/725
+
+### PGPatcher i PGLite w trybie Mod Organizer 2
+
+Gdy Mod Manager ma wartość `None`, PGPatcher widzi jeden scalony folder `Data` i
+nie wie, z którego moda pochodzi dana siatka lub tekstura, więc nie ma konfliktów
+do pokazania ani kolejności modów do zachowania. Tryb `Mod Organizer 2` czyta
+samą instancję: plik `modlist.txt` profilu, włączone mody w kolejności
+priorytetu oraz pliki w folderze każdego moda. PGLite, wersja działająca w grze,
+czyta instancję tak samo. Instancja Eidos ma już układ MO2 (`mods/`,
+`profiles/<name>/modlist.txt`, `overwrite/`), więc ten tryb z nią działa.
+
+W launcherze PGPatchera:
+
+1. Ustaw **Mod Manager** na `Mod Organizer 2`.
+2. Ustaw **MO2 Options -> Instance Location** na folder instancji Eidos,
+   zapisany jako ścieżka Windows na dysku `Z:` Wine, którym jest `/`. Instancja
+   przenośna w `/mnt/Games/Eidos-Skyrim` to `Z:\mnt\Games\Eidos-Skyrim`;
+   globalna to
+   `Z:\home\<you>\.local\share\Colony\Eidos\instances\<game id>`.
+3. Zostaw `--ignore-mo2vfscheck` w argumentach narzędzia. W tym trybie
+   PGPatcher szuka usvfs i przerywa pracę, gdy go nie znajdzie.
+
+PGPatcher przyjmuje folder tylko wtedy, gdy zawiera on `modorganizer.ini`, więc
+Eidos zapisuje `ModOrganizer.ini` w katalogu głównym instancji przy każdym
+uruchomieniu gry lub narzędzia, dla uruchamianego profilu. Plik jest zapisywany
+ponownie tylko wtedy, gdy zmienia się jego zawartość. Zawiera:
+
+- w `[General]`: `gameName`, `gamePath` (folder instalacji gry jako ścieżkę
+  `Z:`) i `selected_profile`;
+- w `[Settings]`: `mod_directory`, `profiles_directory` i
+  `overwrite_directory` jako bezwzględne ścieżki `Z:`, a także
+  `download_directory`, gdy instancja ma folder `downloads/`.
+
+Jego pierwszy wiersz to komentarz mówiący, że zapisał go Eidos. Plik
+`ModOrganizer.ini` bez tego wiersza, przy dowolnej wielkości liter w nazwie,
+nigdy nie jest zmieniany ani usuwany: instancja MO2 otwarta w Eidos zachowuje
+swój plik, a PGPatcher czyta go w niezmienionej postaci. MO2 usuwa komentarze
+przy zapisie ustawień, więc plik nadpisany przez MO2 od tej chwili należy do MO2.
+
+Eidos zapisuje plik tylko przy uruchamianiu czegoś, więc między uruchomieniami
+wskazuje on profil ostatniego. Narzędzie uruchomione przez Eidos zawsze znajduje
+w nim swój profil.
+
+PGPatcher kończy pracę z błędem, gdy profil nie ma żadnego włączonego moda, oraz
+gdy jego folder wyjściowy jest folderem włączonego moda, tak samo jak pod MO2.
 
 ## Ścieżka gry w prefiksie
 
