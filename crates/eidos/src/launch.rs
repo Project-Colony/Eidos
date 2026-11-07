@@ -360,6 +360,14 @@ pub(crate) fn run_through_view(
         exit(1);
     }
 
+    // PGPatcher's and PGLite's "Mod Organizer 2" mode read the instance from a
+    // ModOrganizer.ini at its root. Written for the profile this run uses, so
+    // a tool started now reads the mod list the merged view is built from.
+    // Nothing in the run depends on it, so a failure is only reported.
+    if let Err(e) = inst.write_mo2_ini(game.def.name, &game.install_path, &prof.name) {
+        eidos_log::warn!("eidos: could not write ModOrganizer.ini for MO2-mode tools: {e}");
+    }
+
     // Recover the selected profile before any preparation can replace runtime
     // files from an interrupted session. Completed output moves are idempotent.
     const ROOT_CONTROL_FILES: &[&str] = &[

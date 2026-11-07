@@ -28,6 +28,7 @@ mod categories;
 mod export;
 mod manifest;
 mod meta;
+mod mo2_ini;
 mod mod_backup;
 mod profile;
 mod provenance;
