@@ -98,7 +98,9 @@ fn tool_executable(
 }
 
 pub(crate) fn cmd_tool(args: &[String]) {
-    let Some(id) = args.first() else {
+    // `--help` is a request for this text, not a game id to look up.
+    let asked_help = args.first().is_some_and(|a| a == "--help" || a == "-h");
+    let Some(id) = args.first().filter(|_| !asked_help) else {
         eidos_log::info!(
             "usage:\n\
              \x20 eidos tool <game-id>                       list tools\n\
@@ -106,7 +108,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
              \x20 eidos tool <game-id> rm <title>\n\
              \x20 eidos tool <game-id> run <title> [--print] [-- <extra args>...]"
         );
-        exit(2);
+        exit(if asked_help { 0 } else { 2 });
     };
     let target = resolve(id);
     let Some(game) = find_instance_game(&target) else {
