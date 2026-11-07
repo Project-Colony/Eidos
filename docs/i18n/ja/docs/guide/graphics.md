@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=ee3cee732aafbf91d8085d03a74f7d4e0cfa224d -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=a2dfee4604b4e78f8f22e935fab06fbfe6d4d301 -->
 
 # Community Shaders、DLSS、フレーム生成
 
@@ -89,8 +89,17 @@ Linux で実行する前に二点:
   メッシュを見る必要がある DynDOLOD の**前**に実行します。後からテクスチャを
   変えたら、この順で両方を実行し直すことになります。
 
-出力は他のツールと同様 Overwrite に入り、クリック一つで MOD になります。その
-MOD には高い優先度を与えてください。勝つために作られたものです。
+出力は Overwrite には入りません。PGPatcher はランチャーで設定した Output location
+にだけ書き込み、`Data` の中のフォルダは受け付けません。その場所には専用の
+フォルダを指定してください。たとえばインスタンスの `mods/` の下に新しく作る
+`PGPatcher Output` フォルダです。PGPatcher の実行中はその MOD を無効にして
+おいてください。PGPatcher は書き直す前にフォルダを空にし、Eidos はビューが
+マウントされている間、有効な MOD が変わらないことを前提にしているためです。
+終わったら高い優先度で有効にしてください。勝つために作られたものです。
+
+**Capture output into** の MOD を Output location にしないでください。Eidos は
+実行のたびに PGPatcher 自身の `cfg/` と `log/` をその MOD へ移すため、PGPatcher
+は「Output directory has non-PGPatcher related files」で止まります。
 
 ## あとで数字をどう読むか
 

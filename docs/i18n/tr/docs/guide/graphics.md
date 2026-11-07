@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=ee3cee732aafbf91d8085d03a74f7d4e0cfa224d -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=a2dfee4604b4e78f8f22e935fab06fbfe6d4d301 -->
 
 # Community Shaders, DLSS ve kare üretimi
 
@@ -93,8 +93,18 @@ Linux'ta calistirmadan once iki sey:
   nihai mesh'leri gormesi gereken DynDOLOD'dan **once** calisir. Dokularinizi
   sonradan degistirmek, ikisini de bu sirayla yeniden calistirmak demektir.
 
-Ciktisi her arac gibi Overwrite'a gider; orada tek tikla bir moda donusur. O
-moda yuksek oncelik verin: kazanmak icin yapilmistir.
+Çıktısı Overwrite'a gitmez. PGPatcher yalnızca başlatıcısındaki Output location
+alanında ayarlı klasöre yazar ve `Data` içindeki bir klasörü kabul etmez. Bu
+alana kendine ait bir klasör verin, mesela örneğe ait `mods/` altında yeni bir
+`PGPatcher Output` klasörü. PGPatcher çalışırken o modu kapalı tutun, çünkü
+PGPatcher klasörü yeniden yazmadan önce boşaltır ve Eidos, görünüm bağlıyken
+etkin modların değişmediğini varsayar. Ardından yüksek öncelikle etkinleştirin:
+kazanmak için yapılmıştır.
+
+**Capture output into** ile seçilen bir modu Output location olarak kullanmayın.
+Eidos her çalıştırmadan sonra PGPatcher'ın kendi `cfg/` ve `log/` klasörlerini o
+moda taşır ve PGPatcher ardından
+"Output directory has non-PGPatcher related files" hatasıyla durur.
 
 ## Sayıları sonradan okumak
 

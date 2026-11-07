@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=ee3cee732aafbf91d8085d03a74f7d4e0cfa224d -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=a2dfee4604b4e78f8f22e935fab06fbfe6d4d301 -->
 
 # Community Shaders、DLSS 与帧生成
 
@@ -78,8 +78,15 @@ Community Shaders 能渲染视差、complex material 和 PBR，但只在网格�
 - 它会修改网格，所以要在所有贴图模组装完之**后**、在需要看到最终网格的 DynDOLOD
   之**前**运行。之后再改贴图，就得按这个顺序把两者都重跑一遍。
 
-它的输出和其他工具一样进入 Overwrite，一次点击就能变成模组。给那个模组高优先级：
-它本来就是要赢的。
+它的输出不进入 Overwrite。PGPatcher 只写入其启动器里 Output location 指定的文件夹，
+并且不接受 `Data` 里面的文件夹。把这个位置指向它专用的文件夹，比如在实例的 `mods/`
+下新建一个 `PGPatcher Output` 文件夹。PGPatcher 运行期间让那个模组保持禁用，因为
+PGPatcher 会先清空文件夹再重新写入，而 Eidos 假定视图挂载期间启用的模组不会变化。
+运行结束后再以高优先级启用它：它本来就是要赢的。
+
+不要把 **Capture output into** 的模组用作 Output location。每次运行之后，Eidos
+会把 PGPatcher 自己的 `cfg/` 和 `log/` 移进那个模组，PGPatcher 随后就会报
+「Output directory has non-PGPatcher related files」并停止。
 
 ## 事后怎么读这些数字
 
