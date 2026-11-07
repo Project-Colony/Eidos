@@ -364,8 +364,35 @@ pub(crate) fn run_through_view(
     // ModOrganizer.ini at its root. Written for the profile this run uses, so
     // a tool started now reads the mod list the merged view is built from.
     // Nothing in the run depends on it, so a failure is only reported.
-    if let Err(e) = inst.write_mo2_ini(game.def.name, &game.install_path, &prof.name) {
-        eidos_log::warn!("eidos: could not write ModOrganizer.ini for MO2-mode tools: {e}");
+    // MO2 opens an instance only if gameName is one of its game plugins' names,
+    // and PGPatcher picks its game type from it; three differ from Eidos's.
+    let mo2_game_name = match game.def.id {
+        "enderalse" => "Enderal Special Edition",
+        "fallout3" => "Fallout 3",
+        "falloutnv" => "New Vegas",
+        _ => game.def.name,
+    };
+    match inst.write_mo2_ini(mo2_game_name, &game.install_path, &prof.name) {
+        Ok(eidos_instance::Mo2Ini::Foreign { path, profile })
+            if profile.as_deref() != Some(prof.name.as_str()) =>
+        {
+            let selects = match profile {
+                Some(p) => format!("selects profile '{p}'"),
+                None => "selects no profile".to_owned(),
+            };
+            eidos_log::warn!(
+                "eidos: {} was not written by Eidos and {selects}; PGPatcher's MO2 mode \
+                 reads that, not '{}', the profile this run uses. Select '{}' in MO2, or \
+                 remove the file so Eidos writes its own.",
+                path.display(),
+                prof.name,
+                prof.name
+            );
+        }
+        Ok(_) => {}
+        Err(e) => {
+            eidos_log::warn!("eidos: could not write ModOrganizer.ini for MO2-mode tools: {e}")
+        }
     }
 
     // Recover the selected profile before any preparation can replace runtime

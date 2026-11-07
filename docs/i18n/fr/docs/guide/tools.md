@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=dd5be435db2cb30d0f520a494cda2fe68754dd1e -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=8062635fdeb4cf10e0e1055a5a64c5b46d13f613 -->
 
 # Outils : xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -261,7 +261,7 @@ PGPatcher n'accepte le dossier que s'il contient un `modorganizer.ini` : Eidos
 le jeu ou un outil, pour le profil lancé. Le fichier n'est réécrit que si son
 contenu change. Il contient :
 
-- dans `[General]` : `gameName`, `gamePath` (le dossier d'installation du jeu
+- dans `[General]` : `gameName` (le nom du jeu dans MO2, donc `New Vegas` pour Fallout: New Vegas), `gamePath` (le dossier d'installation du jeu
   sous forme de chemin `Z:`) et `selected_profile` ;
 - dans `[Settings]` : `mod_directory`, `profiles_directory` et
   `overwrite_directory` en chemins `Z:` absolus, plus `download_directory` si
@@ -272,11 +272,16 @@ Sa première ligne est un commentaire qui dit qu'Eidos l'a écrit. Un
 jamais modifié ni supprimé : une instance MO2 que vous avez ouverte dans Eidos
 garde le sien, et PGPatcher lit ce fichier tel quel. MO2 supprime les
 commentaires quand il enregistre ses réglages, donc un fichier sur lequel MO2 a
-enregistré lui appartient dès lors.
+enregistré lui appartient dès lors. Un fichier vide compte comme celui d'Eidos.
 
-Eidos n'écrit le fichier qu'au lancement de quelque chose : entre deux
+Un tel fichier nomme le profil que MO2 a sélectionné en dernier, et PGPatcher
+utilise ce profil, pas celui qu'Eidos lance. Quand les deux diffèrent, Eidos
+consigne un avertissement au lancement. Sélectionnez le même profil dans MO2, ou
+renommez ou supprimez le fichier pour qu'Eidos écrive le sien.
+
+Eidos n'écrit son fichier qu'au lancement de quelque chose : entre deux
 lancements, il nomme le profil du dernier. Un outil lancé par Eidos y trouve
-toujours son propre profil.
+son propre profil.
 
 PGPatcher s'arrête sur une erreur quand le profil n'a aucun mod activé, et quand
 son dossier de sortie est celui d'un mod activé, comme il le fait sous MO2.

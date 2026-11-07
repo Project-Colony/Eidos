@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=dd5be435db2cb30d0f520a494cda2fe68754dd1e -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=8062635fdeb4cf10e0e1055a5a64c5b46d13f613 -->
 
 # Herramientas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -258,7 +258,7 @@ Eidos escribe `ModOrganizer.ini` en la raíz de la instancia cada vez que inicia
 el juego o una herramienta, para el perfil que se inicia. El archivo solo se
 reescribe cuando su contenido cambia. Contiene:
 
-- en `[General]`: `gameName`, `gamePath` (la carpeta de instalación del juego
+- en `[General]`: `gameName` (el nombre del juego en MO2, así que `New Vegas` para Fallout: New Vegas), `gamePath` (la carpeta de instalación del juego
   como ruta `Z:`) y `selected_profile`;
 - en `[Settings]`: `mod_directory`, `profiles_directory` y
   `overwrite_directory` como rutas `Z:` absolutas, más `download_directory`
@@ -269,11 +269,16 @@ Su primera línea es un comentario que dice que lo escribió Eidos. Un
 nombre, nunca se modifica ni se borra: una instancia de MO2 que abrió en Eidos
 conserva el suyo, y PGPatcher lee ese archivo tal cual. MO2 descarta los
 comentarios al guardar su configuración, así que un archivo sobre el que MO2 ha
-guardado pasa a ser de MO2.
+guardado pasa a ser de MO2. Un archivo vacío cuenta como de Eidos.
 
-Eidos escribe el archivo solo cuando inicia algo, de modo que entre dos
+Un archivo así nombra el perfil que MO2 seleccionó por última vez, y PGPatcher
+usa ese perfil, no el que inicia Eidos. Cuando los dos difieren, Eidos registra
+una advertencia al lanzar. Seleccione el mismo perfil en MO2, o cambie el nombre
+del archivo o quítelo para que Eidos escriba el suyo.
+
+Eidos escribe su archivo solo cuando inicia algo, de modo que entre dos
 lanzamientos nombra el perfil del último. Una herramienta que Eidos inicia
-siempre encuentra ahí su propio perfil.
+encuentra ahí su propio perfil.
 
 PGPatcher se detiene con un error cuando el perfil no tiene ningún mod activado
 y cuando su carpeta de salida es la carpeta de un mod activado, igual que bajo

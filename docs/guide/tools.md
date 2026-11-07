@@ -241,8 +241,9 @@ writes `ModOrganizer.ini` at the instance root each time it starts the game or
 a tool, for the profile being started. The file is rewritten only when its
 content changes. It holds:
 
-- in `[General]`: `gameName`, `gamePath` (the game's install folder as a `Z:`
-  path) and `selected_profile`;
+- in `[General]`: `gameName` (MO2's name for the game, so `New Vegas` for
+  Fallout: New Vegas), `gamePath` (the game's install folder as a `Z:` path)
+  and `selected_profile`;
 - in `[Settings]`: `mod_directory`, `profiles_directory` and
   `overwrite_directory` as absolute `Z:` paths, plus `download_directory` when
   the instance has a `downloads/` folder.
@@ -251,11 +252,16 @@ Its first line is a comment saying Eidos wrote it. A `ModOrganizer.ini`
 without that line, under any spelling of the name, is never changed or
 deleted: an MO2 instance you opened in Eidos keeps its own, and PGPatcher reads
 that file as it is. MO2 drops comments when it saves its settings, so a file
-MO2 has saved over is MO2's from then on.
+MO2 has saved over is MO2's from then on. An empty file counts as Eidos's.
 
-Eidos writes the file only when it launches something, so between launches it
-names the profile of the last one. A tool that Eidos starts always finds its
-own profile there.
+Such a file names the profile MO2 last selected, and PGPatcher uses that
+profile, not the one Eidos starts. When the two differ, Eidos logs a warning
+at launch. Select the same profile in MO2, or rename or remove the file so
+Eidos writes its own.
+
+Eidos writes its file only when it launches something, so between launches it
+names the profile of the last one. A tool that Eidos starts finds its own
+profile there.
 
 PGPatcher stops with an error when the profile has no enabled mod, and when
 its output folder is the folder of an enabled mod, as it does under MO2.

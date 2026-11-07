@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=dd5be435db2cb30d0f520a494cda2fe68754dd1e -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=8062635fdeb4cf10e0e1055a5a64c5b46d13f613 -->
 
 # 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -240,7 +240,7 @@ PGPatcher는 폴더에 `modorganizer.ini`가 있을 때만 받아들입니다. �
 `ModOrganizer.ini`를 씁니다. 내용이 바뀔 때만 다시 씁니다. 들어 있는 내용은
 다음과 같습니다.
 
-- `[General]`에 `gameName`, `gamePath`(게임 설치 폴더를 `Z:` 경로로),
+- `[General]`에 `gameName`(MO2에서 쓰는 게임 이름, 그래서 Fallout: New Vegas는 `New Vegas`), `gamePath`(게임 설치 폴더를 `Z:` 경로로),
   `selected_profile`
 - `[Settings]`에 절대 `Z:` 경로로 된 `mod_directory`, `profiles_directory`,
   `overwrite_directory`, 그리고 인스턴스에 `downloads/` 폴더가 있으면
@@ -250,10 +250,14 @@ PGPatcher는 폴더에 `modorganizer.ini`가 있을 때만 받아들입니다. �
 `ModOrganizer.ini`는 이름의 대소문자와 상관없이 절대 바꾸거나 지우지 않습니다.
 Eidos에서 연 MO2 인스턴스는 자기 파일을 그대로 유지하고, PGPatcher는 그 파일을
 있는 그대로 읽습니다. MO2는 설정을 저장할 때 주석을 버리므로, MO2가 덮어써서
-저장한 파일은 그때부터 MO2의 것입니다.
+저장한 파일은 그때부터 MO2의 것입니다. 빈 파일은 Eidos의 파일로 칩니다.
 
-Eidos는 무언가를 시작할 때만 이 파일을 쓰므로, 두 번의 실행 사이에는 마지막
-실행의 프로필 이름이 들어 있습니다. Eidos가 시작한 도구는 그곳에서 항상 자기
+이런 파일에는 MO2가 마지막으로 선택한 프로필이 들어 있고, PGPatcher는 Eidos가 시작하는 프로필이 아니라 그 프로필을 씁니다.
+둘이 다르면 Eidos는 실행할 때 경고를 로그에 남깁니다. MO2에서 같은 프로필을 선택하거나, 파일 이름을 바꾸거나 지워서 Eidos가 자기
+파일을 쓰게 하세요.
+
+Eidos는 무언가를 시작할 때만 자기 파일을 쓰므로, 두 번의 실행 사이에는 마지막
+실행의 프로필 이름이 들어 있습니다. Eidos가 시작한 도구는 그곳에서 자기
 프로필을 찾습니다.
 
 PGPatcher는 프로필에 켜진 모드가 하나도 없을 때와, 출력 폴더가 켜진 모드의

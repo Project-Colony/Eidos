@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=dd5be435db2cb30d0f520a494cda2fe68754dd1e -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=8062635fdeb4cf10e0e1055a5a64c5b46d13f613 -->
 
 # Ferramentas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -254,7 +254,7 @@ Eidos escreve `ModOrganizer.ini` na raiz da instância toda vez que inicia o jog
 ou uma ferramenta, para o perfil que está sendo iniciado. O arquivo só é
 reescrito quando o conteúdo muda. Ele contém:
 
-- em `[General]`: `gameName`, `gamePath` (a pasta de instalação do jogo como
+- em `[General]`: `gameName` (o nome do jogo no MO2, então `New Vegas` para Fallout: New Vegas), `gamePath` (a pasta de instalação do jogo como
   caminho `Z:`) e `selected_profile`;
 - em `[Settings]`: `mod_directory`, `profiles_directory` e
   `overwrite_directory` como caminhos `Z:` absolutos, mais `download_directory`
@@ -265,10 +265,15 @@ A primeira linha é um comentário dizendo que o Eidos escreveu o arquivo. Um
 minúsculas no nome, nunca é alterado nem apagado: uma instância do MO2 que você
 abriu no Eidos mantém o seu, e o PGPatcher lê esse arquivo como está. O MO2
 descarta comentários quando salva as configurações, então um arquivo sobre o
-qual o MO2 salvou passa a ser do MO2.
+qual o MO2 salvou passa a ser do MO2. Um arquivo vazio conta como do Eidos.
 
-O Eidos só escreve o arquivo quando inicia algo, então entre dois lançamentos
-ele nomeia o perfil do último. Uma ferramenta que o Eidos inicia sempre encontra
+Um arquivo assim nomeia o perfil que o MO2 selecionou por último, e o PGPatcher
+usa esse perfil, não o que o Eidos inicia. Quando os dois diferem, o Eidos
+registra um aviso ao lançar. Selecione o mesmo perfil no MO2, ou renomeie ou
+remova o arquivo para que o Eidos escreva o próprio.
+
+O Eidos só escreve o seu arquivo quando inicia algo, então entre dois lançamentos
+ele nomeia o perfil do último. Uma ferramenta que o Eidos inicia encontra
 ali o próprio perfil.
 
 O PGPatcher para com um erro quando o perfil não tem nenhum mod ativado e quando

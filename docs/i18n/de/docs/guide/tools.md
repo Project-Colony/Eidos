@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=dd5be435db2cb30d0f520a494cda2fe68754dd1e -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=8062635fdeb4cf10e0e1055a5a64c5b46d13f613 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -260,7 +260,7 @@ Deshalb schreibt Eidos bei jedem Start des Spiels oder eines Tools eine
 Profil. Die Datei wird nur neu geschrieben, wenn sich ihr Inhalt ändert. Sie
 enthält:
 
-- in `[General]`: `gameName`, `gamePath` (den Installationsordner des Spiels als
+- in `[General]`: `gameName` (der Name des Spiels in MO2, also `New Vegas` für Fallout: New Vegas), `gamePath` (den Installationsordner des Spiels als
   `Z:`-Pfad) und `selected_profile`;
 - in `[Settings]`: `mod_directory`, `profiles_directory` und
   `overwrite_directory` als absolute `Z:`-Pfade, dazu `download_directory`, wenn
@@ -271,10 +271,16 @@ Eine `ModOrganizer.ini` ohne diese Zeile, in welcher Schreibweise des Namens
 auch immer, wird nie geändert oder gelöscht: Eine MO2-Instanz, die Sie in Eidos
 geöffnet haben, behält ihre eigene, und PGPatcher liest diese Datei so, wie sie
 ist. MO2 verwirft Kommentare, wenn es seine Einstellungen speichert, also gehört
-eine Datei, über die MO2 gespeichert hat, von da an MO2.
+eine Datei, über die MO2 gespeichert hat, von da an MO2. Eine leere Datei gilt als die von Eidos.
 
-Eidos schreibt die Datei nur, wenn es etwas startet. Zwischen zwei Starts nennt
-sie also das Profil des letzten. Ein Tool, das Eidos startet, findet dort immer
+Eine solche Datei nennt das Profil, das MO2 zuletzt ausgewählt hat, und
+PGPatcher verwendet dieses Profil, nicht das, das Eidos startet. Wenn sich die
+beiden unterscheiden, protokolliert Eidos beim Start eine Warnung. Wählen Sie in
+MO2 dasselbe Profil, oder benennen Sie die Datei um oder entfernen Sie sie,
+damit Eidos seine eigene schreibt.
+
+Eidos schreibt seine Datei nur, wenn es etwas startet. Zwischen zwei Starts nennt
+sie also das Profil des letzten. Ein Tool, das Eidos startet, findet dort
 sein eigenes Profil.
 
 PGPatcher bricht mit einem Fehler ab, wenn das Profil keinen aktivierten Mod hat

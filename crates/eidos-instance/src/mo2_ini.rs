@@ -16,7 +16,7 @@
 use std::fs;
 use std::io;
 use std::os::unix::ffi::OsStrExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::Instance;
 
@@ -27,38 +27,61 @@ const MARKER: &str = "; Written by Eidos for tools that read a Mod Organizer 2 i
 
 const FILE_NAME: &str = "ModOrganizer.ini";
 
+/// What [`Instance::write_mo2_ini`] did.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Mo2Ini {
+    Written,
+    Unchanged,
+    /// A `ModOrganizer.ini` Eidos did not write is at `path`, so nothing was
+    /// written. `profile` is its `selected_profile`, the one MO2-mode tools
+    /// read instead of the profile Eidos runs.
+    Foreign {
+        path: PathBuf,
+        profile: Option<String>,
+    },
+}
+
 impl Instance {
     /// Write `ModOrganizer.ini` for `profile` and the game installed at
     /// `game_path`, unless a `ModOrganizer.ini` Eidos did not write is there.
     ///
-    /// Returns whether the file was written: an unchanged file is left alone,
-    /// so a launch does not touch it for nothing.
+    /// An unchanged file is left alone, so a launch does not touch it for
+    /// nothing.
     pub fn write_mo2_ini(
         &self,
         game_name: &str,
         game_path: &Path,
         profile: &str,
-    ) -> io::Result<bool> {
+    ) -> io::Result<Mo2Ini> {
         // Wine opens `modorganizer.ini` case-insensitively, so ANY spelling of
         // a foreign one may be the file the tool reads.
         for entry in fs::read_dir(&self.root)? {
             let entry = entry?;
-            if entry
+            if !entry
                 .file_name()
                 .to_str()
                 .is_some_and(|n| n.eq_ignore_ascii_case(FILE_NAME))
-                && !fs::read(entry.path())?.starts_with(MARKER.as_bytes())
             {
-                return Ok(false);
+                continue;
+            }
+            let old = fs::read(entry.path())?;
+            // An empty file holds no MO2 settings to protect, and a crash soon
+            // after the first write can leave one: counting it as foreign
+            // would lock Eidos out of it for good.
+            if !old.trim_ascii().is_empty() && !old.starts_with(MARKER.as_bytes()) {
+                return Ok(Mo2Ini::Foreign {
+                    path: entry.path(),
+                    profile: ini_field(&String::from_utf8_lossy(&old), "selected_profile"),
+                });
             }
         }
         let text = self.mo2_ini_text(game_name, game_path, profile)?;
         let path = self.root.join(FILE_NAME);
         if fs::read(&path).is_ok_and(|old| old == text) {
-            return Ok(false);
+            return Ok(Mo2Ini::Unchanged);
         }
         crate::write_atomic(&path, &text)?;
-        Ok(true)
+        Ok(Mo2Ini::Written)
     }
 
     fn mo2_ini_text(
@@ -158,6 +181,46 @@ fn qt_escape(value: &[u8], byte_array: bool) -> Vec<u8> {
     out
 }
 
+/// PGPatcher 2.3.1's `mo2INIField`, ported: the first line starting with
+/// `key=`, outer quotes trimmed, then `decodeQtByteArrayValue` on the
+/// inside of `@ByteArray(...)` or `\\` -> `\` on a plain value.
+fn ini_field(text: &str, key: &str) -> Option<String> {
+    let prefix = format!("{key}=");
+    let raw = text.lines().find_map(|l| l.strip_prefix(prefix.as_str()))?;
+    let raw = raw.trim_matches('"');
+    let Some(inner) = raw
+        .strip_prefix("@ByteArray(")
+        .and_then(|r| r.strip_suffix(')'))
+    else {
+        return Some(raw.replace("\\\\", "\\"));
+    };
+    let b = inner.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'\\' && i + 1 < b.len() {
+            if b[i + 1] == b'x'
+                && i + 3 < b.len()
+                && b[i + 2].is_ascii_hexdigit()
+                && b[i + 3].is_ascii_hexdigit()
+            {
+                let hex = std::str::from_utf8(&b[i + 2..i + 4]).unwrap();
+                out.push(u8::from_str_radix(hex, 16).unwrap());
+                i += 4;
+                continue;
+            }
+            if b[i + 1] == b'\\' {
+                out.push(b'\\');
+                i += 2;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    Some(String::from_utf8_lossy(&out).into_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -170,55 +233,17 @@ mod tests {
         d
     }
 
-    /// PGPatcher 2.3.1's `mo2INIField`, ported: the first line starting with
-    /// `key=`, outer quotes trimmed, then `decodeQtByteArrayValue` on the
-    /// inside of `@ByteArray(...)` or `\\` -> `\` on a plain value.
-    fn pgpatcher_field(text: &str, key: &str) -> Option<String> {
-        let prefix = format!("{key}=");
-        let raw = text.lines().find_map(|l| l.strip_prefix(prefix.as_str()))?;
-        let raw = raw.trim_matches('"');
-        let Some(inner) = raw
-            .strip_prefix("@ByteArray(")
-            .and_then(|r| r.strip_suffix(')'))
-        else {
-            return Some(raw.replace("\\\\", "\\"));
-        };
-        let b = inner.as_bytes();
-        let mut out = Vec::new();
-        let mut i = 0;
-        while i < b.len() {
-            if b[i] == b'\\' && i + 1 < b.len() {
-                if b[i + 1] == b'x'
-                    && i + 3 < b.len()
-                    && b[i + 2].is_ascii_hexdigit()
-                    && b[i + 3].is_ascii_hexdigit()
-                {
-                    let hex = std::str::from_utf8(&b[i + 2..i + 4]).unwrap();
-                    out.push(u8::from_str_radix(hex, 16).unwrap());
-                    i += 4;
-                    continue;
-                }
-                if b[i + 1] == b'\\' {
-                    out.push(b'\\');
-                    i += 2;
-                    continue;
-                }
-            }
-            out.push(b[i]);
-            i += 1;
-        }
-        Some(String::from_utf8(out).unwrap())
-    }
-
     #[test]
     fn the_file_is_mo2_shaped_and_reads_back_as_pgpatcher_reads_it() {
         let root = temp("shape").join("Mods Été");
         fs::create_dir_all(&root).unwrap();
         let inst = Instance::portable(root.clone());
         let game = Path::new("/mnt/Steam Library/common/Skyrim Spécial,1");
-        assert!(inst
-            .write_mo2_ini("Skyrim Special Edition", game, "Défaut 2")
-            .unwrap());
+        assert_eq!(
+            inst.write_mo2_ini("Skyrim Special Edition", game, "Défaut 2")
+                .unwrap(),
+            Mo2Ini::Written
+        );
         let text = fs::read_to_string(root.join(FILE_NAME)).unwrap();
         let win = |p: &Path| format!("Z:{}", p.display()).replace('/', "\\");
 
@@ -234,35 +259,34 @@ mod tests {
         assert!(!text.contains("download_directory"));
 
         assert_eq!(
-            pgpatcher_field(&text, "gamePath").unwrap(),
+            ini_field(&text, "gamePath").unwrap(),
             r"Z:\mnt\Steam Library\common\Skyrim Spécial,1"
         );
+        assert_eq!(ini_field(&text, "selected_profile").unwrap(), "Défaut 2");
         assert_eq!(
-            pgpatcher_field(&text, "selected_profile").unwrap(),
-            "Défaut 2"
-        );
-        assert_eq!(
-            pgpatcher_field(&text, "mod_directory").unwrap(),
+            ini_field(&text, "mod_directory").unwrap(),
             win(&root.join("mods"))
         );
         assert_eq!(
-            pgpatcher_field(&text, "profiles_directory").unwrap(),
+            ini_field(&text, "profiles_directory").unwrap(),
             win(&root.join("profiles"))
         );
         assert_eq!(
-            pgpatcher_field(&text, "overwrite_directory").unwrap(),
+            ini_field(&text, "overwrite_directory").unwrap(),
             win(&root.join("overwrite"))
         );
         // PGPatcher's own default for a key that is absent.
-        assert_eq!(pgpatcher_field(&text, "base_directory"), None);
+        assert_eq!(ini_field(&text, "base_directory"), None);
 
         fs::create_dir_all(inst.downloads_dir()).unwrap();
-        assert!(inst
-            .write_mo2_ini("Skyrim Special Edition", game, "Défaut 2")
-            .unwrap());
+        assert_eq!(
+            inst.write_mo2_ini("Skyrim Special Edition", game, "Défaut 2")
+                .unwrap(),
+            Mo2Ini::Written
+        );
         let text = fs::read_to_string(root.join(FILE_NAME)).unwrap();
         assert_eq!(
-            pgpatcher_field(&text, "download_directory").unwrap(),
+            ini_field(&text, "download_directory").unwrap(),
             win(&root.join("downloads"))
         );
     }
@@ -271,11 +295,16 @@ mod tests {
     fn a_foreign_ini_in_any_case_is_never_touched() {
         let root = temp("foreign");
         let inst = Instance::portable(root.clone());
-        let mo2 = "[General]\ngamePath=@ByteArray(C:\\\\Games\\\\Skyrim)\n";
+        let mo2 = "[General]\r\ngamePath=@ByteArray(C:\\\\Games\\\\Skyrim)\r\nselected_profile=@ByteArray(Survival)\r\n";
         fs::write(root.join("modorganizer.ini"), mo2).unwrap();
-        assert!(!inst
-            .write_mo2_ini("Skyrim Special Edition", Path::new("/g"), "Default")
-            .unwrap());
+        assert_eq!(
+            inst.write_mo2_ini("Skyrim Special Edition", Path::new("/g"), "Default")
+                .unwrap(),
+            Mo2Ini::Foreign {
+                path: root.join("modorganizer.ini"),
+                profile: Some("Survival".into()),
+            }
+        );
         assert_eq!(
             fs::read_to_string(root.join("modorganizer.ini")).unwrap(),
             mo2
@@ -284,24 +313,45 @@ mod tests {
     }
 
     #[test]
+    fn an_empty_ini_is_eidos_own() {
+        let root = temp("empty");
+        let inst = Instance::portable(root.clone());
+        fs::write(root.join(FILE_NAME), "").unwrap();
+        assert_eq!(
+            inst.write_mo2_ini("Fallout 4", Path::new("/g"), "Default")
+                .unwrap(),
+            Mo2Ini::Written
+        );
+        assert!(fs::read_to_string(root.join(FILE_NAME))
+            .unwrap()
+            .starts_with(MARKER));
+    }
+
+    #[test]
     fn a_marked_ini_follows_the_profile_and_is_not_rewritten_unchanged() {
         let root = temp("marked");
         let inst = Instance::portable(root.clone());
         let game = Path::new("/g");
-        assert!(inst.write_mo2_ini("Fallout 4", game, "Default").unwrap());
+        assert_eq!(
+            inst.write_mo2_ini("Fallout 4", game, "Default").unwrap(),
+            Mo2Ini::Written
+        );
         let path = root.join(FILE_NAME);
         let ino = |p: &Path| std::os::unix::fs::MetadataExt::ino(&fs::metadata(p).unwrap());
         let first = ino(&path);
         // Unchanged: no write at all, so the atomic rename did not swap inodes.
-        assert!(!inst.write_mo2_ini("Fallout 4", game, "Default").unwrap());
+        assert_eq!(
+            inst.write_mo2_ini("Fallout 4", game, "Default").unwrap(),
+            Mo2Ini::Unchanged
+        );
         assert_eq!(ino(&path), first);
 
-        assert!(inst.write_mo2_ini("Fallout 4", game, "Survival").unwrap());
-        let text = fs::read_to_string(&path).unwrap();
         assert_eq!(
-            pgpatcher_field(&text, "selected_profile").unwrap(),
-            "Survival"
+            inst.write_mo2_ini("Fallout 4", game, "Survival").unwrap(),
+            Mo2Ini::Written
         );
+        let text = fs::read_to_string(&path).unwrap();
+        assert_eq!(ini_field(&text, "selected_profile").unwrap(), "Survival");
     }
 
     #[test]

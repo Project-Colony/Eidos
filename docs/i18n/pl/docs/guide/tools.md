@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=dd5be435db2cb30d0f520a494cda2fe68754dd1e -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=8062635fdeb4cf10e0e1055a5a64c5b46d13f613 -->
 
 # Narzędzia: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -251,7 +251,7 @@ Eidos zapisuje `ModOrganizer.ini` w katalogu głównym instancji przy każdym
 uruchomieniu gry lub narzędzia, dla uruchamianego profilu. Plik jest zapisywany
 ponownie tylko wtedy, gdy zmienia się jego zawartość. Zawiera:
 
-- w `[General]`: `gameName`, `gamePath` (folder instalacji gry jako ścieżkę
+- w `[General]`: `gameName` (nazwa gry w MO2, czyli `New Vegas` dla Fallout: New Vegas), `gamePath` (folder instalacji gry jako ścieżkę
   `Z:`) i `selected_profile`;
 - w `[Settings]`: `mod_directory`, `profiles_directory` i
   `overwrite_directory` jako bezwzględne ścieżki `Z:`, a także
@@ -261,10 +261,15 @@ Jego pierwszy wiersz to komentarz mówiący, że zapisał go Eidos. Plik
 `ModOrganizer.ini` bez tego wiersza, przy dowolnej wielkości liter w nazwie,
 nigdy nie jest zmieniany ani usuwany: instancja MO2 otwarta w Eidos zachowuje
 swój plik, a PGPatcher czyta go w niezmienionej postaci. MO2 usuwa komentarze
-przy zapisie ustawień, więc plik nadpisany przez MO2 od tej chwili należy do MO2.
+przy zapisie ustawień, więc plik nadpisany przez MO2 od tej chwili należy do MO2. Pusty plik liczy się jako plik Eidos.
 
-Eidos zapisuje plik tylko przy uruchamianiu czegoś, więc między uruchomieniami
-wskazuje on profil ostatniego. Narzędzie uruchomione przez Eidos zawsze znajduje
+Taki plik wskazuje profil wybrany ostatnio w MO2 i PGPatcher używa tego profilu,
+a nie tego, który uruchamia Eidos. Gdy się różnią, Eidos przy uruchomieniu
+zapisuje ostrzeżenie w dzienniku. Należy wybrać ten sam profil w MO2 albo
+zmienić nazwę pliku lub go usunąć, aby Eidos zapisał własny.
+
+Eidos zapisuje swój plik tylko przy uruchamianiu czegoś, więc między uruchomieniami
+wskazuje on profil ostatniego. Narzędzie uruchomione przez Eidos znajduje
 w nim swój profil.
 
 PGPatcher kończy pracę z błędem, gdy profil nie ma żadnego włączonego moda, oraz

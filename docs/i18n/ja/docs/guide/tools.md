@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=dd5be435db2cb30d0f520a494cda2fe68754dd1e -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=8062635fdeb4cf10e0e1055a5a64c5b46d13f613 -->
 
 # ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -244,7 +244,7 @@ PGPatcher はフォルダーに `modorganizer.ini` がある場合にだけそ�
 インスタンスのルートに `ModOrganizer.ini` を書きます。内容が変わったときにだけ
 書き直します。中身は次のとおりです。
 
-- `[General]` に `gameName`、`gamePath`（ゲームのインストールフォルダーを `Z:`
+- `[General]` に `gameName`（MO2 でのゲーム名。Fallout: New Vegas なら `New Vegas`）、`gamePath`（ゲームのインストールフォルダーを `Z:`
   パスで）、`selected_profile`
 - `[Settings]` に、絶対 `Z:` パスでの `mod_directory`、`profiles_directory`、
   `overwrite_directory`。インスタンスに `downloads/` フォルダーがあれば
@@ -254,11 +254,16 @@ PGPatcher はフォルダーに `modorganizer.ini` がある場合にだけそ�
 `ModOrganizer.ini` は、名前の大文字小文字がどうであれ、変更も削除もしません。
 Eidos で開いた MO2 インスタンスは自分の ini をそのまま持ち、PGPatcher はその
 ファイルをそのまま読みます。MO2 は設定を保存するときにコメントを捨てるので、
-MO2 が上書き保存したファイルはそれ以降 MO2 のものです。
+MO2 が上書き保存したファイルはそれ以降 MO2 のものです。空のファイルは Eidos のものとして扱います。
 
-Eidos がこのファイルを書くのは何かを起動するときだけなので、起動と起動の間は
+こうしたファイルには MO2 が最後に選んだプロファイルが入っており、PGPatcher は
+Eidos が起動するプロファイルではなく、そのプロファイルを使います。両者が異なると、
+Eidos は起動時に警告をログに出します。MO2 で同じプロファイルを選ぶか、ファイルの
+名前を変えるか削除して、Eidos が自分のファイルを書けるようにしてください。
+
+Eidos が自分のファイルを書くのは何かを起動するときだけなので、起動と起動の間は
 最後に起動したプロファイルの名前が入っています。Eidos が起動したツールは、
-そこに必ず自分のプロファイルを見つけます。
+そこに自分のプロファイルを見つけます。
 
 PGPatcher は、プロファイルに有効な MOD が一つもないときと、出力フォルダーが
 有効な MOD のフォルダーであるときに、MO2 の下と同じくエラーで停止します。

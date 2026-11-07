@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=dd5be435db2cb30d0f520a494cda2fe68754dd1e -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=8062635fdeb4cf10e0e1055a5a64c5b46d13f613 -->
 
 # Strumenti: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -253,7 +253,7 @@ Eidos scrive `ModOrganizer.ini` nella radice dell'istanza ogni volta che avvia i
 gioco o uno strumento, per il profilo avviato. Il file viene riscritto solo
 quando il suo contenuto cambia. Contiene:
 
-- in `[General]`: `gameName`, `gamePath` (la cartella d'installazione del gioco
+- in `[General]`: `gameName` (il nome del gioco in MO2, quindi `New Vegas` per Fallout: New Vegas), `gamePath` (la cartella d'installazione del gioco
   come percorso `Z:`) e `selected_profile`;
 - in `[Settings]`: `mod_directory`, `profiles_directory` e
   `overwrite_directory` come percorsi `Z:` assoluti, più `download_directory`
@@ -264,10 +264,15 @@ La sua prima riga è un commento che dice che l'ha scritto Eidos. Un
 del nome, non viene mai modificato né cancellato: un'istanza MO2 che avete
 aperto in Eidos conserva il proprio, e PGPatcher legge quel file così com'è. MO2
 elimina i commenti quando salva le sue impostazioni, quindi un file su cui MO2
-ha salvato è di MO2 da quel momento.
+ha salvato è di MO2 da quel momento. Un file vuoto conta come di Eidos.
 
-Eidos scrive il file solo quando avvia qualcosa, quindi tra un avvio e l'altro
-nomina il profilo dell'ultimo. Uno strumento avviato da Eidos vi trova sempre il
+Un file del genere nomina il profilo che MO2 ha selezionato per ultimo, e
+PGPatcher usa quel profilo, non quello che avvia Eidos. Quando i due
+differiscono, Eidos registra un avviso all'avvio. Selezionate lo stesso profilo
+in MO2, oppure rinominate o rimuovete il file perché Eidos scriva il proprio.
+
+Eidos scrive il suo file solo quando avvia qualcosa, quindi tra un avvio e l'altro
+nomina il profilo dell'ultimo. Uno strumento avviato da Eidos vi trova il
 proprio profilo.
 
 PGPatcher si ferma con un errore quando il profilo non ha alcun mod attivo e

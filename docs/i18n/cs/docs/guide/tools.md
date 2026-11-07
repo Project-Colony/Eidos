@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=dd5be435db2cb30d0f520a494cda2fe68754dd1e -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=8062635fdeb4cf10e0e1055a5a64c5b46d13f613 -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -242,7 +242,7 @@ Eidos zapisuje `ModOrganizer.ini` do kořene instance při každém spuštění 
 nebo nástroje, pro spouštěný profil. Soubor se přepisuje jen tehdy, když se
 změní jeho obsah. Obsahuje:
 
-- v `[General]`: `gameName`, `gamePath` (instalační složku hry jako cestu `Z:`)
+- v `[General]`: `gameName` (název hry podle MO2, tedy `New Vegas` pro Fallout: New Vegas), `gamePath` (instalační složku hry jako cestu `Z:`)
   a `selected_profile`;
 - v `[Settings]`: `mod_directory`, `profiles_directory` a
   `overwrite_directory` jako absolutní cesty `Z:`, a navíc `download_directory`,
@@ -253,10 +253,15 @@ Jeho první řádek je komentář, který říká, že soubor zapsal Eidos. Soub
 nikdy nemění ani nemaže: instance MO2, kterou jste otevřeli v Eidos, si
 ponechá svůj a PGPatcher čte tento soubor tak, jak je. MO2 při ukládání
 nastavení komentáře zahazuje, takže soubor, přes který MO2 uložil, od té chvíle
-patří MO2.
+patří MO2. Prázdný soubor se počítá jako soubor Eidos.
 
-Eidos zapisuje soubor jen při spuštění něčeho, takže mezi dvěma spuštěními
-uvádí profil toho posledního. Nástroj, který spustí Eidos, v něm vždy najde svůj
+Takový soubor uvádí profil, který MO2 vybral naposledy, a PGPatcher použije
+tento profil, ne ten, který spouští Eidos. Když se liší, Eidos při spuštění
+zapíše do protokolu varování. Vyberte v MO2 stejný profil, nebo soubor
+přejmenujte či odstraňte, aby Eidos zapsal vlastní.
+
+Eidos zapisuje svůj soubor jen při spuštění něčeho, takže mezi dvěma spuštěními
+uvádí profil toho posledního. Nástroj, který spustí Eidos, v něm najde svůj
 vlastní profil.
 
 PGPatcher skončí s chybou, když profil nemá žádný zapnutý mod, a když je jeho

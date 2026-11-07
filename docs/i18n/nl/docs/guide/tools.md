@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=dd5be435db2cb30d0f520a494cda2fe68754dd1e -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=8062635fdeb4cf10e0e1055a5a64c5b46d13f613 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -254,7 +254,7 @@ schrijft Eidos `ModOrganizer.ini` in de hoofdmap van de instantie telkens als
 het het spel of een tool start, voor het profiel dat start. Het bestand wordt
 alleen herschreven als de inhoud verandert. Het bevat:
 
-- in `[General]`: `gameName`, `gamePath` (de installatiemap van het spel als
+- in `[General]`: `gameName` (de naam van het spel in MO2, dus `New Vegas` voor Fallout: New Vegas), `gamePath` (de installatiemap van het spel als
   `Z:`-pad) en `selected_profile`;
 - in `[Settings]`: `mod_directory`, `profiles_directory` en
   `overwrite_directory` als absolute `Z:`-paden, plus `download_directory` als de
@@ -265,10 +265,15 @@ De eerste regel is een commentaar dat zegt dat Eidos het bestand schreef. Een
 nooit gewijzigd of verwijderd: een MO2-instantie die u in Eidos opende houdt de
 hare, en PGPatcher leest dat bestand zoals het is. MO2 laat commentaar weg
 wanneer het zijn instellingen opslaat, dus een bestand waar MO2 overheen heeft
-opgeslagen is vanaf dan van MO2.
+opgeslagen is vanaf dan van MO2. Een leeg bestand telt als dat van Eidos.
 
-Eidos schrijft het bestand alleen wanneer het iets start, dus tussen twee starts
-noemt het het profiel van de laatste. Een tool die Eidos start vindt er altijd
+Zo'n bestand noemt het profiel dat MO2 het laatst selecteerde, en PGPatcher
+gebruikt dat profiel, niet het profiel dat Eidos start. Als de twee verschillen,
+logt Eidos bij het starten een waarschuwing. Selecteer hetzelfde profiel in MO2,
+of hernoem of verwijder het bestand zodat Eidos een eigen bestand schrijft.
+
+Eidos schrijft zijn bestand alleen wanneer het iets start, dus tussen twee starts
+noemt het het profiel van de laatste. Een tool die Eidos start vindt er
 zijn eigen profiel.
 
 PGPatcher stopt met een fout als het profiel geen ingeschakelde mod heeft, en

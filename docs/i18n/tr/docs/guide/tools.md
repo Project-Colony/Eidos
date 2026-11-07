@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=dd5be435db2cb30d0f520a494cda2fe68754dd1e -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=8062635fdeb4cf10e0e1055a5a64c5b46d13f613 -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -254,7 +254,7 @@ yüzden Eidos, oyunu ya da bir aracı her başlattığında, başlatılan profil
 örneğin kök klasörüne `ModOrganizer.ini` yazar. Dosya yalnızca içeriği
 değiştiğinde yeniden yazılır. İçinde şunlar bulunur:
 
-- `[General]` içinde: `gameName`, `gamePath` (oyunun kurulum klasörü, `Z:` yolu
+- `[General]` içinde: `gameName` (oyunun MO2'deki adı, yani Fallout: New Vegas için `New Vegas`), `gamePath` (oyunun kurulum klasörü, `Z:` yolu
   olarak) ve `selected_profile`;
 - `[Settings]` içinde: mutlak `Z:` yolları olarak `mod_directory`,
   `profiles_directory` ve `overwrite_directory`, örneğin bir `downloads/`
@@ -265,11 +265,16 @@ içermeyen bir `ModOrganizer.ini`, adı hangi büyük/küçük harfle yazılmı�
 olsun, asla değiştirilmez ya da silinmez: Eidos'ta açtığınız bir MO2 örneği
 kendi dosyasını korur ve PGPatcher o dosyayı olduğu gibi okur. MO2 ayarlarını
 kaydederken yorumları atar, bu yüzden MO2'nin üzerine kaydettiği bir dosya o
-andan itibaren MO2'nindir.
+andan itibaren MO2'nindir. Boş bir dosya Eidos'unki sayılır.
 
-Eidos dosyayı yalnızca bir şey başlatırken yazar, bu yüzden iki başlatma
+Böyle bir dosya MO2'nin en son seçtiği profili gösterir ve PGPatcher, Eidos'un
+başlattığı profili değil bu profili kullanır. İkisi farklıysa Eidos başlatırken
+günlüğe bir uyarı yazar. MO2'de aynı profili seçin ya da Eidos kendi dosyasını
+yazabilsin diye dosyanın adını değiştirin veya dosyayı kaldırın.
+
+Eidos kendi dosyasını yalnızca bir şey başlatırken yazar, bu yüzden iki başlatma
 arasında dosya sonuncunun profilini gösterir. Eidos'un başlattığı bir araç orada
-her zaman kendi profilini bulur.
+kendi profilini bulur.
 
 PGPatcher, profilde etkin hiçbir mod olmadığında ve çıktı klasörü etkin bir
 modun klasörü olduğunda, MO2 altında olduğu gibi bir hatayla durur.

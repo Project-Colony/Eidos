@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=dd5be435db2cb30d0f520a494cda2fe68754dd1e -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=8062635fdeb4cf10e0e1055a5a64c5b46d13f613 -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -216,7 +216,7 @@ PGPatcher 只接受含有 `modorganizer.ini` 的資料夾，所以 Eidos 每次�
 工具時，都會為所啟動的設定檔在實例根目錄寫入 `ModOrganizer.ini`。只有內容
 變更時才會重寫。檔案包含：
 
-- `[General]` 中：`gameName`、`gamePath`（遊戲安裝資料夾，以 `Z:` 路徑表示）與
+- `[General]` 中：`gameName`（MO2 中的遊戲名稱，因此 Fallout: New Vegas 寫作 `New Vegas`）、`gamePath`（遊戲安裝資料夾，以 `Z:` 路徑表示）與
   `selected_profile`；
 - `[Settings]` 中：以絕對 `Z:` 路徑表示的 `mod_directory`、`profiles_directory`
   與 `overwrite_directory`，實例有 `downloads/` 資料夾時還有
@@ -225,10 +225,14 @@ PGPatcher 只接受含有 `modorganizer.ini` 的資料夾，所以 Eidos 每次�
 檔案第一行是一條註解，說明它由 Eidos 寫入。沒有這一行的 `ModOrganizer.ini`，
 無論檔名大小寫如何，Eidos 都不會修改或刪除：你在 Eidos 中開啟的 MO2 實例保留
 它自己的檔案，PGPatcher 照原樣讀取。MO2 儲存設定時會丟棄註解，所以被 MO2 覆寫
-儲存過的檔案從此歸 MO2 所有。
+儲存過的檔案從此歸 MO2 所有。空檔案算作 Eidos 的檔案。
 
-Eidos 只在啟動某個東西時寫這個檔案，所以在兩次啟動之間，它記錄的是上一次啟動的
-設定檔。由 Eidos 啟動的工具總能在其中找到自己的設定檔。
+這樣的檔案記錄的是 MO2 最後選擇的設定檔，PGPatcher 使用這個設定檔，而不是 Eidos
+啟動的那個。兩者不同時，Eidos 會在啟動時記錄一則警告。請在 MO2 中選擇同一個設定
+檔，或者重新命名或刪除該檔案，讓 Eidos 寫入自己的檔案。
+
+Eidos 只在啟動某個東西時寫它自己的檔案，所以在兩次啟動之間，它記錄的是上一次啟動的
+設定檔。由 Eidos 啟動的工具能在其中找到自己的設定檔。
 
 當設定檔中沒有任何已啟用的模組，或輸出資料夾就是某個已啟用模組的資料夾時，
 PGPatcher 會報錯並停止，和在 MO2 下一樣。
