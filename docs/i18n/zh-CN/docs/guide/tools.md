@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f10a5437abda242ca6654c18a34358e156c71a93 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=8062635fdeb4cf10e0e1055a5a64c5b46d13f613 -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -194,6 +194,50 @@ Executables 对话框的标题里输入 `PGPatcher`，Arguments 栏也会以同�
 
 [pg716]: https://github.com/hakasapl/PGPatcher/issues/716
 [pg725]: https://github.com/hakasapl/PGPatcher/issues/725
+
+### Mod Organizer 2 模式下的 PGPatcher 和 PGLite
+
+Mod Manager 设为 `None` 时，PGPatcher 只能看到一个合并后的 `Data` 文件夹，无法
+得知某个网格或贴图来自哪个模组，因此既没有冲突可显示，也没有模组顺序可遵循。
+它的 `Mod Organizer 2` 模式直接读取实例本身：配置文件的 `modlist.txt`、按优先级
+排列的已启用模组，以及每个模组文件夹里的文件。游戏内版本 PGLite 也以同样方式
+读取实例。Eidos 实例本来就是 MO2 的布局（`mods/`、`profiles/<name>/modlist.txt`、
+`overwrite/`），所以这个模式可以直接用于它。
+
+在 PGPatcher 的启动器中：
+
+1. 把 **Mod Manager** 设为 `Mod Organizer 2`。
+2. 把 **MO2 Options -> Instance Location** 设为 Eidos 实例文件夹，写成 Wine
+   `Z:` 盘（即 `/`）上的 Windows 路径。位于 `/mnt/Games/Eidos-Skyrim` 的便携
+   实例写作 `Z:\mnt\Games\Eidos-Skyrim`；全局实例写作
+   `Z:\home\<you>\.local\share\Colony\Eidos\instances\<game id>`。
+3. 在工具的参数中保留 `--ignore-mo2vfscheck`。在这个模式下，PGPatcher 会查找
+   usvfs，找不到就停止。
+
+PGPatcher 只接受含有 `modorganizer.ini` 的文件夹，所以 Eidos 每次启动游戏或
+工具时，都会为所启动的配置文件在实例根目录写入 `ModOrganizer.ini`。只有内容
+变化时才会重写。文件包含：
+
+- `[General]` 中：`gameName`（MO2 中的游戏名，因此 Fallout: New Vegas 写作 `New Vegas`）、`gamePath`（游戏安装文件夹，以 `Z:` 路径表示）和
+  `selected_profile`；
+- `[Settings]` 中：以绝对 `Z:` 路径表示的 `mod_directory`、`profiles_directory`
+  和 `overwrite_directory`，实例有 `downloads/` 文件夹时还有
+  `download_directory`。
+
+文件第一行是一条注释，说明它由 Eidos 写入。没有这一行的 `ModOrganizer.ini`，
+无论文件名大小写如何，Eidos 都不会修改或删除：你在 Eidos 中打开的 MO2 实例保留
+它自己的文件，PGPatcher 按原样读取。MO2 保存设置时会丢弃注释，所以被 MO2 覆盖
+保存过的文件从此归 MO2 所有。空文件算作 Eidos 的文件。
+
+这样的文件记录的是 MO2 最后选择的配置文件，PGPatcher 使用这个配置文件，而不是 Eidos
+启动的那个。两者不同时，Eidos 会在启动时记录一条警告。请在 MO2 中选择同一个配置
+文件，或者重命名或删除该文件，让 Eidos 写入自己的文件。
+
+Eidos 只在启动某个东西时写它自己的文件，所以在两次启动之间，它记录的是上一次启动的
+配置文件。由 Eidos 启动的工具能在其中找到自己的配置文件。
+
+当配置文件中没有任何已启用的模组，或输出文件夹就是某个已启用模组的文件夹时，
+PGPatcher 会报错并停止，和在 MO2 下一样。
 
 ## 前缀里的游戏路径
 

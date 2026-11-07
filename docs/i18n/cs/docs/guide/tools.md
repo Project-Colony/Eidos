@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f10a5437abda242ca6654c18a34358e156c71a93 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=8062635fdeb4cf10e0e1055a5a64c5b46d13f613 -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -216,6 +216,56 @@ souboru. Nechte Prereqs prazdne.
 
 [pg716]: https://github.com/hakasapl/PGPatcher/issues/716
 [pg725]: https://github.com/hakasapl/PGPatcher/issues/725
+
+### PGPatcher a PGLite v režimu Mod Organizer 2
+
+S Mod Manager nastaveným na `None` vidí PGPatcher jedinou sloučenou složku
+`Data` a nepozná, ze kterého modu pochází mesh nebo textura, takže nemá žádné
+konflikty k zobrazení ani pořadí modů, kterým by se řídil. Jeho režim
+`Mod Organizer 2` čte samotnou instanci: soubor `modlist.txt` profilu, zapnuté
+mody v pořadí priority a soubory ve složce každého modu. PGLite, verze běžící ve
+hře, čte instanci stejně. Instance Eidos už má rozložení MO2 (`mods/`,
+`profiles/<name>/modlist.txt`, `overwrite/`), takže tento režim s ní funguje.
+
+V launcheru PGPatcheru:
+
+1. Nastavte **Mod Manager** na `Mod Organizer 2`.
+2. Nastavte **MO2 Options -> Instance Location** na složku instance Eidos,
+   zapsanou jako cesta Windows na disku `Z:` ve Wine, kterým je `/`. Přenosná
+   instance v `/mnt/Games/Eidos-Skyrim` je `Z:\mnt\Games\Eidos-Skyrim`; globální
+   je `Z:\home\<you>\.local\share\Colony\Eidos\instances\<game id>`.
+3. Ponechte `--ignore-mo2vfscheck` v argumentech nástroje. V tomto režimu
+   PGPatcher hledá usvfs a skončí, když chybí.
+
+PGPatcher přijme složku jen tehdy, když obsahuje `modorganizer.ini`, a proto
+Eidos zapisuje `ModOrganizer.ini` do kořene instance při každém spuštění hry
+nebo nástroje, pro spouštěný profil. Soubor se přepisuje jen tehdy, když se
+změní jeho obsah. Obsahuje:
+
+- v `[General]`: `gameName` (název hry podle MO2, tedy `New Vegas` pro Fallout: New Vegas), `gamePath` (instalační složku hry jako cestu `Z:`)
+  a `selected_profile`;
+- v `[Settings]`: `mod_directory`, `profiles_directory` a
+  `overwrite_directory` jako absolutní cesty `Z:`, a navíc `download_directory`,
+  když má instance složku `downloads/`.
+
+Jeho první řádek je komentář, který říká, že soubor zapsal Eidos. Soubor
+`ModOrganizer.ini` bez tohoto řádku, v jakékoli velikosti písmen v názvu, se
+nikdy nemění ani nemaže: instance MO2, kterou jste otevřeli v Eidos, si
+ponechá svůj a PGPatcher čte tento soubor tak, jak je. MO2 při ukládání
+nastavení komentáře zahazuje, takže soubor, přes který MO2 uložil, od té chvíle
+patří MO2. Prázdný soubor se počítá jako soubor Eidos.
+
+Takový soubor uvádí profil, který MO2 vybral naposledy, a PGPatcher použije
+tento profil, ne ten, který spouští Eidos. Když se liší, Eidos při spuštění
+zapíše do protokolu varování. Vyberte v MO2 stejný profil, nebo soubor
+přejmenujte či odstraňte, aby Eidos zapsal vlastní.
+
+Eidos zapisuje svůj soubor jen při spuštění něčeho, takže mezi dvěma spuštěními
+uvádí profil toho posledního. Nástroj, který spustí Eidos, v něm najde svůj
+vlastní profil.
+
+PGPatcher skončí s chybou, když profil nemá žádný zapnutý mod, a když je jeho
+výstupní složka složkou zapnutého modu, stejně jako pod MO2.
 
 ## Cesta ke hře v prefixu
 

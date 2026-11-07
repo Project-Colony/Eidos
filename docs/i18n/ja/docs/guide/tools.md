@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f10a5437abda242ca6654c18a34358e156c71a93 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=8062635fdeb4cf10e0e1055a5a64c5b46d13f613 -->
 
 # ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -217,6 +217,56 @@ MO2 の Linux フォーク Fluorine から）に示した答えが、この確�
 
 [pg716]: https://github.com/hakasapl/PGPatcher/issues/716
 [pg725]: https://github.com/hakasapl/PGPatcher/issues/725
+
+### Mod Organizer 2 モードの PGPatcher と PGLite
+
+Mod Manager が `None` のとき、PGPatcher には統合された `Data` フォルダーが一つ
+見えるだけで、メッシュやテクスチャがどの MOD から来たのか分かりません。そのため
+示せる競合もなく、従うべき MOD の順序もありません。`Mod Organizer 2` モードは
+インスタンスそのものを読みます。プロファイルの `modlist.txt`、有効な MOD とその
+優先順位、各 MOD のフォルダー内のファイルです。ゲーム内版の PGLite も同じ方法で
+インスタンスを読みます。Eidos のインスタンスはすでに MO2 の構成（`mods/`、
+`profiles/<name>/modlist.txt`、`overwrite/`）なので、このモードで使えます。
+
+PGPatcher のランチャーで次のようにします。
+
+1. **Mod Manager** を `Mod Organizer 2` にします。
+2. **MO2 Options -> Instance Location** を Eidos のインスタンスフォルダーに
+   します。Wine の `Z:` ドライブ（`/` にあたります）上の Windows パスとして書き
+   ます。`/mnt/Games/Eidos-Skyrim` にあるポータブルインスタンスは
+   `Z:\mnt\Games\Eidos-Skyrim`、グローバルインスタンスは
+   `Z:\home\<you>\.local\share\Colony\Eidos\instances\<game id>` です。
+3. ツールの引数に `--ignore-mo2vfscheck` を残しておきます。このモードの
+   PGPatcher は usvfs を探し、見つからなければ停止します。
+
+PGPatcher はフォルダーに `modorganizer.ini` がある場合にだけそれを受け付けます。
+そこで Eidos は、ゲームやツールを起動するたびに、起動するプロファイルについて
+インスタンスのルートに `ModOrganizer.ini` を書きます。内容が変わったときにだけ
+書き直します。中身は次のとおりです。
+
+- `[General]` に `gameName`（MO2 でのゲーム名。Fallout: New Vegas なら `New Vegas`）、`gamePath`（ゲームのインストールフォルダーを `Z:`
+  パスで）、`selected_profile`
+- `[Settings]` に、絶対 `Z:` パスでの `mod_directory`、`profiles_directory`、
+  `overwrite_directory`。インスタンスに `downloads/` フォルダーがあれば
+  `download_directory` も
+
+最初の行は、Eidos が書いたことを示すコメントです。この行のない
+`ModOrganizer.ini` は、名前の大文字小文字がどうであれ、変更も削除もしません。
+Eidos で開いた MO2 インスタンスは自分の ini をそのまま持ち、PGPatcher はその
+ファイルをそのまま読みます。MO2 は設定を保存するときにコメントを捨てるので、
+MO2 が上書き保存したファイルはそれ以降 MO2 のものです。空のファイルは Eidos のものとして扱います。
+
+こうしたファイルには MO2 が最後に選んだプロファイルが入っており、PGPatcher は
+Eidos が起動するプロファイルではなく、そのプロファイルを使います。両者が異なると、
+Eidos は起動時に警告をログに出します。MO2 で同じプロファイルを選ぶか、ファイルの
+名前を変えるか削除して、Eidos が自分のファイルを書けるようにしてください。
+
+Eidos が自分のファイルを書くのは何かを起動するときだけなので、起動と起動の間は
+最後に起動したプロファイルの名前が入っています。Eidos が起動したツールは、
+そこに自分のプロファイルを見つけます。
+
+PGPatcher は、プロファイルに有効な MOD が一つもないときと、出力フォルダーが
+有効な MOD のフォルダーであるときに、MO2 の下と同じくエラーで停止します。
 
 ## プレフィックスの中のゲームパス
 

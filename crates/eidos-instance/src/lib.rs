@@ -28,6 +28,7 @@ mod categories;
 mod export;
 mod manifest;
 mod meta;
+mod mo2_ini;
 mod mod_backup;
 mod profile;
 mod provenance;
@@ -40,6 +41,7 @@ pub use categories::{
 pub use export::{csv_quote, fmt_mtime, mod_list_csv, Column, ExportScope};
 pub use manifest::Manifest;
 pub use meta::ModMeta;
+pub use mo2_ini::Mo2Ini;
 pub use mod_backup::{backup_mod, reserve_mod_backup};
 pub use profile::{
     cosave_siblings, format_stamp, is_save_data, is_save_listing, read_text_lossy, untweak_ini,

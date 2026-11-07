@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f10a5437abda242ca6654c18a34358e156c71a93 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=8062635fdeb4cf10e0e1055a5a64c5b46d13f613 -->
 
 # 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -213,6 +213,55 @@ Microsoft CRT DLL을 실행 파일 옆에 함께 제공합니다. Prereqs는 비
 
 [pg716]: https://github.com/hakasapl/PGPatcher/issues/716
 [pg725]: https://github.com/hakasapl/PGPatcher/issues/725
+
+### Mod Organizer 2 모드의 PGPatcher와 PGLite
+
+Mod Manager가 `None`이면 PGPatcher는 병합된 `Data` 폴더 하나만 보게 되고,
+메시나 텍스처가 어느 모드에서 왔는지 알 수 없습니다. 그래서 보여 줄 충돌도,
+따를 모드 순서도 없습니다. `Mod Organizer 2` 모드는 인스턴스 자체를 읽습니다.
+프로필의 `modlist.txt`, 우선순위 순서대로 켜진 모드, 각 모드 폴더 안의 파일을
+읽습니다. 게임 안에서 도는 버전인 PGLite도 같은 방식으로 인스턴스를 읽습니다.
+Eidos 인스턴스는 이미 MO2의 구조(`mods/`, `profiles/<name>/modlist.txt`,
+`overwrite/`)를 갖고 있으므로 이 모드로 쓸 수 있습니다.
+
+PGPatcher 런처에서:
+
+1. **Mod Manager**를 `Mod Organizer 2`로 설정합니다.
+2. **MO2 Options -> Instance Location**을 Eidos 인스턴스 폴더로 설정합니다.
+   Wine의 `Z:` 드라이브(`/`에 해당) 위의 Windows 경로로 적습니다.
+   `/mnt/Games/Eidos-Skyrim`에 있는 포터블 인스턴스는
+   `Z:\mnt\Games\Eidos-Skyrim`이고, 전역 인스턴스는
+   `Z:\home\<you>\.local\share\Colony\Eidos\instances\<game id>`입니다.
+3. 도구의 인수에 `--ignore-mo2vfscheck`를 그대로 두십시오. 이 모드에서
+   PGPatcher는 usvfs를 찾고, 없으면 멈춥니다.
+
+PGPatcher는 폴더에 `modorganizer.ini`가 있을 때만 받아들입니다. 그래서 Eidos는
+게임이나 도구를 시작할 때마다, 시작하는 프로필에 맞춰 인스턴스 루트에
+`ModOrganizer.ini`를 씁니다. 내용이 바뀔 때만 다시 씁니다. 들어 있는 내용은
+다음과 같습니다.
+
+- `[General]`에 `gameName`(MO2에서 쓰는 게임 이름, 그래서 Fallout: New Vegas는 `New Vegas`), `gamePath`(게임 설치 폴더를 `Z:` 경로로),
+  `selected_profile`
+- `[Settings]`에 절대 `Z:` 경로로 된 `mod_directory`, `profiles_directory`,
+  `overwrite_directory`, 그리고 인스턴스에 `downloads/` 폴더가 있으면
+  `download_directory`
+
+첫 줄은 Eidos가 이 파일을 썼다고 알리는 주석입니다. 이 줄이 없는
+`ModOrganizer.ini`는 이름의 대소문자와 상관없이 절대 바꾸거나 지우지 않습니다.
+Eidos에서 연 MO2 인스턴스는 자기 파일을 그대로 유지하고, PGPatcher는 그 파일을
+있는 그대로 읽습니다. MO2는 설정을 저장할 때 주석을 버리므로, MO2가 덮어써서
+저장한 파일은 그때부터 MO2의 것입니다. 빈 파일은 Eidos의 파일로 칩니다.
+
+이런 파일에는 MO2가 마지막으로 선택한 프로필이 들어 있고, PGPatcher는 Eidos가 시작하는 프로필이 아니라 그 프로필을 씁니다.
+둘이 다르면 Eidos는 실행할 때 경고를 로그에 남깁니다. MO2에서 같은 프로필을 선택하거나, 파일 이름을 바꾸거나 지워서 Eidos가 자기
+파일을 쓰게 하세요.
+
+Eidos는 무언가를 시작할 때만 자기 파일을 쓰므로, 두 번의 실행 사이에는 마지막
+실행의 프로필 이름이 들어 있습니다. Eidos가 시작한 도구는 그곳에서 자기
+프로필을 찾습니다.
+
+PGPatcher는 프로필에 켜진 모드가 하나도 없을 때와, 출력 폴더가 켜진 모드의
+폴더일 때 MO2에서와 마찬가지로 오류를 내고 멈춥니다.
 
 ## 프리픽스 안의 게임 경로
 
