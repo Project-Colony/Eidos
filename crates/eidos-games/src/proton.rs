@@ -32,8 +32,8 @@ pub struct ProtonRun {
     /// Steam app id (`SteamAppId`/`SteamGameId`/`STEAM_COMPAT_APP_ID`), and
     /// `STEAM_COMPAT_INSTALL_PATH`/`STEAM_COMPAT_LIBRARY_PATHS` (the game's
     /// dir/library). A Heroic Proton run has `STEAM_COMPAT_DATA_PATH`, an empty
-    /// `STEAM_COMPAT_CLIENT_INSTALL_PATH` and no app id; a Heroic plain Wine run
-    /// has only `WINEPREFIX` (see `heroic_run`).
+    /// `STEAM_COMPAT_CLIENT_INSTALL_PATH`, an empty `UMU_ID` and no app id; a
+    /// Heroic plain Wine run has only `WINEPREFIX` (see `heroic_run`).
     pub env: Vec<(String, String)>,
     /// This Proton belongs to the Flatpak Steam install. Eidos still runs it from
     /// the host (see [`is_flatpak_steam`]), but front ends warn, because its
