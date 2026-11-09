@@ -49,7 +49,7 @@ GPL-3.0-or-later license before any public release that embeds these binaries.
   tool that the builtin can't satisfy gets `vcrun2022` via the Tier-2 winetricks path.
 - The **.NET** runtimes/SDK (`dotnet8`, `dotnetdesktop8`, ...) - too large to bundle and
   must run an in-prefix installer (CLR host + registry + GAC). Tools that need .NET
-  (Synthesis, Pandora, FNIS) get it via the Tier-2 winetricks path, on explicit consent.
+  (Synthesis, FNIS) get it via the Tier-2 winetricks path, on explicit consent.
 
 ## What is NOT bundled, and why
 

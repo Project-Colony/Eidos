@@ -469,7 +469,10 @@ pub fn default_prereqs(title: &str) -> Vec<String> {
     let verbs: &[&str] = if has("synthesis") {
         &["dotnet8", "vcrun2022"]
     } else if has("pandora") {
-        &["dotnetdesktop8"]
+        // Avalonia, not WPF, so Microsoft.NETCore.App alone runs it, and it has
+        // targeted net10.0 since Pandora 4.1.0. "Install .NET Desktop Runtime" is
+        // the apphost's message for any GUI exe that finds no runtime at all.
+        &["dotnet10"]
     } else if has("fnis") {
         &["dotnet48"]
     } else if has("bodyslide") || has("outfit") {
@@ -917,6 +920,10 @@ mod tests {
             vec!["d3dx9_43", "d3dcompiler_47"]
         );
         assert_eq!(default_prereqs("FNIS"), vec!["dotnet48"]);
+        assert_eq!(
+            default_prereqs("Pandora Behaviour Engine+"),
+            vec!["dotnet10"]
+        );
         assert!(default_prereqs("SSEEdit").is_empty()); // Delphi, needs nothing extra
         assert!(default_prereqs("skse64_loader").is_empty());
     }
