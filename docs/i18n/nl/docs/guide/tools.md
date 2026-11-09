@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=6dd62a47ce572c0720e08cb2522d9850e4b75eec -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=d10264fcb7169488da7f4bb45f930ad141fed832 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -157,6 +157,16 @@ opgeeft, krijgt daarom ook de SDK-map in `WINEPATH`, plus
 en `DOTNET_CLI_TELEMETRY_OPTOUT=1`. Een Synthesis-item in `tools.ini` dat nog de
 oude standaard `dotnet8`, `vcrun2022` heeft, krijgt `dotnetsdk10`, `vcrun2022`
 wanneer Eidos het inleest.
+
+Het bouwen van patchers kan nog steeds stranden bij het herstellen van
+pakketten. NuGet controleert de handtekening van elk pakket dat het herstelt, en
+in de rootstore van de prefix ontbreken de roots voor codeondertekening en
+tijdstempels die de SDK meelevert als
+`sdk/10.0.403/trustedroots/codesignctl.pem` en `timestampctl.pem`. Met de
+systeem-Wine 11.21 mislukt het herstellen van `Mutagen.Bethesda.Synthesis`
+0.36.6 met `NU3018` en `NU3028`; nadat beide bestanden in de rootstore van de
+prefix waren geïmporteerd, slaagden hetzelfde herstel en de build. Eidos
+importeert ze nog niet. Proton is niet getest.
 
 Niets in tier 2 of 3 draait stilzwijgend:
 

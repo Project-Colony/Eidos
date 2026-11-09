@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=6dd62a47ce572c0720e08cb2522d9850e4b75eec -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=d10264fcb7169488da7f4bb45f930ad141fed832 -->
 
 # Narzędzia: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -158,6 +158,16 @@ uruchamiania wywołuje gołe `dotnet`, więc narzędzie, które deklaruje
 i `DOTNET_CLI_TELEMETRY_OPTOUT=1`. Wpis Synthesis w `tools.ini`, który wciąż ma
 starą wartość domyślną `dotnet8`, `vcrun2022`, dostaje `dotnetsdk10`,
 `vcrun2022`, gdy Eidos go wczytuje.
+
+Budowanie patcherów nadal może się zatrzymać na przywracaniu pakietów. NuGet
+sprawdza podpis każdego przywracanego pakietu, a w magazynie certyfikatów
+głównych prefiksu brakuje certyfikatów głównych do podpisywania kodu i
+znaczników czasu, które SDK dostarcza jako
+`sdk/10.0.403/trustedroots/codesignctl.pem` i `timestampctl.pem`. Z systemowym
+Wine 11.21 przywracanie `Mutagen.Bethesda.Synthesis` 0.36.6 kończy się błędami
+`NU3018` i `NU3028`; po zaimportowaniu obu plików do magazynu certyfikatów
+głównych prefiksu to samo przywracanie i kompilacja się powiodły. Eidos jeszcze
+ich nie importuje. Proton nie był testowany.
 
 Nic z poziomu 2 ani 3 nie dzieje się po cichu:
 

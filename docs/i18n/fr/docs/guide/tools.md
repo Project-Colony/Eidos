@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=6dd62a47ce572c0720e08cb2522d9850e4b75eec -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=d10264fcb7169488da7f4bb45f930ad141fed832 -->
 
 # Outils : xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -166,6 +166,16 @@ simple `dotnet` pour les construire et les lancer. Un outil qui déclare
 et `DOTNET_CLI_TELEMETRY_OPTOUT=1`. Une entrée Synthesis de `tools.ini` qui
 porte encore l'ancienne valeur par défaut, `dotnet8`, `vcrun2022`, passe à
 `dotnetsdk10`, `vcrun2022` quand Eidos la lit.
+
+La construction des patchers peut encore échouer à la restauration des paquets.
+NuGet vérifie la signature de chaque paquet qu'il restaure, et le magasin de
+racines du préfixe ne contient pas les racines de signature de code et
+d'horodatage que le SDK fournit sous `sdk/10.0.403/trustedroots/codesignctl.pem`
+et `timestampctl.pem`. Avec le Wine 11.21 du système, la restauration de
+`Mutagen.Bethesda.Synthesis` 0.36.6 échoue avec `NU3018` et `NU3028` ; une fois
+les deux fichiers importés dans le magasin de racines du préfixe, la même
+restauration et la compilation ont réussi. Eidos ne les importe pas encore.
+Proton n'a pas été testé.
 
 Rien dans les paliers 2 ou 3 ne s'exécute en silence :
 

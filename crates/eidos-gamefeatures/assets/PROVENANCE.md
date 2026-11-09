@@ -80,3 +80,10 @@ The downloaded file matched it, and its SHA-256,
 `f398979a9cac2dba760771c4e01f16e431dcd6bcfb2213e3e8f5b3d354095cc0`, is the hash
 built into Eidos.
 
+The SDK alone does not get a patcher through NuGet's package restore under
+Wine. The prefix's root store lacks the code-signing and timestamping roots in
+the SDK's `sdk/10.0.403/trustedroots/codesignctl.pem` and `timestampctl.pem`,
+so restoring `Mutagen.Bethesda.Synthesis` 0.36.6 on Wine 11.21 fails with
+`NU3018` and `NU3028`. Eidos does not import those roots yet; see the
+`dotnetsdk10` notes in `docs/guide/tools.md`.
+

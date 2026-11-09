@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=6dd62a47ce572c0720e08cb2522d9850e4b75eec -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=d10264fcb7169488da7f4bb45f930ad141fed832 -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -151,6 +151,15 @@ složku SDK v `WINEPATH` a k tomu `NUGET_CERT_REVOCATION_MODE=offline`,
 `DOTNET_GENERATE_ASPNET_CERTIFICATE=false` a `DOTNET_CLI_TELEMETRY_OPTOUT=1`.
 Záznam Synthesis v `tools.ini`, který má pořád starou výchozí hodnotu `dotnet8`,
 `vcrun2022`, dostane při načtení Eidosem `dotnetsdk10`, `vcrun2022`.
+
+Sestavení patcherů může pořád skončit při obnově balíčků. NuGet ověřuje podpis
+každého balíčku, který obnovuje, a v úložišti kořenových certifikátů prefixu
+chybí kořenové certifikáty pro podepisování kódu a časová razítka, které SDK
+dodává jako `sdk/10.0.403/trustedroots/codesignctl.pem` a `timestampctl.pem`. Se
+systémovým Wine 11.21 obnova `Mutagen.Bethesda.Synthesis` 0.36.6 selže s chybami
+`NU3018` a `NU3028`; po importu obou souborů do úložiště kořenových certifikátů
+prefixu stejná obnova i sestavení prošly. Eidos je zatím neimportuje. Proton
+nebyl testován.
 
 Nic z úrovně 2 ani 3 neběží potichu:
 

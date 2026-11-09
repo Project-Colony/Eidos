@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=6dd62a47ce572c0720e08cb2522d9850e4b75eec -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=d10264fcb7169488da7f4bb45f930ad141fed832 -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -135,6 +135,11 @@ Executables 对话框中的 `Prereqs` 字段是可以编辑的 - 检测出来的
 Synthesis 编译 patcher 需要它,而且构建和运行 patcher 时调用的是不带路径的 `dotnet`,
 所以声明了 `dotnetsdk10` 的工具还会在 `WINEPATH` 上得到 SDK 文件夹,外加 `NUGET_CERT_REVOCATION_MODE=offline`、`DOTNET_GENERATE_ASPNET_CERTIFICATE=false` 和 `DOTNET_CLI_TELEMETRY_OPTOUT=1`。
 `tools.ini` 中仍写着旧默认值 `dotnet8`, `vcrun2022` 的 Synthesis 条目,会在 Eidos 读取时改为 `dotnetsdk10`, `vcrun2022`。
+
+patcher 的构建仍可能在包还原这一步失败。
+NuGet 会检查它还原的每个包的签名,而前缀的根证书存储里没有 SDK 以 `sdk/10.0.403/trustedroots/codesignctl.pem` 和 `timestampctl.pem` 附带的代码签名根证书和时间戳根证书。
+在系统 Wine 11.21 上,还原 `Mutagen.Bethesda.Synthesis` 0.36.6 会以 `NU3018` 和 `NU3028` 失败;把这两个文件导入前缀的根证书存储后,同样的还原和构建都成功了。
+Eidos 目前还不会导入它们。未在 Proton 上测试。
 
 第二类和第三类里没有任何东西是悄悄跑的:
 

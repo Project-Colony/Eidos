@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=6dd62a47ce572c0720e08cb2522d9850e4b75eec -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=d10264fcb7169488da7f4bb45f930ad141fed832 -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -158,6 +158,15 @@ bir araç ayrıca `WINEPATH` üzerinde SDK klasörünü, bir de
 ve `DOTNET_CLI_TELEMETRY_OPTOUT=1` değerlerini alır. `tools.ini` içinde hâlâ
 eski varsayılanı, `dotnet8`, `vcrun2022` taşıyan bir Synthesis girdisi, Eidos
 onu okurken `dotnetsdk10`, `vcrun2022` olur.
+
+Patcher'ların derlenmesi paket geri yükleme adımında yine de durabilir. NuGet
+geri yüklediği her paketin imzasını denetler ve önekin kök sertifika deposunda,
+SDK'nın `sdk/10.0.403/trustedroots/codesignctl.pem` ve `timestampctl.pem` olarak
+getirdiği kod imzalama ve zaman damgası kökleri yoktur. Sistemdeki Wine 11.21
+ile `Mutagen.Bethesda.Synthesis` 0.36.6 geri yüklemesi `NU3018` ve `NU3028`
+hatalarıyla başarısız oluyor; iki dosya önekin kök sertifika deposuna
+aktarıldıktan sonra aynı geri yükleme ve derleme başarılı oldu. Eidos bunları
+henüz aktarmıyor. Proton ile denenmedi.
 
 Kademe 2 ya da 3'te hiçbir şey sessizce çalışmaz:
 

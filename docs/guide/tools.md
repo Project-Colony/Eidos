@@ -150,6 +150,15 @@ and run them, so a tool that declares `dotnetsdk10` also gets the SDK folder on
 A Synthesis entry in `tools.ini` that still lists the old default, `dotnet8`,
 `vcrun2022`, gets `dotnetsdk10`, `vcrun2022` when Eidos reads it.
 
+Patcher builds can still stop at the package restore. NuGet checks the
+signature of every package it restores, and the prefix's root store lacks the
+code-signing and timestamping roots that the SDK ships as
+`sdk/10.0.403/trustedroots/codesignctl.pem` and `timestampctl.pem`. On system
+Wine 11.21, restoring `Mutagen.Bethesda.Synthesis` 0.36.6 fails with `NU3018`
+and `NU3028`; after both files were imported into the prefix's root store, the
+same restore and build succeeded. Eidos does not import them yet. Proton was
+not tested.
+
 Nothing in tiers 2 or 3 runs silently:
 
 ```sh

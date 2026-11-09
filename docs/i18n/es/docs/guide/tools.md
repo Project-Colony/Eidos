@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=6dd62a47ce572c0720e08cb2522d9850e4b75eec -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=d10264fcb7169488da7f4bb45f930ad141fed832 -->
 
 # Herramientas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -163,6 +163,15 @@ declara `dotnetsdk10` recibe también la carpeta del SDK en `WINEPATH`, además 
 y `DOTNET_CLI_TELEMETRY_OPTOUT=1`. Una entrada de Synthesis en `tools.ini` que
 todavía lleva el antiguo valor por defecto, `dotnet8`, `vcrun2022`, pasa a
 `dotnetsdk10`, `vcrun2022` cuando Eidos la lee.
+
+La compilación de patchers todavía puede fallar en la restauración de paquetes.
+NuGet comprueba la firma de cada paquete que restaura, y al almacén de raíces
+del prefijo le faltan las raíces de firma de código y de marca de tiempo que el
+SDK incluye como `sdk/10.0.403/trustedroots/codesignctl.pem` y
+`timestampctl.pem`. Con el Wine 11.21 del sistema, restaurar
+`Mutagen.Bethesda.Synthesis` 0.36.6 falla con `NU3018` y `NU3028`; tras importar
+ambos archivos en el almacén de raíces del prefijo, la misma restauración y la
+compilación funcionaron. Eidos todavía no los importa. Proton no se ha probado.
 
 Nada de los niveles 2 o 3 se ejecuta en silencio:
 

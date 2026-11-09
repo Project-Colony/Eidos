@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=6dd62a47ce572c0720e08cb2522d9850e4b75eec -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=d10264fcb7169488da7f4bb45f930ad141fed832 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -162,6 +162,16 @@ den SDK-Ordner in `WINEPATH` sowie `NUGET_CERT_REVOCATION_MODE=offline`,
 Ein Synthesis-Eintrag in `tools.ini`, der noch den alten Standard `dotnet8`,
 `vcrun2022` enthält, bekommt beim Einlesen durch Eidos `dotnetsdk10`,
 `vcrun2022`.
+
+Das Bauen von Patchern kann trotzdem beim Wiederherstellen der Pakete scheitern.
+NuGet prüft die Signatur jedes Pakets, das es wiederherstellt, und dem
+Stammzertifikatspeicher des Präfix fehlen die Stammzertifikate für Codesignatur
+und Zeitstempel, die das SDK als `sdk/10.0.403/trustedroots/codesignctl.pem` und
+`timestampctl.pem` mitbringt. Mit dem System-Wine 11.21 scheitert die
+Wiederherstellung von `Mutagen.Bethesda.Synthesis` 0.36.6 mit `NU3018` und
+`NU3028`; nachdem beide Dateien in den Stammzertifikatspeicher des Präfix
+importiert waren, liefen dieselbe Wiederherstellung und der Build durch. Eidos
+importiert sie noch nicht. Proton wurde nicht getestet.
 
 Nichts in Tier 2 oder 3 läuft stillschweigend:
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=6dd62a47ce572c0720e08cb2522d9850e4b75eec -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=d10264fcb7169488da7f4bb45f930ad141fed832 -->
 
 # Інструменти: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -157,6 +157,15 @@ Tools -> Executables -> (ваш інструмент) -> Capture output into: FN
 і `DOTNET_CLI_TELEMETRY_OPTOUT=1`. Запис Synthesis у `tools.ini`, де досі стоїть
 старе типове значення `dotnet8`, `vcrun2022`, отримує `dotnetsdk10`,
 `vcrun2022`, коли Eidos його читає.
+
+Збирання патчерів усе ще може зупинитися на відновленні пакетів. NuGet перевіряє
+підпис кожного пакета, який відновлює, а у сховищі кореневих сертифікатів
+префікса немає кореневих сертифікатів для підпису коду та міток часу, які SDK
+постачає як `sdk/10.0.403/trustedroots/codesignctl.pem` і `timestampctl.pem`. Із
+системним Wine 11.21 відновлення `Mutagen.Bethesda.Synthesis` 0.36.6
+завершується помилками `NU3018` і `NU3028`; після імпорту обох файлів у сховище
+кореневих сертифікатів префікса те саме відновлення і збирання пройшли. Eidos
+поки що їх не імпортує. У Proton це не перевірялося.
 
 Ніщо на рівнях 2 і 3 не виконується мовчки:
 
