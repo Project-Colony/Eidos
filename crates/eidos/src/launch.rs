@@ -1016,6 +1016,28 @@ mod extender_tests {
     }
 
     #[test]
+    fn the_game_language_comes_from_the_profile_ini() {
+        let root = std::env::temp_dir().join(format!("eidos-game-lang-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let instance = Instance::portable(root.join("instance"));
+        instance.create().unwrap();
+        let game = DetectedGame {
+            def: eidos_games::GameDef::for_id("skyrimse").unwrap(),
+            install_path: root.join("game"),
+            data_path: root.join("game/Data"),
+            compatdata: None,
+            source: Default::default(),
+            steam_name: String::new(),
+        };
+        assert_eq!(game_language(&game, &instance), None);
+        let ini = instance.active().ini_path("Skyrim.ini");
+        std::fs::create_dir_all(ini.parent().unwrap()).unwrap();
+        std::fs::write(&ini, "[General]\r\nsLanguage=RUSSIAN\r\n").unwrap();
+        assert_eq!(game_language(&game, &instance).as_deref(), Some("RUSSIAN"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn a_tool_env_line_wins_over_what_every_run_gets() {
         let root = std::env::temp_dir().join(format!("eidos-tool-env-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);

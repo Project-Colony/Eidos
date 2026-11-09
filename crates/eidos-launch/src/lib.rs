@@ -809,6 +809,7 @@ fn locale_installed(name: &str) -> bool {
     if loc.is_null() {
         return false;
     }
+    // SAFETY: `loc` is the non-null locale newlocale just returned, freed once.
     unsafe { libc::freelocale(loc) };
     true
 }
@@ -986,7 +987,7 @@ mod tests {
         assert!(game_language_locale_env(None, Some("fr_FR.UTF-8"), "RUSSIAN", all).is_none());
         // No matching locale on the host: change nothing.
         assert!(game_language_locale_env(None, None, "RUSSIAN", |_| false).is_none());
-        // The real newlocale check accepts C.UTF-8 and rejects nonsense.
+        // The real newlocale check rejects a locale the host does not have.
         assert!(!locale_installed("xx_XX.nonsense"));
     }
 
