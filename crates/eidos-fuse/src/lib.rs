@@ -417,11 +417,6 @@ impl Eidos {
         let max_age = Duration::from_secs(NEG_TTL_RECORDED_SECS);
         let mut neg = self.negatives.lock_recover();
         let dir = neg.entry(parent).or_default();
-        // A record older than the TTL it justified no longer covers anything.
-        dir.retain(|_, v| {
-            v.retain(|(_, at)| now.duration_since(*at) < max_age);
-            !v.is_empty()
-        });
         let key = name.to_ascii_lowercase();
         if let Some((_, at)) = dir
             .get_mut(&key)
@@ -430,8 +425,17 @@ impl Eidos {
             *at = now;
             return true;
         }
-        if dir.values().map(Vec::len).sum::<usize>() >= 4096 {
-            return false;
+        let count = |dir: &NegativeDir| dir.values().map(Vec::len).sum::<usize>();
+        if count(dir) >= 4096 {
+            // A record older than the TTL it justified no longer covers anything,
+            // so it only matters once it holds a place under the cap.
+            dir.retain(|_, v| {
+                v.retain(|(_, at)| now.duration_since(*at) < max_age);
+                !v.is_empty()
+            });
+            if count(dir) >= 4096 {
+                return false;
+            }
         }
         dir.entry(key).or_default().push((name.to_string(), now));
         true

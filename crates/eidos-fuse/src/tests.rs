@@ -669,20 +669,27 @@ fn recorded_negative_gets_the_long_ttl_and_a_capped_one_the_short() {
 }
 
 #[test]
-fn old_negative_records_are_dropped_on_insert() {
+fn the_cap_evicts_aged_negative_records() {
     let eidos = Eidos::new(vec![], std::env::temp_dir().join("eidos-neg-age"));
-    assert!(eidos.record_negative(1, "old"));
+    for i in 0..4096 {
+        assert!(eidos.record_negative(1, &format!("n{i}")));
+    }
     let aged = Instant::now() - Duration::from_secs(NEG_TTL_RECORDED_SECS + 1);
     eidos
         .negatives
         .lock_recover()
         .get_mut(&1)
         .unwrap()
-        .get_mut("old")
+        .get_mut("n0")
         .unwrap()[0]
         .1 = aged;
-    assert!(eidos.record_negative(1, "new"));
-    assert!(!eidos.negatives.lock_recover()[&1].contains_key("old"));
+    assert!(
+        eidos.record_negative(1, "new"),
+        "the aged record gives its place"
+    );
+    let neg = eidos.negatives.lock_recover();
+    assert!(!neg[&1].contains_key("n0"));
+    assert!(neg[&1].contains_key("new"));
 }
 
 #[test]
