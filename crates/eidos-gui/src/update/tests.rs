@@ -5837,15 +5837,54 @@ fn archive_extraction_names_the_new_mod_and_never_reuses_a_folder() {
     // The worker's answer registers the new folder like an install.
     let fresh = root.join("mods/Other (extracted)");
     fs::create_dir_all(&fresh).unwrap();
+    let source = root.join("mods/Source/Source.ba2");
     let _ = update_inner(
         &mut app,
-        Message::ArchiveExtracted("Other (extracted)".into(), Ok(fresh)),
+        Message::ArchiveExtracted(
+            root.clone(),
+            source.clone(),
+            "Other (extracted)".into(),
+            Ok(fresh),
+        ),
     );
     assert!(app.mods.iter().any(|m| m.name == "Other (extracted)"));
     let _ = update_inner(
         &mut app,
-        Message::ArchiveExtracted("Third (extracted)".into(), Err("disk full".into())),
+        Message::ArchiveExtracted(
+            root.clone(),
+            source,
+            "Third (extracted)".into(),
+            Err("disk full".into()),
+        ),
     );
     assert!(app.status.as_deref().unwrap().contains("disk full"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_second_extract_of_the_same_archive_starts_nothing_until_the_first_ends() {
+    // The running decode publishes its folder only at the end, so a second
+    // click used to queue a duplicate that failed with "File exists".
+    let (mut app, root) = list_app(&["Source"]);
+    let click = || Message::ExtractArchive("Source".into(), "Source.ba2".into());
+    assert_eq!(update_inner(&mut app, click()).units(), 1);
+    assert_eq!(
+        update_inner(&mut app, click()).units(),
+        0,
+        "the first still runs"
+    );
+    // An answer meant for another instance frees the archive and nothing else.
+    let _ = update_inner(
+        &mut app,
+        Message::ArchiveExtracted(
+            root.join("other-instance"),
+            root.join("mods/Source/Source.ba2"),
+            "Source (extracted)".into(),
+            Err("disk full".into()),
+        ),
+    );
+    assert!(!app.status.as_deref().unwrap().contains("disk full"));
+    assert!(app.extracting_archives.is_empty());
+    assert_eq!(update_inner(&mut app, click()).units(), 1);
     fs::remove_dir_all(root).unwrap();
 }

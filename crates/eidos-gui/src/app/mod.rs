@@ -514,6 +514,9 @@ pub(crate) struct App {
     /// The download whose MD5 lookup is in flight, so the row can say so and a
     /// second click cannot start the same hash twice.
     pub(crate) identifying_download: Option<String>,
+    /// Archives being extracted into a new mod, so a second click on the same
+    /// one cannot start a duplicate decode that fails on the taken folder.
+    pub(crate) extracting_archives: HashSet<PathBuf>,
     /// Last (instant, bytes) seen for each in-flight download, keyed by file
     /// name. Speed is a derivative, so it needs the previous sample; keeping it
     /// out of `DownloadRow` means a rebuilt row list does not lose the history.

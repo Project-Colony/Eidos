@@ -438,6 +438,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         resuming: None,
         confirm_delete_download: None,
         identifying_download: None,
+        extracting_archives: HashSet::new(),
         download_samples: HashMap::new(),
         selected_mods: HashSet::new(),
         sel_anchor: None,

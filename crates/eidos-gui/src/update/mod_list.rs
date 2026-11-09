@@ -889,6 +889,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let source = m.path.join(&archive);
             let name = extracted_mod_name(&archive);
             let dest = inst.mods_dir().join(&name);
+            let root = inst.root.clone();
             // Checked here for a clear message; the worker's rename refuses it too.
             if dest.symlink_metadata().is_ok() {
                 app.status = Some(tf("status_extract_exists", &[("name", &name)]));
@@ -898,24 +899,38 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 "status_extracting_archive",
                 &[("archive", &archive), ("name", &name)],
             ));
+            // The running decode only publishes its folder at the end, so the
+            // check above cannot see it yet.
+            if !app.extracting_archives.insert(source.clone()) {
+                return Task::none();
+            }
             return Task::perform(
-                crate::background_work::run(move || {
-                    eidos_conflicts::extract_archive(&source, &dest, 16 * 1024 * 1024 * 1024)
-                        .map(|_| dest)
-                        .map_err(|e| e.to_string())
+                crate::background_work::run({
+                    let source = source.clone();
+                    move || {
+                        eidos_conflicts::extract_archive(&source, &dest, 16 * 1024 * 1024 * 1024)
+                            .map(|_| dest)
+                            .map_err(|e| e.to_string())
+                    }
                 }),
-                move |result| Message::ArchiveExtracted(name, result),
+                move |result| Message::ArchiveExtracted(root, source, name, result),
             );
         }
-        Message::ArchiveExtracted(name, result) => match result {
-            Ok(dest) => after_install(app, &name, dest, false, None),
-            Err(error) => {
-                app.status = Some(tf(
-                    "status_extract_failed",
-                    &[("name", &name), ("error", &error)],
-                ))
+        Message::ArchiveExtracted(root, source, name, result) => {
+            app.extracting_archives.remove(&source);
+            if app.created.as_ref().is_none_or(|i| i.root != root) {
+                return Task::none();
             }
-        },
+            match result {
+                Ok(dest) => after_install(app, &name, dest, false, None),
+                Err(error) => {
+                    app.status = Some(tf(
+                        "status_extract_failed",
+                        &[("name", &name), ("error", &error)],
+                    ))
+                }
+            }
+        }
         // ---- Export the mod list (MO2's Export to csv) -----------------------
         Message::ShowExportDialog => {
             app.file_menu_open = false;
