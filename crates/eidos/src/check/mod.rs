@@ -3,6 +3,7 @@
 //! CLI prints the code and its args.
 
 pub mod extender;
+pub mod launch_option;
 
 use std::path::{Path, PathBuf};
 
@@ -45,6 +46,11 @@ pub const CODES: &[&str] = &[
     "extender_missing",
     "extender_runtime_missing",
     "game_updated",
+    "launch_option_missing",
+    "launch_option_no_eidos",
+    "launch_option_binary_missing",
+    "launch_option_no_command",
+    "launch_option_other_copy",
 ];
 
 /// The instance's enabled mods, highest priority first.
@@ -58,7 +64,7 @@ pub fn active_mods(inst: &Instance) -> Vec<(String, PathBuf)> {
 }
 
 pub fn host_findings(
-    _home: &Path,
+    home: &Path,
     game: &DetectedGame,
     inst: &Instance,
     mods: &[(String, PathBuf)],
@@ -78,5 +84,20 @@ pub fn host_findings(
         inst.launch_record().last_good.as_ref(),
         &extender::current_build(game, mods, &overwrite),
     ));
+    if game.is_steam() && game.compatdata.is_some() {
+        let options = eidos_games::steam_launch_options(home, game.def.steam_app_id);
+        let path: Vec<PathBuf> = std::env::var_os("PATH")
+            .map(|p| std::env::split_paths(&p).collect())
+            .unwrap_or_default();
+        if let Ok(this_exe) = std::env::current_exe() {
+            out.extend(launch_option::launch_option_findings(
+                options.as_deref(),
+                &this_exe,
+                home,
+                &path,
+                game.def,
+            ));
+        }
+    }
     out
 }

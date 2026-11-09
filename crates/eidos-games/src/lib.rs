@@ -20,6 +20,8 @@ use std::path::{Path, PathBuf};
 mod paths;
 mod stores;
 pub use stores::{select_installation, GameSource, Store};
+mod steam_config;
+pub use steam_config::steam_launch_options;
 mod proton;
 pub use proton::{
     is_flatpak_steam, library_path, proton_command, steam_root, wineserver_wait_for, ProtonRun,
