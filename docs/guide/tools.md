@@ -107,7 +107,7 @@ is a case-insensitive substring of the title.
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
 | `synthesis` | `dotnet8`, `vcrun2022` |
-| `pandora` | `dotnetdesktop8` |
+| `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
 | anything else | nothing |
