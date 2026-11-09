@@ -454,8 +454,8 @@ pub(crate) fn cmd_tool(args: &[String]) {
                     .iter()
                     .filter_map(|v| match eidos_gamefeatures::runtime(v)?.verb {
                         "dotnet10" => Some(
-                            " Without dotnet10, DynDOLOD's LODGen dies at startup and leaves a \
-                             log with nothing in it but a version banner.",
+                            " Without dotnet10, a .NET 10 tool such as Pandora or DynDOLOD's \
+                             LODGen does not start.",
                         ),
                         "dotnetsdk10" => {
                             Some(" Without dotnetsdk10, Synthesis cannot build its patchers.")
