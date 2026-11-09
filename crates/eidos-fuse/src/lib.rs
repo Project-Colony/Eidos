@@ -29,6 +29,7 @@
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::Metadata;
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64};
@@ -172,6 +173,10 @@ pub struct Eidos {
     /// recorded spelling would keep resolving to the moved file for the whole
     /// entry TTL and serve its contents under a name that no longer exists.
     aliases: Mutex<HashMap<u64, Vec<(u64, String)>>>,
+    /// Directory inode -> whether a name in it needs Unicode case folding, which
+    /// Eidos does not do, so the directory must not claim to fold case. Read from
+    /// the layers on first ask; `dir_changed` sets it and nothing clears it.
+    unicode_case_dirs: Mutex<HashMap<u64, bool>>,
     /// Set once the session is mounted; used to push those invalidations.
     notifier: Arc<Mutex<Option<fuser::Notifier>>>,
     /// The kernel advertised `FUSE_NO_OPENDIR_SUPPORT`, so it can open and read
@@ -269,6 +274,7 @@ impl Eidos {
             stats: Stats::default(),
             negatives: Mutex::new(HashMap::new()),
             aliases: Mutex::new(HashMap::new()),
+            unicode_case_dirs: Mutex::new(HashMap::new()),
             notifier: Arc::new(Mutex::new(None)),
         }
     }
@@ -429,6 +435,39 @@ impl Eidos {
     fn dir_changed(&self, parent: u64, name: &str) {
         self.invalidate_dir_of(parent);
         self.invalidate_folded_negatives(parent, name);
+        // A removal sets it too: the flag never clears, and a stale one only
+        // costs Wine its own scan of this directory.
+        if eidos_core::has_unicode_case(name)
+            && self.unicode_case_dirs.lock_recover().insert(parent, true) == Some(false)
+        {
+            // The kernel keeps a `.ciopfs` answered before for the entry TTL.
+            // Off the handler thread, as in `invalidate_folded_negatives`.
+            if let Some(notifier) = self.notifier.lock_recover().clone() {
+                std::thread::spawn(move || {
+                    let marker = OsStr::from_bytes(ops::CIOPFS_MARKER);
+                    let _ = notifier.inval_entry(INodeNo(parent), marker);
+                });
+            }
+        }
+    }
+
+    /// Whether directory `dir` may tell Wine it folds case (`FS_IOC_GETFLAGS`
+    /// and the `.ciopfs` marker): not when a name in it needs Unicode case
+    /// folding, because Wine then skips its own scan, which would find it.
+    fn folds_case(&self, dir: u64) -> bool {
+        if let Some(&unicode) = self.unicode_case_dirs.lock_recover().get(&dir) {
+            return !unicode;
+        }
+        let Some(vpath) = self.inodes.lock_recover().path(dir) else {
+            return false;
+        };
+        let unicode = self.stack.dir_has_unicode_case(&vpath);
+        // `or_insert`: a create racing this read may have set it already.
+        !*self
+            .unicode_case_dirs
+            .lock_recover()
+            .entry(dir)
+            .or_insert(unicode)
     }
 
     fn invalidate_folded_negatives(&self, parent: u64, name: &str) {

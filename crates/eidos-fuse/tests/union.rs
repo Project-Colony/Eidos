@@ -172,25 +172,66 @@ fn case_insensitive_read_through_mount() {
     );
 }
 
-fn getflags_reports_casefold_on_dirs_only() {
+/// `FS_IOC_GETFLAGS` on `p`: (return value, flags, errno).
+fn getflags(p: &Path) -> (i32, i32, Option<i32>) {
     use std::os::fd::AsRawFd;
+    let f = fs::File::open(p).unwrap();
+    let mut flags: i32 = 0;
+    // SAFETY: FS_IOC_GETFLAGS writes one int through the pointer.
+    let r = unsafe { libc::ioctl(f.as_raw_fd(), libc::FS_IOC_GETFLAGS, &mut flags) };
+    (r, flags, std::io::Error::last_os_error().raw_os_error())
+}
+
+/// Whether `dir` tells Wine it folds case, by both signals, which must agree.
+fn says_casefold(dir: &Path) -> bool {
+    let (r, flags, errno) = getflags(dir);
+    let ioctl = r == 0 && flags & 0x4000_0000 != 0;
+    assert!(ioctl || errno == Some(libc::ENOTTY), "{dir:?}: {errno:?}");
+    let marker = match fs::symlink_metadata(dir.join(".ciopfs")) {
+        Ok(_) => true,
+        Err(e) => {
+            assert_eq!(e.kind(), std::io::ErrorKind::NotFound, "{dir:?}");
+            false
+        }
+    };
+    assert_eq!(ioctl, marker, "{dir:?}");
+    ioctl
+}
+
+fn getflags_reports_casefold_on_dirs_only() {
     let t = Tmp::new();
     let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
     put(&game, "Textures/Armor.DDS", b"texdata");
     let _s = mounted!(vec![game], over, &mnt);
 
-    let getflags = |p: &Path| {
-        let f = fs::File::open(p).unwrap();
-        let mut flags: i32 = 0;
-        // SAFETY: FS_IOC_GETFLAGS writes one int through the pointer.
-        let r = unsafe { libc::ioctl(f.as_raw_fd(), libc::FS_IOC_GETFLAGS, &mut flags) };
-        (r, flags, std::io::Error::last_os_error().raw_os_error())
-    };
     let (r, flags, _) = getflags(&mnt.join("Textures"));
     assert_eq!(r, 0);
     assert_ne!(flags & 0x4000_0000, 0, "flags {flags:#x}");
     let (r, _, errno) = getflags(&mnt.join("Textures/Armor.DDS"));
     assert_eq!((r, errno), (-1, Some(libc::ENOTTY)));
+}
+
+fn unicode_cased_names_turn_the_casefold_hint_off() {
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    put(&game, "Accents/Café.dds", b"x");
+    put(&game, "Plain/cafe.dds", b"x");
+    put(&game, "Plain/日本.txt", b"x");
+    put(&over, "Saves/Élise.ess", b"x");
+    let _s = mounted!(vec![game], over, &mnt);
+
+    assert!(says_casefold(&mnt));
+    assert!(says_casefold(&mnt.join("Plain")));
+    assert!(!says_casefold(&mnt.join("Accents")));
+    assert!(!says_casefold(&mnt.join("Saves")));
+    // A name created through the mount turns it off from then on, including
+    // the `.ciopfs` entry the kernel cached above.
+    fs::write(mnt.join("Plain/Ébène.txt"), b"x").unwrap();
+    let marker = mnt.join("Plain/.ciopfs");
+    assert!(settle(|| fs::symlink_metadata(&marker).is_err().then_some(())).is_some());
+    assert!(!says_casefold(&mnt.join("Plain")));
+    fs::remove_file(mnt.join("Plain/Ébène.txt")).unwrap();
+    assert!(!says_casefold(&mnt.join("Plain")));
 }
 
 fn write_copies_up_and_keeps_sources_pristine() {
@@ -1368,6 +1409,11 @@ fn main() {
         (
             "getflags_reports_casefold_on_dirs_only",
             getflags_reports_casefold_on_dirs_only,
+            false,
+        ),
+        (
+            "unicode_cased_names_turn_the_casefold_hint_off",
+            unicode_cased_names_turn_the_casefold_hint_off,
             false,
         ),
         (

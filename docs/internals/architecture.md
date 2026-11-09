@@ -283,14 +283,21 @@ that does **not** yet close:
   is not implemented yet. usvfs itself models rename as copy + delete here.
 - **Casing beyond ASCII.** v1 folds ASCII case; Windows folds a wider Unicode
   table. This is at parity with usvfs (its tree uses ASCII `_strnicmp`), but a
-  documented limitation to close later.
+  documented limitation to close later. Wine's own directory scan does fold
+  Unicode case, and it skips that scan in a directory that says it folds case.
+  So a directory where any layer holds a name with a non-ASCII letter that has
+  a case mapping (`Café.dds`, `Ωmega.esp`) does not say so: `ioctl` answers
+  ENOTTY there and `lookup` withholds `.ciopfs`, and Wine finds `Café.dds` when
+  asked for `CAFÉ.dds`. The cost is that directory's ASCII mis-casings going
+  back to Wine's scan as well.
 - **Steam churn.** Proton updates and the launch-option dance are an ongoing
   integration surface.
 - **Telling Wine the mount folds case** (fixed). Wine's
   `get_dir_case_sensitivity` asks the directory through `FS_IOC_GETFLAGS`, then
   sniffs for the marker CIOPFS leaves in each directory. Eidos answers both:
   `ioctl` returns the casefold flag on directories (4 bytes, ENOTTY for
-  everything else) and `lookup` serves `.ciopfs` for older Wine. Without either
+  everything else) and `lookup` serves `.ciopfs` for older Wine, both except in
+  the directories described under casing beyond ASCII. Without either
   Wine assumes case-sensitive and answers every
   mis-cased lookup by reading the entire directory to search for a match - which,
   for a Bethesda game asking for `data/ccbgssse001-fish.bsa` against

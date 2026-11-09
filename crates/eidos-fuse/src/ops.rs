@@ -29,12 +29,9 @@ use crate::*;
 /// mis-cased path - see the comment there for what that rescan costs.
 pub(crate) const CIOPFS_MARKER: &[u8] = b".ciopfs";
 
-/// What `FS_IOC_GETFLAGS` answers for a directory inode: `FS_CASEFOLD_FL`, so
-/// Wine skips its `fstatfs` and `.ciopfs` probes. `None` means "not a casefold
-/// directory" (ENOTTY).
-fn getflags_reply(_dir: INodeNo) -> Option<[u8; 4]> {
-    Some(0x4000_0000u32.to_ne_bytes())
-}
+/// What `FS_IOC_GETFLAGS` answers for a directory that folds case, so Wine
+/// skips its `fstatfs` and `.ciopfs` probes. Any other directory gets ENOTTY.
+const FS_CASEFOLD_FL: u32 = 0x4000_0000;
 
 impl Eidos {
     /// An error after a completed mutation prevents the kernel's usual dentry
@@ -160,6 +157,7 @@ impl Filesystem for Eidos {
         if freed {
             self.aliases.lock_recover().remove(&ino.0);
             self.negatives.lock_recover().remove(&ino.0);
+            self.unicode_case_dirs.lock_recover().remove(&ino.0);
         }
     }
 
@@ -341,7 +339,8 @@ impl Filesystem for Eidos {
         //
         // Answered on lookup only, and deliberately absent from `readdir`: it is a
         // signal to Wine, not a file the game should ever enumerate or open.
-        if name.as_bytes() == CIOPFS_MARKER {
+        // Withheld where a name needs Unicode case folding (see `folds_case`).
+        if name.as_bytes() == CIOPFS_MARKER && self.folds_case(parent.0) {
             Stats::bump(&self.stats.marker);
             let ino = self.inodes.lock_recover().lookup(&vpath);
             reply.entry(&TTL, &self.marker_attr(ino), Generation(0));
@@ -1073,6 +1072,7 @@ impl Filesystem for Eidos {
                 for dead in clobbered {
                     self.aliases.lock_recover().remove(&dead);
                     self.negatives.lock_recover().remove(&dead);
+                    self.unicode_case_dirs.lock_recover().remove(&dead);
                     if receipt.is_err() {
                         self.invalidate_page_cache(dead);
                     }
@@ -1229,11 +1229,10 @@ impl Filesystem for Eidos {
         let _t = self.stats.ioctl_getflags.start();
         // The kernel sets FUSE_IOCTL_DIR from S_ISDIR and asks for sizeof(int);
         // a longer reply would be rejected.
-        match getflags_reply(ino) {
-            Some(b) if flags.contains(IoctlFlags::FUSE_IOCTL_DIR) && out_size >= 4 => {
-                reply.ioctl(0, &b)
-            }
-            _ => reply.error(Errno::ENOTTY),
+        if flags.contains(IoctlFlags::FUSE_IOCTL_DIR) && out_size >= 4 && self.folds_case(ino.0) {
+            reply.ioctl(0, &FS_CASEFOLD_FL.to_ne_bytes())
+        } else {
+            reply.error(Errno::ENOTTY)
         }
     }
 

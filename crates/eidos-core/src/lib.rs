@@ -51,6 +51,17 @@ pub fn is_hidden_name(name: &str) -> bool {
     name.len() > suffix.len() && name[name.len() - suffix.len()..].eq_ignore_ascii_case(suffix)
 }
 
+/// Whether `name` holds a non-ASCII letter that has a case mapping, such as `é`
+/// or `Ω`. Eidos folds ASCII case only, so a directory holding such a name must
+/// not tell Wine it folds case: Wine would then skip the scan that finds
+/// `Café.dds` when asked for `CAFÉ.dds`.
+pub fn has_unicode_case(name: &str) -> bool {
+    !name.is_ascii()
+        && name
+            .chars()
+            .any(|c| !c.is_ascii() && (c.to_lowercase().ne([c]) || c.to_uppercase().ne([c])))
+}
+
 /// Whether any component of a virtual path was hidden - a hidden DIRECTORY takes
 /// its whole subtree with it, which is how MO2 lets one click suppress a mod's
 /// entire `meshes/` without touching the files.
@@ -150,6 +161,10 @@ struct LowerIndex {
     /// slot, so a lower layer's copy of the file a hidden one shadowed becomes
     /// the winner - which is the point of hiding one mod's stray override.
     dirs: HashMap<Box<[u8]>, Box<[DirEntryInfo]>>,
+    /// Folded virtual directories where some layer holds a name that
+    /// [`has_unicode_case`] flags, hidden names included. Empty on nearly every
+    /// setup.
+    unicode_case_dirs: HashSet<Box<[u8]>>,
     /// A child mount will cover this directory. Keep the directory indexed but
     /// resolve its contents by walking, including before that mount is ready.
     unindexed_subtree: Option<Box<[u8]>>,
@@ -177,6 +192,7 @@ struct IndexBuild {
     /// (directory, folded name) seen in any layer; these names never get an
     /// `entries` key, so their claims are kept here. Empty on nearly every setup.
     lossy_claims: HashSet<Box<[u8]>>,
+    unicode_case_dirs: HashSet<Box<[u8]>>,
 }
 
 #[derive(Debug, Clone)]
@@ -225,8 +241,16 @@ impl LowerIndex {
         Ok(std::sync::Arc::new(LowerIndex {
             entries: build.entries,
             dirs,
+            unicode_case_dirs: build.unicode_case_dirs,
             unindexed_subtree,
         }))
+    }
+
+    /// Whether a layer holds a [`has_unicode_case`] name in this directory.
+    /// `Err(())` where `children` delegates to the walk.
+    fn unicode_case(&self, folded: &[u8]) -> Result<bool, ()> {
+        self.children(folded)
+            .map(|_| self.unicode_case_dirs.contains(folded))
     }
 
     /// The merged lower-layer listing of a directory.
@@ -343,6 +367,9 @@ fn walk_layer(
             }
             continue;
         };
+        if has_unicode_case(text) {
+            build.unicode_case_dirs.insert(parent.clone());
+        }
         let folded_name = text.to_ascii_lowercase().into_bytes();
 
         let mark = rel.len();
@@ -1511,6 +1538,37 @@ impl LayerStack {
             .collect()
     }
 
+    /// Whether any layer, the Overwrite included, holds a [`has_unicode_case`]
+    /// name directly in directory `vpath`. Raw names count, hidden and whiteout
+    /// ones too: flagging a directory too often only costs Wine its own scan.
+    pub fn dir_has_unicode_case(&self, vpath: &str) -> bool {
+        let holds = |dir: &PathBuf| {
+            fs::read_dir(dir).is_ok_and(|entries| {
+                entries
+                    .flatten()
+                    .any(|e| e.file_name().to_str().is_some_and(has_unicode_case))
+            })
+        };
+        if self.ci_lookup_all(&self.overwrite, vpath).iter().any(holds) {
+            return true;
+        }
+        if let Some(shared) = &self.readonly_overwrite {
+            return shared.dir_has_unicode_case(vpath);
+        }
+        match self
+            .lower
+            .as_ref()
+            .map(|i| i.unicode_case(&fold_vpath(vpath)))
+        {
+            Some(Ok(flag)) => flag,
+            None | Some(Err(())) => self
+                .layers
+                .iter()
+                .flat_map(|l| self.ci_lookup_all(l, vpath))
+                .any(|d| holds(&d)),
+        }
+    }
+
     /// [`LayerStack::list_dir`] plus each entry's file type AS THE DIRECTORY
     /// ENTRY REPORTED IT.
     ///
@@ -2070,6 +2128,35 @@ mod tests {
         let times = [ts, ts];
         let c = std::ffi::CString::new(p.as_os_str().as_bytes()).unwrap();
         unsafe { libc::utimensat(libc::AT_FDCWD, c.as_ptr(), times.as_ptr(), 0) };
+    }
+
+    #[test]
+    fn dirs_holding_a_unicode_cased_name_are_flagged() {
+        assert!(has_unicode_case("Café.dds"));
+        assert!(has_unicode_case("Ωmega.esp"));
+        assert!(!has_unicode_case("cafe.dds"));
+        assert!(!has_unicode_case("日本.txt"));
+
+        let t = TempTree::new();
+        let (low, over, upper) = (t.sub("low"), t.sub("over"), t.sub("upper"));
+        put(&low, "Accents/Café.dds", "x");
+        put(&low, "Plain/cafe.dds", "x");
+        put(&low, "Plain/日本.txt", "x");
+        put(&over, "Saves/Élise.ess", "x");
+        let indexed = LayerStack::new(vec![low.clone()], over.clone());
+        assert!(indexed.lower.is_some());
+        let stacks = [
+            indexed,
+            LayerStack::new_unindexed(vec![low.clone()], over.clone()),
+            LayerStack::new_with_readonly_overwrite(vec![low], upper, None, Some(over)),
+        ];
+        for stack in stacks {
+            assert!(stack.dir_has_unicode_case("ACCENTS"));
+            assert!(stack.dir_has_unicode_case("saves"));
+            assert!(!stack.dir_has_unicode_case("Plain"));
+            assert!(!stack.dir_has_unicode_case(""));
+            assert!(!stack.dir_has_unicode_case("missing"));
+        }
     }
 
     #[test]
