@@ -269,6 +269,12 @@ pub(crate) fn cmd_tool(args: &[String]) {
             // `runner=native` runs the executable itself: no Proton, no Steam
             // prefix, and none of the Proton-only steps below.
             let native = tool.runner == eidos_instance::Runner::Native;
+            if native && tool.slr {
+                eidos_log::info!(
+                    "eidos tool: '{title}' has runner=native, so its slr=1 is ignored: the Steam \
+                     Linux Runtime container only wraps a Proton run."
+                );
+            }
             let compat = game.compatdata.as_deref();
             let mut run = match (compat, game.heroic_run()) {
                 _ if native => None,
@@ -278,7 +284,8 @@ pub(crate) fn cmd_tool(args: &[String]) {
                     eidos_log::info!(
                         "No Steam Proton prefix for {id}. For a Heroic/Legendary copy, set \
                          runner=native on the tool in tools.ini, with exe= the copy's own runner \
-                         (see Tools in the guide)."
+                         (see Tools in the guide), or launch the game once through Heroic so its \
+                         prefix exists."
                     );
                     exit(1);
                 }
@@ -449,11 +456,22 @@ pub(crate) fn cmd_tool(args: &[String]) {
                     .map(|s| s.as_str())
                     .collect::<Vec<_>>()
                     .join(", ");
+                let effects: String = missing3
+                    .iter()
+                    .filter_map(|v| match eidos_gamefeatures::runtime(v)?.verb {
+                        "dotnet10" => Some(
+                            " Without dotnet10, DynDOLOD's LODGen dies at startup and leaves a \
+                             log with nothing in it but a version banner.",
+                        ),
+                        "dotnetsdk10" => {
+                            Some(" Without dotnetsdk10, Synthesis cannot build its patchers.")
+                        }
+                        _ => None,
+                    })
+                    .collect();
                 eidos_log::info!(
                     "eidos tool: '{title}' needs the {names} runtime, which is not downloaded yet - \
-                     run `eidos prereqs {id} --install`. Without it DynDOLOD's LODGen dies at startup \
-                     leaving a log with nothing in it but a version banner, and Synthesis cannot \
-                     build its patchers."
+                     run `eidos prereqs {id} --install`.{effects}"
                 );
             }
 
@@ -518,11 +536,25 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 }
             }
             // Outside the view, before the tool starts: see `wineserver_wait`.
-            if let Some(Err(e)) = wineserver_wait.map(|mut w| w.status()) {
-                eidos_log::warn!(
-                    "eidos: could not wait for the prefix's wineserver ({e}); if '{title}' does \
-                     not see the mods, close the game and run it again."
+            if let Some(mut wait) = wineserver_wait {
+                let prefix = wait
+                    .get_envs()
+                    .find(|(k, _)| *k == "WINEPREFIX")
+                    .and_then(|(_, v)| v.map(PathBuf::from))
+                    .or_else(|| std::env::var_os("WINEPREFIX").map(PathBuf::from))
+                    // Wine's own default when no WINEPREFIX is set.
+                    .unwrap_or_else(|| home().join(".wine"));
+                eidos_log::info!(
+                    "eidos: waiting for the Wine programs in {} to exit (the game, or build \
+                     servers left by a previous run) before '{title}' starts",
+                    prefix.display()
                 );
+                if let Err(e) = wait.status() {
+                    eidos_log::warn!(
+                        "eidos: could not wait for the prefix's wineserver ({e}); if '{title}' \
+                         does not see the mods, close the game and run it again."
+                    );
+                }
             }
             run_through_view(
                 // The RESOLVED game, not the CLI argument: see the note in
