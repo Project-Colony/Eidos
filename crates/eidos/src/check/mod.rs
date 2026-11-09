@@ -149,6 +149,23 @@ pub struct PrefixFacts {
 /// been set up to run under Proton. Unmemoised: the GUI, which asks on every
 /// refresh, gathers the same facts through its own memo of `system.reg`.
 pub fn prefix_facts(game: &DetectedGame) -> Option<PrefixFacts> {
+    prefix_facts_with(game, |compat, game, s_drive| {
+        eidos_gamefeatures::registry_status(
+            compat,
+            &game.install_path,
+            game.def.registry_name,
+            s_drive,
+        )
+    })
+}
+
+/// [`prefix_facts`] with the registry answered by `registry`, called with the
+/// prefix path, the game and where `S:` points. Lets the GUI put its memo in
+/// front of the shared predicate without keeping a second copy of the rest.
+pub fn prefix_facts_with(
+    game: &DetectedGame,
+    registry: impl FnOnce(&Path, &DetectedGame, Option<&Path>) -> RegistryStatus,
+) -> Option<PrefixFacts> {
     let compat = game.compatdata.as_ref()?;
     // Read once and hand to both consumers: the registry check resolves the
     // launcher's `S:`-relative value through THIS link, so the two facts must
@@ -156,12 +173,7 @@ pub fn prefix_facts(game: &DetectedGame) -> Option<PrefixFacts> {
     let gamedrive_found = std::fs::read_link(compat.join("pfx/dosdevices/s:")).ok();
     Some(PrefixFacts {
         game_name: game.def.name.to_string(),
-        registry: eidos_gamefeatures::registry_status(
-            compat,
-            &game.install_path,
-            game.def.registry_name,
-            gamedrive_found.as_deref(),
-        ),
+        registry: registry(compat, game, gamedrive_found.as_deref()),
         gamedrive_found,
         gamedrive_want: eidos_games::library_path(&game.install_path),
     })

@@ -45,17 +45,7 @@ use crate::{t, tf};
 /// [`eidos::check::prefix_facts`], with the registry read through
 /// [`registry_status_memo`]. `None` when the game has no prefix path at all.
 pub(crate) fn prefix_facts(game: &DetectedGame) -> Option<PrefixFacts> {
-    let compat = game.compatdata.as_ref()?;
-    // Read once and hand to both consumers: the registry check resolves the
-    // launcher's `S:`-relative value through THIS link, so the two facts must
-    // describe the same instant.
-    let gamedrive_found = std::fs::read_link(compat.join("pfx/dosdevices/s:")).ok();
-    Some(PrefixFacts {
-        game_name: game.def.name.to_string(),
-        registry: registry_status_memo(compat, game, gamedrive_found.as_deref()),
-        gamedrive_found,
-        gamedrive_want: eidos_games::library_path(&game.install_path),
-    })
+    eidos::check::prefix_facts_with(game, registry_status_memo)
 }
 
 /// [`eidos_gamefeatures::registry_status`], answered from the last call when
