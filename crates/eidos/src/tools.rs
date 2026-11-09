@@ -539,8 +539,9 @@ fn print_plan(
 /// Steam's shader cache for the game (only for a Steam copy and when its
 /// directory exists - Steam's tree is never written to - and never over a
 /// variable the user exported),
-/// empty .NET roots so a host SDK cannot hijack a framework-dependent tool, and
-/// no Steam overlay in `LD_PRELOAD`. `host` reads the inherited environment.
+/// empty .NET roots so a host SDK cannot hijack a framework-dependent tool, one
+/// `WINEPATH` that still holds the user's own, and no Steam overlay in
+/// `LD_PRELOAD`. `host` reads the inherited environment.
 fn apply_tool_env_facts(
     env: &mut Vec<(String, String)>,
     compat: Option<&Path>,
@@ -589,6 +590,20 @@ fn apply_tool_env_facts(
         env.push(("DOTNET_ROOT".into(), String::new()));
     }
     env.push(("DOTNET_ROOT_X64".into(), String::new()));
+    // Wine searches WINEPATH, a `;` list, before the prefix PATH. Fold every
+    // entry into one, the latest first since it is the one that would have won
+    // alone, and keep a WINEPATH the user exported after them.
+    let mut paths: Vec<String> = env
+        .iter()
+        .rev()
+        .filter(|(k, _)| k == "WINEPATH")
+        .map(|(_, v)| v.clone())
+        .collect();
+    if !paths.is_empty() {
+        paths.extend(host("WINEPATH").filter(|h| !h.is_empty()));
+        env.retain(|(k, _)| k != "WINEPATH");
+        env.push(("WINEPATH".into(), paths.join(";")));
+    }
     if let Some(pre) = host("LD_PRELOAD").filter(|p| p.contains("gameoverlayrenderer.so")) {
         let kept: Vec<&str> = pre
             .split([' ', ':'])
@@ -775,6 +790,23 @@ mod env_fact_tests {
         apply_tool_env_facts(&mut env, None, 1, false, |_| None);
         assert_eq!(get(&env, "DOTNET_ROOT"), Some("/rt"));
         assert_eq!(env.iter().filter(|(k, _)| k == "DOTNET_ROOT").count(), 1);
+    }
+
+    #[test]
+    fn winepath_entries_fold_into_one_and_keep_the_users() {
+        // One already in the run's env, then the SDK runtime's, then the user's export.
+        let mut env = vec![
+            ("WINEPATH".to_string(), "C:\\run".to_string()),
+            ("WINEPATH".to_string(), "Z:\\sdk".to_string()),
+        ];
+        let mine = |k: &str| (k == "WINEPATH").then(|| "C:\\mine".to_string());
+        apply_tool_env_facts(&mut env, None, 1, false, mine);
+        assert_eq!(get(&env, "WINEPATH"), Some("Z:\\sdk;C:\\run;C:\\mine"));
+        assert_eq!(env.iter().filter(|(k, _)| k == "WINEPATH").count(), 1);
+        // Nothing from Eidos: the inherited value reaches the tool untouched.
+        let mut env = vec![];
+        apply_tool_env_facts(&mut env, None, 1, false, mine);
+        assert_eq!(get(&env, "WINEPATH"), None);
     }
 
     #[test]
