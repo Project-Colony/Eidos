@@ -948,6 +948,8 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("diag_extender_missing_detail", "{n} plugins de l'extenseur de scripts sont installés dans {dir}, mais {loader} ne se trouve dans aucun mod activé ni dans le dossier du jeu. Le jeu démarre sans eux."),
     ("diag_extender_runtime_missing", "L'extenseur de scripts ne correspond pas à la version {runtime} du jeu"),
     ("diag_extender_runtime_missing_detail", "{loader} est installé, mais pas {dll}. Le chargeur cherche ce fichier pour la version {runtime} du jeu et s'arrête avec une erreur s'il manque. Cela suit généralement une mise à jour du jeu : installez la version de l'extenseur de scripts pour {runtime}."),
+    ("diag_game_updated", "{game} a changé depuis le dernier lancement sans erreur"),
+    ("diag_game_updated_detail", "L'exécutable du jeu est passé de {from} à {to} (build Steam {build_from} vers {build_to}) depuis le dernier lancement par Eidos qui s'est terminé sans erreur. Les plugins de l'extenseur de scripts conçus pour {from} peuvent ne plus se charger ; les cartes ci-dessous nomment ceux qui le déclarent."),
     ("diag_ba2_audio", "Une archive BA2 stocke du son compressé"),
     ("diag_ba2_audio_detail", "{archive} fichier(s) audio, venant de {mod}. Le jeu peut planter en jouant un son compressé dans une BA2. Refaites l'archive avec le son non compressé."),
     ("diag_enb_cs", "ENB et Community Shaders sont tous deux actifs"),

@@ -948,6 +948,8 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("diag_extender_missing_detail", "{n} script-extender plugins are installed in {dir}, but {loader} is in no enabled mod and not in the game folder. The game starts without them."),
     ("diag_extender_runtime_missing", "The script extender does not match game version {runtime}"),
     ("diag_extender_runtime_missing_detail", "{loader} is installed, but {dll} is not. The loader looks for that file for game version {runtime} and stops with an error when it is missing. This usually follows a game update: install the script extender build for {runtime}."),
+    ("diag_game_updated", "{game} changed since the last clean launch"),
+    ("diag_game_updated_detail", "The game executable went from {from} to {to} (Steam build {build_from} to {build_to}) since the last launch through Eidos that exited without an error. Script-extender plugins built for {from} may stop loading; the cards below name the ones that declare it."),
     ("diag_ba2_audio", "BA2 archive stores audio compressed"),
     ("diag_ba2_audio_detail", "{archive} audio file(s), from {mod}. The game can crash when it plays sound stored compressed inside a BA2. Repack the archive with audio uncompressed."),
     ("diag_enb_cs", "ENB and Community Shaders are both active"),

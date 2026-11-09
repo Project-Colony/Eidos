@@ -41,7 +41,11 @@ impl Finding {
 }
 
 /// Every code `host_findings` and `prefix_findings` can emit; the GUI has en/fr strings for each.
-pub const CODES: &[&str] = &["extender_missing", "extender_runtime_missing"];
+pub const CODES: &[&str] = &[
+    "extender_missing",
+    "extender_runtime_missing",
+    "game_updated",
+];
 
 /// The instance's enabled mods, highest priority first.
 pub fn active_mods(inst: &Instance) -> Vec<(String, PathBuf)> {
@@ -59,13 +63,20 @@ pub fn host_findings(
     inst: &Instance,
     mods: &[(String, PathBuf)],
 ) -> Vec<Finding> {
-    eidos_gamefeatures::preflight::extender_facts(
+    let overwrite = inst.overwrite_dir();
+    let mut out = eidos_gamefeatures::preflight::extender_facts(
         game.def,
         &game.data_path,
         &game.install_path,
         mods,
-        &inst.overwrite_dir(),
+        &overwrite,
     )
     .map(|f| extender::extender_findings(&f))
-    .unwrap_or_default()
+    .unwrap_or_default();
+    out.extend(extender::game_update_findings(
+        game.def.name,
+        inst.launch_record().last_good.as_ref(),
+        &extender::current_build(game, mods, &overwrite),
+    ));
+    out
 }

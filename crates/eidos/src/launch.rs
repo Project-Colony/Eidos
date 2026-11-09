@@ -604,7 +604,26 @@ pub(crate) fn run_through_view(
             exit(1);
         }
     }
+    let game_run = opts.tool_name.is_none();
+    if game_run {
+        let build = crate::check::extender::current_build(
+            game,
+            &crate::check::active_mods(inst),
+            &inst.overwrite_dir(),
+        );
+        let started = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        if let Err(e) = inst.record_launch_start(&build, started) {
+            eidos_log::warn!("eidos: could not record the game build: {e}");
+        }
+    }
     let result = launch(spec);
+    if game_run && matches!(&result, Ok(s) if s.success()) {
+        if let Err(e) = inst.record_good_launch() {
+            eidos_log::warn!("eidos: could not record the clean launch: {e}");
+        }
+    }
     if let Some(session) = shader_session {
         if let Err(error) = session.cleanup() {
             eidos_log::warn!("eidos: could not remove session-owned shader files: {error}");
