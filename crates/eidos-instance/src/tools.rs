@@ -155,11 +155,23 @@ pub fn read_tools(path: &Path) -> Vec<Tool> {
                 }
             }
             "runner" if v.eq_ignore_ascii_case("native") => tool.runner = Runner::Native,
-            "runner" if !v.is_empty() && !v.eq_ignore_ascii_case("proton") => eprintln!(
-                "eidos: tools.ini: '{}' has runner={v}, which Eidos does not know (accepted: \
-                 native, proton); the tool runs through Proton.",
-                tool.title
-            ),
+            "runner" if !v.is_empty() && !v.eq_ignore_ascii_case("proton") => {
+                // The GUI rereads tools.ini on many events: warn once per tool and value.
+                static WARNED: std::sync::Mutex<std::collections::BTreeSet<String>> =
+                    std::sync::Mutex::new(std::collections::BTreeSet::new());
+                let msg = format!(
+                    "eidos: tools.ini: '{}' has runner={v}, which Eidos does not know \
+                     (accepted: native, proton); the tool runs as if runner= were not set.",
+                    tool.title
+                );
+                if WARNED
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert(msg.clone())
+                {
+                    eprintln!("{msg}");
+                }
+            }
             "slr" => tool.slr = matches!(v, "true" | "1" | "yes" | "on"),
             _ => {}
         }
