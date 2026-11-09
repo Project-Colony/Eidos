@@ -430,13 +430,7 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     for i in drawn_plugin_rows(app) {
         let p = &list.plugins[i];
         let idx = p.index.clone().unwrap_or_else(|| "--".to_string());
-        let kind = if p.is_light {
-            "ESL"
-        } else if p.loads_as_master() {
-            "ESM"
-        } else {
-            "esp"
-        };
+        let kind = plugin_kind(p);
         let is_primary = spec
             .as_ref()
             .map(|s| {
@@ -488,6 +482,18 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         if engine_owned {
             tip.push('\n');
             tip.push_str(t("plugin_tip_engine_owned"));
+        }
+        if p.is_dummy {
+            tip.push('\n');
+            tip.push_str(t("plugin_tip_dummy"));
+        }
+        let archives = plugin_archives(app, &p.name);
+        if !archives.is_empty() {
+            tip.push('\n');
+            tip.push_str(&tf(
+                "plugin_tip_archives",
+                &[("list", &archives.join(", "))],
+            ));
         }
         if !p.masters.is_empty() {
             let present: Vec<&str> = p
@@ -696,4 +702,70 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         .push(header)
         .push(list_area)
         .into()
+}
+
+/// The Type column label. Light outranks medium, as in the engine's index scheme.
+fn plugin_kind(p: &eidos_plugins::Plugin) -> &'static str {
+    if p.is_light {
+        "ESL"
+    } else if p.is_medium {
+        "ESH"
+    } else if p.loads_as_master() {
+        "ESM"
+    } else {
+        "esp"
+    }
+}
+
+/// Archives the last archive plan loads on behalf of this plugin.
+fn plugin_archives<'a>(app: &'a App, plugin: &str) -> Vec<&'a str> {
+    app.archive_plan.as_ref().map_or_else(Vec::new, |plan| {
+        plan.archives
+            .iter()
+            .filter(|a| {
+                a.plugin
+                    .as_deref()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(plugin))
+            })
+            .map(|a| a.name.as_str())
+            .collect()
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::plugin_row;
+    use eidos_gamefeatures::archives::{ArchiveActivation, ArchivePlan};
+
+    #[test]
+    fn medium_plugin_is_labelled_esh() {
+        let mut p = plugin_row("Medium.esp", "A");
+        assert_eq!(plugin_kind(&p), "esp");
+        p.is_medium = true;
+        assert_eq!(plugin_kind(&p), "ESH");
+        p.is_light = true;
+        assert_eq!(plugin_kind(&p), "ESL");
+    }
+
+    #[test]
+    fn archives_come_from_the_plan_not_the_name() {
+        let mut app = crate::test_support::nav_app(&[]);
+        let act = |name: &str, plugin: Option<&str>| ArchiveActivation {
+            name: name.into(),
+            plugin: plugin.map(Into::into),
+            order_uncertain: false,
+        };
+        app.archive_plan = Some(ArchivePlan {
+            archives: vec![
+                act("Mine.bsa", Some("MINE.esp")),
+                act("Other.bsa", Some("other.esp")),
+                act("Mine - Extra.bsa", None),
+            ],
+            diagnostics: vec![],
+        });
+        assert_eq!(plugin_archives(&app, "mine.esp"), ["Mine.bsa"]);
+        app.archive_plan = None;
+        assert!(plugin_archives(&app, "mine.esp").is_empty());
+    }
 }

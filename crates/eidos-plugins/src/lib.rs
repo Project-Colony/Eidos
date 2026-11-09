@@ -136,6 +136,9 @@ pub struct Plugin {
     pub is_light: bool,
     /// Medium plugin (Starfield ESH).
     pub is_medium: bool,
+    /// The header counts zero records and groups: nothing to load, usually a
+    /// master-only stub other plugins depend on.
+    pub is_dummy: bool,
     /// Header data could not be read; an empty master list is then unknown.
     pub header_error: Option<String>,
     /// TES4 record form version (distinct from the HEDR plugin version).
@@ -432,10 +435,11 @@ impl PluginList {
                 let parsed = parse_header(&path, spec.esplugin_id);
                 let header_error = parsed.as_ref().err().cloned();
                 let header = parsed.unwrap_or_default();
-                let (is_master, is_light, is_medium, masters) = (
+                let (is_master, is_light, is_medium, is_dummy, masters) = (
                     header.is_master,
                     header.is_light,
                     header.is_medium,
+                    header.is_dummy,
                     header.masters,
                 );
                 // An `.esl` on a no-light engine is force-disabled (a packaging error;
@@ -449,6 +453,7 @@ impl PluginList {
                     p.is_master = is_master;
                     p.is_light = is_light;
                     p.is_medium = is_medium;
+                    p.is_dummy = is_dummy;
                     p.header_error = header_error;
                     p.form_version = header.form_version;
                     p.is_blueprint = header.is_blueprint;
@@ -475,6 +480,7 @@ impl PluginList {
                         is_master,
                         is_light,
                         is_medium,
+                        is_dummy,
                         header_error,
                         form_version: header.form_version,
                         is_blueprint: header.is_blueprint,
@@ -1149,6 +1155,7 @@ struct Header {
     is_master: bool,
     is_light: bool,
     is_medium: bool,
+    is_dummy: bool,
     is_blueprint: bool,
     is_update: bool,
     form_version: Option<u16>,
@@ -1181,6 +1188,7 @@ fn parse_header(path: &Path, game_id: GameId) -> Result<Header, String> {
         is_master: p.is_master_file(),
         is_light: p.is_light_plugin(),
         is_medium: p.is_medium_plugin(),
+        is_dummy: p.record_and_group_count() == Some(0),
         is_blueprint: p.is_blueprint_plugin(),
         is_update: p.is_update_plugin(),
         form_version: (!matches!(game_id, GameId::Morrowind | GameId::Oblivion))
@@ -1322,6 +1330,7 @@ mod tests {
             is_master: lower.ends_with(".esm"),
             is_light: lower.ends_with(".esl"),
             is_medium: false,
+            is_dummy: false,
             header_error: None,
             form_version: None,
             is_blueprint: false,
@@ -1454,11 +1463,38 @@ mod tests {
         assert!(header.is_update && header.is_blueprint);
         assert_eq!(header.form_version, Some(44));
         assert_eq!(header.masters, ["Master.esm"]);
+        // No HEDR: the count is unknown, which is not the same as empty.
+        assert!(!header.is_dummy);
         // Starfield ignores the update flag on a light plugin.
         bytes[8..12].copy_from_slice(&0xB00u32.to_le_bytes());
         std::fs::write(&path, &bytes).unwrap();
         let header = parse_header(&path, GameId::Starfield).unwrap();
         assert!(header.is_light && !header.is_update);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn header_with_zero_records_and_groups_is_a_dummy() {
+        let dir = std::env::temp_dir().join(format!("eidos-dummy-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Dummy.esp");
+        let write = |count: u32| {
+            let mut bytes = vec![0u8; 24];
+            bytes[..4].copy_from_slice(b"TES4");
+            bytes[20..22].copy_from_slice(&44u16.to_le_bytes());
+            bytes.extend_from_slice(b"HEDR");
+            bytes.extend_from_slice(&12u16.to_le_bytes());
+            bytes.extend_from_slice(&1.7f32.to_le_bytes());
+            bytes.extend_from_slice(&count.to_le_bytes());
+            bytes.extend_from_slice(&0x800u32.to_le_bytes());
+            let len = (bytes.len() - 24) as u32;
+            bytes[4..8].copy_from_slice(&len.to_le_bytes());
+            std::fs::write(&path, &bytes).unwrap();
+        };
+        write(0);
+        assert!(parse_header(&path, GameId::SkyrimSE).unwrap().is_dummy);
+        write(3);
+        assert!(!parse_header(&path, GameId::SkyrimSE).unwrap().is_dummy);
         std::fs::remove_dir_all(dir).unwrap();
     }
 
