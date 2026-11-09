@@ -277,6 +277,37 @@ pub fn log(level: Level, args: fmt::Arguments<'_>) {
     }
 }
 
+/// The text of a panic payload: `panic!("..")` carries a `&str` or a `String`,
+/// anything else has no printable form.
+pub fn panic_text(payload: &(dyn std::any::Any + Send)) -> &str {
+    payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("non-string panic payload")
+}
+
+/// Write every panic to the session log, then run the hook that was installed
+/// before (the default one still prints to stderr). A GUI started from Steam has
+/// no terminal, so without this a panicking worker thread left no trace at all.
+/// Call it once, right after the log is opened.
+pub fn install_panic_hook() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let thread = std::thread::current();
+        let place = info
+            .location()
+            .map_or_else(String::new, |l| format!(" at {}:{}", l.file(), l.line()));
+        error!(
+            "thread '{}' panicked{}: {}",
+            thread.name().unwrap_or("<unnamed>"),
+            place,
+            panic_text(info.payload())
+        );
+        previous(info);
+    }));
+}
+
 /// Log at [`Level::Debug`]: detail for the file, invisible in the terminal.
 #[macro_export]
 macro_rules! debug {

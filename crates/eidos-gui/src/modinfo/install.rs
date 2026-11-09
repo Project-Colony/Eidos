@@ -86,6 +86,12 @@ pub(crate) fn place_on_worker(
                     }
                 }
             }))
+            .map_err(|p| {
+                eidos_log::error!(
+                    "mod install worker panicked: {}",
+                    eidos_log::panic_text(&*p)
+                )
+            })
             .ok();
             if let (Some(placed), Ok(mut s)) = (placed, slot.lock()) {
                 *s = Some(placed);

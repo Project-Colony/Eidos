@@ -268,6 +268,7 @@ pub fn run(mut args: Vec<String>) {
     let _ = eidos_log::init_with(
         eidos_log::Config::new(bucket).with_version(env!("CARGO_PKG_VERSION")),
     );
+    eidos_log::install_panic_hook();
     // Held until exit: no other Eidos moves an instance this one has resolved.
     let (instances, _instances_held) = eidos_transfer::migrate_global_instances();
     // Logged rather than silent, because a user who goes looking for their
