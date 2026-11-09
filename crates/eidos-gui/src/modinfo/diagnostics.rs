@@ -786,7 +786,8 @@ pub(crate) struct ReportFacts {
     pub(crate) version: String,
     pub(crate) game_id: String,
     pub(crate) proton_build: String,
-    pub(crate) flatpak_steam: bool,
+    /// None when no Proton command could be resolved for the selected game.
+    pub(crate) flatpak_steam: Option<bool>,
     pub(crate) passthrough_requested: bool,
     pub(crate) cap_missing: bool,
     pub(crate) session: &'static str,
@@ -816,7 +817,10 @@ pub(crate) fn health_report(f: &ReportFacts, checks: &[Diagnostic]) -> String {
         format!("Eidos: {}", f.version),
         format!("Game: {}", f.game_id),
         format!("Proton: {}", f.proton_build),
-        format!("Flatpak Steam: {}", yes_no(f.flatpak_steam)),
+        format!(
+            "Flatpak Steam: {}",
+            f.flatpak_steam.map_or("unknown", yes_no)
+        ),
         format!("Passthrough: {passthrough}"),
         format!("Session: {}", f.session),
         format!("Distro: {}", f.distro),
@@ -874,7 +878,7 @@ pub(crate) fn report_facts(app: &App) -> ReportFacts {
         version: env!("CARGO_PKG_VERSION").to_string(),
         game_id: game.map_or_else(|| "none".into(), |g| g.def.id.to_string()),
         proton_build,
-        flatpak_steam: run.is_some_and(|r| r.flatpak),
+        flatpak_steam: run.map(|r| r.flatpak),
         passthrough_requested: passthrough_requested(),
         cap_missing: app.cap_missing,
         session: if on_wayland() { "Wayland" } else { "X11" },

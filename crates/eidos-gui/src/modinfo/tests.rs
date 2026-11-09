@@ -794,7 +794,7 @@ fn health_report_redacts_home_paths() {
         version: "1.0.0".into(),
         game_id: "skyrimse".into(),
         proton_build: "GE-Proton11-1".into(),
-        flatpak_steam: false,
+        flatpak_steam: None,
         passthrough_requested: false,
         cap_missing: false,
         session: "Wayland",
@@ -813,6 +813,7 @@ fn health_report_redacts_home_paths() {
     assert!(!r.contains(&home), "{r}");
     assert!(r.contains("- [problem] Cannot read ~/mods"), "{r}");
     assert!(r.contains("Proton: GE-Proton11-1"));
+    assert!(r.contains("Flatpak Steam: unknown"), "{r}");
 }
 
 #[test]
