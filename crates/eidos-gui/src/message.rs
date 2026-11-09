@@ -432,8 +432,8 @@ pub(crate) enum Message {
     FolderPicked(Option<PathBuf>),
     /// Archives tab: unpack (mod name, archive file name) into a new mod.
     ExtractArchive(String, String),
-    /// The extraction worker finished: the instance root it ran for, the source
-    /// archive, the new mod's name and its folder.
+    /// The extraction worker finished: the instance root it ran for, the
+    /// destination folder, the new mod's name and the worker's result.
     ArchiveExtracted(PathBuf, PathBuf, String, Result<PathBuf, String>),
     // ---- Mod update check (MO2 "Check for updates") ----
     /// Run a Nexus update check across the instance's mods (toolbar + Tools menu).

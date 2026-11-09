@@ -5837,12 +5837,11 @@ fn archive_extraction_names_the_new_mod_and_never_reuses_a_folder() {
     // The worker's answer registers the new folder like an install.
     let fresh = root.join("mods/Other (extracted)");
     fs::create_dir_all(&fresh).unwrap();
-    let source = root.join("mods/Source/Source.ba2");
     let _ = update_inner(
         &mut app,
         Message::ArchiveExtracted(
             root.clone(),
-            source.clone(),
+            fresh.clone(),
             "Other (extracted)".into(),
             Ok(fresh),
         ),
@@ -5852,7 +5851,7 @@ fn archive_extraction_names_the_new_mod_and_never_reuses_a_folder() {
         &mut app,
         Message::ArchiveExtracted(
             root.clone(),
-            source,
+            root.join("mods/Third (extracted)"),
             "Third (extracted)".into(),
             Err("disk full".into()),
         ),
@@ -5873,12 +5872,22 @@ fn a_second_extract_of_the_same_archive_starts_nothing_until_the_first_ends() {
         0,
         "the first still runs"
     );
-    // An answer meant for another instance frees the archive and nothing else.
+    // Source.bsa extracts into the same "Source (extracted)" folder.
+    assert_eq!(
+        update_inner(
+            &mut app,
+            Message::ExtractArchive("Source".into(), "Source.bsa".into())
+        )
+        .units(),
+        0,
+        "a same-stem archive targets the running folder"
+    );
+    // An answer meant for another instance frees the folder and nothing else.
     let _ = update_inner(
         &mut app,
         Message::ArchiveExtracted(
             root.join("other-instance"),
-            root.join("mods/Source/Source.ba2"),
+            root.join("mods/Source (extracted)"),
             "Source (extracted)".into(),
             Err("disk full".into()),
         ),

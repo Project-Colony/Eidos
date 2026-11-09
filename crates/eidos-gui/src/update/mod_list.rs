@@ -900,24 +900,25 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 &[("archive", &archive), ("name", &name)],
             ));
             // The running decode only publishes its folder at the end, so the
-            // check above cannot see it yet.
-            if !app.extracting_archives.insert(source.clone()) {
+            // check above cannot see it yet. Keyed by the folder, so Foo.bsa and
+            // Foo.ba2 cannot both decode into "Foo (extracted)".
+            if !app.extracting_archives.insert(dest.clone()) {
                 return Task::none();
             }
             return Task::perform(
                 crate::background_work::run({
-                    let source = source.clone();
+                    let dest = dest.clone();
                     move || {
                         eidos_conflicts::extract_archive(&source, &dest, 16 * 1024 * 1024 * 1024)
                             .map(|_| dest)
                             .map_err(|e| e.to_string())
                     }
                 }),
-                move |result| Message::ArchiveExtracted(root, source, name, result),
+                move |result| Message::ArchiveExtracted(root, dest, name, result),
             );
         }
-        Message::ArchiveExtracted(root, source, name, result) => {
-            app.extracting_archives.remove(&source);
+        Message::ArchiveExtracted(root, folder, name, result) => {
+            app.extracting_archives.remove(&folder);
             if app.created.as_ref().is_none_or(|i| i.root != root) {
                 return Task::none();
             }
