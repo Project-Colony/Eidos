@@ -103,10 +103,17 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
         // The colour is the one the mod list already uses for "this wins the
         // file", because that is exactly what the row is saying.
         let label: Element<'a, Message> = if r.row.conflicted {
-            text(format!("{} *", r.row.name))
+            let lbl = text(format!("{} *", r.row.name))
                 .size(sz(12))
-                .color(conflict_wins_fg())
-                .into()
+                .color(conflict_wins_fg());
+            tooltip(
+                lbl,
+                container(text(also_in_tip(&r.row.also_in)).size(sz(11)))
+                    .padding(6)
+                    .style(card_style),
+                tooltip::Position::Bottom,
+            )
+            .into()
         } else {
             text(r.row.name.clone()).size(sz(12)).into()
         };
@@ -375,4 +382,9 @@ pub(crate) fn format_size(bytes: u64) -> String {
     } else {
         format!("{bytes} B")
     }
+}
+
+/// The "Also in: A, B" tooltip of a contested Data row (MO2's wording).
+pub(crate) fn also_in_tip(names: &[String]) -> String {
+    format!("{} {}", t("data_also_in"), names.join(", "))
 }

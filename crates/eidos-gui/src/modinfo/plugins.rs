@@ -353,6 +353,7 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     // change while the panel is being drawn, and lowercasing 215 folder names
     // per plugin would be work proportional to mods x plugins.
     let selected_origins = selected_mod_origins(app);
+    let masters = selected_plugin_masters(app);
     // No spacing: the insertion strips are the spacing, exactly as in the mod
     // list, so the layout does not shift the instant a drag begins.
     let mut rows = Column::new();
@@ -360,7 +361,11 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     // is useless if the plugin it marks is forty rows out of sight.
     let mut marks: Vec<Option<Color>> = Vec::new();
     let total = list.plugins.len();
-    let drag = app.plugin_drag.as_ref();
+    // Under a filter the gaps between drawn rows are not gaps of the load
+    // order, so no strip is a target and no row aims: that would need every gap
+    // remapped to the full list. `PluginDragStart` refuses to arm one as well.
+    let filtering = !app.plugin_search.trim().is_empty();
+    let drag = app.plugin_drag.as_ref().filter(|_| !filtering);
     // The line draws iff releasing here would move the block - the exact
     // refusal move_plugins_to applies: only a CONTIGUOUS block treats its own
     // interior gaps as "already here". A non-contiguous selection is compacted
@@ -422,15 +427,10 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         .clip(true),
     );
     let dragging = drag.is_some();
-    for (i, p) in list.plugins.iter().enumerate() {
+    for i in drawn_plugin_rows(app) {
+        let p = &list.plugins[i];
         let idx = p.index.clone().unwrap_or_else(|| "--".to_string());
-        let kind = if p.is_light {
-            "ESL"
-        } else if p.loads_as_master() {
-            "ESM"
-        } else {
-            "esp"
-        };
+        let kind = plugin_kind(p);
         let is_primary = spec
             .as_ref()
             .map(|s| {
@@ -482,6 +482,18 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         if engine_owned {
             tip.push('\n');
             tip.push_str(t("plugin_tip_engine_owned"));
+        }
+        if p.is_dummy {
+            tip.push('\n');
+            tip.push_str(t("plugin_tip_dummy"));
+        }
+        let archives = plugin_archives(app, &p.name);
+        if !archives.is_empty() {
+            tip.push('\n');
+            tip.push_str(&tf(
+                "plugin_tip_archives",
+                &[("list", &archives.join(", "))],
+            ));
         }
         if !p.masters.is_empty() {
             let present: Vec<&str> = p
@@ -595,11 +607,15 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         // otherwise a tooltip-by-tooltip hunt. The plugin's own selection still
         // outranks it - that row is where the user's focus is, and losing its
         // marker to a colour describing a relationship would be a step back.
-        let from_selected_mod = plugin_from_selected_mod(&selected_origins, &p.origin_mod);
+        let tint = plugin_tint(&selected_origins, &masters, p);
         // Same padding as `striped`, or a selected row would be a different
         // height from its neighbours and the list would twitch as focus moves.
-        let painted: Element<'a, Message> = if selected || from_selected_mod {
-            let bg = if selected { sel_bg() } else { origin_bg() };
+        let painted: Element<'a, Message> = if selected || tint.is_some() {
+            let bg = if selected {
+                sel_bg()
+            } else {
+                tint.unwrap_or_else(origin_bg)
+            };
             container(row)
                 .width(Length::Fill)
                 .padding(2)
@@ -622,7 +638,11 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         } else {
             grab
         };
-        let grab = grab.on_release(Message::PluginDragDrop);
+        let grab = if filtering {
+            grab
+        } else {
+            grab.on_release(Message::PluginDragDrop)
+        };
         rows = rows.push(drop_gap(
             i,
             live_gap == Some(i),
@@ -631,7 +651,7 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             Message::PluginDragDrop,
         ));
         rows = rows.push(grab);
-        marks.push(from_selected_mod.then_some(origin_bg()));
+        marks.push(tint);
     }
     // The trailing strip: hovering a row always means "above it", so this is the
     // only way to aim at the end of the load order.
@@ -661,10 +681,130 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             .push(scroll_marks(&marks)),
     );
 
+    let filter = text_input(t("plugins_filter_placeholder"), &app.plugin_search)
+        .on_input(Message::PluginSearchChanged)
+        .padding(5)
+        .size(sz(12));
+
     Column::new()
         .spacing(6)
+        .push(filter)
         .push(head)
         .push(header)
         .push(list_area)
         .into()
+}
+
+/// The Type column label. Light outranks medium, as in the engine's index scheme.
+fn plugin_kind(p: &eidos_plugins::Plugin) -> &'static str {
+    if p.is_light {
+        "ESL"
+    } else if p.is_medium {
+        "ESH"
+    } else if p.loads_as_master() {
+        "ESM"
+    } else {
+        "esp"
+    }
+}
+
+/// Archives the last archive plan loads on behalf of this plugin.
+fn plugin_archives<'a>(app: &'a App, plugin: &str) -> Vec<&'a str> {
+    app.archive_plan.as_ref().map_or_else(Vec::new, |plan| {
+        plan.archives
+            .iter()
+            .filter(|a| {
+                a.plugin
+                    .as_deref()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(plugin))
+            })
+            .map(|a| a.name.as_str())
+            .collect()
+    })
+}
+
+/// A plugin row's tint under its own selection colour, in MO2's order: the
+/// selected mod's plugins, then the selected plugins' masters. Both sets are
+/// built once per view.
+pub(crate) fn plugin_tint(
+    origins: &HashSet<String>,
+    masters: &HashSet<String>,
+    p: &eidos_plugins::Plugin,
+) -> Option<Color> {
+    if plugin_from_selected_mod(origins, &p.origin_mod) {
+        Some(origin_bg())
+    } else if !masters.is_empty() && masters.contains(&p.name.to_ascii_lowercase()) {
+        Some(master_bg())
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::plugin_row;
+    use eidos_gamefeatures::archives::{ArchiveActivation, ArchivePlan};
+
+    #[test]
+    fn selecting_a_plugin_paints_its_masters_and_the_mod_that_ships_it() {
+        let _look = crate::test_support::look_lock();
+        let mut app = crate::test_support::nav_app(&["Armour Pack", "Base Mod"]);
+        let mut patch = plugin_row("Patch.esp", "Armour Pack");
+        patch.masters = vec!["BASE.esm".into()];
+        app.plugins = Some(eidos_plugins::PluginList {
+            plugins: vec![
+                plugin_row("Base.esm", "Base Mod"),
+                patch,
+                plugin_row("Unrelated.esp", ""),
+            ],
+            implicit: Default::default(),
+            locked: Default::default(),
+        });
+        app.selected_plugin = Some(1);
+        let masters = selected_plugin_masters(&app);
+        let origins = selected_mod_origins(&app);
+        let list = app.plugins.as_ref().unwrap();
+        let tint =
+            |origins: &HashSet<String>, i: usize| plugin_tint(origins, &masters, &list.plugins[i]);
+        assert_eq!(tint(&origins, 0), Some(master_bg()), "the master row");
+        assert_eq!(tint(&origins, 2), None, "an unrelated row");
+        let shipped = selected_plugin_origin_mods(&app);
+        assert_eq!(mod_row_tint(&app, 0, &shipped), Some(origin_bg()));
+        assert_eq!(mod_row_tint(&app, 1, &shipped), None);
+        // A master that the selected mod ships takes the origin tint, as in MO2.
+        app.selected_mod = Some(1);
+        assert_eq!(tint(&selected_mod_origins(&app), 0), Some(origin_bg()));
+    }
+
+    #[test]
+    fn medium_plugin_is_labelled_esh() {
+        let mut p = plugin_row("Medium.esp", "A");
+        assert_eq!(plugin_kind(&p), "esp");
+        p.is_medium = true;
+        assert_eq!(plugin_kind(&p), "ESH");
+        p.is_light = true;
+        assert_eq!(plugin_kind(&p), "ESL");
+    }
+
+    #[test]
+    fn archives_come_from_the_plan_not_the_name() {
+        let mut app = crate::test_support::nav_app(&[]);
+        let act = |name: &str, plugin: Option<&str>| ArchiveActivation {
+            name: name.into(),
+            plugin: plugin.map(Into::into),
+            order_uncertain: false,
+        };
+        app.archive_plan = Some(ArchivePlan {
+            archives: vec![
+                act("Mine.bsa", Some("MINE.esp")),
+                act("Other.bsa", Some("other.esp")),
+                act("Mine - Extra.bsa", None),
+            ],
+            diagnostics: vec![],
+        });
+        assert_eq!(plugin_archives(&app, "mine.esp"), ["Mine.bsa"]);
+        app.archive_plan = None;
+        assert!(plugin_archives(&app, "mine.esp").is_empty());
+    }
 }

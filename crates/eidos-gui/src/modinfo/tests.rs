@@ -786,3 +786,38 @@ fn contested_paths_are_scanned_once_per_map_and_mod() {
     let a = contested(&app, &hand, 2);
     assert!(!std::rc::Rc::ptr_eq(&a, &contested(&app, &hand, 2)));
 }
+
+#[test]
+fn health_report_redacts_home_paths() {
+    let home = std::env::var("HOME").unwrap();
+    let f = ReportFacts {
+        version: "1.0.0".into(),
+        game_id: "skyrimse".into(),
+        proton_build: "GE-Proton11-1".into(),
+        flatpak_steam: None,
+        passthrough_requested: false,
+        cap_missing: false,
+        session: "Wayland",
+        distro: "Arch Linux".into(),
+        kernel: "7.2.0".into(),
+        dev_fuse: true,
+        fusermount3: true,
+    };
+    let checks = [Diagnostic {
+        level: DiagLevel::Problem,
+        title: format!("Cannot read {home}/mods"),
+        detail: String::new(),
+        actions: Vec::new(),
+    }];
+    let r = health_report(&f, &checks);
+    assert!(!r.contains(&home), "{r}");
+    assert!(r.contains("- [problem] Cannot read ~/mods"), "{r}");
+    assert!(r.contains("Proton: GE-Proton11-1"));
+    assert!(r.contains("Flatpak Steam: unknown"), "{r}");
+}
+
+#[test]
+fn a_contested_data_row_tooltip_lists_every_other_provider() {
+    let tip = super::files::also_in_tip(&["Mod B".to_string(), "Mod C".to_string()]);
+    assert!(tip.ends_with("Mod B, Mod C"), "{tip}");
+}

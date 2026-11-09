@@ -438,6 +438,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         resuming: None,
         confirm_delete_download: None,
         identifying_download: None,
+        extracting_archives: HashSet::new(),
         download_samples: HashMap::new(),
         selected_mods: HashSet::new(),
         sel_anchor: None,
@@ -449,6 +450,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         drag_scroll_depth: 0.5,
         selected_plugin: None,
         selected_plugins: HashSet::new(),
+        plugin_search: String::new(),
         plugin_anchor: None,
         focus: Pane::Mods,
         categories: None,
@@ -1411,6 +1413,34 @@ pub(crate) fn plugin_from_selected_mod(origins: &HashSet<String>, origin_mod: &s
     !origin_mod.is_empty() && origins.contains(&origin_mod.to_ascii_lowercase())
 }
 
+/// The plugins selected in the plugin list, in the list's own indices.
+fn selected_plugin_rows(app: &App) -> impl Iterator<Item = &eidos_plugins::Plugin> {
+    let list = app.plugins.as_ref();
+    app.selected_plugins
+        .iter()
+        .copied()
+        .chain(app.selected_plugin)
+        .filter_map(move |i| list?.plugins.get(i))
+}
+
+/// Lowercased names of the masters of every selected plugin (MO2 lights them in
+/// the plugin list). Built once per view; a row asks `contains` with its own
+/// lowercased name.
+pub(crate) fn selected_plugin_masters(app: &App) -> HashSet<String> {
+    selected_plugin_rows(app)
+        .flat_map(|p| p.masters.iter().map(|m| m.to_ascii_lowercase()))
+        .collect()
+}
+
+/// Lowercased folder names of the mods that ship the selected plugins. The
+/// game's own Data (empty origin) belongs to no mod row.
+pub(crate) fn selected_plugin_origin_mods(app: &App) -> HashSet<String> {
+    selected_plugin_rows(app)
+        .filter(|p| !p.origin_mod.is_empty())
+        .map(|p| p.origin_mod.to_ascii_lowercase())
+        .collect()
+}
+
 pub(crate) fn planned_instance(app: &App) -> Option<Instance> {
     let game = selected_game(app)?;
     Some(match app.kind {
@@ -1782,6 +1812,22 @@ pub(crate) fn drawn_mod_rows(app: &App) -> Vec<usize> {
             ListEntry::Row(i) => Some(i),
             ListEntry::Group(..) => None,
         })
+        .collect()
+}
+
+/// The plugin rows the Plugins tab draws, in load order: all of them, or under
+/// a filter those whose name contains it, matched like the mod filter. The
+/// indices stay full-list indices, so every row message still names the plugin.
+pub(crate) fn drawn_plugin_rows(app: &App) -> Vec<usize> {
+    let query = app.plugin_search.trim().to_lowercase();
+    let Some(list) = app.plugins.as_ref() else {
+        return Vec::new();
+    };
+    if query.is_empty() {
+        return (0..list.plugins.len()).collect();
+    }
+    (0..list.plugins.len())
+        .filter(|&i| list.plugins[i].name.to_lowercase().contains(&query))
         .collect()
 }
 
@@ -2192,7 +2238,7 @@ pub(crate) fn key_nav(app: &mut App, nav: Nav) -> Task<Message> {
     // Space toggles something nobody is looking at.
     let rows: Vec<usize> = match pane {
         Pane::Mods => drawn_mod_rows(app),
-        Pane::Plugins => (0..app.plugins.as_ref().map(|l| l.plugins.len()).unwrap_or(0)).collect(),
+        Pane::Plugins => drawn_plugin_rows(app),
     };
     if rows.is_empty() {
         return Task::none();
@@ -2251,7 +2297,8 @@ pub(crate) fn key_nav(app: &mut App, nav: Nav) -> Task<Message> {
             let up = matches!(nav, Nav::ShiftUp);
             let Some(i) = cur else { return Task::none() };
             // Same rule as the drag: a move only means something in load order.
-            // The Plugins pane is unaffected - its rows are always `0..len`.
+            // The Plugins pane is always in load order; its filter only skips
+            // rows, and `move_plugins_to` still refuses a slot the engine forbids.
             if pane == Pane::Mods && !can_reorder(app) {
                 return Task::none();
             }
@@ -2973,6 +3020,26 @@ pub(crate) fn save_collapsed(app: &App) {
 mod tests {
     use super::*;
     use crate::test_support::*;
+
+    #[test]
+    fn selecting_a_plugin_collects_its_masters_and_source_mod() {
+        let mut app = nav_app(&["Armour Pack"]);
+        let mut p = plugin_row("Patch.esp", "AAA");
+        p.masters = vec!["Skyrim.esm".into(), "Armour.ESP".into()];
+        p.origin_mod = "Armour Pack".into();
+        let other = plugin_row("Other.esp", "BBB");
+        app.plugins = Some(eidos_plugins::PluginList {
+            plugins: vec![p, other],
+            implicit: Default::default(),
+            locked: Default::default(),
+        });
+        assert!(selected_plugin_masters(&app).is_empty());
+        app.selected_plugin = Some(0);
+        let masters = selected_plugin_masters(&app);
+        assert!(masters.contains("skyrim.esm") && masters.contains("armour.esp"));
+        assert!(!masters.contains("other.esp"));
+        assert!(selected_plugin_origin_mods(&app).contains("armour pack"));
+    }
 
     #[test]
     fn selecting_a_mod_marks_the_plugins_it_ships() {

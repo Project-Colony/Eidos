@@ -780,3 +780,102 @@ fn payload_duplicate_names_fail_without_writing_a_prefix() {
     assert!(write_archive_member(&mut file, "a.txt", 100, &mut output).is_err());
     assert!(output.is_empty());
 }
+/// An uncompressed GNRL BA2 v1 holding `members` in order.
+fn general_archive(members: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut b = vec![0; 24 + 36 * members.len()];
+    b[..4].copy_from_slice(b"BTDX");
+    put32(&mut b, 4, 1);
+    b[8..12].copy_from_slice(b"GNRL");
+    put32(&mut b, 12, members.len() as u32);
+    for (i, (_, data)) in members.iter().enumerate() {
+        let at = b.len() as u64;
+        put64(&mut b, 24 + 36 * i + 16, at);
+        put32(&mut b, 24 + 36 * i + 28, data.len() as u32);
+        b.extend_from_slice(data);
+    }
+    let names = b.len() as u64;
+    put64(&mut b, 16, names);
+    for (name, _) in members {
+        b.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        b.extend_from_slice(name.as_bytes());
+    }
+    b
+}
+#[test]
+fn extract_archive_writes_every_member_into_a_new_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("Foo.ba2");
+    std::fs::write(
+        &source,
+        general_archive(&[
+            ("Textures/a.txt", b"first"),
+            ("textures/Sub/b.txt", b"second"),
+            ("root.txt", b""),
+        ]),
+    )
+    .unwrap();
+    let dest = dir.path().join("Foo (extracted)");
+    assert_eq!(extract_archive(&source, &dest, 100).unwrap(), 3);
+    assert_eq!(std::fs::read(dest.join("Textures/a.txt")).unwrap(), b"first");
+    assert_eq!(
+        std::fs::read(dest.join("Textures/Sub/b.txt")).unwrap(),
+        b"second"
+    );
+    assert_eq!(std::fs::read(dest.join("root.txt")).unwrap(), b"");
+    assert!(
+        !dest.join("textures").exists(),
+        "case variants share one folder"
+    );
+    // An existing folder, even an empty one, is never replaced.
+    assert!(extract_archive(&source, &dest, 100).is_err());
+    assert_eq!(std::fs::read_dir(&dest).unwrap().count(), 2);
+    let empty = dir.path().join("Empty");
+    std::fs::create_dir(&empty).unwrap();
+    assert!(extract_archive(&source, &empty, 100).is_err());
+    assert_eq!(std::fs::read_dir(&empty).unwrap().count(), 0);
+    assert_eq!(
+        std::fs::read_dir(dir.path()).unwrap().count(),
+        3,
+        "stages are removed"
+    );
+}
+#[test]
+fn extract_archive_refuses_traversal_and_leaves_nothing_on_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let mods = dir.path().join("mods");
+    std::fs::create_dir(&mods).unwrap();
+    let source = dir.path().join("evil.ba2");
+    let dest = mods.join("evil (extracted)");
+    for name in [
+        "../escape.txt",
+        "/escape.txt",
+        "C:/escape.txt",
+        "a/../../escape.txt",
+        "a\\..\\..\\escape.txt",
+    ] {
+        std::fs::write(
+            &source,
+            general_archive(&[("ok.txt", b"fine"), (name, b"evil")]),
+        )
+        .unwrap();
+        assert!(
+            matches!(
+                extract_archive(&source, &dest, 100),
+                Err(ArchiveError::Corrupt(_))
+            ),
+            "{name}"
+        );
+        assert!(!dir.path().join("escape.txt").exists());
+        assert_eq!(std::fs::read_dir(&mods).unwrap().count(), 0, "{name}");
+    }
+    // A member that fails to decode after an earlier one was written.
+    let mut b = general_archive(&[("ok.txt", b"fine"), ("bad.txt", b"not zlib")]);
+    put32(&mut b, 24 + 36 + 24, 8);
+    std::fs::write(&source, b).unwrap();
+    assert!(extract_archive(&source, &dest, 100).is_err());
+    assert_eq!(
+        std::fs::read_dir(&mods).unwrap().count(),
+        0,
+        "the stage is removed"
+    );
+}

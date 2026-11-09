@@ -66,6 +66,15 @@ impl ArchiveRow {
     }
 }
 
+/// The folder an archive's Extract button creates: `<archive stem> (extracted)`.
+pub(crate) fn extracted_mod_name(archive: &str) -> String {
+    let stem = std::path::Path::new(archive)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    format!("{stem} (extracted)")
+}
+
 /// Every archive the enabled mods ship, with the reason each one loads.
 ///
 /// `None` when the active plugin set is unknown - the same distinction the
@@ -232,7 +241,27 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
                     .size(sz(11))
                     .width(Length::FillPortion(2)),
             )
-            .push(container(why).width(Length::FillPortion(3)));
+            .push(container(why).width(Length::FillPortion(3)))
+            .push(tooltip(
+                button(text(t("archives_extract")).size(sz(10)))
+                    .padding([1, 5])
+                    .on_press(Message::ExtractArchive(
+                        r.mod_name.clone(),
+                        r.archive.clone(),
+                    ))
+                    .style(button::secondary),
+                container(
+                    text(tf(
+                        "archives_extract_tip",
+                        &[("name", &extracted_mod_name(&r.archive))],
+                    ))
+                    .size(sz(11)),
+                )
+                .padding(6)
+                .max_width(360.0)
+                .style(card_style),
+                tooltip::Position::Left,
+            ));
         list = list.push(list_row(
             container(row).padding(3).into(),
             i % 2 == 0,

@@ -1096,6 +1096,7 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         // A worker's answer arriving, not a click.
         | Message::Placed(..)
         | Message::ArchiveExportFinished(..)
+        | Message::ArchiveExtracted(..)
         | Message::CollectionInstallChecked { .. }
         // And the hover-to-expand timer, which fires only while a drag rests on
         // a collapsed group. Same reason: the program watching a pointer sit
@@ -1303,6 +1304,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::CreateEmptyModAt(..)
         | Message::InstallFromFolder
         | Message::FolderPicked(..)
+        | Message::ExtractArchive(..)
+        | Message::ArchiveExtracted(..)
         | Message::ShowExportDialog
         | Message::CloseExportDialog
         | Message::ExportScopeChanged(..)
@@ -1353,6 +1356,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::SelectPluginToggle(..)
         | Message::SelectPluginExtend(..)
         | Message::SetSelectedPluginsEnabled(..)
+        | Message::PluginSearchChanged(..)
         | Message::PluginDragStart(..)
         | Message::PluginDragOverGap(..)
         | Message::PluginDragCancel
@@ -1431,6 +1435,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::PreviewDdsSelection(..)
         | Message::ClosePreview
         | Message::FiletreeOpen(..)
+        | Message::OpenFile(..)
         | Message::FiletreePreview(..)
         | Message::FiletreeRenameStart(..)
         | Message::FiletreeRenameChanged(..)
@@ -1460,6 +1465,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::LogLevel(..)
         | Message::LogRefresh
         | Message::LogCopy
+        | Message::CopyHealthReport
         | Message::LogOpenFolder
         | Message::ShowIniEditor
         | Message::CloseIniEditor

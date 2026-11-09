@@ -453,7 +453,21 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.error = Some(tf("status_refused_open", &[("path", &rel)]));
                 return Task::none();
             };
-            return update(app, Message::OpenFolder(path));
+            return update(app, Message::OpenFile(path));
+        }
+        Message::OpenFile(path) => {
+            let shown = path.display().to_string();
+            app.status = Some(
+                match open_text_file(&path, |p| {
+                    let _ = std::process::Command::new("xdg-open").arg(p).spawn();
+                }) {
+                    Ok(()) => tf("status_opened_externally", &[("path", &shown)]),
+                    Err(OpenRefusal::Missing) => tf("status_does_not_exist", &[("path", &shown)]),
+                    Err(OpenRefusal::NotText) => {
+                        tf("status_refused_open_type", &[("path", &shown)])
+                    }
+                },
+            );
         }
         Message::FiletreePreview(i, rel) => {
             let Some(base) = app.mods.get(i).map(|m| m.path.clone()) else {
@@ -676,4 +690,69 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         _ => unreachable!("routed by update_inner"),
     }
     Task::none()
+}
+
+/// Extensions xdg-open may be asked to open from a mod. Never an executable,
+/// script or plugin: wine.desktop would run an .exe or .bat with plain wine,
+/// and an editor can rewrite an .esp.
+const OPENABLE_TEXT: &[&str] = &[
+    "txt", "ini", "json", "log", "cfg", "psc", "xml", "yaml", "yml", "toml", "lua", "md",
+];
+
+enum OpenRefusal {
+    Missing,
+    NotText,
+}
+
+/// Hands `path` to `opener` when it is an existing regular text file and not
+/// a link. Creates nothing.
+fn open_text_file(path: &Path, opener: impl FnOnce(&Path)) -> Result<(), OpenRefusal> {
+    let Ok(meta) = path.symlink_metadata() else {
+        return Err(OpenRefusal::Missing);
+    };
+    let text = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| OPENABLE_TEXT.contains(&e.to_ascii_lowercase().as_str()));
+    if !meta.is_file() || !text {
+        return Err(OpenRefusal::NotText);
+    }
+    opener(path);
+    Ok(())
+}
+
+#[cfg(test)]
+mod open_file_tests {
+    use super::*;
+
+    #[test]
+    fn open_text_file_checks_before_launching() {
+        let dir = std::env::temp_dir().join(format!("eidos-openfile-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut launched = Vec::new();
+
+        let missing = dir.join("gone.ini");
+        assert!(matches!(
+            open_text_file(&missing, |p| launched.push(p.to_path_buf())),
+            Err(OpenRefusal::Missing)
+        ));
+        assert!(!missing.exists(), "nothing is created");
+
+        let exe = dir.join("a.exe");
+        std::fs::write(&exe, b"x").unwrap();
+        assert!(matches!(
+            open_text_file(&exe, |p| launched.push(p.to_path_buf())),
+            Err(OpenRefusal::NotText)
+        ));
+
+        let link = dir.join("l.ini");
+        std::os::unix::fs::symlink(&exe, &link).unwrap();
+        assert!(open_text_file(&link, |p| launched.push(p.to_path_buf())).is_err());
+
+        let ini = dir.join("Game.INI");
+        std::fs::write(&ini, b"x").unwrap();
+        assert!(open_text_file(&ini, |p| launched.push(p.to_path_buf())).is_ok());
+        assert_eq!(launched, vec![ini]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

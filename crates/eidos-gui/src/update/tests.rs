@@ -231,6 +231,7 @@ fn switching_instance_drops_the_previous_games_merged_view() {
                 size: None,
                 mtime: None,
                 conflicted: false,
+                also_in: Vec::new(),
             }]),
         ),
     );
@@ -467,6 +468,7 @@ fn every_main_screen_field_hands_the_keyboard_over() {
     // space into it and a mod turns off.
     for msg in [
         Message::SearchChanged("x".into()),
+        Message::PluginSearchChanged("x".into()),
         Message::RenameChanged("x".into()),
         Message::NotesChanged("x".into()),
         Message::OverwriteToModName("x".into()),
@@ -480,6 +482,41 @@ fn every_main_screen_field_hands_the_keyboard_over() {
         let _ = update(&mut app, msg);
         assert!(app.typing, "{label} did not claim the keyboard");
     }
+}
+
+#[test]
+fn the_plugin_filter_takes_hidden_rows_from_the_keyboard_and_the_selection() {
+    // A row the filter hides is a highlight nobody can see: the arrows skip it,
+    // and a batch button must not act on it.
+    let mut app = nav_app(&[]);
+    let mut list = eidos_plugins::PluginList::default();
+    for name in ["Alpha.esp", "Gamma.esp", "Beta.esp", "Gate.esp"] {
+        list.plugins.push(crate::test_support::plugin_row(name, ""));
+    }
+    app.plugins = Some(list);
+    app.tab = Tab::Plugins;
+    app.focus = Pane::Plugins;
+    app.selected_plugins = [1, 2].into();
+    app.selected_plugin = Some(2);
+    app.plugin_anchor = Some(2);
+    let _ = update(&mut app, Message::PluginSearchChanged("GA".into()));
+    assert_eq!(drawn_plugin_rows(&app), [1, 3]);
+    assert_eq!(app.selected_plugins, [1].into());
+    assert_eq!(app.selected_plugin, None);
+    assert_eq!(app.plugin_anchor, None);
+    let _ = key_nav(&mut app, Nav::Down);
+    assert_eq!(app.selected_plugin, Some(1));
+    let _ = key_nav(&mut app, Nav::Down);
+    assert_eq!(app.selected_plugin, Some(3));
+    // A Shift run skips Beta.esp, hidden between the two drawn rows.
+    let _ = update(&mut app, Message::SelectPluginExtend(1));
+    assert_eq!(app.selected_plugins, [1, 3].into());
+    // Ctrl+A takes what is drawn, not the hidden Alpha.esp and Beta.esp.
+    app.selected_plugins.clear();
+    app.selected_plugin = None;
+    let _ = update(&mut app, Message::SelectAllInFocus);
+    assert_eq!(app.selected_plugins, [1, 3].into());
+    assert_eq!(app.selected_plugin, Some(1));
 }
 
 #[test]
@@ -4957,6 +4994,46 @@ fn activate_all_leaves_the_engines_own_plugins_alone() {
 }
 
 #[test]
+fn deactivate_all_under_a_filter_touches_only_the_shown_plugins() {
+    let mut app = app_for_game("skyrimse");
+    let mut list = PluginList::default();
+    for n in ["Armour.esp", "Armour Patch.esp", "Weapons Patch.esp"] {
+        list.plugins.push(plugin_row(n, "Some Mod"));
+    }
+    app.plugins = Some(list);
+    app.plugin_search = "  patch ".into();
+    assert_eq!(
+        crate::view::set_all_plugins_label(&app, false),
+        "Deactivate all shown (2)"
+    );
+    let _ = update_inner(&mut app, Message::PluginsSetAll(false));
+    let on: Vec<&str> = app
+        .plugins
+        .as_ref()
+        .unwrap()
+        .plugins
+        .iter()
+        .filter(|p| p.enabled)
+        .map(|p| p.name.as_str())
+        .collect();
+    assert_eq!(on, ["Armour.esp"], "the hidden row keeps its state");
+    // Nothing shown is left to change: the status names the shown rows.
+    let _ = update_inner(&mut app, Message::PluginsSetAll(false));
+    assert_eq!(
+        app.status.as_deref(),
+        Some(t("status_plugins_shown_none_to_deactivate"))
+    );
+    // A filter that matches no row says so instead of giving a reason.
+    app.plugin_search = "nothing".into();
+    let _ = update_inner(&mut app, Message::PluginsSetAll(false));
+    assert_eq!(app.status.as_deref(), Some(t("status_plugins_none_shown")));
+    // A menu opened on a row does not survive the filter changing.
+    app.menu_plugin = Some(1);
+    let _ = update_inner(&mut app, Message::PluginSearchChanged("armour".into()));
+    assert_eq!(app.menu_plugin, None);
+}
+
+#[test]
 fn a_second_identify_cannot_start_while_one_is_running() {
     // Two whole-file hashes racing to write one sidecar.
     let mut app = nav_app(&[]);
@@ -5743,4 +5820,84 @@ fn an_unlocked_run_neither_disarms_confirmations_nor_drops_the_selection() {
     finish_tracked_run(&mut app);
     assert_eq!(app.selected_mods.len(), 2);
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn archive_extraction_names_the_new_mod_and_never_reuses_a_folder() {
+    let (mut app, root) = list_app(&["Source"]);
+    assert_eq!(
+        extracted_mod_name("Source - Textures.bsa"),
+        "Source - Textures (extracted)"
+    );
+    let taken = root.join("mods/Source (extracted)");
+    fs::create_dir_all(&taken).unwrap();
+    fs::write(taken.join("keep.txt"), b"mine").unwrap();
+    let _ = update_inner(
+        &mut app,
+        Message::ExtractArchive("Source".into(), "Source.ba2".into()),
+    );
+    assert!(app.status.as_deref().unwrap().contains("already exists"));
+    assert_eq!(fs::read(taken.join("keep.txt")).unwrap(), b"mine");
+    // The worker's answer registers the new folder like an install.
+    let fresh = root.join("mods/Other (extracted)");
+    fs::create_dir_all(&fresh).unwrap();
+    let _ = update_inner(
+        &mut app,
+        Message::ArchiveExtracted(
+            root.clone(),
+            fresh.clone(),
+            "Other (extracted)".into(),
+            Ok(fresh),
+        ),
+    );
+    assert!(app.mods.iter().any(|m| m.name == "Other (extracted)"));
+    let _ = update_inner(
+        &mut app,
+        Message::ArchiveExtracted(
+            root.clone(),
+            root.join("mods/Third (extracted)"),
+            "Third (extracted)".into(),
+            Err("disk full".into()),
+        ),
+    );
+    assert!(app.status.as_deref().unwrap().contains("disk full"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_second_extract_of_the_same_archive_starts_nothing_until_the_first_ends() {
+    // The running decode publishes its folder only at the end, so a second
+    // click used to queue a duplicate that failed with "File exists".
+    let (mut app, root) = list_app(&["Source"]);
+    let click = || Message::ExtractArchive("Source".into(), "Source.ba2".into());
+    assert_eq!(update_inner(&mut app, click()).units(), 1);
+    assert_eq!(
+        update_inner(&mut app, click()).units(),
+        0,
+        "the first still runs"
+    );
+    // Source.bsa extracts into the same "Source (extracted)" folder.
+    assert_eq!(
+        update_inner(
+            &mut app,
+            Message::ExtractArchive("Source".into(), "Source.bsa".into())
+        )
+        .units(),
+        0,
+        "a same-stem archive targets the running folder"
+    );
+    // An answer meant for another instance frees the folder and nothing else.
+    let _ = update_inner(
+        &mut app,
+        Message::ArchiveExtracted(
+            root.join("other-instance"),
+            root.join("mods/Source (extracted)"),
+            "Source (extracted)".into(),
+            Err("disk full".into()),
+        ),
+    );
+    assert!(!app.status.as_deref().unwrap().contains("disk full"));
+    assert!(app.extracting_archives.is_empty());
+    assert_eq!(update_inner(&mut app, click()).units(), 1);
+    fs::remove_dir_all(root).unwrap();
 }
