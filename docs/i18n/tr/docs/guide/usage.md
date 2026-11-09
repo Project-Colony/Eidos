@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=28769fd12c94a2f9a6a9fda35b67b39cc433502b -->
 
 # Eidos kullanımı
 
@@ -96,6 +96,12 @@ dizininin üzerine bağlar (bir bind-stash aracılığıyla, böylece artalan s�
 hâlâ dokunulmamış dosyaları okur), sonra komutu o görünüm üzerinden çalıştırır.
 Yazmalar (kayıtlar, yeniden üretilen yapılandırmalar) örneğin `overwrite/`
 katmanına iner; oyun kurulumu ve her mod kaynağı bayt bayt dokunulmamış kalır.
+
+### Wabbajack listeleri
+
+Eidos'ta Wabbajack yükleyicisi yoktur. Listeyi Eidos dışında CLF3 veya Jackify ile kurun, ardından sihirbazda kurulum klasörünü taşınabilir örnek olarak seçin. Eidos klasörü MO2'nin düzeniyle okur: `mods/`, `profiles/<ad>/modlist.txt` ve eklenti listeleri. Yükleyicinin yazdığı `ModOrganizer.ini` dosyasını korur ve hiçbir zaman üzerine yazmaz, böylece listenin kendi çalıştırılabilir dosyaları kayıtlı kalır.
+
+Birçok liste, oyunun değiştirilmiş bir kopyasını içeren bir `Stock Game` veya `Game Root` klasörü ekler ve MO2 oyunu oradan başlatır. Eidos Steam kurulumunu başlatır ve başka bir oyun klasörü için ayarı yoktur. Sihirbaz böyle bir klasör bulursa bunu özet ekranında bildirir ve başka bir şey yapmaz: listenin oraya koyduklarını kendiniz bir modun `Root/` klasörüne taşıyın. CLF3, BSA ve DDS dosyalarını kendi araçlarıyla yeniden oluşturur; bu yüzden sonuç bir Wabbajack kurulumundan farklı olabilir ve liste yazarları bunu desteklemez.
 
 ### Mod listesi
 

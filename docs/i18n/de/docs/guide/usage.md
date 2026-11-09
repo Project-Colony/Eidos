@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=28769fd12c94a2f9a6a9fda35b67b39cc433502b -->
 
 # Eidos verwenden
 
@@ -101,6 +101,12 @@ einem privaten Namensraum und führt den Befehl dann durch diesen Blick aus.
 Schreibvorgänge (Spielstände, neu erzeugte Konfigurationen) landen in der
 `overwrite/`-Schicht der Instanz; die Spielinstallation und jede Mod-Quelle
 bleiben Byte für Byte unberührt.
+
+### Wabbajack-Listen
+
+Eidos hat keinen Wabbajack-Installer. Installieren Sie die Liste mit CLF3 oder Jackify außerhalb von Eidos und wählen Sie den Installationsordner im Assistenten als portable Instanz. Eidos liest den Ordner so, wie MO2 ihn anlegt: `mods/`, `profiles/<Name>/modlist.txt` und die Plugin-Listen. Die vom Installer geschriebene `ModOrganizer.ini` bleibt erhalten und wird nie überschrieben, sodass die eigenen Programme der Liste registriert bleiben.
+
+Viele Listen legen einen Ordner `Stock Game` oder `Game Root` an, der eine angepasste Kopie des Spiels enthält, und MO2 startet das Spiel von dort. Eidos startet die Steam-Installation und hat keine Einstellung für einen anderen Spielordner. Findet der Assistent so einen Ordner, weist er auf der Übersichtsseite darauf hin und tut sonst nichts: Verschieben Sie, was die Liste dort abgelegt hat, selbst in den `Root/`-Ordner eines Mods. CLF3 baut BSA- und DDS-Dateien mit eigenen Werkzeugen neu, deshalb kann das Ergebnis von einer Wabbajack-Installation abweichen, und die Listenautoren unterstützen es nicht.
 
 ### Die Mod-Liste
 

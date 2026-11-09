@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=28769fd12c94a2f9a6a9fda35b67b39cc433502b -->
 
 # Eidos 사용하기
 
@@ -83,6 +83,12 @@ Eidos는 예전 위치를 계속 쓰고 다음 실행 때 다시 시도합니다
 마운트하고, 그 뷰를 통해 명령을 실행합니다. 쓰기(세이브, 다시 생성된 설정)는
 인스턴스의 `overwrite/` 레이어에 떨어지고, 게임 설치본과 모든 모드 원본은
 바이트 단위로 원래 그대로 남습니다.
+
+### Wabbajack 목록
+
+Eidos에는 Wabbajack 설치 프로그램이 없습니다. Eidos 밖에서 CLF3 또는 Jackify로 목록을 설치한 다음, 마법사에서 설치 폴더를 휴대용 인스턴스로 선택하세요. Eidos는 폴더를 MO2 구조로 읽습니다: `mods/`, `profiles/<이름>/modlist.txt`, 플러그인 목록입니다. 설치 프로그램이 쓴 `ModOrganizer.ini`는 그대로 두며 덮어쓰지 않으므로 목록 자체의 실행 파일 등록은 유지됩니다.
+
+많은 목록이 수정된 게임 사본을 담은 `Stock Game` 또는 `Game Root` 폴더를 추가하고, MO2는 그곳에서 게임을 실행합니다. Eidos는 Steam 설치본을 실행하며 다른 게임 폴더를 지정하는 설정이 없습니다. 마법사는 이런 폴더를 발견하면 요약 화면에 알리기만 하고 다른 일은 하지 않습니다. 목록이 그곳에 넣은 파일은 직접 어떤 모드의 `Root/` 폴더로 옮기세요. CLF3는 BSA와 DDS 파일을 자체 도구로 다시 만들기 때문에 결과가 Wabbajack 설치와 다를 수 있으며, 목록 제작자도 이를 지원하지 않습니다.
 
 ### 모드 목록
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=28769fd12c94a2f9a6a9fda35b67b39cc433502b -->
 
 # Používání Eidosu
 
@@ -91,6 +91,12 @@ takže démon dál čte nedotčené soubory) uvnitř soukromého jmenného prost
 skrz tento pohled spustí příkaz. Zápisy (savy, znovu vygenerované konfigurace)
 přistanou ve vrstvě `overwrite/` dané instance; instalace hry i každý zdroj módu
 zůstanou bajt po bajtu nedotčené.
+
+### Seznamy Wabbajack
+
+Eidos nemá instalátor Wabbajack. Nainstalujte seznam pomocí CLF3 nebo Jackify mimo Eidos a v průvodci zvolte instalační složku jako přenosnou instanci. Eidos čte složku v uspořádání MO2: `mods/`, `profiles/<název>/modlist.txt` a seznamy pluginů. Soubor `ModOrganizer.ini`, který zapsal instalátor, ponechá a nikdy ho nepřepíše, takže programy samotného seznamu zůstanou zaregistrované.
+
+Mnoho seznamů přidává složku `Stock Game` nebo `Game Root` s upravenou kopií hry a MO2 spouští hru odtud. Eidos spouští instalaci ze Steamu a nemá nastavení pro jinou složku hry. Když průvodce takovou složku najde, upozorní na to na přehledové obrazovce a nedělá nic dalšího: soubory, které tam seznam uložil, přesuňte sami do složky `Root/` některého modu. CLF3 znovu vytváří soubory BSA a DDS vlastními nástroji, takže výsledek se může lišit od instalace Wabbajack a autoři seznamů ho nepodporují.
 
 ### Seznam módů
 
