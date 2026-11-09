@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=80ee63cfac4035db5e5010e5c389ef6bc6f5a370 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
 
 # ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -149,6 +149,8 @@ Executables ダイアログの `Prereqs` 欄は編集できます - この検出
 `dotnetsdk10` は .NET 10 SDK で、ダウンロードは 301 MB、展開すると 808 MB です。
 Synthesis はパッチャーのコンパイルにこれを必要とし、ビルドと実行にはパスなしの `dotnet` を呼び出します。
 そのため `dotnetsdk10` を宣言したツールには、`WINEPATH` 上の SDK フォルダに加えて、`NUGET_CERT_REVOCATION_MODE=offline`、`DOTNET_GENERATE_ASPNET_CERTIFICATE=false`、`DOTNET_CLI_TELEMETRY_OPTOUT=1` も設定されます。
+パッチャーのビルドは MSBuild のノードと VBCSCompiler サーバーを動かしたまま残し、Wine ではそれらがプレフィックスの wineserver を終了させないため、ツールには `MSBUILDDISABLENODEREUSE=1`、`DOTNET_CLI_USE_MSBUILD_SERVER=0`、`UseSharedCompilation=false` も設定されます。
+`DOTNET_ROLL_FORWARD=Major` により、.NET 8 向けにビルドされたパッチャー (Mutagen 0.54 より前) は、.NET 8 ランタイムが見つからないとき SDK の .NET 10 ランタイムで動きます。
 `tools.ini` の Synthesis エントリが古い既定値 `dotnet8`, `vcrun2022` のままなら、Eidos が読み込むときに `dotnetsdk10`, `vcrun2022` に置き換わります。
 
 NuGet は復元するすべてのパッケージの署名を Windows のルート証明書ストアで確認しますが、Wine のプレフィックスには、SDK が `sdk/10.0.403/trustedroots/codesignctl.pem` と `timestampctl.pem` として同梱しているコード署名用とタイムスタンプ用のルート証明書がありません。

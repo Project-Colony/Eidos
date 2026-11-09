@@ -76,6 +76,14 @@ const RUNTIMES: &[Runtime] = &[
             // crashes under Wine.
             ("DOTNET_GENERATE_ASPNET_CERTIFICATE", "false"),
             ("DOTNET_CLI_TELEMETRY_OPTOUT", "1"),
+            // A build leaves MSBuild nodes and the VBCSCompiler server running,
+            // and under Wine they keep the prefix's wineserver alive.
+            ("MSBUILDDISABLENODEREUSE", "1"),
+            ("DOTNET_CLI_USE_MSBUILD_SERVER", "0"),
+            ("UseSharedCompilation", "false"),
+            // Patchers built for net8.0 (Mutagen before 0.54) run on the SDK's
+            // .NET 10 when no 8.0 runtime is found.
+            ("DOTNET_ROLL_FORWARD", "Major"),
         ],
     },
 ];
@@ -550,6 +558,10 @@ mod tests {
             ("NUGET_CERT_REVOCATION_MODE", "offline"),
             ("DOTNET_GENERATE_ASPNET_CERTIFICATE", "false"),
             ("DOTNET_CLI_TELEMETRY_OPTOUT", "1"),
+            ("MSBUILDDISABLENODEREUSE", "1"),
+            ("DOTNET_CLI_USE_MSBUILD_SERVER", "0"),
+            ("UseSharedCompilation", "false"),
+            ("DOTNET_ROLL_FORWARD", "Major"),
         ];
         let want: Vec<(String, String)> = want
             .iter()

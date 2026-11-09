@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=80ee63cfac4035db5e5010e5c389ef6bc6f5a370 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -132,6 +132,8 @@ Executables 對話框裡的 `Prereqs` 欄位可以編輯 - 偵測結果是預設
 `dotnetsdk10` 是 .NET 10 SDK,下載 301 MB,解壓縮後 808 MB。
 Synthesis 編譯 patcher 需要它,而且建置與執行 patcher 時呼叫的是不帶路徑的 `dotnet`,
 所以宣告了 `dotnetsdk10` 的工具還會在 `WINEPATH` 上拿到 SDK 資料夾,外加 `NUGET_CERT_REVOCATION_MODE=offline`、`DOTNET_GENERATE_ASPNET_CERTIFICATE=false` 與 `DOTNET_CLI_TELEMETRY_OPTOUT=1`。
+建置 patcher 會留下仍在執行的 MSBuild 節點與 VBCSCompiler 伺服器,在 Wine 下它們會讓前綴的 wineserver 一直存活,所以該工具還會拿到 `MSBUILDDISABLENODEREUSE=1`、`DOTNET_CLI_USE_MSBUILD_SERVER=0` 與 `UseSharedCompilation=false`。
+`DOTNET_ROLL_FORWARD=Major` 讓為 .NET 8 建置的 patcher(Mutagen 0.54 之前)在找不到 .NET 8 執行階段時,改用 SDK 附帶的 .NET 10 執行階段執行。
 `tools.ini` 中仍寫著舊預設值 `dotnet8`, `vcrun2022` 的 Synthesis 項目,會在 Eidos 讀取時改成 `dotnetsdk10`, `vcrun2022`。
 
 NuGet 會對照 Windows 根憑證存放區檢查它還原的每個套件的簽章,而 Wine 前綴裡沒有 SDK 以 `sdk/10.0.403/trustedroots/codesignctl.pem` 與 `timestampctl.pem` 附帶的程式碼簽署根憑證與時間戳記根憑證。

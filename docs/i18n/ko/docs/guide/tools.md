@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=80ee63cfac4035db5e5010e5c389ef6bc6f5a370 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
 
 # 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -146,7 +146,12 @@ Executables 대화상자의 `Prereqs` 항목은 편집할 수 있습니다 - 감
 컴파일하는 데 이것이 필요하고, 패처를 빌드하고 실행할 때 경로 없는 `dotnet`을 호출합니다. 그래서 `dotnetsdk10`을 선언한
 도구는 `WINEPATH`에 SDK 폴더를 받고, 그와 함께 `NUGET_CERT_REVOCATION_MODE=offline`,
 `DOTNET_GENERATE_ASPNET_CERTIFICATE=false`, `DOTNET_CLI_TELEMETRY_OPTOUT=1`도
-받습니다. `tools.ini`의 Synthesis 항목이 아직 예전 기본값 `dotnet8`, `vcrun2022`를 담고 있으면,
+받습니다.
+패처를 빌드하면 MSBuild 노드와 VBCSCompiler 서버가 계속 실행된 채 남고, Wine에서는 이들이 프리픽스의 wineserver를
+살아 있게 하므로, 도구는 `MSBUILDDISABLENODEREUSE=1`, `DOTNET_CLI_USE_MSBUILD_SERVER=0`,
+`UseSharedCompilation=false`도 받습니다. `DOTNET_ROLL_FORWARD=Major` 덕분에 .NET 8용으로
+빌드된 패처(Mutagen 0.54 이전)는 .NET 8 런타임을 찾지 못하면 SDK의 .NET 10 런타임에서 실행됩니다.
+`tools.ini`의 Synthesis 항목이 아직 예전 기본값 `dotnet8`, `vcrun2022`를 담고 있으면,
 Eidos가 읽을 때 `dotnetsdk10`, `vcrun2022`로 바뀝니다.
 
 NuGet은 복원하는 모든 패키지의 서명을 Windows 루트 인증서 저장소를 기준으로 확인하는데, Wine 프리픽스에는 SDK가

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=80ee63cfac4035db5e5010e5c389ef6bc6f5a370 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
 
 # Инструменты: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -154,7 +154,14 @@ DirectX-DLL; тот же исполняемый файл, зарегистрир
 вызывает голый `dotnet`, поэтому инструмент, который объявляет `dotnetsdk10`,
 получает ещё и папку SDK в `WINEPATH`, а также
 `NUGET_CERT_REVOCATION_MODE=offline`, `DOTNET_GENERATE_ASPNET_CERTIFICATE=false`
-и `DOTNET_CLI_TELEMETRY_OPTOUT=1`. Запись Synthesis в `tools.ini`, где всё ещё
+и `DOTNET_CLI_TELEMETRY_OPTOUT=1`.
+Сборка патчера оставила бы работающими узлы MSBuild и сервер VBCSCompiler, а под
+Wine они не дают завершиться wineserver префикса, поэтому инструмент получает
+ещё `MSBUILDDISABLENODEREUSE=1`, `DOTNET_CLI_USE_MSBUILD_SERVER=0` и
+`UseSharedCompilation=false`. `DOTNET_ROLL_FORWARD=Major` позволяет патчеру,
+собранному под .NET 8 (Mutagen до 0.54), работать в среде выполнения .NET 10 из
+SDK, если среда выполнения .NET 8 не найдена.
+Запись Synthesis в `tools.ini`, где всё ещё
 стоит старое значение по умолчанию `dotnet8`, `vcrun2022`, получает
 `dotnetsdk10`, `vcrun2022`, когда Eidos её читает.
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=80ee63cfac4035db5e5010e5c389ef6bc6f5a370 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -155,7 +155,15 @@ Synthesis patcher'larını derlemek için buna ihtiyaç duyar ve onları derleyi
 çalıştırmak için yolsuz bir `dotnet` çağırır; bu yüzden `dotnetsdk10` bildiren
 bir araç ayrıca `WINEPATH` üzerinde SDK klasörünü, bir de
 `NUGET_CERT_REVOCATION_MODE=offline`, `DOTNET_GENERATE_ASPNET_CERTIFICATE=false`
-ve `DOTNET_CLI_TELEMETRY_OPTOUT=1` değerlerini alır. `tools.ini` içinde hâlâ
+ve `DOTNET_CLI_TELEMETRY_OPTOUT=1` değerlerini alır.
+Bir patcher derlemesi MSBuild düğümlerini ve VBCSCompiler sunucusunu çalışır
+halde bırakırdı ve Wine altında bunlar önekin wineserver'ını canlı tutar; bu
+yüzden araç ayrıca `MSBUILDDISABLENODEREUSE=1`,
+`DOTNET_CLI_USE_MSBUILD_SERVER=0` ve `UseSharedCompilation=false` değerlerini de
+alır. `DOTNET_ROLL_FORWARD=Major`, .NET 8 için derlenmiş bir patcher'ın (0.54
+öncesi Mutagen) hiçbir .NET 8 çalışma zamanı bulunamadığında SDK'nın .NET 10
+çalışma zamanında çalışmasını sağlar.
+`tools.ini` içinde hâlâ
 eski varsayılanı, `dotnet8`, `vcrun2022` taşıyan bir Synthesis girdisi, Eidos
 onu okurken `dotnetsdk10`, `vcrun2022` olur.
 

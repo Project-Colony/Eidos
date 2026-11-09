@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=80ee63cfac4035db5e5010e5c389ef6bc6f5a370 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -149,6 +149,12 @@ ho potřebuje ke kompilaci svých patcherů a k jejich sestavení a spuštění 
 holé `dotnet`, takže nástroj, který deklaruje `dotnetsdk10`, dostane navíc
 složku SDK v `WINEPATH` a k tomu `NUGET_CERT_REVOCATION_MODE=offline`,
 `DOTNET_GENERATE_ASPNET_CERTIFICATE=false` a `DOTNET_CLI_TELEMETRY_OPTOUT=1`.
+Sestavení patcheru by po sobě nechalo běžet uzly MSBuild a server VBCSCompiler,
+které pod Wine drží wineserver prefixu naživu, proto nástroj dostane i
+`MSBUILDDISABLENODEREUSE=1`, `DOTNET_CLI_USE_MSBUILD_SERVER=0` a
+`UseSharedCompilation=false`. `DOTNET_ROLL_FORWARD=Major` dovolí patcheru
+sestavenému pro .NET 8 (Mutagen před 0.54) běžet na runtime .NET 10 ze SDK, když
+se žádný runtime .NET 8 nenajde.
 Záznam Synthesis v `tools.ini`, který má pořád starou výchozí hodnotu `dotnet8`,
 `vcrun2022`, dostane při načtení Eidosem `dotnetsdk10`, `vcrun2022`.
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=80ee63cfac4035db5e5010e5c389ef6bc6f5a370 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
 
 # Outils : xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -163,7 +163,15 @@ décompressé. Synthesis en a besoin pour compiler ses patchers, et il appelle u
 simple `dotnet` pour les construire et les lancer. Un outil qui déclare
 `dotnetsdk10` reçoit donc aussi le dossier du SDK dans `WINEPATH`, ainsi que
 `NUGET_CERT_REVOCATION_MODE=offline`, `DOTNET_GENERATE_ASPNET_CERTIFICATE=false`
-et `DOTNET_CLI_TELEMETRY_OPTOUT=1`. Une entrée Synthesis de `tools.ini` qui
+et `DOTNET_CLI_TELEMETRY_OPTOUT=1`.
+La compilation d'un patcher laisserait tourner des nœuds MSBuild et le serveur
+VBCSCompiler, qui sous Wine maintiennent en vie le wineserver du préfixe, donc
+l'outil reçoit aussi `MSBUILDDISABLENODEREUSE=1`,
+`DOTNET_CLI_USE_MSBUILD_SERVER=0` et `UseSharedCompilation=false`.
+`DOTNET_ROLL_FORWARD=Major` permet à un patcher compilé pour .NET 8 (Mutagen
+avant 0.54) de tourner sur le runtime .NET 10 du SDK quand aucun runtime .NET 8
+n'est trouvé.
+Une entrée Synthesis de `tools.ini` qui
 porte encore l'ancienne valeur par défaut, `dotnet8`, `vcrun2022`, passe à
 `dotnetsdk10`, `vcrun2022` quand Eidos la lit.
 

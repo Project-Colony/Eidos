@@ -147,6 +147,12 @@ Synthesis needs it to compile its patchers, and it calls a bare `dotnet` to buil
 and run them, so a tool that declares `dotnetsdk10` also gets the SDK folder on
 `WINEPATH`, plus `NUGET_CERT_REVOCATION_MODE=offline`,
 `DOTNET_GENERATE_ASPNET_CERTIFICATE=false` and `DOTNET_CLI_TELEMETRY_OPTOUT=1`.
+A patcher build would leave MSBuild nodes and the VBCSCompiler server running,
+and under Wine they keep the prefix's wineserver alive, so the tool also gets
+`MSBUILDDISABLENODEREUSE=1`, `DOTNET_CLI_USE_MSBUILD_SERVER=0` and
+`UseSharedCompilation=false`. `DOTNET_ROLL_FORWARD=Major` lets a patcher built
+for .NET 8 (Mutagen before 0.54) run on the SDK's .NET 10 runtime when no .NET 8
+runtime is found.
 A Synthesis entry in `tools.ini` that still lists the old default, `dotnet8`,
 `vcrun2022`, gets `dotnetsdk10`, `vcrun2022` when Eidos reads it.
 
