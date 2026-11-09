@@ -49,11 +49,13 @@ static PRIVILEGED: AtomicBool = AtomicBool::new(false);
 /// eidos-launch; otherwise a user namespace comes first (the
 /// `unshare --map-root-user --mount` idiom). Must run single-threaded, hence
 /// before the test runner does anything else. Returns whether it kept the
-/// initial user namespace: a bare unshare also succeeds inside a container's
-/// user namespace, so `/proc/self/uid_map` must map every uid to itself too.
-/// That lets a mount register passthrough backing files. The strict branch of
-/// `a_writer_is_refused_while_passthrough_readers_hold_the_file` also needs a
-/// kernel with FUSE passthrough (Linux 6.9 or later), and fails without it.
+/// initial user namespace: only that namespace, with CAP_SYS_ADMIN, lets a
+/// mount register passthrough backing files. A bare unshare also succeeds
+/// inside a container's user namespace, so `/proc/self/uid_map` must map every
+/// uid to itself too; that check only detects the initial namespace. The strict
+/// branch of `a_writer_is_refused_while_passthrough_readers_hold_the_file` also
+/// needs a kernel with FUSE passthrough (Linux 6.9 or later), and fails without
+/// it.
 fn enter_private_namespace() -> std::io::Result<bool> {
     // SAFETY: getuid/getgid always succeed.
     let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
