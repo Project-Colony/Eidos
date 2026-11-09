@@ -18,9 +18,9 @@ thread_local! {
 }
 
 /// Read up to `size` bytes at `offset` via `pread`, looping over short reads and
-/// stopping at EOF, then hand the bytes read (or the error) to `f` (they live in a per-thread
-/// buffer, so they must not outlive it). `pread` does not disturb a shared file
-/// offset, so concurrent reads on one handle are safe.
+/// stopping at EOF, then hand the bytes read (or the error) to `f` (they live in
+/// a per-thread buffer, so they must not outlive it). `pread` does not disturb a
+/// shared file offset, so concurrent reads on one handle are safe.
 pub(crate) fn read_full_at<R>(
     file: &File,
     mut offset: u64,

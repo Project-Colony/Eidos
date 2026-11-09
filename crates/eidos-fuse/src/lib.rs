@@ -483,9 +483,6 @@ impl Eidos {
         );
     }
 
-    /// Drop any negative dentry the kernel holds for a name that case-folds to
-    /// `name` in `parent`. Called whenever an entry is created, so a probe for
-    /// `Foo.esp` cannot keep hiding a freshly created `foo.esp`.
     /// Drop the kernel's cached pages for one inode.
     ///
     /// Needed when a copy-up swaps the file backing a virtual path: the inode
@@ -544,6 +541,9 @@ impl Eidos {
             .or_insert(unicode)
     }
 
+    /// Drop any negative dentry the kernel holds for a name that case-folds to
+    /// `name` in `parent`. Called whenever an entry is created, so a probe for
+    /// `Foo.esp` cannot keep hiding a freshly created `foo.esp`.
     fn invalidate_folded_negatives(&self, parent: u64, name: &str) {
         let stale: Vec<String> = {
             let mut neg = self.negatives.lock_recover();

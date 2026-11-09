@@ -410,11 +410,11 @@ impl Filesystem for Eidos {
         // `get_dir_case_sensitivity` first asks `FS_IOC_GETFLAGS` (see `ioctl`),
         // then sniffs for the marker CIOPFS leaves in every directory it serves;
         // older Wine only has the marker. Without either Wine assumes
-        // case-SENSITIVE, and every
-        // lookup whose spelling does not match byte-for-byte falls back to reading
-        // the WHOLE directory to search for a case-insensitive match. Bethesda
-        // games ask for `data/ccbgssse001-fish.bsa` while the file is
-        // `ccBGSSSE001-Fish.bsa`, so that fallback fires on nearly every asset.
+        // case-SENSITIVE, and every lookup whose spelling does not match
+        // byte-for-byte falls back to reading the WHOLE directory to search for a
+        // case-insensitive match. Bethesda games ask for
+        // `data/ccbgssse001-fish.bsa` while the file is `ccBGSSSE001-Fish.bsa`, so
+        // that fallback fires on nearly every asset.
         //
         // Measured on Skyrim SE through this mount: 4471 `.ciopfs` probes and 2236
         // full directory re-reads in EIGHT SECONDS, 195796 `opendir`s of Data in
