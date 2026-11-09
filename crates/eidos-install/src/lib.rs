@@ -664,13 +664,14 @@ pub use install::obmm;
 pub use install::scripted;
 pub use install::{
     classify_extracted, collision_name, extract_to_temp, extract_to_temp_with, finish_fomod,
-    finish_fomod_with_finish, fomod_context, fomod_context_for_instance,
-    fomod_context_with_plugins, install_archive, install_archive_with_policy, install_bain,
-    install_destination, install_extracted, install_extracted_with_finish, install_manual,
-    install_omod, install_omod_with_finish, mod_name_for, open_archive, open_archive_with,
-    open_archive_with_installers, open_omod_with, try_open_omod, try_open_omod_with, ExtractedTree,
-    FomodSession, InstallError, InstallReport, OmodCompression, OmodCreationTime, OmodFileKind,
-    OmodMember, OmodMetadata, OmodScript, OmodScriptKind, OmodSession, Opened, OverwritePolicy,
+    finish_fomod_with_finish, fomod_choices_from_json, fomod_choices_json, fomod_context,
+    fomod_context_for_instance, fomod_context_with_plugins, install_archive,
+    install_archive_with_policy, install_bain, install_destination, install_extracted,
+    install_extracted_with_finish, install_manual, install_omod, install_omod_with_finish,
+    mod_name_for, open_archive, open_archive_with, open_archive_with_installers, open_omod_with,
+    try_open_omod, try_open_omod_with, ExtractedTree, FomodSession, InstallError, InstallReport,
+    OmodCompression, OmodCreationTime, OmodFileKind, OmodMember, OmodMetadata, OmodScript,
+    OmodScriptKind, OmodSession, Opened, OverwritePolicy,
 };
 
 /// The same check as [`ArchiveTree::data_looks_valid`], against a directory that

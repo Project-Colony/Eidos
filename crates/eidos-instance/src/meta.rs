@@ -310,6 +310,28 @@ impl ModMeta {
         );
     }
 
+    /// The FOMOD answers the last install of this mod used, as the JSON
+    /// `eidos_install::fomod_choices_json` writes. `None` when absent or cleared.
+    pub fn fomod_choices(&self) -> Option<String> {
+        match &qt_items(self.raw("eidosFomodChoices")?)[..] {
+            [json] if !json.is_empty() => Some(json.clone()),
+            _ => None,
+        }
+    }
+
+    /// Record (or, with an empty string, clear) the FOMOD answers. Quoted the
+    /// way QSettings writes it back unchanged (see collection_owner).
+    pub fn set_fomod_choices(&mut self, json: &str) {
+        self.set(
+            "eidosFomodChoices",
+            &if json.is_empty() {
+                String::new()
+            } else {
+                qt_quote(json)
+            },
+        );
+    }
+
     /// A `[General]` string value, unquoted and with empty treated as absent.
     fn string(&self, key: &str) -> Option<String> {
         self.raw(key).map(unquote).filter(|s| !s.is_empty())
@@ -1542,6 +1564,21 @@ mod tests {
             ModMeta::read(&p).notes().as_deref(),
             Some("merge with USSEP, keep my patch on top")
         );
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn fomod_choices_survive_commas_quotes_and_non_ascii() {
+        let p = tmp_ini(SAMPLE);
+        let mut m = ModMeta::read(&p);
+        let json = r#"[{"name":"Étape, 1","groups":[{"name":"Textures \"HD\"","choices":[{"name":"C:\\x, 2K","idx":1}]}]}]"#;
+        m.set_fomod_choices(json);
+        m.write(&p).unwrap();
+        assert_eq!(ModMeta::read(&p).fomod_choices().as_deref(), Some(json));
+        let mut m = ModMeta::read(&p);
+        m.set_fomod_choices("");
+        m.write(&p).unwrap();
+        assert_eq!(ModMeta::read(&p).fomod_choices(), None);
         let _ = fs::remove_file(&p);
     }
 

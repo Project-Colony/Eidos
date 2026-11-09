@@ -1928,6 +1928,81 @@ fn public_archive_entry_points_apply_the_same_fomod_plan() {
 }
 
 #[test]
+fn fomod_choices_json_uses_the_collection_shape() {
+    use eidos_fomod::{RecordedGroup, RecordedOption, RecordedStep};
+    let steps = vec![RecordedStep {
+        name: "Main".into(),
+        groups: vec![RecordedGroup {
+            name: "Textures".into(),
+            selected: vec![RecordedOption {
+                name: "2K".into(),
+                idx: 1,
+            }],
+        }],
+    }];
+    let json = fomod_choices_json(&steps);
+    assert_eq!(
+        json,
+        r#"[{"name":"Main","groups":[{"name":"Textures","choices":[{"name":"2K","idx":1}]}]}]"#
+    );
+    assert_eq!(fomod_choices_from_json(&json), Some(steps));
+    assert_eq!(fomod_choices_from_json("not json"), None);
+}
+
+#[test]
+fn finish_fomod_stores_the_choices_it_installed() {
+    use eidos_fomod::{RecordedGroup, RecordedOption, RecordedStep};
+    let Some(bin) = eidos_sevenzip::find_7z() else {
+        return;
+    };
+    let t = TempDir::new("fomod-choices");
+    let src = t.path().join("source");
+    write_at(&src, "2k.esp", b"two");
+    write_at(&src, "fomod/ModuleConfig.xml", br#"<config><moduleName>Test</moduleName><installSteps order="Explicit"><installStep name="Main"><optionalFileGroups order="Explicit"><group name="Textures" type="SelectAny"><plugins order="Explicit"><plugin name="2K"><files><file source="2k.esp" destination="2k.esp"/></files><typeDescriptor><type name="Optional"/></typeDescriptor></plugin></plugins></group></optionalFileGroups></installStep></installSteps></config>"#);
+    let archive = t.path().join("archive.zip");
+    let output = std::process::Command::new(bin)
+        .args(["a", "-tzip"])
+        .arg(&archive)
+        .arg(".")
+        .current_dir(&src)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let mods = t.path().join("mods");
+    let ctx = Default::default();
+    let Opened::Fomod(session) = open_archive(&archive, &mods, "Chosen", "skyrimse").unwrap()
+    else {
+        panic!("FOMOD must take priority")
+    };
+    let report = finish_fomod(
+        *session,
+        &vec![vec![vec![true]]],
+        &mods,
+        "skyrimse",
+        &ctx,
+        OverwritePolicy::Fail,
+    )
+    .unwrap();
+    let stored = ModMeta::read(&report.dest.join("meta.ini"))
+        .fomod_choices()
+        .unwrap();
+    assert!(stored.contains("\"choices\""), "{stored}");
+    assert_eq!(
+        fomod_choices_from_json(&stored),
+        Some(vec![RecordedStep {
+            name: "Main".into(),
+            groups: vec![RecordedGroup {
+                name: "Textures".into(),
+                selected: vec![RecordedOption {
+                    name: "2K".into(),
+                    idx: 0,
+                }],
+            }],
+        }])
+    );
+}
+
+#[test]
 fn persisted_fomod_context_uses_profile_activation_and_whiteouts() {
     let t = TempDir::new("persisted-fomod-context");
     let inst = eidos_instance::Instance::portable(t.path().join("instance"));

@@ -21,4 +21,4 @@ pub use engine::{
 };
 pub use model::*;
 pub use parse::decode_xml;
-pub use replay::{replay, RecordedGroup, RecordedOption, RecordedStep, Replay};
+pub use replay::{replay, to_recorded, RecordedGroup, RecordedOption, RecordedStep, Replay};

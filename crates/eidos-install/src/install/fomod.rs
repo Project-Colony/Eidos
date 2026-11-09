@@ -353,7 +353,8 @@ fn finish_fomod_inner(
         return Err(InstallError::UnmetDependency(req));
     }
     let plan = eidos_fomod::build_plan(&session.config, selection, ctx);
-    install_destination_inner(
+    let choices = fomod_choices_json(&eidos_fomod::to_recorded(&session.config, selection, ctx));
+    let report = install_destination_inner(
         &session.archive,
         mods_dir,
         &session.name,
@@ -369,6 +370,93 @@ fn finish_fomod_inner(
             }
             Ok((String::new(), true, missing))
         },
+    )?;
+    // The mod is installed either way; losing the answers only costs a
+    // reinstall its pre-ticked wizard.
+    let meta = report.dest.join("meta.ini");
+    if let Err(e) = eidos_instance::ModMeta::read_checked(&meta).and_then(|mut m| {
+        m.set_fomod_choices(&choices);
+        m.write(&meta)
+    }) {
+        eidos_log::warn!(
+            "eidos install: could not record the FOMOD choices in {} ({e})",
+            meta.display()
+        );
+    }
+    Ok(report)
+}
+
+/// One step of FOMOD answers in the JSON shape of a collection's
+/// `choices.options` and Vortex's `installerChoices.options`.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ChoiceStep {
+    name: String,
+    groups: Vec<ChoiceGroup>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ChoiceGroup {
+    name: String,
+    choices: Vec<ChoiceOption>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ChoiceOption {
+    name: String,
+    idx: usize,
+}
+
+/// FOMOD answers as the JSON `meta.ini` stores them, in the collection shape.
+pub fn fomod_choices_json(steps: &[eidos_fomod::RecordedStep]) -> String {
+    let steps: Vec<ChoiceStep> = steps
+        .iter()
+        .map(|s| ChoiceStep {
+            name: s.name.clone(),
+            groups: s
+                .groups
+                .iter()
+                .map(|g| ChoiceGroup {
+                    name: g.name.clone(),
+                    choices: g
+                        .selected
+                        .iter()
+                        .map(|o| ChoiceOption {
+                            name: o.name.clone(),
+                            idx: o.idx,
+                        })
+                        .collect(),
+                })
+                .collect(),
+        })
+        .collect();
+    serde_json::to_string(&steps).expect("strings serialize")
+}
+
+/// The answers [`fomod_choices_json`] wrote, or `None` when `json` is not that shape.
+pub fn fomod_choices_from_json(json: &str) -> Option<Vec<eidos_fomod::RecordedStep>> {
+    let steps: Vec<ChoiceStep> = serde_json::from_str(json).ok()?;
+    Some(
+        steps
+            .into_iter()
+            .map(|s| eidos_fomod::RecordedStep {
+                name: s.name,
+                groups: s
+                    .groups
+                    .into_iter()
+                    .map(|g| eidos_fomod::RecordedGroup {
+                        name: g.name,
+                        selected: g
+                            .choices
+                            .into_iter()
+                            .map(|o| eidos_fomod::RecordedOption {
+                                name: o.name,
+                                idx: o.idx,
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+            })
+            .collect(),
     )
 }
 
