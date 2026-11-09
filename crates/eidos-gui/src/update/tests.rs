@@ -510,6 +510,12 @@ fn the_plugin_filter_takes_hidden_rows_from_the_keyboard_and_the_selection() {
     // A Shift run skips Beta.esp, hidden between the two drawn rows.
     let _ = update(&mut app, Message::SelectPluginExtend(1));
     assert_eq!(app.selected_plugins, [1, 3].into());
+    // Ctrl+A takes what is drawn, not the hidden Alpha.esp and Beta.esp.
+    app.selected_plugins.clear();
+    app.selected_plugin = None;
+    let _ = update(&mut app, Message::SelectAllInFocus);
+    assert_eq!(app.selected_plugins, [1, 3].into());
+    assert_eq!(app.selected_plugin, Some(1));
 }
 
 #[test]
