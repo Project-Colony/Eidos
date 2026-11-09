@@ -21,7 +21,9 @@ mod paths;
 mod stores;
 pub use stores::{select_installation, GameSource, Store};
 mod proton;
-pub use proton::{is_flatpak_steam, library_path, proton_command, steam_root, ProtonRun};
+pub use proton::{
+    is_flatpak_steam, library_path, proton_command, steam_root, wineserver_wait_for, ProtonRun,
+};
 
 /// A supported game. The catalog now lives in the shared `eidos-gamedef`
 /// descriptor; re-exported so detection callers keep using `eidos_games::GameDef`.

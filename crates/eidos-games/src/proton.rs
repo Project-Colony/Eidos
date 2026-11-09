@@ -69,12 +69,8 @@ impl ProtonRun {
     /// outside the view (the regedit import just before, or the game itself)
     /// reads and writes the real game folder.
     pub fn wineserver_wait(&self) -> Option<Command> {
-        if !self.plain_wine {
-            return None;
-        }
-        let mut cmd = Command::new(self.proton.with_file_name("wineserver"));
-        cmd.arg("-w").envs(self.env.iter().map(|(k, v)| (k, v)));
-        Some(cmd)
+        self.plain_wine
+            .then(|| wineserver_wait_for(&self.proton, &self.env))
     }
 
     /// Start this run inside the Steam Linux Runtime its Proton build names
@@ -121,6 +117,16 @@ impl ProtonRun {
         v.extend(args.iter().cloned());
         v
     }
+}
+
+/// `wineserver -w` from the folder of the `wine` binary `wine`, with `env` on
+/// top of the inherited environment (it must name the same `WINEPREFIX`). See
+/// [`ProtonRun::wineserver_wait`]; a `runner=native` tool that is a `wine`
+/// needs the same wait.
+pub fn wineserver_wait_for(wine: &Path, env: &[(String, String)]) -> Command {
+    let mut cmd = Command::new(wine.with_file_name("wineserver"));
+    cmd.arg("-w").envs(env.iter().map(|(k, v)| (k, v)));
+    cmd
 }
 
 /// The run for a copy Heroic manages, with the build and prefix its settings

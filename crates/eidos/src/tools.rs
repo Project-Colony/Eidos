@@ -419,7 +419,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
                     "eidos tool: '{title}' needs {names} - run `eidos prereqs {id} --install` to set it up (downloads from Microsoft)."
                 );
             }
-            let wineserver_wait = run.as_ref().and_then(|r| r.wineserver_wait());
+            let wineserver_wait = wineserver_wait(run.as_ref(), &exe, &tool.env);
             // Tier 3: point the tool at any runtime it declares. Nothing is
             // installed into the prefix - the variable IS the mechanism, which is
             // why an absent runtime must contribute nothing rather than a path
@@ -558,6 +558,23 @@ fn print_plan(
         ));
     }
     out
+}
+
+/// The `wineserver -w` to run before a tool, outside the view: a plain Wine
+/// run's, or for a `runner=native` tool whose executable is a `wine`, the
+/// server next to it with the tool's own `env=` (its `WINEPREFIX`).
+fn wineserver_wait(
+    run: Option<&eidos_games::ProtonRun>,
+    exe: &Path,
+    tool_env: &[(String, String)],
+) -> Option<std::process::Command> {
+    match run {
+        Some(run) => run.wineserver_wait(),
+        None => exe
+            .file_name()
+            .is_some_and(|n| n.to_string_lossy().starts_with("wine"))
+            .then(|| eidos_games::wineserver_wait_for(exe, tool_env)),
+    }
 }
 
 /// Env a Windows tool needs from the host, not from the instance.
@@ -768,6 +785,24 @@ mod env_fact_tests {
             std::fs::create_dir_all(root.join("steamapps/shadercache/489830")).unwrap();
         }
         (root, compat)
+    }
+
+    #[test]
+    fn a_native_wine_tool_waits_for_the_server_next_to_it() {
+        use std::ffi::OsStr;
+        let env = vec![("WINEPREFIX".to_string(), "/h/Prefixes/Skyrim".to_string())];
+        let wait = wineserver_wait(None, Path::new("/opt/wine-ge/bin/wine"), &env)
+            .expect("a native wine waits");
+        assert_eq!(wait.get_program(), "/opt/wine-ge/bin/wineserver");
+        assert_eq!(wait.get_args().collect::<Vec<_>>(), ["-w"]);
+        assert_eq!(
+            wait.get_envs().collect::<Vec<_>>(),
+            [(
+                OsStr::new("WINEPREFIX"),
+                Some(OsStr::new("/h/Prefixes/Skyrim"))
+            )]
+        );
+        assert!(wineserver_wait(None, Path::new("/usr/bin/Synthesis"), &env).is_none());
     }
 
     #[test]
