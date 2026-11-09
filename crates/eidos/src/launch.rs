@@ -784,6 +784,35 @@ pub(crate) fn run_through_view(
     }
 }
 
+// Wrapper DLLs a mod ships at its root (d3dcompiler_47 is handled by import
+// detection below, not by the ship check - mods import it, they don't ship it).
+// `d3dx9_42` is the SKSE64 plugin preloader (SSE Engine Fixes' second half): a
+// proxy DLL the Windows loader picks up from the game root, which then preloads
+// the SKSE plugins that need to run before SKSE itself. Wine implements
+// d3dx9_42, so without the override the builtin wins and the preloader never
+// runs - silently, which is the whole problem with this class of mod.
+// `version` and `dsound` are two more names Ultimate ASI Loader ships under
+// (Crimson Desert ASI mods use them beside winmm and dinput8).
+pub(crate) const SHIPPED_SHADOWS: &[&str] = &[
+    "d3d8",
+    "d3d9",
+    "d3d10",
+    "d3d11",
+    "d3d12",
+    "dxgi",
+    "dinput",
+    "dinput8",
+    "winmm",
+    "version",
+    "dsound",
+    "xinput1_3",
+    "x3daudio1_7",
+    "opengl32",
+    "d3dx9_42",
+    "winhttp",
+    "wininet",
+];
+
 /// Which of `shadows` are shipped as a top-level `.dll` in any of `dirs`.
 ///
 /// One listing per directory, no recursion: a wrapper DLL only works where the
@@ -831,32 +860,6 @@ pub(crate) fn forced_dll_overrides(
     inst: &Instance,
     tool_prereqs: &[String],
 ) -> Option<(String, String)> {
-    // Wrapper DLLs a mod ships at its root (d3dcompiler_47 is handled by import
-    // detection below, not by the ship check - mods import it, they don't ship it).
-    // `d3dx9_42` is the SKSE64 plugin preloader (SSE Engine Fixes' second half): a
-    // proxy DLL the Windows loader picks up from the game root, which then preloads
-    // the SKSE plugins that need to run before SKSE itself. Wine implements
-    // d3dx9_42, so without the override the builtin wins and the preloader never
-    // runs - silently, which is the whole problem with this class of mod.
-    // `version` and `dsound` are two more names Ultimate ASI Loader ships under
-    // (Crimson Desert ASI mods use them beside winmm and dinput8).
-    const SHIPPED_SHADOWS: &[&str] = &[
-        "d3d8",
-        "d3d9",
-        "d3d10",
-        "d3d11",
-        "d3d12",
-        "dxgi",
-        "dinput",
-        "dinput8",
-        "winmm",
-        "version",
-        "dsound",
-        "xinput1_3",
-        "x3daudio1_7",
-        "opengl32",
-        "d3dx9_42",
-    ];
     let mut roots: Vec<PathBuf> = inst
         .modlist()
         .into_iter()

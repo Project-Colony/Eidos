@@ -76,6 +76,9 @@ pub fn registry_blob(registry_name: &str, install_path: &Path) -> String {
             ));
         }
     }
+    // Wine hides dot-files by default; tools that keep config in `.something`
+    // folders (Pandora, Synthesis) otherwise cannot see them.
+    out.push_str("\r\n[HKEY_CURRENT_USER\\Software\\Wine]\r\n\"ShowDotFiles\"=\"Y\"\r\n");
     for exe in xedit_exes() {
         out.push_str(&format!(
             "\r\n[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\{exe}]\r\n"
@@ -108,14 +111,14 @@ fn escape_reg(s: &str) -> String {
 /// Bump the suffix whenever the BLOB gains entries that are not covered by the
 /// value checks: a prefix written by an older Eidos then re-imports once instead
 /// of keeping a blob that no longer says everything it should. `v2` added the
-/// `QuickAutoClean` executables.
+/// `QuickAutoClean` executables, `v3` the `ShowDotFiles` value.
 fn marker_path(compatdata: &Path, registry_name: &str) -> PathBuf {
     let key = if registry_name.is_empty() {
         "xedit"
     } else {
         registry_name
     };
-    compatdata.join(".eidos_registry").join(format!("{key}.v2"))
+    compatdata.join(".eidos_registry").join(format!("{key}.v3"))
 }
 
 /// Whether `system.reg` currently holds `want` in BOTH views of the game's key.
@@ -388,6 +391,13 @@ pub fn ensure_registry(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn blob_shows_dot_files_and_the_marker_is_v3() {
+        let blob = registry_blob("", Path::new("/g"));
+        assert!(blob.contains("[HKEY_CURRENT_USER\\Software\\Wine]\r\n\"ShowDotFiles\"=\"Y\""));
+        assert!(marker_path(Path::new("/c"), "X").ends_with("X.v3"));
+    }
 
     #[test]
     fn blob_writes_both_registry_views_with_a_trailing_backslash() {

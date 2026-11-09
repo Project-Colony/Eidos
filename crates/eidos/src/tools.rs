@@ -404,6 +404,17 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 );
             }
 
+            // Host-environment facts for a tool run, applied last so `--print`
+            // shows them. The Creation Kit override is a different Steam app, so
+            // the game's shader cache would be the wrong one for it.
+            apply_tool_env_facts(
+                &mut run.env,
+                compat,
+                game.def.steam_app_id,
+                app_id.is_some(),
+                |k| std::env::var(k).ok(),
+            );
+
             // A tool that IS its own Steam app - the Creation Kit is the usual
             // one - wants that app's id, not the game's. Both variables, because
             // Proton reads one and Steam's own libraries read the other, and a
@@ -468,6 +479,69 @@ pub(crate) fn cmd_tool(args: &[String]) {
             eidos_log::warn!("unknown tool subcommand '{other}' (list | add | rm | run)");
             exit(2);
         }
+    }
+}
+
+/// Env a Windows tool needs from the host, not from the instance.
+///
+/// Steam's shader cache for the game (only when its directory exists - Steam's
+/// tree is never written to - and never over a variable the user exported),
+/// empty .NET roots so a host SDK cannot hijack a framework-dependent tool, and
+/// no Steam overlay in `LD_PRELOAD`. `host` reads the inherited environment.
+fn apply_tool_env_facts(
+    env: &mut Vec<(String, String)>,
+    compat: &Path,
+    game_app_id: u32,
+    app_id_override: bool,
+    host: impl Fn(&str) -> Option<String>,
+) {
+    let mut push = |k: &str, v: String| env.push((k.to_string(), v));
+    if !app_id_override {
+        let cache = compat.join(format!("../../shadercache/{game_app_id}"));
+        if cache.is_dir() {
+            let c = |sub: &str| cache.join(sub).to_string_lossy().into_owned();
+            let mut vars = vec![
+                ("STEAM_COMPAT_SHADER_PATH", c("")),
+                (
+                    "__GL_SHADER_DISK_CACHE_APP_NAME",
+                    "steamapp_shader_cache".into(),
+                ),
+                ("__GL_SHADER_DISK_CACHE_PATH", c("nvidiav1")),
+                (
+                    "__GL_SHADER_DISK_CACHE_READ_ONLY_APP_NAME",
+                    "steam_shader_cache;steamapp_merged_shader_cache".into(),
+                ),
+                ("__GL_SHADER_DISK_CACHE_SKIP_CLEANUP", "1".into()),
+                (
+                    "MESA_DISK_CACHE_READ_ONLY_FOZ_DBS",
+                    "steam_cache,steam_precompiled".into(),
+                ),
+                ("MESA_DISK_CACHE_SINGLE_FILE", "1".into()),
+                ("MESA_SHADER_CACHE_DIR", c("")),
+                ("MESA_SHADER_CACHE_MAX_SIZE", "5G".into()),
+            ];
+            // Only DXVK builds that still read it (sarek); Steam creates the dir.
+            if cache.join("DXVK_state_cache").is_dir() {
+                vars.push(("DXVK_STATE_CACHE_PATH", c("DXVK_state_cache")));
+            }
+            for (k, v) in vars {
+                if host(k).is_none() {
+                    push(k, v);
+                }
+            }
+        }
+    }
+    // An empty value reads as unset for the .NET host, and still shows in --print.
+    if !env.iter().any(|(k, _)| k == "DOTNET_ROOT") {
+        env.push(("DOTNET_ROOT".into(), String::new()));
+    }
+    env.push(("DOTNET_ROOT_X64".into(), String::new()));
+    if let Some(pre) = host("LD_PRELOAD").filter(|p| p.contains("gameoverlayrenderer.so")) {
+        let kept: Vec<&str> = pre
+            .split([' ', ':'])
+            .filter(|e| !e.is_empty() && !e.contains("gameoverlayrenderer.so"))
+            .collect();
+        env.push(("LD_PRELOAD".into(), kept.join(":")));
     }
 }
 
@@ -577,5 +651,91 @@ mod root_tool_tests {
             Some((source, game.join("skse64_loader.exe")))
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod env_fact_tests {
+    use super::*;
+
+    fn get<'a>(env: &'a [(String, String)], k: &str) -> Option<&'a str> {
+        env.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str())
+    }
+
+    fn library(with_cache: bool) -> (PathBuf, PathBuf) {
+        let root = std::env::temp_dir().join(format!(
+            "eidos-envfacts-{}-{with_cache}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let compat = root.join("steamapps/compatdata/489830");
+        std::fs::create_dir_all(&compat).unwrap();
+        if with_cache {
+            std::fs::create_dir_all(root.join("steamapps/shadercache/489830")).unwrap();
+        }
+        (root, compat)
+    }
+
+    #[test]
+    fn shader_cache_vars_follow_the_cache_dir_and_never_override_the_user() {
+        let (root, compat) = library(true);
+        let mut env = vec![];
+        apply_tool_env_facts(&mut env, &compat, 489830, false, |k| {
+            (k == "MESA_SHADER_CACHE_MAX_SIZE").then(|| "1G".to_string())
+        });
+        assert!(get(&env, "STEAM_COMPAT_SHADER_PATH")
+            .unwrap()
+            .contains("shadercache/489830"));
+        assert!(get(&env, "__GL_SHADER_DISK_CACHE_PATH")
+            .unwrap()
+            .ends_with("nvidiav1"));
+        assert_eq!(get(&env, "MESA_SHADER_CACHE_MAX_SIZE"), None);
+        assert_eq!(get(&env, "DXVK_STATE_CACHE_PATH"), None);
+        assert_eq!(get(&env, "MESA_GLSL_CACHE_DIR"), None);
+        std::fs::create_dir(root.join("steamapps/shadercache/489830/DXVK_state_cache")).unwrap();
+        let mut env = vec![];
+        apply_tool_env_facts(&mut env, &compat, 489830, false, |_| None);
+        assert!(get(&env, "DXVK_STATE_CACHE_PATH").is_some());
+        let mut env = vec![];
+        apply_tool_env_facts(&mut env, &compat, 489830, true, |_| None);
+        assert_eq!(get(&env, "STEAM_COMPAT_SHADER_PATH"), None);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn no_shader_vars_and_no_dir_created_when_steam_has_no_cache() {
+        let (root, compat) = library(false);
+        let mut env = vec![];
+        apply_tool_env_facts(&mut env, &compat, 489830, false, |_| None);
+        assert_eq!(get(&env, "STEAM_COMPAT_SHADER_PATH"), None);
+        assert!(!root.join("steamapps/shadercache").exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn dotnet_roots_are_blanked_unless_the_tool_sets_one() {
+        let mut env = vec![];
+        apply_tool_env_facts(&mut env, Path::new("/nope"), 1, false, |_| None);
+        assert_eq!(get(&env, "DOTNET_ROOT"), Some(""));
+        assert_eq!(get(&env, "DOTNET_ROOT_X64"), Some(""));
+        let mut env = vec![("DOTNET_ROOT".to_string(), "/rt".to_string())];
+        apply_tool_env_facts(&mut env, Path::new("/nope"), 1, false, |_| None);
+        assert_eq!(get(&env, "DOTNET_ROOT"), Some("/rt"));
+        assert_eq!(env.iter().filter(|(k, _)| k == "DOTNET_ROOT").count(), 1);
+    }
+
+    #[test]
+    fn steam_overlay_leaves_ld_preload_but_other_entries_stay() {
+        let pre = "/a/gameoverlayrenderer.so:/b/libx.so /c/gameoverlayrenderer.so";
+        let mut env = vec![];
+        apply_tool_env_facts(&mut env, Path::new("/nope"), 1, false, |k| {
+            (k == "LD_PRELOAD").then(|| pre.to_string())
+        });
+        assert_eq!(get(&env, "LD_PRELOAD"), Some("/b/libx.so"));
+        let mut env = vec![];
+        apply_tool_env_facts(&mut env, Path::new("/nope"), 1, false, |k| {
+            (k == "LD_PRELOAD").then(|| "/b/libx.so".to_string())
+        });
+        assert_eq!(get(&env, "LD_PRELOAD"), None);
     }
 }
