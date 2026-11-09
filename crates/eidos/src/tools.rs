@@ -271,8 +271,8 @@ pub(crate) fn cmd_tool(args: &[String]) {
             let native = tool.runner == eidos_instance::Runner::Native;
             if native && tool.slr {
                 eidos_log::info!(
-                    "eidos tool: '{title}' has runner=native, so its slr=1 is ignored: the Steam \
-                     Linux Runtime container only wraps a Proton run."
+                    "eidos tool: '{title}' has runner=native, so its slr= line is ignored: the \
+                     Steam Linux Runtime container only wraps a Proton run."
                 );
             }
             let compat = game.compatdata.as_deref();
