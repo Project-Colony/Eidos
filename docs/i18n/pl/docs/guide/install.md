@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=e00626e360d8e5b283304045968cc7a6bd6af061 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=159c034d20f656f379fb1e707a2804ecb4a0df37 -->
 
 # Instalacja Eidos
 
@@ -111,14 +111,17 @@ wycieczka jest w [usage.md](usage.md).
 
 ## Opcjonalnie: passthrough FUSE
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` nadaje opcjonalne uprawnienie, ale nie włącza passthrough.
-Nadaje się je osobnemu plikowi wykonywalnemu `eidos` z pakietu albo z kompilacji
-ze źródeł, nigdy `eidos-linux`, który jest też oknem
-([SECURITY.md](../../../../../SECURITY.md)).
-`EIDOS_FUSE_PASSTHROUGH=1` to osobny przełącznik używany podczas uruchamiania. Jest **domyślnie wyłączony i niemal na pewno chcesz, żeby tak zostało**:
-zmierzone na Skyrim SE - powstrzymuje grę przed otwarciem własnych archiwów i
-wtyczek, przez co mody po cichu się nie wczytują. Przełącznik istnieje po to, by
-mechanizm dało się przetestować ponownie, a nie dlatego, że jest zalecany.
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` nadaje opcjonalne
+uprawnienie, ale nie włącza passthrough. Nadaje się je osobnemu plikowi
+wykonywalnemu `eidos` z pakietu albo z kompilacji ze źródeł, nigdy
+`eidos-linux`, który jest też oknem ([SECURITY.md](../../../../../SECURITY.md)).
+`EIDOS_FUSE_PASSTHROUGH=1` to osobny przełącznik używany podczas uruchamiania i
+jest domyślnie wyłączony. Przy włączonym passthrough wcześniejsza wersja demona
+nie pozwalała Skyrim SE otworzyć własnych archiwów i wtyczek, przez co mody po
+cichu się nie wczytywały. Ta przyczyna jest naprawiona (jądro przyjmuje jeden
+plik bazowy na i-węzeł, a demon dzieli teraz jeden między wszystkie otwarcia
+pliku przez passthrough), ale poprawki jeszcze nie zmierzono w prawdziwej sesji
+gry. Do tego czasu włączaj passthrough tylko po to, by go testować.
 
 Szczegóły i pomiary stojące za tą decyzją w
 [troubleshooting.md](troubleshooting.md).

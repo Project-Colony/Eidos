@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=596ae1f1b120f9890bd5aac859d50e815b728678 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=287e0b2cc22bc21eb741f1bc3189c44d9d4b9e5f -->
 
 # Probleemoplossing en diagnostiek
 
@@ -43,10 +43,12 @@ weglaat), zodat de lagen zelf ook hier ongerept blijven.
 #### Waarom passthrough standaard uit staat
 
 Passthrough geeft de kernel het echte onderliggende bestand, zodat lezingen deze
-daemon volledig overslaan. Het is een doorvoerwinst die hier correctheid kost.
-A/B gemeten op Skyrim SE 1.6.1170, proton-cachyos 11.0, kernel 7.1.4, dezelfde
-laadvolgorde van 82 plugins, met als enige variabele of het binaire bestand de
-capability droeg:
+daemon volledig overslaan. De A/B hieronder dateert van vóór de oplossing die
+verderop staat beschreven bij het bekende probleem "FUSE-passthrough belet het
+spel enige modinhoud te laden". Die oplossing is nog niet in een spel gemeten,
+dus passthrough blijft standaard uit. A/B gemeten op Skyrim SE 1.6.1170,
+proton-cachyos 11.0, kernel 7.1.4, dezelfde laadvolgorde van 82 plugins, met als
+enige variabele of het binaire bestand de capability droeg:
 
 | passthrough | `NtCreateFile`-fouten met `STATUS_ACCESS_VIOLATION`    |
 |-------------|--------------------------------------------------------|
@@ -164,18 +166,23 @@ symlink naar zijn eigen boom.
 **Wine kon niet zien dat de koppeling hoofdletters vouwt.** Opgelost, en dit was
 degene die ertoe deed.
 
-Wine's `get_dir_case_sensitivity` vraagt de map eerst via `FS_IOC_GETFLAGS` en snuffelt daarna naar de markering die CIOPFS achterlaat in de mappen die het bedient. Ontbreekt beide, dan gaat Wine uit van
-HOOFDLETTERGEVOELIG, en elke opzoeking waarvan de spelling niet byte voor byte
-klopt, valt terug op het lezen van de HELE map om een hoofdletterongevoelige
-treffer te vinden. Bethesda-spellen vragen om `data/ccbgssse001-fish.bsa` terwijl
-het bestand `ccBGSSSE001-Fish.bsa` heet, dus het ging bij vrijwel elke asset af:
-4471 markeringspeilingen en 2236 volledige herlezingen van mappen in acht
-seconden, en 195796 opsommingen van `Data` in negentig. Skyrim SE bereikte zijn
-hoofdmenu nooit - het bleef op 240 MB resident staan terwijl de daemon 92% van
-een core verstookte.
+Wine's `get_dir_case_sensitivity` vraagt de map eerst via `FS_IOC_GETFLAGS` en
+snuffelt daarna naar de markering die CIOPFS achterlaat in de mappen die het
+bedient. Ontbreekt beide, dan gaat Wine uit van HOOFDLETTERGEVOELIG, en elke
+opzoeking waarvan de spelling niet byte voor byte klopt, valt terug op het lezen
+van de HELE map om een hoofdletterongevoelige treffer te vinden.
+Bethesda-spellen vragen om `data/ccbgssse001-fish.bsa` terwijl het bestand
+`ccBGSSSE001-Fish.bsa` heet, dus het ging bij vrijwel elke asset af: 4471
+markeringspeilingen en 2236 volledige herlezingen van mappen in acht seconden,
+en 195796 opsommingen van `Data` in negentig. Skyrim SE bereikte zijn hoofdmenu
+nooit - het bleef op 240 MB resident staan terwijl de daemon 92% van een core
+verstookte.
 
 Eidos vouwde hoofdletters vanaf het begin in `resolve_read`. De hele kost zat
-erin dat het dat nooit zei. `lookup` antwoordt nu `.ciopfs`; `readdir` toont het nog altijd niet in lijsten. `ioctl` beantwoordt ook `FS_IOC_GETFLAGS` op mappen met de casefold-vlag, die huidige Wine vraagt voordat het naar de markering zoekt.
+erin dat het dat nooit zei. `lookup` antwoordt nu `.ciopfs`; `readdir` toont het
+nog altijd niet in lijsten. `ioctl` beantwoordt ook `FS_IOC_GETFLAGS` op mappen
+met de casefold-vlag, die huidige Wine vraagt voordat het naar de markering
+zoekt.
 
 Twee dingen maakten het fataal in plaats van alleen maar traag. De kost schaalt
 mee met de mapgrootte, dus het installeren van de Anniversary-inhoud (`Data` van
@@ -190,8 +197,8 @@ Daarna: het hoofdmenu, 2,1 GB resident, daemon op 0% CPU.
 bewerkingstellers zeggen hoeveel; 195796 opsommingen van één map zijn onzichtbaar
 in een totaal.
 
-**Dat het spel `plugins.txt` leeg herschreef** was zeer waarschijnlijk hetzelfde
-- een `Data` die het binnen geen redelijke tijd kon opsommen, dus concludeerde
+**Dat het spel `plugins.txt` leeg herschreef** was zeer waarschijnlijk hetzelfde -
+een `Data` die het binnen geen redelijke tijd kon opsommen, dus concludeerde
 het dat er niets was en bewaarde dat. Niet bewezen, en het opnieuw nakijken
 waard. Hoe dan ook betekent de capture-bewaking (een capture die de actieve set
 volledig leegmaakt, wordt bij elke omvang geweigerd) dat het het profiel niet
@@ -199,26 +206,50 @@ meer kan beschadigen.
 
 **`FOPEN_KEEP_CACHE` staat uit.** Opgelost, en het is de moeite waard te weten
 waarom. Het liet Skyrim SE crashen op een null-dereferentie, seconden na het
-hoofdmenu, deterministisch, met nul mods geïnstalleerd; de andere drie caches aan
-kernelkant zijn stuk voor stuk weggebisecteerd en alleen deze deed ertoe. Het
-verlies ervan werd destijds als gratis gemeten, maar die meting is gedaan met
-`FUSE_PASSTHROUGH` actief, waar de daemon *nul* lezingen bedient
-(`EIDOS_FUSE_STATS` meldde `read 0` voor een volledige laadbeurt) en de kernel
-die pagina's al tegen het onderliggende bestand cachete. Passthrough staat nu
-standaard uit (hieronder), dus dat argument geldt niet meer en de echte kost is
-ongemeten - de crash is hoe dan ook reden genoeg om het uit te laten. Zet het met
-`EIDOS_FUSE_KEEP_CACHE=1` weer aan om te onderzoeken; de twee vlaggen zijn niet
-langer verstrengeld, dus het kan nu op zichzelf getest worden.
+hoofdmenu, deterministisch, met nul mods geïnstalleerd; de andere drie caches
+aan kernelkant zijn stuk voor stuk weggebisecteerd en alleen deze deed ertoe.
+Die bisectie draaide met `FUSE_PASSTHROUGH` aan, en de kernel laat een
+passthrough-opening die `FOPEN_KEEP_CACHE` draagt mislukken met EIO, dus met de
+vlag aan mislukte elke passthrough-opening. Misschien waren het die mislukte
+openingen die het spel lieten crashen, en de vlag op zichzelf, met passthrough
+uit, is nooit getest. Passthrough-antwoorden dragen hem niet meer. Het verlies
+ervan werd destijds als gratis gemeten, maar met passthrough aan bedient de
+daemon *nul* lezingen (`EIDOS_FUSE_STATS` meldde `read 0` voor een volledige
+laadbeurt), dus met passthrough standaard uit (hieronder) is de echte kost
+ongemeten. Zet hem met `EIDOS_FUSE_KEEP_CACHE=1` weer aan om hem op zichzelf te
+testen.
 
 ### FUSE-passthrough belet het spel enige modinhoud te laden
 
-Opgelost door het uit te zetten; `EIDOS_FUSE_PASSTHROUGH=1` brengt het terug. Met
-passthrough aan slaagt Skyrim SE er niet in 152 van zijn eigen bestanden (75
-`.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`) te openen, met
-`STATUS_ACCESS_VIOLATION`, tegenover 0 met passthrough uit, op kernel 7.1.4 - dus
-laadt er stilzwijgend geen modinhoud. De kernel werpt de fout op nadat de daemon
-`opened_passthrough` geantwoord heeft, dus de eigen logs van de daemon tonen een
-schone draaibeurt (nul mislukte opens, nul geweigerde onderliggende bestanden).
-De grondoorzaak in het kernelpad is niet vastgesteld; de schakelaar blijft
-bestaan zodat het opnieuw getest kan worden, en zodat passthrough tot alleen
-DLL's beperkt zou kunnen worden mocht image-mapping het nodig blijken te hebben.
+Opgelost in de daemon, maar de oplossing is nog niet in een echte spelsessie
+gemeten, dus passthrough blijft standaard uit; `EIDOS_FUSE_PASSTHROUGH=1` zet
+het aan. Vóór de oplossing slaagde Skyrim SE er met passthrough aan niet in 152
+van zijn eigen bestanden (75 `.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`) te openen,
+met `STATUS_ACCESS_VIOLATION`, tegenover 0 met passthrough uit, op kernel
+7.1.4 - dus laadde er stilzwijgend geen modinhoud. De kernel wierp de fout op
+nadat de daemon `opened_passthrough` geantwoord had, dus de eigen logs van de
+daemon toonden een schone draaibeurt (nul mislukte openingen, nul geweigerde
+onderliggende bestanden).
+
+De kernel koppelt één onderliggend bestand aan elke inode (`fs/fuse/iomode.c`).
+Een opening die voor een inode die er al een heeft een tweede id van een
+onderliggend bestand meebrengt, mislukt met EIO, net als een normale opening
+(zonder `FOPEN_PASSTHROUGH`) van een inode die een onderliggend bestand heeft.
+Een passthrough-opening die `FOPEN_KEEP_CACHE` draagt, mislukt ook met EIO. De
+daemon registreerde vroeger bij elke opening een nieuwe id, dus mislukte de
+tweede opening van een bestand dat het spel al open hield. Wine meldt EIO als
+`STATUS_ACCESS_VIOLATION`, de fout achter de 152 mislukte openingen.
+
+De daemon registreert nu één onderliggend bestand per inode, gedeeld door al
+zijn passthrough-openingen, en zet nooit `FOPEN_KEEP_CACHE` op een
+passthrough-opening. Passthrough geldt alleen voor openingen om te lezen van
+bestanden uit de spel- en modlagen die 1 MiB of groter zijn of eindigen op
+`.dll`, `.exe` of `.asi`. Zodra dat onderliggende bestand geregistreerd is,
+gebruikt elke opening om te lezen van het bestand het, en zolang het bestand
+normale openingen heeft, krijgen nieuwe lezers ook normale openingen. Een
+bestand in de Overwrite gaat nooit via passthrough, en een koppeling die
+tijdstempels van plugins projecteert, gebruikt het helemaal niet. Een schrijver
+die een bestand opent terwijl passthrough-lezers het vasthouden, krijgt ETXTBSY
+(in Wine: `STATUS_SHARING_VIOLATION`) vóór enige copy-up, zodat een opening met
+`O_TRUNC` geen lege kopie in de Overwrite kan achterlaten die het bestand van de
+mod verbergt.

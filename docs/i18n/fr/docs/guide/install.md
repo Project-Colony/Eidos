@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=e00626e360d8e5b283304045968cc7a6bd6af061 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=159c034d20f656f379fb1e707a2804ecb4a0df37 -->
 
 # Installer Eidos
 
@@ -110,14 +110,19 @@ La visite complète est dans [usage.md](usage.md).
 
 ## Facultatif : le passthrough FUSE
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` accorde la capacité facultative ; cette commande n’active pas le passthrough.
-Elle s'applique au binaire `eidos` séparé du paquet ou d'une compilation depuis
-les sources, jamais à `eidos-linux`, qui est aussi la fenêtre
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` accorde la capacité
+facultative ; cette commande n’active pas le passthrough. Elle s'applique au
+binaire `eidos` séparé du paquet ou d'une compilation depuis les sources, jamais
+à `eidos-linux`, qui est aussi la fenêtre
 ([SECURITY.md](../../../../../SECURITY.md), en anglais).
-`EIDOS_FUSE_PASSTHROUGH=1` est le réglage d’activation distinct à l’exécution. Il est **désactivé par défaut et vous voulez presque certainement le
-laisser ainsi** : mesuré sur Skyrim SE, il empêche le jeu d'ouvrir ses propres
-archives et plugins, si bien que les mods ne se chargent pas, en silence.
-L'interrupteur existe pour retester le mécanisme, pas parce qu'il est recommandé.
+`EIDOS_FUSE_PASSTHROUGH=1` est le réglage d’activation distinct à l’exécution,
+et il est désactivé par défaut. Passthrough activé, une version antérieure du
+démon empêchait Skyrim SE d'ouvrir ses propres archives et plugins, si bien que
+les mods ne se chargeaient pas, en silence. Cette cause est corrigée (le noyau
+accepte un seul fichier sous-jacent par inode, et le démon en partage désormais
+un entre toutes les ouvertures en passthrough d'un fichier), mais le correctif
+n'a pas encore été mesuré dans une vraie session de jeu. D'ici là, n'activez le
+passthrough que pour le tester.
 
 Les détails, et les mesures derrière cette décision, dans
 [troubleshooting.md](troubleshooting.md).

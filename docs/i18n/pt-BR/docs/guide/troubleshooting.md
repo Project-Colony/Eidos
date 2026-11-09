@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=596ae1f1b120f9890bd5aac859d50e815b728678 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=287e0b2cc22bc21eb741f1bc3189c44d9d4b9e5f -->
 
 # Solução de problemas e diagnóstico
 
@@ -39,10 +39,13 @@ modo que as próprias camadas permanecem intactas mesmo aqui.
 
 #### Por que o passthrough vem desligado
 
-O passthrough entrega ao kernel o arquivo de respaldo real, então as leituras pulam
-este daemon inteiramente. É um ganho de vazão que aqui custa correção. Medido em A/B
-no Skyrim SE 1.6.1170, proton-cachyos 11.0, kernel 7.1.4, a mesma ordem de carga de
-82 plugins, com a única variável sendo se o binário carregava a capacidade:
+O passthrough entrega ao kernel o arquivo de respaldo real, então as leituras
+pulam este daemon inteiramente. O A/B abaixo é anterior à correção descrita mais
+adiante no problema conhecido "O passthrough do FUSE impede o jogo de carregar
+qualquer conteúdo de mod". Essa correção ainda não foi medida em um jogo, então
+o passthrough continua desligado por padrão. Medido em A/B no Skyrim SE
+1.6.1170, proton-cachyos 11.0, kernel 7.1.4, a mesma ordem de carga de 82
+plugins, com a única variável sendo se o binário carregava a capacidade:
 
 | passthrough | falhas de `NtCreateFile` com `STATUS_ACCESS_VIOLATION` |
 |-------------|---------------------------------------------------------|
@@ -151,17 +154,21 @@ para a própria árvore a cada atualização do prefixo.
 **O Wine não conseguia perceber que a montagem dobra a caixa.** Corrigido, e era o
 que importava.
 
-O `get_dir_case_sensitivity` do Wine pergunta primeiro ao diretório com `FS_IOC_GETFLAGS` e depois fareja o marcador que o CIOPFS deixa nos diretórios que serve. Sem nenhum dos dois, o Wine supõe SENSÍVEL, e toda busca cuja grafia não
-bate byte a byte recai em ler o diretório INTEIRO para achar uma correspondência
-insensível a maiúsculas. Jogos da Bethesda pedem `data/ccbgssse001-fish.bsa`
-enquanto o arquivo é `ccBGSSSE001-Fish.bsa`, então isso disparava em quase todo
-recurso: 4471 sondagens do marcador e 2236 releituras completas de diretório em oito
-segundos, e 195796 enumerações de `Data` em noventa. O Skyrim SE nunca chegava ao
-menu principal - ficava em 240 MB residentes enquanto o daemon queimava 92 % de um
-núcleo.
+O `get_dir_case_sensitivity` do Wine pergunta primeiro ao diretório com
+`FS_IOC_GETFLAGS` e depois fareja o marcador que o CIOPFS deixa nos diretórios
+que serve. Sem nenhum dos dois, o Wine supõe SENSÍVEL, e toda busca cuja grafia
+não bate byte a byte recai em ler o diretório INTEIRO para achar uma
+correspondência insensível a maiúsculas. Jogos da Bethesda pedem
+`data/ccbgssse001-fish.bsa` enquanto o arquivo é `ccBGSSSE001-Fish.bsa`, então
+isso disparava em quase todo recurso: 4471 sondagens do marcador e 2236
+releituras completas de diretório em oito segundos, e 195796 enumerações de
+`Data` em noventa. O Skyrim SE nunca chegava ao menu principal - ficava em
+240 MB residentes enquanto o daemon queimava 92 % de um núcleo.
 
 O Eidos dobrava a caixa em `resolve_read` desde o início. Todo o custo estava em
-nunca dizer isso. Agora `lookup` responde `.ciopfs`; `readdir` continua não o listando. `ioctl` também responde `FS_IOC_GETFLAGS` nos diretórios com a flag casefold, que o Wine atual consulta antes de procurar o marcador.
+nunca dizer isso. Agora `lookup` responde `.ciopfs`; `readdir` continua não o
+listando. `ioctl` também responde `FS_IOC_GETFLAGS` nos diretórios com a flag
+casefold, que o Wine atual consulta antes de procurar o marcador.
 
 Duas coisas o tornaram fatal em vez de meramente lento. O custo escala com o tamanho
 do diretório, então instalar o conteúdo Anniversary (`Data` de 37 para 177 arquivos)
@@ -181,26 +188,51 @@ havia nada ali e salvava isso. Não provado, e vale reconferir. De qualquer form
 guarda de captura (uma captura que zera inteiramente o conjunto ativo é recusada em
 qualquer tamanho) significa que ela não pode mais danificar o perfil.
 
-**`FOPEN_KEEP_CACHE` está desligado.** Corrigido, e vale saber por quê. Ele travava o
-Skyrim SE numa desreferência nula segundos após o menu principal, de forma
-determinística, sem nenhum mod instalado; os outros três caches do lado do kernel
-foram eliminados um a um por bissecção e só este importava. Perdê-lo foi medido como
-gratuito na época, mas aquela medição foi feita com `FUSE_PASSTHROUGH` ativo, onde o
-daemon serve *zero* leituras (`EIDOS_FUSE_STATS` reportou `read 0` numa carga
-completa) e o kernel já estava cacheando aquelas páginas contra o arquivo de
-respaldo. O passthrough agora vem desligado (abaixo), então aquele argumento não
-vale mais e o custo real está sem medição - o travamento já basta para deixá-lo
-desligado. Religue com `EIDOS_FUSE_KEEP_CACHE=1` para investigar; as duas flags não
-estão mais emaranhadas, então agora ele pode ser testado sozinho.
+**`FOPEN_KEEP_CACHE` está desligado.** Corrigido, e vale saber por quê. Ele
+travava o Skyrim SE numa desreferência nula segundos após o menu principal, de
+forma determinística, sem nenhum mod instalado; os outros três caches do lado do
+kernel foram eliminados um a um por bissecção e só este importava. Essa
+bissecção rodou com `FUSE_PASSTHROUGH` ativo, e o kernel faz falhar com EIO uma
+abertura em passthrough que carrega `FOPEN_KEEP_CACHE`, então com a flag ligada
+toda abertura em passthrough falhava. Talvez tenham sido essas aberturas falhas
+que travavam o jogo, e a flag sozinha, com o passthrough desligado, nunca foi
+testada. As respostas em passthrough não a carregam mais. Perdê-lo foi medido
+como gratuito na época, mas com o passthrough ativo o daemon serve *zero*
+leituras (`EIDOS_FUSE_STATS` reportou `read 0` numa carga completa), então com o
+passthrough desligado por padrão (abaixo) o custo real está sem medição. Religue
+com `EIDOS_FUSE_KEEP_CACHE=1` para testá-lo sozinho.
 
 ### O passthrough do FUSE impede o jogo de carregar qualquer conteúdo de mod
 
-Corrigido desligando-o; `EIDOS_FUSE_PASSTHROUGH=1` traz de volta. Com o passthrough
-ligado, o Skyrim SE falha em abrir 152 dos próprios arquivos (75 `.bsa`, 65 `.esl`,
-10 `.esm`, 2 `.esp`) com `STATUS_ACCESS_VIOLATION`, contra 0 com ele desligado, no
-kernel 7.1.4 - então nenhum conteúdo de mod carrega, em silêncio. O kernel levanta o
-erro depois que o daemon respondeu `opened_passthrough`, então os logs do próprio
-daemon mostram uma execução limpa (zero aberturas falhas, zero arquivos de respaldo
-recusados). A causa raiz no caminho do kernel não está estabelecida; a chave é
-mantida para que se possa retestar, e para que o passthrough possa ser estreitado
-apenas às DLLs caso o mapeamento de imagens acabe precisando dele.
+Corrigido no daemon, mas a correção ainda não foi medida numa sessão de jogo
+real, então o passthrough continua desligado por padrão;
+`EIDOS_FUSE_PASSTHROUGH=1` o liga. Antes da correção, com o passthrough ligado,
+o Skyrim SE falhava em abrir 152 dos próprios arquivos (75 `.bsa`, 65 `.esl`, 10
+`.esm`, 2 `.esp`) com `STATUS_ACCESS_VIOLATION`, contra 0 com ele desligado, no
+kernel 7.1.4 - então nenhum conteúdo de mod carregava, em silêncio. O kernel
+levantava o erro depois que o daemon tinha respondido `opened_passthrough`,
+então os logs do próprio daemon mostravam uma execução limpa (zero aberturas
+falhas, zero arquivos de respaldo recusados).
+
+O kernel associa um único arquivo de respaldo a cada inode (`fs/fuse/iomode.c`).
+Uma abertura que traz um segundo identificador de respaldo para um inode que já
+tem um falha com EIO, assim como uma abertura normal (sem `FOPEN_PASSTHROUGH`)
+de um inode que tem arquivo de respaldo. Uma abertura em passthrough que carrega
+`FOPEN_KEEP_CACHE` também falha com EIO. O daemon registrava um identificador
+novo a cada abertura, então falhava a segunda abertura de um arquivo que o jogo
+já mantinha aberto. O Wine reporta EIO como `STATUS_ACCESS_VIOLATION`, o erro
+por trás das 152 aberturas falhas.
+
+O daemon agora registra um único arquivo de respaldo por inode, compartilhado
+por todas as suas aberturas em passthrough, e nunca põe `FOPEN_KEEP_CACHE` numa
+abertura em passthrough. O passthrough só cobre aberturas somente leitura de
+arquivos das camadas do jogo e dos mods que tenham 1 MiB ou mais ou terminem em
+`.dll`, `.exe` ou `.asi`. Uma vez registrado esse arquivo de respaldo, toda
+abertura somente leitura do arquivo o usa, e enquanto o arquivo tiver aberturas
+normais, os novos leitores também recebem aberturas normais. Um arquivo do
+Overwrite nunca passa pelo passthrough, e uma montagem que projeta os carimbos
+de data dos plugins não o usa de jeito nenhum. Uma abertura para escrita de um
+arquivo que leitores em passthrough mantêm aberto recebe ETXTBSY (no Wine:
+`STATUS_SHARING_VIOLATION`) antes de qualquer copy-up, então uma abertura com
+`O_TRUNC` não pode deixar no Overwrite uma cópia vazia que esconda o arquivo do
+mod.

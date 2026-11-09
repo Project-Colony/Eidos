@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=596ae1f1b120f9890bd5aac859d50e815b728678 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=287e0b2cc22bc21eb741f1bc3189c44d9d4b9e5f -->
 
 # 疑難排解與診斷
 
@@ -37,10 +37,11 @@ fusermount3 -u /mnt/point
 
 #### 為什麼 passthrough 預設關閉
 
-Passthrough 把真正的後端檔案交給核心,於是讀取完全跳過這個常駐程式。它換來的是
-吞吐量,代價是這裡的正確性。在 Skyrim SE 1.6.1170、proton-cachyos 11.0、核心
-7.1.4、同一份 82 個外掛的載入順序上做 A/B 實測,唯一的變因是執行檔有沒有帶上那個
-capability:
+Passthrough 把真正的後端檔案交給核心,於是讀取完全跳過這個常駐程式。下面的 A/B 早
+於後文已知問題「FUSE passthrough 讓遊戲載入不了任何模組內容」所描述的修正。這個
+修正還沒在遊戲裡測量過,所以 passthrough 預設維持關閉。在 Skyrim SE 1.6.1170、
+proton-cachyos 11.0、核心 7.1.4、同一份 82 個外掛的載入順序上做 A/B 實測,唯一的
+變因是執行檔有沒有帶上那個能力:
 
 | passthrough | `NtCreateFile` 以 `STATUS_ACCESS_VIOLATION` 失敗的次數 |
 |-------------|--------------------------------------------------------|
@@ -138,14 +139,17 @@ XP32 Maximum Skeleton 的動畫與 FNIS 行為檔在大寫的那個底下,`chara
 
 **Wine 分辨不出這個掛載會摺疊大小寫。** 已修正,而且這是最要緊的那一個。
 
-Wine 的 `get_dir_case_sensitivity` 會先用 `FS_IOC_GETFLAGS` 詢問目錄,再去嗅 CIOPFS 留在它所服務目錄裡的那個標記。兩者都沒有,Wine 就假設大小寫敏感,而每一次拼法沒有逐位元組相符的查找,都會退回去讀整個目錄來
-找不分大小寫的相符項。Bethesda 的遊戲要的是 `data/ccbgssse001-fish.bsa`,而檔案叫
-`ccBGSSSE001-Fish.bsa`,於是它幾乎在每一個素材上都被觸發:八秒內 4471 次標記探測與
-2236 次整個目錄重讀,九十秒內 195796 次對 `Data` 的列舉。Skyrim SE 從來沒走到主
-選單 - 它停在 240 MB 常駐記憶體,而常駐程式燒掉了一顆核心的 92%。
+Wine 的 `get_dir_case_sensitivity` 會先用 `FS_IOC_GETFLAGS` 詢問目錄,再去嗅
+CIOPFS 留在它所服務目錄裡的那個標記。兩者都沒有,Wine 就假設大小寫敏感,而每一次拼
+法沒有逐位元組相符的查找,都會退回去讀整個目錄來找不分大小寫的相符項。Bethesda 的
+遊戲要的是 `data/ccbgssse001-fish.bsa`,而檔案叫 `ccBGSSSE001-Fish.bsa`,於是它幾
+乎在每一個素材上都被觸發:八秒內 4471 次標記探測與 2236 次整個目錄重讀,九十秒內
+195796 次對 `Data` 的列舉。Skyrim SE 從來沒走到主選單 - 它停在 240 MB 常駐記憶體,
+而常駐程式燒掉了一顆核心的 92%。
 
 Eidos 從一開始就在 `resolve_read` 裡摺疊大小寫。這整份成本只是因為從來沒說出來。
-現在 `lookup` 會回應 `.ciopfs`;`readdir` 仍然不把它列出來。`ioctl` 也會對目錄回應 `FS_IOC_GETFLAGS` 並帶上 casefold 旗標,目前的 Wine 會在尋找標記之前先問這個。
+現在 `lookup` 會回應 `.ciopfs`;`readdir` 仍然不把它列出來。`ioctl` 也會對目錄回
+應 `FS_IOC_GETFLAGS` 並帶上 casefold 旗標,目前的 Wine 會在尋找標記之前先問這個。
 
 有兩件事讓它從單純的慢變成致命。成本隨目錄大小增長,所以裝上 Anniversary 內容
 (`Data` 從 37 個檔案變成 177 個)就把它推過了頭。而且 `opendir` 會急切地建出合併
@@ -163,22 +167,38 @@ Eidos 從一開始就在 `resolve_read` 裡摺疊大小寫。這整份成本只�
 意味著它再也弄不壞設定檔了。
 
 **`FOPEN_KEEP_CACHE` 是關的。** 已修正,而且值得知道原因。它會在主選單之後幾秒讓
-Skyrim SE 因空指標解參考而當機,可穩定重現,而且一個模組都沒裝;另外三個核心側的
-快取被逐一二分排除,只有這一個有影響。當時測出來失去它是零成本,但那次測量是在
-`FUSE_PASSTHROUGH` 開著的情況下做的,那時常駐程式服務的讀取是*零*次
-(`EIDOS_FUSE_STATS` 在一次完整載入中回報 `read 0`),而核心早就針對後端檔案在快取
-那些分頁了。Passthrough 現在預設關閉(見下),所以那個論據不再成立,真正的成本是
-未經測量的 - 不管怎樣,光是那次當機就足以構成讓它保持關閉的理由。要調查的話用
-`EIDOS_FUSE_KEEP_CACHE=1` 重新開啟;這兩個旗標不再糾纏在一起,所以現在可以單獨測試
-它。
+Skyrim SE 因空指標解參考而當機,可穩定重現,而且一個模組都沒裝;另外三個核心側的快
+取被逐一二分排除,只有這一個有影響。那次二分是在 `FUSE_PASSTHROUGH` 開著的情況下
+做的,而核心會讓帶有 `FOPEN_KEEP_CACHE` 的 passthrough 開啟以 EIO 失敗,所以開著這
+個旗標時,每一次 passthrough 開啟都失敗了。讓遊戲當機的或許正是這些失敗的開啟,而
+在 passthrough 關閉時單獨測試這個旗標,從來沒做過。Passthrough 回覆現在不再帶它。
+當時測出來失去它是零成本,但 passthrough 開著時常駐程式服務的讀取是零次
+(`EIDOS_FUSE_STATS` 在一次完整載入中回報 `read 0`),所以在 passthrough 預設關閉的
+現在(見下),真正的成本未經測量。要單獨測試的話用 `EIDOS_FUSE_KEEP_CACHE=1` 重新開
+啟。
 
 ### FUSE passthrough 讓遊戲載入不了任何模組內容
 
-已藉由關掉它修正;`EIDOS_FUSE_PASSTHROUGH=1` 會把它找回來。在核心 7.1.4 上,
-passthrough 開著時,Skyrim SE 有 152 個自己的檔案(75 個 `.bsa`、65 個 `.esl`、
-10 個 `.esm`、2 個 `.esp`)以 `STATUS_ACCESS_VIOLATION` 開啟失敗,關掉時是 0 個 -
-於是沒有任何模組內容會載入,而且悄無聲息。核心是在常駐程式回覆
-`opened_passthrough` 之後才拋出這個錯誤,所以常駐程式自己的日誌顯示的是一場乾淨的
-執行(零次開啟失敗,零次後端檔案被拒)。核心路徑裡的根本原因尚未確立;保留這個開關
-是為了它能被重新測試,也為了萬一 image-mapping 真的需要 passthrough,能把它縮小到
-只給 DLL。
+已在常駐程式中修正,但修正還沒在真實的遊戲工作階段裡測量過,所以 passthrough 預設
+維持關閉;`EIDOS_FUSE_PASSTHROUGH=1` 可以開啟它。修正之前,在核心 7.1.4 上,passthrough
+開著時,Skyrim SE 有 152 個自己的檔案(75 個 `.bsa`、65 個 `.esl`、10 個 `.esm`、2
+個 `.esp`)以 `STATUS_ACCESS_VIOLATION` 開啟失敗,關掉時是 0 個 - 於是沒有任何模組
+內容會載入,而且悄無聲息。核心是在常駐程式回覆 `opened_passthrough` 之後才拋出這
+個錯誤,所以常駐程式自己的日誌顯示的是一場乾淨的執行(零次開啟失敗,零次後端檔案被
+拒)。
+
+核心為每個 inode 只綁定一個後端檔案(`fs/fuse/iomode.c`)。如果一個 inode 已經有後
+端檔案,再帶來第二個後端檔案 ID 的開啟會以 EIO 失敗;對已有後端檔案的 inode 做一般
+開啟(不帶 `FOPEN_PASSTHROUGH`)也一樣。帶有 `FOPEN_KEEP_CACHE` 的 passthrough 開
+啟同樣以 EIO 失敗。以前的常駐程式每次開啟都註冊一個新的 ID,所以遊戲已經開著的檔
+案被第二次開啟時就會失敗。Wine 把 EIO 回報為 `STATUS_ACCESS_VIOLATION`,這正是那
+152 次開啟失敗背後的錯誤。
+
+現在常駐程式每個 inode 只註冊一個後端檔案,由該 inode 的所有 passthrough 開啟共用,
+而且從不在 passthrough 開啟上設定 `FOPEN_KEEP_CACHE`。Passthrough 只用於遊戲層和
+模組層中大小達到 1 MiB 或以 `.dll`、`.exe`、`.asi` 結尾的檔案的唯讀開啟。這個後
+端檔案一旦註冊,該檔案的每一次唯讀開啟都使用它;只要該檔案還有一般開啟,新的讀取者
+拿到的也是一般開啟。Overwrite 裡的檔案從不走 passthrough,投射外掛時間戳記的掛載
+則完全不使用它。當 passthrough 讀取者還占著一個檔案時,以寫入方式開啟它會在任何
+copy-up 之前得到 ETXTBSY(在 Wine 中是 `STATUS_SHARING_VIOLATION`),因此 `O_TRUNC`
+開啟不會在 Overwrite 裡留下一個遮住模組檔案的空副本。

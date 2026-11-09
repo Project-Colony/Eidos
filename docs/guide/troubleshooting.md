@@ -39,9 +39,11 @@ layers themselves stay pristine even here.
 #### Why passthrough is off by default
 
 Passthrough hands the kernel the real backing file so reads skip this daemon
-entirely. It is a throughput win that costs correctness here. Measured A/B on
-Skyrim SE 1.6.1170, proton-cachyos 11.0, kernel 7.1.4, the same 82-plugin load
-order, the only variable being whether the binary carried the capability:
+entirely. The A/B below predates the fix described in the known issue "FUSE
+passthrough stops the game loading any mod content" further down. That fix has
+not been measured in a game yet, so passthrough stays off by default. Measured
+A/B on Skyrim SE 1.6.1170, proton-cachyos 11.0, kernel 7.1.4, the same 82-plugin
+load order, the only variable being whether the binary carried the capability:
 
 | passthrough | `NtCreateFile` failures with `STATUS_ACCESS_VIOLATION` |
 |-------------|--------------------------------------------------------|
@@ -154,16 +156,21 @@ into its own tree on every prefix update.
 **Wine could not tell that the mount folds case.** Fixed, and it was the one that
 mattered.
 
-Wine's `get_dir_case_sensitivity` first asks the directory through `FS_IOC_GETFLAGS`, then sniffs for the marker CIOPFS leaves in the directories it serves. With neither, Wine assumes case-SENSITIVE, and every lookup whose spelling
-does not match byte-for-byte falls back to reading the WHOLE directory to find a
-case-insensitive match. Bethesda games ask for `data/ccbgssse001-fish.bsa` while
-the file is `ccBGSSSE001-Fish.bsa`, so it fired on nearly every asset: 4471 marker
-probes and 2236 full directory re-reads in eight seconds, and 195796 enumerations
-of `Data` in ninety. Skyrim SE never reached its main menu - it sat at 240 MB
-resident while the daemon burned 92% of a core.
+Wine's `get_dir_case_sensitivity` first asks the directory through
+`FS_IOC_GETFLAGS`, then sniffs for the marker CIOPFS leaves in the directories
+it serves. With neither, Wine assumes case-SENSITIVE, and every lookup whose
+spelling does not match byte-for-byte falls back to reading the WHOLE directory
+to find a case-insensitive match. Bethesda games ask for
+`data/ccbgssse001-fish.bsa` while the file is `ccBGSSSE001-Fish.bsa`, so it
+fired on nearly every asset: 4471 marker probes and 2236 full directory re-reads
+in eight seconds, and 195796 enumerations of `Data` in ninety. Skyrim SE never
+reached its main menu - it sat at 240 MB resident while the daemon burned 92% of
+a core.
 
 Eidos had folded case in `resolve_read` from the start. The whole cost was never
-saying so. `lookup` now answers `.ciopfs`; `readdir` still does not list it. `ioctl` also answers `FS_IOC_GETFLAGS` on directories with the casefold flag, which current Wine asks before it looks for the marker.
+saying so. `lookup` now answers `.ciopfs`; `readdir` still does not list it.
+`ioctl` also answers `FS_IOC_GETFLAGS` on directories with the casefold flag,
+which current Wine asks before it looks for the marker.
 
 Two things made it fatal rather than merely slow. The cost scales with directory
 size, so installing the Anniversary content (`Data` from 37 files to 177) tipped
@@ -182,26 +189,45 @@ nothing there and saved that. Not proven, and worth re-checking. Either way the
 capture guard (a capture that clears the active set entirely is refused at any
 size) means it can no longer damage the profile.
 
-**`FOPEN_KEEP_CACHE` is off.** Fixed, and worth knowing why. It crashed Skyrim SE
-on a null dereference seconds after the main menu, deterministically, with zero
-mods installed; the other three kernel-side caches were bisected out individually
-and only this one mattered. Losing it was measured as free at the time, but that
-measurement was taken with `FUSE_PASSTHROUGH` active, where the daemon serves
-*zero* reads (`EIDOS_FUSE_STATS` reported `read 0` for a full load) and the
-kernel was already caching those pages against the backing file. Passthrough is
-now off by default (below), so that argument no longer applies and the real cost
-is unmeasured - the crash is reason enough to leave it off regardless. Re-enable
-with `EIDOS_FUSE_KEEP_CACHE=1` to investigate; the two flags are no longer
-entangled, so it can now be tested on its own.
+**`FOPEN_KEEP_CACHE` is off.** Fixed, and worth knowing why. It crashed Skyrim
+SE on a null dereference seconds after the main menu, deterministically, with
+zero mods installed; the other three kernel-side caches were bisected out
+individually and only this one mattered. That bisect ran with `FUSE_PASSTHROUGH`
+on, and the kernel fails a passthrough open that carries `FOPEN_KEEP_CACHE` with
+EIO, so with the flag on every passthrough open failed. Those failed opens may
+be what crashed the game, and the flag on its own, with passthrough off, has
+never been tested. Passthrough replies no longer carry it. Losing it was
+measured as free at the time, but with passthrough on the daemon serves *zero*
+reads (`EIDOS_FUSE_STATS` reported `read 0` for a full load), so with
+passthrough off by default (below) the real cost is unmeasured. Re-enable with
+`EIDOS_FUSE_KEEP_CACHE=1` to test it on its own.
 
 ### FUSE passthrough stops the game loading any mod content
 
-Fixed by turning it off; `EIDOS_FUSE_PASSTHROUGH=1` brings it back. With
-passthrough on, Skyrim SE fails to open 152 of its own files (75 `.bsa`, 65
-`.esl`, 10 `.esm`, 2 `.esp`) with `STATUS_ACCESS_VIOLATION`, against 0 with it
-off, on kernel 7.1.4 - so no mod content loads, silently. The kernel raises the
-error after the daemon has replied `opened_passthrough`, so the daemon's own logs
-show a clean run (zero failed opens, zero refused backing files). Root cause in
-the kernel path is not established; the switch is kept so it can be re-tested,
-and so passthrough could be narrowed to DLLs only if image-mapping turns out to
-need it.
+Fixed in the daemon, but the fix has not been measured in a real game session
+yet, so passthrough stays off by default; `EIDOS_FUSE_PASSTHROUGH=1` turns it
+on. Before the fix, with passthrough on, Skyrim SE failed to open 152 of its own
+files (75 `.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`) with
+`STATUS_ACCESS_VIOLATION`, against 0 with it off, on kernel 7.1.4 - so no mod
+content loaded, silently. The kernel raised the error after the daemon had
+replied `opened_passthrough`, so the daemon's own logs showed a clean run (zero
+failed opens, zero refused backing files).
+
+The kernel binds one backing file per inode (`fs/fuse/iomode.c`). An open that
+brings a second backing id for an inode that already has one fails with EIO, and
+so does a normal open (without `FOPEN_PASSTHROUGH`) of an inode that has a
+backing. A passthrough open that carries `FOPEN_KEEP_CACHE` fails with EIO too.
+The daemon used to register a new backing id on every open, so the second open
+of a file the game already held open failed. Wine reports EIO as
+`STATUS_ACCESS_VIOLATION`, the error behind the 152 failed opens.
+
+The daemon now registers one backing per inode, shared by all its passthrough
+opens, and never sets `FOPEN_KEEP_CACHE` on a passthrough open. Passthrough
+covers only read-only opens of files from the game and mod layers that are 1 MiB
+or larger or end in `.dll`, `.exe` or `.asi`. Once a file has a backing, every
+read-only open of it uses that backing, and while it has normal opens, new
+readers get normal opens too. A file in the Overwrite never goes through
+passthrough, and a mount that projects plugin timestamps does not use it at all.
+A writer that opens a file while passthrough readers hold it gets ETXTBSY (Wine:
+`STATUS_SHARING_VIOLATION`) before any copy-up, so an `O_TRUNC` open cannot
+leave an empty Overwrite copy that hides the mod's file.

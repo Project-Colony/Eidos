@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=e00626e360d8e5b283304045968cc7a6bd6af061 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=159c034d20f656f379fb1e707a2804ecb4a0df37 -->
 
 # Eidos installieren
 
@@ -107,15 +107,19 @@ vollständige Führung steht in [usage.md](usage.md).
 
 ## Optional: FUSE-Passthrough
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` vergibt die optionale Capability, aktiviert aber kein Passthrough.
-Sie gehört auf die separate `eidos`-Binärdatei des Bundles oder eines Builds aus
-dem Quelltext, niemals auf `eidos-linux`, das zugleich das Fenster ist
-([SECURITY.md](../../../../../SECURITY.md)).
-`EIDOS_FUSE_PASSTHROUGH=1` ist der separate Schalter zur Laufzeit. Er ist **standardmäßig aus, und Sie wollen ihn mit
-ziemlicher Sicherheit so lassen**: auf Skyrim SE gemessen hindert er das Spiel
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` vergibt die optionale
+Capability, aktiviert aber kein Passthrough. Sie gehört auf die separate
+`eidos`-Binärdatei des Bundles oder eines Builds aus dem Quelltext, niemals auf
+`eidos-linux`, das zugleich das Fenster ist
+([SECURITY.md](../../../../../SECURITY.md)). `EIDOS_FUSE_PASSTHROUGH=1` ist der
+separate Schalter zur Laufzeit, und er ist standardmäßig aus. Mit
+eingeschaltetem Passthrough hinderte eine frühere Version des Daemons Skyrim SE
 daran, seine eigenen Archive und Plugins zu öffnen, sodass Mods stillschweigend
-nicht laden. Der Schalter existiert, um den Mechanismus erneut zu testen, nicht
-weil er empfohlen wäre.
+nicht luden. Diese Ursache ist behoben (der Kernel akzeptiert eine
+Hintergrunddatei pro Inode, und der Daemon teilt jetzt eine zwischen allen
+Passthrough-Öffnungen einer Datei), aber die Korrektur wurde noch nicht in einer
+echten Spielsitzung gemessen. Bis dahin schalten Sie Passthrough nur zum Testen
+ein.
 
 Einzelheiten und die Messungen hinter dieser Entscheidung in
 [troubleshooting.md](troubleshooting.md).
