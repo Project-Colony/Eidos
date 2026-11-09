@@ -16,9 +16,11 @@ license = "GPL-3.0-or-later"
 repository = "https://github.com/Project-Colony/Eidos"
 edition = "2021"
 # The oldest toolchain the workspace builds on, held honest by the msrv job in
-# CI. libloot 0.29 needs 1.89, which is also above the 1.88 iced 0.14 and
-# colony-ui need. Raise it deliberately, not because a crate raised its own.
-rust-version = "1.89"
+# CI. rfd 0.18 needs 1.92, the most of any dependency, above the 1.89 of
+# libloot 0.29 and the 1.88 of iced 0.14 and colony-ui. CI and releases build
+# with a newer toolchain (RUST_VERSION in the workflows). Raise it deliberately,
+# not because a crate raised its own.
+rust-version = "1.92"
 
 # Every external dependency, once, at its full current version: a floating
 # "1.0" looks current forever while the lockfile ages, and the manifest is what
@@ -31,37 +33,37 @@ base64 = "0.23.1"
 bcdec_rs = "=0.2.1"
 bzip2 = "0.6.1"
 colony-ui = "0.1.6"
-crc32fast = "1.5.2"
+crc32fast = "1.5.4"
 ddsfile = "0.6.0"
 dirs = "7.0.0"
-encoding_rs = "0.8.42"
+encoding_rs = "0.8.44"
 esplugin = "6.1.4"
-flate2 = "1.1.10"
+flate2 = "1.1.11"
 fuser = "0.18.0"
 iced = "0.14.0"
 iced_runtime = "0.14.0"
 iced_tiny_skia = "0.14.1"
 # Imported as `image_decoder`, so it never reads as iced's `image` widget.
 image-decoder = { package = "image", version = "0.25.10", default-features = false }
-libc = "0.2.190"
+libc = "0.2.191"
 libloadorder = "=18.8.2"
-libloot = "0.29.6"
+libloot = "0.29.7"
 lz4_flex = { version = "=0.14.0", default-features = false }
 md-5 = { version = "0.11.0", default-features = false }
 object = { version = "0.40.0", default-features = false }
 qbsdiff = { version = "=1.4.4", default-features = false }
 quick-xml = "0.42.0"
-rfd = "0.17.2"
+rfd = "0.18.0"
 ring = "0.17.14"
-roxmltree = "0.21.1"
-rustix = "1.1.5"
+roxmltree = "0.21.2"
+rustix = "1.1.6"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = { version = "0.11.1", default-features = false }
 smol = "2.0.2"
 tempfile = "3.27.0"
-toml = "1.1.8"
-ureq = "3.4.2"
+toml = "1.2.1"
+ureq = "3.5.1"
 
 [profile.release]
 # The Colony release profile (design/releases.md in Project-Colony-Resources,

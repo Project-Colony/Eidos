@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=c4073ef7daa93b14edfa3d1e00794a2cdbdf8066 -->
+<!-- eidos-i18n: source=README.md sha=bf2a3d995d27b69444b8e0497adb217856e87ce8 -->
 
 <div align="center">
 
@@ -209,8 +209,8 @@ just build
 just install
 ```
 
-Нужен Rust 1.89 или новее (это `rust-version`, который проверяет CI; CI и
-релизы собираются на 1.99.0), а также `just`, CMake 3.20+ и компилятор C++17
+Нужен Rust 1.92 или новее (это `rust-version`, который проверяет CI; CI и
+релизы собираются на 1.99.1), а также `just`, CMake 3.20+ и компилятор C++17
 для вспомогательной программы предпросмотра NIF. Пакет Arch собирается из
 `packaging/PKGBUILD`. Что нужно заранее и команды без `just`:
 [docs/guide/install.md](docs/guide/install.md).
