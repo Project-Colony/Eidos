@@ -288,8 +288,8 @@ that does **not** yet close:
   So a directory where any layer holds a name with a non-ASCII letter that has
   a case mapping (`Café.dds`, `Ωmega.esp`) does not say so: `ioctl` answers
   ENOTTY there and `lookup` withholds `.ciopfs`, and Wine finds `Café.dds` when
-  asked for `CAFÉ.dds`. The cost is that directory's ASCII mis-casings going
-  back to Wine's scan as well.
+  asked for `CAFÉ.dds`. The cost is a full Wine scan of that directory for
+  every lookup of a name it does not hold.
 - **Steam churn.** Proton updates and the launch-option dance are an ongoing
   integration surface.
 - **Telling Wine the mount folds case** (fixed). Wine's
