@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=d10264fcb7169488da7f4bb45f930ad141fed832 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -163,15 +163,19 @@ Ein Synthesis-Eintrag in `tools.ini`, der noch den alten Standard `dotnet8`,
 `vcrun2022` enthält, bekommt beim Einlesen durch Eidos `dotnetsdk10`,
 `vcrun2022`.
 
-Das Bauen von Patchern kann trotzdem beim Wiederherstellen der Pakete scheitern.
-NuGet prüft die Signatur jedes Pakets, das es wiederherstellt, und dem
-Stammzertifikatspeicher des Präfix fehlen die Stammzertifikate für Codesignatur
-und Zeitstempel, die das SDK als `sdk/10.0.403/trustedroots/codesignctl.pem` und
-`timestampctl.pem` mitbringt. Mit dem System-Wine 11.21 scheitert die
-Wiederherstellung von `Mutagen.Bethesda.Synthesis` 0.36.6 mit `NU3018` und
-`NU3028`; nachdem beide Dateien in den Stammzertifikatspeicher des Präfix
-importiert waren, liefen dieselbe Wiederherstellung und der Build durch. Eidos
-importiert sie noch nicht. Proton wurde nicht getestet.
+NuGet prüft die Signatur jedes Pakets, das es wiederherstellt, gegen den
+Windows-Stammzertifikatspeicher, und einem Wine-Präfix fehlen die
+Stammzertifikate für Codesignatur und Zeitstempel, die das SDK als
+`sdk/10.0.403/trustedroots/codesignctl.pem` und `timestampctl.pem` mitbringt.
+Ohne sie scheitert die Wiederherstellung von `Mutagen.Bethesda.Synthesis` 0.36.6
+mit `NU3018` und `NU3028`. Deshalb fügt Eidos, bevor ein Tool mit `dotnetsdk10`
+startet und sobald das SDK heruntergeladen ist, die 385 Zertifikate beider
+Dateien dem Stammzertifikatspeicher des aktuellen Benutzers im Präfix des Spiels
+hinzu, im selben `regedit`-Import, der den Spielpfad schreibt (siehe unten).
+Fehlt später eines, importiert Eidos sie erneut. Jedes Windows-Programm in
+diesem Präfix vertraut diesen Stammzertifikaten dann. Mit ihnen gelingen in
+einem frischen Präfix mit leerem NuGet-Cache dieselbe Wiederherstellung und der
+Build, mit dem System-Wine 11.21 und mit GE-Proton11-9.
 
 Nichts in Tier 2 oder 3 läuft stillschweigend:
 

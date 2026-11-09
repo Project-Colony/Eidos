@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=d10264fcb7169488da7f4bb45f930ad141fed832 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
 
 # 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -149,12 +149,14 @@ Executables 대화상자의 `Prereqs` 항목은 편집할 수 있습니다 - 감
 받습니다. `tools.ini`의 Synthesis 항목이 아직 예전 기본값 `dotnet8`, `vcrun2022`를 담고 있으면,
 Eidos가 읽을 때 `dotnetsdk10`, `vcrun2022`로 바뀝니다.
 
-패처 빌드는 아직 패키지 복원 단계에서 멈출 수 있습니다. NuGet은 복원하는 모든 패키지의 서명을 확인하는데, 프리픽스의 루트 인증서
-저장소에는 SDK가 `sdk/10.0.403/trustedroots/codesignctl.pem`과 `timestampctl.pem`으로 함께
-제공하는 코드 서명용 및 타임스탬프용 루트 인증서가 없습니다. 시스템 Wine 11.21에서는
-`Mutagen.Bethesda.Synthesis` 0.36.6 복원이 `NU3018`과 `NU3028`로 실패했고, 두 파일을 프리픽스의 루트
-인증서 저장소로 가져온 뒤에는 같은 복원과 빌드가 성공했습니다. Eidos는 아직 이 파일들을 가져오지 않습니다. Proton에서는 시험하지
-않았습니다.
+NuGet은 복원하는 모든 패키지의 서명을 Windows 루트 인증서 저장소를 기준으로 확인하는데, Wine 프리픽스에는 SDK가
+`sdk/10.0.403/trustedroots/codesignctl.pem`과 `timestampctl.pem`으로 함께 제공하는 코드 서명용
+및 타임스탬프용 루트 인증서가 없습니다. 이것이 없으면 `Mutagen.Bethesda.Synthesis` 0.36.6 복원이 `NU3018`과
+`NU3028`로 실패합니다. 그래서 `dotnetsdk10`을 선언한 도구를 실행하기 전에, SDK가 내려받아져 있으면 Eidos가 두 파일의
+인증서 385개를 게임 프리픽스의 현재 사용자 루트 인증서 저장소에 추가합니다. 이 작업은 게임 경로를 기록하는 것과 같은 `regedit`
+가져오기에서 이루어집니다(아래 참조). 그중 하나라도 없어지면 다시 가져옵니다. 그 뒤로는 그 프리픽스의 모든 Windows 프로그램이 이 루트
+인증서를 신뢰합니다. 이 인증서가 있으면 새 프리픽스와 빈 NuGet 캐시에서 같은 복원과 빌드가 시스템 Wine 11.21과
+GE-Proton11-9 모두에서 성공합니다.
 
 계층 2나 3의 어떤 것도 조용히 실행되지 않습니다:
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=d10264fcb7169488da7f4bb45f930ad141fed832 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
 
 # Ferramentas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -162,15 +162,19 @@ e `DOTNET_CLI_TELEMETRY_OPTOUT=1`. Uma entrada do Synthesis no `tools.ini` que
 ainda traz o antigo padrão, `dotnet8`, `vcrun2022`, passa a `dotnetsdk10`,
 `vcrun2022` quando o Eidos a lê.
 
-A compilação dos patchers ainda pode falhar na restauração dos pacotes. O NuGet
-verifica a assinatura de cada pacote que restaura, e o repositório de raízes do
-prefixo não tem as raízes de assinatura de código e de carimbo de data/hora que
-o SDK traz como `sdk/10.0.403/trustedroots/codesignctl.pem` e
-`timestampctl.pem`. Com o Wine 11.21 do sistema, restaurar
-`Mutagen.Bethesda.Synthesis` 0.36.6 falha com `NU3018` e `NU3028`; depois de
-importar os dois arquivos no repositório de raízes do prefixo, a mesma
-restauração e a compilação deram certo. O Eidos ainda não os importa. O Proton
-não foi testado.
+O NuGet verifica a assinatura de cada pacote que restaura contra o repositório
+de raízes do Windows, e a um prefixo do Wine faltam as raízes de assinatura de
+código e de carimbo de data/hora que o SDK traz como
+`sdk/10.0.403/trustedroots/codesignctl.pem` e `timestampctl.pem`. Sem elas,
+restaurar `Mutagen.Bethesda.Synthesis` 0.36.6 falha com `NU3018` e `NU3028`. Por
+isso, antes de executar uma ferramenta que declara `dotnetsdk10`, e depois que o
+SDK foi baixado, o Eidos adiciona os 385 certificados dos dois arquivos ao
+repositório de raízes do usuário atual no prefixo do jogo, na mesma importação
+com `regedit` que grava o caminho do jogo (veja abaixo). Se algum sumir, ele os
+importa de novo. A partir daí, todo programa do Windows nesse prefixo confia
+nessas raízes. Com elas, num prefixo novo e com o cache do NuGet vazio, a mesma
+restauração e a compilação dão certo com o Wine 11.21 do sistema e com o
+GE-Proton11-9.
 
 Nada nos tiers 2 ou 3 roda em silêncio:
 

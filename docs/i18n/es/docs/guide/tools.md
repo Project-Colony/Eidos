@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=d10264fcb7169488da7f4bb45f930ad141fed832 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
 
 # Herramientas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -164,14 +164,19 @@ y `DOTNET_CLI_TELEMETRY_OPTOUT=1`. Una entrada de Synthesis en `tools.ini` que
 todavía lleva el antiguo valor por defecto, `dotnet8`, `vcrun2022`, pasa a
 `dotnetsdk10`, `vcrun2022` cuando Eidos la lee.
 
-La compilación de patchers todavía puede fallar en la restauración de paquetes.
-NuGet comprueba la firma de cada paquete que restaura, y al almacén de raíces
-del prefijo le faltan las raíces de firma de código y de marca de tiempo que el
-SDK incluye como `sdk/10.0.403/trustedroots/codesignctl.pem` y
-`timestampctl.pem`. Con el Wine 11.21 del sistema, restaurar
-`Mutagen.Bethesda.Synthesis` 0.36.6 falla con `NU3018` y `NU3028`; tras importar
-ambos archivos en el almacén de raíces del prefijo, la misma restauración y la
-compilación funcionaron. Eidos todavía no los importa. Proton no se ha probado.
+NuGet comprueba la firma de cada paquete que restaura contra el almacén de
+raíces de Windows, y a un prefijo de Wine le faltan las raíces de firma de
+código y de marca de tiempo que el SDK incluye como
+`sdk/10.0.403/trustedroots/codesignctl.pem` y `timestampctl.pem`. Sin ellas,
+restaurar `Mutagen.Bethesda.Synthesis` 0.36.6 falla con `NU3018` y `NU3028`. Por
+eso, antes de ejecutar una herramienta que declara `dotnetsdk10`, y una vez
+descargado el SDK, Eidos añade los 385 certificados de ambos archivos al almacén
+de raíces del usuario actual en el prefijo del juego, en la misma importación
+con `regedit` que escribe la ruta del juego (ver más abajo). Si falta alguno,
+los vuelve a importar. A partir de ahí, todos los programas de Windows de ese
+prefijo confían en estas raíces. Con ellas, en un prefijo nuevo y con la caché
+de NuGet vacía, la misma restauración y la compilación funcionan con el Wine
+11.21 del sistema y con GE-Proton11-9.
 
 Nada de los niveles 2 o 3 se ejecuta en silencio:
 

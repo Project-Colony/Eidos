@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=d10264fcb7169488da7f4bb45f930ad141fed832 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
 
 # Strumenti: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -160,15 +160,19 @@ e `DOTNET_CLI_TELEMETRY_OPTOUT=1`. Una voce di Synthesis in `tools.ini` che
 riporta ancora il vecchio valore predefinito, `dotnet8`, `vcrun2022`, passa a
 `dotnetsdk10`, `vcrun2022` quando Eidos la legge.
 
-La compilazione dei patcher può ancora fallire al ripristino dei pacchetti.
-NuGet verifica la firma di ogni pacchetto che ripristina, e all'archivio delle
-radici del prefisso mancano le radici di firma del codice e di marca temporale
-che l'SDK fornisce come `sdk/10.0.403/trustedroots/codesignctl.pem` e
-`timestampctl.pem`. Con il Wine 11.21 di sistema, il ripristino di
-`Mutagen.Bethesda.Synthesis` 0.36.6 fallisce con `NU3018` e `NU3028`; dopo aver
-importato entrambi i file nell'archivio delle radici del prefisso, lo stesso
-ripristino e la compilazione sono riusciti. Eidos non li importa ancora. Proton
-non è stato provato.
+NuGet verifica la firma di ogni pacchetto che ripristina rispetto all'archivio
+delle radici di Windows, e a un prefisso Wine mancano le radici di firma del
+codice e di marca temporale che l'SDK fornisce come
+`sdk/10.0.403/trustedroots/codesignctl.pem` e `timestampctl.pem`. Senza di esse,
+il ripristino di `Mutagen.Bethesda.Synthesis` 0.36.6 fallisce con `NU3018` e
+`NU3028`. Per questo, prima di avviare uno strumento che dichiara `dotnetsdk10`,
+e una volta scaricato l'SDK, Eidos aggiunge i 385 certificati dei due file
+all'archivio delle radici dell'utente corrente nel prefisso del gioco, nella
+stessa importazione con `regedit` che scrive il percorso del gioco (vedi sotto).
+Se uno manca, li importa di nuovo. Da quel momento ogni programma Windows in
+quel prefisso si fida di queste radici. Con esse, in un prefisso nuovo e con la
+cache di NuGet vuota, lo stesso ripristino e la compilazione riescono con il
+Wine 11.21 di sistema e con GE-Proton11-9.
 
 Niente nei livelli 2 o 3 gira in sordina:
 

@@ -82,8 +82,12 @@ built into Eidos.
 
 The SDK alone does not get a patcher through NuGet's package restore under
 Wine. The prefix's root store lacks the code-signing and timestamping roots in
-the SDK's `sdk/10.0.403/trustedroots/codesignctl.pem` and `timestampctl.pem`,
-so restoring `Mutagen.Bethesda.Synthesis` 0.36.6 on Wine 11.21 fails with
-`NU3018` and `NU3028`. Eidos does not import those roots yet; see the
-`dotnetsdk10` notes in `docs/guide/tools.md`.
+the SDK's `sdk/10.0.403/trustedroots/codesignctl.pem` and `timestampctl.pem`
+(385 distinct certificates), so restoring `Mutagen.Bethesda.Synthesis` 0.36.6
+fails with `NU3018` and `NU3028`. Eidos reads both files from the downloaded
+SDK and writes each certificate to the prefix's
+`HKCU\Software\Microsoft\SystemCertificates\Root\Certificates` key with
+`regedit`, in the layout Wine's crypt32 uses itself: checked byte for byte
+against the 325 entries .NET's `X509Store` wrote into a scratch prefix. Nothing
+from these files ships with Eidos.
 

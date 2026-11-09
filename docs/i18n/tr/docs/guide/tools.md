@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=d10264fcb7169488da7f4bb45f930ad141fed832 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -159,14 +159,19 @@ ve `DOTNET_CLI_TELEMETRY_OPTOUT=1` değerlerini alır. `tools.ini` içinde hâl�
 eski varsayılanı, `dotnet8`, `vcrun2022` taşıyan bir Synthesis girdisi, Eidos
 onu okurken `dotnetsdk10`, `vcrun2022` olur.
 
-Patcher'ların derlenmesi paket geri yükleme adımında yine de durabilir. NuGet
-geri yüklediği her paketin imzasını denetler ve önekin kök sertifika deposunda,
-SDK'nın `sdk/10.0.403/trustedroots/codesignctl.pem` ve `timestampctl.pem` olarak
-getirdiği kod imzalama ve zaman damgası kökleri yoktur. Sistemdeki Wine 11.21
-ile `Mutagen.Bethesda.Synthesis` 0.36.6 geri yüklemesi `NU3018` ve `NU3028`
-hatalarıyla başarısız oluyor; iki dosya önekin kök sertifika deposuna
-aktarıldıktan sonra aynı geri yükleme ve derleme başarılı oldu. Eidos bunları
-henüz aktarmıyor. Proton ile denenmedi.
+NuGet geri yüklediği her paketin imzasını Windows kök sertifika deposuna göre
+denetler ve bir Wine önekinde, SDK'nın
+`sdk/10.0.403/trustedroots/codesignctl.pem` ve `timestampctl.pem` olarak
+getirdiği kod imzalama ve zaman damgası kökleri yoktur. Bunlar olmadan
+`Mutagen.Bethesda.Synthesis` 0.36.6 geri yüklemesi `NU3018` ve `NU3028`
+hatalarıyla başarısız olur. Bu yüzden Eidos, `dotnetsdk10` bildiren bir aracı
+çalıştırmadan önce ve SDK indirilmişse, iki dosyadaki 385 sertifikayı oyunun
+önekindeki geçerli kullanıcının kök sertifika deposuna ekler; bunu oyun yolunu
+yazan aynı `regedit` aktarımında yapar (aşağıya bakın). Biri kaybolursa onları
+yeniden aktarır. Bundan sonra o önekteki her Windows programı bu köklere
+güvenir. Bunlarla, yeni bir önekte ve boş bir NuGet önbelleğiyle, aynı geri
+yükleme ve derleme sistemdeki Wine 11.21 ile de GE-Proton11-9 ile de başarılı
+olur.
 
 Kademe 2 ya da 3'te hiçbir şey sessizce çalışmaz:
 

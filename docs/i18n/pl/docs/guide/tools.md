@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=d10264fcb7169488da7f4bb45f930ad141fed832 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
 
 # Narzędzia: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -159,15 +159,19 @@ i `DOTNET_CLI_TELEMETRY_OPTOUT=1`. Wpis Synthesis w `tools.ini`, który wciąż 
 starą wartość domyślną `dotnet8`, `vcrun2022`, dostaje `dotnetsdk10`,
 `vcrun2022`, gdy Eidos go wczytuje.
 
-Budowanie patcherów nadal może się zatrzymać na przywracaniu pakietów. NuGet
-sprawdza podpis każdego przywracanego pakietu, a w magazynie certyfikatów
-głównych prefiksu brakuje certyfikatów głównych do podpisywania kodu i
-znaczników czasu, które SDK dostarcza jako
-`sdk/10.0.403/trustedroots/codesignctl.pem` i `timestampctl.pem`. Z systemowym
-Wine 11.21 przywracanie `Mutagen.Bethesda.Synthesis` 0.36.6 kończy się błędami
-`NU3018` i `NU3028`; po zaimportowaniu obu plików do magazynu certyfikatów
-głównych prefiksu to samo przywracanie i kompilacja się powiodły. Eidos jeszcze
-ich nie importuje. Proton nie był testowany.
+NuGet sprawdza podpis każdego przywracanego pakietu względem magazynu
+certyfikatów głównych Windows, a w prefiksie Wine brakuje certyfikatów głównych
+do podpisywania kodu i znaczników czasu, które SDK dostarcza jako
+`sdk/10.0.403/trustedroots/codesignctl.pem` i `timestampctl.pem`. Bez nich
+przywracanie `Mutagen.Bethesda.Synthesis` 0.36.6 kończy się błędami `NU3018` i
+`NU3028`. Dlatego zanim uruchomi narzędzie, które deklaruje `dotnetsdk10`, i gdy
+SDK jest już pobrane, Eidos dodaje 385 certyfikatów z obu plików do magazynu
+certyfikatów głównych bieżącego użytkownika w prefiksie gry, w tym samym
+imporcie przez `regedit`, który zapisuje ścieżkę gry (patrz niżej). Jeśli
+któregoś zabraknie, importuje je ponownie. Od tej chwili każdy program dla
+Windows w tym prefiksie ufa tym certyfikatom. Z nimi, w nowym prefiksie i z
+pustą pamięcią podręczną NuGet, to samo przywracanie i kompilacja udają się z
+systemowym Wine 11.21 i z GE-Proton11-9.
 
 Nic z poziomu 2 ani 3 nie dzieje się po cichu:
 

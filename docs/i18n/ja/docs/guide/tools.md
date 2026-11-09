@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=d10264fcb7169488da7f4bb45f930ad141fed832 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
 
 # ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -151,10 +151,12 @@ Synthesis はパッチャーのコンパイルにこれを必要とし、ビル�
 そのため `dotnetsdk10` を宣言したツールには、`WINEPATH` 上の SDK フォルダに加えて、`NUGET_CERT_REVOCATION_MODE=offline`、`DOTNET_GENERATE_ASPNET_CERTIFICATE=false`、`DOTNET_CLI_TELEMETRY_OPTOUT=1` も設定されます。
 `tools.ini` の Synthesis エントリが古い既定値 `dotnet8`, `vcrun2022` のままなら、Eidos が読み込むときに `dotnetsdk10`, `vcrun2022` に置き換わります。
 
-パッチャーのビルドは、まだパッケージの復元で止まることがあります。
-NuGet は復元するすべてのパッケージの署名を確認しますが、プレフィックスのルート証明書ストアには、SDK が `sdk/10.0.403/trustedroots/codesignctl.pem` と `timestampctl.pem` として同梱しているコード署名用とタイムスタンプ用のルート証明書がありません。
-システムの Wine 11.21 では `Mutagen.Bethesda.Synthesis` 0.36.6 の復元が `NU3018` と `NU3028` で失敗し、2 つのファイルをプレフィックスのルート証明書ストアにインポートした後は、同じ復元とビルドが成功しました。
-Eidos はまだこれらをインポートしません。Proton では試していません。
+NuGet は復元するすべてのパッケージの署名を Windows のルート証明書ストアで確認しますが、Wine のプレフィックスには、SDK が `sdk/10.0.403/trustedroots/codesignctl.pem` と `timestampctl.pem` として同梱しているコード署名用とタイムスタンプ用のルート証明書がありません。
+これがないと、`Mutagen.Bethesda.Synthesis` 0.36.6 の復元は `NU3018` と `NU3028` で失敗します。
+そのため、`dotnetsdk10` を宣言したツールを実行する前に、SDK がダウンロード済みであれば、Eidos は 2 つのファイルの 385 個の証明書をゲームのプレフィックスの現在のユーザーのルート証明書ストアに追加します。これはゲームのパスを書き込むのと同じ `regedit` のインポートで行います (後述)。
+どれかが消えた場合は、もう一度インポートします。
+以後、そのプレフィックス内のすべての Windows プログラムがこれらのルート証明書を信頼します。
+これがあれば、新しいプレフィックスと空の NuGet キャッシュで、同じ復元とビルドがシステムの Wine 11.21 と GE-Proton11-9 の両方で成功します。
 
 Tier 2 と Tier 3 は、どちらも黙って動くことがありません:
 

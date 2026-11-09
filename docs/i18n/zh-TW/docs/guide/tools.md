@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=d10264fcb7169488da7f4bb45f930ad141fed832 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -134,10 +134,12 @@ Synthesis 編譯 patcher 需要它,而且建置與執行 patcher 時呼叫的是
 所以宣告了 `dotnetsdk10` 的工具還會在 `WINEPATH` 上拿到 SDK 資料夾,外加 `NUGET_CERT_REVOCATION_MODE=offline`、`DOTNET_GENERATE_ASPNET_CERTIFICATE=false` 與 `DOTNET_CLI_TELEMETRY_OPTOUT=1`。
 `tools.ini` 中仍寫著舊預設值 `dotnet8`, `vcrun2022` 的 Synthesis 項目,會在 Eidos 讀取時改成 `dotnetsdk10`, `vcrun2022`。
 
-patcher 的建置仍可能在套件還原這一步失敗。
-NuGet 會檢查它還原的每個套件的簽章,而前綴的根憑證存放區裡沒有 SDK 以 `sdk/10.0.403/trustedroots/codesignctl.pem` 與 `timestampctl.pem` 附帶的程式碼簽署根憑證與時間戳記根憑證。
-在系統 Wine 11.21 上,還原 `Mutagen.Bethesda.Synthesis` 0.36.6 會以 `NU3018` 與 `NU3028` 失敗;把這兩個檔案匯入前綴的根憑證存放區後,同樣的還原與建置都成功了。
-Eidos 目前還不會匯入它們。未在 Proton 上測試。
+NuGet 會對照 Windows 根憑證存放區檢查它還原的每個套件的簽章,而 Wine 前綴裡沒有 SDK 以 `sdk/10.0.403/trustedroots/codesignctl.pem` 與 `timestampctl.pem` 附帶的程式碼簽署根憑證與時間戳記根憑證。
+沒有它們,還原 `Mutagen.Bethesda.Synthesis` 0.36.6 會以 `NU3018` 與 `NU3028` 失敗。
+因此,在執行宣告了 `dotnetsdk10` 的工具之前,只要 SDK 已經下載,Eidos 就會把這兩個檔案中的 385 個憑證加入遊戲前綴裡目前使用者的根憑證存放區,用的是寫入遊戲路徑的同一次 `regedit` 匯入(見下文)。
+如果其中某個憑證遺失,Eidos 會重新匯入。
+此後,該前綴裡的每個 Windows 程式都信任這些根憑證。
+有了它們,在全新的前綴與空的 NuGet 快取下,同樣的還原與建置在系統 Wine 11.21 與 GE-Proton11-9 上都能成功。
 
 第二層與第三層都不會靜悄悄地執行:
 

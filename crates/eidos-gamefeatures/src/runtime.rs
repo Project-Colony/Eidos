@@ -124,6 +124,28 @@ pub fn env_for(verbs: &[String]) -> Vec<(String, String)> {
     out
 }
 
+/// The PEM text of the NuGet code-signing and timestamping roots that an
+/// installed `dotnetsdk10` among `verbs` ships, or nothing. NuGet checks each
+/// package signature against the Windows root store, and a Wine prefix lacks
+/// these roots, so restores fail with NU3018 and NU3028 without them.
+pub fn nuget_roots_pem(verbs: &[String]) -> String {
+    let Some(r) = verbs
+        .iter()
+        .filter_map(|v| runtime(v))
+        .find(|r| r.verb == "dotnetsdk10" && is_installed(r))
+    else {
+        return String::new();
+    };
+    let dir = runtime_dir(r)
+        .join("sdk")
+        .join(r.version)
+        .join("trustedroots");
+    ["codesignctl.pem", "timestampctl.pem"]
+        .iter()
+        .filter_map(|f| fs::read_to_string(dir.join(f)).ok())
+        .collect()
+}
+
 /// A runtime's environment for the copy in `dir`.
 fn env_in(r: &Runtime, dir: &Path) -> Vec<(String, String)> {
     let dir = to_windows_dir(dir);

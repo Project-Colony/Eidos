@@ -339,11 +339,22 @@ pub(crate) fn cmd_tool(args: &[String]) {
             // `game` is the already-resolved target a dozen lines above; there is
             // no second lookup left to get wrong.
             if let (Some(run), Some(prefix)) = (&run, game.prefix()) {
+                // A tool on the .NET SDK also needs NuGet's signing roots in
+                // the prefix, or every package restore fails (NU3018).
+                let roots = eidos_gamefeatures::nuget_roots_pem(&tool.prereqs);
+                let (and_roots, or_restore) = match roots.is_empty() {
+                    true => ("", ""),
+                    false => (
+                        " and the .NET SDK's NuGet signing roots",
+                        " or its package restore fails with NU3018",
+                    ),
+                };
                 match eidos_gamefeatures::ensure_registry(
                     &prefix,
                     compat,
                     &game.install_path,
                     game.def.registry_name,
+                    &roots,
                     // `runinprefix`, not the game verb: this must not run
                     // Proton's game-drive setup, only a program in the
                     // existing prefix.
@@ -356,7 +367,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
                     &run.env,
                 ) {
                     Ok(RegistryOutcome::Imported) => {
-                        eidos_log::info!("eidos: registered the game path in the Wine prefix")
+                        eidos_log::info!("eidos: registered the game path{and_roots} in the Wine prefix")
                     }
                     Ok(RegistryOutcome::AlreadyCorrect) => {}
                     // The two silences that used to cost a support thread. The
@@ -375,9 +386,9 @@ pub(crate) fn cmd_tool(args: &[String]) {
                             .map(|(pid, cmd)| format!("{} (pid {pid})", cmd.split_whitespace().next().unwrap_or(cmd)))
                             .unwrap_or_else(|| "another program".to_string());
                         eidos_log::warn!(
-                            "eidos: the Wine prefix is in use by {who}, so the game path could not \
-                             be registered - close it and run '{title}' again if it opens on an \
-                             empty folder."
+                            "eidos: the Wine prefix is in use by {who}, so the game path{and_roots} \
+                             could not be registered - close it and run '{title}' again if it opens \
+                             on an empty folder{or_restore}."
                         );
                     }
                     Err(e) => eidos_log::warn!("eidos: could not write the prefix registry ({e}); tools may ask for the game path"),

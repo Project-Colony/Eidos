@@ -88,6 +88,59 @@ pub fn registry_blob(registry_name: &str, install_path: &Path) -> String {
     out
 }
 
+/// `.reg` sections that add each certificate in `pem` to the current user's
+/// Root store, skipping those `user_reg` already holds. The layout is the one
+/// Wine's crypt32 writes itself: the subkey is the SHA-1 in upper-case hex
+/// (Wine drops a `Blob` whose hash differs from its key), and `Blob` is the
+/// hash property (3) then the certificate (32), each as id, 1, length, bytes.
+fn root_certificates_reg(pem: &str, user_reg: &str) -> String {
+    use base64::Engine as _;
+    let certs: std::collections::BTreeMap<String, Vec<u8>> = pem
+        .split("-----BEGIN CERTIFICATE-----")
+        .skip(1)
+        .filter_map(|block| {
+            let body: String = block
+                .split("-----END CERTIFICATE-----")
+                .next()?
+                .split_whitespace()
+                .collect();
+            base64::engine::general_purpose::STANDARD.decode(body).ok()
+        })
+        .map(|der| {
+            let hash = ring::digest::digest(&ring::digest::SHA1_FOR_LEGACY_USE_ONLY, &der);
+            let key: String = hash.as_ref().iter().map(|b| format!("{b:02X}")).collect();
+            let mut blob = Vec::with_capacity(der.len() + 44);
+            for (id, data) in [(3u32, hash.as_ref()), (32, &der[..])] {
+                blob.extend(id.to_le_bytes());
+                blob.extend(1u32.to_le_bytes());
+                blob.extend((data.len() as u32).to_le_bytes());
+                blob.extend(data);
+            }
+            (key, blob)
+        })
+        .collect();
+    let present: std::collections::HashSet<&str> = user_reg
+        .lines()
+        .filter_map(|l| {
+            l.strip_prefix(r"[Software\\Microsoft\\SystemCertificates\\Root\\Certificates\\")?
+                .split(']')
+                .next()
+        })
+        .collect();
+    let mut out = String::new();
+    for (key, blob) in certs {
+        if present.contains(key.as_str()) {
+            continue;
+        }
+        let hex: Vec<String> = blob.iter().map(|b| format!("{b:02x}")).collect();
+        out.push_str(&format!(
+            "\r\n[HKEY_CURRENT_USER\\Software\\Microsoft\\SystemCertificates\\Root\\Certificates\\{key}]\r\n\"Blob\"=hex:{}\r\n",
+            hex.join(",")
+        ));
+    }
+    out
+}
+
 /// A Linux path as Wine sees it on the `Z:` drive, with a trailing backslash.
 fn to_windows_path(p: &Path) -> String {
     let s = p.to_string_lossy().replace('/', "\\");
@@ -328,11 +381,17 @@ pub enum RegistryOutcome {
 /// that runs a program in the existing prefix without Proton's game-drive setup.
 /// `compatdata` is Steam's directory around `prefix`, `None` for a copy Steam
 /// does not run; Eidos keeps its marker there, or in the prefix without one.
+///
+/// `roots_pem` holds certificates the current user's Root store must trust
+/// (the .NET SDK's NuGet roots, see `nuget_roots_pem`), or is empty. They go
+/// into the same import, because the wineserver a first import leaves running
+/// for a few seconds would make a second one find the prefix busy.
 pub fn ensure_registry(
     prefix: &Path,
     compatdata: Option<&Path>,
     install_path: &Path,
     registry_name: &str,
+    roots_pem: &str,
     proton_argv: impl FnOnce(&Path) -> Vec<String>,
     proton_env: &[(String, String)],
 ) -> io::Result<RegistryOutcome> {
@@ -359,11 +418,18 @@ pub fn ensure_registry(
     let already_written = fs::read_to_string(&marker).is_ok_and(|s| s.trim() == want);
     let still_correct = fs::read_to_string(prefix.join("system.reg"))
         .is_ok_and(|reg| registry_matches(&reg, registry_name, &want));
-    if already_written && still_correct {
+    let roots = match roots_pem {
+        "" => String::new(),
+        pem => root_certificates_reg(
+            pem,
+            &fs::read_to_string(prefix.join("user.reg")).unwrap_or_default(),
+        ),
+    };
+    if already_written && still_correct && roots.is_empty() {
         return Ok(RegistryOutcome::AlreadyCorrect);
     }
 
-    let blob = registry_blob(registry_name, install_path);
+    let blob = registry_blob(registry_name, install_path) + &roots;
     let reg_file = state.join(".eidos_registry").join("eidos.reg");
     if let Some(parent) = reg_file.parent() {
         fs::create_dir_all(parent)?;
@@ -451,6 +517,7 @@ mod tests {
             Some(&dir),
             Path::new("/games/Skyrim"),
             "Skyrim Special Edition",
+            "",
             |_| vec!["/bin/false".to_string()],
             &[],
         )
@@ -477,6 +544,7 @@ mod tests {
             None,
             Path::new("/games/Skyrim"),
             "Skyrim Special Edition",
+            "",
             |reg| {
                 argv = vec!["/bin/true".to_string(), reg.display().to_string()];
                 argv.clone()
@@ -733,5 +801,99 @@ mod tests {
             ),
             "blob and check disagree:\n{as_system_reg}"
         );
+    }
+
+    // ---- the .NET SDK's NuGet roots -----------------------------------------
+
+    // GlobalSign ECC Root CA - R4, the smallest certificate in the SDK's
+    // trustedroots. The Blob below is what Wine's crypt32 wrote to user.reg
+    // when .NET's X509Store added it to a scratch prefix (Wine 11.21).
+    const GLOBALSIGN_ECC_R4: &str = "\
+        -----BEGIN CERTIFICATE-----\n\
+        MIIB4TCCAYegAwIBAgIRKjikHJYKBN5CsiilC+g0mAIwCgYIKoZIzj0EAwIwUDEk\n\
+        MCIGA1UECxMbR2xvYmFsU2lnbiBFQ0MgUm9vdCBDQSAtIFI0MRMwEQYDVQQKEwpH\n\
+        bG9iYWxTaWduMRMwEQYDVQQDEwpHbG9iYWxTaWduMB4XDTEyMTExMzAwMDAwMFoX\n\
+        DTM4MDExOTAzMTQwN1owUDEkMCIGA1UECxMbR2xvYmFsU2lnbiBFQ0MgUm9vdCBD\n\
+        QSAtIFI0MRMwEQYDVQQKEwpHbG9iYWxTaWduMRMwEQYDVQQDEwpHbG9iYWxTaWdu\n\
+        MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEuMZ5049sJQ6fLjkZHAOkrprlOQcJ\n\
+        FspjsbmG+IpXwVfOQvpzofdlQv8ewQCybnMO/8ch5RikqtlxP6jUuc6MHaNCMEAw\n\
+        DgYDVR0PAQH/BAQDAgEGMA8GA1UdEwEB/wQFMAMBAf8wHQYDVR0OBBYEFFSwe61F\n\
+        uOJAf/sKbvu+M8k8o4TVMAoGCCqGSM49BAMCA0gAMEUCIQDckqGgE6bPA7DmxCGX\n\
+        kPoUVy0D7O48027KqGx2vKLeuwIgJ6iFJzWbVsaj8kfSt24bAgAXqmemFZHe+pTs\n\
+        ewv4n4Q=\n\
+        -----END CERTIFICATE-----\n";
+    const GLOBALSIGN_ECC_R4_BLOB: &str = "\
+        0300000001000000140000006969562e4080f424a1e7199f14baf3ee58ab6abb2000000001000000e5010000308201e1\
+        30820187a00302010202112a38a41c960a04de42b228a50be8349802300a06082a8648ce3d0403023050312430220603\
+        55040b131b476c6f62616c5369676e2045434320526f6f74204341202d20523431133011060355040a130a476c6f6261\
+        6c5369676e311330110603550403130a476c6f62616c5369676e301e170d3132313131333030303030305a170d333830\
+        3131393033313430375a305031243022060355040b131b476c6f62616c5369676e2045434320526f6f74204341202d20\
+        523431133011060355040a130a476c6f62616c5369676e311330110603550403130a476c6f62616c5369676e30593013\
+        06072a8648ce3d020106082a8648ce3d03010703420004b8c679d38f6c250e9f2e39191c03a4ae9ae539070916ca63b1\
+        b986f88a57c157ce42fa73a1f76542ff1ec100b26e730effc721e518a4aad9713fa8d4b9ce8c1da3423040300e060355\
+        1d0f0101ff040403020106300f0603551d130101ff040530030101ff301d0603551d0e0416041454b07bad45b8e2407f\
+        fb0a6efbbe33c93ca384d5300a06082a8648ce3d0403020348003045022100dc92a1a013a6cf03b0e6c4219790fa1457\
+        2d03ecee3cd36ecaa86c76bca2debb022027a88527359b56c6a3f247d2b76e1b020017aa67a61591defa94ec7b0bf89f\
+        84";
+    const GLOBALSIGN_ECC_R4_KEY: &str = "6969562E4080F424A1E7199F14BAF3EE58AB6ABB";
+
+    #[test]
+    fn root_certificates_get_wines_own_key_and_blob() {
+        let hex: Vec<&str> = (0..GLOBALSIGN_ECC_R4_BLOB.len())
+            .step_by(2)
+            .map(|i| &GLOBALSIGN_ECC_R4_BLOB[i..i + 2])
+            .collect();
+        // Twice in the input, once in the output.
+        let pem = format!("{GLOBALSIGN_ECC_R4}{GLOBALSIGN_ECC_R4}");
+        assert_eq!(
+            root_certificates_reg(&pem, ""),
+            format!(
+                "\r\n[HKEY_CURRENT_USER\\Software\\Microsoft\\SystemCertificates\\Root\\\
+                 Certificates\\{GLOBALSIGN_ECC_R4_KEY}]\r\n\"Blob\"=hex:{}\r\n",
+                hex.join(",")
+            )
+        );
+        let user_reg = format!(
+            "[Software\\\\Microsoft\\\\SystemCertificates\\\\Root\\\\Certificates\\\\\
+             {GLOBALSIGN_ECC_R4_KEY}] 1794241120\n"
+        );
+        assert_eq!(root_certificates_reg(&pem, &user_reg), "");
+    }
+
+    #[test]
+    fn a_missing_root_certificate_reimports_an_otherwise_correct_prefix() {
+        let prefix = std::env::temp_dir().join(format!("eidos-reg-roots-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&prefix);
+        fs::create_dir_all(prefix.join(".eidos_registry")).unwrap();
+        let esc = escape_reg(WANT);
+        fs::write(prefix.join("system.reg"), system_reg(&esc, &esc)).unwrap();
+        fs::write(marker_path(&prefix, "Skyrim Special Edition"), WANT).unwrap();
+        fs::write(prefix.join("user.reg"), "").unwrap();
+        let run = |pem: &str| {
+            ensure_registry(
+                &prefix,
+                None,
+                Path::new("/mnt/Jeux/SteamLibrary/steamapps/common/Skyrim Special Edition"),
+                "Skyrim Special Edition",
+                pem,
+                |reg| vec!["/bin/true".to_string(), reg.display().to_string()],
+                &[],
+            )
+            .unwrap()
+        };
+        assert_eq!(run(""), RegistryOutcome::AlreadyCorrect);
+        assert_eq!(run(GLOBALSIGN_ECC_R4), RegistryOutcome::Imported);
+        let reg = fs::read_to_string(prefix.join(".eidos_registry/eidos.reg")).unwrap();
+        assert!(reg.contains("Bethesda Softworks") && reg.contains(GLOBALSIGN_ECC_R4_KEY));
+        fs::write(
+            prefix.join("user.reg"),
+            format!(
+                "[Software\\\\Microsoft\\\\SystemCertificates\\\\Root\\\\Certificates\\\\\
+                 {GLOBALSIGN_ECC_R4_KEY}] 1\n"
+            ),
+        )
+        .unwrap();
+        assert_eq!(run(GLOBALSIGN_ECC_R4), RegistryOutcome::AlreadyCorrect);
+        let _ = fs::remove_dir_all(&prefix);
     }
 }

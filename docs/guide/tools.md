@@ -150,14 +150,17 @@ and run them, so a tool that declares `dotnetsdk10` also gets the SDK folder on
 A Synthesis entry in `tools.ini` that still lists the old default, `dotnet8`,
 `vcrun2022`, gets `dotnetsdk10`, `vcrun2022` when Eidos reads it.
 
-Patcher builds can still stop at the package restore. NuGet checks the
-signature of every package it restores, and the prefix's root store lacks the
-code-signing and timestamping roots that the SDK ships as
-`sdk/10.0.403/trustedroots/codesignctl.pem` and `timestampctl.pem`. On system
-Wine 11.21, restoring `Mutagen.Bethesda.Synthesis` 0.36.6 fails with `NU3018`
-and `NU3028`; after both files were imported into the prefix's root store, the
-same restore and build succeeded. Eidos does not import them yet. Proton was
-not tested.
+NuGet checks the signature of every package it restores against the Windows root
+store, and a Wine prefix lacks the code-signing and timestamping roots that the
+SDK ships as `sdk/10.0.403/trustedroots/codesignctl.pem` and `timestampctl.pem`.
+Without them, restoring `Mutagen.Bethesda.Synthesis` 0.36.6 fails with `NU3018`
+and `NU3028`. So before a tool that declares `dotnetsdk10` runs, once the SDK is
+downloaded, Eidos adds the 385 certificates of both files to the current user's
+root store in the game's prefix, in the same `regedit` import that writes the
+game path (see below). It imports them again if one goes missing. Every Windows
+program in that prefix then trusts these roots. With them, in a fresh prefix
+with an empty NuGet cache, the same restore and build succeed on system Wine
+11.21 and on GE-Proton11-9.
 
 Nothing in tiers 2 or 3 runs silently:
 

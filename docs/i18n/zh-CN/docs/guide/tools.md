@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=d10264fcb7169488da7f4bb45f930ad141fed832 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -136,10 +136,12 @@ Synthesis 编译 patcher 需要它,而且构建和运行 patcher 时调用的是
 所以声明了 `dotnetsdk10` 的工具还会在 `WINEPATH` 上得到 SDK 文件夹,外加 `NUGET_CERT_REVOCATION_MODE=offline`、`DOTNET_GENERATE_ASPNET_CERTIFICATE=false` 和 `DOTNET_CLI_TELEMETRY_OPTOUT=1`。
 `tools.ini` 中仍写着旧默认值 `dotnet8`, `vcrun2022` 的 Synthesis 条目,会在 Eidos 读取时改为 `dotnetsdk10`, `vcrun2022`。
 
-patcher 的构建仍可能在包还原这一步失败。
-NuGet 会检查它还原的每个包的签名,而前缀的根证书存储里没有 SDK 以 `sdk/10.0.403/trustedroots/codesignctl.pem` 和 `timestampctl.pem` 附带的代码签名根证书和时间戳根证书。
-在系统 Wine 11.21 上,还原 `Mutagen.Bethesda.Synthesis` 0.36.6 会以 `NU3018` 和 `NU3028` 失败;把这两个文件导入前缀的根证书存储后,同样的还原和构建都成功了。
-Eidos 目前还不会导入它们。未在 Proton 上测试。
+NuGet 会对照 Windows 根证书存储检查它还原的每个包的签名,而 Wine 前缀里没有 SDK 以 `sdk/10.0.403/trustedroots/codesignctl.pem` 和 `timestampctl.pem` 附带的代码签名根证书和时间戳根证书。
+没有它们,还原 `Mutagen.Bethesda.Synthesis` 0.36.6 会以 `NU3018` 和 `NU3028` 失败。
+因此,在运行声明了 `dotnetsdk10` 的工具之前,只要 SDK 已经下载,Eidos 就会把这两个文件中的 385 个证书加入游戏前缀里当前用户的根证书存储,用的是写入游戏路径的同一次 `regedit` 导入(见下文)。
+如果其中某个证书丢失,Eidos 会重新导入。
+此后,该前缀里的每个 Windows 程序都信任这些根证书。
+有了它们,在全新的前缀和空的 NuGet 缓存下,同样的还原和构建在系统 Wine 11.21 和 GE-Proton11-9 上都能成功。
 
 第二类和第三类里没有任何东西是悄悄跑的:
 

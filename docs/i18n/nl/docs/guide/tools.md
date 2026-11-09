@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=d10264fcb7169488da7f4bb45f930ad141fed832 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -158,15 +158,19 @@ en `DOTNET_CLI_TELEMETRY_OPTOUT=1`. Een Synthesis-item in `tools.ini` dat nog de
 oude standaard `dotnet8`, `vcrun2022` heeft, krijgt `dotnetsdk10`, `vcrun2022`
 wanneer Eidos het inleest.
 
-Het bouwen van patchers kan nog steeds stranden bij het herstellen van
-pakketten. NuGet controleert de handtekening van elk pakket dat het herstelt, en
-in de rootstore van de prefix ontbreken de roots voor codeondertekening en
-tijdstempels die de SDK meelevert als
-`sdk/10.0.403/trustedroots/codesignctl.pem` en `timestampctl.pem`. Met de
-systeem-Wine 11.21 mislukt het herstellen van `Mutagen.Bethesda.Synthesis`
-0.36.6 met `NU3018` en `NU3028`; nadat beide bestanden in de rootstore van de
-prefix waren geïmporteerd, slaagden hetzelfde herstel en de build. Eidos
-importeert ze nog niet. Proton is niet getest.
+NuGet controleert de handtekening van elk pakket dat het herstelt tegen de
+rootstore van Windows, en in een Wine-prefix ontbreken de roots voor
+codeondertekening en tijdstempels die de SDK meelevert als
+`sdk/10.0.403/trustedroots/codesignctl.pem` en `timestampctl.pem`. Zonder die
+roots mislukt het herstellen van `Mutagen.Bethesda.Synthesis` 0.36.6 met
+`NU3018` en `NU3028`. Daarom voegt Eidos, voordat een tool die `dotnetsdk10`
+declareert start en zodra de SDK gedownload is, de 385 certificaten uit beide
+bestanden toe aan de rootstore van de huidige gebruiker in de prefix van het
+spel, in dezelfde `regedit`-import die het spelpad schrijft (zie hieronder).
+Verdwijnt er een, dan importeert Eidos ze opnieuw. Elk Windows-programma in die
+prefix vertrouwt deze roots daarna. Met deze roots slagen hetzelfde herstel en
+de build in een nieuwe prefix met een lege NuGet-cache, met de systeem-Wine
+11.21 en met GE-Proton11-9.
 
 Niets in tier 2 of 3 draait stilzwijgend:
 

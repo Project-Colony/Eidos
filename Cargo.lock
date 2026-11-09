@@ -1197,6 +1197,7 @@ dependencies = [
 name = "eidos-gamefeatures"
 version = "1.21.0"
 dependencies = [
+ "base64",
  "eidos-conflicts",
  "eidos-core",
  "eidos-gamedef",
@@ -1206,6 +1207,7 @@ dependencies = [
  "flate2",
  "libc",
  "object 0.40.0",
+ "ring",
  "sha2",
  "ureq",
 ]

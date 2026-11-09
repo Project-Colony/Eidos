@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=d10264fcb7169488da7f4bb45f930ad141fed832 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
 
 # Outils : xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -167,15 +167,19 @@ et `DOTNET_CLI_TELEMETRY_OPTOUT=1`. Une entrée Synthesis de `tools.ini` qui
 porte encore l'ancienne valeur par défaut, `dotnet8`, `vcrun2022`, passe à
 `dotnetsdk10`, `vcrun2022` quand Eidos la lit.
 
-La construction des patchers peut encore échouer à la restauration des paquets.
-NuGet vérifie la signature de chaque paquet qu'il restaure, et le magasin de
-racines du préfixe ne contient pas les racines de signature de code et
-d'horodatage que le SDK fournit sous `sdk/10.0.403/trustedroots/codesignctl.pem`
-et `timestampctl.pem`. Avec le Wine 11.21 du système, la restauration de
-`Mutagen.Bethesda.Synthesis` 0.36.6 échoue avec `NU3018` et `NU3028` ; une fois
-les deux fichiers importés dans le magasin de racines du préfixe, la même
-restauration et la compilation ont réussi. Eidos ne les importe pas encore.
-Proton n'a pas été testé.
+NuGet vérifie la signature de chaque paquet qu'il restaure auprès du magasin de
+racines de Windows, et il manque à un préfixe Wine les racines de signature de
+code et d'horodatage que le SDK fournit sous
+`sdk/10.0.403/trustedroots/codesignctl.pem` et `timestampctl.pem`. Sans elles,
+la restauration de `Mutagen.Bethesda.Synthesis` 0.36.6 échoue avec `NU3018` et
+`NU3028`. Avant de lancer un outil qui déclare `dotnetsdk10`, une fois le SDK
+téléchargé, Eidos ajoute donc les 385 certificats des deux fichiers au magasin
+de racines de l'utilisateur courant dans le préfixe du jeu, dans le même import
+`regedit` que celui qui écrit le chemin du jeu (voir plus bas). Si l'un d'eux
+disparaît, il les importe de nouveau. Tous les programmes Windows de ce préfixe
+font alors confiance à ces racines. Avec elles, dans un préfixe neuf et avec un
+cache NuGet vide, la même restauration et la compilation réussissent avec le
+Wine 11.21 du système et avec GE-Proton11-9.
 
 Rien dans les paliers 2 ou 3 ne s'exécute en silence :
 

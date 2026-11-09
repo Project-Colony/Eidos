@@ -47,7 +47,7 @@ pub use prereqs::{
 mod runtime;
 pub use runtime::{
     env_for as runtime_env_for, install as install_runtime, is_installed as runtime_is_installed,
-    is_runtime_verb, runtime, runtime_dir, runtimes_dir, Runtime, RuntimeError,
+    is_runtime_verb, nuget_roots_pem, runtime, runtime_dir, runtimes_dir, Runtime, RuntimeError,
 };
 
 mod savegame;
