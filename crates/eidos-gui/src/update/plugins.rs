@@ -609,6 +609,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 let filtering = !app.plugin_search.trim().is_empty();
                 app.status = Some(
                     t(match (on, filtering) {
+                        (_, true) if shown.is_empty() => "status_plugins_none_shown",
                         (true, false) => "status_plugins_all_active",
                         (false, false) => "status_plugins_none_to_deactivate",
                         (true, true) => "status_plugins_shown_all_active",

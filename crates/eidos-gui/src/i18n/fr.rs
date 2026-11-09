@@ -699,6 +699,7 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("status_plugins_none_to_deactivate", "Plus rien à désactiver : les autres sont chargés par le jeu lui-même."),
     ("status_plugins_shown_all_active", "Tous les plugins affichés qui peuvent être actifs le sont déjà."),
     ("status_plugins_shown_none_to_deactivate", "Aucun plugin affiché ne peut être désactivé : ils sont inactifs ou chargés par le jeu lui-même."),
+    ("status_plugins_none_shown", "Aucun plugin ne correspond au filtre."),
     ("status_plugins_activated", "{n} plugin(s) activé(s)."),
     ("status_plugins_deactivated", "{n} plugin(s) désactivé(s)."),
     ("status_select_plugin_first", "Sélectionnez d'abord un plugin."),
