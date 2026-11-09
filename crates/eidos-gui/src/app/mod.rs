@@ -553,6 +553,8 @@ pub(crate) struct App {
     /// to "which rows am I acting on".
     pub(crate) selected_plugin: Option<usize>,
     pub(crate) selected_plugins: HashSet<usize>,
+    /// Plugin-list filter query (case-insensitive substring on the plugin name).
+    pub(crate) plugin_search: String,
     /// Which list the arrow keys move in.
     pub(crate) focus: Pane,
     /// The category catalog, read once instead of per frame.

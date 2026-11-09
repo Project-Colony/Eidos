@@ -738,3 +738,148 @@ fn rows_aim_only_during_a_drag() {
         "the missing-master line moved the rows"
     );
 }
+
+/// The plugin filter only skips rows. A drawn row still names its full-list
+/// index, and while the gaps between drawn rows are not load-order gaps no drag
+/// starts or aims. Clearing the box brings back every row and the drag.
+#[test]
+fn the_plugin_filter_keeps_full_list_indices_and_holds_the_drag() {
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    let mut list = eidos_plugins::PluginList::default();
+    for name in ["Alpha.esp", "Beta.esp", "Gamma.esp"] {
+        list.plugins
+            .push(crate::test_support::plugin_row(name, "Alpha"));
+    }
+    app.plugins = Some(list);
+    let mut renderer = renderer();
+    let panel = |app: &App| crate::modinfo::plugins_panel(app);
+    let drawn = |app: &App, renderer: &mut iced::Renderer| -> Vec<String> {
+        positions(panel(app), renderer)
+            .labels
+            .into_iter()
+            .map(|(text, _)| text)
+            .filter(|text| text.ends_with(".esp"))
+            .collect()
+    };
+    let moved = |at: Point| [Event::Mouse(mouse::Event::CursorMoved { position: at })];
+    let press = [Event::Mouse(mouse::Event::ButtonPressed(
+        mouse::Button::Left,
+    ))];
+    let drag_message = |m: &Message| {
+        matches!(
+            m,
+            Message::PluginDragStart(..) | Message::PluginDragOverGap(..) | Message::PluginDragDrop
+        )
+    };
+    assert_eq!(
+        drawn(&app, &mut renderer),
+        ["Alpha.esp", "Beta.esp", "Gamma.esp"]
+    );
+
+    // Typing narrows the rows, ignoring case.
+    let input = positions(panel(&app), &mut renderer).inputs[0].center();
+    let (cache, _) = frame(
+        panel(&app),
+        &mut renderer,
+        Cache::new(),
+        &click(),
+        input,
+        None,
+    );
+    let typed = [key(
+        iced::keyboard::Key::Character("g".into()),
+        iced::keyboard::Modifiers::empty(),
+        Some("g"),
+    )];
+    let (_, messages) = frame(panel(&app), &mut renderer, cache, &typed, input, None);
+    assert!(
+        messages
+            .iter()
+            .any(|m| matches!(m, Message::PluginSearchChanged(q) if q == "g")),
+        "{messages:?}"
+    );
+    apply(&mut app, messages);
+    assert_eq!(drawn(&app, &mut renderer), ["Gamma.esp"]);
+
+    // Gamma is drawn first and still selects row 2, without arming a drag.
+    let gamma = label(panel(&app), &mut renderer, "Gamma.esp", 0);
+    let (_, messages) = frame(
+        panel(&app),
+        &mut renderer,
+        Cache::new(),
+        &click(),
+        gamma,
+        Some("plugins-filtered"),
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|m| matches!(m, Message::SelectPlugin(2))),
+        "{messages:?}"
+    );
+    assert!(!messages.iter().any(drag_message), "{messages:?}");
+    apply(&mut app, messages);
+    assert_eq!(app.selected_plugin, Some(2));
+    assert!(app.plugin_drag.is_none(), "a filtered press armed a drag");
+    let _ = crate::update::update_inner(&mut app, Message::PluginDragStart(2));
+    assert!(app.plugin_drag.is_none(), "a drag started under a filter");
+
+    // A drag armed before the box was filled aims nowhere either.
+    app.plugin_search.clear();
+    let _ = crate::update::update_inner(&mut app, Message::PluginDragStart(0));
+    assert!(app.plugin_drag.is_some());
+    app.plugin_search = "g".to_string();
+    let (cache, _) = frame(
+        panel(&app),
+        &mut renderer,
+        Cache::new(),
+        &moved(input),
+        input,
+        None,
+    );
+    let (_, messages) = frame(
+        panel(&app),
+        &mut renderer,
+        cache,
+        &moved(gamma),
+        gamma,
+        None,
+    );
+    assert!(!messages.iter().any(drag_message), "{messages:?}");
+
+    // Clearing the box restores every row and the drag.
+    let _ = crate::update::update_inner(&mut app, Message::PluginSearchChanged(String::new()));
+    assert!(app.plugin_drag.is_none(), "a filter change keeps no drag");
+    assert_eq!(
+        drawn(&app, &mut renderer),
+        ["Alpha.esp", "Beta.esp", "Gamma.esp"]
+    );
+    let alpha = label(panel(&app), &mut renderer, "Alpha.esp", 0);
+    let gamma = label(panel(&app), &mut renderer, "Gamma.esp", 0);
+    let (cache, messages) = frame(
+        panel(&app),
+        &mut renderer,
+        Cache::new(),
+        &press,
+        alpha,
+        None,
+    );
+    apply(&mut app, messages);
+    assert_eq!(app.selected_plugin, Some(0));
+    assert!(app.plugin_drag.is_some(), "the press armed a drag again");
+    let (_, messages) = frame(
+        panel(&app),
+        &mut renderer,
+        cache,
+        &moved(gamma),
+        gamma,
+        None,
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|m| matches!(m, Message::PluginDragOverGap(2))),
+        "{messages:?}"
+    );
+}

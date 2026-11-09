@@ -467,6 +467,7 @@ fn every_main_screen_field_hands_the_keyboard_over() {
     // space into it and a mod turns off.
     for msg in [
         Message::SearchChanged("x".into()),
+        Message::PluginSearchChanged("x".into()),
         Message::RenameChanged("x".into()),
         Message::NotesChanged("x".into()),
         Message::OverwriteToModName("x".into()),
@@ -480,6 +481,35 @@ fn every_main_screen_field_hands_the_keyboard_over() {
         let _ = update(&mut app, msg);
         assert!(app.typing, "{label} did not claim the keyboard");
     }
+}
+
+#[test]
+fn the_plugin_filter_takes_hidden_rows_from_the_keyboard_and_the_selection() {
+    // A row the filter hides is a highlight nobody can see: the arrows skip it,
+    // and a batch button must not act on it.
+    let mut app = nav_app(&[]);
+    let mut list = eidos_plugins::PluginList::default();
+    for name in ["Alpha.esp", "Gamma.esp", "Beta.esp", "Gate.esp"] {
+        list.plugins.push(crate::test_support::plugin_row(name, ""));
+    }
+    app.plugins = Some(list);
+    app.tab = Tab::Plugins;
+    app.focus = Pane::Plugins;
+    app.selected_plugins = [1, 2].into();
+    app.selected_plugin = Some(2);
+    app.plugin_anchor = Some(2);
+    let _ = update(&mut app, Message::PluginSearchChanged("GA".into()));
+    assert_eq!(drawn_plugin_rows(&app), [1, 3]);
+    assert_eq!(app.selected_plugins, [1].into());
+    assert_eq!(app.selected_plugin, None);
+    assert_eq!(app.plugin_anchor, None);
+    let _ = key_nav(&mut app, Nav::Down);
+    assert_eq!(app.selected_plugin, Some(1));
+    let _ = key_nav(&mut app, Nav::Down);
+    assert_eq!(app.selected_plugin, Some(3));
+    // A Shift run skips Beta.esp, hidden between the two drawn rows.
+    let _ = update(&mut app, Message::SelectPluginExtend(1));
+    assert_eq!(app.selected_plugins, [1, 3].into());
 }
 
 #[test]

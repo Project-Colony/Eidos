@@ -449,6 +449,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         drag_scroll_depth: 0.5,
         selected_plugin: None,
         selected_plugins: HashSet::new(),
+        plugin_search: String::new(),
         plugin_anchor: None,
         focus: Pane::Mods,
         categories: None,
@@ -1785,6 +1786,19 @@ pub(crate) fn drawn_mod_rows(app: &App) -> Vec<usize> {
         .collect()
 }
 
+/// The plugin rows the Plugins tab draws, in load order: all of them, or under
+/// a filter those whose name contains it, matched like the mod filter. The
+/// indices stay full-list indices, so every row message still names the plugin.
+pub(crate) fn drawn_plugin_rows(app: &App) -> Vec<usize> {
+    let query = app.plugin_search.trim().to_lowercase();
+    let Some(list) = app.plugins.as_ref() else {
+        return Vec::new();
+    };
+    (0..list.plugins.len())
+        .filter(|&i| list.plugins[i].name.to_lowercase().contains(&query))
+        .collect()
+}
+
 /// Whether dragging can mean anything right now.
 ///
 /// Only in load order. Under a sort or a grouping the insertion gaps address the
@@ -2192,7 +2206,7 @@ pub(crate) fn key_nav(app: &mut App, nav: Nav) -> Task<Message> {
     // Space toggles something nobody is looking at.
     let rows: Vec<usize> = match pane {
         Pane::Mods => drawn_mod_rows(app),
-        Pane::Plugins => (0..app.plugins.as_ref().map(|l| l.plugins.len()).unwrap_or(0)).collect(),
+        Pane::Plugins => drawn_plugin_rows(app),
     };
     if rows.is_empty() {
         return Task::none();
@@ -2251,7 +2265,8 @@ pub(crate) fn key_nav(app: &mut App, nav: Nav) -> Task<Message> {
             let up = matches!(nav, Nav::ShiftUp);
             let Some(i) = cur else { return Task::none() };
             // Same rule as the drag: a move only means something in load order.
-            // The Plugins pane is unaffected - its rows are always `0..len`.
+            // The Plugins pane is always in load order; its filter only skips
+            // rows, and `move_plugins_to` still refuses a slot the engine forbids.
             if pane == Pane::Mods && !can_reorder(app) {
                 return Task::none();
             }

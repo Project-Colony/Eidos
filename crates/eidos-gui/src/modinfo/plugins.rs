@@ -360,7 +360,11 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     // is useless if the plugin it marks is forty rows out of sight.
     let mut marks: Vec<Option<Color>> = Vec::new();
     let total = list.plugins.len();
-    let drag = app.plugin_drag.as_ref();
+    // Under a filter the gaps between drawn rows are not gaps of the load
+    // order, so no strip is a target and no row aims: that would need every gap
+    // remapped to the full list. `PluginDragStart` refuses to arm one as well.
+    let filtering = !app.plugin_search.trim().is_empty();
+    let drag = app.plugin_drag.as_ref().filter(|_| !filtering);
     // The line draws iff releasing here would move the block - the exact
     // refusal move_plugins_to applies: only a CONTIGUOUS block treats its own
     // interior gaps as "already here". A non-contiguous selection is compacted
@@ -422,7 +426,8 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         .clip(true),
     );
     let dragging = drag.is_some();
-    for (i, p) in list.plugins.iter().enumerate() {
+    for i in drawn_plugin_rows(app) {
+        let p = &list.plugins[i];
         let idx = p.index.clone().unwrap_or_else(|| "--".to_string());
         let kind = if p.is_light {
             "ESL"
@@ -622,7 +627,11 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         } else {
             grab
         };
-        let grab = grab.on_release(Message::PluginDragDrop);
+        let grab = if filtering {
+            grab
+        } else {
+            grab.on_release(Message::PluginDragDrop)
+        };
         rows = rows.push(drop_gap(
             i,
             live_gap == Some(i),
@@ -661,8 +670,14 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             .push(scroll_marks(&marks)),
     );
 
+    let filter = text_input(t("plugins_filter_placeholder"), &app.plugin_search)
+        .on_input(Message::PluginSearchChanged)
+        .padding(5)
+        .size(sz(12));
+
     Column::new()
         .spacing(6)
+        .push(filter)
         .push(head)
         .push(header)
         .push(list_area)

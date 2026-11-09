@@ -594,6 +594,8 @@ pub(crate) enum Message {
     SelectPluginExtend(usize),
     /// Enable or disable every selected plugin at once (MO2's batch toggle).
     SetSelectedPluginsEnabled(bool),
+    /// Filter box above the plugin list (case-insensitive substring on the name).
+    PluginSearchChanged(String),
     // ---- keyboard navigation ----
     /// A navigation key was pressed. Which list it moves is decided in `update`
     /// from `App::focus`, because `on_key_press` takes a plain `fn` and cannot

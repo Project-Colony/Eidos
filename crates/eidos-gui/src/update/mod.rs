@@ -1353,6 +1353,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::SelectPluginToggle(..)
         | Message::SelectPluginExtend(..)
         | Message::SetSelectedPluginsEnabled(..)
+        | Message::PluginSearchChanged(..)
         | Message::PluginDragStart(..)
         | Message::PluginDragOverGap(..)
         | Message::PluginDragCancel
