@@ -342,13 +342,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 // A tool on the .NET SDK also needs NuGet's signing roots in
                 // the prefix, or every package restore fails (NU3018).
                 let roots = eidos_gamefeatures::nuget_roots_pem(&tool.prereqs);
-                let (and_roots, or_restore) = match roots.is_empty() {
-                    true => ("", ""),
-                    false => (
-                        " and the .NET SDK's NuGet signing roots",
-                        " or its package restore fails with NU3018",
-                    ),
-                };
+                let and_roots = " and the .NET SDK's NuGet signing roots";
                 match eidos_gamefeatures::ensure_registry(
                     &prefix,
                     compat,
@@ -366,7 +360,8 @@ pub(crate) fn cmd_tool(args: &[String]) {
                     },
                     &run.env,
                 ) {
-                    Ok(RegistryOutcome::Imported) => {
+                    Ok(RegistryOutcome::Imported(added)) => {
+                        let and_roots = if added { and_roots } else { "" };
                         eidos_log::info!("eidos: registered the game path{and_roots} in the Wine prefix")
                     }
                     Ok(RegistryOutcome::AlreadyCorrect) => {}
@@ -380,7 +375,11 @@ pub(crate) fn cmd_tool(args: &[String]) {
                         game.def.name,
                         if game.is_steam() { "Steam" } else { "Heroic" }
                     ),
-                    Ok(RegistryOutcome::PrefixBusy(busy)) => {
+                    Ok(RegistryOutcome::PrefixBusy(busy, missing)) => {
+                        let (and_roots, or_restore) = match missing {
+                            true => (and_roots, " or its package restore fails with NU3018"),
+                            false => ("", ""),
+                        };
                         let who = busy
                             .first()
                             .map(|(pid, cmd)| format!("{} (pid {pid})", cmd.split_whitespace().next().unwrap_or(cmd)))

@@ -359,8 +359,9 @@ fn resolve_windows_path(value: &str, s_drive: Option<&Path>) -> Option<PathBuf> 
 /// back to the caller, which says it out loud.
 #[derive(Debug, PartialEq, Eq)]
 pub enum RegistryOutcome {
-    /// The import ran; the key now holds the current path in both views.
-    Imported,
+    /// The import ran; the key now holds the current path in both views. True
+    /// when the import also added root certificates the prefix lacked.
+    Imported(bool),
     /// Both views already held it. Nothing to do, nothing to say.
     AlreadyCorrect,
     /// Proton has not created `user.reg` yet. Importing now would race its own
@@ -368,8 +369,9 @@ pub enum RegistryOutcome {
     PrefixUninitialised,
     /// A wineserver is live and caches the registry in memory, rewriting it at
     /// shutdown - an import now would be silently undone. Carries what is
-    /// holding it, so the message can name the process.
-    PrefixBusy(Vec<(u32, String)>),
+    /// holding it, so the message can name the process, and whether root
+    /// certificates are missing from the prefix.
+    PrefixBusy(Vec<(u32, String)>, bool),
 }
 
 /// Write the registry entries into the prefix, unless they are already there.
@@ -401,11 +403,19 @@ pub fn ensure_registry(
     if !prefix.join("user.reg").is_file() {
         return Ok(RegistryOutcome::PrefixUninitialised);
     }
+    // Before the busy check, so a busy prefix can still say whether it lacks roots.
+    let roots = match roots_pem {
+        "" => String::new(),
+        pem => root_certificates_reg(
+            pem,
+            &fs::read_to_string(prefix.join("user.reg")).unwrap_or_default(),
+        ),
+    };
     // A live wineserver caches the registry in memory and rewrites it on
     // shutdown, so importing now would be silently undone. Refuse instead.
     let busy = crate::prefix_busy_at(prefix, compatdata);
     if !busy.is_empty() {
-        return Ok(RegistryOutcome::PrefixBusy(busy));
+        return Ok(RegistryOutcome::PrefixBusy(busy, !roots.is_empty()));
     }
 
     let marker = marker_path(state, registry_name);
@@ -418,13 +428,6 @@ pub fn ensure_registry(
     let already_written = fs::read_to_string(&marker).is_ok_and(|s| s.trim() == want);
     let still_correct = fs::read_to_string(prefix.join("system.reg"))
         .is_ok_and(|reg| registry_matches(&reg, registry_name, &want));
-    let roots = match roots_pem {
-        "" => String::new(),
-        pem => root_certificates_reg(
-            pem,
-            &fs::read_to_string(prefix.join("user.reg")).unwrap_or_default(),
-        ),
-    };
     if already_written && still_correct && roots.is_empty() {
         return Ok(RegistryOutcome::AlreadyCorrect);
     }
@@ -454,7 +457,7 @@ pub fn ensure_registry(
         return Err(io::Error::other(format!("regedit import failed: {status}")));
     }
     fs::write(&marker, &want)?;
-    Ok(RegistryOutcome::Imported)
+    Ok(RegistryOutcome::Imported(!roots.is_empty()))
 }
 
 #[cfg(test)]
@@ -552,7 +555,7 @@ mod tests {
             &[],
         )
         .unwrap();
-        assert_eq!(ran, RegistryOutcome::Imported);
+        assert_eq!(ran, RegistryOutcome::Imported(false));
         assert_eq!(
             argv[1],
             prefix
@@ -882,7 +885,7 @@ mod tests {
             .unwrap()
         };
         assert_eq!(run(""), RegistryOutcome::AlreadyCorrect);
-        assert_eq!(run(GLOBALSIGN_ECC_R4), RegistryOutcome::Imported);
+        assert_eq!(run(GLOBALSIGN_ECC_R4), RegistryOutcome::Imported(true));
         let reg = fs::read_to_string(prefix.join(".eidos_registry/eidos.reg")).unwrap();
         assert!(reg.contains("Bethesda Softworks") && reg.contains(GLOBALSIGN_ECC_R4_KEY));
         fs::write(
