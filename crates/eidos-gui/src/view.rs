@@ -1533,6 +1533,7 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // other order disables the insertion strips: a drop in a sorted list has no
     // meaning to give the row it lands on, which is why MO2 disables it too.
     let entries = display_entries(app);
+    let plugin_origins = selected_plugin_origin_mods(app);
     let reorderable = app.mod_sort.is_none() && app.group_by.is_none();
     let dragging = dragging && reorderable;
     for entry in &entries {
@@ -1629,7 +1630,13 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         }
         // Computed once and handed to both: the row paints this colour, and the
         // name cell fades into it.
-        let conflict = conflict_tint(app, i);
+        // The mod that ships a selected plugin outranks the conflict tint: the
+        // plugin click is the newer question, though selected_mod stays set.
+        let conflict = if plugin_origins.contains(&m.name.to_ascii_lowercase()) {
+            Some(origin_bg())
+        } else {
+            conflict_tint(app, i)
+        };
         tints.push(conflict);
         // The mod's own colour, washed down to a row background. MO2 colours any
         // mod through the Notes column; Eidos already stored the colour per mod

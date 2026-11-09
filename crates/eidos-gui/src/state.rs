@@ -1412,6 +1412,34 @@ pub(crate) fn plugin_from_selected_mod(origins: &HashSet<String>, origin_mod: &s
     !origin_mod.is_empty() && origins.contains(&origin_mod.to_ascii_lowercase())
 }
 
+/// The plugins selected in the plugin list, in the list's own indices.
+fn selected_plugin_rows(app: &App) -> impl Iterator<Item = &eidos_plugins::Plugin> {
+    let list = app.plugins.as_ref();
+    app.selected_plugins
+        .iter()
+        .copied()
+        .chain(app.selected_plugin)
+        .filter_map(move |i| list?.plugins.get(i))
+}
+
+/// Lowercased names of the masters of every selected plugin (MO2 lights them in
+/// the plugin list). Built once per view; a row asks `contains` with its own
+/// lowercased name.
+pub(crate) fn selected_plugin_masters(app: &App) -> HashSet<String> {
+    selected_plugin_rows(app)
+        .flat_map(|p| p.masters.iter().map(|m| m.to_ascii_lowercase()))
+        .collect()
+}
+
+/// Lowercased folder names of the mods that ship the selected plugins. The
+/// game's own Data (empty origin) belongs to no mod row.
+pub(crate) fn selected_plugin_origin_mods(app: &App) -> HashSet<String> {
+    selected_plugin_rows(app)
+        .filter(|p| !p.origin_mod.is_empty())
+        .map(|p| p.origin_mod.to_ascii_lowercase())
+        .collect()
+}
+
 pub(crate) fn planned_instance(app: &App) -> Option<Instance> {
     let game = selected_game(app)?;
     Some(match app.kind {
@@ -2988,6 +3016,26 @@ pub(crate) fn save_collapsed(app: &App) {
 mod tests {
     use super::*;
     use crate::test_support::*;
+
+    #[test]
+    fn selecting_a_plugin_collects_its_masters_and_source_mod() {
+        let mut app = nav_app(&["Armour Pack"]);
+        let mut p = plugin_row("Patch.esp", "AAA");
+        p.masters = vec!["Skyrim.esm".into(), "Armour.ESP".into()];
+        p.origin_mod = "Armour Pack".into();
+        let other = plugin_row("Other.esp", "BBB");
+        app.plugins = Some(eidos_plugins::PluginList {
+            plugins: vec![p, other],
+            implicit: Default::default(),
+            locked: Default::default(),
+        });
+        assert!(selected_plugin_masters(&app).is_empty());
+        app.selected_plugin = Some(0);
+        let masters = selected_plugin_masters(&app);
+        assert!(masters.contains("skyrim.esm") && masters.contains("armour.esp"));
+        assert!(!masters.contains("other.esp"));
+        assert!(selected_plugin_origin_mods(&app).contains("armour pack"));
+    }
 
     #[test]
     fn selecting_a_mod_marks_the_plugins_it_ships() {

@@ -353,6 +353,7 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     // change while the panel is being drawn, and lowercasing 215 folder names
     // per plugin would be work proportional to mods x plugins.
     let selected_origins = selected_mod_origins(app);
+    let masters = selected_plugin_masters(app);
     // No spacing: the insertion strips are the spacing, exactly as in the mod
     // list, so the layout does not shift the instant a drag begins.
     let mut rows = Column::new();
@@ -603,8 +604,21 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         let from_selected_mod = plugin_from_selected_mod(&selected_origins, &p.origin_mod);
         // Same padding as `striped`, or a selected row would be a different
         // height from its neighbours and the list would twitch as focus moves.
-        let painted: Element<'a, Message> = if selected || from_selected_mod {
-            let bg = if selected { sel_bg() } else { origin_bg() };
+        // Order as in MO2: selection, then the selected mod's plugins, then masters.
+        let is_master = !masters.is_empty() && masters.contains(&p.name.to_ascii_lowercase());
+        let tint = if from_selected_mod {
+            Some(origin_bg())
+        } else if is_master {
+            Some(master_bg())
+        } else {
+            None
+        };
+        let painted: Element<'a, Message> = if selected || tint.is_some() {
+            let bg = if selected {
+                sel_bg()
+            } else {
+                tint.unwrap_or_else(origin_bg)
+            };
             container(row)
                 .width(Length::Fill)
                 .padding(2)
@@ -640,7 +654,7 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             Message::PluginDragDrop,
         ));
         rows = rows.push(grab);
-        marks.push(from_selected_mod.then_some(origin_bg()));
+        marks.push(tint);
     }
     // The trailing strip: hovering a row always means "above it", so this is the
     // only way to aim at the end of the load order.

@@ -200,6 +200,27 @@ pub(crate) fn origin_bg() -> Color {
     best
 }
 
+/// A master of the selected plugin. Same contrast search as `origin_bg`, with
+/// `origin_bg` itself added to the tints it must not be confused with, and a
+/// different hue source (the warning colour) so the two read as different things.
+pub(crate) fn master_bg() -> Color {
+    let p = pal();
+    let rivals = [sel_bg(), origin_bg(), p.success_bg, p.error_bg];
+    let gap = |a: Color, b: Color| (a.r - b.r).abs() + (a.g - b.g).abs() + (a.b - b.b).abs();
+
+    let mut best = mix(p.bg_card, p.warning, 0.28);
+    let mut best_gap = -1.0;
+    for r in [0.20, 0.30, 0.42, 0.56, 0.70] {
+        let c = mix(p.bg_card, p.warning, r);
+        let worst = rivals.iter().fold(f32::MAX, |m, v| m.min(gap(c, *v)));
+        if worst > best_gap {
+            best_gap = worst;
+            best = c;
+        }
+    }
+    best
+}
+
 /// A mod the focused one OVERWRITES: it sits lower in the list and wins the
 /// files they share. The palette's success tint - the focused mod is on top.
 pub(crate) fn conflict_wins_bg() -> Color {
@@ -300,6 +321,7 @@ mod tests {
                 let tints = [
                     ("selection", sel_bg()),
                     ("origin", origin_bg()),
+                    ("master", master_bg()),
                     ("wins", conflict_wins_bg()),
                     ("loses", conflict_loses_bg()),
                 ];
