@@ -165,7 +165,8 @@ pub fn cabextract_available() -> bool {
 }
 
 /// Install ONE `verb` into `prefix` via winetricks, using Proton's own wine.
-/// `proton` is the Proton entry script (its directory holds `files/bin/wine`);
+/// `proton` is the Proton entry script (its directory holds `files/bin/wine`),
+/// or the `wine` binary of a plain Wine build;
 /// `steam_env` is the `STEAM_COMPAT_*` set Proton uses on a real launch (passed for
 /// parity). The verb's payload is fetched from Microsoft, so the caller must have
 /// user consent. Installing one verb at a time lets the caller record each success,
@@ -196,8 +197,9 @@ pub fn install_tier2_verb(
     })?;
     // Valve's official builds put wine under `files/bin`; several community and
     // distro-repackaged builds use `dist/bin` instead. Try both before giving up,
-    // or a perfectly good Proton is rejected on layout alone.
-    let (wine, wineserver) = ["files/bin", "dist/bin"]
+    // or a perfectly good Proton is rejected on layout alone. A plain Wine build
+    // has wineserver beside wine.
+    let (wine, wineserver) = ["files/bin", "dist/bin", ""]
         .iter()
         .map(|d| {
             (
@@ -212,8 +214,8 @@ pub fn install_tier2_verb(
             io::Error::new(
                 io::ErrorKind::NotFound,
                 format!(
-                    "Proton wine not found under {}/files/bin or {}/dist/bin",
-                    proton_dir.display(),
+                    "no wine found at {0}/files/bin/wine, {0}/dist/bin/wine (Proton) or \
+                     {0}/wine (plain Wine)",
                     proton_dir.display()
                 ),
             )

@@ -345,6 +345,7 @@ mod tests {
             app_id: "x".into(),
             prefix: Some(f.0.join("actual-wine")),
             heroic: true,
+            runner: None,
         };
         assert_eq!(game.saves_path(), Some(f.0.join("game/Saves")));
     }
@@ -374,6 +375,7 @@ mod tests {
             app_id: "fixture".into(),
             prefix: Some(f.0.join("external")),
             heroic: true,
+            runner: None,
         };
         fs::create_dir_all(f.0.join("external/drive_c/users/alice/AppData/Roaming")).unwrap();
         assert_eq!(

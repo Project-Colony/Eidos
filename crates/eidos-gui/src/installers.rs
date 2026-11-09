@@ -1596,6 +1596,7 @@ print(json.dumps({'protocol':1,'request_id':r['request_id'],'outcome':o}))
                 app_id: "synthetic-oblivion".into(),
                 prefix: Some(first_prefix),
                 heroic: true,
+                runner: None,
             };
             let mut second = app.games[0].clone();
             if let eidos_games::GameSource::External { prefix, .. } = &mut second.source {

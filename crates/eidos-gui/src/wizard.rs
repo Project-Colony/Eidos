@@ -12,6 +12,7 @@ use colony_ui::sz;
 use crate::theme::{card_style, text};
 use crate::widgets::nav;
 use crate::{planned_instance, selected_game, t, tf, App, InstanceKind, Message};
+use eidos_instance::Instance;
 
 /// The program's name, which is the way into Preferences and out again, as on
 /// the main screen. It is here too so the language, the text size and the
@@ -270,6 +271,9 @@ pub(crate) fn summary_screen<'a>(app: &App) -> Element<'a, Message> {
         .is_some_and(|m| game.map(|g| g.def.id) == Some(m.game_id.as_str()));
     if adopts {
         content = content.push(text(t("wizard_adopts")).size(sz(12)));
+    }
+    if let Some(folder) = planned_instance(app).and_then(|i| Instance::stock_game_folder(&i.root)) {
+        content = content.push(text(tf("wizard_stock_game", &[("folder", &folder)])).size(sz(12)));
     }
     if let Some(err) = &app.error {
         content = content.push(text(tf("wizard_error", &[("error", &err)])).size(sz(13)));

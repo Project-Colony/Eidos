@@ -14,6 +14,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crate::{quoted_pair, steam_libraries};
 
@@ -21,19 +22,29 @@ use crate::{quoted_pair, steam_libraries};
 pub const STEAM_FLATPAK_ID: &str = "com.valvesoftware.Steam";
 
 /// A ready-to-spawn Proton invocation for one app.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProtonRun {
-    /// The `proton` entry script (run as `proton waitforexitandrun <exe> [args...]`).
+    /// The `proton` entry script (run as `proton waitforexitandrun <exe> [args...]`),
+    /// or a `wine` binary when [`plain_wine`](Self::plain_wine) is set.
     pub proton: PathBuf,
-    /// Environment Proton needs: `STEAM_COMPAT_DATA_PATH` (the app's compatdata),
-    /// `STEAM_COMPAT_CLIENT_INSTALL_PATH` (the Steam root), the Steam app id
-    /// (`SteamAppId`/`SteamGameId`/`STEAM_COMPAT_APP_ID`), and
-    /// `STEAM_COMPAT_INSTALL_PATH`/`STEAM_COMPAT_LIBRARY_PATHS` (the game's dir/library).
+    /// Environment the run needs. For a Steam copy: `STEAM_COMPAT_DATA_PATH` (the
+    /// app's compatdata), `STEAM_COMPAT_CLIENT_INSTALL_PATH` (the Steam root), the
+    /// Steam app id (`SteamAppId`/`SteamGameId`/`STEAM_COMPAT_APP_ID`), and
+    /// `STEAM_COMPAT_INSTALL_PATH`/`STEAM_COMPAT_LIBRARY_PATHS` (the game's
+    /// dir/library). A Heroic Proton run has `STEAM_COMPAT_DATA_PATH`, an empty
+    /// `STEAM_COMPAT_CLIENT_INSTALL_PATH`, an empty `UMU_ID` and no app id; a
+    /// Heroic plain Wine run has only `WINEPREFIX` (see `heroic_run`).
     pub env: Vec<(String, String)>,
     /// This Proton belongs to the Flatpak Steam install. Eidos still runs it from
     /// the host (see [`is_flatpak_steam`]), but front ends warn, because its
     /// sandbox libraries may not resolve.
     pub flatpak: bool,
+    /// `proton` is a plain Wine build (Heroic's `wine` runner type): it takes no
+    /// verb and finds its prefix in `WINEPREFIX`.
+    pub plain_wine: bool,
+    /// The Steam Linux Runtime's `_v2-entry-point` that every command of this
+    /// run starts through, or `None` to start Proton on the host.
+    pub runtime: Option<PathBuf>,
 }
 
 impl ProtonRun {
@@ -46,13 +57,109 @@ impl ProtonRun {
     /// previous session. `waitforexitandrun` is what Steam itself invokes for the
     /// game, matching Eidos's exclusive single-process tool launch.
     pub fn command(&self, exe: &Path, args: &[String]) -> Vec<String> {
-        let mut v = vec![
-            self.proton.to_string_lossy().into_owned(),
-            "waitforexitandrun".to_string(),
-            exe.to_string_lossy().into_owned(),
-        ];
+        self.with_verb("waitforexitandrun", exe, args)
+    }
+
+    /// The argv that runs `exe` in the existing prefix with `runinprefix`, which
+    /// skips Proton's game-drive setup.
+    pub fn run_in_prefix(&self, exe: &Path, args: &[String]) -> Vec<String> {
+        self.with_verb("runinprefix", exe, args)
+    }
+
+    /// For a plain Wine build, the `wineserver -w` that `proton waitforexitandrun`
+    /// runs itself, to start before the tool and outside the merged view. Wine
+    /// opens files inside wineserver, so a tool that joins a server started
+    /// outside the view (the regedit import just before, or the game itself)
+    /// reads and writes the real game folder.
+    pub fn wineserver_wait(&self) -> Option<Command> {
+        self.plain_wine
+            .then(|| wineserver_wait_for(&self.proton, &self.env))
+    }
+
+    /// Start this run inside the Steam Linux Runtime its Proton build names
+    /// (`require_tool_appid` in the build's `toolmanifest.vdf`), installed in
+    /// any Steam library. `Err(None)`: the build names no runtime.
+    /// `Err(Some(id))`: the runtime, Steam app `id`, is not installed.
+    pub fn in_steam_runtime(&mut self, home: &Path) -> Result<(), Option<u32>> {
+        let manifest =
+            fs::read_to_string(self.proton.with_file_name("toolmanifest.vdf")).unwrap_or_default();
+        let app_id = crate::kv_first(&manifest, "require_tool_appid")
+            .and_then(|id| id.parse::<u32>().ok())
+            .filter(|&id| id != 0)
+            .ok_or(None)?;
+        let dir = crate::scan_installed(home)
+            .into_iter()
+            .filter(|app| app.app_id == app_id)
+            .filter_map(|app| app.install_path())
+            .find(|dir| dir.join("_v2-entry-point").is_file())
+            .ok_or(Some(app_id))?;
+        // Steam lists both folders here, and pressure-vessel shares them with
+        // the container, so a Proton in a library it does not share by default
+        // is still visible inside it.
+        let proton_dir = self.proton.parent().unwrap_or(Path::new("/"));
+        self.env.push((
+            "STEAM_COMPAT_TOOL_PATHS".to_string(),
+            format!("{}:{}", proton_dir.display(), dir.display()),
+        ));
+        self.runtime = Some(dir.join("_v2-entry-point"));
+        Ok(())
+    }
+
+    fn with_verb(&self, verb: &str, exe: &Path, args: &[String]) -> Vec<String> {
+        let mut v = Vec::new();
+        if let Some(entry) = &self.runtime {
+            v.push(entry.to_string_lossy().into_owned());
+            v.push(format!("--verb={verb}"));
+            v.push("--".to_string());
+        }
+        v.push(self.proton.to_string_lossy().into_owned());
+        if !self.plain_wine {
+            v.push(verb.to_string());
+        }
+        v.push(exe.to_string_lossy().into_owned());
         v.extend(args.iter().cloned());
         v
+    }
+}
+
+/// `wineserver -w` from the folder of the `wine` binary `wine`, with `env` on
+/// top of the inherited environment (it must name the same `WINEPREFIX`). See
+/// [`ProtonRun::wineserver_wait`]; a `runner=native` tool that is a `wine`
+/// needs the same wait.
+pub fn wineserver_wait_for(wine: &Path, env: &[(String, String)]) -> Command {
+    let mut cmd = Command::new(wine.with_file_name("wineserver"));
+    cmd.arg("-w").envs(env.iter().map(|(k, v)| (k, v)));
+    cmd
+}
+
+/// The run for a copy Heroic manages, with the build and prefix that the game's
+/// Heroic settings name. Nothing here reads Steam: a Heroic-only machine has no
+/// Steam root, and no Steam app id is set.
+pub(crate) fn heroic_run(bin: &Path, proton: bool, prefix: &Path) -> ProtonRun {
+    let prefix = prefix.to_string_lossy().into_owned();
+    let env = if proton {
+        vec![
+            ("STEAM_COMPAT_DATA_PATH".to_string(), prefix),
+            // The proton script indexes this one without checking for it. Empty
+            // means there is no Steam client to copy files from.
+            (
+                "STEAM_COMPAT_CLIENT_INSTALL_PATH".to_string(),
+                String::new(),
+            ),
+            // Present, GE-Proton starts the program without steam.exe. Empty, the
+            // checks that read its value (a umu-<appid> id, protonfixes' extra
+            // drives over $HOME and /mnt) stay off.
+            ("UMU_ID".to_string(), String::new()),
+        ]
+    } else {
+        vec![("WINEPREFIX".to_string(), prefix)]
+    };
+    ProtonRun {
+        proton: bin.to_path_buf(),
+        env,
+        flatpak: false,
+        plain_wine: !proton,
+        runtime: None,
     }
 }
 
@@ -107,21 +214,40 @@ fn compat_tool_name(steam_root: &Path, app_id: u32) -> Option<String> {
     for_app.or(for_default)
 }
 
-/// Locate the `proton` binary for a compat-tool `name`: custom builds in
-/// `compatibilitytools.d` first (by folder name, then by each tool's declared
+/// Folders that hold custom compat tools, user folder first so it wins a name
+/// clash: Steam's own, the distro packages' (proton-cachyos, proton-ge-custom),
+/// then each entry of `$STEAM_EXTRA_COMPAT_TOOLS_PATHS`.
+fn compat_tool_dirs(steam_root: &Path) -> Vec<PathBuf> {
+    let mut dirs = vec![
+        steam_root.join("compatibilitytools.d"),
+        PathBuf::from("/usr/share/steam/compatibilitytools.d"),
+        PathBuf::from("/usr/local/share/steam/compatibilitytools.d"),
+    ];
+    if let Some(extra) = std::env::var_os("STEAM_EXTRA_COMPAT_TOOLS_PATHS") {
+        dirs.extend(std::env::split_paths(&extra).filter(|p| !p.as_os_str().is_empty()));
+    }
+    dirs
+}
+
+/// Locate the `proton` binary for a compat-tool `name`: custom builds in the
+/// compat tool folders first (by folder name, then by each tool's declared
 /// internal name), then official Protons in the libraries' `steamapps/common`
 /// (matched loosely: `proton_experimental` -> "Proton - Experimental").
 fn find_proton_binary(steam_root: &Path, home: &Path, name: &str) -> Option<PathBuf> {
-    // 1. compatibilitytools.d/<name>/proton (GE-Proton10-34 etc.)
-    let custom = steam_root
-        .join("compatibilitytools.d")
-        .join(name)
-        .join("proton");
-    if custom.is_file() {
-        return Some(custom);
-    }
-    // 2. Any compatibilitytools.d entry whose compatibilitytool.vdf declares `name`.
-    if let Ok(rd) = fs::read_dir(steam_root.join("compatibilitytools.d")) {
+    find_proton_binary_in(&compat_tool_dirs(steam_root), home, name)
+}
+
+fn find_proton_binary_in(tool_dirs: &[PathBuf], home: &Path, name: &str) -> Option<PathBuf> {
+    for dir in tool_dirs {
+        // 1. <dir>/<name>/proton (GE-Proton10-34 etc.)
+        let custom = dir.join(name).join("proton");
+        if custom.is_file() {
+            return Some(custom);
+        }
+        // 2. Any entry whose compatibilitytool.vdf declares `name`.
+        let Ok(rd) = fs::read_dir(dir) else {
+            continue;
+        };
         for e in rd.flatten() {
             let vdf = e.path().join("compatibilitytool.vdf");
             let proton = e.path().join("proton");
@@ -268,6 +394,8 @@ pub fn proton_command(
         proton,
         env,
         flatpak,
+        plain_wine: false,
+        runtime: None,
     })
 }
 
@@ -328,6 +456,25 @@ pub fn is_flatpak_steam(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_a_plain_wine_run_waits_for_its_wineserver() {
+        use super::heroic_run;
+        use std::ffi::OsStr;
+        use std::path::Path;
+        let prefix = Path::new("/p/wine");
+        let wine = heroic_run(Path::new("/w/bin/wine"), false, prefix);
+        let wait = wine.wineserver_wait().expect("plain Wine waits");
+        assert_eq!(wait.get_program(), "/w/bin/wineserver");
+        assert_eq!(wait.get_args().collect::<Vec<_>>(), ["-w"]);
+        assert_eq!(
+            wait.get_envs().collect::<Vec<_>>(),
+            [(OsStr::new("WINEPREFIX"), Some(OsStr::new("/p/wine")))]
+        );
+        // `proton waitforexitandrun` already waits.
+        let proton = heroic_run(Path::new("/g/proton"), true, prefix);
+        assert!(proton.wineserver_wait().is_none());
+    }
+
     #[test]
     fn the_library_path_is_the_root_that_holds_steamapps() {
         use super::library_path;
@@ -463,12 +610,32 @@ mod tests {
         fs::create_dir_all(&steam).unwrap();
         fs_extra_copy(&root, &steam);
 
-        let ge = find_proton_binary(&steam, &home, "GE-Proton10-34").unwrap();
+        let dirs = [steam.join("compatibilitytools.d")];
+        let ge = find_proton_binary_in(&dirs, &home, "GE-Proton10-34").unwrap();
         assert!(ge.ends_with("compatibilitytools.d/GE-Proton10-34/proton"));
-        let official = find_proton_binary(&steam, &home, "proton_experimental").unwrap();
+        let official = find_proton_binary_in(&dirs, &home, "proton_experimental").unwrap();
         assert!(official.to_string_lossy().contains("Proton - Experimental"));
         let _ = fs::remove_dir_all(&root);
         let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn finds_tools_in_later_roots_and_user_root_wins() {
+        let (user, sys) = (tmp_root(), tmp_root());
+        let home = tmp_root();
+        for (root, tool) in [(&sys, "proton-cachyos"), (&sys, "Clash"), (&user, "Clash")] {
+            let d = root.join(tool);
+            fs::create_dir_all(&d).unwrap();
+            fs::write(d.join("proton"), "#!/bin/sh\n").unwrap();
+        }
+        let dirs = [user.clone(), sys.clone()];
+        let found = find_proton_binary_in(&dirs, &home, "proton-cachyos").unwrap();
+        assert!(found.starts_with(&sys));
+        let clash = find_proton_binary_in(&dirs, &home, "Clash").unwrap();
+        assert!(clash.starts_with(&user));
+        for d in [&user, &sys, &home] {
+            let _ = fs::remove_dir_all(d);
+        }
     }
 
     #[test]
@@ -513,6 +680,130 @@ mod tests {
         assert!(argv[2].ends_with("SSEEdit.exe"));
         assert_eq!(argv[3], "-quickautoclean");
         let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn a_run_goes_through_the_runtime_its_proton_names() {
+        // The runtime sits in a second library, as it does when Steam installs
+        // it next to the game rather than in its own root.
+        let home = tmp_root();
+        let steam = home.join(".local/share/Steam");
+        let lib = tmp_root();
+        fs::create_dir_all(steam.join("steamapps")).unwrap();
+        fs::create_dir_all(lib.join("steamapps")).unwrap();
+        fs::write(
+            steam.join("steamapps/libraryfolders.vdf"),
+            format!(
+                "\"libraryfolders\"\n{{\n\t\"1\"\n\t{{\n\t\t\"path\"\t\t\"{}\"\n\t}}\n}}\n",
+                lib.display()
+            ),
+        )
+        .unwrap();
+        let proton_dir = steam.join("compatibilitytools.d/GE-Proton11-9");
+        fs::create_dir_all(&proton_dir).unwrap();
+        let mut run = ProtonRun {
+            proton: proton_dir.join("proton"),
+            env: Vec::new(),
+            flatpak: false,
+            plain_wine: false,
+            runtime: None,
+        };
+        let exe = Path::new("/g/SSEEdit.exe");
+        let args = ["-quickautoclean".to_string()];
+        let proton = run.proton.to_string_lossy().into_owned();
+        // Without the runtime, Proton itself is the program.
+        assert_eq!(
+            run.command(exe, &args),
+            [
+                proton.as_str(),
+                "waitforexitandrun",
+                "/g/SSEEdit.exe",
+                "-quickautoclean"
+            ]
+        );
+
+        // No toolmanifest.vdf, or one without require_tool_appid: no runtime named.
+        assert_eq!(run.in_steam_runtime(&home), Err(None));
+        // A Proton 11 manifest, as Steam ships it.
+        fs::write(
+            proton_dir.join("toolmanifest.vdf"),
+            "\"manifest\"\n{\n  \"version\" \"2\"\n  \"commandline\" \"/proton %verb%\"\n  \
+             \"require_tool_appid\" \"4183110\"\n  \"use_sessions\" \"1\"\n}\n",
+        )
+        .unwrap();
+        // Named, but not installed: the error carries the app id.
+        assert_eq!(run.in_steam_runtime(&home), Err(Some(4183110)));
+        assert_eq!(run.runtime, None);
+
+        fs::write(
+            lib.join("steamapps/appmanifest_4183110.acf"),
+            "\"AppState\"\n{\n\t\"appid\"\t\t\"4183110\"\n\t\"name\"\t\t\"Steam Linux Runtime 4.0\"\n\t\"installdir\"\t\t\"SteamLinuxRuntime_4\"\n}\n",
+        )
+        .unwrap();
+        let runtime = lib.join("steamapps/common/SteamLinuxRuntime_4");
+        // A manifest whose folder lacks the entry point is not a runtime.
+        assert_eq!(run.in_steam_runtime(&home), Err(Some(4183110)));
+        fs::create_dir_all(&runtime).unwrap();
+        fs::write(runtime.join("_v2-entry-point"), "#!/bin/sh\n").unwrap();
+        // An installdir with `..` is not followed, even to the right folder.
+        let manifest = lib.join("steamapps/appmanifest_4183110.acf");
+        let acf = fs::read_to_string(&manifest).unwrap();
+        fs::write(
+            &manifest,
+            acf.replace(
+                "\"SteamLinuxRuntime_4\"",
+                "\"../common/SteamLinuxRuntime_4\"",
+            ),
+        )
+        .unwrap();
+        assert_eq!(run.in_steam_runtime(&home), Err(Some(4183110)));
+        fs::write(&manifest, acf).unwrap();
+        assert_eq!(run.in_steam_runtime(&home), Ok(()));
+
+        let entry = fs::canonicalize(&lib)
+            .unwrap()
+            .join("steamapps/common/SteamLinuxRuntime_4/_v2-entry-point");
+        let entry = entry.to_string_lossy();
+        assert_eq!(
+            run.command(exe, &args),
+            [
+                &*entry,
+                "--verb=waitforexitandrun",
+                "--",
+                proton.as_str(),
+                "waitforexitandrun",
+                "/g/SSEEdit.exe",
+                "-quickautoclean"
+            ]
+        );
+        // The registry import keeps its own verb, inside the same container.
+        assert_eq!(
+            run.run_in_prefix(Path::new("regedit"), &["/t/a.reg".to_string()])[..5],
+            [
+                &*entry,
+                "--verb=runinprefix",
+                "--",
+                proton.as_str(),
+                "runinprefix"
+            ]
+        );
+        // pressure-vessel shares the folders Steam lists here with the container.
+        let tool_paths: Vec<_> = run
+            .env
+            .iter()
+            .filter(|(k, _)| k == "STEAM_COMPAT_TOOL_PATHS")
+            .map(|(_, v)| v.as_str())
+            .collect();
+        assert_eq!(
+            tool_paths,
+            [format!(
+                "{}:{}",
+                proton_dir.display(),
+                entry.trim_end_matches("/_v2-entry-point")
+            )]
+        );
+        let _ = fs::remove_dir_all(&home);
+        let _ = fs::remove_dir_all(&lib);
     }
 
     #[test]

@@ -49,7 +49,7 @@ GPL-3.0-or-later license before any public release that embeds these binaries.
   tool that the builtin can't satisfy gets `vcrun2022` via the Tier-2 winetricks path.
 - The **.NET** runtimes/SDK (`dotnet8`, `dotnetdesktop8`, ...) - too large to bundle and
   must run an in-prefix installer (CLR host + registry + GAC). Tools that need .NET
-  (Synthesis, FNIS) get it via the Tier-2 winetricks path, on explicit consent.
+  (FNIS) get it via the Tier-2 winetricks path, on explicit consent.
 
 ## What is NOT bundled, and why
 
@@ -67,4 +67,27 @@ class of silent failure the prerequisite system exists to end.
 
 Trimming a runtime is something an application's own author does, knowing their
 own code. See `crates/eidos-gamefeatures/src/runtime.rs`.
+
+The .NET 10 SDK that Synthesis needs to compile its patchers (`dotnetsdk10`) is
+downloaded the same way. Eidos pins version 10.0.403, the win-x64 zip at
+`https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.403/dotnet-sdk-10.0.403-win-x64.zip`:
+300745255 bytes, 5577 files, 808 MB unpacked, and it holds the
+`Microsoft.NETCore.App`, `Microsoft.AspNetCore.App` and
+`Microsoft.WindowsDesktop.App` 10.0.14 runtimes. Microsoft's
+`release-metadata/10.0/releases.json` gives its SHA-512 as
+`7a114c318fa7f1d9822991b534b2814d0e78386ceda816b371f5141acefe741d87ccb606ede06cadac8f9ac5070e32b708a67bbd1619ff5e5a7858a27874ef48`.
+The downloaded file matched it, and its SHA-256,
+`f398979a9cac2dba760771c4e01f16e431dcd6bcfb2213e3e8f5b3d354095cc0`, is the hash
+built into Eidos.
+
+The SDK alone does not get a patcher through NuGet's package restore under
+Wine. The prefix's root store lacks the code-signing and timestamping roots in
+the SDK's `sdk/10.0.403/trustedroots/codesignctl.pem` and `timestampctl.pem`
+(385 distinct certificates), so restoring `Mutagen.Bethesda.Synthesis` 0.36.6
+fails with `NU3018` and `NU3028`. Eidos reads both files from the downloaded
+SDK and writes each certificate to the prefix's
+`HKCU\Software\Microsoft\SystemCertificates\Root\Certificates` key with
+`regedit`, in the layout Wine's crypt32 uses itself: checked byte for byte
+against the 325 entries .NET's `X509Store` wrote into a scratch prefix. Nothing
+from these files ships with Eidos.
 

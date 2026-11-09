@@ -16,6 +16,7 @@ serde.workspace = true
 serde_json.workspace = true
 eidos-addons = { path = "../eidos-addons" }
 eidos-paths = { path = "../eidos-paths" }
+eidos-ini = { path = "../eidos-ini" }
 # Session logs: a launch started from Steam has no terminal, so the file is the
 # only record of what happened - and the GUI's Log pane reads exactly these.
 eidos-log = { path = "../eidos-log" }

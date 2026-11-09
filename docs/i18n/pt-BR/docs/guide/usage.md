@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=28769fd12c94a2f9a6a9fda35b67b39cc433502b -->
 
 # Usar o Eidos
 
@@ -96,6 +96,12 @@ dentro de um espaço de nomes privado, e então roda o comando através dessa
 visão. As escritas (saves, configurações regeradas) caem na camada `overwrite/`
 da instância; a instalação do jogo e toda fonte de mod ficam intactas byte a
 byte.
+
+### Listas do Wabbajack
+
+O Eidos não tem instalador do Wabbajack. Instale a lista com CLF3 ou Jackify, fora do Eidos, e escolha a pasta de instalação como instância portátil no assistente. O Eidos lê a pasta com a estrutura do MO2: `mods/`, `profiles/<nome>/modlist.txt` e as listas de plugins. Ele mantém o `ModOrganizer.ini` escrito pelo instalador e nunca o sobrescreve, então os executáveis da própria lista continuam registrados.
+
+Muitas listas adicionam uma pasta `Stock Game` ou `Game Root` com uma cópia modificada do jogo, e o MO2 inicia o jogo a partir dela. O Eidos inicia a instalação da Steam e não tem opção para outra pasta de jogo. Quando o assistente encontra uma pasta assim, avisa na tela de resumo e não faz mais nada: mova você mesmo o que a lista colocou ali para a pasta `Root/` de um mod. O CLF3 reconstrói arquivos BSA e DDS com ferramentas próprias, então o resultado pode diferir de uma instalação do Wabbajack, e os autores das listas não dão suporte a ele.
 
 ### A lista de mods
 

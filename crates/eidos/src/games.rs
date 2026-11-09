@@ -238,6 +238,7 @@ mod identity_tests {
                 app_id: "synthetic".into(),
                 prefix: Some(root.0.join("prefix-a")),
                 heroic: true,
+                runner: None,
             },
             install_path: root.0.join("game"),
             data_path: root.0.join("game/Data"),
@@ -250,6 +251,7 @@ mod identity_tests {
             app_id: "synthetic".into(),
             prefix: Some(root.0.join("prefix-b")),
             heroic: true,
+            runner: None,
         };
         let candidates = [first.clone(), second];
         let mut manifest = eidos_instance::Manifest::new("skyrimse", InstanceKind::Portable);

@@ -24,9 +24,9 @@ pub struct Tool {
     /// Working directory; `None` = the executable's own directory (MO2 default).
     pub workdir: Option<PathBuf>,
     /// Runtime prerequisites to ensure in the prefix before this tool runs
-    /// (winetricks-style verbs, e.g. `["dotnet8", "vcrun2022"]` for Synthesis, or
-    /// `["d3dx9_43", "d3dcompiler_47"]` for BodySlide's 3D preview). Empty for the
-    /// Delphi tools (xEdit/SSEEdit) that need nothing extra.
+    /// (winetricks-style verbs, e.g. `["dotnetsdk10", "vcrun2022"]` for Synthesis,
+    /// or `["d3dx9_43", "d3dcompiler_47"]` for BodySlide's 3D preview). Empty for
+    /// the Delphi tools (xEdit/SSEEdit) that need nothing extra.
     pub prereqs: Vec<String>,
     /// A mod to capture this tool's output into, instead of leaving it in the
     /// Overwrite (MO2's "Create files in mod instead of overwrite").
@@ -48,6 +48,31 @@ pub struct Tool {
     pub hidden: bool,
     /// Sort this entry to the top of the picker.
     pub pinned: bool,
+    /// Variables for this tool's runs only, from `env=NAME=value` lines in file
+    /// order. Applied after everything Eidos sets, so they win.
+    pub env: Vec<(String, String)>,
+    /// How the executable is started.
+    pub runner: Runner,
+    /// Run the tool and its registry import inside the Steam Linux Runtime
+    /// that its Proton build names (`slr=1`), the way Steam starts the game.
+    pub slr: bool,
+}
+
+/// How a tool's executable is started.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Runner {
+    /// Through the game's Proton, in its Steam prefix.
+    #[default]
+    Proton,
+    /// As it is, with no Proton (`runner=native`): a Linux program, or the Wine
+    /// of a copy Steam does not manage, pointed at its prefix through `env=`.
+    Native,
+}
+
+/// A variable name a shell could export: `[A-Za-z_][A-Za-z0-9_]*`.
+fn is_env_name(name: &str) -> bool {
+    name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// Whether a string names a mod FOLDER and nothing else: no separators, no
@@ -122,6 +147,32 @@ pub fn read_tools(path: &Path) -> Vec<Tool> {
             "app_id" => tool.app_id = v.trim().parse::<u32>().ok().filter(|&n| n != 0),
             "hidden" => tool.hidden = matches!(v.trim(), "true" | "1" | "yes" | "on"),
             "pinned" => tool.pinned = matches!(v.trim(), "true" | "1" | "yes" | "on"),
+            // `env=NAME=value`, one line per variable. A name no shell could
+            // export is dropped here, before it reaches a launch environment.
+            "env" => {
+                if let Some((name, value)) = v.split_once('=').filter(|(n, _)| is_env_name(n)) {
+                    tool.env.push((name.to_string(), value.to_string()));
+                }
+            }
+            "runner" if v.eq_ignore_ascii_case("native") => tool.runner = Runner::Native,
+            "runner" if !v.is_empty() && !v.eq_ignore_ascii_case("proton") => {
+                // The GUI rereads tools.ini on many events: warn once per tool and value.
+                static WARNED: std::sync::Mutex<std::collections::BTreeSet<String>> =
+                    std::sync::Mutex::new(std::collections::BTreeSet::new());
+                let msg = format!(
+                    "eidos: tools.ini: '{}' has runner={v}, which Eidos does not know \
+                     (accepted: native, proton); the tool runs as if runner= were not set.",
+                    tool.title
+                );
+                if WARNED
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert(msg.clone())
+                {
+                    eprintln!("{msg}");
+                }
+            }
+            "slr" => tool.slr = matches!(v, "true" | "1" | "yes" | "on"),
             _ => {}
         }
     }
@@ -138,6 +189,14 @@ pub fn read_tools(path: &Path) -> Vec<Tool> {
                 .is_ok_and(|c| c.contains("\"net10.0\""))
         {
             t.prereqs = vec!["dotnet10".to_string()];
+        }
+        // The old Synthesis seed gave a runtime that cannot compile patchers.
+        // Synthesis releases since 0.21 ship their own runtime, so the SDK
+        // replaces dotnet8 whatever the version.
+        if t.prereqs == ["dotnet8", "vcrun2022"]
+            && t.title.to_ascii_lowercase().contains("synthesis")
+        {
+            t.prereqs = vec!["dotnetsdk10".to_string(), "vcrun2022".to_string()];
         }
     }
     out
@@ -183,6 +242,15 @@ pub fn write_tools(path: &Path, tools: &[Tool]) -> io::Result<()> {
         }
         if t.pinned {
             s.push_str("pinned=true\n");
+        }
+        for (k, v) in &t.env {
+            s.push_str(&format!("env={k}={v}\n"));
+        }
+        if t.runner == Runner::Native {
+            s.push_str("runner=native\n");
+        }
+        if t.slr {
+            s.push_str("slr=1\n");
         }
         s.push('\n');
     }
@@ -481,7 +549,9 @@ pub fn default_prereqs(title: &str) -> Vec<String> {
     let t = title.to_ascii_lowercase();
     let has = |needle: &str| t.contains(needle);
     let verbs: &[&str] = if has("synthesis") {
-        &["dotnet8", "vcrun2022"]
+        // Synthesis compiles its patchers and runs them with a bare `dotnet`,
+        // so it needs the SDK on the path, not a runtime.
+        &["dotnetsdk10", "vcrun2022"]
     } else if has("pandora") {
         // Avalonia, not WPF, so Microsoft.NETCore.App alone runs it, and it has
         // targeted net10.0 since Pandora 4.1.0. "Install .NET Desktop Runtime" is
@@ -761,6 +831,13 @@ mod tests {
                 app_id: Some(1946160),
                 hidden: false,
                 pinned: true,
+                // In file order, and a value may itself hold `=`.
+                env: vec![
+                    ("PROTON_LOG".into(), "1".into()),
+                    ("WINEDLLOVERRIDES".into(), "dxgi=n,b".into()),
+                ],
+                runner: Runner::Proton,
+                slr: true,
             },
             Tool {
                 title: "BodySlide".into(),
@@ -772,10 +849,29 @@ mod tests {
                 app_id: None,
                 hidden: true,
                 pinned: false,
+                env: Vec::new(),
+                runner: Runner::Native,
+                slr: false,
             },
         ];
         write_tools(&p, &tools).unwrap();
         assert_eq!(read_tools(&p), tools);
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn an_env_line_without_a_valid_name_is_dropped() {
+        let p = tmp();
+        fs::write(
+            &p,
+            "[Tool/T]\nexe=/x/t.exe\nenv=1BAD=x\nenv=NO_VALUE\nenv=A-B=x\nenv==x\n\
+             env=_OK=\nrunner=wine\n",
+        )
+        .unwrap();
+        let t = &read_tools(&p)[0];
+        assert_eq!(t.env, vec![("_OK".to_string(), String::new())]);
+        // Anything but `native` keeps the default.
+        assert_eq!(t.runner, Runner::Proton);
         let _ = fs::remove_file(&p);
     }
 
@@ -796,6 +892,24 @@ mod tests {
         assert_eq!(t[0].prereqs, vec!["dotnet10"]);
         assert_eq!(t[1].prereqs, vec!["dotnetdesktop8"]);
         let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn old_synthesis_seed_moves_to_dotnetsdk10() {
+        let p = tmp();
+        fs::write(
+            &p,
+            "[Tool/Synthesis]\nexe=/x/Synthesis.exe\nprereqs=dotnet8,vcrun2022\n\
+             [Tool/Synthesis]\nexe=/x/Synthesis.exe\nprereqs=dotnet8\n\
+             [Tool/Other]\nexe=/x/other.exe\nprereqs=dotnet8,vcrun2022\n",
+        )
+        .unwrap();
+        let t = read_tools(&p);
+        assert_eq!(t[0].prereqs, vec!["dotnetsdk10", "vcrun2022"]);
+        // A hand-edited list and a tool that is not Synthesis keep theirs.
+        assert_eq!(t[1].prereqs, vec!["dotnet8"]);
+        assert_eq!(t[2].prereqs, vec!["dotnet8", "vcrun2022"]);
+        let _ = fs::remove_file(&p);
     }
 
     #[test]
@@ -947,7 +1061,10 @@ mod tests {
 
     #[test]
     fn default_prereqs_maps_known_tools() {
-        assert_eq!(default_prereqs("Synthesis"), vec!["dotnet8", "vcrun2022"]);
+        assert_eq!(
+            default_prereqs("Synthesis"),
+            vec!["dotnetsdk10", "vcrun2022"]
+        );
         assert_eq!(
             default_prereqs("BodySlide x64"),
             vec!["d3dx9_43", "d3dcompiler_47"]

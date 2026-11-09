@@ -90,6 +90,12 @@ namespace, then runs the command through that view. Writes (saves, regenerated
 configs) land in the instance's `overwrite/` layer; the game install and every
 mod source stay byte-for-byte pristine.
 
+### Wabbajack lists
+
+Eidos has no Wabbajack installer. Install the list with CLF3 or Jackify, outside Eidos, then pick the install folder as a portable instance in the wizard. Eidos reads the folder as MO2 lays it out: `mods/`, `profiles/<name>/modlist.txt` and the plugin lists. It keeps the `ModOrganizer.ini` the installer wrote and never overwrites it, so the list's own executables stay registered.
+
+Many lists add a `Stock Game` or `Game Root` folder that holds a patched copy of the game, and MO2 launches the game from there. Eidos launches the Steam install and has no setting for another game folder. When the wizard finds such a folder it says so on the review screen and does nothing else: move what the list put there into a mod's `Root/` folder yourself. CLF3 rebuilds BSA and DDS files with its own tools, so the result can differ from a Wabbajack install, and list authors do not support it.
+
 ### The mod list
 
 As in MO2, each profile has its own `modlist.txt` (which mods are enabled, in

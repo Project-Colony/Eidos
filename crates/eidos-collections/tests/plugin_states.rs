@@ -79,6 +79,7 @@ fn external_store_plugin_activation_uses_actual_wine_prefix() {
             app_id: "fixture".into(),
             prefix: Some(root.join("wine")),
             heroic: true,
+            runner: None,
         },
         def,
         install_path: root.join("game"),

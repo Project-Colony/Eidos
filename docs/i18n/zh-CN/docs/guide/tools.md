@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=21bf9773a77eafde0226799b69158680985f3963 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -97,7 +97,7 @@ Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 | `bodyslide`, `outfit` | `d3dx9_43`, `d3dcompiler_47` |
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
-| `synthesis` | `dotnet8`, `vcrun2022` |
+| `synthesis` | `dotnetsdk10`, `vcrun2022` |
 | `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
@@ -125,11 +125,25 @@ Executables 对话框中的 `Prereqs` 字段是可以编辑的 - 检测出来的
 `dotnet48`、`xact`……)。它们要写注册表键、GAC 和 CLR host,所以没法靠复制文件
 解决。它们**从 Microsoft 下载**。
 
-**第三类 - 运行时**(`dotnet10`)。一个现代 .NET 运行时是 193 个文件,住在
+**第三类 - 运行时**(`dotnet10`, `dotnetsdk10`)。一个现代 .NET 运行时是 193 个文件,住在
 它们自己的目录里,通过 `DOTNET_ROOT` 被找到:从不注册,也根本不会装进前缀,
 所以另外两类都载不动它。Eidos 自己下载它,用编译进二进制里的校验和核对,
 并缓存在 `~/.local/share/Colony/Eidos/runtimes/` - **在任何实例之外**,
 因为 78 MB 不是按游戏算的,也不是按 profile 算的。
+
+`dotnetsdk10` 是 .NET 10 SDK,下载 301 MB,解压后 808 MB。
+Synthesis 编译 patcher 需要它,而且构建和运行 patcher 时调用的是不带路径的 `dotnet`,
+所以声明了 `dotnetsdk10` 的工具还会在 `WINEPATH` 上得到 SDK 文件夹,外加 `NUGET_CERT_REVOCATION_MODE=offline`、`DOTNET_GENERATE_ASPNET_CERTIFICATE=false` 和 `DOTNET_CLI_TELEMETRY_OPTOUT=1`。
+构建 patcher 会留下仍在运行的 MSBuild 节点和 VBCSCompiler 服务器,在 Wine 下它们会让前缀的 wineserver 一直存活,所以该工具还会得到 `MSBUILDDISABLENODEREUSE=1`、`DOTNET_CLI_USE_MSBUILD_SERVER=0` 和 `UseSharedCompilation=false`。
+`DOTNET_ROLL_FORWARD=Major` 让为 .NET 8 构建的 patcher(Mutagen 0.54 之前)在找不到 .NET 8 运行时时,使用 SDK 自带的 .NET 10 运行时运行。
+`tools.ini` 中仍写着旧默认值 `dotnet8`, `vcrun2022` 的 Synthesis 条目,会在 Eidos 读取时改为 `dotnetsdk10`, `vcrun2022`。
+
+NuGet 会对照 Windows 根证书存储检查它还原的每个包的签名,而 Wine 前缀里没有 SDK 以 `sdk/10.0.403/trustedroots/codesignctl.pem` 和 `timestampctl.pem` 附带的代码签名根证书和时间戳根证书。
+没有它们,还原 `Mutagen.Bethesda.Synthesis` 0.36.6 会以 `NU3018` 和 `NU3028` 失败。
+因此,在运行声明了 `dotnetsdk10` 的工具之前,只要 SDK 已经下载,Eidos 就会把这两个文件中的 385 个证书加入游戏前缀里当前用户的根证书存储,用的是写入游戏路径的同一次 `regedit` 导入(见下文)。
+如果其中某个证书丢失,Eidos 会重新导入。
+此后,该前缀里的每个 Windows 程序都信任这些根证书。
+有了它们,在全新的前缀和空的 NuGet 缓存下,同样的还原和构建在系统 Wine 11.21 和 GE-Proton11-9 上都能成功。
 
 第二类和第三类里没有任何东西是悄悄跑的:
 
@@ -273,6 +287,61 @@ Creation Kit 是一个独立的 Steam 应用,要用它自己的 AppID;另外几�
 两个环境变量 - `SteamAppId` 和 `SteamGameId`,两个都要,因为 Proton 读其中
 一个,而 Steam 自己的库读另一个,一个工具看到两者不一致时会以奇怪而非清晰的
 方式失败。`eidos tool ... --print` 会准确显示真实运行会拿到什么。
+
+## 环境变量,以及不经过 Proton 的工具
+
+`<instance>/tools.ini` 里有三个键在 Executables 对话框中还没有对应的输入框,
+需要手动写进工具所在的节。每一行 `env=NAME=value` 设置一个只对这个工具的运行
+生效的变量:
+
+```ini
+[Tool/BodySlide]
+exe=Data/CalienteTools/BodySlide/BodySlide x64.exe
+env=PROTON_LOG=1
+env=WINEDEBUG=-all
+```
+
+Eidos 在设置完它自己的所有变量之后才应用这些行,所以这里写的值会替换掉 Eidos
+自己的值。这也包括 Eidos 根据模组自带的 DLL 拼出来的 `WINEDLLOVERRIDES`:
+设置了它的工具,必须把自己需要的每个 DLL 都列进去。变量名由字母、数字和 `_`
+组成,不以数字开头。名字不合规则的行会被忽略。
+
+`runner=native` 不经过 Proton,直接运行 `exe` 本身。合并视图照常挂载,
+`arg0=`、`arg1=` 这些行就是它的参数。Linux 程序,或者 Steam 不管理、Heroic
+也没有记录运行器的副本上的工具,都用这种方式:`exe` 是那个副本的 Wine,Windows
+程序是第一个参数,前缀由 `env=` 指定。
+
+```ini
+[Tool/SSEEdit (GOG)]
+exe=/opt/wine-ge/bin/wine
+arg0=/home/me/Games/Skyrim/SSEEdit.exe
+workdir=/home/me/Games/Skyrim
+runner=native
+env=WINEPREFIX=/home/me/Games/Heroic/Prefixes/default/Skyrim
+```
+
+`exe` 必须是绝对路径。工作目录默认是 `exe` 所在的文件夹,在这里就是运行器的
+文件夹,所以要设置 `workdir=`。只有 `exe` 会被改写成合并后的路径:模组里的
+Windows 程序,要写它在游戏 `Data` 文件夹下的路径,合并视图就是在那里显示它的。
+原生工具会跳过 Proton 的步骤:上面讲的注册表键、Steam 的着色器缓存、空的 .NET
+根目录,以及从 `LD_PRELOAD` 中去掉 Steam 覆盖层。
+
+用 Heroic 安装的 GOG 或 Epic 副本,如果游戏的 Heroic 设置
+(`GamesConfig/<appName>.json`)指定了 Wine 或 Proton 版本,工具就不需要这样的
+条目:Eidos 用那个版本在游戏的 Heroic 前缀里运行它们,
+`eidos prereqs <instance> --install` 也把它交给 winetricks。只用 Legendary
+安装的副本没有 Heroic 设置。
+
+`slr=1` 会让工具及其之前的注册表导入,在工具的 Proton 版本所指定的 Steam Linux Runtime 容器里启动(见其 `toolmanifest.vdf` 中的 `require_tool_appid`),与 Steam 启动游戏的方式相同。
+这个运行时必须装在某个 Steam 库中;没有装的话,运行会停下,并给出需要安装的 Steam 应用。
+`eidos prereqs` 仍在主机上运行 winetricks,`runner=native` 的工具会忽略这个键。
+容器能看到你的主目录和游戏所在的 Steam 库。
+放在其他地方(例如另一块磁盘上)的工具、mod 或运行时,需要 `env=STEAM_COMPAT_MOUNTS=/那个/路径`(多个路径用 `:` 分隔)。
+装在 `/usr/share/steam/compatibilitytools.d` 下的 Proton 很可能无法配合 `slr=1` 使用,因为容器里的 `/usr` 是运行时自己的。
+目前还没有在容器里实际运行过工具。
+
+`eidos tool <instance> run <title> --print` 会显示最终的命令,以及这次运行在继承的
+环境之上设置的每一个变量,包括这些行。
 
 ## 工具自己的设置终归是它自己的
 

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use crate::{catalog, DetectedGame};
+use crate::{catalog, DetectedGame, ProtonRun};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Store {
@@ -27,12 +27,15 @@ impl Store {
 pub enum GameSource {
     #[default]
     Steam,
-    /// Discovery records the actual prefix, but does not guess a host-compatible runner.
+    /// Discovery records the actual prefix, and the runner only when Heroic's
+    /// settings for the game name one. It never guesses a runner.
     External {
         store: Store,
         app_id: String,
         prefix: Option<PathBuf>,
         heroic: bool,
+        /// The Wine or Proton build from Heroic's `wineVersion.bin`, set up for `prefix`.
+        runner: Option<ProtonRun>,
     },
 }
 
@@ -78,6 +81,14 @@ impl DetectedGame {
 
     pub fn is_steam(&self) -> bool {
         matches!(self.source, GameSource::Steam)
+    }
+
+    /// How tools run on a Heroic copy: the build and prefix Heroic's settings name.
+    pub fn heroic_run(&self) -> Option<&ProtonRun> {
+        match &self.source {
+            GameSource::External { runner, .. } => runner.as_ref(),
+            GameSource::Steam => None,
+        }
     }
 
     /// Store variants can use different profile locations despite sharing an engine.
@@ -156,7 +167,9 @@ fn json(path: &Path) -> Option<Value> {
         .flatten()
 }
 
-fn prefix(root: &Path, id: &str, native: bool) -> Option<PathBuf> {
+/// The prefix Heroic's settings name for a game, and the runner when
+/// `wineVersion.bin` is an absolute path to an existing file.
+fn prefix(root: &Path, id: &str, native: bool) -> Option<(PathBuf, Option<ProtonRun>)> {
     if native
         || id.is_empty()
         || !id
@@ -171,12 +184,27 @@ fn prefix(root: &Path, id: &str, native: bool) -> Option<PathBuf> {
     if !configured.is_absolute() {
         return None;
     }
-    let path = match settings.get("wineVersion")?.get("type")?.as_str()? {
-        "proton" => configured.join("pfx"),
-        "wine" => configured.to_path_buf(),
+    let wine = settings.get("wineVersion")?;
+    let proton = match wine.get("type")?.as_str()? {
+        "proton" => true,
+        "wine" => false,
         _ => return None,
     };
-    crate::canonical_directory(&path)
+    let path = crate::canonical_directory(&if proton {
+        configured.join("pfx")
+    } else {
+        configured.to_path_buf()
+    })?;
+    // Proton takes the directory that holds `pfx`, as Heroic passes it.
+    let run_prefix = if proton { configured } else { path.as_path() };
+    // Heroic strips single quotes from `bin` before running it.
+    let runner = wine
+        .get("bin")
+        .and_then(Value::as_str)
+        .map(|bin| Path::new(bin.trim_matches('\'')))
+        .filter(|bin| bin.is_absolute() && bin.is_file())
+        .map(|bin| crate::proton::heroic_run(bin, proton, run_prefix));
+    Some((path, runner))
 }
 
 fn append_manifest(out: &mut Vec<DetectedGame>, file: &Path, store: Store, heroic: Option<&Path>) {
@@ -223,6 +251,15 @@ fn append_manifest(out: &mut Vec<DetectedGame>, file: &Path, store: Store, heroi
         let Some(install_path) = crate::canonical_directory(Path::new(raw)) else {
             continue;
         };
+        let (prefix, runner) = heroic
+            .and_then(|root| {
+                prefix(
+                    root,
+                    &id,
+                    entry.get("platform").and_then(Value::as_str) == Some("linux"),
+                )
+            })
+            .unzip();
         let game = DetectedGame {
             def,
             data_path: install_path.join(def.data_dir),
@@ -235,15 +272,10 @@ fn append_manifest(out: &mut Vec<DetectedGame>, file: &Path, store: Store, heroi
                 .to_owned(),
             source: GameSource::External {
                 store,
-                prefix: heroic.and_then(|root| {
-                    prefix(
-                        root,
-                        &id,
-                        entry.get("platform").and_then(Value::as_str) == Some("linux"),
-                    )
-                }),
+                prefix,
                 app_id: id,
                 heroic: heroic.is_some(),
+                runner: runner.flatten(),
             },
         };
         if !out.iter().any(|g| g.selection_id() == game.selection_id()) {

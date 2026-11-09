@@ -359,22 +359,26 @@ mod tests {
         // Once the window has closed, the next launch moves it. Retried while
         // the move lock still looks taken: another test in this process can be
         // between a fork and its exec (7z, par2), and that child holds the
-        // window's lock description until it execs. A few microseconds in
-        // practice, and it failed the 1.21.1 release build once.
+        // window's lock description until it execs. The holder's instance lock
+        // can be caught the same way. A few microseconds in practice, and it
+        // failed the 1.21.1 release build twice.
         drop(window);
         let mut notes = launch(&old, &new);
         for _ in 0..200 {
-            if !notes
-                .first()
-                .is_some_and(|n| n.starts_with("another Eidos is running"))
-            {
+            if !notes.first().is_some_and(|n| {
+                n.starts_with("another Eidos is running")
+                    || n.starts_with("could not lock the instance")
+            }) {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(5));
             notes = launch(&old, &new);
         }
         assert_eq!(notes.len(), 1, "{notes:?}");
-        assert!(new.join("fallout4").join(REPOINTED_MARKER).is_file());
+        assert!(
+            new.join("fallout4").join(REPOINTED_MARKER).is_file(),
+            "{notes:?}"
+        );
     }
 
     #[test]

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=21bf9773a77eafde0226799b69158680985f3963 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
 
 # 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -106,7 +106,7 @@ Eidos가 그 도구에 어떤 런타임 사전 요구 사항을 마련할지 결
 | `bodyslide`, `outfit` | `d3dx9_43`, `d3dcompiler_47` |
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
-| `synthesis` | `dotnet8`, `vcrun2022` |
+| `synthesis` | `dotnetsdk10`, `vcrun2022` |
 | `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
@@ -135,12 +135,33 @@ Executables 대화상자의 `Prereqs` 항목은 편집할 수 있습니다 - 감
 `dotnet48`, `xact`...). 이것들은 레지스트리 키와 GAC와 CLR 호스트를 쓰기 때문에
 파일 복사로는 되지 않습니다. **Microsoft에서 내려받습니다**.
 
-**Tier 3 - 런타임** (`dotnet10`). 요즘 .NET 런타임은 자기 디렉터리에 사는 193개의
+**Tier 3 - 런타임** (`dotnet10`, `dotnetsdk10`). 요즘 .NET 런타임은 자기 디렉터리에 사는 193개의
 파일이고 `DOTNET_ROOT`를 통해 찾습니다: 등록되지도 않고 프리픽스에 설치되지도
 아예 않으므로, 다른 두 계층 어느 쪽도 그것을 실어 나를 수 없습니다. Eidos가 직접
 내려받아 바이너리에 박혀 있는 체크섬으로 확인하고
 `~/.local/share/Colony/Eidos/runtimes/`에 캐시합니다 - **어느 인스턴스에도 속하지
 않는 바깥**인데, 78 MB는 게임별도 프로필별도 아니기 때문입니다.
+
+`dotnetsdk10`은 .NET 10 SDK로, 내려받는 크기는 301 MB이고 풀면 808 MB입니다. Synthesis는 패처를
+컴파일하는 데 이것이 필요하고, 패처를 빌드하고 실행할 때 경로 없는 `dotnet`을 호출합니다. 그래서 `dotnetsdk10`을 선언한
+도구는 `WINEPATH`에 SDK 폴더를 받고, 그와 함께 `NUGET_CERT_REVOCATION_MODE=offline`,
+`DOTNET_GENERATE_ASPNET_CERTIFICATE=false`, `DOTNET_CLI_TELEMETRY_OPTOUT=1`도
+받습니다.
+패처를 빌드하면 MSBuild 노드와 VBCSCompiler 서버가 계속 실행된 채 남고, Wine에서는 이들이 프리픽스의 wineserver를
+살아 있게 하므로, 도구는 `MSBUILDDISABLENODEREUSE=1`, `DOTNET_CLI_USE_MSBUILD_SERVER=0`,
+`UseSharedCompilation=false`도 받습니다. `DOTNET_ROLL_FORWARD=Major` 덕분에 .NET 8용으로
+빌드된 패처(Mutagen 0.54 이전)는 .NET 8 런타임을 찾지 못하면 SDK의 .NET 10 런타임에서 실행됩니다.
+`tools.ini`의 Synthesis 항목이 아직 예전 기본값 `dotnet8`, `vcrun2022`를 담고 있으면,
+Eidos가 읽을 때 `dotnetsdk10`, `vcrun2022`로 바뀝니다.
+
+NuGet은 복원하는 모든 패키지의 서명을 Windows 루트 인증서 저장소를 기준으로 확인하는데, Wine 프리픽스에는 SDK가
+`sdk/10.0.403/trustedroots/codesignctl.pem`과 `timestampctl.pem`으로 함께 제공하는 코드 서명용
+및 타임스탬프용 루트 인증서가 없습니다. 이것이 없으면 `Mutagen.Bethesda.Synthesis` 0.36.6 복원이 `NU3018`과
+`NU3028`로 실패합니다. 그래서 `dotnetsdk10`을 선언한 도구를 실행하기 전에, SDK가 내려받아져 있으면 Eidos가 두 파일의
+인증서 385개를 게임 프리픽스의 현재 사용자 루트 인증서 저장소에 추가합니다. 이 작업은 게임 경로를 기록하는 것과 같은 `regedit`
+가져오기에서 이루어집니다(아래 참조). 그중 하나라도 없어지면 다시 가져옵니다. 그 뒤로는 그 프리픽스의 모든 Windows 프로그램이 이 루트
+인증서를 신뢰합니다. 이 인증서가 있으면 새 프리픽스와 빈 NuGet 캐시에서 같은 복원과 빌드가 시스템 Wine 11.21과
+GE-Proton11-9 모두에서 성공합니다.
 
 계층 2나 3의 어떤 것도 조용히 실행되지 않습니다:
 
@@ -300,6 +321,65 @@ Windows에서 이것은 다른 런처를 뜻합니다. 여기서는 이미 만�
 하나를 읽고 Steam 자신의 라이브러리는 다른 하나를 읽으며, 그 둘이 어긋난 것을 본
 도구는 분명하게가 아니라 이상하게 실패하기 때문입니다. `eidos tool ... --print`는
 진짜 실행이 무엇을 받게 될지 정확히 보여줍니다.
+
+## 환경 변수, 그리고 Proton 없이 실행하는 도구
+
+`<instance>/tools.ini`의 키 세 개는 아직 Executables 대화 상자에 입력란이
+없으므로, 도구의 섹션에 직접 적어 넣으십시오. `env=NAME=value` 줄 하나가 그
+도구의 실행에만 적용되는 변수 하나를 설정합니다:
+
+```ini
+[Tool/BodySlide]
+exe=Data/CalienteTools/BodySlide/BodySlide x64.exe
+env=PROTON_LOG=1
+env=WINEDEBUG=-all
+```
+
+Eidos는 자신이 설정하는 모든 것을 설정한 뒤에 이 줄들을 적용하므로, 여기에
+적은 값이 Eidos 자신의 값을 대체합니다. 모드가 함께 제공하는 DLL로 Eidos가
+만드는 `WINEDLLOVERRIDES`도 마찬가지입니다. 이것을 설정하는 도구는 필요한
+DLL을 모두 그 안에 나열해야 합니다. 이름은 영문자, 숫자, `_`로 이루어지며
+숫자로 시작하지 않습니다. 다른 이름을 가진 줄은 무시됩니다.
+
+`runner=native`는 Proton 없이 `exe` 자체를 실행합니다. 병합된 뷰는 다른 모든
+도구와 똑같이 마운트되고, `arg0=`, `arg1=` 줄이 그 인수가 됩니다. Linux
+프로그램이나, Steam이 관리하지 않고 Heroic에도 러너 기록이 없는 사본용 도구에
+이것을 쓰십시오. `exe`는 그 사본의 Wine이고, Windows 프로그램이 첫 번째
+인수이며, 프리픽스는 `env=`에서 옵니다.
+
+```ini
+[Tool/SSEEdit (GOG)]
+exe=/opt/wine-ge/bin/wine
+arg0=/home/me/Games/Skyrim/SSEEdit.exe
+workdir=/home/me/Games/Skyrim
+runner=native
+env=WINEPREFIX=/home/me/Games/Heroic/Prefixes/default/Skyrim
+```
+
+`exe`는 절대 경로여야 합니다. 작업 디렉터리의 기본값은 `exe`가 있는 폴더,
+여기서는 러너의 폴더이므로 `workdir=`를 설정하십시오. 병합된 경로로 다시
+쓰이는 것은 `exe`뿐입니다. 모드 안에 있는 Windows 프로그램이라면, 병합된 뷰가
+그것을 보여 주는 게임의 `Data` 폴더 아래 경로를 적으십시오. 네이티브 도구는
+Proton 단계를 건너뜁니다. 위에서 설명한 레지스트리 키, Steam의 셰이더 캐시,
+빈 .NET 루트, 그리고 `LD_PRELOAD`에서 Steam 오버레이를 빼는 일입니다.
+
+Heroic으로 설치한 GOG 또는 Epic 사본에서는, 게임의 Heroic 설정
+(`GamesConfig/<appName>.json`)에 Wine이나 Proton 빌드가 지정되어 있으면 도구에
+이런 항목이 필요 없습니다. Eidos는 그 빌드로 게임의 Heroic 프리픽스 안에서
+도구를 실행하고, `eidos prereqs <instance> --install`도 그 빌드를 winetricks에
+넘깁니다. Legendary만으로 설치한 사본에는 Heroic 설정이 없습니다.
+
+`slr=1`은 도구와 그 앞의 레지스트리 가져오기를 도구의 Proton 빌드가 지정하는 Steam Linux Runtime 컨테이너 안에서
+시작합니다(`toolmanifest.vdf`의 `require_tool_appid`). Steam이 게임을 시작하는 방식과 같습니다. 그
+런타임은 Steam 라이브러리 중 하나에 설치되어 있어야 하며, 없으면 실행이 멈추고 설치할 Steam 앱을 알려 줍니다. `eidos
+prereqs`는 계속 호스트에서 winetricks를 실행하고, `runner=native` 도구는 이 키를 무시합니다. 컨테이너는 홈 폴더와
+게임의 Steam 라이브러리를 봅니다. 다른 곳, 예를 들어 다른 드라이브에 있는 도구, 모드, 런타임에는
+`env=STEAM_COMPAT_MOUNTS=/그/경로`가 필요합니다(여러 경로는 `:`로 구분).
+`/usr/share/steam/compatibilitytools.d`에 설치한 Proton은 컨테이너 안의 `/usr`가 런타임의 것이므로
+`slr=1`로는 아마 쓸 수 없습니다. 컨테이너 안에서 도구를 실행하는 것은 아직 시험하지 않았습니다.
+
+`eidos tool <instance> run <title> --print`는 최종 명령과, 실행이 상속된 환경
+위에 설정하는 모든 변수를 이 줄들까지 포함해 보여 줍니다.
 
 ## 도구 자신의 설정은 여전히 그 도구의 몫
 

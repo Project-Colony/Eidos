@@ -55,7 +55,7 @@ pub use settings::Settings;
 pub use tools::{
     default_args, default_prereqs, default_tools, default_tools_in, default_tools_in_view,
     merge_tools, read_tools, root_executable, root_executable_source, tool_search_roots,
-    write_tools, GameExecutables, Tool,
+    write_tools, GameExecutables, Runner, Tool,
 };
 
 /// Where an instance is stored.
@@ -602,6 +602,19 @@ impl Instance {
             })
         };
         canon(root).starts_with(canon(install))
+    }
+
+    /// The name of a `Stock Game` or `Game Root` folder directly inside `root`
+    /// (matched without regard to case), the layout Wabbajack lists install a
+    /// patched copy of the game into. Eidos launches the Steam install, so the
+    /// files in such a folder have to become a `Root/` mod by hand.
+    pub fn stock_game_folder(root: &Path) -> Option<String> {
+        fs::read_dir(root)
+            .ok()?
+            .flatten()
+            .filter(|e| e.path().is_dir())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .find(|n| n.eq_ignore_ascii_case("Stock Game") || n.eq_ignore_ascii_case("Game Root"))
     }
 
     /// Open an existing folder as an instance, requiring it to be
@@ -1899,6 +1912,23 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
         Instance::portable(root)
+    }
+
+    #[test]
+    fn stock_game_folder_matches_both_names_in_any_case() {
+        let inst = tmp_instance();
+        assert_eq!(Instance::stock_game_folder(&inst.root), None);
+        // A file with the name is not a folder.
+        fs::write(inst.root.join("Stock Game"), b"").unwrap();
+        assert_eq!(Instance::stock_game_folder(&inst.root), None);
+        fs::create_dir(inst.root.join("mods")).unwrap();
+        assert_eq!(Instance::stock_game_folder(&inst.root), None);
+        fs::create_dir(inst.root.join("GAME ROOT")).unwrap();
+        assert_eq!(
+            Instance::stock_game_folder(&inst.root).as_deref(),
+            Some("GAME ROOT")
+        );
+        assert_eq!(Instance::stock_game_folder(&inst.root.join("nope")), None);
     }
 
     #[test]
