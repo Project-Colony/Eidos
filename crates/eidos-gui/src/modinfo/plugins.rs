@@ -607,18 +607,9 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         // otherwise a tooltip-by-tooltip hunt. The plugin's own selection still
         // outranks it - that row is where the user's focus is, and losing its
         // marker to a colour describing a relationship would be a step back.
-        let from_selected_mod = plugin_from_selected_mod(&selected_origins, &p.origin_mod);
+        let tint = plugin_tint(&selected_origins, &masters, p);
         // Same padding as `striped`, or a selected row would be a different
         // height from its neighbours and the list would twitch as focus moves.
-        // Order as in MO2: selection, then the selected mod's plugins, then masters.
-        let is_master = !masters.is_empty() && masters.contains(&p.name.to_ascii_lowercase());
-        let tint = if from_selected_mod {
-            Some(origin_bg())
-        } else if is_master {
-            Some(master_bg())
-        } else {
-            None
-        };
         let painted: Element<'a, Message> = if selected || tint.is_some() {
             let bg = if selected {
                 sel_bg()
@@ -732,11 +723,59 @@ fn plugin_archives<'a>(app: &'a App, plugin: &str) -> Vec<&'a str> {
     })
 }
 
+/// A plugin row's tint under its own selection colour, in MO2's order: the
+/// selected mod's plugins, then the selected plugins' masters. Both sets are
+/// built once per view.
+pub(crate) fn plugin_tint(
+    origins: &HashSet<String>,
+    masters: &HashSet<String>,
+    p: &eidos_plugins::Plugin,
+) -> Option<Color> {
+    if plugin_from_selected_mod(origins, &p.origin_mod) {
+        Some(origin_bg())
+    } else if !masters.is_empty() && masters.contains(&p.name.to_ascii_lowercase()) {
+        Some(master_bg())
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_support::plugin_row;
     use eidos_gamefeatures::archives::{ArchiveActivation, ArchivePlan};
+
+    #[test]
+    fn selecting_a_plugin_paints_its_masters_and_the_mod_that_ships_it() {
+        let _look = crate::test_support::look_lock();
+        let mut app = crate::test_support::nav_app(&["Armour Pack", "Base Mod"]);
+        let mut patch = plugin_row("Patch.esp", "Armour Pack");
+        patch.masters = vec!["BASE.esm".into()];
+        app.plugins = Some(eidos_plugins::PluginList {
+            plugins: vec![
+                plugin_row("Base.esm", "Base Mod"),
+                patch,
+                plugin_row("Unrelated.esp", ""),
+            ],
+            implicit: Default::default(),
+            locked: Default::default(),
+        });
+        app.selected_plugin = Some(1);
+        let masters = selected_plugin_masters(&app);
+        let origins = selected_mod_origins(&app);
+        let list = app.plugins.as_ref().unwrap();
+        let tint =
+            |origins: &HashSet<String>, i: usize| plugin_tint(origins, &masters, &list.plugins[i]);
+        assert_eq!(tint(&origins, 0), Some(master_bg()), "the master row");
+        assert_eq!(tint(&origins, 2), None, "an unrelated row");
+        let shipped = selected_plugin_origin_mods(&app);
+        assert_eq!(mod_row_tint(&app, 0, &shipped), Some(origin_bg()));
+        assert_eq!(mod_row_tint(&app, 1, &shipped), None);
+        // A master that the selected mod ships takes the origin tint, as in MO2.
+        app.selected_mod = Some(1);
+        assert_eq!(tint(&selected_mod_origins(&app), 0), Some(origin_bg()));
+    }
 
     #[test]
     fn medium_plugin_is_labelled_esh() {

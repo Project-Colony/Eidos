@@ -1642,13 +1642,7 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         }
         // Computed once and handed to both: the row paints this colour, and the
         // name cell fades into it.
-        // The mod that ships a selected plugin outranks the conflict tint: the
-        // plugin click is the newer question, though selected_mod stays set.
-        let conflict = if plugin_origins.contains(&m.name.to_ascii_lowercase()) {
-            Some(origin_bg())
-        } else {
-            conflict_tint(app, i)
-        };
+        let conflict = mod_row_tint(app, i, &plugin_origins);
         tints.push(conflict);
         // The mod's own colour, washed down to a row background. MO2 colours any
         // mod through the Notes column; Eidos already stored the colour per mod
@@ -2816,6 +2810,26 @@ mod tests {
         assert!(
             !names.contains(&"Skyrim.esm".to_string()),
             "a whited-out file is NOT in the merged view: {names:?}"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_contested_data_row_lists_the_layers_it_beats() {
+        let (mut app, root) = data_app(
+            &[("textures/shared.dds", "mod")],
+            &[("textures/shared.dds", "generated")],
+        );
+        app.conflicts = compute_conflicts(&app);
+        let rows = merged_listing(&app, "textures");
+        let row = rows.iter().find(|r| r.name == "shared.dds").unwrap();
+        assert_eq!(row.source, "[Overwrite]");
+        assert_eq!(row.also_in, ["AAA"]);
+        let top = merged_listing(&app, "");
+        let folder = top.iter().find(|r| r.name == "textures").unwrap();
+        assert!(
+            folder.also_in.is_empty(),
+            "a folder has no providers to list"
         );
         let _ = fs::remove_dir_all(&root);
     }
