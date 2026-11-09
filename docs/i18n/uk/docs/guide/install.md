@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=bc05db1de00bb7c80224f065c3f730f3adc542dc -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=e00626e360d8e5b283304045968cc7a6bd6af061 -->
 
 # Встановлення Eidos
 
@@ -70,7 +70,7 @@ just build
 just install
 ```
 
-Для збирання з джерельного коду потрібні Rust 1.89 або новіший, `just`, CMake 3.20+, компілятор C++17 і Python 3 для тестів нативної допоміжної програми. Команди без `just` наведено в [інструкціях для нативної допоміжної програми](../../../../../crates/eidos-nif-preview/README.md). Зберіть Rust командою `cargo build --release --locked`, скопіюйте допоміжну програму до `target/release`, а потім запустіть `packaging/install.sh --from target/release`.
+Для збирання з джерельного коду потрібні Rust 1.92 або новіший, `just`, CMake 3.20+, компілятор C++17 і Python 3 для тестів нативної допоміжної програми. Команди без `just` наведено в [інструкціях для нативної допоміжної програми](../../../../../crates/eidos-nif-preview/README.md). Зберіть Rust командою `cargo build --release --locked`, скопіюйте допоміжну програму до `target/release`, а потім запустіть `packaging/install.sh --from target/release`.
 
 ## Далі: скерувати на нього Steam
 
