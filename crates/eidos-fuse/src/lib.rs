@@ -180,7 +180,8 @@ pub struct Eidos {
     /// create can invalidate precisely those spellings. A record older than the
     /// kernel TTL it justified ([`NEG_TTL_RECORDED`]) no longer covers anything;
     /// `record_negative` drops such records only once the parent reaches its
-    /// 4096 cap, and a create drops the other spellings that fold to its name.
+    /// 4096 cap, and any change of a name in the parent drops the other
+    /// spellings that fold to that name.
     negatives: Mutex<HashMap<u64, NegativeDir>>,
     /// Positive dentries handed to the kernel, keyed by inode: the
     /// `(parent_ino, exact name)` spellings it now caches for that file.
@@ -554,8 +555,9 @@ impl Eidos {
     }
 
     /// Drop any negative dentry the kernel holds for a name that case-folds to
-    /// `name` in `parent`. Called whenever an entry is created, so a probe for
-    /// `Foo.esp` cannot keep hiding a freshly created `foo.esp`.
+    /// `name` in `parent`. Called through `dir_changed` on any change of a name in
+    /// `parent` (create, mkdir, symlink, unlink, rmdir, both sides of a rename), so
+    /// a probe for `Foo.esp` cannot keep hiding a freshly created `foo.esp`.
     fn invalidate_folded_negatives(&self, parent: u64, name: &str) {
         let stale: Vec<String> = {
             let mut neg = self.negatives.lock_recover();
