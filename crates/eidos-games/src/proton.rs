@@ -107,21 +107,40 @@ fn compat_tool_name(steam_root: &Path, app_id: u32) -> Option<String> {
     for_app.or(for_default)
 }
 
-/// Locate the `proton` binary for a compat-tool `name`: custom builds in
-/// `compatibilitytools.d` first (by folder name, then by each tool's declared
+/// Folders that hold custom compat tools, user folder first so it wins a name
+/// clash: Steam's own, the distro packages' (proton-cachyos, proton-ge-custom),
+/// then each entry of `$STEAM_EXTRA_COMPAT_TOOLS_PATHS`.
+fn compat_tool_dirs(steam_root: &Path) -> Vec<PathBuf> {
+    let mut dirs = vec![
+        steam_root.join("compatibilitytools.d"),
+        PathBuf::from("/usr/share/steam/compatibilitytools.d"),
+        PathBuf::from("/usr/local/share/steam/compatibilitytools.d"),
+    ];
+    if let Some(extra) = std::env::var_os("STEAM_EXTRA_COMPAT_TOOLS_PATHS") {
+        dirs.extend(std::env::split_paths(&extra).filter(|p| !p.as_os_str().is_empty()));
+    }
+    dirs
+}
+
+/// Locate the `proton` binary for a compat-tool `name`: custom builds in the
+/// compat tool folders first (by folder name, then by each tool's declared
 /// internal name), then official Protons in the libraries' `steamapps/common`
 /// (matched loosely: `proton_experimental` -> "Proton - Experimental").
 fn find_proton_binary(steam_root: &Path, home: &Path, name: &str) -> Option<PathBuf> {
-    // 1. compatibilitytools.d/<name>/proton (GE-Proton10-34 etc.)
-    let custom = steam_root
-        .join("compatibilitytools.d")
-        .join(name)
-        .join("proton");
-    if custom.is_file() {
-        return Some(custom);
-    }
-    // 2. Any compatibilitytools.d entry whose compatibilitytool.vdf declares `name`.
-    if let Ok(rd) = fs::read_dir(steam_root.join("compatibilitytools.d")) {
+    find_proton_binary_in(&compat_tool_dirs(steam_root), home, name)
+}
+
+fn find_proton_binary_in(tool_dirs: &[PathBuf], home: &Path, name: &str) -> Option<PathBuf> {
+    for dir in tool_dirs {
+        // 1. <dir>/<name>/proton (GE-Proton10-34 etc.)
+        let custom = dir.join(name).join("proton");
+        if custom.is_file() {
+            return Some(custom);
+        }
+        // 2. Any entry whose compatibilitytool.vdf declares `name`.
+        let Ok(rd) = fs::read_dir(dir) else {
+            continue;
+        };
         for e in rd.flatten() {
             let vdf = e.path().join("compatibilitytool.vdf");
             let proton = e.path().join("proton");
@@ -463,12 +482,32 @@ mod tests {
         fs::create_dir_all(&steam).unwrap();
         fs_extra_copy(&root, &steam);
 
-        let ge = find_proton_binary(&steam, &home, "GE-Proton10-34").unwrap();
+        let dirs = [steam.join("compatibilitytools.d")];
+        let ge = find_proton_binary_in(&dirs, &home, "GE-Proton10-34").unwrap();
         assert!(ge.ends_with("compatibilitytools.d/GE-Proton10-34/proton"));
-        let official = find_proton_binary(&steam, &home, "proton_experimental").unwrap();
+        let official = find_proton_binary_in(&dirs, &home, "proton_experimental").unwrap();
         assert!(official.to_string_lossy().contains("Proton - Experimental"));
         let _ = fs::remove_dir_all(&root);
         let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn finds_tools_in_later_roots_and_user_root_wins() {
+        let (user, sys) = (tmp_root(), tmp_root());
+        let home = tmp_root();
+        for (root, tool) in [(&sys, "proton-cachyos"), (&sys, "Clash"), (&user, "Clash")] {
+            let d = root.join(tool);
+            fs::create_dir_all(&d).unwrap();
+            fs::write(d.join("proton"), "#!/bin/sh\n").unwrap();
+        }
+        let dirs = [user.clone(), sys.clone()];
+        let found = find_proton_binary_in(&dirs, &home, "proton-cachyos").unwrap();
+        assert!(found.starts_with(&sys));
+        let clash = find_proton_binary_in(&dirs, &home, "Clash").unwrap();
+        assert!(clash.starts_with(&user));
+        for d in [&user, &sys, &home] {
+            let _ = fs::remove_dir_all(d);
+        }
     }
 
     #[test]
