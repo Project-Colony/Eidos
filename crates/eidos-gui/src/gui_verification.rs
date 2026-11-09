@@ -718,4 +718,23 @@ fn rows_aim_only_during_a_drag() {
     assert!(aimed(&messages).is_empty(), "no false enter: {messages:?}");
     let (_, messages) = frame(panel(), &mut renderer, cache, &moved(c), c, None);
     assert_eq!(aimed(&messages), vec![2], "{messages:?}");
+
+    // Unchecking a master raises the missing-master line in that same slot, so
+    // the rows stay put and a quick second click lands on the same checkbox.
+    app.plugin_drag = None;
+    if let Some(list) = app.plugins.as_mut() {
+        list.plugins[1].masters = vec!["AimA.esp".to_string()];
+        list.plugins[0].enabled = false;
+        assert!(!list.missing_masters().is_empty());
+    }
+    assert_eq!(
+        label(
+            crate::modinfo::plugins_panel(&app),
+            &mut renderer,
+            "AimC.esp",
+            0
+        ),
+        c,
+        "the missing-master line moved the rows"
+    );
 }
