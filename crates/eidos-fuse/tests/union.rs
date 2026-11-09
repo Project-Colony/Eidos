@@ -49,13 +49,17 @@ static PRIVILEGED: AtomicBool = AtomicBool::new(false);
 /// eidos-launch; otherwise a user namespace comes first (the
 /// `unshare --map-root-user --mount` idiom). Must run single-threaded, hence
 /// before the test runner does anything else. Returns whether it kept the
-/// initial user namespace.
+/// initial user namespace: a bare unshare also succeeds inside a container's
+/// user namespace, so `/proc/self/uid_map` must map every uid to itself too.
+/// That lets a mount register passthrough backing files. The strict branch of
+/// `a_writer_is_refused_while_passthrough_readers_hold_the_file` also needs a
+/// kernel with FUSE passthrough (Linux 6.9 or later), and fails without it.
 fn enter_private_namespace() -> std::io::Result<bool> {
     // SAFETY: getuid/getgid always succeed.
     let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
     // SAFETY: unshare with namespace flags has no memory-safety preconditions.
-    let privileged = unsafe { libc::unshare(libc::CLONE_NEWNS) } == 0;
-    if !privileged {
+    let bare = unsafe { libc::unshare(libc::CLONE_NEWNS) } == 0;
+    if !bare {
         // SAFETY: as above.
         if unsafe { libc::unshare(libc::CLONE_NEWUSER | libc::CLONE_NEWNS) } != 0 {
             return Err(std::io::Error::last_os_error());
@@ -78,7 +82,9 @@ fn enter_private_namespace() -> std::io::Result<bool> {
     if rc != 0 {
         return Err(std::io::Error::last_os_error());
     }
-    Ok(privileged)
+    Ok(bare
+        && fs::read_to_string("/proc/self/uid_map")
+            .is_ok_and(|m| m.split_whitespace().eq(["0", "0", "4294967295"])))
 }
 
 /// A self-cleaning temp directory tree, no external deps.
@@ -188,6 +194,9 @@ fn case_insensitive_read_through_mount() {
     );
 }
 
+/// The casefold bit of `FS_IOC_GETFLAGS` (`FS_CASEFOLD_FL` in `linux/fs.h`).
+const FS_CASEFOLD_FL: i32 = 0x4000_0000;
+
 /// `FS_IOC_GETFLAGS` on `p`: (return value, flags, errno).
 fn getflags(p: &Path) -> (i32, i32, Option<i32>) {
     use std::os::fd::AsRawFd;
@@ -201,7 +210,7 @@ fn getflags(p: &Path) -> (i32, i32, Option<i32>) {
 /// Whether `dir` tells Wine it folds case, by both signals, which must agree.
 fn says_casefold(dir: &Path) -> bool {
     let (r, flags, errno) = getflags(dir);
-    let ioctl = r == 0 && flags & 0x4000_0000 != 0;
+    let ioctl = r == 0 && flags & FS_CASEFOLD_FL != 0;
     assert!(ioctl || errno == Some(libc::ENOTTY), "{dir:?}: {errno:?}");
     let marker = match fs::symlink_metadata(dir.join(".ciopfs")) {
         Ok(_) => true,
@@ -222,7 +231,7 @@ fn getflags_reports_casefold_on_dirs_only() {
 
     let (r, flags, _) = getflags(&mnt.join("Textures"));
     assert_eq!(r, 0);
-    assert_ne!(flags & 0x4000_0000, 0, "flags {flags:#x}");
+    assert_ne!(flags & FS_CASEFOLD_FL, 0, "flags {flags:#x}");
     let (r, _, errno) = getflags(&mnt.join("Textures/Armor.DDS"));
     assert_eq!((r, errno), (-1, Some(libc::ENOTTY)));
 }
