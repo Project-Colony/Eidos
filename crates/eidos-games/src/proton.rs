@@ -27,10 +27,13 @@ pub struct ProtonRun {
     /// The `proton` entry script (run as `proton waitforexitandrun <exe> [args...]`),
     /// or a `wine` binary when [`plain_wine`](Self::plain_wine) is set.
     pub proton: PathBuf,
-    /// Environment Proton needs: `STEAM_COMPAT_DATA_PATH` (the app's compatdata),
-    /// `STEAM_COMPAT_CLIENT_INSTALL_PATH` (the Steam root), the Steam app id
-    /// (`SteamAppId`/`SteamGameId`/`STEAM_COMPAT_APP_ID`), and
-    /// `STEAM_COMPAT_INSTALL_PATH`/`STEAM_COMPAT_LIBRARY_PATHS` (the game's dir/library).
+    /// Environment the run needs. For a Steam copy: `STEAM_COMPAT_DATA_PATH` (the
+    /// app's compatdata), `STEAM_COMPAT_CLIENT_INSTALL_PATH` (the Steam root), the
+    /// Steam app id (`SteamAppId`/`SteamGameId`/`STEAM_COMPAT_APP_ID`), and
+    /// `STEAM_COMPAT_INSTALL_PATH`/`STEAM_COMPAT_LIBRARY_PATHS` (the game's
+    /// dir/library). A Heroic Proton run has `STEAM_COMPAT_DATA_PATH`, an empty
+    /// `STEAM_COMPAT_CLIENT_INSTALL_PATH` and no app id; a Heroic plain Wine run
+    /// has only `WINEPREFIX` (see `heroic_run`).
     pub env: Vec<(String, String)>,
     /// This Proton belongs to the Flatpak Steam install. Eidos still runs it from
     /// the host (see [`is_flatpak_steam`]), but front ends warn, because its
@@ -87,7 +90,7 @@ impl ProtonRun {
         let dir = crate::scan_installed(home)
             .into_iter()
             .filter(|app| app.app_id == app_id)
-            .map(|app| app.library.join("steamapps/common").join(app.install_dir))
+            .filter_map(|app| app.install_path())
             .find(|dir| dir.join("_v2-entry-point").is_file())
             .ok_or(Some(app_id))?;
         // Steam lists both folders here, and pressure-vessel shares them with
@@ -129,8 +132,8 @@ pub fn wineserver_wait_for(wine: &Path, env: &[(String, String)]) -> Command {
     cmd
 }
 
-/// The run for a copy Heroic manages, with the build and prefix its settings
-/// for the game name. Nothing here reads Steam: a Heroic-only machine has no
+/// The run for a copy Heroic manages, with the build and prefix that the game's
+/// Heroic settings name. Nothing here reads Steam: a Heroic-only machine has no
 /// Steam root, and no Steam app id is set.
 pub(crate) fn heroic_run(bin: &Path, proton: bool, prefix: &Path) -> ProtonRun {
     let prefix = prefix.to_string_lossy().into_owned();
@@ -742,6 +745,19 @@ mod tests {
         assert_eq!(run.in_steam_runtime(&home), Err(Some(4183110)));
         fs::create_dir_all(&runtime).unwrap();
         fs::write(runtime.join("_v2-entry-point"), "#!/bin/sh\n").unwrap();
+        // An installdir with `..` is not followed, even to the right folder.
+        let manifest = lib.join("steamapps/appmanifest_4183110.acf");
+        let acf = fs::read_to_string(&manifest).unwrap();
+        fs::write(
+            &manifest,
+            acf.replace(
+                "\"SteamLinuxRuntime_4\"",
+                "\"../common/SteamLinuxRuntime_4\"",
+            ),
+        )
+        .unwrap();
+        assert_eq!(run.in_steam_runtime(&home), Err(Some(4183110)));
+        fs::write(&manifest, acf).unwrap();
         assert_eq!(run.in_steam_runtime(&home), Ok(()));
 
         let entry = fs::canonicalize(&lib)

@@ -43,6 +43,20 @@ pub struct InstalledApp {
     pub library: PathBuf,
 }
 
+impl InstalledApp {
+    /// `steamapps/common/<installdir>` in the app's library, or `None` when
+    /// `installdir` is empty or not a plain relative path (`..`, `/`), which
+    /// would leave that folder.
+    pub fn install_path(&self) -> Option<PathBuf> {
+        let relative = Path::new(&self.install_dir);
+        (!relative.as_os_str().is_empty()
+            && relative
+                .components()
+                .all(|c| matches!(c, std::path::Component::Normal(_))))
+        .then(|| self.library.join("steamapps/common").join(relative))
+    }
+}
+
 /// A supported game located on disk, ready to seed an Eidos instance.
 #[derive(Debug, Clone)]
 pub struct DetectedGame {
@@ -169,16 +183,7 @@ pub fn detect(home: &Path) -> Vec<DetectedGame> {
             let def = catalog()
                 .iter()
                 .find(|d| d.steam_app_id != 0 && d.steam_app_id == app.app_id)?;
-            let relative = Path::new(&app.install_dir);
-            if relative.as_os_str().is_empty()
-                || !relative
-                    .components()
-                    .all(|c| matches!(c, std::path::Component::Normal(_)))
-            {
-                return None;
-            }
-            let install_path =
-                canonical_directory(&app.library.join("steamapps/common").join(relative))?;
+            let install_path = canonical_directory(&app.install_path()?)?;
             let data_path = install_path.join(def.data_dir);
             let compat = app
                 .library
