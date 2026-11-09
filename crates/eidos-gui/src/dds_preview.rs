@@ -827,7 +827,12 @@ pub(crate) mod tests {
             (out.width, out.height, out.rgba.len()),
             (4096, 2048, 32 * 1024 * 1024)
         );
-        assert!(out.rgba.chunks_exact(4).all(|p| p == [0, 0, 0, 255]));
+        assert!(out
+            .rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .all(|p| *p == [0, 0, 0, 255]));
         let oversized = vec![0; MAX_DDS_BYTES + 1];
         assert!(inspect(&oversized).unwrap_err().contains("128 MiB limit"));
     }

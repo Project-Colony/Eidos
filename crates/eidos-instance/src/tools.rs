@@ -524,7 +524,7 @@ mod tests {
         assert!(root_executable(&game, &[], &overwrite, loader).is_none());
         fs::write(root.join(loader), b"mod loader").unwrap();
         assert_eq!(
-            root_executable(&game, &[root.clone()], &overwrite, loader),
+            root_executable(&game, std::slice::from_ref(&root), &overwrite, loader),
             Some(game.join(loader))
         );
         assert!(
@@ -543,7 +543,7 @@ mod tests {
         )
         .unwrap();
         assert!(
-            root_executable(&game, &[root.clone()], &overwrite, loader).is_none(),
+            root_executable(&game, std::slice::from_ref(&root), &overwrite, loader).is_none(),
             "whiteout"
         );
         fs::remove_file(overwrite.join(format!("{}{loader}", eidos_core::WHITEOUT_PREFIX)))
@@ -708,7 +708,7 @@ mod tests {
         fs::write(deep.join("FO4Edit.exe"), b"x").unwrap();
         let known: &[(&str, &str)] = &[("FO4Edit.exe", "FO4Edit")];
         assert!(
-            find_known_tools(&[root.clone()], known).is_empty(),
+            find_known_tools(std::slice::from_ref(&root), known).is_empty(),
             "past the depth cap"
         );
 
@@ -720,7 +720,7 @@ mod tests {
         #[cfg(unix)]
         std::os::unix::fs::symlink(&outside, linked.join("away")).unwrap();
         #[cfg(unix)]
-        assert!(find_known_tools(&[linked.clone()], known).is_empty());
+        assert!(find_known_tools(std::slice::from_ref(&linked), known).is_empty());
         for d in [root, outside, linked] {
             let _ = fs::remove_dir_all(&d);
         }

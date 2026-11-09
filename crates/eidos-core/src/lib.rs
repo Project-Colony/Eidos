@@ -2298,7 +2298,7 @@ mod tests {
         // full build give up, so the boundary is what keeps the root indexed.
         let locked = game.join("Data/locked");
         fs::create_dir(&locked).unwrap();
-        fs::set_permissions(&locked, fs::Permissions::from_mode(0)).unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o0)).unwrap();
         let full = LayerStack::new(vec![game.clone()], over.clone());
         assert!(full.lower.is_none());
         let why = full.index_declined().unwrap();
@@ -2537,7 +2537,7 @@ mod tests {
         assert_eq!(clean.index_declined(), None);
         let locked = game.join("Data/locked");
         fs::create_dir(&locked).unwrap();
-        fs::set_permissions(&locked, fs::Permissions::from_mode(0)).unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o0)).unwrap();
         let declined =
             LayerStack::new_with_readonly_overwrite(vec![game], private, None, Some(shared));
         assert!(declined.index_declined().is_some());

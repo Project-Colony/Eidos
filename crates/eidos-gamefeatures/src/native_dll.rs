@@ -434,7 +434,7 @@ mod tests {
         let dll = dir.join("delay.dll");
         fs::write(&dll, pe).unwrap();
         assert!(imported_dlls(&dll).unwrap().contains("d3dcompiler_47.dll"));
-        assert!(scan_imports_provisionable(&[dir.clone()]));
+        assert!(scan_imports_provisionable(std::slice::from_ref(&dir)));
         fs::remove_dir_all(dir).unwrap();
     }
     use std::sync::atomic::{AtomicU32, Ordering};
@@ -475,11 +475,11 @@ mod tests {
     #[test]
     fn community_shaders_detected_case_insensitively() {
         let m = tmp_dir();
-        assert!(!community_shaders_in_roots(&[m.clone()]));
+        assert!(!community_shaders_in_roots(std::slice::from_ref(&m)));
         // Windows-cased segments must still match on a case-sensitive fs.
         fs::create_dir_all(m.join("skse/Plugins")).unwrap();
         fs::write(m.join("skse/Plugins/communityshaders.dll"), b"x").unwrap();
-        assert!(community_shaders_in_roots(&[m.clone()]));
+        assert!(community_shaders_in_roots(std::slice::from_ref(&m)));
         let _ = fs::remove_dir_all(&m);
     }
 
@@ -489,14 +489,14 @@ mod tests {
         let modr = tmp_dir();
         fs::write(root.join("enbseries.ini"), b"x").unwrap();
         // Only ENB present -> no advisory.
-        assert!(!enb_cs_conflict(&root, &[modr.clone()]));
+        assert!(!enb_cs_conflict(&root, std::slice::from_ref(&modr)));
         // Add Community Shaders -> advisory fires.
         fs::create_dir_all(modr.join("SKSE/Plugins")).unwrap();
         fs::write(modr.join("SKSE/Plugins/CommunityShaders.dll"), b"x").unwrap();
-        assert!(enb_cs_conflict(&root, &[modr.clone()]));
+        assert!(enb_cs_conflict(&root, std::slice::from_ref(&modr)));
         // CS without ENB -> no advisory.
         let empty_root = tmp_dir();
-        assert!(!enb_cs_conflict(&empty_root, &[modr.clone()]));
+        assert!(!enb_cs_conflict(&empty_root, std::slice::from_ref(&modr)));
         let _ = fs::remove_dir_all(&root);
         let _ = fs::remove_dir_all(&modr);
         let _ = fs::remove_dir_all(&empty_root);
@@ -597,9 +597,8 @@ mod tests {
         fs::write(&bogus, b"this is not a PE file").unwrap();
         // Either an error or an empty set is acceptable - but never a panic and
         // never a false positive.
-        match imported_dlls(&bogus) {
-            Ok(set) => assert!(!set.contains(D3DCOMPILER_47)),
-            Err(_) => {}
+        if let Ok(set) = imported_dlls(&bogus) {
+            assert!(!set.contains(D3DCOMPILER_47))
         }
         let _ = fs::remove_dir_all(&dir);
     }
@@ -620,11 +619,11 @@ mod tests {
             .next()
             .unwrap();
         assert!(
-            scan_imports_for(&[dir.clone()], &any_import),
+            scan_imports_for(std::slice::from_ref(&dir), &any_import),
             "recursive scan must find it"
         );
         assert!(!scan_imports_for(
-            &[dir.clone()],
+            std::slice::from_ref(&dir),
             "nothing_imports_this_zzz.dll"
         ));
         let _ = fs::remove_dir_all(&dir);
@@ -647,19 +646,22 @@ mod tests {
         let assets = dir.join("Textures/effects");
         fs::create_dir_all(&assets).unwrap();
         fs::write(assets.join("stray.dll"), dll).unwrap();
-        assert!(!scan_imports_for(&[dir.clone()], &any_import));
+        assert!(!scan_imports_for(std::slice::from_ref(&dir), &any_import));
         // The same folder name deeper down is not an asset root: still walked.
         let nested = dir.join("SKSE/Plugins/textures");
         fs::create_dir_all(&nested).unwrap();
         fs::write(nested.join("plugin.dll"), dll).unwrap();
-        assert!(scan_imports_for(&[dir.clone()], &any_import));
+        assert!(scan_imports_for(std::slice::from_ref(&dir), &any_import));
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn scan_empty_dir_is_false() {
         let dir = tmp_dir();
-        assert!(!scan_imports_for(&[dir.clone()], D3DCOMPILER_47));
+        assert!(!scan_imports_for(
+            std::slice::from_ref(&dir),
+            D3DCOMPILER_47
+        ));
         let _ = fs::remove_dir_all(&dir);
     }
 

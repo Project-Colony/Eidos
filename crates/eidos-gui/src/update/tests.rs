@@ -400,11 +400,13 @@ fn the_auto_scroll_speeds_up_toward_the_edge() {
 fn the_slow_end_is_still_slower_than_the_fast_end() {
     // Guards the constants against being edited into each other's order,
     // which would make the band feel arbitrary rather than aimable.
-    assert!(DRAG_SCROLL_SLOW_PX > 0.0, "the shallow end must still move");
-    assert!(
-        DRAG_SCROLL_FAST_PX > DRAG_SCROLL_SLOW_PX * 2.0,
-        "the range is too narrow to be worth having"
-    );
+    const {
+        assert!(DRAG_SCROLL_SLOW_PX > 0.0, "the shallow end must still move");
+        assert!(
+            DRAG_SCROLL_FAST_PX > DRAG_SCROLL_SLOW_PX * 2.0,
+            "the range is too narrow to be worth having"
+        );
+    }
 }
 
 #[test]
@@ -5487,7 +5489,7 @@ fn forgetting_missing_mods_does_nothing_when_the_mods_folder_is_unreadable() {
         .iter()
         .map(|p| fs::read_to_string(inst.profile(p).dir().join("modlist.txt")).unwrap())
         .collect();
-    fs::set_permissions(inst.mods_dir(), fs::Permissions::from_mode(0)).unwrap();
+    fs::set_permissions(inst.mods_dir(), fs::Permissions::from_mode(0o0)).unwrap();
 
     let offered = offers_forget(&app);
     let _ = update_inner(&mut app, Message::ForgetMissingMods);

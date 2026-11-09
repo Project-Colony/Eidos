@@ -1485,7 +1485,13 @@ mod case_bridge_tests {
         fs::write(&ml, "condition: 'not file(\"scripts/skse.pex\")'").unwrap();
 
         let out = root.join("bridge");
-        let bridged = build_case_bridge(&ml, &[mod_dir.clone()], &root.join("game"), &out).unwrap();
+        let bridged = build_case_bridge(
+            &ml,
+            std::slice::from_ref(&mod_dir),
+            &root.join("game"),
+            &out,
+        )
+        .unwrap();
         assert_eq!(bridged, vec!["scripts/skse.pex".to_string()]);
 
         // What libloot will actually do: join the relative path onto the base.
@@ -1543,9 +1549,11 @@ mod case_bridge_tests {
         let ml = root.join("m.yaml");
         fs::write(&ml, "condition: 'file(\"scripts/nothere.pex\")'").unwrap();
         let out = root.join("b");
-        assert!(build_case_bridge(&ml, &[root.clone()], &root, &out)
-            .unwrap()
-            .is_empty());
+        assert!(
+            build_case_bridge(&ml, std::slice::from_ref(&root), &root, &out)
+                .unwrap()
+                .is_empty()
+        );
         assert!(!case_bridge_data_dir(&out)
             .join("scripts/nothere.pex")
             .exists());
@@ -1624,7 +1632,7 @@ mod case_bridge_tests {
         let ml = root.join("m.yaml");
         fs::write(&ml, "condition: 'file(\"scripts/skse.pex\")'").unwrap();
         let out = root.join("b");
-        build_case_bridge(&ml, &[mod_dir.clone()], &root, &out).unwrap();
+        build_case_bridge(&ml, std::slice::from_ref(&mod_dir), &root, &out).unwrap();
         assert!(case_bridge_data_dir(&out).join("scripts/skse.pex").exists());
 
         fs::remove_dir_all(&mod_dir).unwrap();

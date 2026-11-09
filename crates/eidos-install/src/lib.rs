@@ -1546,15 +1546,9 @@ mod tests {
         // bare .asi/.ini pair; ReShade ships its addon beside reshade-shaders/.
         let cd = LayoutRules::for_game("crimsondesert");
         let asi = tree(&["bin64/LETMESLEEP.asi", "bin64/LETMESLEEP.ini"]);
-        assert_eq!(
-            asi.simple_archive_base(cd.clone()).as_deref(),
-            Some("bin64/")
-        );
+        assert_eq!(asi.simple_archive_base(cd).as_deref(), Some("bin64/"));
         let bare = tree(&["MyMod/winmm.dll", "MyMod/scripts.asi"]);
-        assert_eq!(
-            bare.simple_archive_base(cd.clone()).as_deref(),
-            Some("MyMod/")
-        );
+        assert_eq!(bare.simple_archive_base(cd).as_deref(), Some("MyMod/"));
         let reshade = tree(&[
             "renodx-crimsondesert.addon64",
             "reshade-shaders/Shaders/a.fx",

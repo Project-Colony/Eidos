@@ -781,8 +781,10 @@ mod tests {
             path: b,
             unmanaged: false,
         });
-        let mut plugins = PluginList::default();
-        plugins.plugins = vec![plugin_row("A.esp", "AAA"), plugin_row("B.esp", "BBB")];
+        let mut plugins = PluginList {
+            plugins: vec![plugin_row("A.esp", "AAA"), plugin_row("B.esp", "BBB")],
+            ..PluginList::default()
+        };
         for p in &mut plugins.plugins {
             p.enabled = true
         }
@@ -1074,8 +1076,10 @@ mod tests {
         let mod_root = app.mods[0].path.clone();
         fs::write(mod_root.join("A.bsa"), archive_bsa_fixture()).unwrap();
         fs::write(mod_root.join("B.bsa"), archive_bsa_fixture()).unwrap();
-        let mut plugins = PluginList::default();
-        plugins.plugins = vec![plugin_row("A.esp", "AAA"), plugin_row("B.esp", "AAA")];
+        let mut plugins = PluginList {
+            plugins: vec![plugin_row("A.esp", "AAA"), plugin_row("B.esp", "AAA")],
+            ..PluginList::default()
+        };
         for p in &mut plugins.plugins {
             p.enabled = true
         }
@@ -1106,8 +1110,10 @@ mod tests {
             ],
         );
         fs::write(app.mods[0].path.join("A.bsa"), archive_bsa_fixture()).unwrap();
-        let mut plugins = PluginList::default();
-        plugins.plugins = vec![plugin_row("A.esp", "AAA")];
+        let mut plugins = PluginList {
+            plugins: vec![plugin_row("A.esp", "AAA")],
+            ..PluginList::default()
+        };
         plugins.plugins[0].enabled = true;
         app.plugins = Some(plugins);
         schedule_archive_conflicts(&mut app);
