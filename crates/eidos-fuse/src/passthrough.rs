@@ -112,6 +112,10 @@ impl<B> Passthrough<B> {
         register: impl FnOnce() -> std::io::Result<B>,
     ) -> ReadOpen<B> {
         let st = self.inodes.entry(ino).or_default();
+        // fuser delivers no RELEASE for an OPEN reply the kernel discards (an open
+        // interrupted by a fatal signal), so a pt_refs count taken below can leak
+        // and keep writers on this inode at ETXTBSY until FORGET.
+        //
         // The kernel wants FOPEN_PASSTHROUGH on every open of an inode that has
         // a backing, eligible or not.
         if let Some(backing) = &st.backing {
