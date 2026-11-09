@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=c4073ef7daa93b14edfa3d1e00794a2cdbdf8066 -->
+<!-- eidos-i18n: source=README.md sha=aba00e8b05529cc86b31f767796f90e336b73aac -->
 
 <div align="center">
 
@@ -208,8 +208,8 @@ just build
 just install
 ```
 
-Rust 1.89 ya da daha yenisi (CI'nin denetlediği `rust-version`; CI ve sürümler
-1.99.0 ile derlenir), ayrıca NIF önizleme yardımcısı için `just`, CMake 3.20+ ve
+Rust 1.99 ya da daha yenisi (CI'nin denetlediği `rust-version`; CI ve sürümler
+1.99.1 ile derlenir), ayrıca NIF önizleme yardımcısı için `just`, CMake 3.20+ ve
 bir C++17 derleyicisi gerekir. Bir Arch paketi `packaging/PKGBUILD` üzerinden
 derlenir. Ön gereksinimler ve `just` olmadan kullanılacak komutlar:
 [docs/guide/install.md](docs/guide/install.md).

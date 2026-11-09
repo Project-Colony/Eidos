@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=bc05db1de00bb7c80224f065c3f730f3adc542dc -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=22c85b4727116d65fe06f0c56cc9f8b16abbad38 -->
 
 # Eidos のインストール
 
@@ -70,7 +70,7 @@ just build
 just install
 ```
 
-ソースからのビルドには Rust 1.89 以降、`just`、CMake 3.20 以降、C++17 コンパイラ、およびネイティブヘルパーのテスト用に Python 3 が必要です。`just` を使わないコマンドは[ネイティブヘルパーの手順](../../../../../crates/eidos-nif-preview/README.md)を参照してください。Rust を `cargo build --release --locked` でビルドし、ヘルパーを `target/release` にコピーしてから `packaging/install.sh --from target/release` を実行します。
+ソースからのビルドには Rust 1.99 以降、`just`、CMake 3.20 以降、C++17 コンパイラ、およびネイティブヘルパーのテスト用に Python 3 が必要です。`just` を使わないコマンドは[ネイティブヘルパーの手順](../../../../../crates/eidos-nif-preview/README.md)を参照してください。Rust を `cargo build --release --locked` でビルドし、ヘルパーを `target/release` にコピーしてから `packaging/install.sh --from target/release` を実行します。
 
 ## そのあと: Steam をここへ向ける
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=bc05db1de00bb7c80224f065c3f730f3adc542dc -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=22c85b4727116d65fe06f0c56cc9f8b16abbad38 -->
 
 # Eidos 설치
 
@@ -72,7 +72,7 @@ just build
 just install
 ```
 
-소스 빌드에는 Rust 1.89 이상, `just`, CMake 3.20 이상, C++17 컴파일러, 네이티브 도우미 테스트용 Python 3이 필요합니다. `just` 없이 실행할 명령은 [네이티브 도우미 안내](../../../../../crates/eidos-nif-preview/README.md)를 참고하세요. `cargo build --release --locked`로 Rust를 빌드하고 도우미를 `target/release`에 복사한 다음 `packaging/install.sh --from target/release`를 실행하세요.
+소스 빌드에는 Rust 1.99 이상, `just`, CMake 3.20 이상, C++17 컴파일러, 네이티브 도우미 테스트용 Python 3이 필요합니다. `just` 없이 실행할 명령은 [네이티브 도우미 안내](../../../../../crates/eidos-nif-preview/README.md)를 참고하세요. `cargo build --release --locked`로 Rust를 빌드하고 도우미를 `target/release`에 복사한 다음 `packaging/install.sh --from target/release`를 실행하세요.
 
 ## 그다음: Steam이 이것을 가리키게 하기
 

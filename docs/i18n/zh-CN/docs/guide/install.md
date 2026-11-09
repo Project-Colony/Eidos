@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=bc05db1de00bb7c80224f065c3f730f3adc542dc -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=22c85b4727116d65fe06f0c56cc9f8b16abbad38 -->
 
 # 安装 Eidos
 
@@ -66,7 +66,7 @@ just build
 just install
 ```
 
-从源码构建需要 Rust 1.89 或更新版本、`just`、CMake 3.20 或更高版本、C++17 编译器，以及用于原生辅助程序测试的 Python 3。不使用 `just` 时，请参阅[原生辅助程序说明](../../../../../crates/eidos-nif-preview/README.md)，使用 `cargo build --release --locked` 构建 Rust 程序，将辅助程序复制到 `target/release`，然后运行 `packaging/install.sh --from target/release`。
+从源码构建需要 Rust 1.99 或更新版本、`just`、CMake 3.20 或更高版本、C++17 编译器，以及用于原生辅助程序测试的 Python 3。不使用 `just` 时，请参阅[原生辅助程序说明](../../../../../crates/eidos-nif-preview/README.md)，使用 `cargo build --release --locked` 构建 Rust 程序，将辅助程序复制到 `target/release`，然后运行 `packaging/install.sh --from target/release`。
 
 ## 然后:让 Steam 指向它
 

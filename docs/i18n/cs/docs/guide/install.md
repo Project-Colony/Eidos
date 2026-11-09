@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=bc05db1de00bb7c80224f065c3f730f3adc542dc -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=22c85b4727116d65fe06f0c56cc9f8b16abbad38 -->
 
 # Instalace Eidosu
 
@@ -75,7 +75,7 @@ just build
 just install
 ```
 
-Sestavení ze zdrojů vyžaduje Rust 1.89 nebo novější, `just`, CMake 3.20+, překladač C++17 a Python 3 pro testy nativního pomocného programu. Příkazy bez `just` najdete v [pokynech k nativnímu pomocnému programu](../../../../../crates/eidos-nif-preview/README.md). Rust sestavte pomocí `cargo build --release --locked`, pomocný program zkopírujte do `target/release` a poté spusťte `packaging/install.sh --from target/release`.
+Sestavení ze zdrojů vyžaduje Rust 1.99 nebo novější, `just`, CMake 3.20+, překladač C++17 a Python 3 pro testy nativního pomocného programu. Příkazy bez `just` najdete v [pokynech k nativnímu pomocnému programu](../../../../../crates/eidos-nif-preview/README.md). Rust sestavte pomocí `cargo build --release --locked`, pomocný program zkopírujte do `target/release` a poté spusťte `packaging/install.sh --from target/release`.
 
 ## Potom: nasměrovat na něj Steam
 
