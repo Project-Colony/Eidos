@@ -400,13 +400,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
                     Err(e) => eidos_log::warn!("eidos: could not write the prefix registry ({e}); tools may ask for the game path"),
                 }
             }
-            let mut command = match &run {
-                Some(run) => run.command(&exe, &tool.args),
-                None => std::iter::once(exe.to_string_lossy().into_owned())
-                    .chain(tool.args.iter().cloned())
-                    .collect(),
-            };
-            command.extend(extra);
+            let command = tool_command(run.as_ref(), &exe, &tool.args, extra);
             // MO2's default working directory for a tool is its own folder - which,
             // after the rewrite above, is the merged one. An explicit workdir gets
             // the same treatment (MO2 adjusts cwd and binary independently).
@@ -478,7 +472,9 @@ pub(crate) fn cmd_tool(args: &[String]) {
             // Host-environment facts for a tool run, applied last so `--print`
             // shows them. The Creation Kit override is a different Steam app, so
             // the game's shader cache would be the wrong one for it. Not for a
-            // native tool: a Linux .NET program needs the host's DOTNET_ROOT.
+            // native tool: it may be a Linux .NET program, so the host's .NET
+            // roots stay as they are. A runtime the tool declares still set its
+            // Z: DOTNET_ROOT above, the form a native Wine runner needs.
             if !native {
                 apply_tool_env_facts(
                     &mut env,
@@ -602,6 +598,24 @@ fn print_plan(
     out
 }
 
+/// The argv for a tool run: `exe` and `args` through the run's Proton or Wine,
+/// or as they are for a `runner=native` tool, then the `--` extra arguments.
+fn tool_command(
+    run: Option<&eidos_games::ProtonRun>,
+    exe: &Path,
+    args: &[String],
+    extra: Vec<String>,
+) -> Vec<String> {
+    let mut command = match run {
+        Some(run) => run.command(exe, args),
+        None => std::iter::once(exe.to_string_lossy().into_owned())
+            .chain(args.iter().cloned())
+            .collect(),
+    };
+    command.extend(extra);
+    command
+}
+
 /// The `wineserver -w` to run before a tool, outside the view: a plain Wine
 /// run's, or for a `runner=native` tool whose executable is a `wine`, the
 /// server next to it with the tool's own `env=` (its `WINEPREFIX`).
@@ -622,7 +636,7 @@ fn wineserver_wait(
 /// Env a Windows tool needs from the host, not from the instance.
 ///
 /// Steam's shader cache for the game (only for a Steam copy and when its
-/// directory exists - Steam's tree is never written to - and never over a
+/// directory exists - Eidos never creates directories there - and never over a
 /// variable the user exported),
 /// empty .NET roots so a host SDK cannot hijack a framework-dependent tool, one
 /// `WINEPATH` that still holds the user's own, and no Steam overlay in
@@ -845,6 +859,25 @@ mod env_fact_tests {
             )]
         );
         assert!(wineserver_wait(None, Path::new("/usr/bin/Synthesis"), &env).is_none());
+    }
+
+    #[test]
+    fn a_native_tool_runs_its_exe_then_its_args_then_the_extra_ones() {
+        let args = ["C:\\Tools\\xEdit.exe".to_string(), "-sse".to_string()];
+        assert_eq!(
+            tool_command(
+                None,
+                Path::new("/opt/wine-ge/bin/wine"),
+                &args,
+                vec!["-quickautoclean".to_string()]
+            ),
+            [
+                "/opt/wine-ge/bin/wine",
+                "C:\\Tools\\xEdit.exe",
+                "-sse",
+                "-quickautoclean"
+            ]
+        );
     }
 
     #[test]
