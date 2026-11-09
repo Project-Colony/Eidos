@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=aba00e8b05529cc86b31f767796f90e336b73aac -->
+<!-- eidos-i18n: source=README.md sha=bf2a3d995d27b69444b8e0497adb217856e87ce8 -->
 
 <div align="center">
 
@@ -210,7 +210,7 @@ just build
 just install
 ```
 
-Requiere Rust 1.99 o posterior (la `rust-version` que comprueba CI; CI y las
+Requiere Rust 1.92 o posterior (la `rust-version` que comprueba CI; CI y las
 versiones publicadas compilan con 1.99.1), además de `just`, CMake 3.20+ y un
 compilador C++17 para el programa auxiliar de vista previa NIF. Un paquete de
 Arch se compila desde `packaging/PKGBUILD`. Requisitos previos y las órdenes sin

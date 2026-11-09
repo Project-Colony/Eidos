@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=22c85b4727116d65fe06f0c56cc9f8b16abbad38 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=e00626e360d8e5b283304045968cc7a6bd6af061 -->
 
 # Eidos installeren
 
@@ -70,7 +70,7 @@ just build
 just install
 ```
 
-Bouwen vanuit broncode vereist Rust 1.99 of nieuwer, `just`, CMake 3.20+, een C++17-compiler en Python 3 voor de tests van het native hulpprogramma. Zie de [instructies voor het native hulpprogramma](../../../../../crates/eidos-nif-preview/README.md) voor opdrachten zonder `just`, bouw Rust met `cargo build --release --locked`, kopieer het hulpprogramma naar `target/release` en voer daarna `packaging/install.sh --from target/release` uit.
+Bouwen vanuit broncode vereist Rust 1.92 of nieuwer, `just`, CMake 3.20+, een C++17-compiler en Python 3 voor de tests van het native hulpprogramma. Zie de [instructies voor het native hulpprogramma](../../../../../crates/eidos-nif-preview/README.md) voor opdrachten zonder `just`, bouw Rust met `cargo build --release --locked`, kopieer het hulpprogramma naar `target/release` en voer daarna `packaging/install.sh --from target/release` uit.
 
 ## Daarna: Steam ernaar laten wijzen
 

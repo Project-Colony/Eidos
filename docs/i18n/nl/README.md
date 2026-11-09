@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=aba00e8b05529cc86b31f767796f90e336b73aac -->
+<!-- eidos-i18n: source=README.md sha=bf2a3d995d27b69444b8e0497adb217856e87ce8 -->
 
 <div align="center">
 
@@ -209,7 +209,7 @@ just build
 just install
 ```
 
-Vereist Rust 1.99 of nieuwer (de `rust-version` die de CI controleert; CI en
+Vereist Rust 1.92 of nieuwer (de `rust-version` die de CI controleert; CI en
 releases bouwen met 1.99.1), plus `just`, CMake 3.20+ en een C++17-compiler voor
 het hulpprogramma voor NIF-voorvertoningen. Een Arch-pakket wordt gebouwd vanuit
 `packaging/PKGBUILD`. Vereisten en de opdrachten zonder `just`:

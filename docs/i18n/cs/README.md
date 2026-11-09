@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=aba00e8b05529cc86b31f767796f90e336b73aac -->
+<!-- eidos-i18n: source=README.md sha=bf2a3d995d27b69444b8e0497adb217856e87ce8 -->
 
 <div align="center">
 
@@ -204,7 +204,7 @@ just build
 just install
 ```
 
-Vyžaduje Rust 1.99 nebo novější (`rust-version`, které kontroluje CI; CI a
+Vyžaduje Rust 1.92 nebo novější (`rust-version`, které kontroluje CI; CI a
 vydání sestavují s 1.99.1), plus `just`, CMake 3.20+ a překladač C++17 pro
 pomocný program náhledu NIF. Balíček pro Arch se sestaví z `packaging/PKGBUILD`.
 Prerekvizity a příkazy bez `just`:

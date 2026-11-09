@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=22c85b4727116d65fe06f0c56cc9f8b16abbad38 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=e00626e360d8e5b283304045968cc7a6bd6af061 -->
 
 # Instalacja Eidos
 
@@ -77,7 +77,7 @@ just build
 just install
 ```
 
-Budowanie ze źródeł wymaga Rusta 1.99 lub nowszego, `just`, CMake 3.20+, kompilatora C++17 oraz Python 3 do testów natywnego programu pomocniczego. Polecenia bez `just` znajdziesz w [instrukcji natywnego programu pomocniczego](../../../../../crates/eidos-nif-preview/README.md). Zbuduj Rust poleceniem `cargo build --release --locked`, skopiuj program pomocniczy do `target/release`, a następnie uruchom `packaging/install.sh --from target/release`.
+Budowanie ze źródeł wymaga Rusta 1.92 lub nowszego, `just`, CMake 3.20+, kompilatora C++17 oraz Python 3 do testów natywnego programu pomocniczego. Polecenia bez `just` znajdziesz w [instrukcji natywnego programu pomocniczego](../../../../../crates/eidos-nif-preview/README.md). Zbuduj Rust poleceniem `cargo build --release --locked`, skopiuj program pomocniczy do `target/release`, a następnie uruchom `packaging/install.sh --from target/release`.
 
 ## Następnie: wskazać go Steamowi
 

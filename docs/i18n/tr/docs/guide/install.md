@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=22c85b4727116d65fe06f0c56cc9f8b16abbad38 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=e00626e360d8e5b283304045968cc7a6bd6af061 -->
 
 # Eidos kurulumu
 
@@ -72,7 +72,7 @@ just build
 just install
 ```
 
-Kaynaktan derleme için Rust 1.99 ya da daha yenisi, `just`, CMake 3.20+, bir C++17 derleyicisi ve yerel yardımcının testleri için Python 3 gerekir. `just` olmadan kullanılacak komutlar için [yerel yardımcı yönergelerine](../../../../../crates/eidos-nif-preview/README.md) bakın; Rust'ı `cargo build --release --locked` ile derleyin, yardımcıyı `target/release` içine kopyalayın ve ardından `packaging/install.sh --from target/release` çalıştırın.
+Kaynaktan derleme için Rust 1.92 ya da daha yenisi, `just`, CMake 3.20+, bir C++17 derleyicisi ve yerel yardımcının testleri için Python 3 gerekir. `just` olmadan kullanılacak komutlar için [yerel yardımcı yönergelerine](../../../../../crates/eidos-nif-preview/README.md) bakın; Rust'ı `cargo build --release --locked` ile derleyin, yardımcıyı `target/release` içine kopyalayın ve ardından `packaging/install.sh --from target/release` çalıştırın.
 
 ## Sonra: Steam'i ona yöneltin
 

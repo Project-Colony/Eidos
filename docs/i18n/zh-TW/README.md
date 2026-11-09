@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=aba00e8b05529cc86b31f767796f90e336b73aac -->
+<!-- eidos-i18n: source=README.md sha=bf2a3d995d27b69444b8e0497adb217856e87ce8 -->
 
 <div align="center">
 
@@ -172,7 +172,7 @@ just build
 just install
 ```
 
-需要 Rust 1.99 或更新版本(CI 檢查的 `rust-version`;CI 與發行版以 1.99.1 建置),
+需要 Rust 1.92 或更新版本(CI 檢查的 `rust-version`;CI 與發行版以 1.99.1 建置),
 另加 `just`、CMake 3.20 或更新版本,以及供 NIF 預覽輔助程式使用的 C++17 編譯器。
 Arch 套件可從 `packaging/PKGBUILD` 建置。前置需求以及不用 `just` 的命令:
 [docs/guide/install.md](docs/guide/install.md)。

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=aba00e8b05529cc86b31f767796f90e336b73aac -->
+<!-- eidos-i18n: source=README.md sha=bf2a3d995d27b69444b8e0497adb217856e87ce8 -->
 
 <div align="center">
 
@@ -171,7 +171,7 @@ just build
 just install
 ```
 
-需要 Rust 1.99 或更新版本(即 CI 检查的 `rust-version`;CI 和发行版用 1.99.1 构建),
+需要 Rust 1.92 或更新版本(即 CI 检查的 `rust-version`;CI 和发行版用 1.99.1 构建),
 外加 `just`、CMake 3.20 或更高版本,以及用于 NIF 预览辅助程序的 C++17 编译器。Arch
 软件包由 `packaging/PKGBUILD` 构建。前置条件以及不用 `just` 的命令:
 [docs/guide/install.zh-CN.md](docs/guide/install.md)。

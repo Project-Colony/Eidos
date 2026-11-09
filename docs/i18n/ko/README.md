@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=aba00e8b05529cc86b31f767796f90e336b73aac -->
+<!-- eidos-i18n: source=README.md sha=bf2a3d995d27b69444b8e0497adb217856e87ce8 -->
 
 <div align="center">
 
@@ -191,8 +191,8 @@ just build
 just install
 ```
 
-Rust 1.99 이상이 필요하고(CI가 확인하는 `rust-version`입니다. CI와 릴리스는
-1.99.1으로 빌드합니다), NIF 미리 보기 도우미를 위해 `just`, CMake 3.20 이상,
+Rust 1.92 이상이 필요하고(CI가 확인하는 `rust-version`입니다. CI와 릴리스는
+1.99.1로 빌드합니다), NIF 미리 보기 도우미를 위해 `just`, CMake 3.20 이상,
 C++17 컴파일러도 필요합니다. Arch 패키지는 `packaging/PKGBUILD`에서
 빌드됩니다. 사전 요구 사항과 `just` 없이 실행하는 명령:
 [docs/guide/install.md](docs/guide/install.md).
