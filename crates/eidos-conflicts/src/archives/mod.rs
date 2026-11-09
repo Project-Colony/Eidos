@@ -165,6 +165,27 @@ fn path(bytes: &[u8]) -> Result<String> {
 pub fn read_archive_members(path: &Path) -> Result<Vec<String>> {
     read_members(File::open(path)?)
 }
+/// Members of a general-type BA2 that hold `.wav` or `.xwm` audio stored
+/// zlib-compressed. Fallout 4 reads that audio uncompressed, and a compressed
+/// entry can crash it. Texture BA2s, BSAs and other BA2 variants give an empty list.
+pub fn compressed_audio_members(path: &Path) -> Result<Vec<String>> {
+    let mut file = File::open(path)?;
+    let mut head = [0; 12];
+    if file.read_exact(&mut head).is_err() || &head[..4] != b"BTDX" || &head[8..] != b"GNRL" {
+        return Ok(Vec::new());
+    }
+    let (d, _) = parse_directory(file, None, true)?;
+    Ok(d.every
+        .into_iter()
+        .flatten()
+        .filter(|(name, payload)| {
+            let name = name.to_ascii_lowercase();
+            matches!(payload, Payload::General(s) if s.codec == Codec::Zlib)
+                && (name.ends_with(".wav") || name.ends_with(".xwm"))
+        })
+        .map(|(name, _)| name)
+        .collect())
+}
 fn read_members<R: Read + Seek>(reader: R) -> Result<Vec<String>> {
     Ok(parse_directory(reader, None, false)?.1)
 }

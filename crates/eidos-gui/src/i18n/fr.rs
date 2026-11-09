@@ -939,6 +939,8 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("diag_native_check", "{severity} : vérification des plugins natifs [{code}]"),
     ("diag_fontconfig_missing", "fontconfig.txt cite une bibliothèque de polices absente"),
     ("diag_fontconfig_missing_detail", "Absent : {fonts}. Le fontconfig.txt retenu vient de {mod}. Le texte des menus peut s'afficher en carrés tant que le fichier n'est pas installé ou que la ligne n'est pas retirée."),
+    ("diag_ba2_audio", "Une archive Fallout 4 stocke du son compressé"),
+    ("diag_ba2_audio_detail", "{archive} fichier(s) audio, venant de {mod}. Fallout 4 peut planter en jouant un son compressé dans une BA2. Refaites l'archive avec le son non compressé."),
     ("diag_enb_cs", "ENB et Community Shaders sont tous deux actifs"),
     ("diag_enb_cs_detail", "Ils peuvent fonctionner ensemble, mais si l'image semble fausse, désactivez l'un d'eux dans son INI."),
     ("diag_incomplete_install", "Installation incomplète : {name}"),

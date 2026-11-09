@@ -211,6 +211,36 @@ pub fn scan_fontconfig(
     }]
 }
 
+/// Warn about mod BA2 archives that store `.wav` or `.xwm` audio compressed
+/// (Fallout 4 can crash on it). The installed game's own archives are not read.
+pub fn scan_compressed_audio(
+    game: &eidos_gamedef::GameDef,
+    mods: &[(String, PathBuf)],
+    overwrite: &Path,
+) -> Vec<PreflightDiagnostic> {
+    if game.id != "fallout4" {
+        return Vec::new();
+    }
+    let data = eidos_core::LayerStack::new_unindexed(
+        mods.iter().map(|(_, p)| p.clone()).collect(),
+        overwrite.to_path_buf(),
+    );
+    data.list_dir("")
+        .into_iter()
+        .filter(|(name, _)| name.to_ascii_lowercase().ends_with(".ba2"))
+        .filter_map(|(name, path)| {
+            let bad = eidos_conflicts::archives::compressed_audio_members(&path).ok()?;
+            (!bad.is_empty()).then(|| PreflightDiagnostic {
+                code: "ba2_compressed_audio",
+                severity: DiagnosticSeverity::Warning,
+                origin_mod: layer_origin(&path, mods, overwrite),
+                path,
+                detail: format!("{name}: {}", bad.len()),
+            })
+        })
+        .collect()
+}
+
 /// Names in `fontlib "X.swf"` lines. Not anchored to the end of the line, so a
 /// CRLF file parses; `#` starts a comment.
 fn fontlibs(text: &str) -> Vec<String> {
@@ -1045,5 +1075,41 @@ mod tests {
     fn fontconfig_accepts_loose_and_archived_fonts_and_crlf() {
         let text = "# comment\r\nfontlib \"Loose.swf\"\r\nFONTLIB \"fonts_en.swf\"\r\n";
         assert!(font_scan(text, &["loose.swf"], Some("Interface/fonts_en.swf")).is_empty());
+    }
+
+    #[test]
+    fn compressed_audio_warns_for_a_packed_wav_in_a_fallout4_ba2() {
+        let root = std::env::temp_dir().join(format!("eidos-ba2-audio-{}", std::process::id()));
+        let (m, ow) = (root.join("mod"), root.join("ow"));
+        std::fs::create_dir_all(&m).unwrap();
+        std::fs::create_dir_all(&ow).unwrap();
+        let name = b"sound/a.wav";
+        let mut b = vec![0u8; 24 + 36 + 1 + 2 + name.len()];
+        b[..4].copy_from_slice(b"BTDX");
+        b[4..8].copy_from_slice(&1u32.to_le_bytes());
+        b[8..12].copy_from_slice(b"GNRL");
+        b[12..16].copy_from_slice(&1u32.to_le_bytes());
+        b[16..24].copy_from_slice(&61u64.to_le_bytes());
+        b[40..48].copy_from_slice(&60u64.to_le_bytes());
+        b[48..52].copy_from_slice(&1u32.to_le_bytes());
+        b[52..56].copy_from_slice(&1u32.to_le_bytes());
+        b[61..63].copy_from_slice(&(name.len() as u16).to_le_bytes());
+        b[63..].copy_from_slice(name);
+        std::fs::write(m.join("Voice - Main.ba2"), b).unwrap();
+        let game = |id| {
+            eidos_gamedef::builtin()
+                .iter()
+                .find(|g| g.id == id)
+                .unwrap()
+        };
+        let mods = [("Voices".to_string(), m)];
+        let found = scan_compressed_audio(game("fallout4"), &mods, &ow);
+        let other = scan_compressed_audio(game("skyrimse"), &mods, &ow);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].code, "ba2_compressed_audio");
+        assert_eq!(found[0].detail, "Voice - Main.ba2: 1");
+        assert_eq!(found[0].origin_mod, "Voices");
+        assert!(other.is_empty());
     }
 }

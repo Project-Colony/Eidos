@@ -361,6 +361,21 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 actions: Vec::new(),
             });
         }
+        for d in eidos_gamefeatures::preflight::scan_compressed_audio(
+            game.def,
+            &mods,
+            &inst.overwrite_dir(),
+        ) {
+            out.push(Diagnostic {
+                level: DiagLevel::Advice,
+                title: t("diag_ba2_audio").to_string(),
+                detail: tf(
+                    "diag_ba2_audio_detail",
+                    &[("archive", &d.detail), ("mod", &d.origin_mod)],
+                ),
+                actions: Vec::new(),
+            });
+        }
         let cs_roots: Vec<PathBuf> = inst
             .modlist()
             .into_iter()
