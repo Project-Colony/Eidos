@@ -168,6 +168,7 @@ pub fn extract_archive(source: &Path, destination: &Path, max_bytes: u64) -> Res
     if archive_identity(source)? != identity {
         return Err(corrupt("archive path changed while extracting"));
     }
+    // NOREPLACE fails with EINVAL on NFS and on FUSE mounts such as ntfs-3g, as in publish_stage.
     rustix::fs::renameat_with(
         rustix::fs::CWD,
         &root,
