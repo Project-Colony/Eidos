@@ -1950,12 +1950,12 @@ pub(crate) fn plugin_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> 
         ))
         .push(send_to_plugin_priority(app, i))
         .push(menu_sep())
-        .push(menu_item(
-            t("plugin_menu_activate_all"),
+        .push(menu_item_owned(
+            set_all_plugins_label(app, true),
             Message::PluginsSetAll(true),
         ))
-        .push(menu_item(
-            t("plugin_menu_deactivate_all"),
+        .push(menu_item_owned(
+            set_all_plugins_label(app, false),
             Message::PluginsSetAll(false),
         ));
 
@@ -1964,6 +1964,25 @@ pub(crate) fn plugin_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> 
     // - so right-clicking a mod and then a plugin visibly changed the shape of
     // the popup. It also inherits menu_frame's shadow and its press guard.
     menu_frame(col.into())
+}
+
+/// "Activate all", or under a filter "Activate all shown (n)": the action then
+/// touches only the drawn rows, and the label must not read as everything.
+pub(crate) fn set_all_plugins_label(app: &App, on: bool) -> String {
+    if app.plugin_search.trim().is_empty() {
+        let key = if on {
+            "plugin_menu_activate_all"
+        } else {
+            "plugin_menu_deactivate_all"
+        };
+        return t(key).to_string();
+    }
+    let key = if on {
+        "plugin_menu_activate_shown"
+    } else {
+        "plugin_menu_deactivate_shown"
+    };
+    tf(key, &[("n", &drawn_plugin_rows(app).len())])
 }
 
 /// The profile names and the active one, memoised against the view generation.

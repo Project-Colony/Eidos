@@ -580,12 +580,17 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             // By NAME, like the batch toggle: enabling changes the tier a plugin
             // sorts into, so the rows move under any index collected first.
+            // Under a filter only the drawn rows, like Ctrl+A and Space.
+            let shown: HashSet<usize> = drawn_plugin_rows(app).into_iter().collect();
             let names: Vec<String> = {
                 let Some(list) = app.plugins.as_ref() else {
                     return Task::none();
                 };
                 list.plugins
                     .iter()
+                    .enumerate()
+                    .filter(|(i, _)| shown.contains(i))
+                    .map(|(_, p)| p)
                     .filter(|p| {
                         // The game's own masters and an .esl on a no-light
                         // engine cannot be toggled at all; writing them would be

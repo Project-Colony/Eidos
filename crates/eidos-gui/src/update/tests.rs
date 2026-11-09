@@ -4994,6 +4994,32 @@ fn activate_all_leaves_the_engines_own_plugins_alone() {
 }
 
 #[test]
+fn deactivate_all_under_a_filter_touches_only_the_shown_plugins() {
+    let mut app = app_for_game("skyrimse");
+    let mut list = PluginList::default();
+    for n in ["Armour.esp", "Armour Patch.esp", "Weapons Patch.esp"] {
+        list.plugins.push(plugin_row(n, "Some Mod"));
+    }
+    app.plugins = Some(list);
+    app.plugin_search = "  patch ".into();
+    assert_eq!(
+        crate::view::set_all_plugins_label(&app, false),
+        "Deactivate all shown (2)"
+    );
+    let _ = update_inner(&mut app, Message::PluginsSetAll(false));
+    let on: Vec<&str> = app
+        .plugins
+        .as_ref()
+        .unwrap()
+        .plugins
+        .iter()
+        .filter(|p| p.enabled)
+        .map(|p| p.name.as_str())
+        .collect();
+    assert_eq!(on, ["Armour.esp"], "the hidden row keeps its state");
+}
+
+#[test]
 fn a_second_identify_cannot_start_while_one_is_running() {
     // Two whole-file hashes racing to write one sidecar.
     let mut app = nav_app(&[]);

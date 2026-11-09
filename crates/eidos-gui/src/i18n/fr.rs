@@ -170,6 +170,8 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("plugin_menu_send_bottom", "Envoyer en bas"),
     ("plugin_menu_activate_all", "Tout activer"),
     ("plugin_menu_deactivate_all", "Tout désactiver"),
+    ("plugin_menu_activate_shown", "Activer les plugins affichés ({n})"),
+    ("plugin_menu_deactivate_shown", "Désactiver les plugins affichés ({n})"),
     ("view_row_number", "Numéro de ligne (1 = la première)"),
     ("view_send_to_priority", "Envoyer à la priorité..."),
     ("view_filters_n", "Filtres ({n})"),
