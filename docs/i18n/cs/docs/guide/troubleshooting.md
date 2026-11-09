@@ -171,7 +171,7 @@ na značku a 2236 úplných opětovných čtení adresáře za osm sekund a 1957
 Eidos sjednocoval velikost písmen v `resolve_read` od začátku. Celá ta cena byla
 za to, že to nikdy neřekl. `lookup` teď odpovídá `.ciopfs`; `readdir` jej stále
 nevypisuje. `ioctl` navíc na adresářích odpovídá na `FS_IOC_GETFLAGS` příznakem
-casefold, na který se současné Wine ptá dřív, než začne hledat značku.
+casefold, na který se současný Wine ptá dřív, než začne hledat značku.
 
 Fatálním, ne jen pomalým, to udělaly dvě věci. Cena roste s velikostí adresáře,
 takže instalace obsahu Anniversary (`Data` ze 37 souborů na 177) to překlopila.
