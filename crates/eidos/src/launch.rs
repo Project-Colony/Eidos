@@ -797,8 +797,8 @@ pub(crate) fn run_env(
     // accented, Cyrillic or CJK character. Steam's pressure-vessel can strip the
     // locale on the way in, so this covers both `eidos play` and `eidos tool`. An
     // existing UTF-8 locale is left untouched.
-    // A game language with a non-1252 code page gets a matching LC_CTYPE when the
-    // user set no locale of their own; otherwise the C.UTF-8 fallback applies.
+    // A game language with a non-1252 code page gets a matching LC_CTYPE unless
+    // the user set LC_ALL or LC_CTYPE; otherwise the C.UTF-8 fallback applies.
     match game_language(game, inst)
         .and_then(|l| eidos_launch::game_language_locale_env_from_process(&l))
     {

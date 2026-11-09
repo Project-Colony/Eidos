@@ -780,16 +780,19 @@ pub fn utf8_locale_env_from_process() -> Vec<(String, String)> {
 /// UTF-8 locale candidates for a Bethesda `sLanguage` value whose ANSI code page
 /// is not 1252 (Russian 1251, Polish/Czech/Hungarian 1250, Turkish 1254,
 /// Japanese 932, Chinese 936/950, Korean 949). Other languages get none.
+/// Skyrim writes long names; Fallout 4 and Starfield write short codes, where
+/// Fallout 4's `cn` is its Traditional Chinese and Starfield's `zhhans` is
+/// Simplified.
 fn language_locales(language: &str) -> &'static [&'static str] {
     match language.trim().to_ascii_lowercase().as_str() {
-        "russian" => &["ru_RU.UTF-8"],
-        "polish" => &["pl_PL.UTF-8"],
+        "russian" | "ru" => &["ru_RU.UTF-8"],
+        "polish" | "pl" => &["pl_PL.UTF-8"],
         "czech" => &["cs_CZ.UTF-8"],
         "hungarian" => &["hu_HU.UTF-8"],
         "turkish" => &["tr_TR.UTF-8"],
-        "japanese" => &["ja_JP.UTF-8"],
-        "chinese" | "chinesetraditional" | "chinese_traditional" => &["zh_TW.UTF-8"],
-        "chinesesimplified" | "chinese_simplified" => &["zh_CN.UTF-8"],
+        "japanese" | "ja" => &["ja_JP.UTF-8"],
+        "chinese" | "chinesetraditional" | "chinese_traditional" | "cn" => &["zh_TW.UTF-8"],
+        "chinesesimplified" | "chinese_simplified" | "zhhans" => &["zh_CN.UTF-8"],
         "korean" => &["ko_KR.UTF-8"],
         _ => &[],
     }
@@ -811,17 +814,17 @@ fn locale_installed(name: &str) -> bool {
 }
 
 /// `LC_CTYPE` for a game language whose code page is not 1252, so Wine picks the
-/// matching Unix codepage. Applies only when the user set none of `LC_ALL`,
-/// `LC_CTYPE` and `LANG`; `installed` says which locales the host has. `None`
-/// means change nothing (the caller keeps [`utf8_locale_env`]).
+/// matching ANSI code page. A desktop `LANG` in another language does not stop
+/// it, since that is the case it exists for; an explicit `LC_ALL` or `LC_CTYPE`
+/// does. `installed` says which locales the host has. `None` means change
+/// nothing (the caller keeps [`utf8_locale_env`]).
 pub fn game_language_locale_env(
     lc_all: Option<&str>,
     lc_ctype: Option<&str>,
-    lang: Option<&str>,
     language: &str,
     installed: impl Fn(&str) -> bool,
 ) -> Option<Vec<(String, String)>> {
-    if [lc_all, lc_ctype, lang]
+    if [lc_all, lc_ctype]
         .into_iter()
         .flatten()
         .any(|v| !v.is_empty())
@@ -839,7 +842,6 @@ pub fn game_language_locale_env_from_process(language: &str) -> Option<Vec<(Stri
     game_language_locale_env(
         get("LC_ALL").as_deref(),
         get("LC_CTYPE").as_deref(),
-        get("LANG").as_deref(),
         language,
         locale_installed,
     )
@@ -948,26 +950,42 @@ mod tests {
     }
 
     #[test]
-    fn game_language_picks_a_codepage_locale_only_for_unset_env() {
+    fn game_language_picks_a_codepage_locale_unless_lc_all_or_lc_ctype_is_set() {
         let all = |_: &str| true;
-        let ru = game_language_locale_env(None, None, None, "RUSSIAN", all);
+        let ru = game_language_locale_env(None, None, "RUSSIAN", all);
         assert_eq!(
             ru,
             Some(vec![("LC_CTYPE".to_string(), "ru_RU.UTF-8".to_string())])
         );
         assert_eq!(
-            game_language_locale_env(Some(""), None, None, "japanese", all).unwrap()[0].1,
+            game_language_locale_env(Some(""), None, "japanese", all).unwrap()[0].1,
             "ja_JP.UTF-8"
         );
         assert_eq!(
-            game_language_locale_env(None, None, None, "ChineseSimplified", all).unwrap()[0].1,
+            game_language_locale_env(None, None, "ChineseSimplified", all).unwrap()[0].1,
             "zh_CN.UTF-8"
         );
-        // Code page 1252 languages, unknown ones and a user locale change nothing.
-        assert!(game_language_locale_env(None, None, None, "FRENCH", all).is_none());
-        assert!(game_language_locale_env(None, None, Some("C"), "RUSSIAN", all).is_none());
+        // Fallout 4 and Starfield short codes.
+        for (code, want) in [
+            ("ru", "ru_RU.UTF-8"),
+            ("pl", "pl_PL.UTF-8"),
+            ("ja", "ja_JP.UTF-8"),
+            ("cn", "zh_TW.UTF-8"),
+            ("zhhans", "zh_CN.UTF-8"),
+        ] {
+            assert_eq!(
+                game_language_locale_env(None, None, code, all).unwrap()[0].1,
+                want
+            );
+        }
+        // Code page 1252 languages and unknown ones change nothing.
+        assert!(game_language_locale_env(None, None, "FRENCH", all).is_none());
+        assert!(game_language_locale_env(None, None, "fr", all).is_none());
+        // An explicit LC_ALL or LC_CTYPE is the user's choice.
+        assert!(game_language_locale_env(Some("C"), None, "RUSSIAN", all).is_none());
+        assert!(game_language_locale_env(None, Some("fr_FR.UTF-8"), "RUSSIAN", all).is_none());
         // No matching locale on the host: change nothing.
-        assert!(game_language_locale_env(None, None, None, "RUSSIAN", |_| false).is_none());
+        assert!(game_language_locale_env(None, None, "RUSSIAN", |_| false).is_none());
         // The real newlocale check accepts C.UTF-8 and rejects nonsense.
         assert!(!locale_installed("xx_XX.nonsense"));
     }
