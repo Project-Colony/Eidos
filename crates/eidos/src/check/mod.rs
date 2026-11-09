@@ -2,6 +2,7 @@
 //! renders a finding through `diag_<code>` / `diag_<code>_detail` strings; the
 //! CLI prints the code and its args.
 
+pub mod crash;
 pub mod extender;
 pub mod graphics;
 pub mod launch_option;
@@ -55,6 +56,8 @@ pub const CODES: &[&str] = &[
     "nvapi_missing",
     "fullscreen_blocks_framegen",
     "enb_linux_version",
+    "game_crashed",
+    "game_crashed_unattributed",
 ];
 
 /// The instance's enabled mods, highest priority first.
@@ -116,5 +119,6 @@ pub fn host_findings(
             home,
         )));
     }
+    out.extend(crash::crash_findings(game, inst, mods));
     out
 }

@@ -605,21 +605,25 @@ pub(crate) fn run_through_view(
         }
     }
     let game_run = opts.tool_name.is_none();
+    let started = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
     if game_run {
         let build = crate::check::extender::current_build(
             game,
             &crate::check::active_mods(inst),
             &inst.overwrite_dir(),
         );
-        let started = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs());
         if let Err(e) = inst.record_launch_start(&build, started) {
             eidos_log::warn!("eidos: could not record the game build: {e}");
         }
     }
     let result = launch(spec);
-    if game_run && matches!(&result, Ok(s) if s.success()) {
+    // A crash under Proton can still exit 0; a crash log written since the start says otherwise.
+    if game_run
+        && matches!(&result, Ok(s) if s.success())
+        && !crate::check::crash::crashed_since(game, &inst.overwrite_dir(), started)
+    {
         if let Err(e) = inst.record_good_launch() {
             eidos_log::warn!("eidos: could not record the clean launch: {e}");
         }

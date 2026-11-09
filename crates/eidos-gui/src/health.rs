@@ -214,11 +214,27 @@ pub(crate) fn finding_card(f: &eidos::check::Finding) -> Diagnostic {
     }
 }
 
-/// The findings Eidos can fix itself get a Fix button.
+/// The findings Eidos can fix itself get a Fix button; a crash card opens or
+/// copies its log.
 pub(crate) fn finding_actions(f: &eidos::check::Finding) -> Vec<(String, Message)> {
     match f.code {
         "fullscreen_blocks_framegen" | "enb_linux_version" => {
             vec![(t("diag_action_fix").to_string(), Message::HealthFix(f.code))]
+        }
+        "game_crashed" | "game_crashed_unattributed" => {
+            let Some(log) = f.arg("log").map(PathBuf::from) else {
+                return Vec::new();
+            };
+            vec![
+                (
+                    t("diag_action_open_log").to_string(),
+                    Message::OpenFile(log.clone()),
+                ),
+                (
+                    t("diag_action_copy_log").to_string(),
+                    Message::CopyCrashLog(log),
+                ),
+            ]
         }
         _ => Vec::new(),
     }
@@ -301,6 +317,24 @@ mod tests {
             for key in [format!("diag_{code}"), format!("diag_{code}_detail")] {
                 assert_ne!(t(&key), key, "missing {key} in en.rs");
             }
+        }
+    }
+
+    #[test]
+    fn crash_cards_offer_open_and_copy() {
+        use eidos::check::{Finding, Level};
+        use std::path::Path;
+        for code in ["game_crashed", "game_crashed_unattributed"] {
+            let f = Finding {
+                code,
+                level: Level::Problem,
+                args: vec![("log", "/tmp/crash-x.log".into())],
+            };
+            let a = finding_actions(&f);
+            assert!(matches!(&a[0].1, Message::OpenFile(p) if p == Path::new("/tmp/crash-x.log")));
+            assert!(
+                matches!(&a[1].1, Message::CopyCrashLog(p) if p == Path::new("/tmp/crash-x.log"))
+            );
         }
     }
 

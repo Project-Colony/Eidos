@@ -155,6 +155,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.status = Some(t("status_report_copied").to_string());
             return iced::clipboard::write(text);
         }
+        Message::CopyCrashLog(path) => match eidos::check::crash::redacted_log(&path) {
+            Some(text) => {
+                app.status = Some(t("status_crash_log_copied").to_string());
+                return iced::clipboard::write(text);
+            }
+            None => app.status = Some(tf("status_does_not_exist", &[("path", &path.display())])),
+        },
         Message::HealthFix(code) => {
             if let Some(r) = &app.running {
                 // A capture at the end of the run would overwrite a profile INI edit.

@@ -5752,6 +5752,50 @@ fn a_run_eidos_refused_says_why_in_the_status_bar() {
 }
 
 #[test]
+fn a_crashed_game_names_its_log_unless_eidos_refused_the_launch() {
+    let (mut app, root) = list_app(&["Keep"]);
+    let compat = root.join("compatdata");
+    let skse =
+        compat.join("pfx/drive_c/users/steamuser/Documents/My Games/Skyrim Special Edition/SKSE");
+    fs::create_dir_all(&skse).unwrap();
+    let log = skse.join("crash-2026-11-09-21-30-00.log");
+    fs::write(&log, "Unhandled exception \"EXCEPTION_ACCESS_VIOLATION\"\n").unwrap();
+    app.games[0].compatdata = Some(compat);
+    let started = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        - 60;
+    app.created
+        .as_ref()
+        .unwrap()
+        .record_launch_start(&Default::default(), started)
+        .unwrap();
+
+    for (script, crashed) in [
+        ("exit 0", true),
+        (
+            "echo 'WARN  eidos: refusing to launch: in use' >&2; exit 1",
+            false,
+        ),
+    ] {
+        let mut cmd = std::process::Command::new("/bin/sh");
+        cmd.arg("-c").arg(script);
+        start_run(&mut app, "Skyrim".into(), cmd);
+        app.running.as_mut().unwrap().game = true;
+        finish_tracked_run(&mut app);
+        let status = app.status.clone().unwrap_or_default();
+        assert_eq!(
+            status.contains(&log.display().to_string()),
+            crashed,
+            "{status}"
+        );
+        assert_eq!(status.contains("refusing to launch"), !crashed, "{status}");
+    }
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn the_refusal_line_is_eidos_s_own_and_only_its_first_line() {
     let log = "# eidos: running Skyrim\n\
                ERROR: ld.so: object '/s/gameoverlayrenderer.so' from LD_PRELOAD cannot be preloaded\n\
