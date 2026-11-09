@@ -15,10 +15,24 @@ use crate::*;
 /// bug is the suspect.
 pub(crate) const TTL_SECS: u64 = 3600;
 
-/// Lifetime of a NEGATIVE dentry - see [`Eidos::reply_negative`]. Much shorter
-/// than the positive TTL because the kernel matches negative entries on exact
-/// name bytes while Eidos resolves case-insensitively.
+/// Lifetime of a NEGATIVE dentry whose spelling could not be recorded for
+/// invalidation - see [`Eidos::reply_negative`]. The kernel matches negative
+/// entries on exact name bytes while Eidos resolves case-insensitively.
 pub(crate) const NEG_TTL_SECS: u64 = 60;
+
+/// Lifetime of a negative dentry whose spelling is recorded in `negatives`, so a
+/// differently-cased create can invalidate it. Only the unrecorded misses (cap
+/// hit) need the short [`NEG_TTL_SECS`].
+pub(crate) const NEG_TTL_RECORDED_SECS: u64 = 3600;
+
+pub(crate) static NEG_TTL_RECORDED: std::sync::LazyLock<Duration> =
+    std::sync::LazyLock::new(|| {
+        Duration::from_secs(if Cache::Neg.is_off() {
+            0
+        } else {
+            NEG_TTL_RECORDED_SECS
+        })
+    });
 
 pub(crate) static TTL: std::sync::LazyLock<Duration> = std::sync::LazyLock::new(|| {
     Duration::from_secs(if Cache::Attr.is_off() { 0 } else { TTL_SECS })

@@ -34,7 +34,10 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::UNIX_EPOCH;
+use std::time::{Duration, Instant, UNIX_EPOCH};
+
+/// One parent's recorded negatives: folded name, then (exact spelling, recorded at).
+type NegativeDir = HashMap<String, Vec<(String, Instant)>>;
 
 use eidos_core::LayerStack;
 use fuser::{BackgroundSession, BackingId, FileAttr, FileType, Generation, INodeNo, ReplyEntry};
@@ -162,14 +165,16 @@ pub struct Eidos {
     dir_cache: Mutex<DirCache>,
     next_fh: AtomicU64,
     stats: Stats,
-    /// Negative dentries handed to the kernel, as `(parent_ino, exact name)`.
+    /// Negative dentries handed to the kernel: parent inode, then ASCII-folded
+    /// name, then the exact spellings denied with the time each was recorded.
     ///
     /// The kernel keys its dentry cache on the EXACT name bytes while Eidos
     /// resolves case-insensitively, so a negative cached for `Foo.esp` would
     /// survive a later create of `foo.esp` and the game would be told a file it
     /// can plainly see does not exist. We remember what we denied so that a
-    /// create can invalidate precisely those spellings.
-    negatives: Mutex<HashMap<u64, Vec<String>>>,
+    /// create can invalidate precisely those spellings. A record is dropped
+    /// once it is older than the kernel TTL it justified ([`NEG_TTL_RECORDED`]).
+    negatives: Mutex<HashMap<u64, NegativeDir>>,
     /// Positive dentries handed to the kernel, keyed by inode: the
     /// `(parent_ino, exact name)` spellings it now caches for that file.
     ///
@@ -356,22 +361,18 @@ impl Eidos {
     /// hundreds of `read_dir` calls for one absent file, and it is exactly the
     /// metadata storm that stalls a Bethesda game's startup for minutes.
     ///
-    /// The TTL is deliberately short. The kernel keys its negative dentries on the
-    /// exact name bytes while Eidos folds case, so a negative cached for `Foo.esp`
-    /// would survive a create of `foo.esp` through the mount until it expires.
-    /// Creation through this mount is safe regardless (the kernel re-issues a real
-    /// lookup for O_CREAT and for every LOOKUP_EXCL path), so the window only
-    /// concerns a differently-cased create, which self-heals in seconds.
+    /// A recorded miss gets an hour: a differently-cased create invalidates the
+    /// recorded spellings through the notifier. A miss the per-parent cap could
+    /// not record keeps the 60 s TTL, since nothing could invalidate it. The
+    /// kernel keys on exact name bytes while Eidos folds case, which is why the
+    /// record exists. Creation through this mount is safe regardless (the kernel
+    /// re-issues a real lookup for O_CREAT and for every LOOKUP_EXCL path).
     fn reply_negative(&self, parent: u64, name: &str, reply: ReplyEntry) {
-        // Remember the exact spelling we denied, capped so a probe storm cannot
-        // grow this without bound (the kernel forgets on its own TTL anyway).
-        {
-            let mut neg = self.negatives.lock_recover();
-            let names = neg.entry(parent).or_default();
-            if names.len() < 4096 && !names.iter().any(|n| n == name) {
-                names.push(name.to_string());
-            }
-        }
+        let ttl = if self.record_negative(parent, name) {
+            &NEG_TTL_RECORDED
+        } else {
+            &NEG_TTL
+        };
         // ino = 0 IS the negative dentry; no inode is minted or refcounted for a
         // path that does not exist.
         let blank = FileAttr {
@@ -391,7 +392,35 @@ impl Eidos {
             blksize: 4096,
             flags: 0,
         };
-        reply.entry(&NEG_TTL, &blank, Generation(0));
+        reply.entry(ttl, &blank, Generation(0));
+    }
+
+    /// Remember the exact spelling we denied so a create can invalidate it.
+    /// Returns false when the per-parent cap stopped the record: such a miss
+    /// gets the short TTL, because nothing could invalidate it.
+    fn record_negative(&self, parent: u64, name: &str) -> bool {
+        let now = Instant::now();
+        let max_age = Duration::from_secs(NEG_TTL_RECORDED_SECS);
+        let mut neg = self.negatives.lock_recover();
+        let dir = neg.entry(parent).or_default();
+        // A record older than the TTL it justified no longer covers anything.
+        dir.retain(|_, v| {
+            v.retain(|(_, at)| now.duration_since(*at) < max_age);
+            !v.is_empty()
+        });
+        let key = name.to_ascii_lowercase();
+        if let Some((_, at)) = dir
+            .get_mut(&key)
+            .and_then(|v| v.iter_mut().find(|(n, _)| n == name))
+        {
+            *at = now;
+            return true;
+        }
+        if dir.values().map(Vec::len).sum::<usize>() >= 4096 {
+            return false;
+        }
+        dir.entry(key).or_default().push((name.to_string(), now));
+        true
     }
 
     /// Remember a spelling the kernel now caches for `ino`, so a later rename can
@@ -500,16 +529,22 @@ impl Eidos {
     fn invalidate_folded_negatives(&self, parent: u64, name: &str) {
         let stale: Vec<String> = {
             let mut neg = self.negatives.lock_recover();
-            let Some(names) = neg.get_mut(&parent) else {
+            let Some(dir) = neg.get_mut(&parent) else {
+                return;
+            };
+            let key = name.to_ascii_lowercase();
+            let Some(names) = dir.get_mut(&key) else {
                 return;
             };
             // Exact matches are handled by the kernel itself when it instantiates
             // the new dentry; only the OTHER spellings need a nudge.
-            let (stale, keep): (Vec<String>, Vec<String>) = names
-                .drain(..)
-                .partition(|n| n.eq_ignore_ascii_case(name) && n != name);
-            *names = keep;
-            stale
+            let (stale, keep): (Vec<_>, Vec<_>) = names.drain(..).partition(|(n, _)| n != name);
+            if keep.is_empty() {
+                dir.remove(&key);
+            } else {
+                *names = keep;
+            }
+            stale.into_iter().map(|(n, _)| n).collect()
         };
         if stale.is_empty() {
             return;
@@ -681,7 +716,13 @@ impl Eidos {
         };
         let (negative_dirs, negative_names) = {
             let n = self.negatives.lock_recover();
-            (n.len(), n.values().map(Vec::len).sum::<usize>())
+            (
+                n.len(),
+                n.values()
+                    .flat_map(|d| d.values())
+                    .map(Vec::len)
+                    .sum::<usize>(),
+            )
         };
         let (listings, children) = {
             let c = self.dir_cache.lock_recover();

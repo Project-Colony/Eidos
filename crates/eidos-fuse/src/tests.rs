@@ -631,3 +631,51 @@ fn invalidating_unread_directories_keeps_no_per_path_state() {
     cache.invalidate(Some("listed"));
     assert!(cache.entries.is_empty());
 }
+
+#[test]
+fn recorded_negative_gets_the_long_ttl_and_a_capped_one_the_short() {
+    let eidos = Eidos::new(vec![], std::env::temp_dir().join("eidos-neg-ttl"));
+    assert!(eidos.record_negative(1, "Foo.esp"));
+    assert!(
+        eidos.record_negative(1, "Foo.esp"),
+        "re-recording stays recorded"
+    );
+    assert!(*NEG_TTL_RECORDED > *NEG_TTL);
+    for i in 1..4096 {
+        assert!(eidos.record_negative(1, &format!("n{i}")));
+    }
+    assert!(
+        !eidos.record_negative(1, "one-too-many"),
+        "cap hit: short TTL"
+    );
+    assert!(eidos.record_negative(2, "x"), "the cap is per parent");
+}
+
+#[test]
+fn old_negative_records_are_dropped_on_insert() {
+    let eidos = Eidos::new(vec![], std::env::temp_dir().join("eidos-neg-age"));
+    assert!(eidos.record_negative(1, "old"));
+    let aged = Instant::now() - Duration::from_secs(NEG_TTL_RECORDED_SECS + 1);
+    eidos
+        .negatives
+        .lock_recover()
+        .get_mut(&1)
+        .unwrap()
+        .get_mut("old")
+        .unwrap()[0]
+        .1 = aged;
+    assert!(eidos.record_negative(1, "new"));
+    assert!(!eidos.negatives.lock_recover()[&1].contains_key("old"));
+}
+
+#[test]
+fn create_invalidates_every_other_spelling_of_a_recorded_negative() {
+    let eidos = Eidos::new(vec![], std::env::temp_dir().join("eidos-neg-create"));
+    for n in ["foo.esp", "FOO.ESP", "Foo.esp"] {
+        eidos.record_negative(1, n);
+    }
+    eidos.invalidate_folded_negatives(1, "Foo.esp");
+    let neg = eidos.negatives.lock_recover();
+    let left: Vec<_> = neg[&1]["foo.esp"].iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(left, ["Foo.esp"], "only the exact spelling stays");
+}
