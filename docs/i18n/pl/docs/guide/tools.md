@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=21bf9773a77eafde0226799b69158680985f3963 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=226e33d31b260039513531ac88c3bdeefae8bb0b -->
 
 # Narzędzia: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -314,6 +314,52 @@ uruchomieniu, które i tak było już budowane - `SteamAppId` i `SteamGameId`, o
 bo Proton czyta jedną, a własne biblioteki Steama drugą, i narzędzie widzące ich
 niezgodność zawodzi dziwnie, a nie wyraźnie. `eidos tool ... --print` pokazuje
 dokładnie to, co dostałoby prawdziwe uruchomienie.
+
+## Zmienne środowiskowe i narzędzia uruchamiane bez Protona
+
+Dwa klucze w `<instance>/tools.ini` nie mają jeszcze pola w oknie Executables,
+więc dopisz je ręcznie w sekcji narzędzia. Każdy wiersz `env=NAME=value` ustawia
+jedną zmienną tylko dla uruchomień tego narzędzia:
+
+```ini
+[Tool/BodySlide]
+exe=Data/CalienteTools/BodySlide/BodySlide x64.exe
+env=PROTON_LOG=1
+env=WINEDEBUG=-all
+```
+
+Eidos stosuje te wiersze po wszystkim, co ustawia sam, więc wartość podana tutaj
+zastępuje jego własną. Dotyczy to też `WINEDLLOVERRIDES`, który Eidos składa z
+bibliotek DLL dostarczanych przez twoje mody: narzędzie, które go ustawia, musi
+wymienić w nim każdą DLL, jakiej potrzebuje. Nazwa składa się z liter, cyfr i
+`_` i nie zaczyna się od cyfry. Wiersz z inną nazwą jest pomijany.
+
+`runner=native` uruchamia samo `exe`, bez Protona. Scalony widok jest montowany
+jak dla każdego narzędzia, a wiersze `arg0=`, `arg1=` są jego argumentami. Użyj
+tego dla programu linuksowego albo dla narzędzia do kopii, którą Steam nie
+zarządza (Heroic, Legendary): `exe` to Wine tej kopii, program dla Windows jest
+pierwszym argumentem, a prefiks pochodzi z `env=`.
+
+```ini
+[Tool/SSEEdit (GOG)]
+exe=/opt/wine-ge/bin/wine
+arg0=/home/me/Games/Skyrim/SSEEdit.exe
+workdir=/home/me/Games/Skyrim
+runner=native
+env=WINEPREFIX=/home/me/Games/Heroic/Prefixes/default/Skyrim
+```
+
+`exe` musi być ścieżką bezwzględną. Katalog roboczy to domyślnie folder, w
+którym leży `exe`, tutaj folder runnera, więc ustaw `workdir=`. Na scaloną
+ścieżkę przepisywane jest tylko `exe`: dla programu Windows wewnątrz moda podaj
+jego ścieżkę w folderze `Data` gry, gdzie pokazuje go scalony widok. Narzędzie
+natywne pomija kroki Protona: klucz rejestru opisany wyżej, pamięć podręczną
+shaderów Steama, puste katalogi główne .NET i usunięcie nakładki Steama z
+`LD_PRELOAD`.
+
+`eidos tool <instance> run <title> --print` pokazuje końcowe polecenie i każdą
+zmienną, którą uruchomienie ustawia ponad odziedziczonym środowiskiem, łącznie
+z tymi wierszami.
 
 ## Własne ustawienia narzędzia pozostają jego własne
 

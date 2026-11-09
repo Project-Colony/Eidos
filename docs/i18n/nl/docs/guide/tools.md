@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=21bf9773a77eafde0226799b69158680985f3963 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=226e33d31b260039513531ac88c3bdeefae8bb0b -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -319,6 +319,54 @@ omgevingsvariabelen op de draai die toch al opgebouwd werd - `SteamAppId` en
 `SteamGameId`, allebei, omdat Proton de ene leest en Steams eigen bibliotheken de
 andere, en een tool die ze ziet verschillen faalt vreemd in plaats van duidelijk.
 `eidos tool ... --print` toont precies wat de echte draai zou krijgen.
+
+## Omgevingsvariabelen en tools zonder Proton
+
+Twee sleutels in `<instance>/tools.ini` hebben nog geen veld in het
+Executables-venster, dus zet je ze met de hand in de sectie van de tool. Elke
+regel `env=NAME=value` zet één variabele die alleen geldt wanneer die tool
+draait:
+
+```ini
+[Tool/BodySlide]
+exe=Data/CalienteTools/BodySlide/BodySlide x64.exe
+env=PROTON_LOG=1
+env=WINEDEBUG=-all
+```
+
+Eidos past deze regels toe na alles wat het zelf zet, dus een waarde hier
+vervangt die van Eidos. Dat geldt ook voor de `WINEDLLOVERRIDES` die Eidos
+opbouwt uit de DLL's die je mods meeleveren: een tool die hem zet, moet er elke
+DLL in opnemen die hij nodig heeft. Een naam bestaat uit letters, cijfers en
+`_`, en begint niet met een cijfer. Een regel met een andere naam wordt
+genegeerd.
+
+`runner=native` start `exe` zelf, zonder Proton. De samengevoegde weergave wordt
+gemount zoals voor elke tool, en de regels `arg0=`, `arg1=` zijn zijn
+argumenten. Gebruik het voor een Linux-programma, of voor een tool bij een kopie
+die Steam niet beheert (Heroic, Legendary): `exe` is de Wine van die kopie, het
+Windows-programma is het eerste argument en het prefix komt uit `env=`.
+
+```ini
+[Tool/SSEEdit (GOG)]
+exe=/opt/wine-ge/bin/wine
+arg0=/home/me/Games/Skyrim/SSEEdit.exe
+workdir=/home/me/Games/Skyrim
+runner=native
+env=WINEPREFIX=/home/me/Games/Heroic/Prefixes/default/Skyrim
+```
+
+`exe` moet een absoluut pad zijn. De werkmap is standaard de map waarin `exe`
+staat, hier die van de runner, dus zet `workdir=`. Alleen `exe` wordt
+herschreven naar zijn samengevoegde pad: geef voor een Windows-programma in een
+mod het pad onder de map `Data` van het spel, waar de samengevoegde weergave het
+toont. Een native tool slaat de Proton-stappen over: de registersleutel
+hierboven, de shadercache van Steam, de lege .NET-roots en het weghalen van de
+Steam-overlay uit `LD_PRELOAD`.
+
+`eidos tool <instance> run <title> --print` toont het uiteindelijke commando en
+elke variabele die de draai boven op de geërfde omgeving zet, deze regels
+inbegrepen.
 
 ## De eigen instellingen van een tool blijven de zijne
 

@@ -48,6 +48,28 @@ pub struct Tool {
     pub hidden: bool,
     /// Sort this entry to the top of the picker.
     pub pinned: bool,
+    /// Variables for this tool's runs only, from `env=NAME=value` lines in file
+    /// order. Applied after everything Eidos sets, so they win.
+    pub env: Vec<(String, String)>,
+    /// How the executable is started.
+    pub runner: Runner,
+}
+
+/// How a tool's executable is started.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Runner {
+    /// Through the game's Proton, in its Steam prefix.
+    #[default]
+    Proton,
+    /// As it is, with no Proton (`runner=native`): a Linux program, or the Wine
+    /// of a copy Steam does not manage, pointed at its prefix through `env=`.
+    Native,
+}
+
+/// A variable name a shell could export: `[A-Za-z_][A-Za-z0-9_]*`.
+fn is_env_name(name: &str) -> bool {
+    name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// Whether a string names a mod FOLDER and nothing else: no separators, no
@@ -122,6 +144,14 @@ pub fn read_tools(path: &Path) -> Vec<Tool> {
             "app_id" => tool.app_id = v.trim().parse::<u32>().ok().filter(|&n| n != 0),
             "hidden" => tool.hidden = matches!(v.trim(), "true" | "1" | "yes" | "on"),
             "pinned" => tool.pinned = matches!(v.trim(), "true" | "1" | "yes" | "on"),
+            // `env=NAME=value`, one line per variable. A name no shell could
+            // export is dropped here, before it reaches a launch environment.
+            "env" => {
+                if let Some((name, value)) = v.split_once('=').filter(|(n, _)| is_env_name(n)) {
+                    tool.env.push((name.to_string(), value.to_string()));
+                }
+            }
+            "runner" if v.eq_ignore_ascii_case("native") => tool.runner = Runner::Native,
             _ => {}
         }
     }
@@ -183,6 +213,12 @@ pub fn write_tools(path: &Path, tools: &[Tool]) -> io::Result<()> {
         }
         if t.pinned {
             s.push_str("pinned=true\n");
+        }
+        for (k, v) in &t.env {
+            s.push_str(&format!("env={k}={v}\n"));
+        }
+        if t.runner == Runner::Native {
+            s.push_str("runner=native\n");
         }
         s.push('\n');
     }
@@ -761,6 +797,12 @@ mod tests {
                 app_id: Some(1946160),
                 hidden: false,
                 pinned: true,
+                // In file order, and a value may itself hold `=`.
+                env: vec![
+                    ("PROTON_LOG".into(), "1".into()),
+                    ("WINEDLLOVERRIDES".into(), "dxgi=n,b".into()),
+                ],
+                runner: Runner::Proton,
             },
             Tool {
                 title: "BodySlide".into(),
@@ -772,10 +814,28 @@ mod tests {
                 app_id: None,
                 hidden: true,
                 pinned: false,
+                env: Vec::new(),
+                runner: Runner::Native,
             },
         ];
         write_tools(&p, &tools).unwrap();
         assert_eq!(read_tools(&p), tools);
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn an_env_line_without_a_valid_name_is_dropped() {
+        let p = tmp();
+        fs::write(
+            &p,
+            "[Tool/T]\nexe=/x/t.exe\nenv=1BAD=x\nenv=NO_VALUE\nenv=A-B=x\nenv==x\n\
+             env=_OK=\nrunner=wine\n",
+        )
+        .unwrap();
+        let t = &read_tools(&p)[0];
+        assert_eq!(t.env, vec![("_OK".to_string(), String::new())]);
+        // Anything but `native` keeps the default.
+        assert_eq!(t.runner, Runner::Proton);
         let _ = fs::remove_file(&p);
     }
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=21bf9773a77eafde0226799b69158680985f3963 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=226e33d31b260039513531ac88c3bdeefae8bb0b -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -271,6 +271,47 @@ Creation Kit 是獨立的 Steam 應用程式,要用自己的 AppID;少數幾個�
 兩個環境變數 - `SteamAppId` 與 `SteamGameId`,兩個都要,因為 Proton 讀其中
 一個,而 Steam 自己的函式庫讀另一個,工具若看到兩者不一致,失敗的方式會很古怪
 而不是乾脆。`eidos tool ... --print` 會原原本本顯示真正執行時會拿到什麼。
+
+## 環境變數,以及不經過 Proton 的工具
+
+`<instance>/tools.ini` 裡有兩個鍵在 Executables 對話框中還沒有對應的欄位,
+需要手動寫進工具所在的區段。每一行 `env=NAME=value` 設定一個只對這個工具的
+執行生效的變數:
+
+```ini
+[Tool/BodySlide]
+exe=Data/CalienteTools/BodySlide/BodySlide x64.exe
+env=PROTON_LOG=1
+env=WINEDEBUG=-all
+```
+
+Eidos 在設定完它自己的所有變數之後才套用這些行,所以這裡寫的值會取代 Eidos
+自己的值。這也包括 Eidos 依模組附帶的 DLL 組出來的 `WINEDLLOVERRIDES`:
+設定了它的工具,必須把自己需要的每個 DLL 都列進去。變數名稱由字母、數字和 `_`
+組成,不以數字開頭。名稱不合規則的行會被忽略。
+
+`runner=native` 不經過 Proton,直接執行 `exe` 本身。合併檢視照常掛載,
+`arg0=`、`arg1=` 這些行就是它的參數。Linux 程式,或 Steam 不管理的副本
+(Heroic、Legendary)上的工具,都用這種方式:`exe` 是那個副本的 Wine,Windows
+程式是第一個參數,前綴由 `env=` 指定。
+
+```ini
+[Tool/SSEEdit (GOG)]
+exe=/opt/wine-ge/bin/wine
+arg0=/home/me/Games/Skyrim/SSEEdit.exe
+workdir=/home/me/Games/Skyrim
+runner=native
+env=WINEPREFIX=/home/me/Games/Heroic/Prefixes/default/Skyrim
+```
+
+`exe` 必須是絕對路徑。工作目錄預設是 `exe` 所在的資料夾,在這裡就是執行器的
+資料夾,所以要設定 `workdir=`。只有 `exe` 會被改寫成合併後的路徑:模組裡的
+Windows 程式,要寫它在遊戲 `Data` 資料夾下的路徑,合併檢視就是在那裡顯示它的。
+原生工具會跳過 Proton 的步驟:上面講的登錄機碼、Steam 的著色器快取、空的 .NET
+根目錄,以及從 `LD_PRELOAD` 中拿掉 Steam 覆蓋層。
+
+`eidos tool <instance> run <title> --print` 會顯示最終的命令,以及這次執行在繼承的
+環境之上設定的每一個變數,包括這些行。
 
 ## 工具自己的設定,終究還是它自己的事
 

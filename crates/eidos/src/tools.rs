@@ -266,26 +266,37 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 }
                 exe.clone()
             });
-            let Some(compat) = game.compatdata.as_ref() else {
-                eidos_log::info!(
-                    "No Steam Proton prefix for {id}. For a Heroic/Legendary copy, configure a native tool with its actual runner and prefix."
-                );
-                exit(1);
+            // `runner=native` runs the executable itself: no Proton, no Steam
+            // prefix, and none of the Proton-only steps below.
+            let native = tool.runner == eidos_instance::Runner::Native;
+            let compat = game.compatdata.as_deref();
+            let run = match compat {
+                _ if native => None,
+                None => {
+                    eidos_log::info!(
+                        "No Steam Proton prefix for {id}. For a Heroic/Legendary copy, set \
+                         runner=native on the tool in tools.ini, with exe= the copy's own runner \
+                         (see Tools in the guide)."
+                    );
+                    exit(1);
+                }
+                Some(compat) => {
+                    let Some(run) = eidos_games::proton_command(
+                        &home(),
+                        game.def.steam_app_id,
+                        compat,
+                        &game.install_path,
+                    ) else {
+                        eidos_log::warn!(
+                            "Could not resolve the Proton for {id} (config.vdf CompatToolMapping / \
+                             compatibilitytools.d). Is the game set up to run under Proton?"
+                        );
+                        exit(1);
+                    };
+                    warn_if_flatpak_proton(&run);
+                    Some(run)
+                }
             };
-            let Some(run) = eidos_games::proton_command(
-                &home(),
-                game.def.steam_app_id,
-                compat,
-                &game.install_path,
-            ) else {
-                eidos_log::warn!(
-                    "Could not resolve the Proton for {id} (config.vdf CompatToolMapping / \
-                     compatibilitytools.d). Is the game set up to run under Proton?"
-                );
-                exit(1);
-            };
-
-            warn_if_flatpak_proton(&run);
             // Windows tools find their game by reading HKLM\Software\Bethesda
             // Softworks\<game> "installed path", which the game's own installer
             // writes - and which Steam under Proton never runs. Without it xEdit,
@@ -299,7 +310,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
             // for every run started from the GUI - the one way anyone starts one.
             // `game` is the already-resolved target a dozen lines above; there is
             // no second lookup left to get wrong.
-            {
+            if let (Some(run), Some(compat)) = (&run, compat) {
                 let proton = run.proton.clone();
                 let env = run.env.clone();
                 match eidos_gamefeatures::ensure_registry(
@@ -346,7 +357,12 @@ pub(crate) fn cmd_tool(args: &[String]) {
                     Err(e) => eidos_log::warn!("eidos: could not write the prefix registry ({e}); tools may ask for the game path"),
                 }
             }
-            let mut command = run.command(&exe, &tool.args);
+            let mut command = match &run {
+                Some(run) => run.command(&exe, &tool.args),
+                None => std::iter::once(exe.to_string_lossy().into_owned())
+                    .chain(tool.args.iter().cloned())
+                    .collect(),
+            };
             command.extend(extra);
             // MO2's default working directory for a tool is its own folder - which,
             // after the rewrite above, is the merged one. An explicit workdir gets
@@ -381,9 +397,8 @@ pub(crate) fn cmd_tool(args: &[String]) {
             // installed into the prefix - the variable IS the mechanism, which is
             // why an absent runtime must contribute nothing rather than a path
             // that does not exist (the .NET host stops looking once it is set).
-            let mut run = run;
-            run.env
-                .extend(eidos_gamefeatures::runtime_env_for(&prereqs));
+            let mut env = run.map(|r| r.env).unwrap_or_default();
+            env.extend(eidos_gamefeatures::runtime_env_for(&prereqs));
             let missing3: Vec<&String> = prereqs
                 .iter()
                 .filter(|v| {
@@ -406,14 +421,17 @@ pub(crate) fn cmd_tool(args: &[String]) {
 
             // Host-environment facts for a tool run, applied last so `--print`
             // shows them. The Creation Kit override is a different Steam app, so
-            // the game's shader cache would be the wrong one for it.
-            apply_tool_env_facts(
-                &mut run.env,
-                compat,
-                game.def.steam_app_id,
-                app_id.is_some(),
-                |k| std::env::var(k).ok(),
-            );
+            // the game's shader cache would be the wrong one for it. Not for a
+            // native tool: a Linux .NET program needs the host's DOTNET_ROOT.
+            if let Some(compat) = compat.filter(|_| !native) {
+                apply_tool_env_facts(
+                    &mut env,
+                    compat,
+                    game.def.steam_app_id,
+                    app_id.is_some(),
+                    |k| std::env::var(k).ok(),
+                );
+            }
 
             // A tool that IS its own Steam app - the Creation Kit is the usual
             // one - wants that app's id, not the game's. Both variables, because
@@ -422,26 +440,29 @@ pub(crate) fn cmd_tool(args: &[String]) {
             // than clearly. Set here, on the env that is about to be handed
             // over, so `--print` shows exactly what the real run would get.
             if let Some(id) = app_id {
-                run.env
-                    .retain(|(k, _)| k != "SteamAppId" && k != "SteamGameId");
-                run.env.push(("SteamAppId".to_string(), id.to_string()));
-                run.env.push(("SteamGameId".to_string(), id.to_string()));
+                env.retain(|(k, _)| k != "SteamAppId" && k != "SteamGameId");
+                env.push(("SteamAppId".to_string(), id.to_string()));
+                env.push(("SteamGameId".to_string(), id.to_string()));
             }
+            let opts = crate::launch::ToolOpts {
+                prereqs: &prereqs,
+                output_mod: output_mod.as_deref(),
+                tool_name: Some(title),
+                executable: Some(&source_exe),
+                env: &tool.env,
+            };
             if print_only {
-                println!(
-                    "would run (through the merged view at {}):",
-                    game.data_path.display()
+                let env = crate::launch::run_env(&game, &inst, opts, env, false);
+                print!(
+                    "{}",
+                    print_plan(
+                        &game.data_path,
+                        &command,
+                        &env,
+                        cwd.as_deref(),
+                        opts.output_mod
+                    )
                 );
-                println!("  argv : {command:?}");
-                for (k, v) in &run.env {
-                    println!("  env  : {k}={v}");
-                }
-                if let Some(c) = &cwd {
-                    println!("  cwd  : {}", c.display());
-                }
-                if let Some(m) = &output_mod {
-                    println!("  out  : mods/{m} (the run's Overwrite output is captured there)");
-                }
                 return;
             }
             // A capture target the user cannot SEE is a target that quietly does
@@ -465,14 +486,9 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 &game,
                 &inst,
                 command,
-                run.env,
+                env,
                 cwd,
-                crate::launch::ToolOpts {
-                    prereqs: &prereqs,
-                    output_mod: output_mod.as_deref(),
-                    tool_name: Some(title),
-                    executable: Some(&source_exe),
-                },
+                opts,
             );
         }
         Some(other) => {
@@ -480,6 +496,33 @@ pub(crate) fn cmd_tool(args: &[String]) {
             exit(2);
         }
     }
+}
+
+/// What `eidos tool run --print` shows: the command, and every variable the run
+/// sets on top of the inherited environment.
+fn print_plan(
+    data: &Path,
+    command: &[String],
+    env: &[(String, String)],
+    cwd: Option<&Path>,
+    output_mod: Option<&str>,
+) -> String {
+    let mut out = format!(
+        "would run (through the merged view at {}):\n  argv : {command:?}\n",
+        data.display()
+    );
+    for (k, v) in env {
+        out.push_str(&format!("  env  : {k}={v}\n"));
+    }
+    if let Some(c) = cwd {
+        out.push_str(&format!("  cwd  : {}\n", c.display()));
+    }
+    if let Some(m) = output_mod {
+        out.push_str(&format!(
+            "  out  : mods/{m} (the run's Overwrite output is captured there)\n"
+        ));
+    }
+    out
 }
 
 /// Env a Windows tool needs from the host, not from the instance.
@@ -722,6 +765,34 @@ mod env_fact_tests {
         apply_tool_env_facts(&mut env, Path::new("/nope"), 1, false, |_| None);
         assert_eq!(get(&env, "DOTNET_ROOT"), Some("/rt"));
         assert_eq!(env.iter().filter(|(k, _)| k == "DOTNET_ROOT").count(), 1);
+    }
+
+    #[test]
+    fn print_shows_a_tool_env_line_in_the_final_env() {
+        let root = std::env::temp_dir().join(format!("eidos-tool-print-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let inst = Instance::portable(root.join("instance"));
+        inst.create().unwrap();
+        let game = DetectedGame {
+            def: eidos_games::GameDef::for_id("skyrimse").unwrap(),
+            install_path: root.join("game"),
+            data_path: root.join("game/Data"),
+            compatdata: None,
+            source: Default::default(),
+            steam_name: String::new(),
+        };
+        let tool_env = [("PROTON_LOG".to_string(), "1".to_string())];
+        let opts = crate::launch::ToolOpts {
+            env: &tool_env,
+            ..Default::default()
+        };
+        let env = crate::launch::run_env(&game, &inst, opts, Vec::new(), false);
+        let shown = print_plan(&game.data_path, &["/x/t".into()], &env, None, None);
+        assert!(shown.contains("  env  : PROTON_LOG=1\n"), "{shown}");
+        if std::env::var_os("PROTON_USE_XALIA").is_none() {
+            assert!(shown.contains("PROTON_USE_XALIA=0"), "{shown}");
+        }
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

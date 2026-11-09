@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=21bf9773a77eafde0226799b69158680985f3963 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=226e33d31b260039513531ac88c3bdeefae8bb0b -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -318,6 +318,52 @@ Windows'ta bu, farklı bir başlatıcı demektir. Burada ise zaten kurulmakta ol
 kitaplıkları okur ve ikisini uyuşmaz gören bir araç, açıkça değil tuhaf biçimde
 başarısız olur. `eidos tool ... --print` gerçek çalıştırmanın tam olarak neyi
 alacağını gösterir.
+
+## Ortam değişkenleri ve Proton'suz çalışan araçlar
+
+`<instance>/tools.ini` içindeki iki anahtarın Executables penceresinde henüz bir
+alanı yok; bu yüzden onları aracın bölümüne elle ekleyin. Her `env=NAME=value`
+satırı, yalnızca o aracın çalıştırmaları için bir değişken ayarlar:
+
+```ini
+[Tool/BodySlide]
+exe=Data/CalienteTools/BodySlide/BodySlide x64.exe
+env=PROTON_LOG=1
+env=WINEDEBUG=-all
+```
+
+Eidos bu satırları kendi ayarladığı her şeyden sonra uygular; bu yüzden burada
+verilen bir değer Eidos'un kendi değerinin yerini alır. Buna, Eidos'un
+modlarınızın getirdiği DLL'lerden kurduğu `WINEDLLOVERRIDES` de dahildir: bunu
+ayarlayan bir araç, ihtiyaç duyduğu her DLL'i içinde listelemelidir. Bir ad
+harflerden, rakamlardan ve `_` karakterinden oluşur ve rakamla başlamaz. Başka
+bir ada sahip satır yok sayılır.
+
+`runner=native`, `exe`'yi Proton olmadan doğrudan çalıştırır. Birleşik görünüm
+her araçta olduğu gibi bağlanır ve `arg0=`, `arg1=` satırları onun
+argümanlarıdır. Bunu bir Linux programı için ya da Steam'in yönetmediği bir
+kopyanın (Heroic, Legendary) aracı için kullanın: `exe` o kopyanın Wine'ıdır,
+Windows programı ilk argümandır ve önek `env=` ile gelir.
+
+```ini
+[Tool/SSEEdit (GOG)]
+exe=/opt/wine-ge/bin/wine
+arg0=/home/me/Games/Skyrim/SSEEdit.exe
+workdir=/home/me/Games/Skyrim
+runner=native
+env=WINEPREFIX=/home/me/Games/Heroic/Prefixes/default/Skyrim
+```
+
+`exe` mutlak bir yol olmalıdır. Çalışma dizini varsayılan olarak `exe`'nin
+bulunduğu klasördür, burada çalıştırıcınınki, bu yüzden `workdir=` ayarlayın.
+Birleşik yoluna yalnızca `exe` yeniden yazılır: bir modun içindeki Windows
+programı için, birleşik görünümün onu gösterdiği oyunun `Data` klasörü altındaki
+yolunu verin. Yerel bir araç Proton adımlarını atlar: yukarıdaki kayıt defteri
+anahtarı, Steam'in shader önbelleği, boş .NET kökleri ve Steam katmanının
+`LD_PRELOAD`'dan çıkarılması.
+
+`eidos tool <instance> run <title> --print`, son komutu ve çalıştırmanın
+devralınan ortamın üzerine ayarladığı her değişkeni, bu satırlar dahil, gösterir.
 
 ## Bir aracın kendi ayarları yine kendisinindir
 

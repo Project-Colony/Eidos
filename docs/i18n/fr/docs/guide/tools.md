@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=21bf9773a77eafde0226799b69158680985f3963 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=226e33d31b260039513531ac88c3bdeefae8bb0b -->
 
 # Outils : xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -328,6 +328,54 @@ d'environnement sur l'exécution qui était déjà en train d'être construite -
 bibliothèques de Steam lisent l'autre, et qu'un outil qui les voit en désaccord
 échoue bizarrement plutôt que clairement. `eidos tool ... --print` montre
 exactement ce que recevrait la vraie exécution.
+
+## Variables d'environnement et outils lancés sans Proton
+
+Deux clés de `<instance>/tools.ini` n'ont pas encore de champ dans la boîte de
+dialogue Executables ; ajoutez-les à la main dans la section de l'outil. Chaque
+ligne `env=NAME=value` définit une variable pour les exécutions de cet outil
+seulement :
+
+```ini
+[Tool/BodySlide]
+exe=Data/CalienteTools/BodySlide/BodySlide x64.exe
+env=PROTON_LOG=1
+env=WINEDEBUG=-all
+```
+
+Eidos applique ces lignes après tout ce qu'il définit lui-même, donc une valeur
+mise ici remplace la sienne. Cela vaut aussi pour le `WINEDLLOVERRIDES` qu'il
+construit à partir des DLL que livrent vos mods : un outil qui en définit un
+doit y lister toutes les DLL dont il a besoin. Un nom se compose de lettres, de
+chiffres et de `_`, et ne commence pas par un chiffre. Une ligne avec un autre
+nom est ignorée.
+
+`runner=native` lance `exe` lui-même, sans Proton. La vue fusionnée est montée
+comme pour tout outil, et les lignes `arg0=`, `arg1=` sont ses arguments.
+Servez-vous-en pour un programme Linux, ou pour un outil sur une copie que Steam
+ne gère pas (Heroic, Legendary) : `exe` est le Wine de cette copie, le programme
+Windows est le premier argument, et le préfixe vient de `env=`.
+
+```ini
+[Tool/SSEEdit (GOG)]
+exe=/opt/wine-ge/bin/wine
+arg0=/home/me/Games/Skyrim/SSEEdit.exe
+workdir=/home/me/Games/Skyrim
+runner=native
+env=WINEPREFIX=/home/me/Games/Heroic/Prefixes/default/Skyrim
+```
+
+`exe` doit être un chemin absolu. Le répertoire de travail est par défaut le
+dossier qui contient `exe`, ici celui du lanceur, donc définissez `workdir=`.
+Seul `exe` est réécrit vers son chemin fusionné : pour un programme Windows
+placé dans un mod, donnez son chemin sous le dossier `Data` du jeu, là où la vue
+fusionnée le montre. Un outil natif saute les étapes propres à Proton : la clé
+de registre ci-dessus, le cache de shaders de Steam, les racines .NET vides et
+le retrait de l'overlay Steam de `LD_PRELOAD`.
+
+`eidos tool <instance> run <title> --print` montre la commande finale et chaque
+variable que l'exécution définit par-dessus l'environnement hérité, ces lignes
+comprises.
 
 ## Les réglages propres à un outil restent les siens
 

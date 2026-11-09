@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=21bf9773a77eafde0226799b69158680985f3963 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=226e33d31b260039513531ac88c3bdeefae8bb0b -->
 
 # 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -300,6 +300,50 @@ Windows에서 이것은 다른 런처를 뜻합니다. 여기서는 이미 만�
 하나를 읽고 Steam 자신의 라이브러리는 다른 하나를 읽으며, 그 둘이 어긋난 것을 본
 도구는 분명하게가 아니라 이상하게 실패하기 때문입니다. `eidos tool ... --print`는
 진짜 실행이 무엇을 받게 될지 정확히 보여줍니다.
+
+## 환경 변수, 그리고 Proton 없이 실행하는 도구
+
+`<instance>/tools.ini`의 키 두 개는 아직 Executables 대화 상자에 입력란이
+없으므로, 도구의 섹션에 직접 적어 넣으십시오. `env=NAME=value` 줄 하나가 그
+도구의 실행에만 적용되는 변수 하나를 설정합니다:
+
+```ini
+[Tool/BodySlide]
+exe=Data/CalienteTools/BodySlide/BodySlide x64.exe
+env=PROTON_LOG=1
+env=WINEDEBUG=-all
+```
+
+Eidos는 자신이 설정하는 모든 것을 설정한 뒤에 이 줄들을 적용하므로, 여기에
+적은 값이 Eidos 자신의 값을 대체합니다. 모드가 함께 제공하는 DLL로 Eidos가
+만드는 `WINEDLLOVERRIDES`도 마찬가지입니다. 이것을 설정하는 도구는 필요한
+DLL을 모두 그 안에 나열해야 합니다. 이름은 영문자, 숫자, `_`로 이루어지며
+숫자로 시작하지 않습니다. 다른 이름을 가진 줄은 무시됩니다.
+
+`runner=native`는 Proton 없이 `exe` 자체를 실행합니다. 병합된 뷰는 다른 모든
+도구와 똑같이 마운트되고, `arg0=`, `arg1=` 줄이 그 인수가 됩니다. Linux
+프로그램이나, Steam이 관리하지 않는 사본(Heroic, Legendary)용 도구에 이것을
+쓰십시오. `exe`는 그 사본의 Wine이고, Windows 프로그램이 첫 번째 인수이며,
+프리픽스는 `env=`에서 옵니다.
+
+```ini
+[Tool/SSEEdit (GOG)]
+exe=/opt/wine-ge/bin/wine
+arg0=/home/me/Games/Skyrim/SSEEdit.exe
+workdir=/home/me/Games/Skyrim
+runner=native
+env=WINEPREFIX=/home/me/Games/Heroic/Prefixes/default/Skyrim
+```
+
+`exe`는 절대 경로여야 합니다. 작업 디렉터리의 기본값은 `exe`가 있는 폴더,
+여기서는 러너의 폴더이므로 `workdir=`를 설정하십시오. 병합된 경로로 다시
+쓰이는 것은 `exe`뿐입니다. 모드 안에 있는 Windows 프로그램이라면, 병합된 뷰가
+그것을 보여 주는 게임의 `Data` 폴더 아래 경로를 적으십시오. 네이티브 도구는
+Proton 단계를 건너뜁니다. 위에서 설명한 레지스트리 키, Steam의 셰이더 캐시,
+빈 .NET 루트, 그리고 `LD_PRELOAD`에서 Steam 오버레이를 빼는 일입니다.
+
+`eidos tool <instance> run <title> --print`는 최종 명령과, 실행이 상속된 환경
+위에 설정하는 모든 변수를 이 줄들까지 포함해 보여 줍니다.
 
 ## 도구 자신의 설정은 여전히 그 도구의 몫
 

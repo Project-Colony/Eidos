@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=21bf9773a77eafde0226799b69158680985f3963 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=226e33d31b260039513531ac88c3bdeefae8bb0b -->
 
 # ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -305,6 +305,51 @@ Windows ではこれは別のランチャーを意味します。ここでは、
 Proton は一方を、Steam 自身のライブラリはもう一方を読み、食い違いを見たツールは
 明快にではなく妙な形で失敗するからです。`eidos tool ... --print` は、本当の
 実行が受け取るものをそのまま見せます。
+
+## 環境変数と、Proton を使わないツール
+
+`<instance>/tools.ini` のキーのうち二つは、Executables ダイアログにまだ入力欄が
+ありません。ツールのセクションに手で書き足してください。`env=NAME=value` の行
+一つが、そのツールの実行にだけ効く変数を一つ設定します。
+
+```ini
+[Tool/BodySlide]
+exe=Data/CalienteTools/BodySlide/BodySlide x64.exe
+env=PROTON_LOG=1
+env=WINEDEBUG=-all
+```
+
+Eidos はこれらの行を、自分で設定するものをすべて設定した後に適用します。
+そのため、ここに書いた値は Eidos 自身の値を置き換えます。MOD が同梱する DLL から
+Eidos が組み立てる `WINEDLLOVERRIDES` も同じで、これを設定するツールは、自分が
+必要とする DLL をすべてそこに並べる必要があります。名前は英字、数字、`_` から
+なり、数字で始まりません。それ以外の名前の行は無視されます。
+
+`runner=native` は Proton を通さずに `exe` そのものを実行します。統合ビューは
+どのツールとも同じようにマウントされ、`arg0=`、`arg1=` の行がその引数に
+なります。Linux のプログラムや、Steam が管理していないコピー (Heroic、
+Legendary) 向けのツールにはこれを使います。`exe` はそのコピーの Wine、Windows
+のプログラムが最初の引数で、プレフィックスは `env=` で指定します。
+
+```ini
+[Tool/SSEEdit (GOG)]
+exe=/opt/wine-ge/bin/wine
+arg0=/home/me/Games/Skyrim/SSEEdit.exe
+workdir=/home/me/Games/Skyrim
+runner=native
+env=WINEPREFIX=/home/me/Games/Heroic/Prefixes/default/Skyrim
+```
+
+`exe` は絶対パスでなければなりません。作業ディレクトリの既定値は `exe` のある
+フォルダー、ここではランナーのフォルダーなので、`workdir=` を設定してください。
+統合されたパスに書き換えられるのは `exe` だけです。MOD の中にある Windows
+プログラムには、統合ビューがそれを見せるゲームの `Data` フォルダー以下のパスを
+指定してください。ネイティブのツールでは Proton 用の手順は行われません。上で
+述べたレジストリキー、Steam のシェーダーキャッシュ、空の .NET ルート、
+`LD_PRELOAD` からの Steam オーバーレイの除去がそれです。
+
+`eidos tool <instance> run <title> --print` は、最終的なコマンドと、実行が継承した
+環境の上に設定する変数すべてを、これらの行も含めて表示します。
 
 ## ツール自身の設定は、やはりツール自身のもの
 

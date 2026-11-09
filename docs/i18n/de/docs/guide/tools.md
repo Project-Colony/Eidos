@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=21bf9773a77eafde0226799b69158680985f3963 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=226e33d31b260039513531ac88c3bdeefae8bb0b -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -330,6 +330,55 @@ und `SteamGameId`, beide, weil Proton die eine liest und Steams eigene
 Bibliotheken die andere, und ein Tool, das sie uneins sieht, scheitert
 eigenartig statt deutlich. `eidos tool ... --print` zeigt genau, was der echte
 Lauf bekäme.
+
+## Umgebungsvariablen und Tools ohne Proton
+
+Zwei Schlüssel in `<instance>/tools.ini` haben im Executables-Dialog noch kein
+Feld; tragen Sie sie von Hand in den Abschnitt des Tools ein. Jede Zeile
+`env=NAME=value` setzt eine Variable nur für die Läufe dieses Tools:
+
+```ini
+[Tool/BodySlide]
+exe=Data/CalienteTools/BodySlide/BodySlide x64.exe
+env=PROTON_LOG=1
+env=WINEDEBUG=-all
+```
+
+Eidos wendet diese Zeilen nach allem an, was es selbst setzt, also ersetzt ein
+Wert hier den eigenen. Das gilt auch für das `WINEDLLOVERRIDES`, das Eidos aus
+den DLLs baut, die Ihre Mods mitbringen: Ein Tool, das es setzt, muss darin
+jede DLL aufführen, die es braucht. Ein Name besteht aus Buchstaben, Ziffern und
+`_` und beginnt nicht mit einer Ziffer. Eine Zeile mit einem anderen Namen wird
+ignoriert.
+
+`runner=native` startet `exe` selbst, ohne Proton. Der zusammengeführte Blick
+wird wie für jedes Tool eingehängt, und die Zeilen `arg0=`, `arg1=` sind seine
+Argumente. Nutzen Sie das für ein Linux-Programm oder für ein Tool zu einer
+Kopie, die Steam nicht verwaltet (Heroic, Legendary): `exe` ist das Wine dieser
+Kopie, das Windows-Programm ist das erste Argument, und das Präfix kommt aus
+`env=`.
+
+```ini
+[Tool/SSEEdit (GOG)]
+exe=/opt/wine-ge/bin/wine
+arg0=/home/me/Games/Skyrim/SSEEdit.exe
+workdir=/home/me/Games/Skyrim
+runner=native
+env=WINEPREFIX=/home/me/Games/Heroic/Prefixes/default/Skyrim
+```
+
+`exe` muss ein absoluter Pfad sein. Das Arbeitsverzeichnis ist standardmäßig
+der Ordner, in dem `exe` liegt, hier der des Runners, also setzen Sie
+`workdir=`. Nur `exe` wird auf seinen zusammengeführten Pfad umgeschrieben: Für
+ein Windows-Programm in einem Mod geben Sie seinen Pfad unter dem `Data`-Ordner
+des Spiels an, wo der zusammengeführte Blick es zeigt. Ein natives Tool
+überspringt die Proton-Schritte: den Registry-Schlüssel von oben, Steams
+Shader-Cache, die leeren .NET-Wurzeln und das Entfernen von Steams Overlay aus
+`LD_PRELOAD`.
+
+`eidos tool <instance> run <title> --print` zeigt den endgültigen Befehl und
+jede Variable, die der Lauf über der geerbten Umgebung setzt, diese Zeilen
+eingeschlossen.
 
 ## Die eigenen Einstellungen eines Tools bleiben seine eigenen
 

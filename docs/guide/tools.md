@@ -303,6 +303,51 @@ because Proton reads one and Steam's own libraries read the other, and a tool
 that sees them disagree fails oddly rather than clearly. `eidos tool ... --print`
 shows exactly what the real run would get.
 
+## Environment variables and tools that run without Proton
+
+Two keys of `<instance>/tools.ini` have no field in the Executables dialog yet,
+so add them to the tool's section by hand. Each `env=NAME=value` line sets one
+variable for that tool's runs only:
+
+```ini
+[Tool/BodySlide]
+exe=Data/CalienteTools/BodySlide/BodySlide x64.exe
+env=PROTON_LOG=1
+env=WINEDEBUG=-all
+```
+
+Eidos applies these lines after everything it sets itself, so a value here
+replaces its own. That includes the `WINEDLLOVERRIDES` it builds from the DLLs
+your mods ship: a tool that sets one must list in it every DLL the tool needs.
+A name is letters, digits and `_`, and does not start with a digit. A line with
+any other name is ignored.
+
+`runner=native` runs `exe` itself, without Proton. The merged view is mounted
+as for any tool, and the `arg0=`, `arg1=` lines are its arguments. Use it for a
+Linux program, or for a tool on a copy Steam does not manage (Heroic,
+Legendary): `exe` is that copy's Wine, the Windows program is the first
+argument, and the prefix comes from `env=`.
+
+```ini
+[Tool/SSEEdit (GOG)]
+exe=/opt/wine-ge/bin/wine
+arg0=/home/me/Games/Skyrim/SSEEdit.exe
+workdir=/home/me/Games/Skyrim
+runner=native
+env=WINEPREFIX=/home/me/Games/Heroic/Prefixes/default/Skyrim
+```
+
+`exe` must be an absolute path. The working directory defaults to the folder
+that holds `exe`, here the runner's, so set `workdir=`. Only `exe` is rewritten
+to its merged path: for a Windows program inside a mod, give its path under the
+game's `Data` folder, where the merged view shows it. A native tool skips the
+Proton steps: the registry key above, Steam's shader cache, the empty .NET
+roots, and taking Steam's overlay out of `LD_PRELOAD`.
+
+`eidos tool <instance> run <title> --print` shows the final command and every
+variable the run sets on top of the inherited environment, these lines
+included.
+
 ## A tool's own settings are still its own
 
 Eidos puts a tool in the right place with the right DLLs. What the tool then

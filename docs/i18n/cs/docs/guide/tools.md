@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=21bf9773a77eafde0226799b69158680985f3963 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=226e33d31b260039513531ac88c3bdeefae8bb0b -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -306,6 +306,50 @@ který se stejně už stavěl - `SteamAppId` a `SteamGameId`, obě, protože Pro
 čte jednu a vlastní knihovny Steamu druhou, a nástroj, který je vidí
 nesouhlasit, selže podivně místo jasně. `eidos tool ... --print` ukáže přesně to,
 co by skutečný běh dostal.
+
+## Proměnné prostředí a nástroje spuštěné bez Protonu
+
+Dva klíče v `<instance>/tools.ini` zatím nemají v dialogu Executables žádné
+pole, takže je do sekce nástroje dopište ručně. Každý řádek `env=NAME=value`
+nastaví jednu proměnnou jen pro běhy tohoto nástroje:
+
+```ini
+[Tool/BodySlide]
+exe=Data/CalienteTools/BodySlide/BodySlide x64.exe
+env=PROTON_LOG=1
+env=WINEDEBUG=-all
+```
+
+Eidos tyto řádky použije až po všem, co nastavuje sám, takže hodnota zadaná tady
+nahradí tu jeho. To platí i pro `WINEDLLOVERRIDES`, který Eidos skládá z DLL
+dodaných vašimi módy: nástroj, který ho nastaví, v něm musí uvést každou DLL,
+kterou potřebuje. Jméno tvoří písmena, číslice a `_` a nezačíná číslicí. Řádek
+s jiným jménem se ignoruje.
+
+`runner=native` spustí přímo `exe`, bez Protonu. Sloučený pohled se připojí jako
+u každého nástroje a řádky `arg0=`, `arg1=` jsou jeho argumenty. Použijte to pro
+linuxový program nebo pro nástroj ke kopii, kterou nespravuje Steam (Heroic,
+Legendary): `exe` je Wine této kopie, program pro Windows je první argument a
+prefix přijde z `env=`.
+
+```ini
+[Tool/SSEEdit (GOG)]
+exe=/opt/wine-ge/bin/wine
+arg0=/home/me/Games/Skyrim/SSEEdit.exe
+workdir=/home/me/Games/Skyrim
+runner=native
+env=WINEPREFIX=/home/me/Games/Heroic/Prefixes/default/Skyrim
+```
+
+`exe` musí být absolutní cesta. Pracovní adresář je ve výchozím stavu složka, ve
+které leží `exe`, tady tedy složka runneru, a proto nastavte `workdir=`. Na
+sloučenou cestu se přepisuje jen `exe`: u programu pro Windows uvnitř módu
+zadejte jeho cestu ve složce `Data` hry, kde ho ukazuje sloučený pohled. Nativní
+nástroj vynechá kroky pro Proton: klíč registru popsaný výše, shader cache
+Steamu, prázdné kořeny .NET a odstranění overlaye Steamu z `LD_PRELOAD`.
+
+`eidos tool <instance> run <title> --print` ukáže výsledný příkaz a každou
+proměnnou, kterou běh nastaví nad zděděné prostředí, včetně těchto řádků.
 
 ## Vlastní nastavení nástroje zůstává jeho
 

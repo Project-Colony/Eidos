@@ -265,6 +265,8 @@ pub(crate) struct ToolOpts<'a> {
     /// Only tools produce generator receipts; ordinary game launches do not.
     pub tool_name: Option<&'a str>,
     pub executable: Option<&'a Path>,
+    /// The tool's own `env=` lines, applied last by [`run_env`] so they win.
+    pub env: &'a [(String, String)],
 }
 
 pub(crate) fn run_through_view(
@@ -488,29 +490,7 @@ pub(crate) fn run_through_view(
         }
     }
 
-    // Force-load any mod-provided builtin-shadowing DLLs (ENB/ReShade/.asi loaders) -
-    // the Linux equivalent of usvfs forced libraries, otherwise Wine's builtin wins -
-    // plus any Tier-1 DLL prerequisites a tool declares (d3dx for BodySlide etc.).
-    let mut env = env;
-    if let Some(kv) = forced_dll_overrides(game, inst, opts.prereqs) {
-        env.push(kv);
-    }
-    // Wine derives its Unix codepage from the locale; a C/POSIX one collapses to
-    // CP1252 and MSVC's std::filesystem then rejects any mod path with an
-    // accented, Cyrillic or CJK character. Steam's pressure-vessel can strip the
-    // locale on the way in, so this covers both `eidos play` and `eidos tool`. An
-    // existing UTF-8 locale is left untouched.
-    env.extend(eidos_launch::utf8_locale_env_from_process());
-    // Xalia is Proton's accessibility/gamepad overlay for Wine dialogs. A modded
-    // Bethesda game has no use for it, and the build shipped with several current
-    // Proton forks throws a fatal Mono MissingMethodException the moment it starts
-    // - which lands a stack trace in every run log and buries whatever the game
-    // actually said. Eidos already disables it for the unattended prereq and
-    // registry runs; there is no reason the game launch should differ.
-    // Not forced if the user set it deliberately.
-    if std::env::var_os("PROTON_USE_XALIA").is_none() {
-        env.push(("PROTON_USE_XALIA".to_string(), "0".to_string()));
-    }
+    let env = run_env(game, inst, opts, env, true);
 
     let root_layers = inst.root_layers();
     if runtime_root.is_some() {
@@ -787,6 +767,44 @@ pub(crate) fn run_through_view(
     }
 }
 
+/// The variables a run sets on top of the inherited environment: `env` (what
+/// the caller built), then what every run gets, then the tool's own `env=`
+/// lines, which replace any earlier value of the same name. `eidos tool --print`
+/// calls this too, with `provision` off so it copies no DLL into the prefix.
+pub(crate) fn run_env(
+    game: &DetectedGame,
+    inst: &Instance,
+    opts: ToolOpts<'_>,
+    mut env: Vec<(String, String)>,
+    provision: bool,
+) -> Vec<(String, String)> {
+    // Force-load any mod-provided builtin-shadowing DLLs (ENB/ReShade/.asi loaders) -
+    // the Linux equivalent of usvfs forced libraries, otherwise Wine's builtin wins -
+    // plus any Tier-1 DLL prerequisites a tool declares (d3dx for BodySlide etc.).
+    if let Some(kv) = forced_dll_overrides(game, inst, opts.prereqs, provision) {
+        env.push(kv);
+    }
+    // Wine derives its Unix codepage from the locale; a C/POSIX one collapses to
+    // CP1252 and MSVC's std::filesystem then rejects any mod path with an
+    // accented, Cyrillic or CJK character. Steam's pressure-vessel can strip the
+    // locale on the way in, so this covers both `eidos play` and `eidos tool`. An
+    // existing UTF-8 locale is left untouched.
+    env.extend(eidos_launch::utf8_locale_env_from_process());
+    // Xalia is Proton's accessibility/gamepad overlay for Wine dialogs. A modded
+    // Bethesda game has no use for it, and the build shipped with several current
+    // Proton forks throws a fatal Mono MissingMethodException the moment it starts
+    // - which lands a stack trace in every run log and buries whatever the game
+    // actually said. Eidos already disables it for the unattended prereq and
+    // registry runs; there is no reason the game launch should differ.
+    // Not forced if the user set it deliberately.
+    if std::env::var_os("PROTON_USE_XALIA").is_none() {
+        env.push(("PROTON_USE_XALIA".to_string(), "0".to_string()));
+    }
+    env.retain(|(k, _)| !opts.env.iter().any(|(t, _)| t == k));
+    env.extend(opts.env.iter().cloned());
+    env
+}
+
 // Wrapper DLLs a mod ships at its root (d3dcompiler_47 is handled by import
 // detection below, not by the ship check - mods import it, they don't ship it).
 // `d3dx9_42` is the SKSE64 plugin preloader (SSE Engine Fixes' second half): a
@@ -862,6 +880,7 @@ pub(crate) fn forced_dll_overrides(
     game: &DetectedGame,
     inst: &Instance,
     tool_prereqs: &[String],
+    provision: bool,
 ) -> Option<(String, String)> {
     let mut roots: Vec<PathBuf> = inst
         .modlist()
@@ -884,7 +903,10 @@ pub(crate) fn forced_dll_overrides(
     let mut stems = shipped_shadow_stems(&scan, SHIPPED_SHADOWS);
 
     // The prefix's windows dir, where bundled native DLLs get deployed.
-    let win = game.prefix().map(|prefix| prefix.join("drive_c/windows"));
+    let win = game
+        .prefix()
+        .filter(|_| provision)
+        .map(|prefix| prefix.join("drive_c/windows"));
 
     // Case 2: provision the native d3dcompiler_47 if any mod DLL imports it.
     if eidos_gamefeatures::scan_imports_provisionable(&roots) {
@@ -968,12 +990,61 @@ mod extender_tests {
             compatdata: Some(root.join("unselected-steam-prefix")),
             steam_name: String::new(),
         };
-        let overrides = forced_dll_overrides(&game, &instance, &["d3dx9_43".into()]).unwrap();
+        let overrides = forced_dll_overrides(&game, &instance, &["d3dx9_43".into()], true).unwrap();
         assert!(overrides.1.contains("d3dx9_43=n,b"));
         assert!(prefix
             .join("drive_c/windows/system32/d3dx9_43.dll")
             .is_file());
         assert!(!game.compatdata.unwrap().exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_tool_env_line_wins_over_what_every_run_gets() {
+        let root = std::env::temp_dir().join(format!("eidos-tool-env-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let instance = Instance::portable(root.join("instance"));
+        instance.create().unwrap();
+        // A mod shipping dxgi.dll makes Eidos build its own WINEDLLOVERRIDES.
+        let entry = instance.create_empty_mod("ReShade").unwrap();
+        std::fs::write(entry.path.join("dxgi.dll"), b"").unwrap();
+        instance.save_modlist(&[entry]).unwrap();
+        let game = DetectedGame {
+            def: eidos_games::GameDef::for_id("skyrimse").unwrap(),
+            install_path: root.join("game"),
+            data_path: root.join("game/Data"),
+            compatdata: Some(root.join("compatdata")),
+            source: Default::default(),
+            steam_name: String::new(),
+        };
+        std::fs::create_dir_all(game.prefix().unwrap().join("drive_c/windows")).unwrap();
+        let tool_env = [
+            ("WINEDLLOVERRIDES".to_string(), "dxgi=b".to_string()),
+            ("LC_ALL".to_string(), "ja_JP.UTF-8".to_string()),
+            ("PROTON_USE_XALIA".to_string(), "1".to_string()),
+        ];
+        let prereqs = ["d3dx9_43".to_string()];
+        let opts = ToolOpts {
+            prereqs: &prereqs,
+            env: &tool_env,
+            ..Default::default()
+        };
+        let base = vec![("LC_ALL".to_string(), "C.UTF-8".to_string())];
+        let env = run_env(&game, &instance, opts, base, false);
+        for (k, v) in &tool_env {
+            let got: Vec<&str> = env
+                .iter()
+                .filter(|(n, _)| n == k)
+                .map(|(_, v)| v.as_str())
+                .collect();
+            assert_eq!(got, [v.as_str()], "{k}");
+        }
+        // `--print` builds the same env without copying a DLL into the prefix.
+        assert!(!game
+            .prefix()
+            .unwrap()
+            .join("drive_c/windows/system32/d3dx9_43.dll")
+            .exists());
         std::fs::remove_dir_all(root).unwrap();
     }
 
