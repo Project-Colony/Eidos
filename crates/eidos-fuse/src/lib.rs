@@ -37,7 +37,12 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
 /// One parent's recorded negatives: folded name, then (exact spelling, recorded at).
-type NegativeDir = HashMap<String, Vec<(String, Instant)>>;
+#[derive(Default)]
+struct NegativeDir {
+    names: HashMap<String, Vec<(String, Instant)>>,
+    /// Spellings held in `names`, kept so a miss checks the cap without a walk.
+    len: usize,
+}
 
 use eidos_core::LayerStack;
 use fuser::{BackgroundSession, BackingId, FileAttr, FileType, Generation, INodeNo, ReplyEntry};
@@ -421,25 +426,30 @@ impl Eidos {
         let dir = neg.entry(parent).or_default();
         let key = name.to_ascii_lowercase();
         if let Some((_, at)) = dir
+            .names
             .get_mut(&key)
             .and_then(|v| v.iter_mut().find(|(n, _)| n == name))
         {
             *at = now;
             return true;
         }
-        let count = |dir: &NegativeDir| dir.values().map(Vec::len).sum::<usize>();
-        if count(dir) >= 4096 {
+        if dir.len >= 4096 {
             // A record older than the TTL it justified no longer covers anything,
             // so it only matters once it holds a place under the cap.
-            dir.retain(|_, v| {
+            dir.names.retain(|_, v| {
                 v.retain(|(_, at)| now.duration_since(*at) < max_age);
                 !v.is_empty()
             });
-            if count(dir) >= 4096 {
+            dir.len = dir.names.values().map(Vec::len).sum();
+            if dir.len >= 4096 {
                 return false;
             }
         }
-        dir.entry(key).or_default().push((name.to_string(), now));
+        dir.names
+            .entry(key)
+            .or_default()
+            .push((name.to_string(), now));
+        dir.len += 1;
         true
     }
 
@@ -553,17 +563,18 @@ impl Eidos {
                 return;
             };
             let key = name.to_ascii_lowercase();
-            let Some(names) = dir.get_mut(&key) else {
+            let Some(names) = dir.names.get_mut(&key) else {
                 return;
             };
             // Exact matches are handled by the kernel itself when it instantiates
             // the new dentry; only the OTHER spellings need a nudge.
             let (stale, keep): (Vec<_>, Vec<_>) = names.drain(..).partition(|(n, _)| n != name);
             if keep.is_empty() {
-                dir.remove(&key);
+                dir.names.remove(&key);
             } else {
                 *names = keep;
             }
+            dir.len -= stale.len();
             stale.into_iter().map(|(n, _)| n).collect()
         };
         if stale.is_empty() {
@@ -736,13 +747,7 @@ impl Eidos {
         };
         let (negative_dirs, negative_names) = {
             let n = self.negatives.lock_recover();
-            (
-                n.len(),
-                n.values()
-                    .flat_map(|d| d.values())
-                    .map(Vec::len)
-                    .sum::<usize>(),
-            )
+            (n.len(), n.values().map(|d| d.len).sum::<usize>())
         };
         let (listings, children) = {
             let c = self.dir_cache.lock_recover();

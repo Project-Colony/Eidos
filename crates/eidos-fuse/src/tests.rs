@@ -680,6 +680,7 @@ fn the_cap_evicts_aged_negative_records() {
         .lock_recover()
         .get_mut(&1)
         .unwrap()
+        .names
         .get_mut("n0")
         .unwrap()[0]
         .1 = aged;
@@ -688,8 +689,9 @@ fn the_cap_evicts_aged_negative_records() {
         "the aged record gives its place"
     );
     let neg = eidos.negatives.lock_recover();
-    assert!(!neg[&1].contains_key("n0"));
-    assert!(neg[&1].contains_key("new"));
+    assert!(!neg[&1].names.contains_key("n0"));
+    assert!(neg[&1].names.contains_key("new"));
+    assert_eq!(neg[&1].len, 4096, "the count follows the sweep");
 }
 
 #[test]
@@ -700,8 +702,12 @@ fn create_invalidates_every_other_spelling_of_a_recorded_negative() {
     }
     eidos.invalidate_folded_negatives(1, "Foo.esp");
     let neg = eidos.negatives.lock_recover();
-    let left: Vec<_> = neg[&1]["foo.esp"].iter().map(|(n, _)| n.as_str()).collect();
+    let left: Vec<_> = neg[&1].names["foo.esp"]
+        .iter()
+        .map(|(n, _)| n.as_str())
+        .collect();
     assert_eq!(left, ["Foo.esp"], "only the exact spelling stays");
+    assert_eq!(neg[&1].len, 1, "the count drops with the spellings");
 }
 
 #[test]
