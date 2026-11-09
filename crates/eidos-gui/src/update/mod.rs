@@ -1095,6 +1095,9 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         | Message::PreviewReady(..)
         // A worker's answer arriving, not a click.
         | Message::Placed(..)
+        // Same for the answers of the nxm handler worker (read, register).
+        | Message::NxmHandlerRead(..)
+        | Message::NxmRegistered(..)
         | Message::ArchiveExportFinished(..)
         | Message::ArchiveExtracted(..)
         | Message::CollectionInstallChecked { .. }
@@ -1497,6 +1500,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::SettingsTabSelected(..)
         | Message::NexusSignInStart
         | Message::NexusSignInResult(..)
+        | Message::NxmHandlerRead(..)
+        | Message::RegisterNxm
+        | Message::NxmRegistered(..)
         | Message::NexusSignOut
         | Message::Preference(..)
         | Message::DismissToast

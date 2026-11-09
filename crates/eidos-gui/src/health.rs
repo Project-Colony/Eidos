@@ -34,11 +34,12 @@
 
 use std::path::PathBuf;
 
+use eidos::nxm_handler::NxmHandler;
 use eidos_gamefeatures::RegistryStatus;
 use eidos_games::DetectedGame;
 
 use crate::modinfo::{DiagLevel, Diagnostic};
-use crate::{t, tf};
+use crate::{t, tf, Message};
 
 /// Everything the prefix checks need, read once so the checks themselves stay
 /// pure and testable. Gathering is I/O; deciding is not.
@@ -203,12 +204,11 @@ pub(crate) struct NexusFacts {
     pub(crate) signed_in: bool,
     /// The last error the Nexus client reported, if it is still standing.
     pub(crate) last_error: Option<String>,
+    /// Who owns `nxm://` links; None while unread.
+    pub(crate) nxm: Option<NxmHandler>,
 }
 
 pub(crate) fn nexus_checks(f: &NexusFacts) -> Vec<Diagnostic> {
-    if f.signed_in && f.last_error.is_none() {
-        return Vec::new();
-    }
     let mut out = Vec::new();
     if !f.signed_in {
         out.push(Diagnostic {
@@ -225,6 +225,28 @@ pub(crate) fn nexus_checks(f: &NexusFacts) -> Vec<Diagnostic> {
             detail: tf("health_nexus_failed_detail", &[("error", &e)]),
             actions: Vec::new(),
         });
+    }
+    let register = || vec![(t("settings_nxm_register").to_string(), Message::RegisterNxm)];
+    match &f.nxm {
+        Some(NxmHandler::Unset) => out.push(Diagnostic {
+            level: DiagLevel::Advice,
+            title: t("health_nxm_unset").to_string(),
+            detail: t("health_nxm_unset_detail").to_string(),
+            actions: register(),
+        }),
+        Some(NxmHandler::EidosMissing { exec }) => out.push(Diagnostic {
+            level: DiagLevel::Problem,
+            title: t("health_nxm_missing").to_string(),
+            detail: tf("health_nxm_missing_detail", &[("exec", exec)]),
+            actions: register(),
+        }),
+        Some(NxmHandler::Other { desktop }) => out.push(Diagnostic {
+            level: DiagLevel::Advice,
+            title: t("health_nxm_other").to_string(),
+            detail: tf("health_nxm_other_detail", &[("desktop", desktop)]),
+            actions: register(),
+        }),
+        _ => {}
     }
     out
 }
@@ -354,7 +376,8 @@ mod tests {
     fn a_working_nexus_says_nothing() {
         assert!(nexus_checks(&NexusFacts {
             signed_in: true,
-            last_error: None
+            last_error: None,
+            nxm: None,
         })
         .is_empty());
     }
@@ -364,6 +387,7 @@ mod tests {
         let d = nexus_checks(&NexusFacts {
             signed_in: false,
             last_error: None,
+            nxm: None,
         });
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].level, DiagLevel::Advice);
@@ -378,6 +402,7 @@ mod tests {
         let d = nexus_checks(&NexusFacts {
             signed_in: true,
             last_error: Some("429 Too Many Requests.".to_string()),
+            nxm: None,
         });
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].level, DiagLevel::Problem);
@@ -385,10 +410,23 @@ mod tests {
     }
 
     #[test]
+    fn nxm_handler_cards_offer_register() {
+        let card = |h| nexus_checks(&NexusFacts { signed_in: true, last_error: None, nxm: Some(h) });
+        assert!(card(NxmHandler::Eidos { exec: "/x".into() }).is_empty());
+        assert!(card(NxmHandler::Unknown).is_empty());
+        let missing = card(NxmHandler::EidosMissing { exec: "/x".into() });
+        assert_eq!(missing[0].level, DiagLevel::Problem);
+        assert!(matches!(missing[0].actions[0].1, Message::RegisterNxm));
+        assert_eq!(card(NxmHandler::Unset)[0].level, DiagLevel::Advice);
+        assert_eq!(card(NxmHandler::Other { desktop: "a.desktop".into() })[0].level, DiagLevel::Advice);
+    }
+
+    #[test]
     fn signed_out_and_failing_is_two_cards() {
         let d = nexus_checks(&NexusFacts {
             signed_in: false,
             last_error: Some("connection refused".to_string()),
+            nxm: None,
         });
         assert_eq!(d.len(), 2);
     }

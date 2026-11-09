@@ -104,33 +104,16 @@ pub(crate) fn cmd_nxm(args: &[String]) {
             };
             resume(&archive);
         }
-        Some("--register") => {
-            let (exe, needs_marker) = crate::this_exe();
-            let marker = if needs_marker {
-                format!(" {}", crate::CLI_MARKER)
-            } else {
-                String::new()
-            };
-            let apps = eidos_paths::desktop_entries_dir();
-            let _ = std::fs::create_dir_all(&apps);
-            let desktop = apps.join("eidos-nxm.desktop");
-            let body = format!(
-                "[Desktop Entry]\nType=Application\nName=Eidos (Nexus nxm handler)\n\
-                 Exec={}{marker} nxm %u\nMimeType=x-scheme-handler/nxm;\nNoDisplay=true\nTerminal=false\n",
-                exe.display()
-            );
-            if let Err(e) = std::fs::write(&desktop, body) {
-                eidos_log::warn!("could not write {}: {e}", desktop.display());
-                exit(1);
-            }
-            let _ = std::process::Command::new("xdg-mime")
-                .args(["default", "eidos-nxm.desktop", "x-scheme-handler/nxm"])
-                .status();
-            println!(
+        Some("--register") => match crate::nxm_handler::register() {
+            Ok(desktop) => println!(
                 "Registered {} for nxm:// links.\nThe site's \"Mod Manager Download\" button now downloads through Eidos.",
                 desktop.display()
-            );
-        }
+            ),
+            Err(e) => {
+                eidos_log::warn!("could not register the nxm handler: {e}");
+                exit(1);
+            }
+        },
         Some(url) => {
             let nxm = match eidos_nexus::NxmLink::parse(url) {
                 Ok(eidos_nexus::NxmLink::Mod(n)) => n,

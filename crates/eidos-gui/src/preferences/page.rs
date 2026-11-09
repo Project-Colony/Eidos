@@ -165,6 +165,30 @@ impl Sections<'_> {
             .into()
     }
 
+    /// Who owns `nxm://` links, with the button that makes it Eidos.
+    fn nxm_row<'a>(&self) -> Element<'a, Message> {
+        use eidos::nxm_handler::NxmHandler as H;
+        let line = match &self.app.nxm_handler {
+            None => String::new(),
+            Some(H::Eidos { exec }) => tf("settings_nxm_status_eidos", &[("exec", exec)]),
+            Some(H::EidosMissing { exec }) => tf("settings_nxm_status_missing", &[("exec", exec)]),
+            Some(H::Other { desktop }) => tf("settings_nxm_status_other", &[("desktop", desktop)]),
+            Some(H::Unset) => t("settings_nxm_status_unset").to_string(),
+            Some(H::Unknown) => t("settings_nxm_status_unknown").to_string(),
+        };
+        Row::new()
+            .spacing(8)
+            .align_y(Alignment::Center)
+            .push(text(line).size(self.typo.sz(12)).font(self.typo.regular))
+            .push(
+                button(text(t("settings_nxm_register")).size(self.typo.sz(12)).font(self.typo.regular))
+                    .padding([5, 12])
+                    .style(button::primary)
+                    .on_press(Message::RegisterNxm),
+            )
+            .into()
+    }
+
     fn startup<'a>(&self) -> Element<'a, Message> {
         let (app, typo) = (self.app, &self.typo);
         let games = std::iter::once((None, t("settings_none").to_string())).chain(
@@ -400,6 +424,7 @@ impl Sections<'_> {
                         .map(|i| i.downloads_dir().display().to_string())
                         .unwrap_or_else(|| t("settings_no_instance_open").to_string()),
                 ),
+                self.nxm_row(),
                 self.note(t("settings_nxm_note").to_string()),
                 setting_row(
                     typo,

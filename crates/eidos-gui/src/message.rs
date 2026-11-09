@@ -282,6 +282,10 @@ pub(crate) enum Message {
     NexusSignInStart,
     /// The sign-in finished: the account on success, else an error.
     NexusSignInResult(Result<eidos_nexus::Account, String>),
+    /// Which program the desktop hands `nxm://` links to (read on a worker).
+    NxmHandlerRead(eidos::nxm_handler::NxmHandler),
+    RegisterNxm,
+    NxmRegistered(Result<(), String>),
     /// Forget the stored Nexus session.
     NexusSignOut,
     /// A change from the shared Colony preferences: theme, accent, text sizes,

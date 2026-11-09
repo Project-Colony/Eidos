@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=8f0ea64ea39bdda653b7726249aa2b3377b772dc -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=cadcf569ba9dbf61fcde16e8cef0e9cbe719744c -->
 
 # Risoluzione dei problemi e diagnostica
 
@@ -247,3 +247,9 @@ affatto. Un'apertura in scrittura di un file che lettori in passthrough tengono
 aperto riceve ETXTBSY (in Wine: `STATUS_SHARING_VIOLATION`) prima di qualsiasi
 copy-up, così un'apertura con `O_TRUNC` non può lasciare nell'Overwrite una
 copia vuota che nasconda il file della mod.
+
+### Il pulsante Mod Manager Download non fa nulla
+
+Preferenze > Download mostra quale programma riceve i link `nxm://`. Salute aggiunge una scheda quando quel programma non è Eidos, manca o non ne è impostato nessuno. Il pulsante Registra scrive `eidos-nxm.desktop` e lo imposta come gestore predefinito di `x-scheme-handler/nxm`. Da terminale, `eidos nxm --register` fa lo stesso.
+
+Se lo stato indica già Eidos e il pulsante continua a non fare nulla, il browser potrebbe usare una scelta precedente. Cancella la scelta salvata per i link nxm nelle impostazioni del browser, così che la richieda di nuovo. Un browser Flatpak non può avviare i programmi dell'host e passa il link tramite il portale desktop, che legge il gestore registrato sull'host.

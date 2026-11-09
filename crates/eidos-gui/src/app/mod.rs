@@ -258,6 +258,8 @@ pub(crate) struct App {
     pub(crate) nexus_signing_in: bool,
     /// The last sign-in error, shown inline in the dialog.
     pub(crate) nexus_error: Option<String>,
+    /// Who owns `nxm://` links; None until the startup read answers.
+    pub(crate) nxm_handler: Option<eidos::nxm_handler::NxmHandler>,
     /// The persisted app-global settings the CLI shares (default game, tools).
     pub(crate) prefs: Settings,
     /// The window's look: theme, accent, fonts, text sizes, motion.

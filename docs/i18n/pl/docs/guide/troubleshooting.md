@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=8f0ea64ea39bdda653b7726249aa2b3377b772dc -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=cadcf569ba9dbf61fcde16e8cef0e9cbe719744c -->
 
 # Rozwiązywanie problemów i diagnostyka
 
@@ -242,3 +242,9 @@ używa. Otwarcie do zapisu pliku, który trzymają czytelnicy przez passthrough,
 dostaje ETXTBSY (w Wine: `STATUS_SHARING_VIOLATION`) przed jakimkolwiek copy-up,
 więc otwarcie z `O_TRUNC` nie może zostawić w Overwrite pustej kopii, która
 ukryłaby plik moda.
+
+### Przycisk Mod Manager Download nic nie robi
+
+Preferencje > Pobieranie pokazują, który program odbiera linki `nxm://`. Stan dodaje kartę, gdy tym programem nie jest Eidos, gdy go brakuje albo gdy żaden nie jest ustawiony. Przycisk Zarejestruj zapisuje `eidos-nxm.desktop` i ustawia go jako domyślną obsługę `x-scheme-handler/nxm`. W terminalu to samo robi `eidos nxm --register`.
+
+Jeśli stan już wskazuje Eidos, a przycisk nadal nic nie robi, przeglądarka może używać wcześniejszego wyboru. Usuń zapisany wybór dla linków nxm w ustawieniach przeglądarki, żeby zapytała ponownie. Przeglądarka we Flatpaku nie może uruchamiać programów hosta i przekazuje link przez portal pulpitu, który czyta obsługę zarejestrowaną na hoście.

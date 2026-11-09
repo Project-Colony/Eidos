@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=8f0ea64ea39bdda653b7726249aa2b3377b772dc -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=cadcf569ba9dbf61fcde16e8cef0e9cbe719744c -->
 
 # トラブルシューティングと診断
 
@@ -241,3 +241,9 @@ ID を持ち込むオープンは EIO で失敗し、バッキングファイル
 み手が保持しているファイルを書き込み用に開くと、どの copy-up よりも先に
 ETXTBSY(Wine では `STATUS_SHARING_VIOLATION`)が返るので、`O_TRUNC` のオープンが
 MOD のファイルを隠す空のコピーを Overwrite に残すことはありません。
+
+### Mod Manager Download ボタンが何も起こさない
+
+「設定 > ダウンロード」に、`nxm://` リンクを受け取るプログラムが表示されます。そのプログラムが Eidos でない場合、存在しない場合、未設定の場合は、ヘルスにカードが追加されます。「登録」ボタンは `eidos-nxm.desktop` を書き出し、`x-scheme-handler/nxm` の既定のハンドラにします。ターミナルからは `eidos nxm --register` で同じことができます。
+
+状態がすでに Eidos を示しているのにボタンが動かない場合、ブラウザが以前の選択を使っている可能性があります。ブラウザの設定で nxm リンクの保存済みの選択を消去し、再度確認されるようにしてください。Flatpak 版のブラウザはホストのプログラムを起動できず、デスクトップポータル経由でリンクを渡します。ポータルはホストに登録されたハンドラを読みます。

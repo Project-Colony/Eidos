@@ -341,6 +341,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         nexus_account: None,
         nexus_signing_in: false,
         nexus_error: None,
+        nxm_handler: None,
         // NOT `Settings::load()` under test, for two reasons that both bit.
         // Loading binds the real file, so a test dispatching "toggle lock"
         // wrote the developer's own preferences - the symptom, options
@@ -604,6 +605,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     // `eidos-gui --collection <nxm://...>`: the nxm handler hands a collection
     // link here rather than trying to install one itself, because reading it
     // needs the mod list this window holds.
+    let startup = Task::batch([startup, read_nxm_handler()]);
     let collection = launch_args
         .iter()
         .position(|a| a == "--collection")
@@ -614,6 +616,12 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         None => startup,
     };
     (app, startup)
+}
+
+/// Ask the desktop who owns `nxm://` links. `xdg-mime` is a process, so this
+/// runs on the blocking pool, never in `diagnostics()`.
+pub(crate) fn read_nxm_handler() -> Task<Message> {
+    Task::perform(smol::unblock(eidos::nxm_handler::read), Message::NxmHandlerRead)
 }
 
 /// Reload the tool list for the open instance (user `tools.ini` + per-game

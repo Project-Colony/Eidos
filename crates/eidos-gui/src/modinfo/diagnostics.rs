@@ -40,6 +40,7 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
     out.extend(crate::health::nexus_checks(&crate::health::NexusFacts {
         signed_in: app.nexus_account.is_some(),
         last_error: app.nexus_error.clone(),
+        nxm: app.nxm_handler.clone(),
     }));
 
     // What the user's own `diagnose` extensions reported, FIRST and attributed by

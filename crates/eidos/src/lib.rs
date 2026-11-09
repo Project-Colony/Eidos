@@ -19,6 +19,7 @@ mod games;
 mod install;
 mod launch;
 mod nxm;
+pub mod nxm_handler;
 mod prepare;
 mod prereqs;
 mod resolve;
