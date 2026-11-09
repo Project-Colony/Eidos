@@ -1,7 +1,7 @@
 use std::sync::atomic::Ordering;
 use std::time::SystemTime;
 
-use eidos_instance::ModMeta;
+use eidos_instance::{CategoryFactory, ModMeta};
 
 use super::*;
 use eidos_fomod::FileItem;
@@ -161,6 +161,62 @@ fn meta_ini_records_the_game_the_way_mo2_spells_it() {
     assert_eq!(
         ModMeta::read(&dest.join("meta.ini")).game_name().as_deref(),
         Some("Fallout4")
+    );
+}
+
+/// Archive with a Nexus category 37 sidecar, and an instance root that maps 37
+/// to local category 2 when `mapped`.
+fn category_case(tag: &str, mapped: bool) -> (TempDir, PathBuf, PathBuf) {
+    let t = TempDir::new(tag);
+    let archive = t.path().join("MyMod-1234.7z");
+    fs::write(&archive, b"x").unwrap();
+    fs::write(
+        t.path().join("MyMod-1234.7z.meta"),
+        b"[General]\ncategory=37\n",
+    )
+    .unwrap();
+    let root = t.path().join("root");
+    fs::create_dir_all(&root).unwrap();
+    if mapped {
+        fs::write(root.join("nexuscatmap.dat"), "2|Armour|37\n").unwrap();
+    }
+    let dest = t.path().join("MyMod");
+    fs::create_dir_all(&dest).unwrap();
+    (t, archive, dest)
+}
+
+#[test]
+fn install_maps_the_nexus_category_through_the_instance_catalog() {
+    let (t, archive, dest) = category_case("catmap", true);
+    let cats = CategoryFactory::load(&t.path().join("root"));
+    write_meta_preserving(&archive, &dest, "skyrimse", None, None, false, &cats).unwrap();
+    assert_eq!(
+        ModMeta::read(&dest.join("meta.ini")).category().as_deref(),
+        Some("2,")
+    );
+}
+
+#[test]
+fn an_unmapped_nexus_category_stays_uncategorised() {
+    let (t, archive, dest) = category_case("catunmapped", false);
+    let cats = CategoryFactory::load(&t.path().join("root"));
+    write_meta_preserving(&archive, &dest, "skyrimse", None, None, false, &cats).unwrap();
+    assert_eq!(
+        ModMeta::read(&dest.join("meta.ini")).category().as_deref(),
+        Some("-1,")
+    );
+}
+
+#[test]
+fn a_reinstall_keeps_the_users_category() {
+    let (t, archive, dest) = category_case("catkeep", true);
+    let cats = CategoryFactory::load(&t.path().join("root"));
+    let mut kept = ModMeta::default();
+    kept.set_categories(Some(42), &[]);
+    write_meta_preserving(&archive, &dest, "skyrimse", None, Some(kept), false, &cats).unwrap();
+    assert_eq!(
+        ModMeta::read(&dest.join("meta.ini")).category().as_deref(),
+        Some("42,")
     );
 }
 

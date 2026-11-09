@@ -10,7 +10,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use eidos_instance::ModMeta;
+use eidos_instance::{CategoryFactory, ModMeta};
 
 use crate::{fix_directory_name, guess_mod_name};
 
@@ -24,7 +24,15 @@ pub(crate) fn write_meta(
     game_id: &str,
     guessed_id: Option<u64>,
 ) -> io::Result<()> {
-    write_meta_preserving(archive, dest, game_id, guessed_id, None, false)
+    write_meta_preserving(
+        archive,
+        dest,
+        game_id,
+        guessed_id,
+        None,
+        false,
+        &CategoryFactory::defaults(),
+    )
 }
 
 pub(crate) fn write_meta_preserving(
@@ -34,6 +42,7 @@ pub(crate) fn write_meta_preserving(
     guessed_id: Option<u64>,
     preserved: Option<ModMeta>,
     merging: bool,
+    categories: &CategoryFactory,
 ) -> io::Result<()> {
     // The sidecar is the full archive name + ".meta" (e.g. Mod-1234.7z.meta).
     let sidecar = PathBuf::from(format!("{}.meta", archive.to_string_lossy()));
@@ -86,9 +95,21 @@ pub(crate) fn write_meta_preserving(
     if let Some(nv) = from.newest_version() {
         meta.set("newestVersion", &nv);
     }
-    // The sidecar's category is a raw Nexus id we don't map yet; leave uncategorised.
+    // The sidecar's category is a raw Nexus id; the instance catalog maps it when
+    // Fetch from Nexus has filled `nexuscatmap.dat`, else the mod stays
+    // uncategorised. A reinstall keeps the user's category.
     if !had_metadata {
-        meta.set("category", "\"-1,\"");
+        let local = from
+            .category()
+            .and_then(|c| {
+                c.trim()
+                    .trim_matches('"')
+                    .trim_end_matches(',')
+                    .parse::<i32>()
+                    .ok()
+            })
+            .and_then(|id| categories.for_nexus_id(id));
+        meta.set_categories(local, &[]);
     }
     // nexusFileStatus mirrors the sidecar's fileCategory (1 = main file by default).
     meta.set(

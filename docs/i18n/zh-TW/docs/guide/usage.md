@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=361774f4c6bf1703a68a6798a05660bc0ce15fae -->
 
 # 使用 Eidos
 
@@ -470,7 +470,7 @@ Downloads 分頁是一座壓縮檔**圖書館**,不是傳輸佇列。可以依�
 
 **Categories** 是可以編輯的,不只是拿來顯示:把它們指派給單一模組或整批選取、在
 同一個對話框裡編輯目錄本身,並從 Nexus 拉取該遊戲的官方類別清單。兩個目錄檔案都是
-MO2 自己的(`categories.dat` 與 `nexuscatmap.dat`),所以共用的實例只會有一份目錄。
+MO2 自己的(`categories.dat` 與 `nexuscatmap.dat`),所以共用的實例只會有一份目錄。 從 Nexus 下載的模組,在「從 Nexus 取得」對應好目錄之後,安裝時會自動歸類。
 
 **View -> INI editor** 編輯設定檔的遊戲 INI - 會留存的那一份,而不是埋在 Proton
 前綴裡、每次啟動都被覆寫的那一份。**View -> Log** 讀取工作階段日誌。

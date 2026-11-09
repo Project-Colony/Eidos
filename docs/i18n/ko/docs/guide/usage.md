@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=361774f4c6bf1703a68a6798a05660bc0ce15fae -->
 
 # Eidos 사용하기
 
@@ -552,7 +552,7 @@ Nexus가 고르고 이 설정은 아무것도 바꾸지 않습니다. 이것은 
 전체에 지정하고, 같은 대화 상자에서 카탈로그 자체를 고치고, 게임의 공식 카테고리
 목록을 Nexus에서 가져오세요. 카탈로그 파일 둘 다 MO2 자신의
 것(`categories.dat`과 `nexuscatmap.dat`)이므로, 공유된 인스턴스는 카탈로그
-하나를 유지합니다.
+하나를 유지합니다. Nexus에서 내려받은 모드는 'Nexus에서 가져오기'로 카탈로그 매핑이 끝나 있으면 설치할 때 카테고리가 지정됩니다.
 
 **View -> INI editor**는 프로필의 게임 INI를 편집합니다 - 실행할 때마다 덮어쓰이는
 Proton 프리픽스 속에 파묻힌 것이 아니라 남아 있는 사본 쪽입니다. **View ->

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=361774f4c6bf1703a68a6798a05660bc0ce15fae -->
 
 # Usare Eidos
 
@@ -650,7 +650,7 @@ Le **Categories** sono modificabili, non solo mostrate: assegnale a una mod o a
 un'intera selezione, modifica il catalogo stesso dalla stessa finestra, e
 scarica da Nexus l'elenco ufficiale delle categorie del gioco. Entrambi i file
 di catalogo sono quelli di MO2 (`categories.dat` e `nexuscatmap.dat`), quindi
-un'istanza condivisa mantiene un solo catalogo.
+un'istanza condivisa mantiene un solo catalogo. Una mod scaricata da Nexus viene categorizzata all'installazione, dopo che Recupera da Nexus ha associato il catalogo.
 
 **View -> INI editor** modifica gli INI di gioco del profilo - la copia che
 resta, non quella sepolta nel prefisso Proton che viene sovrascritta a ogni

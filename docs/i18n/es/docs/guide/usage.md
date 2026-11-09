@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=361774f4c6bf1703a68a6798a05660bc0ce15fae -->
 
 # Usar Eidos
 
@@ -637,7 +637,7 @@ descarga se hace igual, desde el nodo que Nexus ofreciera primero.
 selección, edita el propio catálogo desde el mismo diálogo, y trae de Nexus la
 lista oficial de categorías del juego. Los dos archivos de catálogo son los
 propios de MO2 (`categories.dat` y `nexuscatmap.dat`), así que una instancia
-compartida mantiene un solo catálogo.
+compartida mantiene un solo catálogo. Un mod descargado de Nexus se categoriza al instalarlo, una vez que Obtener de Nexus ha asignado el catálogo.
 
 **View -> INI editor** edita los INI del juego del perfil - la copia que persiste,
 no la enterrada en el prefijo de Proton que se sobrescribe en cada lanzamiento.

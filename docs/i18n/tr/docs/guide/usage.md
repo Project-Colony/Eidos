@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=361774f4c6bf1703a68a6798a05660bc0ce15fae -->
 
 # Eidos kullanımı
 
@@ -614,7 +614,7 @@ düğümden.
 bütün bir seçime atayın, katalogun kendisini aynı iletişim kutusundan düzenleyin
 ve oyunun resmî kategori listesini Nexus'tan çekin. İki katalog dosyası da
 MO2'nin kendisidir (`categories.dat` ve `nexuscatmap.dat`), yani paylaşılan bir
-örnek tek bir katalog tutar.
+örnek tek bir katalog tutar. Nexus'tan indirilen bir mod, Nexus'tan getir kataloğu eşleştirdikten sonra kurulum sırasında kategorilenir.
 
 **View -> INI editor**, profilin oyun INI'lerini düzenler - her başlatmada
 üzerine yazılan, Proton önekine gömülü olanı değil, kalıcı olan kopyayı.

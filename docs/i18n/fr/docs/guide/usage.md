@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=361774f4c6bf1703a68a6798a05660bc0ce15fae -->
 
 # Utiliser Eidos
 
@@ -663,7 +663,7 @@ que Nexus a proposé en premier.
 ou à toute une sélection, modifiez le catalogue lui-même depuis la même boîte de
 dialogue, et récupérez la liste officielle des catégories du jeu depuis Nexus.
 Les deux fichiers de catalogue sont ceux de MO2 (`categories.dat` et
-`nexuscatmap.dat`), si bien qu'une instance partagée garde un seul catalogue.
+`nexuscatmap.dat`), si bien qu'une instance partagée garde un seul catalogue. Un mod téléchargé depuis Nexus est classé à l'installation, dès que Récupérer depuis Nexus a associé le catalogue.
 
 **View -> INI editor** modifie les INI de jeu du profil - la copie qui persiste,
 plutôt que celle enfouie dans le préfixe Proton qui est écrasée à chaque

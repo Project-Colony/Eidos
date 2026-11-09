@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=361774f4c6bf1703a68a6798a05660bc0ce15fae -->
 
 # Používání Eidosu
 
@@ -588,7 +588,7 @@ z uzlu, který Nexus nabídl jako první.
 nebo celému výběru, upravte z téhož dialogu i samotný katalog a stáhněte
 oficiální seznam kategorií hry z Nexusu. Oba soubory katalogu jsou vlastní
 soubory MO2 (`categories.dat` a `nexuscatmap.dat`), takže sdílená instance drží
-jeden katalog.
+jeden katalog. Mod stažený z Nexusu se při instalaci zařadí do kategorie, jakmile Načíst z Nexusu namapuje katalog.
 
 **View -> INI editor** upravuje herní INI soubory profilu - tu kopii, která
 přetrvá, ne tu zahrabanou v prefixu Protonu, která se při každém spuštění

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=361774f4c6bf1703a68a6798a05660bc0ce15fae -->
 
 # Eidos gebruiken
 
@@ -630,7 +630,7 @@ dan gebeurt de download toch, vanaf het knooppunt dat Nexus als eerste aanbood.
 een hele selectie, bewerk de catalogus zelf vanuit dezelfde dialoog, en haal de
 officiële categorielijst van het spel op bij Nexus. Beide catalogusbestanden zijn
 die van MO2 (`categories.dat` en `nexuscatmap.dat`), dus een gedeelde instantie
-houdt één catalogus.
+houdt één catalogus. Een van Nexus gedownloade mod krijgt bij de installatie een categorie, zodra Ophalen van Nexus de catalogus heeft gekoppeld.
 
 **View -> INI editor** bewerkt de spel-INI's van het profiel - de kopie die
 blijft bestaan, niet die begraven in het Proton-prefix die bij elke start

@@ -578,7 +578,7 @@ whichever node Nexus offered first.
 **Categories** are editable, not just displayed: assign them to one mod or a
 whole selection, edit the catalog itself from the same dialog, and pull the
 game's official category list from Nexus. Both catalog files are MO2's own
-(`categories.dat` and `nexuscatmap.dat`), so a shared instance keeps one catalog.
+(`categories.dat` and `nexuscatmap.dat`), so a shared instance keeps one catalog. A mod downloaded from Nexus is categorised at install, once Fetch from Nexus has mapped the catalog.
 
 **View -> INI editor** edits the profile's game INIs - the copy that persists,
 rather than the one buried in the Proton prefix that is overwritten at every

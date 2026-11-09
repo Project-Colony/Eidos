@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=361774f4c6bf1703a68a6798a05660bc0ce15fae -->
 
 # Eidos の使い方
 
@@ -564,7 +564,7 @@ Nexus が最初に出したノードから行われます。
 割り当て、同じダイアログからカタログ自体を編集し、ゲームの公式カテゴリ一覧を
 Nexus から取ってこられます。カタログのファイルはどちらも MO2 のもの
 (`categories.dat` と `nexuscatmap.dat`)なので、共有したインスタンスは
-カタログを一つに保ちます。
+カタログを一つに保ちます。 Nexus からダウンロードした MOD は、「Nexus から取得」でカタログの対応付けが済んでいれば、インストール時にカテゴリが付きます。
 
 **View -> INI editor** はプロファイルのゲーム INI を編集します - 起動のたびに
 上書きされる Proton プレフィックスの奥のものではなく、残るほうの写しです。

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=361774f4c6bf1703a68a6798a05660bc0ce15fae -->
 
 # 使用 Eidos
 
@@ -455,7 +455,7 @@ Nexus 最先给出的那个节点。
 
 **Categories** 是可编辑的,不只是拿来显示:把它们指派给一个模组或一整批选中的模组,
 在同一个对话框里编辑目录本身,并从 Nexus 拉取这款游戏的官方分类列表。两个目录文件都是
-MO2 自己的(`categories.dat` 和 `nexuscatmap.dat`),所以共享的实例保有同一份目录。
+MO2 自己的(`categories.dat` 和 `nexuscatmap.dat`),所以共享的实例保有同一份目录。 从 Nexus 下载的模组,在“从 Nexus 获取”映射好目录之后,安装时会自动归类。
 
 **View -> INI editor** 编辑配置档的游戏 INI - 是会持久保留的那一份,而不是埋在 Proton
 前缀里、每次启动都被覆盖的那一份。**View -> Log** 读会话日志。**View -> Extensions**

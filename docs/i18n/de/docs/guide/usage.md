@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=361774f4c6bf1703a68a6798a05660bc0ce15fae -->
 
 # Eidos verwenden
 
@@ -665,7 +665,7 @@ zuerst angeboten hat.
 oder einer ganzen Auswahl zu, bearbeiten Sie den Katalog selbst aus demselben
 Dialog, und holen Sie die offizielle Kategorienliste des Spiels von Nexus. Beide
 Katalogdateien sind MO2s eigene (`categories.dat` und `nexuscatmap.dat`), sodass
-eine geteilte Instanz einen Katalog behält.
+eine geteilte Instanz einen Katalog behält. Eine von Nexus heruntergeladene Mod wird bei der Installation kategorisiert, sobald „Von Nexus abrufen“ den Katalog zugeordnet hat.
 
 **View -> INI editor** bearbeitet die Spiel-INIs des Profils - die Kopie, die
 bleibt, statt der im Proton-Präfix vergrabenen, die bei jedem Start überschrieben

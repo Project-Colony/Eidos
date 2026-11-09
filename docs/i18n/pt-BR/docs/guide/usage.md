@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=361774f4c6bf1703a68a6798a05660bc0ce15fae -->
 
 # Usar o Eidos
 
@@ -618,7 +618,7 @@ As **Categories** são editáveis, não só exibidas: atribua-as a um mod ou a u
 seleção inteira, edite o próprio catálogo pelo mesmo diálogo, e puxe do Nexus a
 lista oficial de categorias do jogo. Os dois arquivos de catálogo são os do
 próprio MO2 (`categories.dat` e `nexuscatmap.dat`), então uma instância
-compartilhada mantém um catálogo só.
+compartilhada mantém um catálogo só. Um mod baixado do Nexus é categorizado na instalação, depois que Buscar do Nexus mapeou o catálogo.
 
 **View -> INI editor** edita os INIs do jogo do perfil - a cópia que persiste, e
 não a que fica enterrada no prefixo Proton e é sobrescrita a cada início.

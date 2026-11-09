@@ -483,6 +483,21 @@ pub(crate) fn after_install(
             &[("name", &name), ("where", &where_to), ("note", &note)],
         )
     });
+    // A Nexus category the catalog could not map: say where the mappings come from.
+    let nexus_category = archive.and_then(|a| {
+        eidos_instance::ModMeta::read(&PathBuf::from(format!("{}.meta", a.display()))).category()
+    });
+    let unmapped = nexus_category.is_some()
+        && eidos_instance::ModMeta::read(&dest.join("meta.ini"))
+            .category()
+            .and_then(|c| eidos_instance::parse_primary(&c))
+            .is_none();
+    if unmapped {
+        if let Some(status) = &mut app.status {
+            status.push(' ');
+            status.push_str(t("status_category_unmapped"));
+        }
+    }
     for warning in [warning, registration_warning, move_refused]
         .into_iter()
         .flatten()

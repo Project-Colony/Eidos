@@ -324,6 +324,27 @@ fn completed_install_surfaces_persistent_missing_payload_warning() {
 }
 
 #[test]
+fn install_status_hints_at_fetch_from_nexus_for_an_unmapped_category() {
+    let (mut app, root) = list_app(&["Armour"]);
+    let inst = app.created.clone().unwrap();
+    let archive = root.join("Armour-37.7z");
+    fs::write(&archive, b"x").unwrap();
+    fs::write(root.join("Armour-37.7z.meta"), b"[General]\ncategory=37\n").unwrap();
+    let mut meta = inst.mod_meta("Armour");
+    meta.set_categories(None, &[]);
+    meta.write(&inst.meta_path("Armour")).unwrap();
+    after_install(
+        &mut app,
+        "Armour",
+        inst.mods_dir().join("Armour"),
+        false,
+        Some(&archive),
+    );
+    assert!(app.status.unwrap().contains(t("status_category_unmapped")));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn a_hidden_tool_leaves_the_picker_and_a_pinned_one_goes_to_the_top() {
     use eidos_instance::Tool;
     let mk = |title: &str, hidden: bool, pinned: bool| Tool {

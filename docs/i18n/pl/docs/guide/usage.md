@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=361774f4c6bf1703a68a6798a05660bc0ce15fae -->
 
 # Używanie Eidos
 
@@ -618,7 +618,7 @@ pierwszy.
 albo do całego zaznaczenia, edytuj sam katalog z tego samego okna i ściągnij
 oficjalną listę kategorii gry z Nexusa. Oba pliki katalogu są własnymi plikami
 MO2 (`categories.dat` i `nexuscatmap.dat`), więc współdzielona instancja trzyma
-jeden katalog.
+jeden katalog. Mod pobrany z Nexusa dostaje kategorię przy instalacji, gdy Pobierz z Nexusa zmapuje katalog.
 
 **View -> INI editor** edytuje pliki INI gry z profilu - tę kopię, która
 przetrwa, a nie tę zakopaną w prefiksie Protona, nadpisywaną przy każdym
