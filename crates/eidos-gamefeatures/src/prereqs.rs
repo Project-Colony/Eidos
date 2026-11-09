@@ -214,8 +214,8 @@ pub fn install_tier2_verb(
             io::Error::new(
                 io::ErrorKind::NotFound,
                 format!(
-                    "Proton wine not found under {}/files/bin or {}/dist/bin",
-                    proton_dir.display(),
+                    "no wine found at {0}/files/bin/wine, {0}/dist/bin/wine (Proton) or \
+                     {0}/wine (plain Wine)",
                     proton_dir.display()
                 ),
             )
