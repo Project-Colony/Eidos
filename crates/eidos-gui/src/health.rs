@@ -236,6 +236,21 @@ pub(crate) fn finding_actions(f: &eidos::check::Finding) -> Vec<(String, Message
                 ),
             ]
         }
+        "extender_missing" | "extender_runtime_missing" => {
+            let Some(page) = f.arg("page") else {
+                return Vec::new();
+            };
+            vec![
+                (
+                    t("diag_action_extender_page").to_string(),
+                    Message::OpenUrl(page.to_string()),
+                ),
+                (
+                    t("diag_action_install_archive").to_string(),
+                    Message::InstallMod,
+                ),
+            ]
+        }
         _ => Vec::new(),
     }
 }
@@ -336,6 +351,19 @@ mod tests {
                 matches!(&a[1].1, Message::CopyCrashLog(p) if p == Path::new("/tmp/crash-x.log"))
             );
         }
+    }
+
+    #[test]
+    fn extender_cards_offer_the_download_page_and_install() {
+        use eidos::check::{Finding, Level};
+        let f = Finding {
+            code: "extender_runtime_missing",
+            level: Level::Problem,
+            args: vec![("page", "https://skse.silverlock.org/".into())],
+        };
+        let a = finding_actions(&f);
+        assert!(matches!(&a[0].1, Message::OpenUrl(u) if u == "https://skse.silverlock.org/"));
+        assert!(matches!(&a[1].1, Message::InstallMod));
     }
 
     #[test]

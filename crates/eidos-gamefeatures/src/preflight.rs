@@ -304,24 +304,32 @@ pub fn runtime_version(root: &Merged, game_binary: &str) -> Result<Version, Stri
 pub struct Extender {
     pub plugins_dir: &'static str,
     pub runtime_dll: Option<&'static str>,
+    pub page: &'static str,
 }
 
 pub fn extender(game_id: &str) -> Option<Extender> {
-    let (plugins_dir, runtime_dll) = match game_id {
-        "skyrimse" | "enderalse" => ("SKSE/Plugins", Some("skse64")),
-        "skyrimvr" => ("SKSE/Plugins", Some("sksevr")),
-        "skyrim" => ("SKSE/Plugins", None),
-        "fallout4" => ("F4SE/Plugins", Some("f4se")),
-        "fallout4vr" => ("F4SE/Plugins", Some("f4sevr")),
-        "starfield" => ("SFSE/Plugins", Some("sfse")),
-        "falloutnv" => ("NVSE/Plugins", None),
-        "fallout3" => ("FOSE/Plugins", None),
-        "oblivion" => ("OBSE/Plugins", None),
+    const SKSE: &str = "https://skse.silverlock.org/";
+    const F4SE: &str = "https://f4se.silverlock.org/";
+    let (plugins_dir, runtime_dll, page) = match game_id {
+        "skyrimse" | "enderalse" => ("SKSE/Plugins", Some("skse64"), SKSE),
+        "skyrimvr" => ("SKSE/Plugins", Some("sksevr"), SKSE),
+        "skyrim" => ("SKSE/Plugins", None, SKSE),
+        "fallout4" => ("F4SE/Plugins", Some("f4se"), F4SE),
+        "fallout4vr" => ("F4SE/Plugins", Some("f4sevr"), F4SE),
+        "starfield" => ("SFSE/Plugins", Some("sfse"), "https://sfse.silverlock.org/"),
+        "falloutnv" => (
+            "NVSE/Plugins",
+            None,
+            "https://github.com/xNVSE/NVSE/releases/latest",
+        ),
+        "fallout3" => ("FOSE/Plugins", None, "https://fose.silverlock.org/"),
+        "oblivion" => ("OBSE/Plugins", None, "https://obse.silverlock.org/"),
         _ => return None,
     };
     Some(Extender {
         plugins_dir,
         runtime_dll,
+        page,
     })
 }
 
@@ -336,6 +344,7 @@ pub struct ExtenderFacts {
     pub loader: &'static str,
     pub loader_found: bool,
     pub plugins_dir: &'static str,
+    pub page: &'static str,
     pub plugin_dlls: usize,
     pub runtime: Option<Version>,
     pub runtime_dll: Option<String>,
@@ -368,6 +377,7 @@ pub fn extender_facts(
         loader: se.loader,
         loader_found: is_file(se.loader),
         plugins_dir: row.plugins_dir,
+        page: row.page,
         plugin_dlls,
         runtime,
         runtime_dll,
@@ -1497,6 +1507,24 @@ mod tests {
             && d.severity == DiagnosticSeverity::Unverified));
         assert!(!found.iter().any(|d| d.code == "runtime_mismatch"));
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn every_extender_row_has_an_https_page() {
+        for id in [
+            "skyrim",
+            "skyrimse",
+            "enderalse",
+            "skyrimvr",
+            "fallout4",
+            "fallout4vr",
+            "starfield",
+            "falloutnv",
+            "fallout3",
+            "oblivion",
+        ] {
+            assert!(extender(id).unwrap().page.starts_with("https://"), "{id}");
+        }
     }
 
     #[test]

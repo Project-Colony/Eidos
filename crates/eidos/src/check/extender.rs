@@ -10,6 +10,9 @@ use super::{Finding, Level};
 
 pub fn extender_findings(f: &ExtenderFacts) -> Vec<Finding> {
     let mut out = Vec::new();
+    let runtime = f
+        .runtime
+        .map_or_else(|| "unknown".into(), |v| v.to_string());
     if !f.loader_found && f.plugin_dlls > 0 {
         out.push(Finding {
             code: "extender_missing",
@@ -18,6 +21,8 @@ pub fn extender_findings(f: &ExtenderFacts) -> Vec<Finding> {
                 ("loader", f.loader.to_string()),
                 ("dir", f.plugins_dir.to_string()),
                 ("n", f.plugin_dlls.to_string()),
+                ("page", f.page.to_string()),
+                ("runtime", runtime),
             ],
         });
     }
@@ -30,6 +35,7 @@ pub fn extender_findings(f: &ExtenderFacts) -> Vec<Finding> {
                     ("loader", f.loader.to_string()),
                     ("dll", dll.clone()),
                     ("runtime", runtime.to_string()),
+                    ("page", f.page.to_string()),
                 ],
             });
         }
@@ -151,6 +157,7 @@ mod tests {
             loader: "skse64_loader.exe",
             loader_found: true,
             plugins_dir: "SKSE/Plugins",
+            page: "https://skse.silverlock.org/",
             plugin_dlls: 3,
             runtime: Some(Version([1, 6, 1179, 0])),
             runtime_dll: Some("skse64_1_6_1179.dll".into()),
@@ -176,6 +183,15 @@ mod tests {
         );
         assert_eq!(f[0].arg("dll"), Some("skse64_1_6_1179.dll"));
         assert_eq!(f[0].arg("runtime"), Some("1.6.1179.0"));
+    }
+
+    #[test]
+    fn extender_findings_carry_the_download_page() {
+        let f = extender_findings(&ExtenderFacts {
+            runtime_dll_found: false,
+            ..facts()
+        });
+        assert_eq!(f[0].arg("page"), Some("https://skse.silverlock.org/"));
     }
 
     #[test]
