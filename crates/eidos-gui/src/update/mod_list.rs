@@ -895,16 +895,17 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(tf("status_extract_exists", &[("name", &name)]));
                 return Task::none();
             }
+            // The running decode only publishes its folder at the end, so the
+            // check above cannot see it yet. Keyed by the folder, so Foo.bsa and
+            // Foo.ba2 cannot both decode into "Foo (extracted)". Checked before
+            // the status, which keeps naming the archive that is running.
+            if !app.extracting_archives.insert(dest.clone()) {
+                return Task::none();
+            }
             app.status = Some(tf(
                 "status_extracting_archive",
                 &[("archive", &archive), ("name", &name)],
             ));
-            // The running decode only publishes its folder at the end, so the
-            // check above cannot see it yet. Keyed by the folder, so Foo.bsa and
-            // Foo.ba2 cannot both decode into "Foo (extracted)".
-            if !app.extracting_archives.insert(dest.clone()) {
-                return Task::none();
-            }
             return Task::perform(
                 crate::background_work::run({
                     let dest = dest.clone();
