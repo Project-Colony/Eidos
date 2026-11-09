@@ -1170,6 +1170,19 @@ fn receipt_failures_preserve_completed_namespace_and_retry_order() {
         .unwrap()
         .sync_all()
         .is_err());
+    // close(2) sends FLUSH: a read-only handle skips it, a writable one still
+    // reports the receipt failure.
+    {
+        use std::os::fd::IntoRawFd;
+        let ro = fs::File::open(mnt.join("Keep.esp")).unwrap().into_raw_fd();
+        assert_eq!(unsafe { libc::close(ro) }, 0);
+        let rw = fs::OpenOptions::new()
+            .write(true)
+            .open(mnt.join("Created.esp"))
+            .unwrap()
+            .into_raw_fd();
+        assert_eq!(unsafe { libc::close(rw) }, -1);
+    }
     fs::remove_file(t.0.join("profile")).unwrap();
     fs::rename(t.0.join("saved-profile"), t.0.join("profile")).unwrap();
     fs::File::open(mnt.join("Created.esp"))

@@ -339,7 +339,13 @@ impl Filesystem for Eidos {
         // was doing that work as a panic site inside a handler - and a panic here
         // does not return an errno, it kills a daemon thread out from under the
         // game. The entry both inserts and hands back the reference.
-        let flags = file_open_flags();
+        let mut flags = file_open_flags();
+        if !want_write {
+            // A read-only handle has nothing to flush, and the kernel skips its
+            // dirty-page writeback at close only because such an fd cannot hold a
+            // shared writable mapping. Ignored on kernels older than 5.16.
+            flags |= FopenFlags::FOPEN_NOFLUSH;
+        }
         let of = files.entry(fh).or_insert(OpenFile {
             _real: real,
             file: Arc::new(file),
