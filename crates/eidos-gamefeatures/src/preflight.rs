@@ -159,6 +159,74 @@ pub fn scan_skse(
     diagnostics
 }
 
+/// Warn about `fontlib "X.swf"` lines of the winning `Interface/fontconfig.txt`
+/// whose file is in no layer and in no archive of a layer. Archives are read
+/// only for fonts that are not loose, and the first hit stops the search.
+pub fn scan_fontconfig(
+    game: &eidos_gamedef::GameDef,
+    game_data: &Path,
+    mods: &[(String, PathBuf)],
+    overwrite: &Path,
+) -> Vec<PreflightDiagnostic> {
+    if !matches!(game.id, "skyrim" | "skyrimse" | "skyrimvr" | "enderalse") {
+        return Vec::new();
+    }
+    let mut layers = mods.to_vec();
+    layers.push(("Game".into(), game_data.to_path_buf()));
+    let data = eidos_core::LayerStack::new_unindexed(
+        layers.iter().map(|(_, p)| p.clone()).collect(),
+        overwrite.to_path_buf(),
+    );
+    let Some(config) = data.resolve_read("Interface/fontconfig.txt") else {
+        return Vec::new();
+    };
+    let Ok(text) = std::fs::read(&config) else {
+        return Vec::new();
+    };
+    let mut missing: Vec<String> = Vec::new();
+    for font in fontlibs(&String::from_utf8_lossy(&text)) {
+        let wanted = format!("interface/{}", font.replace('\\', "/").to_ascii_lowercase());
+        let found = data
+            .resolve_read(&format!("Interface/{}", font.replace('\\', "/")))
+            .is_some()
+            || data.list_dir("").into_iter().any(|(name, path)| {
+                let name = name.to_ascii_lowercase();
+                (name.ends_with(".bsa") || name.ends_with(".ba2"))
+                    && eidos_conflicts::archives::read_archive_members(&path)
+                        .is_ok_and(|m| m.iter().any(|m| m.eq_ignore_ascii_case(&wanted)))
+            });
+        if !found && !missing.contains(&font) {
+            missing.push(font);
+        }
+    }
+    if missing.is_empty() {
+        return Vec::new();
+    }
+    vec![PreflightDiagnostic {
+        code: "fontconfig_missing_font",
+        severity: DiagnosticSeverity::Warning,
+        origin_mod: layer_origin(&config, &layers, overwrite),
+        path: config,
+        detail: missing.join(", "),
+    }]
+}
+
+/// Names in `fontlib "X.swf"` lines. Not anchored to the end of the line, so a
+/// CRLF file parses; `#` starts a comment.
+fn fontlibs(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            let rest = line
+                .get(..7)
+                .filter(|k| k.eq_ignore_ascii_case("fontlib"))?;
+            let rest = line[rest.len()..].trim_start().strip_prefix('"')?;
+            let name = &rest[..rest.find('"')?];
+            (!name.is_empty()).then(|| name.to_string())
+        })
+        .collect()
+}
+
 fn layer_origin(path: &Path, layers: &[(String, PathBuf)], overwrite: &Path) -> String {
     if path.starts_with(overwrite) {
         return "Overwrite".into();
@@ -905,5 +973,77 @@ mod tests {
         assert!(check_skse_plugin(&f.0, "M", &context)
             .iter()
             .any(|d| d.code == "pe_architecture"));
+    }
+
+    /// Minimal BSA v105 holding one empty member; enough for the directory reader.
+    fn bsa_with(member: &str) -> Vec<u8> {
+        let (folder, name) = member.rsplit_once('/').unwrap();
+        let start = 36 + 24;
+        let names = start + 1 + folder.len() + 1 + 16;
+        let payload = names + name.len() + 1;
+        let mut b = vec![0; payload + 1];
+        b[..4].copy_from_slice(b"BSA\0");
+        for (at, n) in [
+            (4, 105),
+            (8, 36),
+            (12, 3),
+            (16, 1),
+            (20, 1),
+            (24, folder.len() as u32 + 1),
+            (28, name.len() as u32 + 1),
+            (44, 1),
+        ] {
+            u32at(&mut b, at, n);
+        }
+        let offset = (start + name.len() + 1) as u64;
+        b[52..60].copy_from_slice(&offset.to_le_bytes());
+        b[start] = (folder.len() + 1) as u8;
+        b[start + 1..start + 1 + folder.len()].copy_from_slice(folder.as_bytes());
+        let file_rec = start + folder.len() + 2;
+        u32at(&mut b, file_rec + 8, 1);
+        u32at(&mut b, file_rec + 12, payload as u32);
+        b[names..names + name.len()].copy_from_slice(name.as_bytes());
+        b
+    }
+
+    fn font_scan(config: &str, loose: &[&str], bsa: Option<&str>) -> Vec<PreflightDiagnostic> {
+        let root = std::env::temp_dir().join(format!(
+            "eidos-fontconfig-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
+        let (m, ow, data) = (root.join("mod"), root.join("ow"), root.join("Data"));
+        for d in [&m, &ow, &data] {
+            std::fs::create_dir_all(d.join("Interface")).unwrap();
+        }
+        std::fs::write(m.join("Interface/fontconfig.txt"), config).unwrap();
+        for f in loose {
+            std::fs::write(m.join("Interface").join(f), b"swf").unwrap();
+        }
+        if let Some(member) = bsa {
+            std::fs::write(data.join("Skyrim - Interface.bsa"), bsa_with(member)).unwrap();
+        }
+        let game = eidos_gamedef::builtin()
+            .iter()
+            .find(|g| g.id == "skyrimse")
+            .unwrap();
+        let found = scan_fontconfig(game, &data, &[("Fonts".into(), m)], &ow);
+        let _ = std::fs::remove_dir_all(&root);
+        found
+    }
+
+    #[test]
+    fn fontconfig_warns_for_a_font_found_nowhere() {
+        let found = font_scan("fontlib \"gone.swf\"\n", &[], None);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].code, "fontconfig_missing_font");
+        assert_eq!(found[0].detail, "gone.swf");
+        assert_eq!(found[0].origin_mod, "Fonts");
+    }
+
+    #[test]
+    fn fontconfig_accepts_loose_and_archived_fonts_and_crlf() {
+        let text = "# comment\r\nfontlib \"Loose.swf\"\r\nFONTLIB \"fonts_en.swf\"\r\n";
+        assert!(font_scan(text, &["loose.swf"], Some("Interface/fonts_en.swf")).is_empty());
     }
 }

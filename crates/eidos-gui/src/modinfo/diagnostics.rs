@@ -345,6 +345,22 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 actions: Vec::new(),
             });
         }
+        for d in eidos_gamefeatures::preflight::scan_fontconfig(
+            game.def,
+            &game.data_path,
+            &mods,
+            &inst.overwrite_dir(),
+        ) {
+            out.push(Diagnostic {
+                level: DiagLevel::Advice,
+                title: t("diag_fontconfig_missing").to_string(),
+                detail: tf(
+                    "diag_fontconfig_missing_detail",
+                    &[("fonts", &d.detail), ("mod", &d.origin_mod)],
+                ),
+                actions: Vec::new(),
+            });
+        }
         let cs_roots: Vec<PathBuf> = inst
             .modlist()
             .into_iter()

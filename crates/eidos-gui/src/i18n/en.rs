@@ -934,6 +934,8 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("diag_load_order_unavailable", "Load order unavailable"),
     ("diag_load_order_unavailable_detail", "No game is selected, or this game has no plugin load order for Eidos to analyse."),
     ("diag_native_check", "{severity}: native plugin check [{code}]"),
+    ("diag_fontconfig_missing", "fontconfig.txt names a font library that is missing"),
+    ("diag_fontconfig_missing_detail", "Missing: {fonts}. The winning fontconfig.txt comes from {mod}. Text in menus can show as boxes until the file is installed or the line is removed."),
     ("diag_enb_cs", "ENB and Community Shaders are both active"),
     ("diag_enb_cs_detail", "They can run together, but if visuals look wrong disable one in its INI."),
     ("diag_incomplete_install", "Incomplete installation: {name}"),

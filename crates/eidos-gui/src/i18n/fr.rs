@@ -934,6 +934,8 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("diag_load_order_unavailable", "Ordre de chargement indisponible"),
     ("diag_load_order_unavailable_detail", "Aucun jeu n'est choisi, ou ce jeu n'a pas d'ordre de chargement de plugins qu'Eidos puisse analyser."),
     ("diag_native_check", "{severity} : vérification des plugins natifs [{code}]"),
+    ("diag_fontconfig_missing", "fontconfig.txt cite une bibliothèque de polices absente"),
+    ("diag_fontconfig_missing_detail", "Absent : {fonts}. Le fontconfig.txt retenu vient de {mod}. Le texte des menus peut s'afficher en carrés tant que le fichier n'est pas installé ou que la ligne n'est pas retirée."),
     ("diag_enb_cs", "ENB et Community Shaders sont tous deux actifs"),
     ("diag_enb_cs_detail", "Ils peuvent fonctionner ensemble, mais si l'image semble fausse, désactivez l'un d'eux dans son INI."),
     ("diag_incomplete_install", "Installation incomplète : {name}"),
