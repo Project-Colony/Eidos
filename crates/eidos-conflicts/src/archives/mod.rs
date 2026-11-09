@@ -166,8 +166,9 @@ pub fn read_archive_members(path: &Path) -> Result<Vec<String>> {
     read_members(File::open(path)?)
 }
 /// Members of a general-type BA2 that hold `.wav` or `.xwm` audio stored
-/// zlib-compressed. Fallout 4 reads that audio uncompressed, and a compressed
-/// entry can crash it. Texture BA2s, BSAs and other BA2 variants give an empty list.
+/// zlib-compressed. Fallout 4 and Fallout 4 VR read that audio uncompressed, and
+/// a compressed entry can crash the game. Texture BA2s, BSAs and other BA2
+/// variants give an empty list.
 pub fn compressed_audio_members(path: &Path) -> Result<Vec<String>> {
     let mut file = File::open(path)?;
     let mut head = [0; 12];
