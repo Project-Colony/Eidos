@@ -111,6 +111,9 @@ pub(crate) struct DataRow {
     /// Whether more than one mod provides this path (so a row can be filtered
     /// down to just the contested ones, which is what the tab is FOR).
     pub(crate) conflicted: bool,
+    /// Names of the lower-priority providers of this path, highest first (the
+    /// winner is `source`). Empty when nothing else provides it.
+    pub(crate) also_in: Vec<String>,
 }
 
 /// One memoised recursive listing: the view generation it was built at, and the

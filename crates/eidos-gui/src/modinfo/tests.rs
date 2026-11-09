@@ -814,3 +814,9 @@ fn health_report_redacts_home_paths() {
     assert!(r.contains("- [problem] Cannot read ~/mods"), "{r}");
     assert!(r.contains("Proton: GE-Proton11-1"));
 }
+
+#[test]
+fn a_contested_data_row_tooltip_lists_every_other_provider() {
+    let tip = super::files::also_in_tip(&["Mod B".to_string(), "Mod C".to_string()]);
+    assert!(tip.ends_with("Mod B, Mod C"), "{tip}");
+}

@@ -140,6 +140,7 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("toolbar_executables", "Executables"),
     ("toolbar_backups", "Backups"),
     ("toolbar_tool_setup", "Tool Setup"),
+    ("data_also_in", "Also in:"),
     ("view_flag_nexus_gone", "Nexus no longer serves this mod's page. Keep your archive: you will not be able to download it again."),
     ("view_flag_invalid_data", "Nothing at the top of this mod looks like data this game loads. It may need its folders moved up a level, or it may simply not be a mod for this game. Right-click and Mark as valid to stop asking."),
     ("view_flag_other_game", "Downloaded for {game}, not for this game. It may still work - many mods do - but nothing here checked. Right-click and Mark as valid to stop asking."),

@@ -435,6 +435,17 @@ pub(crate) fn merged_listing(app: &App, dir: &str) -> Vec<DataRow> {
                         .get(&rel)
                         .is_some_and(eidos_conflicts::FileNode::is_conflicted)
                 });
+            let also_in = conflicts
+                .and_then(|c| {
+                    c.files.get(&rel).map(|n| {
+                        n.alternatives
+                            .iter()
+                            .map(|&o| c.name(o).to_string())
+                            .collect()
+                    })
+                })
+                .filter(|_| !is_dir)
+                .unwrap_or_default();
             DataRow {
                 name,
                 source,
@@ -443,6 +454,7 @@ pub(crate) fn merged_listing(app: &App, dir: &str) -> Vec<DataRow> {
                 size: md.as_ref().filter(|m| m.is_file()).map(|m| m.len()),
                 mtime: md.as_ref().and_then(|m| m.modified().ok()),
                 conflicted,
+                also_in,
             }
         })
         .collect();

@@ -231,6 +231,7 @@ fn switching_instance_drops_the_previous_games_merged_view() {
                 size: None,
                 mtime: None,
                 conflicted: false,
+                also_in: Vec::new(),
             }]),
         ),
     );
