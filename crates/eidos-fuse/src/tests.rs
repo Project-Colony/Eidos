@@ -246,6 +246,23 @@ fn the_other_handlers_and_the_index_verdicts_are_reported() {
     assert!(out.contains("overwrite index built 4 time(s)"), "{out}");
 }
 
+#[test]
+fn passthrough_counts_appear_once_an_open_tried_passthrough() {
+    let s = Stats::default();
+    let r = eidos_core::ResolveStats::default();
+    assert!(!s.report(&r, &|_| None).contains("passthrough"));
+    Stats::bump(&s.pt_reused);
+    Stats::bump(&s.pt_writer_refused);
+    let out = s.report(&r, &|_| None);
+    assert!(
+        out.contains(
+            "passthrough: 0 new backing ids, 1 reused, 0 forced normal, \
+             1 writers refused, 0 registrations failed"
+        ),
+        "{out}"
+    );
+}
+
 // ---- The read-shape survey -------------------------------------------------
 //
 // The survey exists to answer four questions the totals cannot: what sizes the

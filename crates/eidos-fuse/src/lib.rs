@@ -22,9 +22,9 @@
 //!   path ever seen.
 //! - `readdir` is served from a snapshot taken at `opendir`, so offsets stay
 //!   stable even if the directory changes mid-enumeration.
-//! - Kernel passthrough is requested best-effort but needs real root, so the
-//!   rootless daemon serves reads/writes itself; `writeback_cache` is negotiated
-//!   instead to make writable shared mmap correct and coalesce writes.
+//! - Kernel passthrough is off by default and needs CAP_SYS_ADMIN in the
+//!   initial user namespace, so the rootless daemon serves reads and writes
+//!   itself. `writeback_cache` is not negotiated (`init` says why).
 
 use std::collections::HashMap;
 use std::ffi::OsStr;
@@ -37,7 +37,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::UNIX_EPOCH;
 
 use eidos_core::LayerStack;
-use fuser::{BackgroundSession, FileAttr, FileType, Generation, INodeNo, ReplyEntry};
+use fuser::{BackgroundSession, BackingId, FileAttr, FileType, Generation, INodeNo, ReplyEntry};
 
 mod timestamps;
 pub use timestamps::{read_plugin_mtimes, recover_plugin_mtimes, PluginTimestamps};
@@ -45,6 +45,7 @@ pub use timestamps::{read_plugin_mtimes, recover_plugin_mtimes, PluginTimestamps
 mod config;
 mod inodes;
 mod ops;
+mod passthrough;
 mod stats;
 mod sys;
 #[cfg(test)]
@@ -52,6 +53,7 @@ mod tests;
 
 use config::*;
 use inodes::*;
+use passthrough::*;
 use stats::*;
 use sys::*;
 
@@ -137,6 +139,9 @@ pub struct Eidos {
     uid: u32,
     gid: u32,
     open_files: Mutex<HashMap<u64, OpenFile>>,
+    /// The backing id each inode shares among its passthrough opens, and its
+    /// live opens of each kind. See `passthrough.rs`.
+    passthrough: Mutex<Passthrough<BackingId>>,
     /// Per-handle directory state. The snapshot is `None` until the first
     /// `readdir` asks for it - see `opendir` for why building it eagerly was a
     /// disaster - and once taken it stays fixed for the handle's life so offsets
@@ -266,6 +271,7 @@ impl Eidos {
             uid,
             gid,
             open_files: Mutex::new(HashMap::new()),
+            passthrough: Mutex::new(Passthrough::default()),
             open_dirs: Mutex::new(HashMap::new()),
             dir_cache: Mutex::new(DirCache::default()),
             next_fh: AtomicU64::new(1),

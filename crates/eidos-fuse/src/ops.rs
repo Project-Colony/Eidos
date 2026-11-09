@@ -46,6 +46,24 @@ impl Eidos {
             let _ = notifier.inval_inode(parent, 0, 0);
         });
     }
+
+    /// Whether this mount negotiates kernel passthrough (see
+    /// `passthrough_enabled`). Never while plugin timestamps are projected.
+    fn passthrough_on(&self) -> bool {
+        passthrough_enabled() && self.plugin_timestamps.is_none()
+    }
+
+    /// Count a writer among the normal opens of `ino`, or answer ETXTBSY while
+    /// passthrough opens of it are live. Called before any copy-up or
+    /// truncation: the kernel would fail that writer with EIO anyway, and an
+    /// O_TRUNC copy left empty in the Overwrite would hide the mod's file from
+    /// then on. Wine reports ETXTBSY as `STATUS_SHARING_VIOLATION`.
+    fn take_writer_slot(&self, ino: u64) -> Result<WriterSlot<'_, BackingId>, Errno> {
+        WriterSlot::take(&self.passthrough, ino).ok_or_else(|| {
+            Stats::bump(&self.stats.pt_writer_refused);
+            Errno::ETXTBSY
+        })
+    }
 }
 
 impl Filesystem for Eidos {
@@ -69,10 +87,11 @@ impl Filesystem for Eidos {
         // FUSE passthrough: negotiate the capability and a non-zero stack depth so
         // the kernel routes reads/writes/mmap straight to the real backing file.
         // OFF unless asked for - see `passthrough_enabled` for the measurement that
-        // put it there: with it on, Skyrim SE fails to open every archive and plugin
-        // it needs. Don't negotiate what we won't use, so a run with it off is a
-        // clean baseline rather than the capability sitting there unused.
-        if passthrough_enabled() && self.plugin_timestamps.is_none() {
+        // put it there and its likely cause: with it on, Skyrim SE failed to open
+        // its archives and plugins. Don't negotiate what we won't use, so a run
+        // with it off is a clean baseline rather than the capability sitting
+        // there unused.
+        if self.passthrough_on() {
             let _ = config.add_capabilities(InitFlags::FUSE_PASSTHROUGH);
             let _ = config.set_max_stack_depth(1);
         }
@@ -158,6 +177,7 @@ impl Filesystem for Eidos {
             self.aliases.lock_recover().remove(&ino.0);
             self.negatives.lock_recover().remove(&ino.0);
             self.unicode_case_dirs.lock_recover().remove(&ino.0);
+            self.passthrough.lock_recover().forget(ino.0);
         }
     }
 
@@ -177,6 +197,18 @@ impl Filesystem for Eidos {
         let accmode = flags.0 & libc::O_ACCMODE;
         let want_write = accmode == libc::O_WRONLY || accmode == libc::O_RDWR;
         let truncating = want_write && flags.0 & libc::O_TRUNC != 0;
+        // Taken before the copy-up below; every early return gives it back.
+        let writer_slot = if want_write && self.passthrough_on() {
+            match self.take_writer_slot(ino.0) {
+                Ok(slot) => Some(slot),
+                Err(e) => {
+                    reply.error(e);
+                    return;
+                }
+            }
+        } else {
+            None
+        };
         let real = if want_write {
             // O_TRUNC discards the existing content, so don't pay to copy the lower
             // file up first - just prepare the overwrite path (parents + clear
@@ -254,15 +286,35 @@ impl Filesystem for Eidos {
             self.invalidate_page_cache(ino.0);
         }
 
-        // Cache the open fd under a fresh handle; try to register it for kernel
-        // passthrough (no-op fallback when rootless, where it returns EPERM).
+        // Cache the open fd under a fresh handle. Only read-only opens can go
+        // through kernel passthrough (`passthrough.rs` decides which): the kernel
+        // reopens the backing file with the open's own flags, so a writer sharing
+        // a reader's backing id would write into the mod's file.
         let fh = self.next_fh.fetch_add(1, Ordering::Relaxed);
-        let backing = if !passthrough_enabled() || self.plugin_timestamps.is_some() {
+        let backing = if want_write || !self.passthrough_on() {
             None
         } else {
-            match reply.open_backing(file.as_fd()) {
-                Ok(b) => Some(b),
-                Err(e) => {
+            let eligible = passthrough_eligible(&real, self.stack.overwrite_root(), &file);
+            let served = self
+                .passthrough
+                .lock_recover()
+                .open_read(ino.0, eligible, || reply.open_backing(file.as_fd()));
+            match served {
+                ReadOpen::New(b) => {
+                    Stats::bump(&self.stats.pt_new);
+                    Some(b)
+                }
+                ReadOpen::Reused(b) => {
+                    Stats::bump(&self.stats.pt_reused);
+                    Some(b)
+                }
+                ReadOpen::ForcedNormal => {
+                    Stats::bump(&self.stats.pt_forced_normal);
+                    None
+                }
+                ReadOpen::Normal => None,
+                ReadOpen::Unregistered(e) => {
+                    Stats::bump(&self.stats.pt_register_failed);
                     // Passthrough is an optimisation, never a requirement: the
                     // daemon serves the reads itself when the kernel will not take
                     // a backing file. Worth SAYING, though - a silent fallback here
@@ -274,6 +326,9 @@ impl Filesystem for Eidos {
                 }
             }
         };
+        if let Some(slot) = writer_slot {
+            slot.keep();
+        }
         let mut files = self.open_files.lock_recover();
         // One entry operation, not an insert followed by a lookup-and-unwrap: the
         // handle is freshly allocated so the slot is provably vacant, but "provably"
@@ -287,7 +342,7 @@ impl Filesystem for Eidos {
             _backing: backing,
         });
         match of._backing.as_ref() {
-            Some(b) => reply.opened_passthrough(FileHandle(fh), flags, b),
+            Some(b) => reply.opened_passthrough(FileHandle(fh), passthrough_flags(flags), b),
             None => reply.opened(FileHandle(fh), flags),
         }
     }
@@ -295,7 +350,7 @@ impl Filesystem for Eidos {
     fn release(
         &self,
         _req: &Request,
-        _ino: INodeNo,
+        ino: INodeNo,
         fh: FileHandle,
         _flags: OpenFlags,
         _lock_owner: Option<LockOwner>,
@@ -303,8 +358,14 @@ impl Filesystem for Eidos {
         reply: ReplyEmpty,
     ) {
         let _t = self.stats.release.start();
-        // Drops the cached fd and any passthrough registration (no-op for fh 0).
-        self.open_files.lock_recover().remove(&fh.0);
+        // Drops the cached fd (no-op for fh 0). A passthrough handle's backing id
+        // closes with the last handle that holds it.
+        let released = self.open_files.lock_recover().remove(&fh.0);
+        if let Some(of) = released.filter(|_| self.passthrough_on()) {
+            self.passthrough
+                .lock_recover()
+                .release(ino.0, of._backing.is_some());
+        }
         match self.flush_projected_times() {
             Ok(()) => reply.ok(),
             Err(e) => reply.error(e.into()),
@@ -661,6 +722,21 @@ impl Filesystem for Eidos {
         };
         let vpath = join(&parent_vpath, &name.to_string_lossy());
 
+        // A writer like any other: refused before create_truncated empties the
+        // file, if passthrough opens of it are live.
+        let writer_slot = if self.passthrough_on() {
+            let ino = self.inodes.lock_recover().intern(&vpath);
+            match self.take_writer_slot(ino) {
+                Ok(slot) => Some(slot),
+                Err(e) => {
+                    reply.error(e);
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+
         // Materialise the file (and any missing parents) in the Overwrite layer.
         // CREATE means "this file did not exist" (the kernel only sends it after a
         // negative lookup), so the new file must start EMPTY: prepare_overwrite
@@ -686,36 +762,29 @@ impl Filesystem for Eidos {
         let ino = self.inodes.lock_recover().lookup(&vpath);
         let attr = self.attr(ino, &meta);
         let fh = self.next_fh.fetch_add(1, Ordering::Relaxed);
-        let backing = if passthrough_enabled() && self.plugin_timestamps.is_none() {
-            reply.open_backing(file.as_fd()).ok()
-        } else {
-            None
-        };
-        let mut files = self.open_files.lock_recover();
+        if let Some(slot) = writer_slot {
+            slot.keep();
+        }
+        // The new file is in the Overwrite and open for writing, so it never goes
+        // through passthrough.
+        //
         // Same shape as open(): entry instead of insert-then-unwrap, because an
         // unwrap in a handler is a panic site and a panic takes the daemon down.
-        let of = files.entry(fh).or_insert(OpenFile {
-            _real: real,
-            file: Arc::new(file),
-            _backing: backing,
-        });
-        match of._backing.as_ref() {
-            Some(b) => reply.created_passthrough(
-                &TTL,
-                &attr,
-                Generation(0),
-                FileHandle(fh),
-                FopenFlags::empty(),
-                b,
-            ),
-            None => reply.created(
-                &TTL,
-                &attr,
-                Generation(0),
-                FileHandle(fh),
-                FopenFlags::empty(),
-            ),
-        }
+        self.open_files
+            .lock_recover()
+            .entry(fh)
+            .or_insert(OpenFile {
+                _real: real,
+                file: Arc::new(file),
+                _backing: None,
+            });
+        reply.created(
+            &TTL,
+            &attr,
+            Generation(0),
+            FileHandle(fh),
+            FopenFlags::empty(),
+        );
     }
 
     fn write(

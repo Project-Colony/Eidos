@@ -49,25 +49,26 @@ pub(crate) static NEG_TTL: std::sync::LazyLock<Duration> = std::sync::LazyLock::
 ///     read from the old one. With `FUSE_PASSTHROUGH` the kernel serves those
 ///     reads without ever asking the daemon, so nothing downstream can notice.
 ///
-/// SO IT IS OFF BY DEFAULT, and stays off until someone can explain the crash
-/// below rather than argue it away.
+/// It is OFF BY DEFAULT. The crash that put it there does not show that it is
+/// harmful on its own.
 ///
-/// Measured on Skyrim SE 1.6.1170 under proton-cachyos 11.0, with ZERO mods
-/// installed: the game reaches its main menu and then dies on a null dereference
-/// (`0xc0000005`, address `0x48`) on a worker thread, deterministically, at the
-/// same instruction every run. Turning this one flag off fixes it while
-/// `FOPEN_CACHE_DIR`, the 1-hour attribute TTL and the negative-dentry cache all
-/// stay on - each was bisected out individually and only this one mattered.
+/// Measured on 2026-07-25 on Skyrim SE 1.6.1170 under proton-cachyos 11.0, with
+/// ZERO mods installed: the game reached its main menu and then died on a null
+/// dereference (`0xc0000005`, address `0x48`) on a worker thread, at the same
+/// instruction every run. Turning this flag off fixed it while `FOPEN_CACHE_DIR`,
+/// the 1-hour attribute TTL and the negative-dentry cache stayed on; each was
+/// bisected out individually. Restricting it to files outside the overwrite
+/// layer did not help.
 ///
-/// Restricting it to files outside the overwrite layer was tried and did NOT
-/// help, which rules out the obvious copy-up explanation: the game crashes while
-/// reading files that were never written to. The interaction with
-/// `FUSE_PASSTHROUGH` - where the kernel serves reads from the backing file
-/// without consulting this daemon at all - was the open question; passthrough is
-/// now off by default too (see [`passthrough_enabled`]), so the two are no longer
-/// entangled and this one can be re-tested on its own.
+/// That bisect ran with the `cap_sys_admin` binary. The daemon then called
+/// `open_backing` on every open and passed these flags to `opened_passthrough`,
+/// and the kernel fails a passthrough open that carries `FOPEN_KEEP_CACHE` with
+/// EIO ("conflicting open flags", `fs/fuse/iomode.c`). With the flag on, every
+/// passthrough open failed, which fits the result that sparing the overwrite
+/// layer changed nothing. Passthrough replies now drop it (see `passthrough_flags`).
+/// Re-test it with passthrough off before turning it on by default.
 ///
-/// `EIDOS_FUSE_KEEP_CACHE=1` turns it back on for whoever picks that up.
+/// `EIDOS_FUSE_KEEP_CACHE=1` turns it on.
 pub(crate) fn file_open_flags() -> FopenFlags {
     if std::env::var("EIDOS_FUSE_KEEP_CACHE").is_ok_and(|v| v != "0") && !Cache::Keep.is_off() {
         FopenFlags::FOPEN_KEEP_CACHE
@@ -78,7 +79,8 @@ pub(crate) fn file_open_flags() -> FopenFlags {
 
 /// Whether to hand the kernel a backing file so it can serve reads without us.
 ///
-/// OFF BY DEFAULT, because with it on Skyrim SE cannot open its own content.
+/// OFF BY DEFAULT. With it on, Skyrim SE could not open its own content, and the
+/// fix below has not been measured on a game yet.
 ///
 /// Measured A/B on Skyrim SE 1.6.1170 under proton-cachyos 11.0, same 82-plugin
 /// load order, `WINEDEBUG=+file` both runs, the only variable being whether the
@@ -90,26 +92,34 @@ pub(crate) fn file_open_flags() -> FopenFlags {
 /// | on          | 152 - 75 `.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`        |
 /// | off         | 0                                                      |
 ///
-/// With it on, the game loads no mod content at all: every plugin and archive it
-/// wants for the whole session fails to open, which surfaces in-game as mods that
-/// are simply not there. With it off the same load order reaches gameplay with
-/// its plugins, archives and Papyrus scripts live.
+/// With it on, the game loaded no mod content at all: every plugin and archive it
+/// wanted for the whole session failed to open, which surfaced in-game as mods
+/// that were simply not there. With it off the same load order reached gameplay
+/// with its plugins, archives and Papyrus scripts live.
 ///
-/// The failure is INVISIBLE from here, which is why it took so long to find: our
-/// own `open` succeeds every time and `open_backing` is never refused (verified
-/// with `EIDOS_FUSE_TRACE=open` - zero `open FAILED`, zero `passthrough refused`
-/// across a full failing session). The kernel produces the error after we reply
-/// `opened_passthrough`, so no amount of daemon-side logging shows it. Whatever
-/// the mechanism, it is not extension-specific: it hits archives and plugins
-/// alike, i.e. exactly the files the game holds open for its whole run.
+/// The daemon could not see the failure: its own `open` succeeded every time and
+/// `open_backing` was never refused (verified with `EIDOS_FUSE_TRACE=open` - zero
+/// `open FAILED`, zero `passthrough refused` across a full failing session). The
+/// kernel produced the error after the reply, on the files the game holds open
+/// for its whole run. The likely cause is that every open then registered a new
+/// backing id, while the kernel keeps one backing file per inode: an open that
+/// brings a second id for an inode that already has one fails with EIO
+/// ("mismatched backing"), and Wine reports EIO as `STATUS_ACCESS_VIOLATION`.
+/// `passthrough.rs` now shares one id per inode and keeps the live opens of an
+/// inode all passthrough or all normal.
+///
+/// The capability also changes the namespace: with it the launcher keeps the
+/// initial user namespace (`launch` in eidos-launch), so in the A/B above it
+/// changed both whether a backing file could be registered and which namespace
+/// the game ran in. A new measurement should hold the capability in both runs
+/// and change only this switch.
 ///
 /// The cost of leaving it off is throughput, not correctness: reads take a
 /// userspace round-trip instead of going straight to the backing file. That is
 /// already what every rootless install does, since registering a backing fd needs
 /// CAP_SYS_ADMIN in the initial user namespace.
 ///
-/// `EIDOS_FUSE_PASSTHROUGH=1` turns it back on, for measuring the throughput it
-/// buys or for re-testing once someone can explain the failure above.
+/// `EIDOS_FUSE_PASSTHROUGH=1` turns it on.
 pub(crate) fn passthrough_enabled() -> bool {
     static ON: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
         std::env::var("EIDOS_FUSE_PASSTHROUGH").is_ok_and(|v| {

@@ -98,6 +98,18 @@ pub(crate) struct Stats {
     /// compared with the old `statfs` count.
     pub(crate) ioctl_getflags: Op,
     pub(crate) ioctl_other: Op,
+    /// Read-only opens through kernel passthrough (only with
+    /// `EIDOS_FUSE_PASSTHROUGH`), by how the backing id was found: registered
+    /// for the open, or shared with a live open of the same inode.
+    pub(crate) pt_new: AtomicU64,
+    pub(crate) pt_reused: AtomicU64,
+    /// Eligible opens served normally because normal opens of the inode were
+    /// live.
+    pub(crate) pt_forced_normal: AtomicU64,
+    /// Writers answered ETXTBSY because passthrough opens of the inode were live.
+    pub(crate) pt_writer_refused: AtomicU64,
+    /// Backing files the kernel refused (EPERM without `CAP_SYS_ADMIN`).
+    pub(crate) pt_register_failed: AtomicU64,
     /// How many times each directory was opened, by path.
     ///
     /// The totals say a session opened directories half a million times. They
@@ -714,6 +726,7 @@ impl Stats {
             g(&self.read),
             g(&self.write),
         ) + &self.more_counts()
+            + &self.passthrough_counts()
             + &self.timings(r)
             + &self.read_shape(path_of)
             + &self.dir_shape()
@@ -745,6 +758,26 @@ impl Stats {
             return String::new();
         }
         format!("\n  other ops: {}", ran.join(", "))
+    }
+
+    /// How opens went through passthrough, when any tried to.
+    fn passthrough_counts(&self) -> String {
+        let g = |c: &AtomicU64| c.load(Ordering::Relaxed);
+        let counts = [
+            g(&self.pt_new),
+            g(&self.pt_reused),
+            g(&self.pt_forced_normal),
+            g(&self.pt_writer_refused),
+            g(&self.pt_register_failed),
+        ];
+        if counts.iter().all(|&n| n == 0) {
+            return String::new();
+        }
+        let [new, reused, forced, refused, failed] = counts;
+        format!(
+            "\n  passthrough: {new} new backing ids, {reused} reused, {forced} forced normal, \
+             {refused} writers refused, {failed} registrations failed"
+        )
     }
 
     /// Where the time actually went, in milliseconds.

@@ -23,31 +23,47 @@
 //! cargo test -p eidos-fuse --test union
 //! EIDOS_FUSE_OPENDIR=1 cargo test -p eidos-fuse --test union
 //! ```
+//!
+//! Kernel passthrough needs CAP_SYS_ADMIN in the initial user namespace, which
+//! the user namespace above takes away. Run the test binary as root or with
+//! `cap_sys_admin+ep`, and with `EIDOS_FUSE_PASSTHROUGH=1`: the suite then keeps
+//! the initial user namespace and every mount uses passthrough.
 
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use eidos_fuse::Eidos;
 use fuser::BackgroundSession;
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-/// Enter a private user + mount namespace (the `unshare --map-root-user --mount`
-/// idiom) so our FUSE mounts are invisible to the rest of the system. Must run
-/// single-threaded, hence before the test runner does anything else.
-fn enter_private_namespace() -> std::io::Result<()> {
+/// Whether the suite kept the initial user namespace with CAP_SYS_ADMIN, so a
+/// mount can register passthrough backing files.
+static PRIVILEGED: AtomicBool = AtomicBool::new(false);
+
+/// Enter a private mount namespace so our FUSE mounts are invisible to the rest
+/// of the system. With CAP_SYS_ADMIN a bare mount namespace works, as in
+/// eidos-launch; otherwise a user namespace comes first (the
+/// `unshare --map-root-user --mount` idiom). Must run single-threaded, hence
+/// before the test runner does anything else. Returns whether it kept the
+/// initial user namespace.
+fn enter_private_namespace() -> std::io::Result<bool> {
     // SAFETY: getuid/getgid always succeed.
     let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
     // SAFETY: unshare with namespace flags has no memory-safety preconditions.
-    if unsafe { libc::unshare(libc::CLONE_NEWUSER | libc::CLONE_NEWNS) } != 0 {
-        return Err(std::io::Error::last_os_error());
+    let privileged = unsafe { libc::unshare(libc::CLONE_NEWNS) } == 0;
+    if !privileged {
+        // SAFETY: as above.
+        if unsafe { libc::unshare(libc::CLONE_NEWUSER | libc::CLONE_NEWNS) } != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        fs::write("/proc/self/setgroups", "deny")?;
+        fs::write("/proc/self/uid_map", format!("0 {uid} 1"))?;
+        fs::write("/proc/self/gid_map", format!("0 {gid} 1"))?;
     }
-    fs::write("/proc/self/setgroups", "deny")?;
-    fs::write("/proc/self/uid_map", format!("0 {uid} 1"))?;
-    fs::write("/proc/self/gid_map", format!("0 {gid} 1"))?;
     // Stop our mounts from propagating to (or being seen by) the host.
     // SAFETY: standard mount(2) call with static C-string arguments.
     let rc = unsafe {
@@ -62,7 +78,7 @@ fn enter_private_namespace() -> std::io::Result<()> {
     if rc != 0 {
         return Err(std::io::Error::last_os_error());
     }
-    Ok(())
+    Ok(privileged)
 }
 
 /// A self-cleaning temp directory tree, no external deps.
@@ -823,6 +839,51 @@ fn rmdir_refuses_non_empty_directory() {
     assert_eq!(err.raw_os_error(), Some(libc::ENOTEMPTY)); // POSIX, not a silent recurse
 }
 
+/// A writer that opens a file while passthrough readers hold it is refused before
+/// its copy-up, so its O_TRUNC cannot leave an empty Overwrite copy that hides
+/// the mod's file. Without passthrough every open is normal and the writer goes
+/// through as before.
+fn a_writer_is_refused_while_passthrough_readers_hold_the_file() {
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    let data: Vec<u8> = (0..(1 << 20)).map(|i| (i % 251) as u8).collect();
+    put(&game, "big.bsa", &data);
+    let passthrough = PRIVILEGED.load(Ordering::Relaxed)
+        && std::env::var("EIDOS_FUSE_PASSTHROUGH")
+            .is_ok_and(|v| !v.trim().is_empty() && v.trim() != "0");
+    let s = mounted!(vec![game.clone()], over.clone(), &mnt);
+
+    // Two readers of one inode: with a backing id per open, the second failed
+    // with EIO.
+    let reader = fs::File::open(mnt.join("big.bsa")).unwrap();
+    assert!(fs::read(mnt.join("big.bsa")).unwrap() == data);
+    let open_writer = || {
+        fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(mnt.join("big.bsa"))
+    };
+    let writer = open_writer();
+    if passthrough {
+        let err = writer.expect_err("a writer opened beside a passthrough reader");
+        assert_eq!(err.raw_os_error(), Some(libc::ETXTBSY), "{err}");
+        assert!(
+            !over.join("big.bsa").exists(),
+            "the refused writer left an Overwrite copy"
+        );
+        assert!(fs::read(mnt.join("big.bsa")).unwrap() == data);
+        drop(reader);
+        // The daemon sees the reader's RELEASE shortly after close returns.
+        assert!(settle(|| open_writer().ok()).is_some());
+    } else {
+        drop(writer.unwrap());
+        drop(reader);
+    }
+    drop(s);
+    assert!(fs::read(game.join("big.bsa")).unwrap() == data);
+    assert_eq!(fs::read(over.join("big.bsa")).unwrap(), b"");
+}
+
 fn large_file_round_trips_through_cached_handle() {
     let t = Tmp::new();
     let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
@@ -1255,7 +1316,10 @@ fn main() {
     // run in the host namespace and skip the delete test, which is the only one
     // sensitive to a host service racing on the mount.
     let isolated = match enter_private_namespace() {
-        Ok(()) => true,
+        Ok(privileged) => {
+            PRIVILEGED.store(privileged, Ordering::Relaxed);
+            true
+        }
         Err(e) => {
             eprintln!(
                 "note: running in the host namespace; host services may race the mounts ({e})"
@@ -1390,6 +1454,11 @@ fn main() {
             "a_recreated_directory_does_not_inherit_the_old_listing",
             a_recreated_directory_does_not_inherit_the_old_listing,
             true,
+        ),
+        (
+            "a_writer_is_refused_while_passthrough_readers_hold_the_file",
+            a_writer_is_refused_while_passthrough_readers_hold_the_file,
+            false,
         ),
         (
             "large_file_round_trips_through_cached_handle",
