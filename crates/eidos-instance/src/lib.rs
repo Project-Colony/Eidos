@@ -40,7 +40,7 @@ pub use categories::{
 };
 pub use export::{csv_quote, fmt_mtime, mod_list_csv, Column, ExportScope};
 pub use manifest::Manifest;
-pub use meta::ModMeta;
+pub use meta::{same_version, ModMeta};
 pub use mo2_ini::Mo2Ini;
 pub use mod_backup::{backup_mod, reserve_mod_backup};
 pub use profile::{

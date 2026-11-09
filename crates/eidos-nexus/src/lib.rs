@@ -1657,8 +1657,11 @@ pub struct ModUpdate {
     pub name: String,
     /// The installed version recorded in `meta.ini` (may be empty).
     pub installed: String,
-    /// The newest version reported by Nexus.
+    /// The newest version reported by Nexus (the installed file's successor when
+    /// the update chain names one, else the mod page's version).
     pub latest: String,
+    /// The successor file, when the update chain named one.
+    pub file_id: Option<u64>,
 }
 
 /// The outcome of an update check shared by the CLI and GUI.
@@ -1720,8 +1723,13 @@ pub fn check_updates(
         .unwrap_or(0);
     const MONTH: u64 = 30 * 24 * 3600;
 
+    // One file list per (domain, mod id): two folders of one mod cost one
+    // request. `None` is a failed fetch, not retried in the same run.
+    let mut files: std::collections::HashMap<(&'static str, u64), Option<ModFiles>> =
+        Default::default();
+
     let mut result = UpdateCheckResult::default();
-    for m in inst.modlist() {
+    'mods: for m in inst.modlist() {
         let meta = inst.mod_meta(&m.name);
         let Some(mod_id) = meta.mod_id() else {
             continue;
@@ -1779,10 +1787,38 @@ pub fn check_updates(
 
         match nexus.mod_info(domain, mod_id) {
             Ok(remote) => {
+                let wanted = file_ids_to_resolve(&meta, mod_id, &remote.version);
+                let mut verdict = None;
+                if !wanted.is_empty() && remote.available && remote.gate.visible() {
+                    let key = (domain, mod_id);
+                    if let std::collections::hash_map::Entry::Vacant(slot) = files.entry(key) {
+                        if nexus.would_block() {
+                            result.rate_limited = true;
+                            break 'mods;
+                        }
+                        match nexus.mod_files(&remote.gate, domain, mod_id) {
+                            Ok(f) => {
+                                slot.insert(Some(f));
+                            }
+                            Err(e) if is_rate_limited(&e) => {
+                                result.rate_limited = true;
+                                break 'mods;
+                            }
+                            // The page version still answers; the next check retries.
+                            Err(_) => {
+                                slot.insert(None);
+                            }
+                        }
+                    }
+                    if let Some(Some(f)) = files.get(&key) {
+                        verdict = Some(decide_update(&remote.version, f, &wanted));
+                    }
+                }
                 let Some(meta) =
-                    apply_mod_update(inst, &m.name, &meta, &remote, now).map_err(|error| {
-                        format!("Could not save update metadata for '{}': {error}", m.name)
-                    })?
+                    apply_mod_update(inst, &m.name, &meta, &remote, verdict.as_ref(), now)
+                        .map_err(|error| {
+                            format!("Could not save update metadata for '{}': {error}", m.name)
+                        })?
                 else {
                     continue;
                 };
@@ -1793,7 +1829,10 @@ pub fn check_updates(
                     result.updates.push(ModUpdate {
                         name: m.name.clone(),
                         installed: meta.version().unwrap_or_default(),
-                        latest: remote.version,
+                        latest: verdict
+                            .as_ref()
+                            .map_or(remote.version, |v| v.newest.clone()),
+                        file_id: verdict.and_then(|v| v.successor),
                     });
                 }
             }
@@ -1819,11 +1858,35 @@ pub fn check_updates(
     Ok(result)
 }
 
+/// The folder's Nexus file ids for `mod_id`, when its installed version differs
+/// from the page's: only then is the mod's file list worth a request.
+pub(crate) fn file_ids_to_resolve(
+    meta: &eidos_instance::ModMeta,
+    mod_id: u64,
+    page_version: &str,
+) -> Vec<u64> {
+    if eidos_instance::same_version(&meta.version().unwrap_or_default(), page_version) {
+        return Vec::new();
+    }
+    let ids: Vec<u64> = meta
+        .installed_files()
+        .into_iter()
+        .filter(|&(m, f)| m == mod_id && f != 0)
+        .map(|(_, f)| f)
+        .collect();
+    if ids.is_empty() {
+        meta.file_id().into_iter().collect()
+    } else {
+        ids
+    }
+}
+
 fn apply_mod_update(
     inst: &eidos_instance::Instance,
     name: &str,
     snapshot: &eidos_instance::ModMeta,
     remote: &RemoteMod,
+    verdict: Option<&FileVerdict>,
     now: u64,
 ) -> io::Result<Option<eidos_instance::ModMeta>> {
     // Network requests run without the instance lock. Only apply their fields
@@ -1833,7 +1896,10 @@ fn apply_mod_update(
     if meta.mod_id() != snapshot.mod_id() || meta.game_name() != snapshot.game_name() {
         return Ok(None);
     }
-    meta.set_newest_version(&remote.version);
+    meta.set_newest_version(verdict.map_or(remote.version.as_str(), |v| v.newest.as_str()));
+    if let Some(v) = verdict {
+        meta.set("nexusFileStatus", &v.status.to_string());
+    }
     meta.set_last_nexus_update(now);
     meta.set_nexus_available(remote.available);
     if !remote.author.is_empty() {
@@ -3614,7 +3680,7 @@ mod update_metadata_integrity_tests {
         current.set_notes("edited during download");
         current.set_ini_tweaks(&["personal.ini".into()]);
         current.write(&path).unwrap();
-        apply_mod_update(&inst, "Personal", &snapshot, &remote, 123)
+        apply_mod_update(&inst, "Personal", &snapshot, &remote, None, 123)
             .unwrap()
             .unwrap();
         let saved = inst.mod_meta("Personal");
@@ -3624,7 +3690,9 @@ mod update_metadata_integrity_tests {
         let lock = inst.try_lock("synthetic metadata editor").unwrap();
         std::thread::scope(|scope| {
             let error = scope
-                .spawn(|| apply_mod_update(&inst, "Personal", &snapshot, &remote, 124).unwrap_err())
+                .spawn(|| {
+                    apply_mod_update(&inst, "Personal", &snapshot, &remote, None, 124).unwrap_err()
+                })
                 .join()
                 .unwrap();
             assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
@@ -3632,13 +3700,84 @@ mod update_metadata_integrity_tests {
         drop(lock);
         let replacement = "[General]\nmodid=99\nversion=3.0\nnotes=replacement\n";
         fs::write(&path, replacement).unwrap();
-        assert!(apply_mod_update(&inst, "Personal", &snapshot, &remote, 124)
-            .unwrap()
-            .is_none());
+        assert!(
+            apply_mod_update(&inst, "Personal", &snapshot, &remote, None, 124)
+                .unwrap()
+                .is_none()
+        );
         assert_eq!(fs::read_to_string(&path).unwrap(), replacement);
         fs::write(&path, [0xff, 0xfe]).unwrap();
-        assert!(apply_mod_update(&inst, "Personal", &snapshot, &remote, 125).is_err());
+        assert!(apply_mod_update(&inst, "Personal", &snapshot, &remote, None, 125).is_err());
         assert_eq!(fs::read(&path).unwrap(), [0xff, 0xfe]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    fn meta(text: &str) -> eidos_instance::ModMeta {
+        let dir = std::env::temp_dir().join(format!(
+            "eidos-file-ids-{}-{}",
+            std::process::id(),
+            text.len()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("meta.ini");
+        fs::write(&path, text).unwrap();
+        let m = eidos_instance::ModMeta::read(&path);
+        fs::remove_dir_all(dir).unwrap();
+        m
+    }
+
+    #[test]
+    fn the_file_list_is_fetched_only_for_a_version_mismatch_with_known_files() {
+        assert!(file_ids_to_resolve(
+            &meta("[General]\nmodid=42\nversion=1.0\nfileID=101\n"),
+            42,
+            "1.0"
+        )
+        .is_empty());
+        assert_eq!(
+            file_ids_to_resolve(
+                &meta("[General]\nmodid=42\nversion=1.0\nfileID=101\n"),
+                42,
+                "1.2"
+            ),
+            [101]
+        );
+        assert!(
+            file_ids_to_resolve(&meta("[General]\nmodid=42\nversion=1.0\n"), 42, "1.2").is_empty()
+        );
+        let merged = "[General]\nmodid=42\nversion=0.9\n[installedFiles]\n1\\modid=42\n1\\fileid=201\n2\\modid=77\n2\\fileid=5\nsize=2\n";
+        assert_eq!(file_ids_to_resolve(&meta(merged), 42, "1.2"), [201]);
+    }
+
+    #[test]
+    fn a_file_verdict_sets_newest_version_and_file_status() {
+        let root =
+            std::env::temp_dir().join(format!("eidos-update-verdict-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let inst = eidos_instance::Instance::portable(root.clone());
+        inst.create().unwrap();
+        fs::create_dir_all(inst.mods_dir().join("Personal")).unwrap();
+        let path = inst.meta_path("Personal");
+        fs::write(&path, "[General]\nmodid=42\nversion=0.9\n").unwrap();
+        let snapshot = inst.mod_meta("Personal");
+        let remote = RemoteMod::from_payload(
+            &serde_json::json!({"mod_id":42,"version":"1.2","available":true,"contains_adult_content":false}),
+            AdultPolicy::Unknown,
+        );
+        let verdict = FileVerdict {
+            newest: "0.9".into(),
+            status: 3,
+            successor: None,
+        };
+        apply_mod_update(&inst, "Personal", &snapshot, &remote, Some(&verdict), 1)
+            .unwrap()
+            .unwrap();
+        let saved = inst.mod_meta("Personal");
+        assert_eq!(saved.newest_version().as_deref(), Some("0.9"));
+        assert!(!saved.update_available());
+        assert!(fs::read_to_string(&path)
+            .unwrap()
+            .contains("nexusFileStatus=3"));
         fs::remove_dir_all(root).unwrap();
     }
 

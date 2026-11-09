@@ -778,7 +778,7 @@ fn parse_bain_options(tail: &str) -> Vec<String> {
 /// trailing zero segments are insignificant ("1.5" == "1.5.0" == "v1.5"). If
 /// either side has a non-numeric segment, falls back to a trimmed
 /// case-insensitive string compare (e.g. "1.5SE" style tags).
-fn same_version(a: &str, b: &str) -> bool {
+pub fn same_version(a: &str, b: &str) -> bool {
     fn segments(s: &str) -> Option<Vec<u64>> {
         let t = s.trim().trim_start_matches(['v', 'V']);
         let mut out = Vec::new();
