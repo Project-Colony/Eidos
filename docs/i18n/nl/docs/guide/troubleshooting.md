@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=596ae1f1b120f9890bd5aac859d50e815b728678 -->
 
 # Probleemoplossing en diagnostiek
 
@@ -164,9 +164,7 @@ symlink naar zijn eigen boom.
 **Wine kon niet zien dat de koppeling hoofdletters vouwt.** Opgelost, en dit was
 degene die ertoe deed.
 
-Er bestaat geen API voor "is dit bestandssysteem hoofdletterongevoelig", dus
-Wine's `get_dir_case_sensitivity` snuffelt naar de markering die CIOPFS
-achterlaat in de mappen die het bedient. Ontbreekt die, dan gaat Wine uit van
+Wine's `get_dir_case_sensitivity` vraagt de map eerst via `FS_IOC_GETFLAGS` en snuffelt daarna naar de markering die CIOPFS achterlaat in de mappen die het bedient. Ontbreekt beide, dan gaat Wine uit van
 HOOFDLETTERGEVOELIG, en elke opzoeking waarvan de spelling niet byte voor byte
 klopt, valt terug op het lezen van de HELE map om een hoofdletterongevoelige
 treffer te vinden. Bethesda-spellen vragen om `data/ccbgssse001-fish.bsa` terwijl
@@ -177,8 +175,7 @@ hoofdmenu nooit - het bleef op 240 MB resident staan terwijl de daemon 92% van
 een core verstookte.
 
 Eidos vouwde hoofdletters vanaf het begin in `resolve_read`. De hele kost zat
-erin dat het dat nooit zei. `lookup` antwoordt nu `.ciopfs`; `readdir` toont het
-nog altijd niet in lijsten.
+erin dat het dat nooit zei. `lookup` antwoordt nu `.ciopfs`; `readdir` toont het nog altijd niet in lijsten. `ioctl` beantwoordt ook `FS_IOC_GETFLAGS` op mappen met de casefold-vlag, die huidige Wine vraagt voordat het naar de markering zoekt.
 
 Twee dingen maakten het fataal in plaats van alleen maar traag. De kost schaalt
 mee met de mapgrootte, dus het installeren van de Anniversary-inhoud (`Data` van

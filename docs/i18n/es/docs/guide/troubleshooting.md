@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=596ae1f1b120f9890bd5aac859d50e815b728678 -->
 
 # Solución de problemas y diagnóstico
 
@@ -156,9 +156,7 @@ actualización del prefijo.
 **Wine no podía saber que el montaje pliega mayúsculas y minúsculas.** Corregido, y
 era el que importaba.
 
-No existe API para «¿este sistema de archivos distingue mayúsculas?», así que
-`get_dir_case_sensitivity` de Wine olfatea el marcador que CIOPFS deja en los
-directorios que sirve. Si falta, Wine supone que SÍ distingue, y toda búsqueda cuya
+`get_dir_case_sensitivity` de Wine pregunta primero al directorio con `FS_IOC_GETFLAGS` y después olfatea el marcador que CIOPFS deja en los directorios que sirve. Si faltan ambos, Wine supone que SÍ distingue, y toda búsqueda cuya
 grafía no coincida byte a byte recae en leer el directorio ENTERO para encontrar una
 coincidencia sin distinción de mayúsculas. Los juegos de Bethesda piden
 `data/ccbgssse001-fish.bsa` cuando el archivo es `ccBGSSSE001-Fish.bsa`, así que
@@ -168,8 +166,7 @@ noventa. Skyrim SE nunca llegaba a su menú principal: se quedaba en 240 MB
 residentes mientras el demonio quemaba el 92 % de un núcleo.
 
 Eidos plegaba mayúsculas en `resolve_read` desde el principio. Todo el coste venía
-de no decirlo nunca. Ahora `lookup` responde `.ciopfs`; `readdir` sigue sin
-listarlo.
+de no decirlo nunca. Ahora `lookup` responde `.ciopfs`; `readdir` sigue sin listarlo. `ioctl` también responde `FS_IOC_GETFLAGS` en los directorios con el indicador de casefold, que el Wine actual pregunta antes de buscar el marcador.
 
 Dos cosas lo volvieron mortal en lugar de meramente lento. El coste escala con el
 tamaño del directorio, así que instalar el contenido Anniversary (`Data` de 37 a 177

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=596ae1f1b120f9890bd5aac859d50e815b728678 -->
 
 # Risoluzione dei problemi e diagnostica
 
@@ -155,9 +155,7 @@ prefisso.
 **Wine non riusciva a capire che il mount ripiega le maiuscole.** Corretto, ed era
 quello che contava.
 
-Non esiste un'API per "questo file system è insensibile alle maiuscole", quindi
-`get_dir_case_sensitivity` di Wine fiuta il marcatore che CIOPFS lascia nelle
-cartelle che serve. In sua assenza Wine presume SENSIBILE alle maiuscole, e ogni
+`get_dir_case_sensitivity` di Wine interroga prima la cartella con `FS_IOC_GETFLAGS`, poi fiuta il marcatore che CIOPFS lascia nelle cartelle che serve. In assenza di entrambi Wine presume SENSIBILE alle maiuscole, e ogni
 ricerca la cui grafia non combacia byte per byte ripiega sulla lettura dell'INTERA
 cartella per trovare una corrispondenza senza distinzione. I giochi Bethesda chiedono
 `data/ccbgssse001-fish.bsa` mentre il file è `ccBGSSSE001-Fish.bsa`, quindi scattava
@@ -167,8 +165,7 @@ raggiungeva mai il menu principale - restava a 240 MB residenti mentre il demone
 bruciava il 92 % di un core.
 
 Eidos ripiegava le maiuscole in `resolve_read` fin dall'inizio. Tutto il costo veniva
-dal non dirlo mai. Ora `lookup` risponde `.ciopfs`; `readdir` continua a non
-elencarlo.
+dal non dirlo mai. Ora `lookup` risponde `.ciopfs`; `readdir` continua a non elencarlo. `ioctl` risponde anche a `FS_IOC_GETFLAGS` sulle cartelle con il flag casefold, che il Wine attuale chiede prima di cercare il marcatore.
 
 Due cose lo hanno reso fatale anziché semplicemente lento. Il costo cresce con la
 dimensione della cartella, quindi installare i contenuti Anniversary (`Data` da 37 a

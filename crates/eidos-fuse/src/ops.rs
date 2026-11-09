@@ -15,19 +15,26 @@ use std::time::SystemTime;
 
 use fuser::{
     BsdFileFlags, Errno, FileHandle, Filesystem, FopenFlags, Generation, INodeNo, InitFlags,
-    KernelConfig, LockOwner, OpenFlags, RenameFlags, ReplyAttr, ReplyCreate, ReplyData,
-    ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyOpen, ReplyStatfs, ReplyWrite, ReplyXattr,
-    Request, TimeOrNow, WriteFlags,
+    IoctlFlags, KernelConfig, LockOwner, OpenFlags, RenameFlags, ReplyAttr, ReplyCreate, ReplyData,
+    ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyIoctl, ReplyOpen, ReplyStatfs, ReplyWrite,
+    ReplyXattr, Request, TimeOrNow, WriteFlags,
 };
 
 use crate::*;
 
-/// The marker CIOPFS leaves in every directory it serves, and the only way Wine
-/// can tell that a filesystem folds case (`get_dir_case_sensitivity` in
-/// `dlls/ntdll/unix/file.c` stats it). Eidos answers it in `lookup` so Wine skips
-/// its brute-force directory rescan on every mis-cased path - see the comment
-/// there for what that rescan costs.
+/// The marker CIOPFS leaves in every directory it serves. Wine stats it in
+/// `get_dir_case_sensitivity` (`dlls/ntdll/unix/file.c`) after asking
+/// `FS_IOC_GETFLAGS` and `fstatfs`; older Wine only knows this one. Eidos answers
+/// it in `lookup` so Wine skips its brute-force directory rescan on every
+/// mis-cased path - see the comment there for what that rescan costs.
 pub(crate) const CIOPFS_MARKER: &[u8] = b".ciopfs";
+
+/// What `FS_IOC_GETFLAGS` answers for a directory inode: `FS_CASEFOLD_FL`, so
+/// Wine skips its `fstatfs` and `.ciopfs` probes. `None` means "not a casefold
+/// directory" (ENOTTY).
+fn getflags_reply(_dir: INodeNo) -> Option<[u8; 4]> {
+    Some(0x4000_0000u32.to_ne_bytes())
+}
 
 impl Eidos {
     /// An error after a completed mutation prevents the kernel's usual dentry
@@ -317,9 +324,10 @@ impl Filesystem for Eidos {
         // Tell Wine this directory is case-insensitive, so it stops proving it the
         // hard way.
         //
-        // Wine has no way to ask a filesystem whether it folds case, so
-        // `get_dir_case_sensitivity` sniffs for the marker CIOPFS leaves in every
-        // directory it serves. Without it Wine assumes case-SENSITIVE, and every
+        // `get_dir_case_sensitivity` first asks `FS_IOC_GETFLAGS` (see `ioctl`),
+        // then sniffs for the marker CIOPFS leaves in every directory it serves;
+        // older Wine only has the marker. Without either Wine assumes
+        // case-SENSITIVE, and every
         // lookup whose spelling does not match byte-for-byte falls back to reading
         // the WHOLE directory to search for a case-insensitive match. Bethesda
         // games ask for `data/ccbgssse001-fish.bsa` while the file is
@@ -1200,6 +1208,32 @@ impl Filesystem for Eidos {
         match r {
             Ok(()) => reply.ok(),
             Err(e) => reply.error(to_errno(&e)),
+        }
+    }
+
+    fn ioctl(
+        &self,
+        _req: &Request,
+        ino: INodeNo,
+        _fh: FileHandle,
+        flags: IoctlFlags,
+        cmd: u32,
+        _in_data: &[u8],
+        out_size: u32,
+        reply: ReplyIoctl,
+    ) {
+        if cmd != libc::FS_IOC_GETFLAGS as u32 {
+            let _t = self.stats.ioctl_other.start();
+            return reply.error(Errno::ENOTTY);
+        }
+        let _t = self.stats.ioctl_getflags.start();
+        // The kernel sets FUSE_IOCTL_DIR from S_ISDIR and asks for sizeof(int);
+        // a longer reply would be rejected.
+        match getflags_reply(ino) {
+            Some(b) if flags.contains(IoctlFlags::FUSE_IOCTL_DIR) && out_size >= 4 => {
+                reply.ioctl(0, &b)
+            }
+            _ => reply.error(Errno::ENOTTY),
         }
     }
 

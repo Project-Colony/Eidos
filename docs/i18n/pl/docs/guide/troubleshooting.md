@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=596ae1f1b120f9890bd5aac859d50e815b728678 -->
 
 # Rozwiązywanie problemów i diagnostyka
 
@@ -150,9 +150,7 @@ aktualizacji prefiksu zastępuje `mscoree.dll` dowiązaniem do własnego drzewa.
 **Wine nie potrafiło stwierdzić, że montowanie składa wielkość liter.** Naprawione i
 to był ten, który miał znaczenie.
 
-Nie istnieje API „czy ten system plików jest niewrażliwy na wielkość liter", więc
-`get_dir_case_sensitivity` w Wine węszy za znacznikiem, który CIOPFS zostawia w
-obsługiwanych przez siebie katalogach. Gdy go brak, Wine zakłada WRAŻLIWOŚĆ na
+`get_dir_case_sensitivity` w Wine najpierw pyta katalog przez `FS_IOC_GETFLAGS`, potem węszy za znacznikiem, który CIOPFS zostawia w obsługiwanych przez siebie katalogach. Gdy brak obu, Wine zakłada WRAŻLIWOŚĆ na
 wielkość liter, a każde wyszukanie, którego pisownia nie zgadza się bajt w bajt,
 cofa się do przeczytania CAŁEGO katalogu w poszukiwaniu dopasowania bez względu na
 wielkość liter. Gry Bethesdy proszą o `data/ccbgssse001-fish.bsa`, podczas gdy plik
@@ -163,8 +161,7 @@ do menu głównego - siedział na 240 MB rezydentnych, podczas gdy demon spalał
 rdzenia.
 
 Eidos składał wielkość liter w `resolve_read` od samego początku. Cały koszt brał się
-z tego, że nigdy tego nie powiedział. `lookup` odpowiada teraz `.ciopfs`; `readdir`
-nadal go nie wypisuje.
+z tego, że nigdy tego nie powiedział. `lookup` odpowiada teraz `.ciopfs`; `readdir` nadal go nie wypisuje. `ioctl` odpowiada też na `FS_IOC_GETFLAGS` dla katalogów flagą casefold, o którą obecny Wine pyta przed szukaniem znacznika.
 
 Dwie rzeczy uczyniły to śmiertelnym, a nie tylko powolnym. Koszt rośnie z rozmiarem
 katalogu, więc zainstalowanie zawartości Anniversary (`Data` z 37 plików do 177)

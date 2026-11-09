@@ -286,9 +286,12 @@ that does **not** yet close:
   documented limitation to close later.
 - **Steam churn.** Proton updates and the launch-option dance are an ongoing
   integration surface.
-- **Telling Wine the mount folds case** (fixed). Wine has no API for the
-  question, so `get_dir_case_sensitivity` sniffs for the marker CIOPFS leaves in
-  each directory. Without it Wine assumes case-sensitive and answers every
+- **Telling Wine the mount folds case** (fixed). Wine's
+  `get_dir_case_sensitivity` asks the directory through `FS_IOC_GETFLAGS`, then
+  sniffs for the marker CIOPFS leaves in each directory. Eidos answers both:
+  `ioctl` returns the casefold flag on directories (4 bytes, ENOTTY for
+  everything else) and `lookup` serves `.ciopfs` for older Wine. Without either
+  Wine assumes case-sensitive and answers every
   mis-cased lookup by reading the entire directory to search for a match - which,
   for a Bethesda game asking for `data/ccbgssse001-fish.bsa` against
   `ccBGSSSE001-Fish.bsa`, is nearly every asset. Measured before the fix: 4471

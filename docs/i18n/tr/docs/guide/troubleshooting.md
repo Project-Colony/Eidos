@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=596ae1f1b120f9890bd5aac859d50e815b728678 -->
 
 # Sorun giderme ve tanılama
 
@@ -161,9 +161,7 @@ giden bir sembolik bağla değiştirir.
 **Wine, bağlamanın harf katlaması yaptığını anlayamıyordu.** Düzeltildi ve
 önemli olan buydu.
 
-"bu dosya sistemi harf duyarsız mı" diye soran bir API yok, bu yüzden Wine'ın
-`get_dir_case_sensitivity` işlevi, CIOPFS'in sunduğu dizinlerde bıraktığı imi
-arar. İm yoksa Wine harf DUYARLI varsayar ve yazımı bayt bayt eşleşmeyen her
+Wine'ın `get_dir_case_sensitivity` işlevi önce dizine `FS_IOC_GETFLAGS` ile sorar, sonra CIOPFS'in sunduğu dizinlerde bıraktığı imi arar. İkisi de yoksa Wine harf DUYARLI varsayar ve yazımı bayt bayt eşleşmeyen her
 arama, harf duyarsız bir eşleşme bulmak için TÜM dizini okumaya geri düşer.
 Bethesda oyunları, dosya `ccBGSSSE001-Fish.bsa` iken `data/ccbgssse001-fish.bsa`
 ister, dolayısıyla bu neredeyse her varlıkta tetiklendi: sekiz saniyede 4471 im
@@ -172,8 +170,7 @@ yoklaması ve 2236 tam dizin yeniden okuması, doksan saniyede de `Data` için
 %92'sini yakarken 240 MB yerleşik bellekte öylece durdu.
 
 Eidos en baştan beri `resolve_read` içinde harf katlaması yapıyordu. Bütün bedel,
-bunu hiç söylememesiydi. `lookup` artık `.ciopfs` yanıtı veriyor; `readdir` onu
-hâlâ listelemiyor.
+bunu hiç söylememesiydi. `lookup` artık `.ciopfs` yanıtı veriyor; `readdir` onu hâlâ listelemiyor. `ioctl` ayrıca dizinler için `FS_IOC_GETFLAGS`'a casefold bayrağıyla yanıt verir; güncel Wine imi aramadan önce bunu sorar.
 
 İki şey bunu yalnızca yavaş değil, öldürücü kıldı. Bedel dizin boyutuyla
 ölçeklenir, bu yüzden Anniversary içeriğini kurmak (`Data` 37 dosyadan 177'ye)

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=596ae1f1b120f9890bd5aac859d50e815b728678 -->
 
 # Dépannage et diagnostics
 
@@ -164,9 +164,7 @@ par un lien symbolique dans son propre arbre à chaque mise à jour du préfixe.
 **Wine ne pouvait pas savoir que le montage replie la casse.** Corrigé, et c'est
 celui qui comptait.
 
-Il n'existe aucune API pour « ce système de fichiers est-il insensible à la
-casse » : le `get_dir_case_sensitivity` de Wine renifle donc le marqueur que
-CIOPFS laisse dans les dossiers qu'il sert. Absent, Wine suppose SENSIBLE à la
+Le `get_dir_case_sensitivity` de Wine interroge d'abord le dossier par `FS_IOC_GETFLAGS`, puis renifle le marqueur que CIOPFS laisse dans les dossiers qu'il sert. Sans l'un ni l'autre, Wine suppose SENSIBLE à la
 casse, et chaque recherche dont l'orthographe ne correspond pas octet pour octet
 se rabat sur la lecture du dossier ENTIER pour trouver une correspondance
 insensible à la casse. Les jeux Bethesda demandent
@@ -178,8 +176,7 @@ son menu principal - il restait à 240 Mo résidents pendant que le démon brûl
 92 % d'un cœur.
 
 Eidos repliait la casse dans `resolve_read` depuis le début. Tout le coût venait
-de ne jamais le dire. `lookup` répond désormais `.ciopfs` ; `readdir` continue de
-ne pas le lister.
+de ne jamais le dire. `lookup` répond désormais `.ciopfs` ; `readdir` continue de ne pas le lister. `ioctl` répond aussi à `FS_IOC_GETFLAGS` sur les dossiers avec l'indicateur de repli de casse, que le Wine actuel demande avant de chercher le marqueur.
 
 Deux choses l'ont rendu fatal plutôt que simplement lent. Le coût croît avec la
 taille du dossier, donc installer le contenu Anniversary (`Data` passant de 37 à

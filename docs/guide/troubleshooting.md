@@ -154,9 +154,7 @@ into its own tree on every prefix update.
 **Wine could not tell that the mount folds case.** Fixed, and it was the one that
 mattered.
 
-There is no API for "is this filesystem case-insensitive", so Wine's
-`get_dir_case_sensitivity` sniffs for the marker CIOPFS leaves in the directories
-it serves. Absent, Wine assumes case-SENSITIVE, and every lookup whose spelling
+Wine's `get_dir_case_sensitivity` first asks the directory through `FS_IOC_GETFLAGS`, then sniffs for the marker CIOPFS leaves in the directories it serves. With neither, Wine assumes case-SENSITIVE, and every lookup whose spelling
 does not match byte-for-byte falls back to reading the WHOLE directory to find a
 case-insensitive match. Bethesda games ask for `data/ccbgssse001-fish.bsa` while
 the file is `ccBGSSSE001-Fish.bsa`, so it fired on nearly every asset: 4471 marker
@@ -165,7 +163,7 @@ of `Data` in ninety. Skyrim SE never reached its main menu - it sat at 240 MB
 resident while the daemon burned 92% of a core.
 
 Eidos had folded case in `resolve_read` from the start. The whole cost was never
-saying so. `lookup` now answers `.ciopfs`; `readdir` still does not list it.
+saying so. `lookup` now answers `.ciopfs`; `readdir` still does not list it. `ioctl` also answers `FS_IOC_GETFLAGS` on directories with the casefold flag, which current Wine asks before it looks for the marker.
 
 Two things made it fatal rather than merely slow. The cost scales with directory
 size, so installing the Anniversary content (`Data` from 37 files to 177) tipped

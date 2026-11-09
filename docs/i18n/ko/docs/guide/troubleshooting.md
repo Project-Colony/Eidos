@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=596ae1f1b120f9890bd5aac859d50e815b728678 -->
 
 # 문제 해결과 진단
 
@@ -149,9 +149,7 @@ Framework를 아무리 설치해도 고쳐지지 않습니다 - Proton은 프리
 **Wine은 마운트가 대소문자를 접는다는 것을 알 수 없었습니다.** 고쳐졌고, 이것이
 중요한 문제였습니다.
 
-"이 파일 시스템은 대소문자를 구분하지 않는가"를 묻는 API는 없어서, Wine의
-`get_dir_case_sensitivity`는 CIOPFS가 자기가 제공하는 디렉터리에 남기는 표식을
-킁킁거립니다. 그것이 없으면 Wine은 대소문자를 구분한다고 가정하고, 철자가 바이트
+Wine의 `get_dir_case_sensitivity`는 먼저 `FS_IOC_GETFLAGS`로 디렉터리에 묻고, 그다음 CIOPFS가 자기가 제공하는 디렉터리에 남기는 표식을 킁킁거립니다. 둘 다 없으면 Wine은 대소문자를 구분한다고 가정하고, 철자가 바이트
 단위로 맞지 않는 모든 조회는 대소문자 무시 일치를 찾으려 디렉터리 전체를 읽는 쪽으로
 물러섭니다. Bethesda 게임은 파일이 `ccBGSSSE001-Fish.bsa`인데도
 `data/ccbgssse001-fish.bsa`를 요구하므로, 이는 거의 모든 에셋에서 발동했습니다. 8초
@@ -160,8 +158,7 @@ Skyrim SE는 메인 메뉴에 끝내 이르지 못했습니다 - 상주 메모�
 데몬은 코어 하나의 92%를 태웠습니다.
 
 Eidos는 처음부터 `resolve_read`에서 대소문자를 접고 있었습니다. 그 모든 비용은
-그렇다고 말하지 않은 데서 왔습니다. 이제 `lookup`이 `.ciopfs`에 답합니다. `readdir`은
-여전히 그것을 나열하지 않습니다.
+그렇다고 말하지 않은 데서 왔습니다. 이제 `lookup`이 `.ciopfs`에 답합니다. `readdir`은 여전히 그것을 나열하지 않습니다. `ioctl`도 디렉터리에 대한 `FS_IOC_GETFLAGS`에 casefold 플래그로 답하며, 현재 Wine은 표식을 찾기 전에 이것을 먼저 묻습니다.
 
 이것을 그저 느린 정도가 아니라 치명적으로 만든 것은 둘입니다. 비용이 디렉터리 크기에
 비례해서 커지므로 Anniversary 콘텐츠 설치(`Data`가 37개 파일에서 177개로)가 저울을

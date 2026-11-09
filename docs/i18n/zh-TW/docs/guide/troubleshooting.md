@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=596ae1f1b120f9890bd5aac859d50e815b728678 -->
 
 # 疑難排解與診斷
 
@@ -138,16 +138,14 @@ XP32 Maximum Skeleton 的動畫與 FNIS 行為檔在大寫的那個底下,`chara
 
 **Wine 分辨不出這個掛載會摺疊大小寫。** 已修正,而且這是最要緊的那一個。
 
-沒有任何 API 能回答「這個檔案系統是不是不分大小寫」,所以 Wine 的
-`get_dir_case_sensitivity` 會去嗅 CIOPFS 留在它所服務目錄裡的那個標記。標記不在,
-Wine 就假設大小寫敏感,而每一次拼法沒有逐位元組相符的查找,都會退回去讀整個目錄來
+Wine 的 `get_dir_case_sensitivity` 會先用 `FS_IOC_GETFLAGS` 詢問目錄,再去嗅 CIOPFS 留在它所服務目錄裡的那個標記。兩者都沒有,Wine 就假設大小寫敏感,而每一次拼法沒有逐位元組相符的查找,都會退回去讀整個目錄來
 找不分大小寫的相符項。Bethesda 的遊戲要的是 `data/ccbgssse001-fish.bsa`,而檔案叫
 `ccBGSSSE001-Fish.bsa`,於是它幾乎在每一個素材上都被觸發:八秒內 4471 次標記探測與
 2236 次整個目錄重讀,九十秒內 195796 次對 `Data` 的列舉。Skyrim SE 從來沒走到主
 選單 - 它停在 240 MB 常駐記憶體,而常駐程式燒掉了一顆核心的 92%。
 
 Eidos 從一開始就在 `resolve_read` 裡摺疊大小寫。這整份成本只是因為從來沒說出來。
-現在 `lookup` 會回應 `.ciopfs`;`readdir` 仍然不把它列出來。
+現在 `lookup` 會回應 `.ciopfs`;`readdir` 仍然不把它列出來。`ioctl` 也會對目錄回應 `FS_IOC_GETFLAGS` 並帶上 casefold 旗標,目前的 Wine 會在尋找標記之前先問這個。
 
 有兩件事讓它從單純的慢變成致命。成本隨目錄大小增長,所以裝上 Anniversary 內容
 (`Data` 從 37 個檔案變成 177 個)就把它推過了頭。而且 `opendir` 會急切地建出合併

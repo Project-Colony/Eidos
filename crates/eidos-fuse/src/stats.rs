@@ -93,6 +93,11 @@ pub(crate) struct Stats {
     pub(crate) rename: Op,
     pub(crate) readlink: Op,
     pub(crate) statfs: Op,
+    /// `FS_IOC_GETFLAGS`: Wine's case-folding probe. Kept apart from the other
+    /// ioctls (Wine's VFAT directory read also lands there) so it can be
+    /// compared with the old `statfs` count.
+    pub(crate) ioctl_getflags: Op,
+    pub(crate) ioctl_other: Op,
     /// How many times each directory was opened, by path.
     ///
     /// The totals say a session opened directories half a million times. They
@@ -328,7 +333,7 @@ impl Drop for Timed<'_> {
 
 impl Stats {
     /// The handlers outside the original six, by name, for the report.
-    fn more_ops(&self) -> [(&'static str, &Op); 16] {
+    fn more_ops(&self) -> [(&'static str, &Op); 18] {
         [
             ("getxattr", &self.getxattr),
             ("setxattr", &self.setxattr),
@@ -346,6 +351,8 @@ impl Stats {
             ("rename", &self.rename),
             ("readlink", &self.readlink),
             ("statfs", &self.statfs),
+            ("ioctl getflags", &self.ioctl_getflags),
+            ("ioctl other", &self.ioctl_other),
         ]
     }
 

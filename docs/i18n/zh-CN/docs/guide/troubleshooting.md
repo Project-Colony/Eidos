@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=596ae1f1b120f9890bd5aac859d50e815b728678 -->
 
 # 排查与诊断
 
@@ -129,16 +129,14 @@ assets` 在另一个下面。
 
 **Wine 无法得知这个挂载会折叠大小写。** 已修复,而且这是最要命的一个。
 
-不存在「这个文件系统是否大小写不敏感」的 API,所以 Wine 的
-`get_dir_case_sensitivity` 靠嗅探 CIOPFS 留在其所服务目录里的标记。标记不在,Wine 就
-假定**大小写敏感**,于是每一次拼写不能逐字节吻合的查找,都退化成读取**整个**目录来
+Wine 的 `get_dir_case_sensitivity` 先用 `FS_IOC_GETFLAGS` 询问目录,再嗅探 CIOPFS 留在其所服务目录里的标记。两者都没有,Wine 就假定**大小写敏感**,于是每一次拼写不能逐字节吻合的查找,都退化成读取**整个**目录来
 寻找大小写无关的匹配。Bethesda 的游戏请求 `data/ccbgssse001-fish.bsa`,而文件名是
 `ccBGSSSE001-Fish.bsa`,所以几乎每个资源都会触发:八秒内 4471 次标记探测、2236 次
 完整重读目录,九十秒内 195796 次枚举 `Data`。Skyrim SE 从未走到主菜单 —— 它停在 240 MB
 常驻内存,而守护进程烧掉了一个核心的 92%。
 
 Eidos 从一开始就在 `resolve_read` 里折叠大小写。全部代价只来自它从不说出这一点。现在
-`lookup` 会回答 `.ciopfs`;`readdir` 依旧不列出它。
+`lookup` 会回答 `.ciopfs`;`readdir` 依旧不列出它。`ioctl` 也会对目录回答 `FS_IOC_GETFLAGS` 并带上 casefold 标志,当前的 Wine 会在查找标记之前先问这个。
 
 有两件事让它从「慢」变成「致命」。代价随目录大小增长,所以装上 Anniversary 内容
 (`Data` 从 37 个文件变成 177 个)就压垮了它。而且 `opendir` 会急切地构建合并列表,

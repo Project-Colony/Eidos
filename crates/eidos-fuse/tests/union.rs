@@ -172,6 +172,27 @@ fn case_insensitive_read_through_mount() {
     );
 }
 
+fn getflags_reports_casefold_on_dirs_only() {
+    use std::os::fd::AsRawFd;
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    put(&game, "Textures/Armor.DDS", b"texdata");
+    let _s = mounted!(vec![game], over, &mnt);
+
+    let getflags = |p: &Path| {
+        let f = fs::File::open(p).unwrap();
+        let mut flags: i32 = 0;
+        // SAFETY: FS_IOC_GETFLAGS writes one int through the pointer.
+        let r = unsafe { libc::ioctl(f.as_raw_fd(), libc::FS_IOC_GETFLAGS, &mut flags) };
+        (r, flags, std::io::Error::last_os_error().raw_os_error())
+    };
+    let (r, flags, _) = getflags(&mnt.join("Textures"));
+    assert_eq!(r, 0);
+    assert_ne!(flags & 0x4000_0000, 0, "flags {flags:#x}");
+    let (r, _, errno) = getflags(&mnt.join("Textures/Armor.DDS"));
+    assert_eq!((r, errno), (-1, Some(libc::ENOTTY)));
+}
+
 fn write_copies_up_and_keeps_sources_pristine() {
     let t = Tmp::new();
     let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
@@ -1342,6 +1363,11 @@ fn main() {
         (
             "creating_a_symlink_lands_in_overwrite",
             creating_a_symlink_lands_in_overwrite,
+            false,
+        ),
+        (
+            "getflags_reports_casefold_on_dirs_only",
+            getflags_reports_casefold_on_dirs_only,
             false,
         ),
         (

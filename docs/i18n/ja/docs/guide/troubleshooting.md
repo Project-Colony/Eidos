@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=596ae1f1b120f9890bd5aac859d50e815b728678 -->
 
 # トラブルシューティングと診断
 
@@ -160,9 +160,7 @@ or more worlds」とだけ言います。原因は Wine の Mono が .NET Framew
 **Wine はマウントが大小を畳み込むと分からなかった。** 修正済み、そしてこれが
 効いた一件です。
 
-「このファイルシステムは大小を区別しないか」を問う API はないので、Wine の
-`get_dir_case_sensitivity` は CIOPFS が自分の配下のディレクトリに残すマーカーを
-嗅ぎに行きます。無ければ Wine は大小を区別すると仮定し、綴りがバイト単位で
+Wine の `get_dir_case_sensitivity` はまず `FS_IOC_GETFLAGS` でディレクトリに尋ね、次に CIOPFS が自分の配下のディレクトリに残すマーカーを嗅ぎに行きます。どちらも無ければ Wine は大小を区別すると仮定し、綴りがバイト単位で
 一致しないルックアップはすべて、大小無視の一致を探すためにディレクトリ丸ごとの
 読み取りへ落ちます。Bethesda のゲームはファイルが `ccBGSSSE001-Fish.bsa` である
 のに `data/ccbgssse001-fish.bsa` を求めるので、ほぼすべてのアセットで発火しま
@@ -171,8 +169,7 @@ or more worlds」とだけ言います。原因は Wine の Mono が .NET Framew
 のままでデーモンはコアの 92% を焼いていました。
 
 Eidos は最初から `resolve_read` で大小を畳み込んでいました。コストのすべては、
-そう言わなかったことにありました。`lookup` はいま `.ciopfs` に答えます。
-`readdir` はいまもそれを一覧しません。
+そう言わなかったことにありました。`lookup` はいま `.ciopfs` に答えます。`readdir` はいまもそれを一覧しません。`ioctl` もディレクトリに対する `FS_IOC_GETFLAGS` に casefold フラグで答えます。現行の Wine はマーカーを探す前にこれを尋ねます。
 
 これを単に遅いではなく致命的にしたものが二つあります。コストはディレクトリの
 大きさに比例するので、Anniversary のコンテンツを入れたこと(`Data` が 37

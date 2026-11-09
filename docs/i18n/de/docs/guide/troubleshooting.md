@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=596ae1f1b120f9890bd5aac859d50e815b728678 -->
 
 # Fehlersuche und Diagnose
 
@@ -156,9 +156,7 @@ seinen eigenen Baum.
 **Wine konnte nicht erkennen, dass das Mount Groß-/Kleinschreibung faltet.**
 Behoben, und das war der, auf den es ankam.
 
-Es gibt keine API für "ist dieses Dateisystem case-insensitiv", also schnüffelt
-Wines `get_dir_case_sensitivity` nach dem Marker, den CIOPFS in den von ihm
-bedienten Verzeichnissen hinterlässt. Fehlt er, nimmt Wine case-SENSITIV an, und
+Wines `get_dir_case_sensitivity` fragt das Verzeichnis zuerst per `FS_IOC_GETFLAGS`, dann schnüffelt es nach dem Marker, den CIOPFS in den von ihm bedienten Verzeichnissen hinterlässt. Fehlt beides, nimmt Wine case-SENSITIV an, und
 jede Suche, deren Schreibweise nicht Byte für Byte passt, fällt darauf zurück, das
 GANZE Verzeichnis zu lesen, um eine Übereinstimmung ohne Rücksicht auf Groß- und
 Kleinschreibung zu finden. Bethesda-Spiele fragen nach `data/ccbgssse001-fish.bsa`,
@@ -169,8 +167,7 @@ sein Hauptmenü - es saß bei 240 MB resident, während der Daemon 92 % eines Ke
 verbrannte.
 
 Eidos faltete Groß- und Kleinschreibung in `resolve_read` von Anfang an. Die ganzen
-Kosten entstanden nur daraus, es nie zu sagen. `lookup` antwortet nun `.ciopfs`;
-`readdir` listet es weiterhin nicht.
+Kosten entstanden nur daraus, es nie zu sagen. `lookup` antwortet nun `.ciopfs`; `readdir` listet es weiterhin nicht. `ioctl` beantwortet außerdem `FS_IOC_GETFLAGS` auf Verzeichnissen mit dem Casefold-Flag, das aktuelles Wine vor der Suche nach dem Marker abfragt.
 
 Zwei Dinge machten es tödlich statt bloß langsam. Die Kosten skalieren mit der
 Verzeichnisgröße, also brachte das Installieren der Anniversary-Inhalte (`Data` von
