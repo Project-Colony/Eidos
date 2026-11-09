@@ -615,6 +615,7 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("status_sync_failed", "Échec de la synchronisation : {error}"),
     ("dialog_pick_extension_file", "Choisissez un fichier pour une extension"),
     ("status_refused_open", "Ouverture de {path} refusée : c'est un lien, ou ce n'est pas un chemin à l'intérieur de ce mod."),
+    ("status_refused_open_type", "Ouverture de {path} refusée : seuls les fichiers texte (txt, ini, json, log, cfg et similaires) peuvent être ouverts d'ici."),
     ("status_refused_preview", "Aperçu de {path} refusé : c'est un lien, ou ce n'est pas un chemin à l'intérieur de ce mod."),
     ("status_refused_rename", "Renommage en {name} refusé : ce n'est pas un nom."),
     ("status_exists_in_folder", "{name} existe déjà dans ce dossier."),

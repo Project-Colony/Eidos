@@ -156,6 +156,8 @@ pub(crate) enum Message {
     ConfirmModRestoreBackup(String),
     /// Filetree: open the entry with the desktop's handler.
     FiletreeOpen(usize, String),
+    /// Open one existing text file with the desktop's handler.
+    OpenFile(PathBuf),
     /// Filetree: preview the entry (mod index, relative path). Resolved when
     /// clicked, like `FiletreeOpen`, not while the row is drawn.
     FiletreePreview(usize, String),

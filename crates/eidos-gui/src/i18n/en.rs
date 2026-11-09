@@ -615,6 +615,7 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("status_sync_failed", "Sync failed: {error}"),
     ("dialog_pick_extension_file", "Choose a file for an extension"),
     ("status_refused_open", "Refused to open {path}: it is a link, or not a path inside this mod."),
+    ("status_refused_open_type", "Refused to open {path}: only text files (txt, ini, json, log, cfg and similar) can be opened from here."),
     ("status_refused_preview", "Refused to preview {path}: it is a link, or not a path inside this mod."),
     ("status_refused_rename", "Refused to rename to {name}: not a name."),
     ("status_exists_in_folder", "{name} already exists in that folder."),

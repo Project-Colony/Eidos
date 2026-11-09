@@ -1432,6 +1432,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::PreviewDdsSelection(..)
         | Message::ClosePreview
         | Message::FiletreeOpen(..)
+        | Message::OpenFile(..)
         | Message::FiletreePreview(..)
         | Message::FiletreeRenameStart(..)
         | Message::FiletreeRenameChanged(..)
