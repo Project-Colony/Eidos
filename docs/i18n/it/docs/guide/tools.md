@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e5a1e8e03e41d94d1b49bde188087efab2adb1b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=6dd62a47ce572c0720e08cb2522d9850e4b75eec -->
 
 # Strumenti: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -113,7 +113,7 @@ tra maiuscole e minuscole.
 | `bodyslide`, `outfit` | `d3dx9_43`, `d3dcompiler_47` |
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
-| `synthesis` | `dotnet8`, `vcrun2022` |
+| `synthesis` | `dotnetsdk10`, `vcrun2022` |
 | `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
@@ -143,13 +143,22 @@ ne richiede uno che nessuno potrebbe indovinare: un titolo che contiene
 `dotnet48`, `xact`...). Scrivono chiavi di registro, la GAC e gli host CLR,
 quindi non possono essere copiati come file. **Scaricano da Microsoft**.
 
-**Livello 3 - runtime** (`dotnet10`). Un runtime .NET moderno è fatto di 193 file
+**Livello 3 - runtime** (`dotnet10`, `dotnetsdk10`). Un runtime .NET moderno è fatto di 193 file
 che vivono in una directory propria e vengono trovati attraverso `DOTNET_ROOT`:
 mai registrati, mai installati nel prefisso, quindi nessuno degli altri due
 livelli può trasportarlo. Eidos lo scarica da sé, lo verifica contro un checksum
 incorporato nel binario, e lo mette in cache in
 `~/.local/share/Colony/Eidos/runtimes/` - **fuori da ogni istanza**, perché 78 MB
 non sono per gioco né per profilo.
+
+`dotnetsdk10` è l'SDK di .NET 10: 301 MB da scaricare, 808 MB una volta
+estratto. Synthesis ne ha bisogno per compilare i suoi patcher, e per costruirli
+ed eseguirli chiama un `dotnet` senza percorso, quindi uno strumento che
+dichiara `dotnetsdk10` riceve anche la cartella dell'SDK in `WINEPATH`, più
+`NUGET_CERT_REVOCATION_MODE=offline`, `DOTNET_GENERATE_ASPNET_CERTIFICATE=false`
+e `DOTNET_CLI_TELEMETRY_OPTOUT=1`. Una voce di Synthesis in `tools.ini` che
+riporta ancora il vecchio valore predefinito, `dotnet8`, `vcrun2022`, passa a
+`dotnetsdk10`, `vcrun2022` quando Eidos la legge.
 
 Niente nei livelli 2 o 3 gira in sordina:
 

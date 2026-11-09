@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e5a1e8e03e41d94d1b49bde188087efab2adb1b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=6dd62a47ce572c0720e08cb2522d9850e4b75eec -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -111,7 +111,7 @@ dizesidir.
 | `bodyslide`, `outfit` | `d3dx9_43`, `d3dcompiler_47` |
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
-| `synthesis` | `dotnet8`, `vcrun2022` |
+| `synthesis` | `dotnetsdk10`, `vcrun2022` |
 | `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
@@ -142,13 +142,22 @@ istege bagli olmadigi [asagisi](#pgpatcher-neden---ignore-mo2vfscheck-ister).
 barındırıcılarını yazar, dolayısıyla dosya kopyalanarak halledilemezler.
 **Microsoft'tan indirirler**.
 
-**Kademe 3 - çalışma zamanları** (`dotnet10`). Modern bir .NET çalışma zamanı,
+**Kademe 3 - çalışma zamanları** (`dotnet10`, `dotnetsdk10`). Modern bir .NET çalışma zamanı,
 kendi dizininde duran ve `DOTNET_ROOT` üzerinden bulunan 193 dosyadır: hiç
 kaydedilmez, öneke hiçbir biçimde kurulmaz, dolayısıyla diğer iki kademeden
 hiçbiri onu taşıyamaz. Eidos onu kendi indirir, ikili dosyaya gömülü bir sağlama
 toplamına karşı denetler ve `~/.local/share/Colony/Eidos/runtimes/` içinde
 önbelleğe alır - **herhangi bir örneğin dışında**, çünkü 78 MB ne oyun başınadır
 ne de profil başına.
+
+`dotnetsdk10`, .NET 10 SDK'sıdır: indirmesi 301 MB, açıldığında 808 MB.
+Synthesis patcher'larını derlemek için buna ihtiyaç duyar ve onları derleyip
+çalıştırmak için yolsuz bir `dotnet` çağırır; bu yüzden `dotnetsdk10` bildiren
+bir araç ayrıca `WINEPATH` üzerinde SDK klasörünü, bir de
+`NUGET_CERT_REVOCATION_MODE=offline`, `DOTNET_GENERATE_ASPNET_CERTIFICATE=false`
+ve `DOTNET_CLI_TELEMETRY_OPTOUT=1` değerlerini alır. `tools.ini` içinde hâlâ
+eski varsayılanı, `dotnet8`, `vcrun2022` taşıyan bir Synthesis girdisi, Eidos
+onu okurken `dotnetsdk10`, `vcrun2022` olur.
 
 Kademe 2 ya da 3'te hiçbir şey sessizce çalışmaz:
 

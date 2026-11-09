@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e5a1e8e03e41d94d1b49bde188087efab2adb1b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=6dd62a47ce572c0720e08cb2522d9850e4b75eec -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -97,7 +97,7 @@ Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 | `bodyslide`, `outfit` | `d3dx9_43`, `d3dcompiler_47` |
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
-| `synthesis` | `dotnet8`, `vcrun2022` |
+| `synthesis` | `dotnetsdk10`, `vcrun2022` |
 | `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
@@ -125,11 +125,16 @@ Executables 对话框中的 `Prereqs` 字段是可以编辑的 - 检测出来的
 `dotnet48`、`xact`……)。它们要写注册表键、GAC 和 CLR host,所以没法靠复制文件
 解决。它们**从 Microsoft 下载**。
 
-**第三类 - 运行时**(`dotnet10`)。一个现代 .NET 运行时是 193 个文件,住在
+**第三类 - 运行时**(`dotnet10`, `dotnetsdk10`)。一个现代 .NET 运行时是 193 个文件,住在
 它们自己的目录里,通过 `DOTNET_ROOT` 被找到:从不注册,也根本不会装进前缀,
 所以另外两类都载不动它。Eidos 自己下载它,用编译进二进制里的校验和核对,
 并缓存在 `~/.local/share/Colony/Eidos/runtimes/` - **在任何实例之外**,
 因为 78 MB 不是按游戏算的,也不是按 profile 算的。
+
+`dotnetsdk10` 是 .NET 10 SDK,下载 301 MB,解压后 808 MB。
+Synthesis 编译 patcher 需要它,而且构建和运行 patcher 时调用的是不带路径的 `dotnet`,
+所以声明了 `dotnetsdk10` 的工具还会在 `WINEPATH` 上得到 SDK 文件夹,外加 `NUGET_CERT_REVOCATION_MODE=offline`、`DOTNET_GENERATE_ASPNET_CERTIFICATE=false` 和 `DOTNET_CLI_TELEMETRY_OPTOUT=1`。
+`tools.ini` 中仍写着旧默认值 `dotnet8`, `vcrun2022` 的 Synthesis 条目,会在 Eidos 读取时改为 `dotnetsdk10`, `vcrun2022`。
 
 第二类和第三类里没有任何东西是悄悄跑的:
 

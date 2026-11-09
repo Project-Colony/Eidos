@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e5a1e8e03e41d94d1b49bde188087efab2adb1b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=6dd62a47ce572c0720e08cb2522d9850e4b75eec -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -111,7 +111,7 @@ klaarzet.** De vergelijking is een deelstring van de titel, hoofdletterongevoeli
 | `bodyslide`, `outfit` | `d3dx9_43`, `d3dcompiler_47` |
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
-| `synthesis` | `dotnet8`, `vcrun2022` |
+| `synthesis` | `dotnetsdk10`, `vcrun2022` |
 | `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
@@ -142,12 +142,21 @@ netwerk.
 ze laten zich niet met een bestandskopie afhandelen. Ze **downloaden van
 Microsoft**.
 
-**Tier 3 - runtimes** (`dotnet10`). Een moderne .NET-runtime is 193 bestanden die
+**Tier 3 - runtimes** (`dotnet10`, `dotnetsdk10`). Een moderne .NET-runtime is 193 bestanden die
 in hun eigen map staan en via `DOTNET_ROOT` gevonden worden: nooit geregistreerd,
 nooit in het prefix geïnstalleerd, zodat geen van de andere lagen hem kan dragen.
 Eidos downloadt hem zelf, controleert hem tegen een in het binaire bestand
 ingebouwde checksum, en bewaart hem in `~/.local/share/Colony/Eidos/runtimes/` -
 **buiten elke instantie**, omdat 78 MB niet per spel en niet per profiel is.
+
+`dotnetsdk10` is de .NET 10 SDK, een download van 301 MB die uitgepakt 808 MB
+beslaat. Synthesis heeft hem nodig om zijn patchers te compileren, en roept een
+kale `dotnet` aan om ze te bouwen en te starten. Een tool die `dotnetsdk10`
+opgeeft, krijgt daarom ook de SDK-map in `WINEPATH`, plus
+`NUGET_CERT_REVOCATION_MODE=offline`, `DOTNET_GENERATE_ASPNET_CERTIFICATE=false`
+en `DOTNET_CLI_TELEMETRY_OPTOUT=1`. Een Synthesis-item in `tools.ini` dat nog de
+oude standaard `dotnet8`, `vcrun2022` heeft, krijgt `dotnetsdk10`, `vcrun2022`
+wanneer Eidos het inleest.
 
 Niets in tier 2 of 3 draait stilzwijgend:
 

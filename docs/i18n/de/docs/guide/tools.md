@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e5a1e8e03e41d94d1b49bde188087efab2adb1b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=6dd62a47ce572c0720e08cb2522d9850e4b75eec -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -115,7 +115,7 @@ auf Groß- und Kleinschreibung.
 | `bodyslide`, `outfit` | `d3dx9_43`, `d3dcompiler_47` |
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
-| `synthesis` | `dotnet8`, `vcrun2022` |
+| `synthesis` | `dotnetsdk10`, `vcrun2022` |
 | `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
@@ -146,13 +146,22 @@ Netz.
 CLR-Hosts, lassen sich also nicht per Dateikopie erledigen. Sie **laden von
 Microsoft herunter**.
 
-**Tier 3 - Runtimes** (`dotnet10`). Eine moderne .NET-Runtime besteht aus 193
+**Tier 3 - Runtimes** (`dotnet10`, `dotnetsdk10`). Eine moderne .NET-Runtime besteht aus 193
 Dateien, die in ihrem eigenen Verzeichnis liegen und über `DOTNET_ROOT` gefunden
 werden: nie registriert, überhaupt nie ins Präfix installiert, sodass keine der
 anderen Stufen sie tragen kann. Eidos lädt sie selbst herunter, prüft sie gegen
 eine in die Binärdatei eingebaute Prüfsumme und legt sie in
 `~/.local/share/Colony/Eidos/runtimes/` ab - **außerhalb jeder Instanz**, weil
 78 MB weder pro Spiel noch pro Profil anfallen.
+
+`dotnetsdk10` ist das .NET-10-SDK: 301 MB Download, entpackt 808 MB. Synthesis
+braucht es, um seine Patcher zu kompilieren, und ruft zum Bauen und Starten ein
+nacktes `dotnet` auf. Ein Tool, das `dotnetsdk10` angibt, bekommt deshalb auch
+den SDK-Ordner in `WINEPATH` sowie `NUGET_CERT_REVOCATION_MODE=offline`,
+`DOTNET_GENERATE_ASPNET_CERTIFICATE=false` und `DOTNET_CLI_TELEMETRY_OPTOUT=1`.
+Ein Synthesis-Eintrag in `tools.ini`, der noch den alten Standard `dotnet8`,
+`vcrun2022` enthält, bekommt beim Einlesen durch Eidos `dotnetsdk10`,
+`vcrun2022`.
 
 Nichts in Tier 2 oder 3 läuft stillschweigend:
 

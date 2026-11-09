@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e5a1e8e03e41d94d1b49bde188087efab2adb1b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=6dd62a47ce572c0720e08cb2522d9850e4b75eec -->
 
 # Ferramentas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -115,7 +115,7 @@ de minúsculas.
 | `bodyslide`, `outfit` | `d3dx9_43`, `d3dcompiler_47` |
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
-| `synthesis` | `dotnet8`, `vcrun2022` |
+| `synthesis` | `dotnetsdk10`, `vcrun2022` |
 | `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
@@ -145,13 +145,22 @@ rede.
 `dotnet48`, `xact`...). Esses escrevem chaves de registro, o GAC e hosts do CLR,
 então não podem ser copiados como arquivos. Eles **baixam da Microsoft**.
 
-**Tier 3 - runtimes** (`dotnet10`). Um runtime .NET moderno são 193 arquivos que
+**Tier 3 - runtimes** (`dotnet10`, `dotnetsdk10`). Um runtime .NET moderno são 193 arquivos que
 vivem no próprio diretório e são encontrados através de `DOTNET_ROOT`: nunca
 registrados, nunca instalados no prefixo de jeito nenhum, então nenhum dos
 outros dois tiers dá conta dele. O Eidos o baixa sozinho, confere contra um
 checksum embutido no binário, e o guarda em cache em
 `~/.local/share/Colony/Eidos/runtimes/` - **fora de qualquer instância**, porque
 78 MB não é por jogo nem por perfil.
+
+`dotnetsdk10` é o SDK do .NET 10, um download de 301 MB que ocupa 808 MB
+descompactado. O Synthesis precisa dele para compilar os seus patchers, e chama
+um `dotnet` sem caminho para construí-los e executá-los, então uma ferramenta
+que declara `dotnetsdk10` recebe também a pasta do SDK no `WINEPATH`, além de
+`NUGET_CERT_REVOCATION_MODE=offline`, `DOTNET_GENERATE_ASPNET_CERTIFICATE=false`
+e `DOTNET_CLI_TELEMETRY_OPTOUT=1`. Uma entrada do Synthesis no `tools.ini` que
+ainda traz o antigo padrão, `dotnet8`, `vcrun2022`, passa a `dotnetsdk10`,
+`vcrun2022` quando o Eidos a lê.
 
 Nada nos tiers 2 ou 3 roda em silêncio:
 

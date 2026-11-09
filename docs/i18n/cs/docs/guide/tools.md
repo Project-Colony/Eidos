@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e5a1e8e03e41d94d1b49bde188087efab2adb1b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=6dd62a47ce572c0720e08cb2522d9850e4b75eec -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -107,7 +107,7 @@ Porovnává se podřetězec názvu bez ohledu na velikost písmen.
 | `bodyslide`, `outfit` | `d3dx9_43`, `d3dcompiler_47` |
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
-| `synthesis` | `dotnet8`, `vcrun2022` |
+| `synthesis` | `dotnetsdk10`, `vcrun2022` |
 | `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
@@ -136,13 +136,21 @@ Nic není třeba dělat, žádná síť.
 `dotnet48`, `xact`...). Ty zapisují klíče registru, GAC a CLR hosty, takže je
 nelze zkopírovat jako soubory. **Stahují se od Microsoftu.**
 
-**Úroveň 3 - runtimes** (`dotnet10`). Moderní běhové prostředí .NET je 193
+**Úroveň 3 - runtimes** (`dotnet10`, `dotnetsdk10`). Moderní běhové prostředí .NET je 193
 souborů, které žijí ve vlastním adresáři a hledají se přes `DOTNET_ROOT`: nikdy
 se neregistrují, do prefixu se vůbec neinstalují, takže je neunese ani jedna z
 ostatních úrovní. Eidos si ho stáhne sám, ověří proti kontrolnímu součtu
 zabudovanému do binárky a uloží do mezipaměti v
 `~/.local/share/Colony/Eidos/runtimes/` - **mimo jakoukoli instanci**, protože
 78 MB není zvlášť pro každou hru ani pro každý profil.
+
+`dotnetsdk10` je .NET 10 SDK: 301 MB ke stažení, po rozbalení 808 MB. Synthesis
+ho potřebuje ke kompilaci svých patcherů a k jejich sestavení a spuštění volá
+holé `dotnet`, takže nástroj, který deklaruje `dotnetsdk10`, dostane navíc
+složku SDK v `WINEPATH` a k tomu `NUGET_CERT_REVOCATION_MODE=offline`,
+`DOTNET_GENERATE_ASPNET_CERTIFICATE=false` a `DOTNET_CLI_TELEMETRY_OPTOUT=1`.
+Záznam Synthesis v `tools.ini`, který má pořád starou výchozí hodnotu `dotnet8`,
+`vcrun2022`, dostane při načtení Eidosem `dotnetsdk10`, `vcrun2022`.
 
 Nic z úrovně 2 ani 3 neběží potichu:
 

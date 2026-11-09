@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e5a1e8e03e41d94d1b49bde188087efab2adb1b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=6dd62a47ce572c0720e08cb2522d9850e4b75eec -->
 
 # Narzędzia: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -112,7 +112,7 @@ Dopasowanie to podciąg tytułu, bez rozróżniania wielkości liter.
 | `bodyslide`, `outfit` | `d3dx9_43`, `d3dcompiler_47` |
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
-| `synthesis` | `dotnet8`, `vcrun2022` |
+| `synthesis` | `dotnetsdk10`, `vcrun2022` |
 | `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
@@ -142,13 +142,22 @@ zrobienia, żadnej sieci.
 `dotnet48`, `xact`...). Zapisują klucze rejestru, GAC i hosty CLR, więc nie da
 się ich skopiować jako plików. **Pobierają się od Microsoftu**.
 
-**Poziom 3 - runtime'y** (`dotnet10`). Nowoczesny runtime .NET to 193 pliki,
+**Poziom 3 - runtime'y** (`dotnet10`, `dotnetsdk10`). Nowoczesny runtime .NET to 193 pliki,
 które leżą we własnym katalogu i są odnajdywane przez `DOTNET_ROOT`: nigdy
 nierejestrowane, nigdy w ogóle nieinstalowane do prefiksu, więc żaden z
 pozostałych poziomów nie może go przenieść. Eidos pobiera go sam, sprawdza z sumą
 kontrolną wbudowaną w plik wykonywalny i buforuje w
 `~/.local/share/Colony/Eidos/runtimes/` - **poza jakąkolwiek instancją**, bo
 78 MB nie jest per gra ani per profil.
+
+`dotnetsdk10` to .NET 10 SDK: 301 MB do pobrania, 808 MB po rozpakowaniu.
+Synthesis potrzebuje go do kompilowania swoich patcherów, a do ich budowania i
+uruchamiania wywołuje gołe `dotnet`, więc narzędzie, które deklaruje
+`dotnetsdk10`, dostaje też folder SDK w `WINEPATH`, a do tego
+`NUGET_CERT_REVOCATION_MODE=offline`, `DOTNET_GENERATE_ASPNET_CERTIFICATE=false`
+i `DOTNET_CLI_TELEMETRY_OPTOUT=1`. Wpis Synthesis w `tools.ini`, który wciąż ma
+starą wartość domyślną `dotnet8`, `vcrun2022`, dostaje `dotnetsdk10`,
+`vcrun2022`, gdy Eidos go wczytuje.
 
 Nic z poziomu 2 ani 3 nie dzieje się po cichu:
 

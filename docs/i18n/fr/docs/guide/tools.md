@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e5a1e8e03e41d94d1b49bde188087efab2adb1b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=6dd62a47ce572c0720e08cb2522d9850e4b75eec -->
 
 # Outils : xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -120,7 +120,7 @@ La correspondance est une sous-chaîne du titre, insensible à la casse.
 | `bodyslide`, `outfit` | `d3dx9_43`, `d3dcompiler_47` |
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
-| `synthesis` | `dotnet8`, `vcrun2022` |
+| `synthesis` | `dotnetsdk10`, `vcrun2022` |
 | `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
@@ -150,13 +150,22 @@ réseau.
 hôtes CLR, ils ne peuvent donc pas être copiés comme des fichiers. Ils
 **téléchargent depuis Microsoft**.
 
-**Palier 3 - runtimes** (`dotnet10`). Un runtime .NET moderne, c'est 193 fichiers
+**Palier 3 - runtimes** (`dotnet10`, `dotnetsdk10`). Un runtime .NET moderne, c'est 193 fichiers
 qui vivent dans leur propre répertoire et sont trouvés via `DOTNET_ROOT` : jamais
 enregistré, jamais installé dans le préfixe du tout, si bien qu'aucun des deux
 autres paliers ne peut le porter. Eidos le télécharge lui-même, le vérifie contre
 une somme de contrôle intégrée au binaire, et le met en cache dans
 `~/.local/share/Colony/Eidos/runtimes/` - **hors de toute instance**, parce que
 78 Mo, ce n'est ni par jeu ni par profil.
+
+`dotnetsdk10` est le SDK .NET 10 : 301 Mo à télécharger, 808 Mo une fois
+décompressé. Synthesis en a besoin pour compiler ses patchers, et il appelle un
+simple `dotnet` pour les construire et les lancer. Un outil qui déclare
+`dotnetsdk10` reçoit donc aussi le dossier du SDK dans `WINEPATH`, ainsi que
+`NUGET_CERT_REVOCATION_MODE=offline`, `DOTNET_GENERATE_ASPNET_CERTIFICATE=false`
+et `DOTNET_CLI_TELEMETRY_OPTOUT=1`. Une entrée Synthesis de `tools.ini` qui
+porte encore l'ancienne valeur par défaut, `dotnet8`, `vcrun2022`, passe à
+`dotnetsdk10`, `vcrun2022` quand Eidos la lit.
 
 Rien dans les paliers 2 ou 3 ne s'exécute en silence :
 

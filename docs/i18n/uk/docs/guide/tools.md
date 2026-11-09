@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e5a1e8e03e41d94d1b49bde188087efab2adb1b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=6dd62a47ce572c0720e08cb2522d9850e4b75eec -->
 
 # Інструменти: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -110,7 +110,7 @@ Tools -> Executables -> (ваш інструмент) -> Capture output into: FN
 | `bodyslide`, `outfit` | `d3dx9_43`, `d3dcompiler_47` |
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
-| `synthesis` | `dotnet8`, `vcrun2022` |
+| `synthesis` | `dotnetsdk10`, `vcrun2022` |
 | `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
@@ -141,13 +141,22 @@ Tools -> Executables -> (ваш інструмент) -> Capture output into: FN
 `dotnet48`, `xact`...). Вони пишуть ключі реєстру, GAC і хости CLR, тож їх
 неможливо просто скопіювати файлами. Вони **завантажуються від Microsoft**.
 
-**Рівень 3 - середовища виконання** (`dotnet10`). Сучасне середовище виконання
+**Рівень 3 - середовища виконання** (`dotnet10`, `dotnetsdk10`). Сучасне середовище виконання
 .NET - це 193 файли, які живуть у власному каталозі і знаходяться через
 `DOTNET_ROOT`: ніколи не реєструються, ніколи взагалі не встановлюються у
 префікс, тож жоден з інших рівнів його не понесе. Eidos завантажує його сам,
 звіряє з контрольною сумою, вбудованою в бінарник, і кешує в
 `~/.local/share/Colony/Eidos/runtimes/` - **поза будь-яким екземпляром**, бо
 78 МБ не є ані на гру, ані на профіль.
+
+`dotnetsdk10` - це .NET 10 SDK: 301 МБ на завантаження, 808 МБ після
+розпакування. Він потрібен Synthesis для компіляції патчерів, а для їх збирання
+і запуску Synthesis викликає голий `dotnet`, тож інструмент, що оголошує
+`dotnetsdk10`, отримує ще й теку SDK у `WINEPATH`, а також
+`NUGET_CERT_REVOCATION_MODE=offline`, `DOTNET_GENERATE_ASPNET_CERTIFICATE=false`
+і `DOTNET_CLI_TELEMETRY_OPTOUT=1`. Запис Synthesis у `tools.ini`, де досі стоїть
+старе типове значення `dotnet8`, `vcrun2022`, отримує `dotnetsdk10`,
+`vcrun2022`, коли Eidos його читає.
 
 Ніщо на рівнях 2 і 3 не виконується мовчки:
 

@@ -41,18 +41,44 @@ pub struct Runtime {
     /// A path inside the extracted tree that must exist for the install to count
     /// as complete. Guards against a half-extracted directory left by a crash.
     pub sentinel: &'static str,
-    /// The environment variable that points a tool at it.
-    pub env_var: &'static str,
+    /// The environment that points a tool at it. `{dir}` in a value stands for
+    /// the runtime's directory.
+    pub env: &'static [(&'static str, &'static str)],
 }
 
-const RUNTIMES: &[Runtime] = &[Runtime {
-    verb: "dotnet10",
-    version: "10.0.10",
-    url: "https://builds.dotnet.microsoft.com/dotnet/Runtime/10.0.10/dotnet-runtime-10.0.10-win-x64.zip",
-    sha256: "79bb04da40ab098f0c2e4ef4652fe5bb98c27c7d5697389003b7be53d2c86f6a",
-    sentinel: "dotnet.exe",
-    env_var: "DOTNET_ROOT",
-}];
+const RUNTIMES: &[Runtime] = &[
+    Runtime {
+        verb: "dotnet10",
+        version: "10.0.10",
+        url: "https://builds.dotnet.microsoft.com/dotnet/Runtime/10.0.10/dotnet-runtime-10.0.10-win-x64.zip",
+        sha256: "79bb04da40ab098f0c2e4ef4652fe5bb98c27c7d5697389003b7be53d2c86f6a",
+        sentinel: "dotnet.exe",
+        env: &[("DOTNET_ROOT", "{dir}")],
+    },
+    // Synthesis compiles its patchers, which a runtime cannot do. The zip also
+    // carries the 10.0 runtimes, Windows Desktop (WPF) included.
+    Runtime {
+        verb: "dotnetsdk10",
+        version: "10.0.403",
+        url: "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.403/dotnet-sdk-10.0.403-win-x64.zip",
+        sha256: "f398979a9cac2dba760771c4e01f16e431dcd6bcfb2213e3e8f5b3d354095cc0",
+        sentinel: "sdk/10.0.403/dotnet.dll",
+        env: &[
+            ("DOTNET_ROOT", "{dir}"),
+            // Synthesis starts a bare `dotnet` to build and run patchers. Wine
+            // puts WINEPATH before the prefix PATH, so this one wins over a
+            // winetricks .NET in C:\Program Files\dotnet.
+            ("WINEPATH", "{dir}"),
+            // NuGet's online revocation check of package signatures fails
+            // under Wine.
+            ("NUGET_CERT_REVOCATION_MODE", "offline"),
+            // The SDK's first-run export of an ASP.NET developer certificate
+            // crashes under Wine.
+            ("DOTNET_GENERATE_ASPNET_CERTIFICATE", "false"),
+            ("DOTNET_CLI_TELEMETRY_OPTOUT", "1"),
+        ],
+    },
+];
 
 /// The runtime a verb names, if Eidos knows it.
 pub fn runtime(verb: &str) -> Option<&'static Runtime> {
@@ -91,12 +117,20 @@ pub fn env_for(verbs: &[String]) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for v in verbs {
         let Some(r) = runtime(v) else { continue };
-        if !is_installed(r) {
-            continue;
+        if is_installed(r) {
+            out.extend(env_in(r, &runtime_dir(r)));
         }
-        out.push((r.env_var.to_string(), to_windows_dir(&runtime_dir(r))));
     }
     out
+}
+
+/// A runtime's environment for the copy in `dir`.
+fn env_in(r: &Runtime, dir: &Path) -> Vec<(String, String)> {
+    let dir = to_windows_dir(dir);
+    r.env
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.replace("{dir}", &dir)))
+        .collect()
 }
 
 /// A Linux directory as Wine's `Z:` drive sees it, with no trailing separator.
@@ -454,15 +488,20 @@ mod tests {
     }
 
     #[test]
-    fn the_pinned_runtime_is_coherent() {
-        let r = runtime("dotnet10").expect("dotnet10 is known");
-        assert!(
-            r.url.contains(r.version),
-            "url and version disagree: {}",
-            r.url
-        );
-        assert_eq!(r.sha256.len(), 64, "a sha256 is 64 hex characters");
-        assert!(r.sha256.chars().all(|c| c.is_ascii_hexdigit()));
+    fn the_pinned_runtimes_are_coherent() {
+        for verb in ["dotnet10", "dotnetsdk10"] {
+            let r = runtime(verb).unwrap_or_else(|| panic!("{verb} is known"));
+            assert!(
+                r.url.contains(r.version),
+                "url and version disagree: {}",
+                r.url
+            );
+            assert_eq!(r.sha256.len(), 64, "a sha256 is 64 hex characters");
+            assert!(r.sha256.chars().all(|c| c.is_ascii_hexdigit()));
+        }
+        // The SDK zip also holds dotnet.exe; only its own folder proves the SDK.
+        let sdk = runtime("dotnetsdk10").unwrap();
+        assert_eq!(sdk.sentinel, format!("sdk/{}/dotnet.dll", sdk.version));
         assert!(runtime("dotnet9").is_none(), "only what we actually pin");
         assert!(
             is_runtime_verb("DOTNET10"),
@@ -477,6 +516,31 @@ mod tests {
         let win = to_windows_dir(Path::new("/mnt/Jeux/Tools/dotnet"));
         assert_eq!(win, r"Z:\mnt\Jeux\Tools\dotnet");
         assert!(!win.contains('/'));
+    }
+
+    #[test]
+    fn the_sdk_sets_its_whole_environment() {
+        let dir = Path::new("/rt/dotnetsdk10-10.0.403");
+        let env = env_in(runtime("dotnetsdk10").unwrap(), dir);
+        let want = [
+            ("DOTNET_ROOT", r"Z:\rt\dotnetsdk10-10.0.403"),
+            ("WINEPATH", r"Z:\rt\dotnetsdk10-10.0.403"),
+            ("NUGET_CERT_REVOCATION_MODE", "offline"),
+            ("DOTNET_GENERATE_ASPNET_CERTIFICATE", "false"),
+            ("DOTNET_CLI_TELEMETRY_OPTOUT", "1"),
+        ];
+        let want: Vec<(String, String)> = want
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        assert_eq!(env, want);
+        assert_eq!(
+            env_in(runtime("dotnet10").unwrap(), dir),
+            vec![(
+                "DOTNET_ROOT".to_string(),
+                r"Z:\rt\dotnetsdk10-10.0.403".to_string()
+            )]
+        );
     }
 
     #[test]

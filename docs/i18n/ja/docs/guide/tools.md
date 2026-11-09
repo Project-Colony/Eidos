@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e5a1e8e03e41d94d1b49bde188087efab2adb1b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=6dd62a47ce572c0720e08cb2522d9850e4b75eec -->
 
 # ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -107,7 +107,7 @@ Overwrite にあったものはそのまま残ります。だから取り込み�
 | `bodyslide`, `outfit` | `d3dx9_43`, `d3dcompiler_47` |
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
-| `synthesis` | `dotnet8`, `vcrun2022` |
+| `synthesis` | `dotnetsdk10`, `vcrun2022` |
 | `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
@@ -138,13 +138,18 @@ Executables ダイアログの `Prereqs` 欄は編集できます - この検出
 `dotnet48`、`xact` など)。これらはレジストリキー、GAC、CLR ホストを書くので、
 ファイルのコピーでは済みません。**Microsoft からダウンロード**します。
 
-**Tier 3 - ランタイム**(`dotnet10`)。現代の .NET ランタイムは 193 個の
+**Tier 3 - ランタイム**(`dotnet10`, `dotnetsdk10`)。現代の .NET ランタイムは 193 個の
 ファイルで、専用のディレクトリに置かれ、`DOTNET_ROOT` を通して見つけられます。
 登録もされず、プレフィックスにインストールもされないので、他のどちらの Tier でも
 運べません。Eidos は自分でダウンロードし、バイナリに埋め込んだチェックサムで
 検証して、`~/.local/share/Colony/Eidos/runtimes/` にキャッシュします -
 **どのインスタンスの外側**でもあります。78 MB はゲームごとでもプロファイル
 ごとでもないからです。
+
+`dotnetsdk10` は .NET 10 SDK で、ダウンロードは 301 MB、展開すると 808 MB です。
+Synthesis はパッチャーのコンパイルにこれを必要とし、ビルドと実行にはパスなしの `dotnet` を呼び出します。
+そのため `dotnetsdk10` を宣言したツールには、`WINEPATH` 上の SDK フォルダに加えて、`NUGET_CERT_REVOCATION_MODE=offline`、`DOTNET_GENERATE_ASPNET_CERTIFICATE=false`、`DOTNET_CLI_TELEMETRY_OPTOUT=1` も設定されます。
+`tools.ini` の Synthesis エントリが古い既定値 `dotnet8`, `vcrun2022` のままなら、Eidos が読み込むときに `dotnetsdk10`, `vcrun2022` に置き換わります。
 
 Tier 2 と Tier 3 は、どちらも黙って動くことがありません:
 

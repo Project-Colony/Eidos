@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e5a1e8e03e41d94d1b49bde188087efab2adb1b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=6dd62a47ce572c0720e08cb2522d9850e4b75eec -->
 
 # 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -106,7 +106,7 @@ Eidos가 그 도구에 어떤 런타임 사전 요구 사항을 마련할지 결
 | `bodyslide`, `outfit` | `d3dx9_43`, `d3dcompiler_47` |
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
-| `synthesis` | `dotnet8`, `vcrun2022` |
+| `synthesis` | `dotnetsdk10`, `vcrun2022` |
 | `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
@@ -135,12 +135,19 @@ Executables 대화상자의 `Prereqs` 항목은 편집할 수 있습니다 - 감
 `dotnet48`, `xact`...). 이것들은 레지스트리 키와 GAC와 CLR 호스트를 쓰기 때문에
 파일 복사로는 되지 않습니다. **Microsoft에서 내려받습니다**.
 
-**Tier 3 - 런타임** (`dotnet10`). 요즘 .NET 런타임은 자기 디렉터리에 사는 193개의
+**Tier 3 - 런타임** (`dotnet10`, `dotnetsdk10`). 요즘 .NET 런타임은 자기 디렉터리에 사는 193개의
 파일이고 `DOTNET_ROOT`를 통해 찾습니다: 등록되지도 않고 프리픽스에 설치되지도
 아예 않으므로, 다른 두 계층 어느 쪽도 그것을 실어 나를 수 없습니다. Eidos가 직접
 내려받아 바이너리에 박혀 있는 체크섬으로 확인하고
 `~/.local/share/Colony/Eidos/runtimes/`에 캐시합니다 - **어느 인스턴스에도 속하지
 않는 바깥**인데, 78 MB는 게임별도 프로필별도 아니기 때문입니다.
+
+`dotnetsdk10`은 .NET 10 SDK로, 내려받는 크기는 301 MB이고 풀면 808 MB입니다. Synthesis는 패처를
+컴파일하는 데 이것이 필요하고, 패처를 빌드하고 실행할 때 경로 없는 `dotnet`을 호출합니다. 그래서 `dotnetsdk10`을 선언한
+도구는 `WINEPATH`에 SDK 폴더를 받고, 그와 함께 `NUGET_CERT_REVOCATION_MODE=offline`,
+`DOTNET_GENERATE_ASPNET_CERTIFICATE=false`, `DOTNET_CLI_TELEMETRY_OPTOUT=1`도
+받습니다. `tools.ini`의 Synthesis 항목이 아직 예전 기본값 `dotnet8`, `vcrun2022`를 담고 있으면,
+Eidos가 읽을 때 `dotnetsdk10`, `vcrun2022`로 바뀝니다.
 
 계층 2나 3의 어떤 것도 조용히 실행되지 않습니다:
 

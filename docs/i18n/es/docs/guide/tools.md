@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e5a1e8e03e41d94d1b49bde188087efab2adb1b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=6dd62a47ce572c0720e08cb2522d9850e4b75eec -->
 
 # Herramientas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -116,7 +116,7 @@ La coincidencia es una subcadena del título, sin distinguir mayúsculas.
 | `bodyslide`, `outfit` | `d3dx9_43`, `d3dcompiler_47` |
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
-| `synthesis` | `dotnet8`, `vcrun2022` |
+| `synthesis` | `dotnetsdk10`, `vcrun2022` |
 | `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
@@ -147,13 +147,22 @@ hacer, sin red.
 `dotnet48`, `xact`...). Estos escriben claves de registro, el GAC y hosts del CLR,
 así que no se pueden copiar como archivos. **Descargan de Microsoft**.
 
-**Nivel 3 - runtimes** (`dotnet10`). Un runtime moderno de .NET son 193 archivos
+**Nivel 3 - runtimes** (`dotnet10`, `dotnetsdk10`). Un runtime moderno de .NET son 193 archivos
 que viven en su propio directorio y se encuentran a través de `DOTNET_ROOT`: nunca
 registrados, nunca instalados en el prefijo, así que ninguno de los otros niveles
 puede transportarlo. Eidos lo descarga él mismo, lo comprueba contra una suma de
 verificación incrustada en el binario, y lo cachea en
 `~/.local/share/Colony/Eidos/runtimes/` - **fuera de cualquier instancia**, porque
 78 MB no es por juego ni por perfil.
+
+`dotnetsdk10` es el SDK de .NET 10: una descarga de 301 MB que ocupa 808 MB
+descomprimida. Synthesis lo necesita para compilar sus patchers, y llama a un
+`dotnet` sin ruta para construirlos y ejecutarlos, así que una herramienta que
+declara `dotnetsdk10` recibe también la carpeta del SDK en `WINEPATH`, además de
+`NUGET_CERT_REVOCATION_MODE=offline`, `DOTNET_GENERATE_ASPNET_CERTIFICATE=false`
+y `DOTNET_CLI_TELEMETRY_OPTOUT=1`. Una entrada de Synthesis en `tools.ini` que
+todavía lleva el antiguo valor por defecto, `dotnet8`, `vcrun2022`, pasa a
+`dotnetsdk10`, `vcrun2022` cuando Eidos la lee.
 
 Nada de los niveles 2 o 3 se ejecuta en silencio:
 

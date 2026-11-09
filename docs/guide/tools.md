@@ -106,7 +106,7 @@ is a case-insensitive substring of the title.
 | `bodyslide`, `outfit` | `d3dx9_43`, `d3dcompiler_47` |
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
-| `synthesis` | `dotnet8`, `vcrun2022` |
+| `synthesis` | `dotnetsdk10`, `vcrun2022` |
 | `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
@@ -135,12 +135,20 @@ Nothing to do, no network.
 `dotnet48`, `xact`...). These write registry keys, the GAC and CLR hosts, so they
 cannot be file-copied. They **download from Microsoft**.
 
-**Tier 3 - runtimes** (`dotnet10`). A modern .NET runtime is 193 files that live
-in their own directory and are found through `DOTNET_ROOT`: never registered,
-never installed into the prefix at all, so neither of the other tiers can carry
-it. Eidos downloads it itself, checks it against a checksum built into the
-binary, and caches it in `~/.local/share/Colony/Eidos/runtimes/` - **outside any
-instance**, because 78 MB is not per-game and not per-profile.
+**Tier 3 - runtimes** (`dotnet10`, `dotnetsdk10`). A modern .NET runtime is 193
+files that live in their own directory and are found through `DOTNET_ROOT`: never
+registered, never installed into the prefix at all, so neither of the other tiers
+can carry it. Eidos downloads it itself, checks it against a checksum built into
+the binary, and caches it in `~/.local/share/Colony/Eidos/runtimes/` - **outside
+any instance**, because 78 MB is not per-game and not per-profile.
+
+`dotnetsdk10` is the .NET 10 SDK, a 301 MB download that unpacks to 808 MB.
+Synthesis needs it to compile its patchers, and it calls a bare `dotnet` to build
+and run them, so a tool that declares `dotnetsdk10` also gets the SDK folder on
+`WINEPATH`, plus `NUGET_CERT_REVOCATION_MODE=offline`,
+`DOTNET_GENERATE_ASPNET_CERTIFICATE=false` and `DOTNET_CLI_TELEMETRY_OPTOUT=1`.
+A Synthesis entry in `tools.ini` that still lists the old default, `dotnet8`,
+`vcrun2022`, gets `dotnetsdk10`, `vcrun2022` when Eidos reads it.
 
 Nothing in tiers 2 or 3 runs silently:
 

@@ -24,9 +24,9 @@ pub struct Tool {
     /// Working directory; `None` = the executable's own directory (MO2 default).
     pub workdir: Option<PathBuf>,
     /// Runtime prerequisites to ensure in the prefix before this tool runs
-    /// (winetricks-style verbs, e.g. `["dotnet8", "vcrun2022"]` for Synthesis, or
-    /// `["d3dx9_43", "d3dcompiler_47"]` for BodySlide's 3D preview). Empty for the
-    /// Delphi tools (xEdit/SSEEdit) that need nothing extra.
+    /// (winetricks-style verbs, e.g. `["dotnetsdk10", "vcrun2022"]` for Synthesis,
+    /// or `["d3dx9_43", "d3dcompiler_47"]` for BodySlide's 3D preview). Empty for
+    /// the Delphi tools (xEdit/SSEEdit) that need nothing extra.
     pub prereqs: Vec<String>,
     /// A mod to capture this tool's output into, instead of leaving it in the
     /// Overwrite (MO2's "Create files in mod instead of overwrite").
@@ -168,6 +168,14 @@ pub fn read_tools(path: &Path) -> Vec<Tool> {
                 .is_ok_and(|c| c.contains("\"net10.0\""))
         {
             t.prereqs = vec!["dotnet10".to_string()];
+        }
+        // The old Synthesis seed gave a runtime that cannot compile patchers.
+        // Synthesis releases since 0.21 ship their own runtime, so the SDK
+        // replaces dotnet8 whatever the version.
+        if t.prereqs == ["dotnet8", "vcrun2022"]
+            && t.title.to_ascii_lowercase().contains("synthesis")
+        {
+            t.prereqs = vec!["dotnetsdk10".to_string(), "vcrun2022".to_string()];
         }
     }
     out
@@ -517,7 +525,9 @@ pub fn default_prereqs(title: &str) -> Vec<String> {
     let t = title.to_ascii_lowercase();
     let has = |needle: &str| t.contains(needle);
     let verbs: &[&str] = if has("synthesis") {
-        &["dotnet8", "vcrun2022"]
+        // Synthesis compiles its patchers and runs them with a bare `dotnet`,
+        // so it needs the SDK on the path, not a runtime.
+        &["dotnetsdk10", "vcrun2022"]
     } else if has("pandora") {
         // Avalonia, not WPF, so Microsoft.NETCore.App alone runs it, and it has
         // targeted net10.0 since Pandora 4.1.0. "Install .NET Desktop Runtime" is
@@ -859,6 +869,24 @@ mod tests {
     }
 
     #[test]
+    fn old_synthesis_seed_moves_to_dotnetsdk10() {
+        let p = tmp();
+        fs::write(
+            &p,
+            "[Tool/Synthesis]\nexe=/x/Synthesis.exe\nprereqs=dotnet8,vcrun2022\n\
+             [Tool/Synthesis]\nexe=/x/Synthesis.exe\nprereqs=dotnet8\n\
+             [Tool/Other]\nexe=/x/other.exe\nprereqs=dotnet8,vcrun2022\n",
+        )
+        .unwrap();
+        let t = read_tools(&p);
+        assert_eq!(t[0].prereqs, vec!["dotnetsdk10", "vcrun2022"]);
+        // A hand-edited list and a tool that is not Synthesis keep theirs.
+        assert_eq!(t[1].prereqs, vec!["dotnet8"]);
+        assert_eq!(t[2].prereqs, vec!["dotnet8", "vcrun2022"]);
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
     fn missing_file_is_empty() {
         assert!(read_tools(Path::new("/no/such/tools.ini")).is_empty());
     }
@@ -1007,7 +1035,10 @@ mod tests {
 
     #[test]
     fn default_prereqs_maps_known_tools() {
-        assert_eq!(default_prereqs("Synthesis"), vec!["dotnet8", "vcrun2022"]);
+        assert_eq!(
+            default_prereqs("Synthesis"),
+            vec!["dotnetsdk10", "vcrun2022"]
+        );
         assert_eq!(
             default_prereqs("BodySlide x64"),
             vec!["d3dx9_43", "d3dcompiler_47"]

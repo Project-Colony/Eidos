@@ -416,7 +416,8 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 eidos_log::info!(
                     "eidos tool: '{title}' needs the {names} runtime, which is not downloaded yet - \
                      run `eidos prereqs {id} --install`. Without it DynDOLOD's LODGen dies at startup \
-                     leaving a log with nothing in it but a version banner."
+                     leaving a log with nothing in it but a version banner, and Synthesis cannot \
+                     build its patchers."
                 );
             }
 
