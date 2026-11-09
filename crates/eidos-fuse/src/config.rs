@@ -93,8 +93,9 @@ pub(crate) fn file_open_flags() -> FopenFlags {
 
 /// Whether to hand the kernel a backing file so it can serve reads without us.
 ///
-/// OFF BY DEFAULT. With it on, Skyrim SE could not open its own content, and the
-/// fix below has not been measured on a game yet.
+/// OFF BY DEFAULT. With it on, an earlier daemon stopped Skyrim SE opening its
+/// own content. The daemon now avoids the most likely cause (below), but that has
+/// not been re-measured in a game.
 ///
 /// Measured A/B on Skyrim SE 1.6.1170 under proton-cachyos 11.0, same 82-plugin
 /// load order, `WINEDEBUG=+file` both runs, the only variable being whether the
@@ -115,12 +116,14 @@ pub(crate) fn file_open_flags() -> FopenFlags {
 /// `open_backing` was never refused (verified with `EIDOS_FUSE_TRACE=open` - zero
 /// `open FAILED`, zero `passthrough refused` across a full failing session). The
 /// kernel produced the error after the reply, on the files the game holds open
-/// for its whole run. The likely cause is that every open then registered a new
-/// backing id, while the kernel keeps one backing file per inode: an open that
-/// brings a second id for an inode that already has one fails with EIO
+/// for its whole run. The most likely cause is that every open then registered a
+/// new backing id, while the kernel keeps one backing file per inode: an open
+/// that brings a second id for an inode that already has one fails with EIO
 /// ("mismatched backing"), and Wine reports EIO as `STATUS_ACCESS_VIOLATION`.
-/// `passthrough.rs` now shares one id per inode and keeps the live opens of an
-/// inode all passthrough or all normal.
+/// That rule is read from the kernel source (`fs/fuse/iomode.c`) and matches the
+/// 152 failed opens. `passthrough.rs` now avoids it: it shares one id per inode
+/// and keeps the live opens of an inode all passthrough or all normal. Not
+/// re-measured in a game.
 ///
 /// The capability also changes the namespace: with it the launcher keeps the
 /// initial user namespace (`launch` in eidos-launch), so in the A/B above it

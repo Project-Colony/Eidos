@@ -78,14 +78,16 @@ three goals (complete / performant / stable long-term):
   answered by **FUSE passthrough** (merged in Linux 6.9), where the daemon
   resolves which real file backs a path and subsequent reads go straight
   kernel-to-disk. The first version stopped the game opening its archives and
-  plugins (see the open risks below). That cause is fixed, but the fix has not
-  been measured in a game, so passthrough ships off and reads come from a cached
-  backing fd via `pread` instead. What carries the load in its place is the
-  metadata path: a game's startup cost is dominated by path probes, not bulk
-  transfer, and those are answered kernel-side by negative dentries, long
-  entry/attr TTLs, `FOPEN_CACHE_DIR` and the `.ciopfs` case-fold marker. Still:
-  **measure** against a real heavy load order before claiming victory - and the
-  read path in particular is now unmeasured without passthrough.
+  plugins, most likely because it registered a new backing file on every open
+  while the kernel accepts one per inode (see the open risks below). The daemon
+  now avoids that, but the change has not been re-measured in a game, so
+  passthrough ships off and reads come from a cached backing fd via `pread`
+  instead. What carries the load in its place is the metadata path: a game's
+  startup cost is dominated by path probes, not bulk transfer, and those are
+  answered kernel-side by negative dentries, long entry/attr TTLs,
+  `FOPEN_CACHE_DIR` and the `.ciopfs` case-fold marker. Still: **measure**
+  against a real heavy load order before claiming victory - and the read path in
+  particular is now unmeasured without passthrough.
 
 OverlayFS keeps its place as the fast way to **prove the thesis** (see the PoC)
 and as a possible optimization later, not as the foundation.
@@ -249,21 +251,22 @@ content loaded at all. The kernel produced the failure after the daemon replied
 `opened_passthrough`, so the daemon never saw it (a full failing session under
 `EIDOS_FUSE_TRACE=open` logs zero failed opens and zero refused backing files).
 The capability also made the launcher keep the initial user namespace, so that
-A/B changed two things at once. The cause is the kernel's rule of one backing
-file per inode (`fs/fuse/iomode.c`): an open that brings a second backing id for
-an inode fails with EIO, as do a normal open of an inode that has a backing and
-a passthrough open that carries `FOPEN_KEEP_CACHE`, and Wine reports EIO as
+A/B changed two things at once. The most likely cause is the kernel's rule of
+one backing file per inode (`fs/fuse/iomode.c`, read from the kernel source; it
+matches the 152 failed opens): an open that brings a second backing id for an
+inode fails with EIO, as do a normal open of an inode that has a backing and a
+passthrough open that carries `FOPEN_KEEP_CACHE`, and Wine reports EIO as
 `STATUS_ACCESS_VIOLATION`. That daemon registered a new backing id on every
-open. `passthrough.rs` now registers one per inode, shared by all its
-passthrough opens, keeps the live opens of an inode all passthrough or all
-normal, and masks `FOPEN_KEEP_CACHE` out of passthrough replies. Only read-only
-opens of lower-layer files that are 1 MiB or larger or end in `.dll`, `.exe` or
-`.asi` go through passthrough; files in the Overwrite never do, and a mount that
-projects plugin timestamps does not negotiate it. A writer that opens a file
-while passthrough readers hold it gets ETXTBSY (Wine:
+open. `passthrough.rs` now avoids those cases: it registers one per inode,
+shared by all its passthrough opens, keeps the live opens of an inode all
+passthrough or all normal, and masks `FOPEN_KEEP_CACHE` out of passthrough
+replies. Only read-only opens of lower-layer files that are 1 MiB or larger or
+end in `.dll`, `.exe` or `.asi` go through passthrough; files in the Overwrite
+never do, and a mount that projects plugin timestamps does not negotiate it. A
+writer that opens a file while passthrough readers hold it gets ETXTBSY (Wine:
 `STATUS_SHARING_VIOLATION`) before any copy-up, so an `O_TRUNC` open cannot
-leave an empty Overwrite copy that hides the mod's file. The fix has not been
-measured in a game yet, so the default stays off: reads are served by the
+leave an empty Overwrite copy that hides the mod's file. The change has not been
+re-measured in a game, so the default stays off: reads are served by the
 daemon's own `pread`, and `EIDOS_FUSE_PASSTHROUGH=1` turns passthrough on. Other
 write corners are covered too: rename-over, in-place rewrites via copy-up, and
 save integrity (`fsync` flushes the backing fd).
