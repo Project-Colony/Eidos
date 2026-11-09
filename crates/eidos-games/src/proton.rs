@@ -39,6 +39,9 @@ pub struct ProtonRun {
     /// `proton` is a plain Wine build (Heroic's `wine` runner type): it takes no
     /// verb and finds its prefix in `WINEPREFIX`.
     pub plain_wine: bool,
+    /// The Steam Linux Runtime's `_v2-entry-point` that every command of this
+    /// run starts through, or `None` to start Proton on the host.
+    pub runtime: Option<PathBuf>,
 }
 
 impl ProtonRun {
@@ -74,8 +77,43 @@ impl ProtonRun {
         Some(cmd)
     }
 
+    /// Start this run inside the Steam Linux Runtime its Proton build names
+    /// (`require_tool_appid` in the build's `toolmanifest.vdf`), installed in
+    /// any Steam library. `Err(None)`: the build names no runtime.
+    /// `Err(Some(id))`: the runtime, Steam app `id`, is not installed.
+    pub fn in_steam_runtime(&mut self, home: &Path) -> Result<(), Option<u32>> {
+        let manifest =
+            fs::read_to_string(self.proton.with_file_name("toolmanifest.vdf")).unwrap_or_default();
+        let app_id = crate::kv_first(&manifest, "require_tool_appid")
+            .and_then(|id| id.parse::<u32>().ok())
+            .filter(|&id| id != 0)
+            .ok_or(None)?;
+        let dir = crate::scan_installed(home)
+            .into_iter()
+            .filter(|app| app.app_id == app_id)
+            .map(|app| app.library.join("steamapps/common").join(app.install_dir))
+            .find(|dir| dir.join("_v2-entry-point").is_file())
+            .ok_or(Some(app_id))?;
+        // Steam lists both folders here, and pressure-vessel shares them with
+        // the container, so a Proton in a library it does not share by default
+        // is still visible inside it.
+        let proton_dir = self.proton.parent().unwrap_or(Path::new("/"));
+        self.env.push((
+            "STEAM_COMPAT_TOOL_PATHS".to_string(),
+            format!("{}:{}", proton_dir.display(), dir.display()),
+        ));
+        self.runtime = Some(dir.join("_v2-entry-point"));
+        Ok(())
+    }
+
     fn with_verb(&self, verb: &str, exe: &Path, args: &[String]) -> Vec<String> {
-        let mut v = vec![self.proton.to_string_lossy().into_owned()];
+        let mut v = Vec::new();
+        if let Some(entry) = &self.runtime {
+            v.push(entry.to_string_lossy().into_owned());
+            v.push(format!("--verb={verb}"));
+            v.push("--".to_string());
+        }
+        v.push(self.proton.to_string_lossy().into_owned());
         if !self.plain_wine {
             v.push(verb.to_string());
         }
@@ -112,6 +150,7 @@ pub(crate) fn heroic_run(bin: &Path, proton: bool, prefix: &Path) -> ProtonRun {
         env,
         flatpak: false,
         plain_wine: !proton,
+        runtime: None,
     }
 }
 
@@ -347,6 +386,7 @@ pub fn proton_command(
         env,
         flatpak,
         plain_wine: false,
+        runtime: None,
     })
 }
 
@@ -631,6 +671,117 @@ mod tests {
         assert!(argv[2].ends_with("SSEEdit.exe"));
         assert_eq!(argv[3], "-quickautoclean");
         let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn a_run_goes_through_the_runtime_its_proton_names() {
+        // The runtime sits in a second library, as it does when Steam installs
+        // it next to the game rather than in its own root.
+        let home = tmp_root();
+        let steam = home.join(".local/share/Steam");
+        let lib = tmp_root();
+        fs::create_dir_all(steam.join("steamapps")).unwrap();
+        fs::create_dir_all(lib.join("steamapps")).unwrap();
+        fs::write(
+            steam.join("steamapps/libraryfolders.vdf"),
+            format!(
+                "\"libraryfolders\"\n{{\n\t\"1\"\n\t{{\n\t\t\"path\"\t\t\"{}\"\n\t}}\n}}\n",
+                lib.display()
+            ),
+        )
+        .unwrap();
+        let proton_dir = steam.join("compatibilitytools.d/GE-Proton11-9");
+        fs::create_dir_all(&proton_dir).unwrap();
+        let mut run = ProtonRun {
+            proton: proton_dir.join("proton"),
+            env: Vec::new(),
+            flatpak: false,
+            plain_wine: false,
+            runtime: None,
+        };
+        let exe = Path::new("/g/SSEEdit.exe");
+        let args = ["-quickautoclean".to_string()];
+        let proton = run.proton.to_string_lossy().into_owned();
+        // Without the runtime, Proton itself is the program.
+        assert_eq!(
+            run.command(exe, &args),
+            [
+                proton.as_str(),
+                "waitforexitandrun",
+                "/g/SSEEdit.exe",
+                "-quickautoclean"
+            ]
+        );
+
+        // No toolmanifest.vdf, or one without require_tool_appid: no runtime named.
+        assert_eq!(run.in_steam_runtime(&home), Err(None));
+        // A Proton 11 manifest, as Steam ships it.
+        fs::write(
+            proton_dir.join("toolmanifest.vdf"),
+            "\"manifest\"\n{\n  \"version\" \"2\"\n  \"commandline\" \"/proton %verb%\"\n  \
+             \"require_tool_appid\" \"4183110\"\n  \"use_sessions\" \"1\"\n}\n",
+        )
+        .unwrap();
+        // Named, but not installed: the error carries the app id.
+        assert_eq!(run.in_steam_runtime(&home), Err(Some(4183110)));
+        assert_eq!(run.runtime, None);
+
+        fs::write(
+            lib.join("steamapps/appmanifest_4183110.acf"),
+            "\"AppState\"\n{\n\t\"appid\"\t\t\"4183110\"\n\t\"name\"\t\t\"Steam Linux Runtime 4.0\"\n\t\"installdir\"\t\t\"SteamLinuxRuntime_4\"\n}\n",
+        )
+        .unwrap();
+        let runtime = lib.join("steamapps/common/SteamLinuxRuntime_4");
+        // A manifest whose folder lacks the entry point is not a runtime.
+        assert_eq!(run.in_steam_runtime(&home), Err(Some(4183110)));
+        fs::create_dir_all(&runtime).unwrap();
+        fs::write(runtime.join("_v2-entry-point"), "#!/bin/sh\n").unwrap();
+        assert_eq!(run.in_steam_runtime(&home), Ok(()));
+
+        let entry = fs::canonicalize(&lib)
+            .unwrap()
+            .join("steamapps/common/SteamLinuxRuntime_4/_v2-entry-point");
+        let entry = entry.to_string_lossy();
+        assert_eq!(
+            run.command(exe, &args),
+            [
+                &*entry,
+                "--verb=waitforexitandrun",
+                "--",
+                proton.as_str(),
+                "waitforexitandrun",
+                "/g/SSEEdit.exe",
+                "-quickautoclean"
+            ]
+        );
+        // The registry import keeps its own verb, inside the same container.
+        assert_eq!(
+            run.run_in_prefix(Path::new("regedit"), &["/t/a.reg".to_string()])[..5],
+            [
+                &*entry,
+                "--verb=runinprefix",
+                "--",
+                proton.as_str(),
+                "runinprefix"
+            ]
+        );
+        // pressure-vessel shares the folders Steam lists here with the container.
+        let tool_paths: Vec<_> = run
+            .env
+            .iter()
+            .filter(|(k, _)| k == "STEAM_COMPAT_TOOL_PATHS")
+            .map(|(_, v)| v.as_str())
+            .collect();
+        assert_eq!(
+            tool_paths,
+            [format!(
+                "{}:{}",
+                proton_dir.display(),
+                entry.trim_end_matches("/_v2-entry-point")
+            )]
+        );
+        let _ = fs::remove_dir_all(&home);
+        let _ = fs::remove_dir_all(&lib);
     }
 
     #[test]

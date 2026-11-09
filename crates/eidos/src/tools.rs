@@ -270,7 +270,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
             // prefix, and none of the Proton-only steps below.
             let native = tool.runner == eidos_instance::Runner::Native;
             let compat = game.compatdata.as_deref();
-            let run = match (compat, game.heroic_run()) {
+            let mut run = match (compat, game.heroic_run()) {
                 _ if native => None,
                 // A Heroic copy: the Wine or Proton and prefix its settings name.
                 (_, Some(run)) => Some(run.clone()),
@@ -299,6 +299,32 @@ pub(crate) fn cmd_tool(args: &[String]) {
                     Some(run)
                 }
             };
+            // `slr=1`: the tool and the registry import below start in the
+            // container Steam uses for the game. `eidos prereqs` keeps running
+            // winetricks on the host.
+            if let Some(run) = run.as_mut().filter(|_| tool.slr) {
+                match run.in_steam_runtime(&home()) {
+                    Ok(()) => {}
+                    Err(None) => {
+                        eidos_log::warn!(
+                            "'{title}' has slr=1, but {} names no Steam Linux Runtime (no \
+                             require_tool_appid in its toolmanifest.vdf). Remove slr=1 to run \
+                             the tool on the host.",
+                            run.proton.display()
+                        );
+                        exit(1);
+                    }
+                    Err(Some(app)) => {
+                        eidos_log::warn!(
+                            "'{title}' has slr=1, but the Steam Linux Runtime its Proton needs, \
+                             Steam app {app}, is not installed in any Steam library. Install it \
+                             with `steam steam://install/{app}`, or remove slr=1 to run the tool \
+                             on the host."
+                        );
+                        exit(1);
+                    }
+                }
+            }
             // Windows tools find their game by reading HKLM\Software\Bethesda
             // Softworks\<game> "installed path", which the game's own installer
             // writes - and which Steam under Proton never runs. Without it xEdit,

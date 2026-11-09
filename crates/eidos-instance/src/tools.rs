@@ -53,6 +53,9 @@ pub struct Tool {
     pub env: Vec<(String, String)>,
     /// How the executable is started.
     pub runner: Runner,
+    /// Run the tool and its registry import inside the Steam Linux Runtime
+    /// that its Proton build names (`slr=1`), the way Steam starts the game.
+    pub slr: bool,
 }
 
 /// How a tool's executable is started.
@@ -152,6 +155,7 @@ pub fn read_tools(path: &Path) -> Vec<Tool> {
                 }
             }
             "runner" if v.eq_ignore_ascii_case("native") => tool.runner = Runner::Native,
+            "slr" => tool.slr = matches!(v, "true" | "1" | "yes" | "on"),
             _ => {}
         }
     }
@@ -227,6 +231,9 @@ pub fn write_tools(path: &Path, tools: &[Tool]) -> io::Result<()> {
         }
         if t.runner == Runner::Native {
             s.push_str("runner=native\n");
+        }
+        if t.slr {
+            s.push_str("slr=1\n");
         }
         s.push('\n');
     }
@@ -813,6 +820,7 @@ mod tests {
                     ("WINEDLLOVERRIDES".into(), "dxgi=n,b".into()),
                 ],
                 runner: Runner::Proton,
+                slr: true,
             },
             Tool {
                 title: "BodySlide".into(),
@@ -826,6 +834,7 @@ mod tests {
                 pinned: false,
                 env: Vec::new(),
                 runner: Runner::Native,
+                slr: false,
             },
         ];
         write_tools(&p, &tools).unwrap();
