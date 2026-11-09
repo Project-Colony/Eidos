@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=361774f4c6bf1703a68a6798a05660bc0ce15fae -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=97258d215328aaa54e93db5456cee947c9048e9e -->
 
 # Eidos verwenden
 
@@ -677,6 +677,14 @@ Das Installieren nimmt alles an: die Simple- und FOMOD-Wege, dazu Wrye Bash
 werden) und eine **manuelle** Auswahl, die den Archivbaum zeigt und Sie auf die
 Datenwurzel zeigen lässt, wenn keine Heuristik das Layout erkennt. Kein Archiv
 wird abgelehnt.
+
+Eine Neuinstallation oder ein Update eines FOMOD-Mods öffnet den Assistenten mit
+den angehakten Antworten der letzten Installation, auf dem ersten Schritt,
+dessen Optionen sich seitdem geändert haben, und listet die Änderungen auf.
+**Reinstall with new choices** beginnt stattdessen mit den Vorgaben des
+Installers. `eidos install --replace` oder `--merge` verwendet die gespeicherten
+Antworten erneut und bricht mit einer Liste der Änderungen ab, wenn sie nicht
+mehr passen.
 
 **Diagnostics** führt Zustandsprüfungen live aus: vor allem die Startfähigkeit,
 fehlende Master (der mit Abstand verlässlichste Absturzvorbote), Archive, die

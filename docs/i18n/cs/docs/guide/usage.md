@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=361774f4c6bf1703a68a6798a05660bc0ce15fae -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=97258d215328aaa54e93db5456cee947c9048e9e -->
 
 # Používání Eidosu
 
@@ -599,6 +599,12 @@ Instalace přijme všechno: cesty Simple a FOMOD, plus balíčky **BAIN** z Wrye
 Bash (zaškrtnete podbalíčky, které se slučují v pořadí) a **ruční** výběr, který
 ukáže strom archivu a nechá vás ukázat na kořen dat, když rozvržení nerozpozná
 žádná heuristika. Žádný archiv není odmítnut.
+
+Přeinstalace nebo aktualizace FOMOD modu otevře průvodce se zaškrtnutými
+odpověďmi z poslední instalace, a to na prvním kroku, jehož možnosti se od té
+doby změnily, se seznamem změn. **Reinstall with new choices** místo toho začne
+od výchozích voleb instalátoru. `eidos install --replace` nebo `--merge` použije
+uložené odpovědi znovu, a když už nesedí, odmítne instalaci a vypíše změny.
 
 **Diagnostics** provádí živé kontroly zdraví: především schopnost spustit hru,
 chybějící mastery (nejspolehlivější jediný předpovídač pádů), archivy, které

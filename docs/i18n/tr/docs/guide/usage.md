@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=361774f4c6bf1703a68a6798a05660bc0ce15fae -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=97258d215328aaa54e93db5456cee947c9048e9e -->
 
 # Eidos kullanımı
 
@@ -625,6 +625,13 @@ Kurulum her şeyi kabul eder: Simple ve FOMOD yolları, artı Wrye Bash **BAIN**
 paketleri (sırayla katılan alt paketleri işaretleyin) ve hiçbir sezgisel yöntem
 yerleşimi tanımadığında arşiv ağacını gösterip veri kökünü işaret etmenizi
 sağlayan **elle** bir seçici. Hiçbir arşiv reddedilmez.
+
+Bir FOMOD modunu yeniden kurmak ya da güncellemek, sihirbazı son kurulumun
+cevapları işaretli olarak, o zamandan beri seçenekleri değişen ilk adımda ve
+değişikliklerin listesiyle açar. **Reinstall with new choices** bunun yerine
+yükleyicinin varsayılanlarından başlar. `eidos install --replace` ya da
+`--merge` kayıtlı cevapları yeniden kullanır; cevaplar artık uymuyorsa
+değişiklikleri listeleyip kurmayı reddeder.
 
 **Diagnostics** canlı sağlık denetimleri çalıştırır: her şeyden önce başlatma
 yeteneği, eksik master'lar (tek başına en güvenilir çökme belirtisi), etkin

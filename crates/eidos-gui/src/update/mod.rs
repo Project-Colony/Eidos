@@ -865,16 +865,14 @@ pub(crate) fn finish_open(
             if let Some(req) = session.unmet_dependencies(&ctx) {
                 app.status = Some(tf("status_unmet_dependency", &[("requirement", &req)]));
             } else {
-                let selection = eidos_fomod::default_selection(&session.config, &ctx);
-                // Open on the first step that is actually shown. Next/Back
-                // already skip invisible steps and build_plan ignores them,
-                // but nothing seeked at open: a FOMOD whose first step is
-                // conditional rendered that page fully interactive, and
-                // every choice made on it was thrown away at install time.
-                let first = eidos_fomod::visible_steps(&session.config, &selection, &ctx)
-                    .iter()
-                    .position(|v| *v)
-                    .unwrap_or(0);
+                // A reinstall or an update replays the answers the folder was
+                // installed with; "Reinstall with new choices" starts over.
+                let stored = (!fresh)
+                    .then(|| eidos_install::collision_name(&mods_dir, session.mod_name()))
+                    .flatten()
+                    .and_then(|folder| app.created.as_ref()?.mod_meta(&folder).fomod_choices());
+                let (selection, first, replayed) =
+                    wizard_start(&session.config, &ctx, stored.as_deref());
                 app.fomod = Some(FomodWizard {
                     target: target.clone(),
                     session,
@@ -884,6 +882,7 @@ pub(crate) fn finish_open(
                     archive: path,
                     ctx,
                     hover: None,
+                    replayed,
                 });
                 app.status = Some(t("status_fomod_choose").to_string());
             }

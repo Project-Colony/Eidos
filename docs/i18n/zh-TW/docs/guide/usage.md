@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=361774f4c6bf1703a68a6798a05660bc0ce15fae -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=97258d215328aaa54e93db5456cee947c9048e9e -->
 
 # 使用 Eidos
 
@@ -480,6 +480,11 @@ MO2 自己的(`categories.dat` 與 `nexuscatmap.dat`),所以共用的實例只�
 安裝什麼都接受:Simple 與 FOMOD 兩條路徑,加上 Wrye Bash 的 **BAIN** 套件(勾選子
 套件,它們會依序合併),以及一個**手動**選擇器,會顯示壓縮檔的樹狀結構,讓你在沒有
 任何啟發法認得出版面時自己指出資料根目錄。沒有任何壓縮檔會被拒絕。
+
+重新安裝或更新 FOMOD 模組時，精靈開啟時會勾好上次安裝的答案，停在之後選項有變動
+的第一步，並列出變動。**Reinstall with new choices** 則從安裝程式的預設值開始。
+`eidos install --replace` 或 `--merge` 沿用儲存的答案，答案不再適用時會列出變動並
+拒絕安裝。
 
 **Diagnostics** 會跑即時的健康檢查:首要是啟動能力、缺少的 master(最可靠的單一
 當機預測指標)、沒有任何啟用外掛會載入的封裝檔、模組清單是否仍與 mods 資料夾相符,

@@ -87,6 +87,30 @@ pub(crate) fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> 
                     .join("; "),
             ));
         }
+        if let Some(steps) = meta
+            .fomod_choices()
+            .and_then(|json| eidos_install::fomod_choices_from_json(&json))
+        {
+            let choices: Vec<String> = steps
+                .iter()
+                .flat_map(|s| s.groups.iter().map(move |g| (s, g)))
+                .filter(|(_, g)| !g.selected.is_empty())
+                .map(|(s, g)| {
+                    let options: Vec<&str> = g.selected.iter().map(|o| o.name.as_str()).collect();
+                    tf(
+                        "info_fomod_choice",
+                        &[
+                            ("step", &s.name),
+                            ("group", &g.name),
+                            ("options", &options.join(", ")),
+                        ],
+                    )
+                })
+                .collect();
+            if !choices.is_empty() {
+                col = col.push(info_kv(t("info_fomod_choices"), choices.join("; ")));
+            }
+        }
         if let Some(warning) = meta.install_warning() {
             col = col.push(info_kv(t("info_install_warning"), warning));
         }

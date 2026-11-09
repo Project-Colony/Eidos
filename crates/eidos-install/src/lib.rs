@@ -669,9 +669,9 @@ pub use install::{
     install_archive_with_policy, install_bain, install_destination, install_extracted,
     install_extracted_with_finish, install_manual, install_omod, install_omod_with_finish,
     mod_name_for, open_archive, open_archive_with, open_archive_with_installers, open_omod_with,
-    try_open_omod, try_open_omod_with, ExtractedTree, FomodSession, InstallError, InstallReport,
-    OmodCompression, OmodCreationTime, OmodFileKind, OmodMember, OmodMetadata, OmodScript,
-    OmodScriptKind, OmodSession, Opened, OverwritePolicy,
+    replay_stored, try_open_omod, try_open_omod_with, ExtractedTree, FomodSession, InstallError,
+    InstallReport, OmodCompression, OmodCreationTime, OmodFileKind, OmodMember, OmodMetadata,
+    OmodScript, OmodScriptKind, OmodSession, Opened, OverwritePolicy,
 };
 
 /// The same check as [`ArchiveTree::data_looks_valid`], against a directory that

@@ -590,6 +590,12 @@ Installing accepts everything: the Simple and FOMOD paths, plus Wrye Bash
 picker that shows the archive tree and lets you point at the data root when no
 heuristic recognises the layout. No archive is refused.
 
+Reinstalling or updating a FOMOD mod opens the wizard with the answers of its
+last install ticked, on the first step whose options changed since then, with
+the changes listed. **Reinstall with new choices** starts from the installer's
+defaults instead. `eidos install --replace` or `--merge` reuses the stored
+answers and refuses, listing the changes, when they no longer fit.
+
 **Diagnostics** runs live health checks: the launch capability above all, missing
 masters (the single most reliable crash predictor), archives no active plugin
 will load, whether the mod list still matches the mods folder, and - after a

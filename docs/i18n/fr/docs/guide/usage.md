@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=361774f4c6bf1703a68a6798a05660bc0ce15fae -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=97258d215328aaa54e93db5456cee947c9048e9e -->
 
 # Utiliser Eidos
 
@@ -675,6 +675,13 @@ L'installation accepte tout : les chemins Simple et FOMOD, plus les paquets
 un sélecteur **manuel** qui montre l'arborescence de l'archive et vous laisse
 désigner la racine des données quand aucune heuristique ne reconnaît la
 disposition. Aucune archive n'est refusée.
+
+Réinstaller ou mettre à jour un mod FOMOD ouvre l'assistant avec les réponses de
+sa dernière installation cochées, sur la première étape dont les options ont
+changé depuis, avec la liste des changements. **Reinstall with new choices**
+part plutôt des valeurs par défaut de l'installateur. `eidos install --replace`
+ou `--merge` reprend les réponses enregistrées et refuse d'installer, en listant
+les changements, quand elles ne correspondent plus.
 
 **Diagnostics** exécute des contrôles de santé en direct : la capacité à lancer
 avant tout, les masters manquants (le prédicteur de crash le plus fiable qui

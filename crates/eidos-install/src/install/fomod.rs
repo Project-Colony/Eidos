@@ -460,6 +460,16 @@ pub fn fomod_choices_from_json(json: &str) -> Option<Vec<eidos_fomod::RecordedSt
     )
 }
 
+/// The answers stored in a mod's `meta.ini` replayed against `config`, or
+/// `None` when `stored` is not the JSON [`fomod_choices_json`] writes.
+pub fn replay_stored(
+    config: &eidos_fomod::ModuleConfig,
+    ctx: &eidos_fomod::Context,
+    stored: &str,
+) -> Option<eidos_fomod::Replay> {
+    fomod_choices_from_json(stored).map(|steps| eidos_fomod::replay(config, ctx, &steps))
+}
+
 // ---- case-collision normalisation -------------------------------------------
 //
 // Windows (NTFS) is case-insensitive and case-preserving: an archive that holds

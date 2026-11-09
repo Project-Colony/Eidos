@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=361774f4c6bf1703a68a6798a05660bc0ce15fae -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=97258d215328aaa54e93db5456cee947c9048e9e -->
 
 # Eidos gebruiken
 
@@ -642,6 +642,14 @@ Bash-**BAIN**-pakketten (vink de subpakketten aan, die op volgorde samenvloeien)
 en een **handmatige** kiezer die de archiefboom toont en je op de dataroot laat
 wijzen wanneer geen enkele heuristiek de indeling herkent. Geen enkel archief
 wordt geweigerd.
+
+Een FOMOD-mod opnieuw installeren of bijwerken opent de wizard met de antwoorden
+van de vorige installatie aangevinkt, op de eerste stap waarvan de opties
+sindsdien veranderd zijn, met een lijst van de wijzigingen. **Reinstall with new
+choices** begint in plaats daarvan bij de standaardwaarden van het
+installatieprogramma. `eidos install --replace` of `--merge` hergebruikt de
+opgeslagen antwoorden en weigert, met de lijst van wijzigingen, wanneer ze niet
+meer passen.
 
 **Diagnostics** draait live gezondheidscontroles: bovenal de startmogelijkheid,
 ontbrekende masters (de betrouwbaarste crashvoorspeller die er is), archieven die

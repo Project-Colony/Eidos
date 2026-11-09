@@ -5915,3 +5915,95 @@ fn a_second_extract_of_the_same_archive_starts_nothing_until_the_first_ends() {
     assert_eq!(update_inner(&mut app, click()).units(), 1);
     fs::remove_dir_all(root).unwrap();
 }
+
+/// Two steps: a texture size (SD recommended) and a patch step. `{snow}` names
+/// the patch option, so a rename can stand for a mod update.
+const REPLAY_XML: &str = r#"<config><installSteps order="Explicit">
+<installStep name="Main"><optionalFileGroups order="Explicit"><group name="Textures" type="SelectExactlyOne"><plugins order="Explicit">
+<plugin name="SD"><typeDescriptor><type name="Recommended"/></typeDescriptor></plugin>
+<plugin name="HD"><typeDescriptor><type name="Optional"/></typeDescriptor></plugin>
+</plugins></group></optionalFileGroups></installStep>
+<installStep name="Extras"><optionalFileGroups><group name="Patches" type="SelectAny"><plugins>
+<plugin name="{snow}"><typeDescriptor><type name="Optional"/></typeDescriptor></plugin>
+</plugins></group></optionalFileGroups></installStep>
+</installSteps></config>"#;
+
+fn replay_config(snow: &str) -> eidos_fomod::ModuleConfig {
+    eidos_fomod::ModuleConfig::parse(&REPLAY_XML.replace("{snow}", snow)).unwrap()
+}
+
+#[test]
+fn wizard_start_ticks_stored_choices_and_stops_at_a_changed_step() {
+    let ctx = eidos_fomod::Context::default();
+    let config = replay_config("Snow");
+    let picked: eidos_fomod::Selection = vec![vec![vec![false, true]], vec![vec![true]]];
+    let stored_same =
+        eidos_install::fomod_choices_json(&eidos_fomod::to_recorded(&config, &picked, &ctx));
+
+    let (sel, step, notes) = wizard_start(&config, &ctx, Some(&stored_same));
+    assert_eq!((sel, step, notes), (picked.clone(), 0, Some(vec![])));
+
+    let (_, step, notes) =
+        wizard_start(&replay_config("Snow (Cathedral)"), &ctx, Some(&stored_same));
+    assert_eq!(step, 1);
+    assert!(!notes.unwrap().is_empty());
+
+    let (sel, step, notes) = wizard_start(&config, &ctx, None);
+    assert_eq!(
+        (sel, step, notes),
+        (eidos_fomod::default_selection(&config, &ctx), 0, None)
+    );
+    // An answer that no longer reads is no answer at all.
+    assert_eq!(wizard_start(&config, &ctx, Some("{")).2, None);
+}
+
+#[test]
+fn a_reinstall_opens_on_the_stored_choices_and_new_choices_start_from_defaults() {
+    let (mut app, root) = list_app(&["Chosen"]);
+    let inst = app.created.clone().unwrap();
+    let ctx = eidos_fomod::Context::default();
+    let config = replay_config("Snow");
+    let picked: eidos_fomod::Selection = vec![vec![vec![false, true]], vec![vec![true]]];
+    let mut meta = inst.mod_meta("Chosen");
+    meta.set_fomod_choices(&eidos_install::fomod_choices_json(
+        &eidos_fomod::to_recorded(&config, &picked, &ctx),
+    ));
+    meta.write(&inst.meta_path("Chosen")).unwrap();
+    let archive = root.join("Chosen.zip");
+    let status = std::process::Command::new("python3")
+        .arg("-c")
+        .arg("import sys,zipfile\nwith zipfile.ZipFile(sys.argv[1],'w') as z: z.writestr('fomod/ModuleConfig.xml',sys.argv[2])")
+        .arg(&archive)
+        .arg(REPLAY_XML.replace("{snow}", "Snow"))
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    for fresh in [false, true] {
+        let opened =
+            eidos_install::open_archive(&archive, &inst.mods_dir(), "Chosen", "skyrimse").unwrap();
+        let target = collection_target(&app).unwrap();
+        let _ = finish_open(
+            &mut app,
+            Ok(opened),
+            archive.clone(),
+            "Chosen".into(),
+            target,
+            fresh,
+        );
+        let w = app.fomod.as_ref().expect("the wizard opened");
+        let _ = fomod_wizard_view(w);
+        if fresh {
+            assert_eq!(w.replayed, None, "new choices start from the defaults");
+            assert_eq!(w.selection, eidos_fomod::default_selection(&config, &ctx));
+        } else {
+            assert_eq!(w.replayed, Some(vec![]));
+            assert_eq!(w.selection, picked);
+            // One changed answer and "the same choices" is no longer true.
+            let _ = update_inner(&mut app, Message::FomodToggle(0, 0));
+            assert_eq!(app.fomod.as_ref().unwrap().replayed, None);
+        }
+        app.fomod = None;
+    }
+    fs::remove_dir_all(root).unwrap();
+}

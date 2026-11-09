@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=361774f4c6bf1703a68a6798a05660bc0ce15fae -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=97258d215328aaa54e93db5456cee947c9048e9e -->
 
 # Usar o Eidos
 
@@ -629,6 +629,13 @@ A instalação aceita tudo: os caminhos Simple e FOMOD, mais os pacotes **BAIN**
 do Wrye Bash (marque os sub-pacotes, que são mesclados em ordem) e um seletor
 **manual** que mostra a árvore do arquivo e deixa você apontar a raiz dos dados
 quando nenhuma heurística reconhece o layout. Nenhum arquivo é recusado.
+
+Reinstalar ou atualizar um mod FOMOD abre o assistente com as respostas da
+última instalação marcadas, no primeiro passo cujas opções mudaram desde então,
+com a lista de mudanças. **Reinstall with new choices** começa, em vez disso,
+pelos padrões do instalador. `eidos install --replace` ou `--merge` reaproveita
+as respostas salvas e recusa a instalação, listando as mudanças, quando elas não
+servem mais.
 
 **Diagnostics** roda verificações de saúde ao vivo: a capacidade de iniciar
 acima de tudo, masters faltando (o preditor de crash mais confiável que existe),

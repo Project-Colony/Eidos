@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=361774f4c6bf1703a68a6798a05660bc0ce15fae -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=97258d215328aaa54e93db5456cee947c9048e9e -->
 
 # Używanie Eidos
 
@@ -629,6 +629,13 @@ Instalowanie przyjmuje wszystko: ścieżki Simple i FOMOD, plus paczki **BAIN**
 Wrye Bash (zaznaczasz podpaczki, które scalają się po kolei) i **ręczny** wybór,
 który pokazuje drzewo archiwum i pozwala wskazać katalog danych, gdy żadna
 heurystyka nie rozpoznaje układu. Żadne archiwum nie jest odrzucane.
+
+Ponowna instalacja lub aktualizacja moda FOMOD otwiera kreator z zaznaczonymi
+odpowiedziami z ostatniej instalacji, na pierwszym kroku, którego opcje od
+tamtej pory się zmieniły, z listą zmian. **Reinstall with new choices** zaczyna
+za to od domyślnych ustawień instalatora. `eidos install --replace` lub
+`--merge` używa zapisanych odpowiedzi ponownie, a gdy już nie pasują, odmawia
+instalacji i wypisuje zmiany.
 
 **Diagnostics** przeprowadza kontrole kondycji na żywo: przede wszystkim zdolność
 do uruchomienia, brakujące pliki master (najbardziej niezawodny pojedynczy

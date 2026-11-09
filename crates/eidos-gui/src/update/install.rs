@@ -167,6 +167,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 // just did, the step's hard rules (Required on, NotUsable off,
                 // radio groups single-ticked) are re-imposed immediately.
                 normalize_fomod_step(w);
+                // After a change, "Install with the same choices" would not be.
+                if w.replayed.as_ref().is_some_and(Vec::is_empty) {
+                    w.replayed = None;
+                }
             }
         }
         Message::FomodNext => {

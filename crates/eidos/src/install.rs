@@ -178,6 +178,27 @@ fn retry_request(args: &[String]) -> Result<Option<(&str, &str)>, String> {
     Ok(Some((&args[0], &args[2])))
 }
 
+/// The FOMOD answers a CLI install uses: the stored ones when they still fit
+/// the installer, the installer's defaults when there are none. A replay that
+/// no longer fits is refused rather than finished with a guess.
+fn fomod_selection(
+    config: &eidos_fomod::ModuleConfig,
+    ctx: &eidos_fomod::Context,
+    stored: Option<&str>,
+) -> Result<eidos_fomod::Selection, String> {
+    let Some(replay) = stored.and_then(|json| eidos_install::replay_stored(config, ctx, json))
+    else {
+        return Ok(eidos_fomod::default_selection(config, ctx));
+    };
+    if !replay.is_faithful() {
+        return Err(format!(
+            "The installer's options changed since the last install: {}. Reinstall from the window to choose again.",
+            replay.unmatched.join("; ")
+        ));
+    }
+    Ok(replay.selection)
+}
+
 pub(crate) fn cmd_install(args: &[String]) {
     match retry_request(args) {
         Ok(Some((target, name))) => {
@@ -454,7 +475,15 @@ pub(crate) fn cmd_install(args: &[String]) {
                             &target.game_id,
                             fallback.as_deref(),
                         );
-                        let selection = eidos_fomod::default_selection(&session.config, &fomod);
+                        // The answers the folder being replaced was installed
+                        // with. Fail never replaces: the collision check above
+                        // already refused an existing folder.
+                        let stored = (options.policy != eidos_install::OverwritePolicy::Fail)
+                            .then(|| eidos_install::collision_name(&inst.mods_dir(), &name))
+                            .flatten()
+                            .and_then(|folder| inst.mod_meta(&folder).fomod_choices());
+                        let selection =
+                            fomod_selection(&session.config, &fomod, stored.as_deref())?;
                         eidos_install::finish_fomod(
                             *session,
                             &selection,
@@ -716,5 +745,41 @@ mod installer_option_tests {
         assert!(read_answers(&path).is_err());
         assert_eq!(std::fs::read(&archive).unwrap(), b"source");
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn replay_config(snow: &str) -> eidos_fomod::ModuleConfig {
+        eidos_fomod::ModuleConfig::parse(&format!(
+            r#"<config><installSteps order="Explicit">
+<installStep name="Main"><optionalFileGroups order="Explicit"><group name="Textures" type="SelectExactlyOne"><plugins order="Explicit">
+<plugin name="SD"><typeDescriptor><type name="Recommended"/></typeDescriptor></plugin>
+<plugin name="HD"><typeDescriptor><type name="Optional"/></typeDescriptor></plugin>
+</plugins></group></optionalFileGroups></installStep>
+<installStep name="Extras"><optionalFileGroups><group name="Patches" type="SelectAny"><plugins>
+<plugin name="{snow}"><typeDescriptor><type name="Optional"/></typeDescriptor></plugin>
+</plugins></group></optionalFileGroups></installStep>
+</installSteps></config>"#
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn cli_fomod_selection_refuses_an_unfaithful_replay() {
+        let ctx = eidos_fomod::Context::default();
+        let config = replay_config("Snow");
+        let picked: eidos_fomod::Selection = vec![vec![vec![false, true]], vec![vec![true]]];
+        let stored_same =
+            eidos_install::fomod_choices_json(&eidos_fomod::to_recorded(&config, &picked, &ctx));
+        assert_eq!(
+            fomod_selection(&config, &ctx, Some(&stored_same)).unwrap(),
+            picked
+        );
+        let err = fomod_selection(&replay_config("Snow (Cathedral)"), &ctx, Some(&stored_same))
+            .unwrap_err();
+        assert!(err.contains("Reinstall from the window"), "{err}");
+        assert!(err.contains("\"Snow\""), "{err}");
+        assert_eq!(
+            fomod_selection(&config, &ctx, None).unwrap(),
+            eidos_fomod::default_selection(&config, &ctx)
+        );
     }
 }

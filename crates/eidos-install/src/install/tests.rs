@@ -1950,6 +1950,18 @@ fn fomod_choices_json_uses_the_collection_shape() {
 }
 
 #[test]
+fn replay_stored_returns_none_for_unreadable_json() {
+    let config = eidos_fomod::ModuleConfig::parse(r#"<config><installSteps><installStep name="Main"><optionalFileGroups><group name="Textures" type="SelectAny"><plugins><plugin name="2K"><typeDescriptor><type name="Optional"/></typeDescriptor></plugin></plugins></group></optionalFileGroups></installStep></installSteps></config>"#).unwrap();
+    let ctx = eidos_fomod::Context::default();
+    assert!(replay_stored(&config, &ctx, "{").is_none());
+    let stored =
+        r#"[{"name":"Main","groups":[{"name":"Textures","choices":[{"name":"2K","idx":0}]}]}]"#;
+    let replay = replay_stored(&config, &ctx, stored).unwrap();
+    assert!(replay.is_faithful(), "{:?}", replay.unmatched);
+    assert_eq!(replay.selection, vec![vec![vec![true]]]);
+}
+
+#[test]
 fn finish_fomod_stores_the_choices_it_installed() {
     use eidos_fomod::{RecordedGroup, RecordedOption, RecordedStep};
     let Some(bin) = eidos_sevenzip::find_7z() else {

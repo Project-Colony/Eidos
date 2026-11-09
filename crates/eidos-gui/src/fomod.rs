@@ -24,6 +24,43 @@ pub(crate) struct FomodWizard {
     /// pane is never blank and the keyboard is not left out - MO2 tracks hover
     /// only, and its preview empties the moment you move the mouse away.
     pub(crate) hover: Option<(usize, usize)>,
+    /// `Some` when the answers of the last install were replayed: empty when
+    /// every one still fits, else what changed since (see [`wizard_start`]).
+    pub(crate) replayed: Option<Vec<String>>,
+}
+
+/// Where a wizard opens: its selection, the step it shows first, and the
+/// replay notes for [`FomodWizard::replayed`].
+///
+/// With `stored` answers that still read, the replayed selection opens on the
+/// first step that changed, or on the first shown step when none did. Without
+/// them, the installer's defaults on its first shown step. A hidden first step
+/// is never the one opened: Next and Back skip hidden steps and build_plan
+/// ignores them, so every choice made on it would be lost.
+pub(crate) fn wizard_start(
+    config: &eidos_fomod::ModuleConfig,
+    ctx: &eidos_fomod::Context,
+    stored: Option<&str>,
+) -> (eidos_fomod::Selection, usize, Option<Vec<String>>) {
+    let first_shown = |selection: &eidos_fomod::Selection| {
+        eidos_fomod::visible_steps(config, selection, ctx)
+            .iter()
+            .position(|v| *v)
+            .unwrap_or(0)
+    };
+    match stored.and_then(|json| eidos_install::replay_stored(config, ctx, json)) {
+        Some(replay) => {
+            let step = replay
+                .first_changed_step
+                .unwrap_or_else(|| first_shown(&replay.selection));
+            (replay.selection, step, Some(replay.unmatched))
+        }
+        None => {
+            let selection = eidos_fomod::default_selection(config, ctx);
+            let step = first_shown(&selection);
+            (selection, step, None)
+        }
+    }
 }
 
 pub(crate) fn group_type_label(kind: eidos_fomod::GroupType) -> &'static str {
@@ -505,6 +542,15 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
         );
     }
     nav = nav.push(Space::new().width(Length::Fill));
+    // Every stored answer still fits: installing them as they are is one click
+    // from any step, and this button is the confirmation before it.
+    if w.replayed.as_ref().is_some_and(Vec::is_empty) {
+        nav = nav.push(fomod_btn(
+            t("fomod_same_choices"),
+            Some(Message::FomodInstall),
+            false,
+        ));
+    }
     nav = nav.push(fomod_btn(
         t("common_cancel"),
         Some(Message::FomodCancel),
@@ -548,15 +594,23 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
         .push(fomod_rule(true))
         .push(container(right).width(Length::Fill));
 
-    Column::new()
+    let mut page = Column::new()
         .spacing(12)
         .padding(16)
         .push(head)
-        .push(fomod_rule(false))
-        .push(panes)
-        .push(fomod_rule(false))
-        .push(nav)
-        .into()
+        .push(fomod_rule(false));
+    // Pushed only when there is something to say: an empty column would still
+    // take a slot of the page's spacing in every other wizard.
+    if let Some(notes) = w.replayed.as_ref().filter(|n| !n.is_empty()) {
+        let mut changed = Column::new()
+            .spacing(2)
+            .push(text(t("fomod_changed_since_last")).size(sz(12)).font(bold));
+        for note in notes {
+            changed = changed.push(text(note.clone()).size(sz(11)).color(fomod_ink_soft()));
+        }
+        page = page.push(changed);
+    }
+    page.push(panes).push(fomod_rule(false)).push(nav).into()
 }
 
 /// A footer button. `msg == None` means present but inert: the disabled Next has
