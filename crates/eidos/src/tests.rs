@@ -332,3 +332,10 @@ fn the_layer_itself_does_not_become_the_data_dir() {
         None
     );
 }
+
+#[test]
+fn http_wrappers_are_in_the_shipped_shadow_list() {
+    for dll in ["winhttp", "wininet"] {
+        assert!(crate::launch::SHIPPED_SHADOWS.contains(&dll), "{dll}");
+    }
+}

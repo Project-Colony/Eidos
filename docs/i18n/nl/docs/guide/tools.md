@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=21bf9773a77eafde0226799b69158680985f3963 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -111,7 +111,7 @@ klaarzet.** De vergelijking is een deelstring van de titel, hoofdletterongevoeli
 | `bodyslide`, `outfit` | `d3dx9_43`, `d3dcompiler_47` |
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
-| `synthesis` | `dotnet8`, `vcrun2022` |
+| `synthesis` | `dotnetsdk10`, `vcrun2022` |
 | `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
@@ -142,12 +142,42 @@ netwerk.
 ze laten zich niet met een bestandskopie afhandelen. Ze **downloaden van
 Microsoft**.
 
-**Tier 3 - runtimes** (`dotnet10`). Een moderne .NET-runtime is 193 bestanden die
+**Tier 3 - runtimes** (`dotnet10`, `dotnetsdk10`). Een moderne .NET-runtime is 193 bestanden die
 in hun eigen map staan en via `DOTNET_ROOT` gevonden worden: nooit geregistreerd,
 nooit in het prefix geïnstalleerd, zodat geen van de andere lagen hem kan dragen.
 Eidos downloadt hem zelf, controleert hem tegen een in het binaire bestand
 ingebouwde checksum, en bewaart hem in `~/.local/share/Colony/Eidos/runtimes/` -
 **buiten elke instantie**, omdat 78 MB niet per spel en niet per profiel is.
+
+`dotnetsdk10` is de .NET 10 SDK, een download van 301 MB die uitgepakt 808 MB
+beslaat. Synthesis heeft hem nodig om zijn patchers te compileren, en roept een
+kale `dotnet` aan om ze te bouwen en te starten. Een tool die `dotnetsdk10`
+opgeeft, krijgt daarom ook de SDK-map in `WINEPATH`, plus
+`NUGET_CERT_REVOCATION_MODE=offline`, `DOTNET_GENERATE_ASPNET_CERTIFICATE=false`
+en `DOTNET_CLI_TELEMETRY_OPTOUT=1`.
+Een patcher-build zou MSBuild-nodes en de VBCSCompiler-server laten draaien, en
+onder Wine houden die de wineserver van de prefix in leven, dus krijgt de tool
+ook `MSBUILDDISABLENODEREUSE=1`, `DOTNET_CLI_USE_MSBUILD_SERVER=0` en
+`UseSharedCompilation=false`. Met `DOTNET_ROLL_FORWARD=Major` draait een patcher
+die voor .NET 8 gebouwd is (Mutagen vóór 0.54) op de .NET 10-runtime van de SDK
+als er geen .NET 8-runtime gevonden wordt.
+Een Synthesis-item in `tools.ini` dat nog de
+oude standaard `dotnet8`, `vcrun2022` heeft, krijgt `dotnetsdk10`, `vcrun2022`
+wanneer Eidos het inleest.
+
+NuGet controleert de handtekening van elk pakket dat het herstelt tegen de
+rootstore van Windows, en in een Wine-prefix ontbreken de roots voor
+codeondertekening en tijdstempels die de SDK meelevert als
+`sdk/10.0.403/trustedroots/codesignctl.pem` en `timestampctl.pem`. Zonder die
+roots mislukt het herstellen van `Mutagen.Bethesda.Synthesis` 0.36.6 met
+`NU3018` en `NU3028`. Daarom voegt Eidos, voordat een tool die `dotnetsdk10`
+declareert start en zodra de SDK gedownload is, de 385 certificaten uit beide
+bestanden toe aan de rootstore van de huidige gebruiker in de prefix van het
+spel, in dezelfde `regedit`-import die het spelpad schrijft (zie hieronder).
+Verdwijnt er een, dan importeert Eidos ze opnieuw. Elk Windows-programma in die
+prefix vertrouwt deze roots daarna. Met deze roots slagen hetzelfde herstel en
+de build in een nieuwe prefix met een lege NuGet-cache, met de systeem-Wine
+11.21 en met GE-Proton11-9.
 
 Niets in tier 2 of 3 draait stilzwijgend:
 
@@ -319,6 +349,75 @@ omgevingsvariabelen op de draai die toch al opgebouwd werd - `SteamAppId` en
 `SteamGameId`, allebei, omdat Proton de ene leest en Steams eigen bibliotheken de
 andere, en een tool die ze ziet verschillen faalt vreemd in plaats van duidelijk.
 `eidos tool ... --print` toont precies wat de echte draai zou krijgen.
+
+## Omgevingsvariabelen en tools zonder Proton
+
+Drie sleutels in `<instance>/tools.ini` hebben nog geen veld in het
+Executables-venster, dus zet je ze met de hand in de sectie van de tool. Elke
+regel `env=NAME=value` zet één variabele die alleen geldt wanneer die tool
+draait:
+
+```ini
+[Tool/BodySlide]
+exe=Data/CalienteTools/BodySlide/BodySlide x64.exe
+env=PROTON_LOG=1
+env=WINEDEBUG=-all
+```
+
+Eidos past deze regels toe na alles wat het zelf zet, dus een waarde hier
+vervangt die van Eidos. Dat geldt ook voor de `WINEDLLOVERRIDES` die Eidos
+opbouwt uit de DLL's die je mods meeleveren: een tool die hem zet, moet er elke
+DLL in opnemen die hij nodig heeft. Een naam bestaat uit letters, cijfers en
+`_`, en begint niet met een cijfer. Een regel met een andere naam wordt
+genegeerd.
+
+`runner=native` start `exe` zelf, zonder Proton. De samengevoegde weergave wordt
+gemount zoals voor elke tool, en de regels `arg0=`, `arg1=` zijn zijn
+argumenten. Gebruik het voor een Linux-programma, of voor een tool bij een kopie
+die Steam niet beheert en waarvoor Heroic geen runner vastlegt: `exe` is de
+Wine van die kopie, het Windows-programma is het eerste argument en het prefix
+komt uit `env=`.
+
+```ini
+[Tool/SSEEdit (GOG)]
+exe=/opt/wine-ge/bin/wine
+arg0=/home/me/Games/Skyrim/SSEEdit.exe
+workdir=/home/me/Games/Skyrim
+runner=native
+env=WINEPREFIX=/home/me/Games/Heroic/Prefixes/default/Skyrim
+```
+
+`exe` moet een absoluut pad zijn. De werkmap is standaard de map waarin `exe`
+staat, hier die van de runner, dus zet `workdir=`. Alleen `exe` wordt
+herschreven naar zijn samengevoegde pad: geef voor een Windows-programma in een
+mod het pad onder de map `Data` van het spel, waar de samengevoegde weergave het
+toont. Een native tool slaat de Proton-stappen over: de registersleutel
+hierboven, de shadercache van Steam, de lege .NET-roots en het weghalen van de
+Steam-overlay uit `LD_PRELOAD`.
+
+Bij een GOG- of Epic-kopie die met Heroic is geïnstalleerd, hebben tools zo'n
+regel niet nodig als de Heroic-instellingen van het spel
+(`GamesConfig/<appName>.json`) een Wine- of Proton-build noemen: Eidos start ze
+met die build in het Heroic-prefix van het spel, en
+`eidos prereqs <instance> --install` geeft die door aan winetricks. Een kopie
+die alleen met Legendary is geïnstalleerd, heeft geen Heroic-instellingen.
+
+`slr=1` start de tool, en de registerimport ervoor, in de container van de Steam
+Linux Runtime die de Proton-build van de tool noemt (`require_tool_appid` in
+zijn `toolmanifest.vdf`), zoals Steam het spel start. Die runtime moet in een
+Steam-bibliotheek geïnstalleerd zijn; anders stopt de run en noemt hij de
+Steam-app die je moet installeren. `eidos prereqs` draait winetricks nog steeds
+op de host, en een tool met `runner=native` negeert de sleutel. De container
+ziet je thuismap en de Steam-bibliotheek van het spel. Een tool, mod of runtime
+ergens anders, bijvoorbeeld op een andere schijf, heeft
+`env=STEAM_COMPAT_MOUNTS=/dat/pad` nodig (meerdere paden gescheiden door `:`).
+Een Proton-build onder `/usr/share/steam/compatibilitytools.d` is met `slr=1`
+waarschijnlijk niet bruikbaar, omdat `/usr` in de container die van de runtime
+is. Een toolrun in de container is nog niet getest.
+
+`eidos tool <instance> run <title> --print` toont het uiteindelijke commando en
+elke variabele die de draai boven op de geërfde omgeving zet, deze regels
+inbegrepen.
 
 ## De eigen instellingen van een tool blijven de zijne
 

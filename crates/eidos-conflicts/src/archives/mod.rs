@@ -103,10 +103,14 @@ struct Directory<R> {
     budget: u64,
     requested: Option<String>,
     selected: Option<(String, Payload)>,
+    /// Every member's payload, in directory order, for whole-archive extraction.
+    every: Option<Vec<(String, Payload)>>,
 }
 impl<R: Read + Seek> Directory<R> {
     fn select(&mut self, name: &str, payload: Payload) {
-        if self
+        if let Some(every) = &mut self.every {
+            every.push((name.to_owned(), payload));
+        } else if self
             .requested
             .as_deref()
             .is_some_and(|s| s.eq_ignore_ascii_case(name))
@@ -161,12 +165,35 @@ fn path(bytes: &[u8]) -> Result<String> {
 pub fn read_archive_members(path: &Path) -> Result<Vec<String>> {
     read_members(File::open(path)?)
 }
+/// Members of a general-type BA2 that hold `.wav` or `.xwm` audio stored
+/// zlib-compressed. Fallout 4 and Fallout 4 VR read that audio uncompressed, and
+/// a compressed entry can crash the game. Texture BA2s, BSAs and other BA2
+/// variants give an empty list.
+pub fn compressed_audio_members(path: &Path) -> Result<Vec<String>> {
+    let mut file = File::open(path)?;
+    let mut head = [0; 12];
+    if file.read_exact(&mut head).is_err() || &head[..4] != b"BTDX" || &head[8..] != b"GNRL" {
+        return Ok(Vec::new());
+    }
+    let (d, _) = parse_directory(file, None, true)?;
+    Ok(d.every
+        .into_iter()
+        .flatten()
+        .filter(|(name, payload)| {
+            let name = name.to_ascii_lowercase();
+            matches!(payload, Payload::General(s) if s.codec == Codec::Zlib)
+                && (name.ends_with(".wav") || name.ends_with(".xwm"))
+        })
+        .map(|(name, _)| name)
+        .collect())
+}
 fn read_members<R: Read + Seek>(reader: R) -> Result<Vec<String>> {
-    Ok(parse_directory(reader, None)?.1)
+    Ok(parse_directory(reader, None, false)?.1)
 }
 fn parse_directory<R: Read + Seek>(
     mut reader: R,
     requested: Option<&str>,
+    every: bool,
 ) -> Result<(Directory<R>, Vec<String>)> {
     let len = reader.seek(SeekFrom::End(0))?;
     let mut d = Directory {
@@ -175,6 +202,7 @@ fn parse_directory<R: Read + Seek>(
         budget: MAX_DIRECTORY,
         requested: requested.map(|s| path(s.as_bytes())).transpose()?,
         selected: None,
+        every: every.then(Vec::new),
     };
     let magic = d.read(0, 4)?;
     let members = match magic.as_slice() {
@@ -341,7 +369,7 @@ fn ba2<R: Read + Seek>(d: &mut Directory<R>) -> Result<Vec<String>> {
         match u32_at(&d.read(32, 4)?, 0) {
             0 => Codec::Zlib,
             3 => Codec::Lz4Block,
-            method if d.requested.is_some() => {
+            method if d.requested.is_some() || d.every.is_some() => {
                 return Err(ArchiveError::Unsupported(format!(
                     "BA2 compression method {method}"
                 )))

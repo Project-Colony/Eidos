@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=21bf9773a77eafde0226799b69158680985f3963 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -107,7 +107,7 @@ Porovnává se podřetězec názvu bez ohledu na velikost písmen.
 | `bodyslide`, `outfit` | `d3dx9_43`, `d3dcompiler_47` |
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
-| `synthesis` | `dotnet8`, `vcrun2022` |
+| `synthesis` | `dotnetsdk10`, `vcrun2022` |
 | `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
@@ -136,13 +136,40 @@ Nic není třeba dělat, žádná síť.
 `dotnet48`, `xact`...). Ty zapisují klíče registru, GAC a CLR hosty, takže je
 nelze zkopírovat jako soubory. **Stahují se od Microsoftu.**
 
-**Úroveň 3 - runtimes** (`dotnet10`). Moderní běhové prostředí .NET je 193
+**Úroveň 3 - runtimes** (`dotnet10`, `dotnetsdk10`). Moderní běhové prostředí .NET je 193
 souborů, které žijí ve vlastním adresáři a hledají se přes `DOTNET_ROOT`: nikdy
 se neregistrují, do prefixu se vůbec neinstalují, takže je neunese ani jedna z
 ostatních úrovní. Eidos si ho stáhne sám, ověří proti kontrolnímu součtu
 zabudovanému do binárky a uloží do mezipaměti v
 `~/.local/share/Colony/Eidos/runtimes/` - **mimo jakoukoli instanci**, protože
 78 MB není zvlášť pro každou hru ani pro každý profil.
+
+`dotnetsdk10` je .NET 10 SDK: 301 MB ke stažení, po rozbalení 808 MB. Synthesis
+ho potřebuje ke kompilaci svých patcherů a k jejich sestavení a spuštění volá
+holé `dotnet`, takže nástroj, který deklaruje `dotnetsdk10`, dostane navíc
+složku SDK v `WINEPATH` a k tomu `NUGET_CERT_REVOCATION_MODE=offline`,
+`DOTNET_GENERATE_ASPNET_CERTIFICATE=false` a `DOTNET_CLI_TELEMETRY_OPTOUT=1`.
+Sestavení patcheru by po sobě nechalo běžet uzly MSBuild a server VBCSCompiler,
+které pod Wine drží wineserver prefixu naživu, proto nástroj dostane i
+`MSBUILDDISABLENODEREUSE=1`, `DOTNET_CLI_USE_MSBUILD_SERVER=0` a
+`UseSharedCompilation=false`. `DOTNET_ROLL_FORWARD=Major` dovolí patcheru
+sestavenému pro .NET 8 (Mutagen před 0.54) běžet na runtime .NET 10 ze SDK, když
+se žádný runtime .NET 8 nenajde.
+Záznam Synthesis v `tools.ini`, který má pořád starou výchozí hodnotu `dotnet8`,
+`vcrun2022`, dostane při načtení Eidosem `dotnetsdk10`, `vcrun2022`.
+
+NuGet ověřuje podpis každého balíčku, který obnovuje, proti úložišti kořenových
+certifikátů Windows, a v prefixu Wine chybí kořenové certifikáty pro
+podepisování kódu a časová razítka, které SDK dodává jako
+`sdk/10.0.403/trustedroots/codesignctl.pem` a `timestampctl.pem`. Bez nich
+obnova `Mutagen.Bethesda.Synthesis` 0.36.6 selže s chybami `NU3018` a `NU3028`.
+Proto když nástroj deklaruje `dotnetsdk10` a SDK je stažené, Eidos před jeho
+spuštěním přidá 385 certifikátů z obou souborů do úložiště kořenových
+certifikátů aktuálního uživatele v prefixu hry, a to ve stejném importu přes
+`regedit`, který zapisuje cestu ke hře (viz níže). Pokud některý z nich zmizí,
+importuje je znovu. Těmto kořenovým certifikátům pak důvěřuje každý program pro
+Windows v tomto prefixu. S nimi v novém prefixu a s prázdnou mezipamětí NuGet
+stejná obnova i sestavení projdou se systémovým Wine 11.21 i s GE-Proton11-9.
 
 Nic z úrovně 2 ani 3 neběží potichu:
 
@@ -306,6 +333,69 @@ který se stejně už stavěl - `SteamAppId` a `SteamGameId`, obě, protože Pro
 čte jednu a vlastní knihovny Steamu druhou, a nástroj, který je vidí
 nesouhlasit, selže podivně místo jasně. `eidos tool ... --print` ukáže přesně to,
 co by skutečný běh dostal.
+
+## Proměnné prostředí a nástroje spuštěné bez Protonu
+
+Tři klíče v `<instance>/tools.ini` zatím nemají v dialogu Executables žádné
+pole, takže je do sekce nástroje dopište ručně. Každý řádek `env=NAME=value`
+nastaví jednu proměnnou jen pro běhy tohoto nástroje:
+
+```ini
+[Tool/BodySlide]
+exe=Data/CalienteTools/BodySlide/BodySlide x64.exe
+env=PROTON_LOG=1
+env=WINEDEBUG=-all
+```
+
+Eidos tyto řádky použije až po všem, co nastavuje sám, takže hodnota zadaná tady
+nahradí tu jeho. To platí i pro `WINEDLLOVERRIDES`, který Eidos skládá z DLL
+dodaných vašimi módy: nástroj, který ho nastaví, v něm musí uvést každou DLL,
+kterou potřebuje. Jméno tvoří písmena, číslice a `_` a nezačíná číslicí. Řádek
+s jiným jménem se ignoruje.
+
+`runner=native` spustí přímo `exe`, bez Protonu. Sloučený pohled se připojí jako
+u každého nástroje a řádky `arg0=`, `arg1=` jsou jeho argumenty. Použijte to pro
+linuxový program nebo pro nástroj ke kopii, kterou nespravuje Steam a pro kterou
+Heroic nemá zapsaný žádný runner: `exe` je Wine této kopie, program pro Windows
+je první argument a prefix přijde z `env=`.
+
+```ini
+[Tool/SSEEdit (GOG)]
+exe=/opt/wine-ge/bin/wine
+arg0=/home/me/Games/Skyrim/SSEEdit.exe
+workdir=/home/me/Games/Skyrim
+runner=native
+env=WINEPREFIX=/home/me/Games/Heroic/Prefixes/default/Skyrim
+```
+
+`exe` musí být absolutní cesta. Pracovní adresář je ve výchozím stavu složka, ve
+které leží `exe`, tady tedy složka runneru, a proto nastavte `workdir=`. Na
+sloučenou cestu se přepisuje jen `exe`: u programu pro Windows uvnitř módu
+zadejte jeho cestu ve složce `Data` hry, kde ho ukazuje sloučený pohled. Nativní
+nástroj vynechá kroky pro Proton: klíč registru popsaný výše, shader cache
+Steamu, prázdné kořeny .NET a odstranění overlaye Steamu z `LD_PRELOAD`.
+
+U kopie z GOG nebo Epicu nainstalované přes Heroic takový záznam nástroje
+nepotřebují, pokud nastavení hry v Heroicu (`GamesConfig/<appName>.json`) uvádí
+build Wine nebo Protonu: Eidos je spustí s tímto buildem v prefixu hry
+z Heroicu a `eidos prereqs <instance> --install` ho předá winetricks. Kopie
+nainstalovaná jen přes Legendary žádná nastavení Heroicu nemá.
+
+`slr=1` spustí nástroj i import do registru před ním uvnitř kontejneru Steam
+Linux Runtime, který jmenuje Proton nástroje (`require_tool_appid` v jeho
+`toolmanifest.vdf`), stejně jako Steam spouští hru. Tento runtime musí být
+nainstalovaný v některé knihovně Steamu; pokud není, běh se zastaví a uvede
+aplikaci Steamu, kterou je třeba nainstalovat. `eidos prereqs` dál spouští
+winetricks na hostiteli a nástroj s `runner=native` tento klíč ignoruje.
+Kontejner vidí vaši domovskou složku a knihovnu Steamu se hrou. Nástroj, mod
+nebo runtime kdekoli jinde, například na jiném disku, potřebuje
+`env=STEAM_COMPAT_MOUNTS=/ta/cesta` (více cest oddělte `:`). Proton
+nainstalovaný v `/usr/share/steam/compatibilitytools.d` s `slr=1` nejspíš použít
+nepůjde, protože `/usr` uvnitř kontejneru patří runtimu. Běh nástroje uvnitř
+kontejneru zatím nebyl testován.
+
+`eidos tool <instance> run <title> --print` ukáže výsledný příkaz a každou
+proměnnou, kterou běh nastaví nad zděděné prostředí, včetně těchto řádků.
 
 ## Vlastní nastavení nástroje zůstává jeho
 

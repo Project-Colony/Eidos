@@ -5,14 +5,10 @@ body:
   - type: markdown
     attributes:
       value: |
-        Three answers settle most Eidos reports before anyone reads the code: the
-        **launch capability**, the **distro and Steam packaging**, and **how the
-        game was launched**. They are the required fields below. Everything else
-        is optional.
-
-        The GUI can answer most of this for you: open the **Diagnostics** tab
-        (it counts problems in the tab label) and press **F5** to re-run the
-        checks.
+        The diagnostic report answers most questions up front: distro, kernel,
+        Proton build, Steam packaging, FUSE state and the Health checks. In the
+        GUI, open the **Diagnostics** tab and press **Copy report**, then paste it
+        below. Everything else is optional.
 
   - type: textarea
     id: what-happened
@@ -25,36 +21,40 @@ body:
     validations:
       required: true
 
-  # The single most common cause of "my mods do not load". CAP_SYS_ADMIN on the
-  # eidos binary is what enables FUSE kernel passthrough; without it Eidos still
-  # runs (rootless fallback) but script-extender DLLs may fail to image-map, and
-  # the only symptom in-game is mods mysteriously missing. Every rebuild or
-  # reinstall wipes it, so it goes stale silently. Ask first, always.
+  - type: textarea
+    id: report
+    attributes:
+      label: Diagnostic report
+      description: |
+        Diagnostics tab, **Copy report** button. Home paths and your user name
+        are replaced before it is copied. CLI only? Say so and fill in the
+        optional system fields further down.
+      render: text
+    validations:
+      required: true
+
+  # The launch capability is optional: it only enables FUSE passthrough, which
+  # is off by default. The report already says whether it was requested.
   - type: textarea
     id: getcap
     attributes:
-      label: Output of getcap on your eidos binary
+      label: Output of getcap on your eidos binary (optional)
       description: |
-        Run this and paste the whole output, including empty output:
+        Only useful if you turned FUSE passthrough on (`EIDOS_FUSE_PASSTHROUGH=1`):
 
         ```sh
         which eidos && getcap "$(command -v eidos)"
         ```
 
-        A healthy install prints something ending in `cap_sys_admin=ep`. **Empty
-        output means the capability is missing** - that alone explains mods not
-        loading and script-extender plugins failing. Fix it with:
+        A binary that has the capability prints something ending in
+        `cap_sys_admin=ep`. Empty output means it is missing. Grant it with:
 
         ```sh
         sudo setcap cap_sys_admin+ep "$(command -v eidos)"
         ```
-
-        then press F5 in the GUI and re-test before filing. If `getcap` is not
-        installed: `libcap` on Arch/Fedora, `libcap2-bin` on Debian/Ubuntu,
-        `libcap-progs` on openSUSE.
       render: shell
     validations:
-      required: true
+      required: false
 
   - type: dropdown
     id: cap-state
@@ -67,7 +67,7 @@ body:
         - "I only use the CLI, no GUI"
         - "I could not tell"
     validations:
-      required: true
+      required: false
 
   # Distro, kernel and Steam packaging together decide whether the mount can even
   # work: user namespaces are gated differently per distro, FUSE support varies by
@@ -84,7 +84,7 @@ body:
         ```
       render: shell
     validations:
-      required: true
+      required: false
 
   - type: dropdown
     id: steam-packaging
@@ -99,7 +99,7 @@ body:
         - "Not using Steam"
         - "Not sure"
     validations:
-      required: true
+      required: false
 
   # The game and the launch path determine which code ran at all: `eidos play`
   # from a Steam launch option, the GUI's Run button, or a bare CLI invocation
@@ -123,7 +123,7 @@ body:
         - "Starfield (starfield)"
         - "Other / not listed"
     validations:
-      required: true
+      required: false
 
   - type: textarea
     id: launch

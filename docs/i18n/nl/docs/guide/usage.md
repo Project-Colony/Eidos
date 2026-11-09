@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c007e61144ed8abc1a9ab52e7bf18c6af3a6f5f5 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
 
 # Eidos gebruiken
 
@@ -96,6 +96,12 @@ binnen een privénaamruimte, en draait de opdracht dan door die weergave.
 Schrijfacties (saves, opnieuw gegenereerde configs) landen in de
 `overwrite/`-laag van de instantie; de spelinstallatie en elke modbron blijven
 byte voor byte ongerept.
+
+### Wabbajack-lijsten
+
+Eidos heeft geen Wabbajack-installatieprogramma. Installeer de lijst met CLF3 of Jackify, buiten Eidos, en kies de installatiemap in de wizard als draagbare instantie. Eidos leest de map in de indeling van MO2: `mods/`, `profiles/<naam>/modlist.txt` en de pluginlijsten. Het `ModOrganizer.ini` dat het installatieprogramma schreef blijft staan en wordt nooit overschreven, zodat de eigen programma's van de lijst geregistreerd blijven.
+
+Veel lijsten voegen een map `Stock Game` of `Game Root` toe met een aangepaste kopie van het spel, en MO2 start het spel vandaar. Eidos start de Steam-installatie en heeft geen instelling voor een andere spelmap. Vindt de wizard zo'n map, dan meldt hij dat op het overzichtsscherm en doet verder niets: verplaats zelf wat de lijst daar heeft neergezet naar de map `Root/` van een mod. CLF3 bouwt BSA- en DDS-bestanden opnieuw op met eigen hulpmiddelen, dus het resultaat kan afwijken van een Wabbajack-installatie, en lijstauteurs ondersteunen het niet.
 
 ### De modlijst
 

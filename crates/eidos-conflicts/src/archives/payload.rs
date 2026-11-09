@@ -59,31 +59,45 @@ pub fn write_archive_member(
     output: &mut impl Write,
 ) -> Result<ArchiveMemberInfo> {
     let identity = ArchiveIdentity::for_file(file)?;
-    let (mut d, _) = parse_directory(file, Some(member))?;
+    let (mut d, _) = parse_directory(file, Some(member), false)?;
     let (name, payload) = d
         .selected
         .take()
         .ok_or_else(|| corrupt("member is absent from archive"))?;
-    let size = match payload {
-        Payload::General(segment) => decode(&mut d.reader, &segment, max_bytes, output)?,
+    let size = write_payload(&mut d.reader, payload, max_bytes, output)?;
+    identity.verify_file(d.reader)?;
+    Ok(ArchiveMemberInfo {
+        member: name,
+        bytes_written: size,
+    })
+}
+/// Decodes one member's payload located by the directory parser.
+pub(super) fn write_payload<R: Read + Seek>(
+    reader: &mut R,
+    payload: Payload,
+    max_bytes: u64,
+    output: &mut impl Write,
+) -> Result<u64> {
+    match payload {
+        Payload::General(segment) => decode(reader, &segment, max_bytes, output),
         Payload::Bsa {
             mut segment,
             prefixed,
         } => {
-            d.reader.seek(SeekFrom::Start(segment.offset))?;
+            reader.seek(SeekFrom::Start(segment.offset))?;
             if prefixed {
                 let mut len = [0];
                 if segment.stored == 0 {
                     return Err(corrupt("missing embedded filename"));
                 }
-                d.reader.read_exact(&mut len)?;
+                reader.read_exact(&mut len)?;
                 let prefix = u64::from(len[0]) + 1;
                 segment.stored = segment
                     .stored
                     .checked_sub(prefix)
                     .ok_or_else(|| corrupt("embedded filename exceeds member"))?;
                 let mut embedded = vec![0; len[0] as usize];
-                d.reader.read_exact(&mut embedded)?;
+                reader.read_exact(&mut embedded)?;
                 // The embedded filename is metadata only and is never used as an output path.
                 path(embedded.strip_suffix(&[0]).unwrap_or(&embedded))?;
                 segment.offset += prefix;
@@ -95,19 +109,14 @@ pub fn write_archive_member(
                     .checked_sub(4)
                     .ok_or_else(|| corrupt("missing uncompressed size"))?;
                 let mut size = [0; 4];
-                d.reader.read_exact(&mut size)?;
+                reader.read_exact(&mut size)?;
                 segment.unpacked = u32::from_le_bytes(size) as u64;
                 segment.offset += 4;
             }
-            decode(&mut d.reader, &segment, max_bytes, output)?
+            decode(reader, &segment, max_bytes, output)
         }
-        Payload::Texture(texture) => texture.write(&mut d.reader, max_bytes, output)?,
-    };
-    identity.verify_file(d.reader)?;
-    Ok(ArchiveMemberInfo {
-        member: name,
-        bytes_written: size,
-    })
+        Payload::Texture(texture) => texture.write(reader, max_bytes, output),
+    }
 }
 fn limit(size: u64, max: u64) -> Result<()> {
     if size > max {

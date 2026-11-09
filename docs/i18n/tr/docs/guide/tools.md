@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=21bf9773a77eafde0226799b69158680985f3963 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -111,7 +111,7 @@ dizesidir.
 | `bodyslide`, `outfit` | `d3dx9_43`, `d3dcompiler_47` |
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
-| `synthesis` | `dotnet8`, `vcrun2022` |
+| `synthesis` | `dotnetsdk10`, `vcrun2022` |
 | `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
@@ -142,13 +142,44 @@ istege bagli olmadigi [asagisi](#pgpatcher-neden---ignore-mo2vfscheck-ister).
 barındırıcılarını yazar, dolayısıyla dosya kopyalanarak halledilemezler.
 **Microsoft'tan indirirler**.
 
-**Kademe 3 - çalışma zamanları** (`dotnet10`). Modern bir .NET çalışma zamanı,
+**Kademe 3 - çalışma zamanları** (`dotnet10`, `dotnetsdk10`). Modern bir .NET çalışma zamanı,
 kendi dizininde duran ve `DOTNET_ROOT` üzerinden bulunan 193 dosyadır: hiç
 kaydedilmez, öneke hiçbir biçimde kurulmaz, dolayısıyla diğer iki kademeden
 hiçbiri onu taşıyamaz. Eidos onu kendi indirir, ikili dosyaya gömülü bir sağlama
 toplamına karşı denetler ve `~/.local/share/Colony/Eidos/runtimes/` içinde
 önbelleğe alır - **herhangi bir örneğin dışında**, çünkü 78 MB ne oyun başınadır
 ne de profil başına.
+
+`dotnetsdk10`, .NET 10 SDK'sıdır: indirmesi 301 MB, açıldığında 808 MB.
+Synthesis patcher'larını derlemek için buna ihtiyaç duyar ve onları derleyip
+çalıştırmak için yolsuz bir `dotnet` çağırır; bu yüzden `dotnetsdk10` bildiren
+bir araç ayrıca `WINEPATH` üzerinde SDK klasörünü, bir de
+`NUGET_CERT_REVOCATION_MODE=offline`, `DOTNET_GENERATE_ASPNET_CERTIFICATE=false`
+ve `DOTNET_CLI_TELEMETRY_OPTOUT=1` değerlerini alır.
+Bir patcher derlemesi MSBuild düğümlerini ve VBCSCompiler sunucusunu çalışır
+halde bırakırdı ve Wine altında bunlar önekin wineserver'ını canlı tutar; bu
+yüzden araç ayrıca `MSBUILDDISABLENODEREUSE=1`,
+`DOTNET_CLI_USE_MSBUILD_SERVER=0` ve `UseSharedCompilation=false` değerlerini de
+alır. `DOTNET_ROLL_FORWARD=Major`, .NET 8 için derlenmiş bir patcher'ın (0.54
+öncesi Mutagen) hiçbir .NET 8 çalışma zamanı bulunamadığında SDK'nın .NET 10
+çalışma zamanında çalışmasını sağlar.
+`tools.ini` içinde hâlâ
+eski varsayılanı, `dotnet8`, `vcrun2022` taşıyan bir Synthesis girdisi, Eidos
+onu okurken `dotnetsdk10`, `vcrun2022` olur.
+
+NuGet geri yüklediği her paketin imzasını Windows kök sertifika deposuna göre
+denetler ve bir Wine önekinde, SDK'nın
+`sdk/10.0.403/trustedroots/codesignctl.pem` ve `timestampctl.pem` olarak
+getirdiği kod imzalama ve zaman damgası kökleri yoktur. Bunlar olmadan
+`Mutagen.Bethesda.Synthesis` 0.36.6 geri yüklemesi `NU3018` ve `NU3028`
+hatalarıyla başarısız olur. Bu yüzden Eidos, `dotnetsdk10` bildiren bir aracı
+çalıştırmadan önce ve SDK indirilmişse, iki dosyadaki 385 sertifikayı oyunun
+önekindeki geçerli kullanıcının kök sertifika deposuna ekler; bunu oyun yolunu
+yazan aynı `regedit` aktarımında yapar (aşağıya bakın). Biri kaybolursa onları
+yeniden aktarır. Bundan sonra o önekteki her Windows programı bu köklere
+güvenir. Bunlarla, yeni bir önekte ve boş bir NuGet önbelleğiyle, aynı geri
+yükleme ve derleme sistemdeki Wine 11.21 ile de GE-Proton11-9 ile de başarılı
+olur.
 
 Kademe 2 ya da 3'te hiçbir şey sessizce çalışmaz:
 
@@ -318,6 +349,72 @@ Windows'ta bu, farklı bir başlatıcı demektir. Burada ise zaten kurulmakta ol
 kitaplıkları okur ve ikisini uyuşmaz gören bir araç, açıkça değil tuhaf biçimde
 başarısız olur. `eidos tool ... --print` gerçek çalıştırmanın tam olarak neyi
 alacağını gösterir.
+
+## Ortam değişkenleri ve Proton'suz çalışan araçlar
+
+`<instance>/tools.ini` içindeki üç anahtarın Executables penceresinde henüz bir
+alanı yok; bu yüzden onları aracın bölümüne elle ekleyin. Her `env=NAME=value`
+satırı, yalnızca o aracın çalıştırmaları için bir değişken ayarlar:
+
+```ini
+[Tool/BodySlide]
+exe=Data/CalienteTools/BodySlide/BodySlide x64.exe
+env=PROTON_LOG=1
+env=WINEDEBUG=-all
+```
+
+Eidos bu satırları kendi ayarladığı her şeyden sonra uygular; bu yüzden burada
+verilen bir değer Eidos'un kendi değerinin yerini alır. Buna, Eidos'un
+modlarınızın getirdiği DLL'lerden kurduğu `WINEDLLOVERRIDES` de dahildir: bunu
+ayarlayan bir araç, ihtiyaç duyduğu her DLL'i içinde listelemelidir. Bir ad
+harflerden, rakamlardan ve `_` karakterinden oluşur ve rakamla başlamaz. Başka
+bir ada sahip satır yok sayılır.
+
+`runner=native`, `exe`'yi Proton olmadan doğrudan çalıştırır. Birleşik görünüm
+her araçta olduğu gibi bağlanır ve `arg0=`, `arg1=` satırları onun
+argümanlarıdır. Bunu bir Linux programı için ya da Steam'in yönetmediği ve
+Heroic'in çalıştırıcı kaydetmediği bir kopyanın aracı için kullanın: `exe` o
+kopyanın Wine'ıdır, Windows programı ilk argümandır ve önek `env=` ile gelir.
+
+```ini
+[Tool/SSEEdit (GOG)]
+exe=/opt/wine-ge/bin/wine
+arg0=/home/me/Games/Skyrim/SSEEdit.exe
+workdir=/home/me/Games/Skyrim
+runner=native
+env=WINEPREFIX=/home/me/Games/Heroic/Prefixes/default/Skyrim
+```
+
+`exe` mutlak bir yol olmalıdır. Çalışma dizini varsayılan olarak `exe`'nin
+bulunduğu klasördür, burada çalıştırıcınınki, bu yüzden `workdir=` ayarlayın.
+Birleşik yoluna yalnızca `exe` yeniden yazılır: bir modun içindeki Windows
+programı için, birleşik görünümün onu gösterdiği oyunun `Data` klasörü altındaki
+yolunu verin. Yerel bir araç Proton adımlarını atlar: yukarıdaki kayıt defteri
+anahtarı, Steam'in shader önbelleği, boş .NET kökleri ve Steam katmanının
+`LD_PRELOAD`'dan çıkarılması.
+
+Heroic ile kurulmuş bir GOG ya da Epic kopyasında, oyunun Heroic ayarları
+(`GamesConfig/<appName>.json`) bir Wine ya da Proton sürümü belirtiyorsa
+araçların böyle bir girdiye ihtiyacı yoktur: Eidos onları bu sürümle oyunun
+Heroic önekinde çalıştırır ve `eidos prereqs <instance> --install` bu sürümü
+winetricks'e verir. Yalnızca Legendary ile kurulmuş bir kopyanın Heroic
+ayarları yoktur.
+
+`slr=1`, aracı ve ondan önceki kayıt defteri aktarımını, aracın Proton sürümünün
+belirttiği Steam Linux Runtime kapsayıcısı içinde başlatır (`toolmanifest.vdf`
+dosyasındaki `require_tool_appid`); Steam oyunu da böyle başlatır. Bu çalışma
+zamanı bir Steam kitaplığında kurulu olmalıdır; değilse çalıştırma durur ve
+kurulması gereken Steam uygulamasını söyler. `eidos prereqs` winetricks'i yine
+ana makinede çalıştırır ve `runner=native` olan bir araç bu anahtarı yok sayar.
+Kapsayıcı ev klasörünüzü ve oyunun Steam kitaplığını görür. Başka bir yerdeki,
+örneğin başka bir sürücüdeki bir araç, mod ya da çalışma zamanı için
+`env=STEAM_COMPAT_MOUNTS=/o/yol` gerekir (birden çok yol `:` ile ayrılır).
+`/usr/share/steam/compatibilitytools.d` altına kurulmuş bir Proton, kapsayıcı
+içindeki `/usr` çalışma zamanına ait olduğundan, büyük olasılıkla `slr=1` ile
+kullanılamaz. Kapsayıcı içinde bir araç çalıştırması henüz denenmedi.
+
+`eidos tool <instance> run <title> --print`, son komutu ve çalıştırmanın
+devralınan ortamın üzerine ayarladığı her değişkeni, bu satırlar dahil, gösterir.
 
 ## Bir aracın kendi ayarları yine kendisinindir
 

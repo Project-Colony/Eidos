@@ -150,6 +150,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.log_pane = Some(load_log_pane(files, current, level));
             }
         }
+        Message::CopyHealthReport => {
+            let text = health_report(&report_facts(app), &app.diag);
+            app.status = Some(t("status_report_copied").to_string());
+            return iced::clipboard::write(text);
+        }
         Message::LogCopy => {
             let Some(pane) = &app.log_pane else {
                 return Task::none();

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=21bf9773a77eafde0226799b69158680985f3963 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
 
 # Strumenti: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -113,7 +113,7 @@ tra maiuscole e minuscole.
 | `bodyslide`, `outfit` | `d3dx9_43`, `d3dcompiler_47` |
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
-| `synthesis` | `dotnet8`, `vcrun2022` |
+| `synthesis` | `dotnetsdk10`, `vcrun2022` |
 | `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
@@ -143,13 +143,44 @@ ne richiede uno che nessuno potrebbe indovinare: un titolo che contiene
 `dotnet48`, `xact`...). Scrivono chiavi di registro, la GAC e gli host CLR,
 quindi non possono essere copiati come file. **Scaricano da Microsoft**.
 
-**Livello 3 - runtime** (`dotnet10`). Un runtime .NET moderno è fatto di 193 file
+**Livello 3 - runtime** (`dotnet10`, `dotnetsdk10`). Un runtime .NET moderno è fatto di 193 file
 che vivono in una directory propria e vengono trovati attraverso `DOTNET_ROOT`:
 mai registrati, mai installati nel prefisso, quindi nessuno degli altri due
 livelli può trasportarlo. Eidos lo scarica da sé, lo verifica contro un checksum
 incorporato nel binario, e lo mette in cache in
 `~/.local/share/Colony/Eidos/runtimes/` - **fuori da ogni istanza**, perché 78 MB
 non sono per gioco né per profilo.
+
+`dotnetsdk10` è l'SDK di .NET 10: 301 MB da scaricare, 808 MB una volta
+estratto. Synthesis ne ha bisogno per compilare i suoi patcher, e per costruirli
+ed eseguirli chiama un `dotnet` senza percorso, quindi uno strumento che
+dichiara `dotnetsdk10` riceve anche la cartella dell'SDK in `WINEPATH`, più
+`NUGET_CERT_REVOCATION_MODE=offline`, `DOTNET_GENERATE_ASPNET_CERTIFICATE=false`
+e `DOTNET_CLI_TELEMETRY_OPTOUT=1`.
+La compilazione di un patcher lascerebbe in esecuzione nodi MSBuild e il server
+VBCSCompiler, che sotto Wine tengono in vita il wineserver del prefisso, quindi
+lo strumento riceve anche `MSBUILDDISABLENODEREUSE=1`,
+`DOTNET_CLI_USE_MSBUILD_SERVER=0` e `UseSharedCompilation=false`.
+`DOTNET_ROLL_FORWARD=Major` permette a un patcher compilato per .NET 8 (Mutagen
+prima della 0.54) di girare sul runtime .NET 10 dell'SDK quando non si trova
+nessun runtime .NET 8.
+Una voce di Synthesis in `tools.ini` che
+riporta ancora il vecchio valore predefinito, `dotnet8`, `vcrun2022`, passa a
+`dotnetsdk10`, `vcrun2022` quando Eidos la legge.
+
+NuGet verifica la firma di ogni pacchetto che ripristina rispetto all'archivio
+delle radici di Windows, e a un prefisso Wine mancano le radici di firma del
+codice e di marca temporale che l'SDK fornisce come
+`sdk/10.0.403/trustedroots/codesignctl.pem` e `timestampctl.pem`. Senza di esse,
+il ripristino di `Mutagen.Bethesda.Synthesis` 0.36.6 fallisce con `NU3018` e
+`NU3028`. Per questo, prima di avviare uno strumento che dichiara `dotnetsdk10`,
+e una volta scaricato l'SDK, Eidos aggiunge i 385 certificati dei due file
+all'archivio delle radici dell'utente corrente nel prefisso del gioco, nella
+stessa importazione con `regedit` che scrive il percorso del gioco (vedi sotto).
+Se uno manca, li importa di nuovo. Da quel momento ogni programma Windows in
+quel prefisso si fida di queste radici. Con esse, in un prefisso nuovo e con la
+cache di NuGet vuota, lo stesso ripristino e la compilazione riescono con il
+Wine 11.21 di sistema e con GE-Proton11-9.
 
 Niente nei livelli 2 o 3 gira in sordina:
 
@@ -319,6 +350,74 @@ d'ambiente sull'esecuzione che si stava già costruendo - `SteamAppId` e
 l'altra, e uno strumento che le vede in disaccordo fallisce in modo strano invece
 che chiaro. `eidos tool ... --print` mostra esattamente ciò che riceverebbe
 l'esecuzione vera.
+
+## Variabili d'ambiente e strumenti avviati senza Proton
+
+Tre chiavi di `<instance>/tools.ini` non hanno ancora un campo nella finestra
+Executables, quindi aggiungile a mano nella sezione dello strumento. Ogni riga
+`env=NAME=value` imposta una variabile solo per le esecuzioni di quello
+strumento:
+
+```ini
+[Tool/BodySlide]
+exe=Data/CalienteTools/BodySlide/BodySlide x64.exe
+env=PROTON_LOG=1
+env=WINEDEBUG=-all
+```
+
+Eidos applica queste righe dopo tutto ciò che imposta da sé, quindi un valore
+messo qui sostituisce il suo. Vale anche per il `WINEDLLOVERRIDES` che Eidos
+costruisce dalle DLL fornite dalle tue mod: uno strumento che lo imposta deve
+elencarvi ogni DLL di cui ha bisogno. Un nome è fatto di lettere, cifre e `_`, e
+non comincia con una cifra. Una riga con qualsiasi altro nome viene ignorata.
+
+`runner=native` avvia `exe` direttamente, senza Proton. La vista unita viene
+montata come per ogni strumento, e le righe `arg0=`, `arg1=` sono i suoi
+argomenti. Usalo per un programma Linux, o per uno strumento su una copia che
+Steam non gestisce e per cui Heroic non registra alcun runner: `exe` è il Wine
+di quella copia, il programma Windows è il primo argomento e il prefisso arriva
+da `env=`.
+
+```ini
+[Tool/SSEEdit (GOG)]
+exe=/opt/wine-ge/bin/wine
+arg0=/home/me/Games/Skyrim/SSEEdit.exe
+workdir=/home/me/Games/Skyrim
+runner=native
+env=WINEPREFIX=/home/me/Games/Heroic/Prefixes/default/Skyrim
+```
+
+`exe` deve essere un percorso assoluto. La cartella di lavoro predefinita è
+quella che contiene `exe`, qui quella del runner, quindi imposta `workdir=`.
+Solo `exe` viene riscritto nel suo percorso unito: per un programma Windows
+dentro una mod, indica il suo percorso sotto la cartella `Data` del gioco, dove
+la vista unita lo mostra. Uno strumento nativo salta i passaggi di Proton: la
+chiave di registro descritta sopra, la cache degli shader di Steam, le radici
+.NET vuote e la rimozione dell'overlay di Steam da `LD_PRELOAD`.
+
+Su una copia GOG o Epic installata con Heroic, gli strumenti non hanno bisogno
+di questa voce se le impostazioni Heroic del gioco (`GamesConfig/<appName>.json`)
+indicano una build di Wine o Proton: Eidos li avvia con quella build nel
+prefisso Heroic del gioco, e `eidos prereqs <instance> --install` la passa a
+winetricks. Una copia installata solo con Legendary non ha impostazioni Heroic.
+
+`slr=1` avvia lo strumento, e l'importazione nel registro che lo precede, dentro
+il contenitore Steam Linux Runtime indicato dal Proton dello strumento
+(`require_tool_appid` nel suo `toolmanifest.vdf`), come Steam avvia il gioco.
+Quel runtime deve essere installato in una libreria di Steam; altrimenti
+l'esecuzione si ferma e indica l'app di Steam da installare. `eidos prereqs`
+continua a eseguire winetricks sull'host, e uno strumento con `runner=native`
+ignora la chiave. Il contenitore vede la tua cartella home e la libreria di
+Steam del gioco. Uno strumento, una mod o un runtime altrove, per esempio su un
+altro disco, richiede `env=STEAM_COMPAT_MOUNTS=/quel/percorso` (più percorsi
+separati da `:`). Un Proton installato in
+`/usr/share/steam/compatibilitytools.d` probabilmente non è utilizzabile con
+`slr=1`, perché `/usr` dentro il contenitore è quello del runtime. Nessuna
+esecuzione di uno strumento nel contenitore è stata ancora provata.
+
+`eidos tool <instance> run <title> --print` mostra il comando finale e ogni
+variabile che l'esecuzione imposta sopra l'ambiente ereditato, comprese queste
+righe.
 
 ## Le impostazioni di uno strumento restano affar suo
 

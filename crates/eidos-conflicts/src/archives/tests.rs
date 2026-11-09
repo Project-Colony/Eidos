@@ -419,3 +419,29 @@ fn member_conflicts_are_listed_for_mods_never_for_the_base_game() {
 }
 
 include!("payload_tests.rs");
+
+#[test]
+fn compressed_audio_is_reported_only_for_zlib_general_entries() {
+    let dir = std::env::temp_dir().join(format!("eidos-ba2-audio-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let check = |name: &str, bytes: Vec<u8>| {
+        let p = dir.join(name);
+        std::fs::write(&p, bytes).unwrap();
+        compressed_audio_members(&p).unwrap()
+    };
+    // Packed size 0 means stored raw; the fixture entry is packed once set to 1.
+    let packed = |member: &str| {
+        let mut b = ba2_fixture(1, false, member);
+        put32(&mut b, 24 + 24, 1);
+        b
+    };
+    assert_eq!(check("a.ba2", packed("sound/fx/a.wav")), ["sound/fx/a.wav"]);
+    assert_eq!(
+        check("b.ba2", packed("sound/voice/a.XWM")),
+        ["sound/voice/a.XWM"]
+    );
+    assert!(check("c.ba2", packed("meshes/a.nif")).is_empty());
+    assert!(check("d.ba2", ba2_fixture(1, false, "sound/fx/a.wav")).is_empty());
+    assert!(check("e.ba2", ba2_fixture(1, true, "textures/a.dds")).is_empty());
+    let _ = std::fs::remove_dir_all(dir);
+}

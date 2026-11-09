@@ -372,6 +372,82 @@ fn make_root_private() -> std::io::Result<()> {
     })
 }
 
+/// Names the kernel setting that most likely stopped the private namespace
+/// setup (unshare, uid_map writes, making `/` private, bind mounts), with the
+/// command that changes it. Inputs are file contents (`None` when the file is
+/// absent) so each case can be tested; `fuse_error` is the error from opening
+/// `/dev/fuse` read-write. Ubuntu 24.04 lets `unshare` succeed and fails later
+/// with EPERM, so callers should use this for any error out of [`launch`].
+pub fn namespace_block_reason(
+    userns_clone: Option<&str>,
+    max_user_namespaces: Option<&str>,
+    apparmor_restrict: Option<&str>,
+    fuse_error: Option<std::io::ErrorKind>,
+) -> Option<String> {
+    let is = |v: Option<&str>, want: &str| v.is_some_and(|v| v.trim() == want);
+    if is(userns_clone, "0") {
+        return Some(
+            "unprivileged user namespaces are disabled (kernel.unprivileged_userns_clone=0). \
+             Enable them with: sudo sysctl -w kernel.unprivileged_userns_clone=1"
+                .into(),
+        );
+    }
+    if is(max_user_namespaces, "0") {
+        return Some(
+            "the user namespace limit is 0 (user.max_user_namespaces=0). \
+             Raise it with: sudo sysctl -w user.max_user_namespaces=15000"
+                .into(),
+        );
+    }
+    if is(apparmor_restrict, "1") {
+        return Some(
+            "AppArmor restricts unprivileged user namespaces \
+             (kernel.apparmor_restrict_unprivileged_userns=1). \
+             Lift it with: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0"
+                .into(),
+        );
+    }
+    fuse_error.map(|kind| match kind {
+        std::io::ErrorKind::NotFound => "/dev/fuse does not exist. Load the module with: \
+             sudo modprobe fuse"
+            .into(),
+        _ => format!(
+            "/dev/fuse cannot be opened for reading and writing ({kind}). \
+             Check its permissions (normally mode 0666) and your user's access to it"
+        ),
+    })
+}
+
+/// True when `e` is the kind of failure a blocked namespace produces. Anything
+/// else (missing mount point, exec error) has nothing to do with the sysctls.
+pub fn is_namespace_errno(e: &std::io::Error) -> bool {
+    matches!(
+        e.raw_os_error(),
+        Some(libc::EPERM | libc::EACCES | libc::ENOSPC)
+    )
+}
+
+/// [`namespace_block_reason`] fed from the running system, for the launch error
+/// `e`. Returns `None` unless `e` looks like a namespace failure.
+pub fn namespace_block_reason_from_system(e: &std::io::Error) -> Option<String> {
+    if !is_namespace_errno(e) {
+        return None;
+    }
+    let read = |p: &str| std::fs::read_to_string(p).ok();
+    let fuse = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/fuse")
+        .err()
+        .map(|e| e.kind());
+    namespace_block_reason(
+        read("/proc/sys/kernel/unprivileged_userns_clone").as_deref(),
+        read("/proc/sys/user/max_user_namespaces").as_deref(),
+        read("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").as_deref(),
+        fuse,
+    )
+}
+
 /// Enter a private user + mount namespace, mount the union, run the command
 /// through it, then unmount on exit. Returns the command's exit status.
 pub fn launch(mut spec: LaunchSpec) -> std::io::Result<ExitStatus> {
@@ -717,6 +793,77 @@ pub fn utf8_locale_env_from_process() -> Vec<(String, String)> {
     )
 }
 
+/// UTF-8 locale candidates for a Bethesda `sLanguage` value whose ANSI code page
+/// is not 1252 (Russian 1251, Polish/Czech/Hungarian 1250, Turkish 1254,
+/// Japanese 932, Chinese 936/950, Korean 949). Other languages get none.
+/// Skyrim writes long names; Fallout 4 and Starfield write short codes, where
+/// Fallout 4's `cn` is its Traditional Chinese and Starfield's `zhhans` is
+/// Simplified.
+fn language_locales(language: &str) -> &'static [&'static str] {
+    match language.trim().to_ascii_lowercase().as_str() {
+        "russian" | "ru" => &["ru_RU.UTF-8"],
+        "polish" | "pl" => &["pl_PL.UTF-8"],
+        "czech" => &["cs_CZ.UTF-8"],
+        "hungarian" => &["hu_HU.UTF-8"],
+        "turkish" => &["tr_TR.UTF-8"],
+        "japanese" | "ja" => &["ja_JP.UTF-8"],
+        "chinese" | "chinesetraditional" | "chinese_traditional" | "cn" => &["zh_TW.UTF-8"],
+        "chinesesimplified" | "chinese_simplified" | "zhhans" => &["zh_CN.UTF-8"],
+        "korean" => &["ko_KR.UTF-8"],
+        _ => &[],
+    }
+}
+
+/// Whether the C library accepts `name` as a `LC_CTYPE` locale on this host.
+fn locale_installed(name: &str) -> bool {
+    let Ok(c) = std::ffi::CString::new(name) else {
+        return false;
+    };
+    // SAFETY: newlocale takes a valid NUL-terminated name and a null base; a
+    // non-null result is freed right away.
+    let loc = unsafe { libc::newlocale(libc::LC_CTYPE_MASK, c.as_ptr(), std::ptr::null_mut()) };
+    if loc.is_null() {
+        return false;
+    }
+    // SAFETY: `loc` is the non-null locale newlocale just returned, freed once.
+    unsafe { libc::freelocale(loc) };
+    true
+}
+
+/// `LC_CTYPE` for a game language whose code page is not 1252, so Wine picks the
+/// matching ANSI code page. A desktop `LANG` in another language does not stop
+/// it, since that is the case it exists for; an explicit `LC_ALL` or `LC_CTYPE`
+/// does. `installed` says which locales the host has. `None` means change
+/// nothing (the caller keeps [`utf8_locale_env`]).
+pub fn game_language_locale_env(
+    lc_all: Option<&str>,
+    lc_ctype: Option<&str>,
+    language: &str,
+    installed: impl Fn(&str) -> bool,
+) -> Option<Vec<(String, String)>> {
+    if [lc_all, lc_ctype]
+        .into_iter()
+        .flatten()
+        .any(|v| !v.is_empty())
+    {
+        return None;
+    }
+    let name = language_locales(language).iter().find(|n| installed(n))?;
+    Some(vec![("LC_CTYPE".to_string(), (*name).to_string())])
+}
+
+/// [`game_language_locale_env`] against this process's environment and the
+/// host's installed locales.
+pub fn game_language_locale_env_from_process(language: &str) -> Option<Vec<(String, String)>> {
+    let get = |k: &str| std::env::var(k).ok();
+    game_language_locale_env(
+        get("LC_ALL").as_deref(),
+        get("LC_CTYPE").as_deref(),
+        language,
+        locale_installed,
+    )
+}
+
 /// Whether `binary` carries CAP_SYS_ADMIN in its file capabilities (the
 /// `setcap cap_sys_admin+ep` state FUSE passthrough needs). Reads the
 /// `security.capability` xattr directly, so it works without the libcap tools.
@@ -749,6 +896,39 @@ pub fn binary_has_cap_sys_admin(binary: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn namespace_block_names_the_setting() {
+        let r = |a, b, c, d| namespace_block_reason(a, b, c, d);
+        assert!(r(Some("0\n"), None, None, None)
+            .unwrap()
+            .contains("unprivileged_userns_clone"));
+        assert!(r(Some("1"), Some("0\n"), None, None)
+            .unwrap()
+            .contains("max_user_namespaces"));
+        assert!(r(None, Some("15000"), Some("1\n"), None)
+            .unwrap()
+            .contains("apparmor_restrict"));
+        assert!(r(None, None, None, Some(std::io::ErrorKind::NotFound))
+            .unwrap()
+            .contains("modprobe"));
+        assert!(
+            r(None, None, None, Some(std::io::ErrorKind::PermissionDenied))
+                .unwrap()
+                .contains("permissions")
+        );
+        assert!(r(Some("1"), Some("15000"), Some("0"), None).is_none());
+    }
+
+    #[test]
+    fn namespace_hint_gated_on_errno() {
+        let os = std::io::Error::from_raw_os_error;
+        assert!(is_namespace_errno(&os(libc::EPERM)));
+        assert!(is_namespace_errno(&os(libc::EACCES)));
+        assert!(is_namespace_errno(&os(libc::ENOSPC)));
+        assert!(!is_namespace_errno(&os(libc::ENOENT)));
+        assert!(!is_namespace_errno(&std::io::Error::other("exec")));
+    }
 
     #[test]
     fn missing_binary_or_xattr_reports_no_cap() {
@@ -784,6 +964,47 @@ mod tests {
         assert!(utf8_locale_env(Some("en_US.UTF-8"), None, Some("C")).is_empty());
         // An empty variable is not set: fall through to the next one.
         assert!(utf8_locale_env(Some(""), None, Some("en_US.UTF-8")).is_empty());
+    }
+
+    #[test]
+    fn game_language_picks_a_codepage_locale_unless_lc_all_or_lc_ctype_is_set() {
+        let all = |_: &str| true;
+        let ru = game_language_locale_env(None, None, "RUSSIAN", all);
+        assert_eq!(
+            ru,
+            Some(vec![("LC_CTYPE".to_string(), "ru_RU.UTF-8".to_string())])
+        );
+        assert_eq!(
+            game_language_locale_env(Some(""), None, "japanese", all).unwrap()[0].1,
+            "ja_JP.UTF-8"
+        );
+        assert_eq!(
+            game_language_locale_env(None, None, "ChineseSimplified", all).unwrap()[0].1,
+            "zh_CN.UTF-8"
+        );
+        // Fallout 4 and Starfield short codes.
+        for (code, want) in [
+            ("ru", "ru_RU.UTF-8"),
+            ("pl", "pl_PL.UTF-8"),
+            ("ja", "ja_JP.UTF-8"),
+            ("cn", "zh_TW.UTF-8"),
+            ("zhhans", "zh_CN.UTF-8"),
+        ] {
+            assert_eq!(
+                game_language_locale_env(None, None, code, all).unwrap()[0].1,
+                want
+            );
+        }
+        // Code page 1252 languages and unknown ones change nothing.
+        assert!(game_language_locale_env(None, None, "FRENCH", all).is_none());
+        assert!(game_language_locale_env(None, None, "fr", all).is_none());
+        // An explicit LC_ALL or LC_CTYPE is the user's choice.
+        assert!(game_language_locale_env(Some("C"), None, "RUSSIAN", all).is_none());
+        assert!(game_language_locale_env(None, Some("fr_FR.UTF-8"), "RUSSIAN", all).is_none());
+        // No matching locale on the host: change nothing.
+        assert!(game_language_locale_env(None, None, "RUSSIAN", |_| false).is_none());
+        // The real newlocale check rejects a locale the host does not have.
+        assert!(!locale_installed("xx_XX.nonsense"));
     }
 
     #[test]

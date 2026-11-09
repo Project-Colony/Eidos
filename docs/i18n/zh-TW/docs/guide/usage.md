@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c007e61144ed8abc1a9ab52e7bf18c6af3a6f5f5 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
 
 # 使用 Eidos
 
@@ -65,6 +65,12 @@ Steam 管 - 一次更新、一次「驗證檔案完整性」或一次解除安�
 (透過 bind-stash,所以常駐程式仍然讀得到原封不動的檔案),然後讓命令穿過那個
 檢視執行。寫入(存檔、重新產生的設定)落在實例的 `overwrite/` 層;遊戲安裝目錄與
 每一份模組來源都逐位元組保持原封不動。
+
+### Wabbajack 清單
+
+Eidos 沒有 Wabbajack 安裝程式。請在 Eidos 之外用 CLF3 或 Jackify 安裝清單，然後在精靈中把安裝資料夾選為可攜式執行個體。Eidos 依 MO2 的配置讀取該資料夾：`mods/`、`profiles/<名稱>/modlist.txt` 和外掛清單。安裝程式寫入的 `ModOrganizer.ini` 會被保留，絕不會被覆寫，因此清單自帶的執行檔仍維持註冊。
+
+許多清單會加入一個 `Stock Game` 或 `Game Root` 資料夾，裡面是修改過的遊戲副本，MO2 從那裡啟動遊戲。Eidos 啟動的是 Steam 安裝，也沒有指向其他遊戲資料夾的設定。精靈發現這樣的資料夾時，只會在確認畫面提示，不會做其他事：請自行把清單放在那裡的檔案移到某個模組的 `Root/` 資料夾中。CLF3 用自己的工具重建 BSA 和 DDS 檔案，所以結果可能與 Wabbajack 安裝不同，清單作者也不提供支援。
 
 ### 模組清單
 

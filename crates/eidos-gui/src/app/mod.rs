@@ -111,6 +111,9 @@ pub(crate) struct DataRow {
     /// Whether more than one mod provides this path (so a row can be filtered
     /// down to just the contested ones, which is what the tab is FOR).
     pub(crate) conflicted: bool,
+    /// Names of the lower-priority providers of this path, highest first (the
+    /// winner is `source`). Empty when nothing else provides it.
+    pub(crate) also_in: Vec<String>,
 }
 
 /// One memoised recursive listing: the view generation it was built at, and the
@@ -511,6 +514,10 @@ pub(crate) struct App {
     /// The download whose MD5 lookup is in flight, so the row can say so and a
     /// second click cannot start the same hash twice.
     pub(crate) identifying_download: Option<String>,
+    /// Destination folders of the running extractions, so a second click (or a
+    /// same-stem archive of the same mod) cannot start a duplicate decode that
+    /// fails on the taken folder.
+    pub(crate) extracting_archives: HashSet<PathBuf>,
     /// Last (instant, bytes) seen for each in-flight download, keyed by file
     /// name. Speed is a derivative, so it needs the previous sample; keeping it
     /// out of `DownloadRow` means a rebuilt row list does not lose the history.
@@ -553,6 +560,8 @@ pub(crate) struct App {
     /// to "which rows am I acting on".
     pub(crate) selected_plugin: Option<usize>,
     pub(crate) selected_plugins: HashSet<usize>,
+    /// Plugin-list filter query (case-insensitive substring on the plugin name).
+    pub(crate) plugin_search: String,
     /// Which list the arrow keys move in.
     pub(crate) focus: Pane,
     /// The category catalog, read once instead of per frame.

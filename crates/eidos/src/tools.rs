@@ -266,26 +266,72 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 }
                 exe.clone()
             });
-            let Some(compat) = game.compatdata.as_ref() else {
+            // `runner=native` runs the executable itself: no Proton, no Steam
+            // prefix, and none of the Proton-only steps below.
+            let native = tool.runner == eidos_instance::Runner::Native;
+            if native && tool.slr {
                 eidos_log::info!(
-                    "No Steam Proton prefix for {id}. For a Heroic/Legendary copy, configure a native tool with its actual runner and prefix."
+                    "eidos tool: '{title}' has runner=native, so its slr= line is ignored: the \
+                     Steam Linux Runtime container only wraps a Proton run."
                 );
-                exit(1);
+            }
+            let compat = game.compatdata.as_deref();
+            let mut run = match (compat, game.heroic_run()) {
+                _ if native => None,
+                // A Heroic copy: the Wine or Proton and prefix its settings name.
+                (_, Some(run)) => Some(run.clone()),
+                (None, None) => {
+                    eidos_log::info!(
+                        "No Steam Proton prefix for {id}. For a Heroic/Legendary copy, set \
+                         runner=native on the tool in tools.ini, with exe= the copy's own runner \
+                         (see Tools in the guide), or launch the game once through Heroic so its \
+                         prefix exists."
+                    );
+                    exit(1);
+                }
+                (Some(compat), None) => {
+                    let Some(run) = eidos_games::proton_command(
+                        &home(),
+                        game.def.steam_app_id,
+                        compat,
+                        &game.install_path,
+                    ) else {
+                        eidos_log::warn!(
+                            "Could not resolve the Proton for {id} (config.vdf CompatToolMapping / \
+                             compatibilitytools.d). Is the game set up to run under Proton?"
+                        );
+                        exit(1);
+                    };
+                    warn_if_flatpak_proton(&run);
+                    Some(run)
+                }
             };
-            let Some(run) = eidos_games::proton_command(
-                &home(),
-                game.def.steam_app_id,
-                compat,
-                &game.install_path,
-            ) else {
-                eidos_log::warn!(
-                    "Could not resolve the Proton for {id} (config.vdf CompatToolMapping / \
-                     compatibilitytools.d). Is the game set up to run under Proton?"
-                );
-                exit(1);
-            };
-
-            warn_if_flatpak_proton(&run);
+            // `slr=1`: the tool and the registry import below start in the
+            // container Steam uses for the game. `eidos prereqs` keeps running
+            // winetricks on the host.
+            if let Some(run) = run.as_mut().filter(|_| tool.slr) {
+                match run.in_steam_runtime(&home()) {
+                    Ok(()) => {}
+                    Err(None) => {
+                        eidos_log::warn!(
+                            "'{title}' has slr=1, but {} names no Steam Linux Runtime (no \
+                             require_tool_appid in its toolmanifest.vdf). Remove slr=1 to run \
+                             the tool on the host.",
+                            run.proton.display()
+                        );
+                        exit(1);
+                    }
+                    Err(Some(app)) => {
+                        eidos_log::warn!(
+                            "'{title}' has slr=1, but the Steam Linux Runtime its Proton needs, \
+                             Steam app {app}, is not installed in any Steam library. Install it \
+                             with `steam steam://install/{app}`, or remove slr=1 to run the tool \
+                             on the host."
+                        );
+                        exit(1);
+                    }
+                }
+            }
             // Windows tools find their game by reading HKLM\Software\Bethesda
             // Softworks\<game> "installed path", which the game's own installer
             // writes - and which Steam under Proton never runs. Without it xEdit,
@@ -299,28 +345,31 @@ pub(crate) fn cmd_tool(args: &[String]) {
             // for every run started from the GUI - the one way anyone starts one.
             // `game` is the already-resolved target a dozen lines above; there is
             // no second lookup left to get wrong.
-            {
-                let proton = run.proton.clone();
-                let env = run.env.clone();
+            if let (Some(run), Some(prefix)) = (&run, game.prefix()) {
+                // A tool on the .NET SDK also needs NuGet's signing roots in
+                // the prefix, or every package restore fails (NU3018).
+                let roots = eidos_gamefeatures::nuget_roots_pem(&tool.prereqs);
+                let and_roots = " and the .NET SDK's NuGet signing roots";
                 match eidos_gamefeatures::ensure_registry(
+                    &prefix,
                     compat,
                     &game.install_path,
                     game.def.registry_name,
+                    &roots,
+                    // `runinprefix`, not the game verb: this must not run
+                    // Proton's game-drive setup, only a program in the
+                    // existing prefix.
                     |reg_file| {
-                        vec![
-                            proton.to_string_lossy().into_owned(),
-                            // `runinprefix`, not the game verb: this must not run
-                            // Proton's game-drive setup, only a program in the
-                            // existing prefix.
-                            "runinprefix".to_string(),
-                            "regedit".to_string(),
-                            reg_file.to_string_lossy().into_owned(),
-                        ]
+                        run.run_in_prefix(
+                            Path::new("regedit"),
+                            &[reg_file.to_string_lossy().into_owned()],
+                        )
                     },
-                    &env,
+                    &run.env,
                 ) {
-                    Ok(RegistryOutcome::Imported) => {
-                        eidos_log::info!("eidos: registered the game path in the Wine prefix")
+                    Ok(RegistryOutcome::Imported(added)) => {
+                        let and_roots = if added { and_roots } else { "" };
+                        eidos_log::info!("eidos: registered the game path{and_roots} in the Wine prefix")
                     }
                     Ok(RegistryOutcome::AlreadyCorrect) => {}
                     // The two silences that used to cost a support thread. The
@@ -328,26 +377,30 @@ pub(crate) fn cmd_tool(args: &[String]) {
                     // lines are the only thing that connects that to Eidos.
                     Ok(RegistryOutcome::PrefixUninitialised) => eidos_log::warn!(
                         "eidos: the Wine prefix has not been created yet, so the game path is not \
-                         registered - launch {} once through Steam first, or '{title}' may open on \
+                         registered - launch {} once through {} first, or '{title}' may open on \
                          an empty folder.",
-                        game.def.name
+                        game.def.name,
+                        if game.is_steam() { "Steam" } else { "Heroic" }
                     ),
-                    Ok(RegistryOutcome::PrefixBusy(busy)) => {
+                    Ok(RegistryOutcome::PrefixBusy(busy, missing)) => {
+                        let (and_roots, or_restore) = match missing {
+                            true => (and_roots, " or its package restore fails with NU3018"),
+                            false => ("", ""),
+                        };
                         let who = busy
                             .first()
                             .map(|(pid, cmd)| format!("{} (pid {pid})", cmd.split_whitespace().next().unwrap_or(cmd)))
                             .unwrap_or_else(|| "another program".to_string());
                         eidos_log::warn!(
-                            "eidos: the Wine prefix is in use by {who}, so the game path could not \
-                             be registered - close it and run '{title}' again if it opens on an \
-                             empty folder."
+                            "eidos: the Wine prefix is in use by {who}, so the game path{and_roots} \
+                             could not be registered - close it and run '{title}' again if it opens \
+                             on an empty folder{or_restore}."
                         );
                     }
                     Err(e) => eidos_log::warn!("eidos: could not write the prefix registry ({e}); tools may ask for the game path"),
                 }
             }
-            let mut command = run.command(&exe, &tool.args);
-            command.extend(extra);
+            let command = tool_command(run.as_ref(), &exe, &tool.args, extra);
             // MO2's default working directory for a tool is its own folder - which,
             // after the rewrite above, is the merged one. An explicit workdir gets
             // the same treatment (MO2 adjusts cwd and binary independently).
@@ -377,13 +430,13 @@ pub(crate) fn cmd_tool(args: &[String]) {
                     "eidos tool: '{title}' needs {names} - run `eidos prereqs {id} --install` to set it up (downloads from Microsoft)."
                 );
             }
+            let wineserver_wait = wineserver_wait(run.as_ref(), &exe, &tool.env);
             // Tier 3: point the tool at any runtime it declares. Nothing is
             // installed into the prefix - the variable IS the mechanism, which is
             // why an absent runtime must contribute nothing rather than a path
             // that does not exist (the .NET host stops looking once it is set).
-            let mut run = run;
-            run.env
-                .extend(eidos_gamefeatures::runtime_env_for(&prereqs));
+            let mut env = run.map(|r| r.env).unwrap_or_default();
+            env.extend(eidos_gamefeatures::runtime_env_for(&prereqs));
             let missing3: Vec<&String> = prereqs
                 .iter()
                 .filter(|v| {
@@ -397,10 +450,38 @@ pub(crate) fn cmd_tool(args: &[String]) {
                     .map(|s| s.as_str())
                     .collect::<Vec<_>>()
                     .join(", ");
+                let effects: String = missing3
+                    .iter()
+                    .filter_map(|v| match eidos_gamefeatures::runtime(v)?.verb {
+                        "dotnet10" => Some(
+                            " Without dotnet10, a .NET 10 tool such as Pandora or DynDOLOD's \
+                             LODGen does not start.",
+                        ),
+                        "dotnetsdk10" => {
+                            Some(" Without dotnetsdk10, Synthesis cannot build its patchers.")
+                        }
+                        _ => None,
+                    })
+                    .collect();
                 eidos_log::info!(
                     "eidos tool: '{title}' needs the {names} runtime, which is not downloaded yet - \
-                     run `eidos prereqs {id} --install`. Without it DynDOLOD's LODGen dies at startup \
-                     leaving a log with nothing in it but a version banner."
+                     run `eidos prereqs {id} --install`.{effects}"
+                );
+            }
+
+            // Host-environment facts for a tool run, applied last so `--print`
+            // shows them. The Creation Kit override is a different Steam app, so
+            // the game's shader cache would be the wrong one for it. Not for a
+            // native tool: it may be a Linux .NET program, so the host's .NET
+            // roots stay as they are. A runtime the tool declares still set its
+            // Z: DOTNET_ROOT above, the form a native Wine runner needs.
+            if !native {
+                apply_tool_env_facts(
+                    &mut env,
+                    compat,
+                    game.def.steam_app_id,
+                    app_id.is_some(),
+                    |k| std::env::var(k).ok(),
                 );
             }
 
@@ -411,26 +492,29 @@ pub(crate) fn cmd_tool(args: &[String]) {
             // than clearly. Set here, on the env that is about to be handed
             // over, so `--print` shows exactly what the real run would get.
             if let Some(id) = app_id {
-                run.env
-                    .retain(|(k, _)| k != "SteamAppId" && k != "SteamGameId");
-                run.env.push(("SteamAppId".to_string(), id.to_string()));
-                run.env.push(("SteamGameId".to_string(), id.to_string()));
+                env.retain(|(k, _)| k != "SteamAppId" && k != "SteamGameId");
+                env.push(("SteamAppId".to_string(), id.to_string()));
+                env.push(("SteamGameId".to_string(), id.to_string()));
             }
+            let opts = crate::launch::ToolOpts {
+                prereqs: &prereqs,
+                output_mod: output_mod.as_deref(),
+                tool_name: Some(title),
+                executable: Some(&source_exe),
+                env: &tool.env,
+            };
             if print_only {
-                println!(
-                    "would run (through the merged view at {}):",
-                    game.data_path.display()
+                let env = crate::launch::run_env(&game, &inst, opts, env, false);
+                print!(
+                    "{}",
+                    print_plan(
+                        &game.data_path,
+                        &command,
+                        &env,
+                        cwd.as_deref(),
+                        opts.output_mod
+                    )
                 );
-                println!("  argv : {command:?}");
-                for (k, v) in &run.env {
-                    println!("  env  : {k}={v}");
-                }
-                if let Some(c) = &cwd {
-                    println!("  cwd  : {}", c.display());
-                }
-                if let Some(m) = &output_mod {
-                    println!("  out  : mods/{m} (the run's Overwrite output is captured there)");
-                }
                 return;
             }
             // A capture target the user cannot SEE is a target that quietly does
@@ -447,6 +531,27 @@ pub(crate) fn cmd_tool(args: &[String]) {
                     _ => {}
                 }
             }
+            // Outside the view, before the tool starts: see `wineserver_wait`.
+            if let Some(mut wait) = wineserver_wait {
+                let prefix = wait
+                    .get_envs()
+                    .find(|(k, _)| *k == "WINEPREFIX")
+                    .and_then(|(_, v)| v.map(PathBuf::from))
+                    .or_else(|| std::env::var_os("WINEPREFIX").map(PathBuf::from))
+                    // Wine's own default when no WINEPREFIX is set.
+                    .unwrap_or_else(|| home().join(".wine"));
+                eidos_log::info!(
+                    "eidos: waiting for the Wine programs in {} to exit (the game, or build \
+                     servers left by a previous run) before '{title}' starts",
+                    prefix.display()
+                );
+                if let Err(e) = wait.status() {
+                    eidos_log::warn!(
+                        "eidos: could not wait for the prefix's wineserver ({e}); if '{title}' \
+                         does not see the mods, close the game and run it again."
+                    );
+                }
+            }
             run_through_view(
                 // The RESOLVED game, not the CLI argument: see the note in
                 // `run_through_view`. `id` here is "/mnt/Jeux/Eidos-Fallout4".
@@ -454,20 +559,156 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 &game,
                 &inst,
                 command,
-                run.env,
+                env,
                 cwd,
-                crate::launch::ToolOpts {
-                    prereqs: &prereqs,
-                    output_mod: output_mod.as_deref(),
-                    tool_name: Some(title),
-                    executable: Some(&source_exe),
-                },
+                opts,
             );
         }
         Some(other) => {
             eidos_log::warn!("unknown tool subcommand '{other}' (list | add | rm | run)");
             exit(2);
         }
+    }
+}
+
+/// What `eidos tool run --print` shows: the command, and every variable the run
+/// sets on top of the inherited environment.
+fn print_plan(
+    data: &Path,
+    command: &[String],
+    env: &[(String, String)],
+    cwd: Option<&Path>,
+    output_mod: Option<&str>,
+) -> String {
+    let mut out = format!(
+        "would run (through the merged view at {}):\n  argv : {command:?}\n",
+        data.display()
+    );
+    for (k, v) in env {
+        out.push_str(&format!("  env  : {k}={v}\n"));
+    }
+    if let Some(c) = cwd {
+        out.push_str(&format!("  cwd  : {}\n", c.display()));
+    }
+    if let Some(m) = output_mod {
+        out.push_str(&format!(
+            "  out  : mods/{m} (the run's Overwrite output is captured there)\n"
+        ));
+    }
+    out
+}
+
+/// The argv for a tool run: `exe` and `args` through the run's Proton or Wine,
+/// or as they are for a `runner=native` tool, then the `--` extra arguments.
+fn tool_command(
+    run: Option<&eidos_games::ProtonRun>,
+    exe: &Path,
+    args: &[String],
+    extra: Vec<String>,
+) -> Vec<String> {
+    let mut command = match run {
+        Some(run) => run.command(exe, args),
+        None => std::iter::once(exe.to_string_lossy().into_owned())
+            .chain(args.iter().cloned())
+            .collect(),
+    };
+    command.extend(extra);
+    command
+}
+
+/// The `wineserver -w` to run before a tool, outside the view: a plain Wine
+/// run's, or for a `runner=native` tool whose executable is a `wine`, the
+/// server next to it with the tool's own `env=` (its `WINEPREFIX`).
+fn wineserver_wait(
+    run: Option<&eidos_games::ProtonRun>,
+    exe: &Path,
+    tool_env: &[(String, String)],
+) -> Option<std::process::Command> {
+    match run {
+        Some(run) => run.wineserver_wait(),
+        None => exe
+            .file_name()
+            .is_some_and(|n| n.to_string_lossy().starts_with("wine"))
+            .then(|| eidos_games::wineserver_wait_for(exe, tool_env)),
+    }
+}
+
+/// Env a Windows tool needs from the host, not from the instance.
+///
+/// Steam's shader cache for the game (only for a Steam copy and when its
+/// directory exists - Eidos never creates directories there - and never over a
+/// variable the user exported),
+/// empty .NET roots so a host SDK cannot hijack a framework-dependent tool, one
+/// `WINEPATH` that still holds the user's own, and no Steam overlay in
+/// `LD_PRELOAD`. `host` reads the inherited environment.
+fn apply_tool_env_facts(
+    env: &mut Vec<(String, String)>,
+    compat: Option<&Path>,
+    game_app_id: u32,
+    app_id_override: bool,
+    host: impl Fn(&str) -> Option<String>,
+) {
+    let mut push = |k: &str, v: String| env.push((k.to_string(), v));
+    if let Some(compat) = compat.filter(|_| !app_id_override) {
+        let cache = compat.join(format!("../../shadercache/{game_app_id}"));
+        if cache.is_dir() {
+            let c = |sub: &str| cache.join(sub).to_string_lossy().into_owned();
+            let mut vars = vec![
+                ("STEAM_COMPAT_SHADER_PATH", c("")),
+                (
+                    "__GL_SHADER_DISK_CACHE_APP_NAME",
+                    "steamapp_shader_cache".into(),
+                ),
+                ("__GL_SHADER_DISK_CACHE_PATH", c("nvidiav1")),
+                (
+                    "__GL_SHADER_DISK_CACHE_READ_ONLY_APP_NAME",
+                    "steam_shader_cache;steamapp_merged_shader_cache".into(),
+                ),
+                ("__GL_SHADER_DISK_CACHE_SKIP_CLEANUP", "1".into()),
+                (
+                    "MESA_DISK_CACHE_READ_ONLY_FOZ_DBS",
+                    "steam_cache,steam_precompiled".into(),
+                ),
+                ("MESA_DISK_CACHE_SINGLE_FILE", "1".into()),
+                ("MESA_SHADER_CACHE_DIR", c("")),
+                ("MESA_SHADER_CACHE_MAX_SIZE", "5G".into()),
+            ];
+            // Only DXVK builds that still read it (sarek); Steam creates the dir.
+            if cache.join("DXVK_state_cache").is_dir() {
+                vars.push(("DXVK_STATE_CACHE_PATH", c("DXVK_state_cache")));
+            }
+            for (k, v) in vars {
+                if host(k).is_none() {
+                    push(k, v);
+                }
+            }
+        }
+    }
+    // An empty value reads as unset for the .NET host, and still shows in --print.
+    if !env.iter().any(|(k, _)| k == "DOTNET_ROOT") {
+        env.push(("DOTNET_ROOT".into(), String::new()));
+    }
+    env.push(("DOTNET_ROOT_X64".into(), String::new()));
+    // Wine searches WINEPATH, a `;` list, before the prefix PATH. Fold every
+    // entry into one, the latest first since it is the one that would have won
+    // alone, and keep a WINEPATH the user exported after them.
+    let mut paths: Vec<String> = env
+        .iter()
+        .rev()
+        .filter(|(k, _)| k == "WINEPATH")
+        .map(|(_, v)| v.clone())
+        .collect();
+    if !paths.is_empty() {
+        paths.extend(host("WINEPATH").filter(|h| !h.is_empty()));
+        env.retain(|(k, _)| k != "WINEPATH");
+        env.push(("WINEPATH".into(), paths.join(";")));
+    }
+    if let Some(pre) = host("LD_PRELOAD").filter(|p| p.contains("gameoverlayrenderer.so")) {
+        let kept: Vec<&str> = pre
+            .split([' ', ':'])
+            .filter(|e| !e.is_empty() && !e.contains("gameoverlayrenderer.so"))
+            .collect();
+        env.push(("LD_PRELOAD".into(), kept.join(":")));
     }
 }
 
@@ -577,5 +818,173 @@ mod root_tool_tests {
             Some((source, game.join("skse64_loader.exe")))
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod env_fact_tests {
+    use super::*;
+
+    fn get<'a>(env: &'a [(String, String)], k: &str) -> Option<&'a str> {
+        env.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str())
+    }
+
+    fn library(with_cache: bool) -> (PathBuf, PathBuf) {
+        let root = std::env::temp_dir().join(format!(
+            "eidos-envfacts-{}-{with_cache}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let compat = root.join("steamapps/compatdata/489830");
+        std::fs::create_dir_all(&compat).unwrap();
+        if with_cache {
+            std::fs::create_dir_all(root.join("steamapps/shadercache/489830")).unwrap();
+        }
+        (root, compat)
+    }
+
+    #[test]
+    fn a_native_wine_tool_waits_for_the_server_next_to_it() {
+        use std::ffi::OsStr;
+        let env = vec![("WINEPREFIX".to_string(), "/h/Prefixes/Skyrim".to_string())];
+        let wait = wineserver_wait(None, Path::new("/opt/wine-ge/bin/wine"), &env)
+            .expect("a native wine waits");
+        assert_eq!(wait.get_program(), "/opt/wine-ge/bin/wineserver");
+        assert_eq!(wait.get_args().collect::<Vec<_>>(), ["-w"]);
+        assert_eq!(
+            wait.get_envs().collect::<Vec<_>>(),
+            [(
+                OsStr::new("WINEPREFIX"),
+                Some(OsStr::new("/h/Prefixes/Skyrim"))
+            )]
+        );
+        assert!(wineserver_wait(None, Path::new("/usr/bin/Synthesis"), &env).is_none());
+    }
+
+    #[test]
+    fn a_native_tool_runs_its_exe_then_its_args_then_the_extra_ones() {
+        let args = ["C:\\Tools\\xEdit.exe".to_string(), "-sse".to_string()];
+        assert_eq!(
+            tool_command(
+                None,
+                Path::new("/opt/wine-ge/bin/wine"),
+                &args,
+                vec!["-quickautoclean".to_string()]
+            ),
+            [
+                "/opt/wine-ge/bin/wine",
+                "C:\\Tools\\xEdit.exe",
+                "-sse",
+                "-quickautoclean"
+            ]
+        );
+    }
+
+    #[test]
+    fn shader_cache_vars_follow_the_cache_dir_and_never_override_the_user() {
+        let (root, compat) = library(true);
+        let mut env = vec![];
+        apply_tool_env_facts(&mut env, Some(&compat), 489830, false, |k| {
+            (k == "MESA_SHADER_CACHE_MAX_SIZE").then(|| "1G".to_string())
+        });
+        assert!(get(&env, "STEAM_COMPAT_SHADER_PATH")
+            .unwrap()
+            .contains("shadercache/489830"));
+        assert!(get(&env, "__GL_SHADER_DISK_CACHE_PATH")
+            .unwrap()
+            .ends_with("nvidiav1"));
+        assert_eq!(get(&env, "MESA_SHADER_CACHE_MAX_SIZE"), None);
+        assert_eq!(get(&env, "DXVK_STATE_CACHE_PATH"), None);
+        assert_eq!(get(&env, "MESA_GLSL_CACHE_DIR"), None);
+        std::fs::create_dir(root.join("steamapps/shadercache/489830/DXVK_state_cache")).unwrap();
+        let mut env = vec![];
+        apply_tool_env_facts(&mut env, Some(&compat), 489830, false, |_| None);
+        assert!(get(&env, "DXVK_STATE_CACHE_PATH").is_some());
+        let mut env = vec![];
+        apply_tool_env_facts(&mut env, Some(&compat), 489830, true, |_| None);
+        assert_eq!(get(&env, "STEAM_COMPAT_SHADER_PATH"), None);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn no_shader_vars_and_no_dir_created_when_steam_has_no_cache() {
+        let (root, compat) = library(false);
+        let mut env = vec![];
+        apply_tool_env_facts(&mut env, Some(&compat), 489830, false, |_| None);
+        assert_eq!(get(&env, "STEAM_COMPAT_SHADER_PATH"), None);
+        assert!(!root.join("steamapps/shadercache").exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn dotnet_roots_are_blanked_unless_the_tool_sets_one() {
+        let mut env = vec![];
+        apply_tool_env_facts(&mut env, None, 1, false, |_| None);
+        assert_eq!(get(&env, "DOTNET_ROOT"), Some(""));
+        assert_eq!(get(&env, "DOTNET_ROOT_X64"), Some(""));
+        let mut env = vec![("DOTNET_ROOT".to_string(), "/rt".to_string())];
+        apply_tool_env_facts(&mut env, None, 1, false, |_| None);
+        assert_eq!(get(&env, "DOTNET_ROOT"), Some("/rt"));
+        assert_eq!(env.iter().filter(|(k, _)| k == "DOTNET_ROOT").count(), 1);
+    }
+
+    #[test]
+    fn winepath_entries_fold_into_one_and_keep_the_users() {
+        // One already in the run's env, then the SDK runtime's, then the user's export.
+        let mut env = vec![
+            ("WINEPATH".to_string(), "C:\\run".to_string()),
+            ("WINEPATH".to_string(), "Z:\\sdk".to_string()),
+        ];
+        let mine = |k: &str| (k == "WINEPATH").then(|| "C:\\mine".to_string());
+        apply_tool_env_facts(&mut env, None, 1, false, mine);
+        assert_eq!(get(&env, "WINEPATH"), Some("Z:\\sdk;C:\\run;C:\\mine"));
+        assert_eq!(env.iter().filter(|(k, _)| k == "WINEPATH").count(), 1);
+        // Nothing from Eidos: the inherited value reaches the tool untouched.
+        let mut env = vec![];
+        apply_tool_env_facts(&mut env, None, 1, false, mine);
+        assert_eq!(get(&env, "WINEPATH"), None);
+    }
+
+    #[test]
+    fn print_shows_a_tool_env_line_in_the_final_env() {
+        let root = std::env::temp_dir().join(format!("eidos-tool-print-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let inst = Instance::portable(root.join("instance"));
+        inst.create().unwrap();
+        let game = DetectedGame {
+            def: eidos_games::GameDef::for_id("skyrimse").unwrap(),
+            install_path: root.join("game"),
+            data_path: root.join("game/Data"),
+            compatdata: None,
+            source: Default::default(),
+            steam_name: String::new(),
+        };
+        let tool_env = [("PROTON_LOG".to_string(), "1".to_string())];
+        let opts = crate::launch::ToolOpts {
+            env: &tool_env,
+            ..Default::default()
+        };
+        let env = crate::launch::run_env(&game, &inst, opts, Vec::new(), false);
+        let shown = print_plan(&game.data_path, &["/x/t".into()], &env, None, None);
+        assert!(shown.contains("  env  : PROTON_LOG=1\n"), "{shown}");
+        if std::env::var_os("PROTON_USE_XALIA").is_none() {
+            assert!(shown.contains("PROTON_USE_XALIA=0"), "{shown}");
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn steam_overlay_leaves_ld_preload_but_other_entries_stay() {
+        let pre = "/a/gameoverlayrenderer.so:/b/libx.so /c/gameoverlayrenderer.so";
+        let mut env = vec![];
+        apply_tool_env_facts(&mut env, None, 1, false, |k| {
+            (k == "LD_PRELOAD").then(|| pre.to_string())
+        });
+        assert_eq!(get(&env, "LD_PRELOAD"), Some("/b/libx.so"));
+        let mut env = vec![];
+        apply_tool_env_facts(&mut env, None, 1, false, |k| {
+            (k == "LD_PRELOAD").then(|| "/b/libx.so".to_string())
+        });
+        assert_eq!(get(&env, "LD_PRELOAD"), None);
     }
 }

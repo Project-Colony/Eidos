@@ -580,12 +580,17 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             // By NAME, like the batch toggle: enabling changes the tier a plugin
             // sorts into, so the rows move under any index collected first.
+            // Under a filter only the drawn rows, like Ctrl+A and Space.
+            let shown: HashSet<usize> = drawn_plugin_rows(app).into_iter().collect();
             let names: Vec<String> = {
                 let Some(list) = app.plugins.as_ref() else {
                     return Task::none();
                 };
                 list.plugins
                     .iter()
+                    .enumerate()
+                    .filter(|(i, _)| shown.contains(i))
+                    .map(|(_, p)| p)
                     .filter(|p| {
                         // The game's own masters and an .esl on a no-light
                         // engine cannot be toggled at all; writing them would be
@@ -601,11 +606,17 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     .collect()
             };
             if names.is_empty() {
-                app.status = Some(if on {
-                    t("status_plugins_all_active").to_string()
-                } else {
-                    t("status_plugins_none_to_deactivate").to_string()
-                });
+                let filtering = !app.plugin_search.trim().is_empty();
+                app.status = Some(
+                    t(match (on, filtering) {
+                        (_, true) if shown.is_empty() => "status_plugins_none_shown",
+                        (true, false) => "status_plugins_all_active",
+                        (false, false) => "status_plugins_none_to_deactivate",
+                        (true, true) => "status_plugins_shown_all_active",
+                        (false, true) => "status_plugins_shown_none_to_deactivate",
+                    })
+                    .to_string(),
+                );
                 return Task::none();
             }
             let held = hold_plugin_selection(app);
@@ -669,13 +680,15 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.typing = false;
             let anchor = app.plugin_anchor.or(app.selected_plugin).unwrap_or(i);
             app.plugin_anchor = Some(anchor);
-            let len = app.plugins.as_ref().map(|l| l.plugins.len()).unwrap_or(0);
+            // Over the drawn rows only: a row the filter hides between the two
+            // clicks would otherwise join a batch action nobody can see.
+            let run = anchor.min(i)..=anchor.max(i);
             app.selected_plugins.clear();
-            for idx in anchor.min(i)..=anchor.max(i) {
-                if idx < len {
-                    app.selected_plugins.insert(idx);
-                }
-            }
+            app.selected_plugins.extend(
+                drawn_plugin_rows(app)
+                    .into_iter()
+                    .filter(|r| run.contains(r)),
+            );
             app.focus = Pane::Plugins;
             app.selected_plugin = Some(i);
             // A modifier click builds a selection; it must not also start a drag.
@@ -756,7 +769,31 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             ));
             commit_plugin_order(app, &spec);
         }
+        Message::PluginSearchChanged(q) => {
+            app.typing = true;
+            app.plugin_search = q;
+            app.plugin_drag = None;
+            // The menu would stay over a slot the filter now fills with another row.
+            app.menu_plugin = None;
+            // As in the mod list: a selection the filter hides would be acted on
+            // unseen by the batch buttons or Space.
+            let shown: HashSet<usize> = drawn_plugin_rows(app).into_iter().collect();
+            app.selected_plugins.retain(|i| shown.contains(i));
+            if !app.selected_plugin.is_some_and(|i| shown.contains(&i)) {
+                app.selected_plugin = None;
+            }
+            if !app.plugin_anchor.is_some_and(|i| shown.contains(&i)) {
+                app.plugin_anchor = None;
+            }
+        }
         Message::PluginDragStart(i) => {
+            // Under a filter the drawn rows skip slots of the load order, so a
+            // gap between two of them is not one place a drop could land. The
+            // press still selects; dragging waits for the filter to clear.
+            if !app.plugin_search.trim().is_empty() {
+                app.plugin_drag = None;
+                return Task::none();
+            }
             // The legal range is resolved once, here, and not per frame: it can
             // only change when the list itself changes, which a drag cannot do.
             // The block this press will move: the whole selection when the

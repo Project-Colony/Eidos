@@ -225,19 +225,24 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
     if failed {
         exit(1);
     }
-    if !game.is_steam() {
-        eidos_log::warn!("Bundled DLLs were handled in the selected prefix. Installing Tier-2 prerequisites for an external copy requires its actual Wine runner; use that runner's winetricks integration. Eidos will read its winetricks.log on the next check.");
-        exit(1);
-    }
-    let Some(compat) = game.compatdata.as_ref() else {
-        eidos_log::warn!("No Steam Proton compatdata is configured for {id}.");
-        exit(1);
-    };
-    let Some(run) =
-        eidos_games::proton_command(&home(), game.def.steam_app_id, compat, &game.install_path)
-    else {
-        eidos_log::warn!("Could not resolve Proton for {id}.");
-        exit(1);
+    let run = if let Some(run) = game.heroic_run() {
+        run.clone()
+    } else {
+        if !game.is_steam() {
+            eidos_log::warn!("Bundled DLLs were handled in the selected prefix. Installing Tier-2 prerequisites for an external copy requires its actual Wine runner; use that runner's winetricks integration. Eidos will read its winetricks.log on the next check.");
+            exit(1);
+        }
+        let Some(compat) = game.compatdata.as_ref() else {
+            eidos_log::warn!("No Steam Proton compatdata is configured for {id}.");
+            exit(1);
+        };
+        let Some(run) =
+            eidos_games::proton_command(&home(), game.def.steam_app_id, compat, &game.install_path)
+        else {
+            eidos_log::warn!("Could not resolve Proton for {id}.");
+            exit(1);
+        };
+        run
     };
     warn_if_flatpak_proton(&run);
     if !eidos_gamefeatures::cabextract_available() {

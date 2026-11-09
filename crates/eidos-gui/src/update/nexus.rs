@@ -52,7 +52,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             Ok(label)
                         },
                     ))
-                    .unwrap_or_else(|_| Err(t("status_lookup_stopped").into()))
+                    .unwrap_or_else(|p| {
+                        eidos_log::error!(
+                            "download identify panicked: {}",
+                            eidos_log::panic_text(&*p)
+                        );
+                        Err(t("status_lookup_stopped").into())
+                    })
                 }),
                 Message::IdentifiedDownload,
             );

@@ -156,6 +156,8 @@ pub(crate) enum Message {
     ConfirmModRestoreBackup(String),
     /// Filetree: open the entry with the desktop's handler.
     FiletreeOpen(usize, String),
+    /// Open one existing text file with the desktop's handler.
+    OpenFile(PathBuf),
     /// Filetree: preview the entry (mod index, relative path). Resolved when
     /// clicked, like `FiletreeOpen`, not while the row is drawn.
     FiletreePreview(usize, String),
@@ -428,6 +430,11 @@ pub(crate) enum Message {
     InstallFromFolder,
     /// The folder picker returned a directory (or `None` if cancelled).
     FolderPicked(Option<PathBuf>),
+    /// Archives tab: unpack (mod name, archive file name) into a new mod.
+    ExtractArchive(String, String),
+    /// The extraction worker finished: the instance root it ran for, the
+    /// destination folder, the new mod's name and the worker's result.
+    ArchiveExtracted(PathBuf, PathBuf, String, Result<PathBuf, String>),
     // ---- Mod update check (MO2 "Check for updates") ----
     /// Run a Nexus update check across the instance's mods (toolbar + Tools menu).
     CheckUpdates,
@@ -480,6 +487,8 @@ pub(crate) enum Message {
     LogRefresh,
     /// Put the shown records on the clipboard.
     LogCopy,
+    /// Put the redacted diagnostic report on the clipboard.
+    CopyHealthReport,
     /// Open the logs folder in a file manager.
     LogOpenFolder,
     // ---- INI editor (MO2's bundled INI Editor tool plugin) ----
@@ -594,6 +603,8 @@ pub(crate) enum Message {
     SelectPluginExtend(usize),
     /// Enable or disable every selected plugin at once (MO2's batch toggle).
     SetSelectedPluginsEnabled(bool),
+    /// Filter box above the plugin list (case-insensitive substring on the name).
+    PluginSearchChanged(String),
     // ---- keyboard navigation ----
     /// A navigation key was pressed. Which list it moves is decided in `update`
     /// from `App::focus`, because `on_key_press` takes a plain `fn` and cannot

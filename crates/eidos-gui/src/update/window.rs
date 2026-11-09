@@ -296,9 +296,14 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     .or(first);
             }
             Pane::Plugins => {
-                let len = app.plugins.as_ref().map(|l| l.plugins.len()).unwrap_or(0);
-                app.selected_plugins = (0..len).collect();
-                app.selected_plugin = app.selected_plugin.or((len > 0).then_some(0));
+                // Drawn rows only, like the mod list: under the filter a hidden
+                // plugin must not join a batch enable/disable or move.
+                let rows = drawn_plugin_rows(app);
+                app.selected_plugins = rows.iter().copied().collect();
+                app.selected_plugin = app
+                    .selected_plugin
+                    .filter(|i| app.selected_plugins.contains(i))
+                    .or(rows.first().copied());
             }
         },
         Message::KeyNav(nav) => return key_nav(app, nav),

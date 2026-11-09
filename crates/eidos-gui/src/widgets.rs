@@ -233,6 +233,25 @@ pub(crate) fn conflict_tint(app: &App, i: usize) -> Option<Color> {
     }
 }
 
+/// The tint of mod row `i`. The mod that ships a selected plugin outranks the
+/// conflict tint: the plugin click is the newer question, though `selected_mod`
+/// stays set.
+pub(crate) fn mod_row_tint(
+    app: &App,
+    i: usize,
+    plugin_origins: &std::collections::HashSet<String>,
+) -> Option<Color> {
+    let ships = app
+        .mods
+        .get(i)
+        .is_some_and(|m| plugin_origins.contains(&m.name.to_ascii_lowercase()));
+    if ships {
+        Some(crate::theme::origin_bg())
+    } else {
+        conflict_tint(app, i)
+    }
+}
+
 /// A mod-list row background that also reflects selection (MO2's blue highlight,
 /// here a parchment-tan so it reads on the burgundy theme).
 /// The height of the insertion strip between two rows. Rendered ALWAYS, not only

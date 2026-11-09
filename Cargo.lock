@@ -1101,6 +1101,7 @@ dependencies = [
  "eidos-fomod",
  "eidos-gamefeatures",
  "eidos-games",
+ "eidos-ini",
  "eidos-install",
  "eidos-instance",
  "eidos-launch",
@@ -1197,6 +1198,7 @@ dependencies = [
 name = "eidos-gamefeatures"
 version = "1.21.1"
 dependencies = [
+ "base64",
  "eidos-conflicts",
  "eidos-core",
  "eidos-gamedef",
@@ -1206,6 +1208,7 @@ dependencies = [
  "flate2",
  "libc",
  "object 0.40.0",
+ "ring",
  "sha2",
  "ureq",
 ]

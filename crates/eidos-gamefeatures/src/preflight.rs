@@ -1,5 +1,8 @@
 //! Read-only checks of PE and SKSE compatibility declarations. No DLL is loaded.
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex, PoisonError};
+use std::time::SystemTime;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Version(pub [u16; 4]);
@@ -157,6 +160,167 @@ pub fn scan_skse(
         ));
     }
     diagnostics
+}
+
+/// The fonts MO2 treats as always present: `Skyrim - Interface.bsa` ships them.
+const VANILLA_FONTS: [&str; 3] = [
+    "interface/fonts_console.swf",
+    "interface/fonts_en.swf",
+    "interface/fonts_cclub.swf",
+];
+
+/// Warn about `fontlib "Interface\X.swf"` lines of the winning
+/// `Interface/fontconfig.txt` whose file is in no layer and in no archive of a
+/// layer. The paths are Data-relative, as MO2's check reads them. The vanilla
+/// fonts count as present, the root is listed once, and the archive search
+/// stops once every font is found.
+pub fn scan_fontconfig(
+    game: &eidos_gamedef::GameDef,
+    game_data: &Path,
+    mods: &[(String, PathBuf)],
+    overwrite: &Path,
+) -> Vec<PreflightDiagnostic> {
+    if !matches!(game.id, "skyrim" | "skyrimse" | "skyrimvr" | "enderalse") {
+        return Vec::new();
+    }
+    let mut layers = mods.to_vec();
+    layers.push(("Game".into(), game_data.to_path_buf()));
+    let data = eidos_core::LayerStack::new_unindexed(
+        layers.iter().map(|(_, p)| p.clone()).collect(),
+        overwrite.to_path_buf(),
+    );
+    let Some(config) = data.resolve_read("Interface/fontconfig.txt") else {
+        return Vec::new();
+    };
+    let Ok(text) = std::fs::read(&config) else {
+        return Vec::new();
+    };
+    // Each entry: the name as the file writes it, and its lowercased Data path.
+    let mut missing: Vec<(String, String)> = Vec::new();
+    for font in fontlibs(&String::from_utf8_lossy(&text)) {
+        let rel = font.replace('\\', "/");
+        let key = rel.to_ascii_lowercase();
+        if !VANILLA_FONTS.contains(&key.as_str())
+            && !missing.iter().any(|(_, k)| *k == key)
+            && data.resolve_read(&rel).is_none()
+        {
+            missing.push((font, key));
+        }
+    }
+    if !missing.is_empty() {
+        for (name, path) in data.list_dir("") {
+            let name = name.to_ascii_lowercase();
+            if !(name.ends_with(".bsa") || name.ends_with(".ba2")) {
+                continue;
+            }
+            // fontlib files are Scaleform .swf movies; keeping only those keeps
+            // the memo small for a 100k-member mesh archive.
+            let swfs = memoised(&SWF_MEMBERS, &path, || {
+                eidos_conflicts::archives::read_archive_members(&path)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|m| m.to_ascii_lowercase())
+                    .filter(|m| m.ends_with(".swf"))
+                    .collect()
+            });
+            missing.retain(|(_, key)| !swfs.contains(key));
+            if missing.is_empty() {
+                break;
+            }
+        }
+    }
+    if missing.is_empty() {
+        return Vec::new();
+    }
+    vec![PreflightDiagnostic {
+        code: "fontconfig_missing_font",
+        severity: DiagnosticSeverity::Warning,
+        origin_mod: layer_origin(&config, &layers, overwrite),
+        path: config,
+        detail: missing
+            .into_iter()
+            .map(|(font, _)| font)
+            .collect::<Vec<_>>()
+            .join(", "),
+    }]
+}
+
+// shortcut: entries are never evicted (one small entry per archive path seen in
+// a session); prune them if instances ever hold tens of thousands of archives.
+type ArchiveMemo<T> = Mutex<HashMap<PathBuf, (u64, SystemTime, T)>>;
+/// The `.swf` members of each archive, lowercased.
+static SWF_MEMBERS: LazyLock<ArchiveMemo<Vec<String>>> = LazyLock::new(Default::default);
+/// How many compressed audio members each Fallout 4 (or VR) BA2 holds.
+static PACKED_AUDIO: LazyLock<ArchiveMemo<usize>> = LazyLock::new(Default::default);
+
+/// `read()` for `path`, reused while the file keeps its size and mtime. The GUI
+/// reruns the Health checks on its own thread after every plugin toggle and mod
+/// change, so an archive directory is parsed again only when the file changes.
+fn memoised<T: Clone>(memo: &ArchiveMemo<T>, path: &Path, read: impl FnOnce() -> T) -> T {
+    let stamp = std::fs::metadata(path)
+        .ok()
+        .and_then(|m| Some((m.len(), m.modified().ok()?)));
+    let Some((len, mtime)) = stamp else {
+        return read();
+    };
+    let mut memo = memo.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some((l, t, value)) = memo.get(path) {
+        if (*l, *t) == (len, mtime) {
+            return value.clone();
+        }
+    }
+    let value = read();
+    memo.insert(path.to_path_buf(), (len, mtime, value.clone()));
+    value
+}
+
+/// Warn about mod BA2 archives that store `.wav` or `.xwm` audio compressed
+/// (Fallout 4 and Fallout 4 VR can crash on it). The installed game's own
+/// archives are not read.
+pub fn scan_compressed_audio(
+    game: &eidos_gamedef::GameDef,
+    mods: &[(String, PathBuf)],
+    overwrite: &Path,
+) -> Vec<PreflightDiagnostic> {
+    if !matches!(game.id, "fallout4" | "fallout4vr") {
+        return Vec::new();
+    }
+    let data = eidos_core::LayerStack::new_unindexed(
+        mods.iter().map(|(_, p)| p.clone()).collect(),
+        overwrite.to_path_buf(),
+    );
+    data.list_dir("")
+        .into_iter()
+        .filter(|(name, _)| name.to_ascii_lowercase().ends_with(".ba2"))
+        .filter_map(|(name, path)| {
+            let bad = memoised(&PACKED_AUDIO, &path, || {
+                eidos_conflicts::archives::compressed_audio_members(&path).map_or(0, |b| b.len())
+            });
+            (bad > 0).then(|| PreflightDiagnostic {
+                code: "ba2_compressed_audio",
+                severity: DiagnosticSeverity::Warning,
+                origin_mod: layer_origin(&path, mods, overwrite),
+                path,
+                detail: format!("{name}: {bad}"),
+            })
+        })
+        .collect()
+}
+
+/// Names in `fontlib "X.swf"` lines. Not anchored to the end of the line, so a
+/// CRLF file parses; `#` starts a comment.
+fn fontlibs(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            let rest = line
+                .get(..7)
+                .filter(|k| k.eq_ignore_ascii_case("fontlib"))?;
+            let rest = line[rest.len()..].trim_start().strip_prefix('"')?;
+            let name = &rest[..rest.find('"')?];
+            (!name.is_empty()).then(|| name.to_string())
+        })
+        .collect()
 }
 
 fn layer_origin(path: &Path, layers: &[(String, PathBuf)], overwrite: &Path) -> String {
@@ -905,5 +1069,151 @@ mod tests {
         assert!(check_skse_plugin(&f.0, "M", &context)
             .iter()
             .any(|d| d.code == "pe_architecture"));
+    }
+
+    /// Minimal BSA v105 holding one empty member; enough for the directory reader.
+    fn bsa_with(member: &str) -> Vec<u8> {
+        let (folder, name) = member.rsplit_once('/').unwrap();
+        let start = 36 + 24;
+        let names = start + 1 + folder.len() + 1 + 16;
+        let payload = names + name.len() + 1;
+        let mut b = vec![0; payload + 1];
+        b[..4].copy_from_slice(b"BSA\0");
+        for (at, n) in [
+            (4, 105),
+            (8, 36),
+            (12, 3),
+            (16, 1),
+            (20, 1),
+            (24, folder.len() as u32 + 1),
+            (28, name.len() as u32 + 1),
+            (44, 1),
+        ] {
+            u32at(&mut b, at, n);
+        }
+        let offset = (start + name.len() + 1) as u64;
+        b[52..60].copy_from_slice(&offset.to_le_bytes());
+        b[start] = (folder.len() + 1) as u8;
+        b[start + 1..start + 1 + folder.len()].copy_from_slice(folder.as_bytes());
+        let file_rec = start + folder.len() + 2;
+        u32at(&mut b, file_rec + 8, 1);
+        u32at(&mut b, file_rec + 12, payload as u32);
+        b[names..names + name.len()].copy_from_slice(name.as_bytes());
+        b
+    }
+
+    fn font_scan(config: &str, loose: &[&str], bsa: Option<&str>) -> Vec<PreflightDiagnostic> {
+        let root = std::env::temp_dir().join(format!(
+            "eidos-fontconfig-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
+        let (m, ow, data) = (root.join("mod"), root.join("ow"), root.join("Data"));
+        for d in [&m, &ow, &data] {
+            std::fs::create_dir_all(d.join("Interface")).unwrap();
+        }
+        std::fs::write(m.join("Interface/fontconfig.txt"), config).unwrap();
+        for f in loose {
+            let f = m.join(f);
+            std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+            std::fs::write(f, b"swf").unwrap();
+        }
+        if let Some(member) = bsa {
+            std::fs::write(data.join("Skyrim - Interface.bsa"), bsa_with(member)).unwrap();
+        }
+        let game = eidos_gamedef::builtin()
+            .iter()
+            .find(|g| g.id == "skyrimse")
+            .unwrap();
+        let found = scan_fontconfig(game, &data, &[("Fonts".into(), m)], &ow);
+        let _ = std::fs::remove_dir_all(&root);
+        found
+    }
+
+    #[test]
+    fn fontconfig_warns_for_a_font_found_nowhere() {
+        // Real fontlib paths are Data-relative, and the vanilla fonts live in
+        // Skyrim - Interface.bsa, which counts as present.
+        let config = "fontlib \"Interface\\fonts_console.swf\"\nfontlib \"Interface\\gone.swf\"\n";
+        let found = font_scan(config, &[], None);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].code, "fontconfig_missing_font");
+        assert_eq!(found[0].detail, "Interface\\gone.swf");
+        assert_eq!(found[0].origin_mod, "Fonts");
+    }
+
+    #[test]
+    fn fontconfig_accepts_loose_and_archived_fonts_and_crlf() {
+        let text = "# comment\r\n\
+            fontlib \"Interface\\Loose.swf\"\r\n\
+            fontlib \"Interface\\Fonts\\Sub.swf\"\r\n\
+            FONTLIB \"Interface\\fonts\\fonts_ru.swf\"\r\n\
+            fontlib \"Interface/fonts_en.swf\"\r\n";
+        let loose = ["Interface/loose.swf", "Interface/fonts/sub.swf"];
+        let bsa = Some("Interface/Fonts/Fonts_RU.swf");
+        assert!(font_scan(text, &loose, bsa).is_empty());
+        // The same names one folder too deep are not the same files.
+        let found = font_scan(text, &["Interface/Interface/loose.swf"], None);
+        assert_eq!(
+            found[0].detail,
+            "Interface\\Loose.swf, Interface\\Fonts\\Sub.swf, Interface\\fonts\\fonts_ru.swf"
+        );
+    }
+
+    #[test]
+    fn an_archive_is_read_again_only_when_it_changes() {
+        let f = Tmp::new(b"one");
+        let memo = ArchiveMemo::default();
+        let reads = std::cell::Cell::new(0);
+        let read = || {
+            reads.set(reads.get() + 1);
+            reads.get()
+        };
+        assert_eq!(memoised(&memo, &f.0, read), 1);
+        assert_eq!(memoised(&memo, &f.0, read), 1);
+        std::fs::write(&f.0, b"three").unwrap();
+        assert_eq!(memoised(&memo, &f.0, read), 2);
+    }
+
+    #[test]
+    fn compressed_audio_warns_for_a_packed_wav_in_a_fallout4_ba2() {
+        let root = std::env::temp_dir().join(format!("eidos-ba2-audio-{}", std::process::id()));
+        let (m, ow) = (root.join("mod"), root.join("ow"));
+        std::fs::create_dir_all(&m).unwrap();
+        std::fs::create_dir_all(&ow).unwrap();
+        let name = b"sound/a.wav";
+        let mut b = vec![0u8; 24 + 36 + 1 + 2 + name.len()];
+        b[..4].copy_from_slice(b"BTDX");
+        b[4..8].copy_from_slice(&1u32.to_le_bytes());
+        b[8..12].copy_from_slice(b"GNRL");
+        b[12..16].copy_from_slice(&1u32.to_le_bytes());
+        b[16..24].copy_from_slice(&61u64.to_le_bytes());
+        b[40..48].copy_from_slice(&60u64.to_le_bytes());
+        b[48..52].copy_from_slice(&1u32.to_le_bytes());
+        b[52..56].copy_from_slice(&1u32.to_le_bytes());
+        b[61..63].copy_from_slice(&(name.len() as u16).to_le_bytes());
+        b[63..].copy_from_slice(name);
+        std::fs::write(m.join("Voice - Main.ba2"), b).unwrap();
+        let game = |id| {
+            eidos_gamedef::builtin()
+                .iter()
+                .find(|g| g.id == id)
+                .unwrap()
+        };
+        let mods = [("Voices".to_string(), m)];
+        let found = scan_compressed_audio(game("fallout4"), &mods, &ow);
+        let vr = scan_compressed_audio(game("fallout4vr"), &mods, &ow);
+        let other = scan_compressed_audio(game("skyrimse"), &mods, &ow);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].code, "ba2_compressed_audio");
+        assert_eq!(found[0].detail, "Voice - Main.ba2: 1");
+        assert_eq!(found[0].origin_mod, "Voices");
+        assert_eq!(
+            vr.len(),
+            1,
+            "Fallout 4 VR reads the same BA2 v1 GNRL archives"
+        );
+        assert!(other.is_empty());
     }
 }

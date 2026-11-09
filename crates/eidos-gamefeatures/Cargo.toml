@@ -14,6 +14,7 @@ eidos-core = { path = "../eidos-core" }
 eidos-paths = { path = "../eidos-paths" }
 eidos-gamedef = { path = "../eidos-gamedef" }
 eidos-ini = { path = "../eidos-ini" }
+eidos-conflicts = { path = "../eidos-conflicts" }
 # The one 7-Zip probe. This crate used to carry a third copy of it, drifted from
 # the other two in candidate set, order and probe mechanism.
 eidos-sevenzip = { path = "../eidos-sevenzip" }
@@ -28,6 +29,8 @@ flate2.workspace = true
 # workspace via eidos-nexus and eidos-loot, so this is a line here and no new
 # build.
 ureq.workspace = true
+# PEM decoding and the SHA-1 that names a certificate in Wine's registry root
+# store (prefix_registry.rs). Both are already in the workspace via eidos-nexus.
+base64.workspace = true
+ring.workspace = true
 
-[dev-dependencies]
-eidos-conflicts = { path = "../eidos-conflicts" }

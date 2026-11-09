@@ -435,6 +435,17 @@ pub(crate) fn merged_listing(app: &App, dir: &str) -> Vec<DataRow> {
                         .get(&rel)
                         .is_some_and(eidos_conflicts::FileNode::is_conflicted)
                 });
+            let also_in = conflicts
+                .and_then(|c| {
+                    c.files.get(&rel).map(|n| {
+                        n.alternatives
+                            .iter()
+                            .map(|&o| c.name(o).to_string())
+                            .collect()
+                    })
+                })
+                .filter(|_| !is_dir)
+                .unwrap_or_default();
             DataRow {
                 name,
                 source,
@@ -443,6 +454,7 @@ pub(crate) fn merged_listing(app: &App, dir: &str) -> Vec<DataRow> {
                 size: md.as_ref().filter(|m| m.is_file()).map(|m| m.len()),
                 mtime: md.as_ref().and_then(|m| m.modified().ok()),
                 conflicted,
+                also_in,
             }
         })
         .collect();
@@ -1533,6 +1545,7 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // other order disables the insertion strips: a drop in a sorted list has no
     // meaning to give the row it lands on, which is why MO2 disables it too.
     let entries = display_entries(app);
+    let plugin_origins = selected_plugin_origin_mods(app);
     let reorderable = app.mod_sort.is_none() && app.group_by.is_none();
     let dragging = dragging && reorderable;
     for entry in &entries {
@@ -1629,7 +1642,7 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         }
         // Computed once and handed to both: the row paints this colour, and the
         // name cell fades into it.
-        let conflict = conflict_tint(app, i);
+        let conflict = mod_row_tint(app, i, &plugin_origins);
         tints.push(conflict);
         // The mod's own colour, washed down to a row background. MO2 colours any
         // mod through the Notes column; Eidos already stored the colour per mod
@@ -1931,12 +1944,12 @@ pub(crate) fn plugin_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> 
         ))
         .push(send_to_plugin_priority(app, i))
         .push(menu_sep())
-        .push(menu_item(
-            t("plugin_menu_activate_all"),
+        .push(menu_item_owned(
+            set_all_plugins_label(app, true),
             Message::PluginsSetAll(true),
         ))
-        .push(menu_item(
-            t("plugin_menu_deactivate_all"),
+        .push(menu_item_owned(
+            set_all_plugins_label(app, false),
             Message::PluginsSetAll(false),
         ));
 
@@ -1945,6 +1958,25 @@ pub(crate) fn plugin_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> 
     // - so right-clicking a mod and then a plugin visibly changed the shape of
     // the popup. It also inherits menu_frame's shadow and its press guard.
     menu_frame(col.into())
+}
+
+/// "Activate all", or under a filter "Activate all shown (n)": the action then
+/// touches only the drawn rows, and the label must not read as everything.
+pub(crate) fn set_all_plugins_label(app: &App, on: bool) -> String {
+    if app.plugin_search.trim().is_empty() {
+        let key = if on {
+            "plugin_menu_activate_all"
+        } else {
+            "plugin_menu_deactivate_all"
+        };
+        return t(key).to_string();
+    }
+    let key = if on {
+        "plugin_menu_activate_shown"
+    } else {
+        "plugin_menu_deactivate_shown"
+    };
+    tf(key, &[("n", &drawn_plugin_rows(app).len())])
 }
 
 /// The profile names and the active one, memoised against the view generation.
@@ -2778,6 +2810,26 @@ mod tests {
         assert!(
             !names.contains(&"Skyrim.esm".to_string()),
             "a whited-out file is NOT in the merged view: {names:?}"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_contested_data_row_lists_the_layers_it_beats() {
+        let (mut app, root) = data_app(
+            &[("textures/shared.dds", "mod")],
+            &[("textures/shared.dds", "generated")],
+        );
+        app.conflicts = compute_conflicts(&app);
+        let rows = merged_listing(&app, "textures");
+        let row = rows.iter().find(|r| r.name == "shared.dds").unwrap();
+        assert_eq!(row.source, "[Overwrite]");
+        assert_eq!(row.also_in, ["AAA"]);
+        let top = merged_listing(&app, "");
+        let folder = top.iter().find(|r| r.name == "textures").unwrap();
+        assert!(
+            folder.also_in.is_empty(),
+            "a folder has no providers to list"
         );
         let _ = fs::remove_dir_all(&root);
     }

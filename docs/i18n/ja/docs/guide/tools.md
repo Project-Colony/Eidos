@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=21bf9773a77eafde0226799b69158680985f3963 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
 
 # ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -107,7 +107,7 @@ Overwrite にあったものはそのまま残ります。だから取り込み�
 | `bodyslide`, `outfit` | `d3dx9_43`, `d3dcompiler_47` |
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
-| `synthesis` | `dotnet8`, `vcrun2022` |
+| `synthesis` | `dotnetsdk10`, `vcrun2022` |
 | `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
@@ -138,13 +138,27 @@ Executables ダイアログの `Prereqs` 欄は編集できます - この検出
 `dotnet48`、`xact` など)。これらはレジストリキー、GAC、CLR ホストを書くので、
 ファイルのコピーでは済みません。**Microsoft からダウンロード**します。
 
-**Tier 3 - ランタイム**(`dotnet10`)。現代の .NET ランタイムは 193 個の
+**Tier 3 - ランタイム**(`dotnet10`, `dotnetsdk10`)。現代の .NET ランタイムは 193 個の
 ファイルで、専用のディレクトリに置かれ、`DOTNET_ROOT` を通して見つけられます。
 登録もされず、プレフィックスにインストールもされないので、他のどちらの Tier でも
 運べません。Eidos は自分でダウンロードし、バイナリに埋め込んだチェックサムで
 検証して、`~/.local/share/Colony/Eidos/runtimes/` にキャッシュします -
 **どのインスタンスの外側**でもあります。78 MB はゲームごとでもプロファイル
 ごとでもないからです。
+
+`dotnetsdk10` は .NET 10 SDK で、ダウンロードは 301 MB、展開すると 808 MB です。
+Synthesis はパッチャーのコンパイルにこれを必要とし、ビルドと実行にはパスなしの `dotnet` を呼び出します。
+そのため `dotnetsdk10` を宣言したツールには、`WINEPATH` 上の SDK フォルダに加えて、`NUGET_CERT_REVOCATION_MODE=offline`、`DOTNET_GENERATE_ASPNET_CERTIFICATE=false`、`DOTNET_CLI_TELEMETRY_OPTOUT=1` も設定されます。
+パッチャーのビルドは MSBuild のノードと VBCSCompiler サーバーを動かしたまま残し、Wine ではそれらがプレフィックスの wineserver を終了させないため、ツールには `MSBUILDDISABLENODEREUSE=1`、`DOTNET_CLI_USE_MSBUILD_SERVER=0`、`UseSharedCompilation=false` も設定されます。
+`DOTNET_ROLL_FORWARD=Major` により、.NET 8 向けにビルドされたパッチャー (Mutagen 0.54 より前) は、.NET 8 ランタイムが見つからないとき SDK の .NET 10 ランタイムで動きます。
+`tools.ini` の Synthesis エントリが古い既定値 `dotnet8`, `vcrun2022` のままなら、Eidos が読み込むときに `dotnetsdk10`, `vcrun2022` に置き換わります。
+
+NuGet は復元するすべてのパッケージの署名を Windows のルート証明書ストアで確認しますが、Wine のプレフィックスには、SDK が `sdk/10.0.403/trustedroots/codesignctl.pem` と `timestampctl.pem` として同梱しているコード署名用とタイムスタンプ用のルート証明書がありません。
+これがないと、`Mutagen.Bethesda.Synthesis` 0.36.6 の復元は `NU3018` と `NU3028` で失敗します。
+そのため、`dotnetsdk10` を宣言したツールを実行する前に、SDK がダウンロード済みであれば、Eidos は 2 つのファイルの 385 個の証明書をゲームのプレフィックスの現在のユーザーのルート証明書ストアに追加します。これはゲームのパスを書き込むのと同じ `regedit` のインポートで行います (後述)。
+どれかが消えた場合は、もう一度インポートします。
+以後、そのプレフィックス内のすべての Windows プログラムがこれらのルート証明書を信頼します。
+これがあれば、新しいプレフィックスと空の NuGet キャッシュで、同じ復元とビルドがシステムの Wine 11.21 と GE-Proton11-9 の両方で成功します。
 
 Tier 2 と Tier 3 は、どちらも黙って動くことがありません:
 
@@ -305,6 +319,66 @@ Windows ではこれは別のランチャーを意味します。ここでは、
 Proton は一方を、Steam 自身のライブラリはもう一方を読み、食い違いを見たツールは
 明快にではなく妙な形で失敗するからです。`eidos tool ... --print` は、本当の
 実行が受け取るものをそのまま見せます。
+
+## 環境変数と、Proton を使わないツール
+
+`<instance>/tools.ini` のキーのうち三つは、Executables ダイアログにまだ入力欄が
+ありません。ツールのセクションに手で書き足してください。`env=NAME=value` の行
+一つが、そのツールの実行にだけ効く変数を一つ設定します。
+
+```ini
+[Tool/BodySlide]
+exe=Data/CalienteTools/BodySlide/BodySlide x64.exe
+env=PROTON_LOG=1
+env=WINEDEBUG=-all
+```
+
+Eidos はこれらの行を、自分で設定するものをすべて設定した後に適用します。
+そのため、ここに書いた値は Eidos 自身の値を置き換えます。MOD が同梱する DLL から
+Eidos が組み立てる `WINEDLLOVERRIDES` も同じで、これを設定するツールは、自分が
+必要とする DLL をすべてそこに並べる必要があります。名前は英字、数字、`_` から
+なり、数字で始まりません。それ以外の名前の行は無視されます。
+
+`runner=native` は Proton を通さずに `exe` そのものを実行します。統合ビューは
+どのツールとも同じようにマウントされ、`arg0=`、`arg1=` の行がその引数に
+なります。Linux のプログラムや、Steam が管理しておらず Heroic にもランナーの
+記録がないコピー向けのツールにはこれを使います。`exe` はそのコピーの Wine、
+Windows のプログラムが最初の引数で、プレフィックスは `env=` で指定します。
+
+```ini
+[Tool/SSEEdit (GOG)]
+exe=/opt/wine-ge/bin/wine
+arg0=/home/me/Games/Skyrim/SSEEdit.exe
+workdir=/home/me/Games/Skyrim
+runner=native
+env=WINEPREFIX=/home/me/Games/Heroic/Prefixes/default/Skyrim
+```
+
+`exe` は絶対パスでなければなりません。作業ディレクトリの既定値は `exe` のある
+フォルダー、ここではランナーのフォルダーなので、`workdir=` を設定してください。
+統合されたパスに書き換えられるのは `exe` だけです。MOD の中にある Windows
+プログラムには、統合ビューがそれを見せるゲームの `Data` フォルダー以下のパスを
+指定してください。ネイティブのツールでは Proton 用の手順は行われません。上で
+述べたレジストリキー、Steam のシェーダーキャッシュ、空の .NET ルート、
+`LD_PRELOAD` からの Steam オーバーレイの除去がそれです。
+
+Heroic でインストールした GOG または Epic のコピーでは、ゲームの Heroic 設定
+(`GamesConfig/<appName>.json`) に Wine か Proton のビルドが記録されていれば、
+ツールにこのエントリは要りません。Eidos はツールをそのビルドで、ゲームの
+Heroic プレフィックスの中で実行し、`eidos prereqs <instance> --install` も
+winetricks にそのビルドを使わせます。Legendary だけでインストールしたコピーには
+Heroic の設定がありません。
+
+`slr=1` を書くと、ツールとその前のレジストリのインポートを、ツールの Proton ビルドが指定する Steam Linux Runtime のコンテナ内で起動します (`toolmanifest.vdf` の `require_tool_appid`)。Steam がゲームを起動するのと同じ方法です。
+そのランタイムはいずれかの Steam ライブラリにインストールされている必要があり、ない場合は実行を止めて、インストールすべき Steam アプリを示します。
+`eidos prereqs` は引き続きホスト上で winetricks を実行し、`runner=native` のツールはこのキーを無視します。
+コンテナから見えるのはホームフォルダーとゲームの Steam ライブラリです。
+それ以外の場所、たとえば別のドライブにあるツール、MOD、ランタイムには `env=STEAM_COMPAT_MOUNTS=/その/パス` が必要です (複数のパスは `:` で区切ります)。
+`/usr/share/steam/compatibilitytools.d` にインストールした Proton は、コンテナ内の `/usr` がランタイムのものなので、`slr=1` ではおそらく使えません。
+コンテナ内でのツールの実行はまだ試していません。
+
+`eidos tool <instance> run <title> --print` は、最終的なコマンドと、実行が継承した
+環境の上に設定する変数すべてを、これらの行も含めて表示します。
 
 ## ツール自身の設定は、やはりツール自身のもの
 
