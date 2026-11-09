@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.22.0](https://github.com/Project-Colony/Eidos/compare/v1.21.1...v1.22.0) (2026-11-09)
+
+
+### Features
+
+* **fuse:** tell Wine which directories fold case, and share one passthrough backing per inode ([#124](https://github.com/Project-Colony/Eidos/issues/124)) ([4744ca4](https://github.com/Project-Colony/Eidos/commit/4744ca4bf993c505e597d1d73dd86d4c32647e93))
+* **gui:** filter plugins, show masters, extract archives, and copy a redacted Health report ([#126](https://github.com/Project-Colony/Eidos/issues/126)) ([6012bc6](https://github.com/Project-Colony/Eidos/commit/6012bc66182811c8e0e3299d80ff86cd3ae06415))
+* **tools:** run tools on Heroic copies, per-tool env and runner, and give Synthesis the .NET 10 SDK ([#125](https://github.com/Project-Colony/Eidos/issues/125)) ([a8989aa](https://github.com/Project-Colony/Eidos/commit/a8989aa68fdffccb4d912c12f19edd2e17a87661))
+
 ## [1.21.1](https://github.com/Project-Colony/Eidos/compare/v1.21.0...v1.21.1) (2026-11-09)
 
 
