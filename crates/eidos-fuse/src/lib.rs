@@ -172,8 +172,10 @@ pub struct Eidos {
     /// resolves case-insensitively, so a negative cached for `Foo.esp` would
     /// survive a later create of `foo.esp` and the game would be told a file it
     /// can plainly see does not exist. We remember what we denied so that a
-    /// create can invalidate precisely those spellings. A record is dropped
-    /// once it is older than the kernel TTL it justified ([`NEG_TTL_RECORDED`]).
+    /// create can invalidate precisely those spellings. A record older than the
+    /// kernel TTL it justified ([`NEG_TTL_RECORDED`]) no longer covers anything;
+    /// `record_negative` drops such records only once the parent reaches its
+    /// 4096 cap, and a create drops the other spellings that fold to its name.
     negatives: Mutex<HashMap<u64, NegativeDir>>,
     /// Positive dentries handed to the kernel, keyed by inode: the
     /// `(parent_ino, exact name)` spellings it now caches for that file.
