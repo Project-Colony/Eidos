@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=c4073ef7daa93b14edfa3d1e00794a2cdbdf8066 -->
+<!-- eidos-i18n: source=README.md sha=bf2a3d995d27b69444b8e0497adb217856e87ce8 -->
 
 <div align="center">
 
@@ -193,7 +193,7 @@ just build
 just install
 ```
 
-Rust 1.89 以降が必要です(CI が検査する `rust-version`。CI とリリースは 1.99.0 で
+Rust 1.92 以降が必要です(CI が検査する `rust-version`。CI とリリースは 1.99.1 で
 ビルドしています)。さらに NIF プレビュー用ヘルパーのために `just`、CMake 3.20
 以降、C++17 コンパイラが要ります。Arch のパッケージは `packaging/PKGBUILD` から
 ビルドします。前提条件と `just` を使わないコマンドは
