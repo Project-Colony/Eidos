@@ -80,7 +80,9 @@ fn api_url(link: &str) -> Option<String> {
 }
 
 pub mod collections;
+mod files;
 pub mod oauth;
+pub use files::*;
 
 /// A parsed `nxm://` mod-file link (MO2's `NXMUrl`).
 #[derive(Debug, Clone, PartialEq, Eq)]
