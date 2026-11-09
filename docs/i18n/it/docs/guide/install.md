@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=e00626e360d8e5b283304045968cc7a6bd6af061 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b937d42496b32ed847c0e3b6387e5e7564b79331 -->
 
 # Installare Eidos
 
@@ -110,13 +110,18 @@ un'istanza portatile - vedi [usage.it.md](usage.md). Il giro completo è lì.
 
 ## Facoltativo: passthrough FUSE
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` assegna la capability facoltativa, ma non attiva il passthrough.
-Va sul binario `eidos` separato del pacchetto o di una compilazione dai sorgenti,
-mai su `eidos-linux`, che è anche la finestra ([SECURITY.md](../../../../../SECURITY.md)).
-`EIDOS_FUSE_PASSTHROUGH=1` è il comando separato per attivarlo durante l’esecuzione. È **disattivato per impostazione predefinita e quasi certamente lo
-vuoi così**: misurato su Skyrim SE, impedisce al gioco di aprire i propri archivi
-e plugin, così le mod silenziosamente non si caricano. L'interruttore esiste per
-ricollaudare il meccanismo, non perché sia consigliato.
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` assegna la capability
+facoltativa, ma non attiva il passthrough. Va sul binario `eidos` separato del
+pacchetto o di una compilazione dai sorgenti, mai su `eidos-linux`, che è anche
+la finestra ([SECURITY.md](../../../../../SECURITY.md)).
+`EIDOS_FUSE_PASSTHROUGH=1` è il comando separato per attivarlo durante
+l’esecuzione, ed è disattivato per impostazione predefinita. Con il passthrough
+attivo, una versione precedente del demone impediva a Skyrim SE di aprire i
+propri archivi e plugin, così le mod silenziosamente non si caricavano. La causa
+più probabile è che registrava un nuovo file di appoggio a ogni apertura, mentre
+il kernel ne accetta uno solo per inode. Il demone ora ne condivide uno tra
+tutte le aperture in passthrough di un file, ma questo non è ancora stato
+rimisurato in un gioco. Fino ad allora, attiva il passthrough solo per provarlo.
 
 I dettagli, e le misure dietro quella decisione, in
 [troubleshooting.it.md](troubleshooting.md).

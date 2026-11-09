@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=e00626e360d8e5b283304045968cc7a6bd6af061 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b937d42496b32ed847c0e3b6387e5e7564b79331 -->
 
 # 安装 Eidos
 
@@ -97,13 +97,14 @@ eidos play skyrimse -- %command%  # 让任何程序穿过合并视图运行
 
 ## 可选:FUSE passthrough
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` 仅授予可选权限，不会开启 passthrough。
-它应当加在捆绑包或源码构建中单独的 `eidos` 二进制文件上,绝不能加在 `eidos-linux` 上,
-因为后者同时也是窗口([SECURITY.md](../../../../../SECURITY.md))。
-运行时需另行设置 `EIDOS_FUSE_PASSTHROUGH=1` 才会启用。
-它**默认关闭,而且你几乎肯定应该让它保持关闭**:在 Skyrim SE 上实测,它会让游戏
-打不开自己的档案与插件,于是模组静悄悄地不加载。这个开关的存在是为了重新测试该
-机制,而不是因为推荐使用。
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` 仅授予可选权限,不会开启
+passthrough。它应当加在捆绑包或源码构建中单独的 `eidos` 二进制文件上,绝不能加在
+`eidos-linux` 上,因为后者同时也是窗口([SECURITY.md](../../../../../SECURITY.md))。
+运行时需另行设置 `EIDOS_FUSE_PASSTHROUGH=1` 才会启用,它默认关闭。passthrough 开
+启时,早先版本的守护进程会让 Skyrim SE 打不开自己的档案与插件,于是模组静悄悄地不
+加载。最可能的原因是它每次打开都注册一个新的后备文件,而内核每个 inode 只接受一个。
+守护进程现在让一个文件的所有 passthrough 打开共享同一个,但这还没有在游戏里重新测
+量过。在那之前,只为了测试才打开 passthrough。
 
 细节以及支撑该决定的实测数据,见
 [troubleshooting.zh-CN.md](troubleshooting.md)。

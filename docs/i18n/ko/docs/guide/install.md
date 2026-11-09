@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=e00626e360d8e5b283304045968cc7a6bd6af061 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b937d42496b32ed847c0e3b6387e5e7564b79331 -->
 
 # Eidos 설치
 
@@ -105,13 +105,16 @@ eidos play skyrimse -- %command%  # 무엇이든 병합된 뷰를 통해 실행
 
 ## 선택: FUSE 패스스루
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"`는 선택적 권한을 부여하지만 패스스루를 켜지는 않습니다.
-이 권한은 번들이나 소스 빌드의 별도 `eidos` 바이너리에 주어야 하며, 창이기도 한
-`eidos-linux`에는 절대 주지 마세요([SECURITY.md](../../../../../SECURITY.md)).
-실행 시 별도의 `EIDOS_FUSE_PASSTHROUGH=1` 설정으로 활성화합니다. **기본값은 꺼짐이고, 거의 확실히 그대로 두는 편이 좋습니다**: Skyrim
-SE에서 측정한 결과, 게임이 자기 아카이브와 플러그인을 열지 못하게 되어 모드가
-조용히 로드되지 않습니다. 이 스위치는 메커니즘을 다시 시험하기 위한 것이지
-권장되기 때문이 아닙니다.
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"`는 선택적 권한을 부여하지만
+패스스루를 켜지는 않습니다. 이 권한은 번들이나 소스 빌드의 별도 `eidos`
+바이너리에 주어야 하며, 창이기도 한 `eidos-linux`에는 절대 주지
+마세요([SECURITY.md](../../../../../SECURITY.md)). 실행 시 별도의
+`EIDOS_FUSE_PASSTHROUGH=1` 설정으로 활성화하며, 기본값은 꺼짐입니다. 패스스루를
+켜면 예전 버전의 데몬은 Skyrim SE가 자기 아카이브와 플러그인을 열지 못하게 해서
+모드가 조용히 로드되지 않았습니다. 가장 유력한 원인은 그 버전이 열기마다 새 백킹
+파일을 등록했는데 커널은 inode마다 하나만 받아들인다는 점입니다. 데몬은 이제 한
+파일의 모든 패스스루 열기가 하나를 공유하게 하지만, 이는 아직 게임에서 다시
+측정되지 않았습니다. 그때까지는 시험할 때만 패스스루를 켜세요.
 
 자세한 내용과 그 결정을 뒷받침한 측정값은
 [troubleshooting.md](troubleshooting.md)에 있습니다.

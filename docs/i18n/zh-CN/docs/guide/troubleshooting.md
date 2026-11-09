@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=8f0ea64ea39bdda653b7726249aa2b3377b772dc -->
 
 # 排查与诊断
 
@@ -36,22 +36,25 @@ fusermount3 -u /mnt/point
 
 #### 为什么 passthrough 默认关闭
 
-passthrough 把真正的后备文件交给内核,于是读取完全绕开这个守护进程。这是以正确性
-为代价换来的吞吐提升。在 Skyrim SE 1.6.1170、proton-cachyos 11.0、内核 7.1.4 上做的
-A/B 实测,同一份 82 个插件的加载顺序,唯一变量是二进制文件是否带着该能力:
+passthrough 把真正的后备文件交给内核,于是读取完全绕开这个守护进程。下面的 A/B 是
+用较早版本的守护进程测的,早于后文已知问题「FUSE passthrough 让游戏加载不了任何模
+组内容」里描述的改动。这个改动避开了最可能的原因,但还没有在游戏里重新测量过,所以
+在重新测量之前 passthrough 默认保持关闭。在 Skyrim SE 1.6.1170、proton-cachyos
+11.0、内核 7.1.4 上做的 A/B 实测,同一份 82 个插件的加载顺序,唯一变量是二进制文件
+是否带着该能力:
 
 | passthrough | `NtCreateFile` 以 `STATUS_ACCESS_VIOLATION` 失败的次数 |
 |-------------|--------------------------------------------------------|
 | 开          | 152 —— 75 个 `.bsa`、65 个 `.esl`、10 个 `.esm`、2 个 `.esp` |
 | 关          | 0                                                      |
 
-开着的时候,游戏打不开自己的任何封装档与插件,在游戏里表现为模组就是不在 —— 没有
-报错,没有日志。关掉之后,同一份加载顺序带着它的插件、封装档和 Papyrus 脚本活着进入
-游戏。
+开着的时候,游戏当时打不开自己的任何封装档与插件,在游戏里表现为模组不在:没有报
+错,没有日志。关掉之后,同一份加载顺序带着它的插件、封装档和 Papyrus 脚本活着进入
+了游戏。
 
-这个失败从守护进程内部是看不见的,这正是它难找的原因:我们自己的 `open` 每次都成功,
-内核也从不拒绝后备文件(用 `EIDOS_FUSE_TRACE=open` 跑完一整场失败会话验证过:零次
-`open FAILED`,零次 `passthrough refused`)。错误发生在守护进程回答
+这个失败当时从守护进程内部是看不见的,这正是它难找的原因:守护进程自己的 `open` 每
+次都成功,内核也从未拒绝后备文件(用 `EIDOS_FUSE_TRACE=open` 跑完一整场失败会话验
+证过:零次 `open FAILED`,零次 `passthrough refused`)。错误发生在守护进程回答
 `opened_passthrough` 之后,所以守护进程侧的任何日志都看不到它。它也与扩展名无关 ——
 封装档和插件同样中招,也就是游戏整场都保持打开的那些文件。
 
@@ -129,16 +132,17 @@ assets` 在另一个下面。
 
 **Wine 无法得知这个挂载会折叠大小写。** 已修复,而且这是最要命的一个。
 
-不存在「这个文件系统是否大小写不敏感」的 API,所以 Wine 的
-`get_dir_case_sensitivity` 靠嗅探 CIOPFS 留在其所服务目录里的标记。标记不在,Wine 就
-假定**大小写敏感**,于是每一次拼写不能逐字节吻合的查找,都退化成读取**整个**目录来
-寻找大小写无关的匹配。Bethesda 的游戏请求 `data/ccbgssse001-fish.bsa`,而文件名是
-`ccBGSSSE001-Fish.bsa`,所以几乎每个资源都会触发:八秒内 4471 次标记探测、2236 次
-完整重读目录,九十秒内 195796 次枚举 `Data`。Skyrim SE 从未走到主菜单 —— 它停在 240 MB
-常驻内存,而守护进程烧掉了一个核心的 92%。
+Wine 的 `get_dir_case_sensitivity` 先用 `FS_IOC_GETFLAGS` 询问目录,再嗅探 CIOPFS
+留在其所服务目录里的标记。两者都没有,Wine 就假定**大小写敏感**,于是每一次拼写不
+能逐字节吻合的查找,都退化成读取**整个**目录来寻找大小写无关的匹配。Bethesda 的游
+戏请求 `data/ccbgssse001-fish.bsa`,而文件名是 `ccBGSSSE001-Fish.bsa`,所以几乎每
+个资源都会触发:八秒内 4471 次标记探测、2236 次完整重读目录,九十秒内 195796 次枚
+举 `Data`。Skyrim SE 从未走到主菜单 - 它停在 240 MB 常驻内存,而守护进程烧掉了一
+个核心的 92%。
 
-Eidos 从一开始就在 `resolve_read` 里折叠大小写。全部代价只来自它从不说出这一点。现在
-`lookup` 会回答 `.ciopfs`;`readdir` 依旧不列出它。
+Eidos 从一开始就在 `resolve_read` 里折叠大小写。全部代价只来自它从不说出这一点。
+现在 `lookup` 会回答 `.ciopfs`;`readdir` 依旧不列出它。`ioctl` 也会对目录回答
+`FS_IOC_GETFLAGS` 并带上 casefold 标志,当前的 Wine 会在查找标记之前先问这个。
 
 有两件事让它从「慢」变成「致命」。代价随目录大小增长,所以装上 Anniversary 内容
 (`Data` 从 37 个文件变成 177 个)就压垮了它。而且 `opendir` 会急切地构建合并列表,
@@ -155,21 +159,39 @@ Eidos 从一开始就在 `resolve_read` 里折叠大小写。全部代价只来�
 捕获保护(任何会把活动集合整个清空的捕获,无论规模一律拒绝)意味着它再也损坏不了
 配置档。
 
-**`FOPEN_KEEP_CACHE` 是关闭的。** 已修复,而且值得知道原因。它会在主菜单出现几秒后
-让 Skyrim SE 因空指针解引用而崩溃,可稳定复现,且一个模组都没装;另外三个内核侧缓存
-被逐个二分排除,只有这一个有影响。当时测量认为失去它是免费的,但那次测量是在
-`FUSE_PASSTHROUGH` 生效的状态下做的 —— 那时守护进程服务的读取是**零**
-(`EIDOS_FUSE_STATS` 在一次完整加载中报告 `read 0`),内核已经在对着后备文件缓存那些
-页面。现在 passthrough 默认关闭(见下),所以那个理由不再成立,真实代价尚未测量 ——
-不过光是崩溃就足以让它保持关闭。要调查的话用 `EIDOS_FUSE_KEEP_CACHE=1` 打开;两个开关
-不再互相纠缠,因此现在可以单独测试它。
+**`FOPEN_KEEP_CACHE` 是关闭的。** 已修复,而且值得知道原因。它会在主菜单出现几秒
+后让 Skyrim SE 因空指针解引用而崩溃,可稳定复现,且一个模组都没装;另外三个内核侧缓
+存被逐个二分排除,只有这一个有影响。那次二分是在 `FUSE_PASSTHROUGH` 开启的状态下
+做的,而内核会让带着 `FOPEN_KEEP_CACHE` 的 passthrough 打开以 EIO 失败,所以开着这
+个标志时,每一次 passthrough 打开都失败了。让游戏崩溃的也许正是这些失败的打开,而
+在 passthrough 关闭的情况下单独测试这个标志,从来没做过。passthrough 回复现在不再
+带它。当时测量认为失去它是免费的,但 passthrough 开启时守护进程服务的读取是零
+(`EIDOS_FUSE_STATS` 在一次完整加载中报告 `read 0`),所以在 passthrough 默认关闭的
+现在(见下),真实代价尚未测量。要单独测试的话用 `EIDOS_FUSE_KEEP_CACHE=1` 打开。
 
 ### FUSE passthrough 让游戏加载不了任何模组内容
 
-通过关闭它修复;`EIDOS_FUSE_PASSTHROUGH=1` 可以把它带回来。passthrough 开启时,
-Skyrim SE 在内核 7.1.4 上会以 `STATUS_ACCESS_VIOLATION` 打不开自己的 152 个文件
-(75 个 `.bsa`、65 个 `.esl`、10 个 `.esm`、2 个 `.esp`),关闭时是 0 个 —— 也就是
-说,任何模组内容都不会加载,而且悄无声息。内核是在守护进程回答 `opened_passthrough`
-之后才抛出错误的,所以守护进程自己的日志显示这是一次干净的运行(零次打开失败,零次
-后备文件被拒)。内核路径中的根因尚未查明;保留这个开关,是为了日后能重新验证,也为了
-万一映像映射确实需要它时,可以把 passthrough 收窄到只对 DLL 生效。
+守护进程现在避开了最可能的原因(见下),但这还没有在游戏里重新测量过,所以
+passthrough 默认保持关闭;`EIDOS_FUSE_PASSTHROUGH=1` 可以打开它。这次改动之前,
+passthrough 开启时,Skyrim SE 在内核 7.1.4 上会以 `STATUS_ACCESS_VIOLATION` 打不
+开自己的 152 个文件(75 个 `.bsa`、65 个 `.esl`、10 个 `.esm`、2 个 `.esp`),关闭
+时是 0 个 - 也就是说,任何模组内容都不会加载,而且悄无声息。内核是在守护进程回答
+`opened_passthrough` 之后才抛出错误的,所以守护进程自己的日志显示的是一次干净的运
+行(零次打开失败,零次后备文件被拒)。
+
+内核给每个 inode 只绑定一个后备文件(`fs/fuse/iomode.c`)。如果一个 inode 已经有后
+备文件,再带来第二个后备文件 ID 的打开会以 EIO 失败;对已有后备文件的 inode 做普通
+打开(不带 `FOPEN_PASSTHROUGH`)也一样。带着 `FOPEN_KEEP_CACHE` 的 passthrough 打
+开同样以 EIO 失败。以前的守护进程每次打开都注册一个新的 ID,所以游戏已经开着的文
+件被第二次打开时就会失败。Wine 把 EIO 报告为 `STATUS_ACCESS_VIOLATION`,这正是那
+152 次打开失败背后的错误。这条规则是从内核源码读出来的,并且与那 152 次失败吻合,
+所以它是最可能的原因。
+
+现在守护进程每个 inode 只注册一个后备文件,由该 inode 的所有 passthrough 打开共享,
+并且从不在 passthrough 打开上设置 `FOPEN_KEEP_CACHE`。passthrough 只用于游戏层和
+模组层中大小达到 1 MiB 或以 `.dll`、`.exe`、`.asi` 结尾的文件的只读打开。这个后
+备文件一旦注册,该文件的每一次只读打开都使用它;只要该文件还有普通打开,新的读者拿
+到的也是普通打开。Overwrite 里的文件从不走 passthrough,投射插件时间戳的挂载则完
+全不使用它。当 passthrough 读者还占着一个文件时,以写入方式打开它会在任何 copy-up
+之前得到 ETXTBSY(在 Wine 中是 `STATUS_SHARING_VIOLATION`),因此 `O_TRUNC` 打开不
+会在 Overwrite 里留下一个遮住模组文件的空副本。

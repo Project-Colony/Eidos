@@ -570,6 +570,20 @@ pub fn launch(mut spec: LaunchSpec) -> std::io::Result<ExitStatus> {
     result
 }
 
+/// One line per union build, so a slow launch can be put next to the index size.
+/// Nothing is printed when the index was declined: the mount says why itself.
+fn log_index_build(which: &str, fs: &Eidos, started: std::time::Instant) {
+    if let Some(i) = fs.index_summary() {
+        eprintln!(
+            "eidos: {which} union index: {} layer(s), {} entries, {} dirs, built in {} ms",
+            i.layers,
+            i.entries,
+            i.dirs,
+            started.elapsed().as_millis()
+        );
+    }
+}
+
 /// The mount-and-run half of [`launch`]: the union spawns and the command
 /// itself. Split out so its `?`s land back in [`launch`], which unmounts the
 /// profile binds no matter how this half exits.
@@ -626,19 +640,21 @@ fn launch_mounted(spec: &LaunchSpec, layers: Vec<PathBuf>) -> std::io::Result<Ex
         // index without walking the same payload a second time. Queries below
         // it still work through the ordinary layer walk until Data is mounted.
         let data_subtree = spec.mountpoint.strip_prefix(root_src).ok();
-        Some(
-            Eidos::new_with_readonly_overwrite(
-                root_layers,
-                root_overwrite,
-                data_subtree,
-                spec.root_readonly_overwrite.clone(),
-            )
-            .spawn(root_src)?,
-        )
+        let started = std::time::Instant::now();
+        let root_fs = Eidos::new_with_readonly_overwrite(
+            root_layers,
+            root_overwrite,
+            data_subtree,
+            spec.root_readonly_overwrite.clone(),
+        );
+        log_index_build("root", &root_fs, started);
+        Some(root_fs.spawn(root_src)?)
     };
 
     std::fs::create_dir_all(&spec.mountpoint)?;
+    let started = std::time::Instant::now();
     let mut filesystem = Eidos::new(layers, spec.overwrite.clone());
+    log_index_build("data", &filesystem, started);
     if let Some(projection) = &spec.plugin_timestamps {
         if projection.state_path.starts_with(&spec.mountpoint)
             || spec

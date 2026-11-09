@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=28769fd12c94a2f9a6a9fda35b67b39cc433502b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
 
 # Eidos verwenden
 
@@ -162,9 +162,11 @@ kopieren Sie ihn und seinen Co-Save in den `saves/`-Ordner des Profils.
 Eidos läuft vollständig rootless. Es mountet in einem privaten User- und
 Mount-Namensraum, also kein setuid-Helfer, kein Daemon und nichts zu gewähren.
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` ist **optional** und schaltet
-genau eines frei: den Kernel-FUSE-Passthrough, der standardmäßig aus ist, weil er
-das Spiel kaputtmacht (siehe unten). Mit der Capability nimmt Eidos einen
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` ist **optional** und
+schaltet genau eines frei: den Kernel-FUSE-Passthrough, der standardmäßig aus
+ist, weil eine frühere Version des Daemons damit das Spiel kaputtmachte und die
+Änderung, die die wahrscheinlichste Ursache vermeidet, noch nicht erneut in
+einem Spiel gemessen wurde (siehe unten). Mit der Capability nimmt Eidos einen
 einfachen Mount-Namensraum statt eines User-Namensraums; Mods werden so oder so
 identisch ausgebracht.
 

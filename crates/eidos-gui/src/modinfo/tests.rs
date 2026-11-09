@@ -12,8 +12,10 @@ fn archive_activation_rejects_sse_arbitrary_suffix_and_merges_ini_keys() {
         ],
         &[],
     );
-    let mut plugins = PluginList::default();
-    plugins.plugins = vec![plugin_row("A.esp", "AAA")];
+    let mut plugins = PluginList {
+        plugins: vec![plugin_row("A.esp", "AAA")],
+        ..PluginList::default()
+    };
     plugins.plugins[0].enabled = true;
     app.plugins = Some(plugins);
     let profile = app.created.as_ref().unwrap().active();
@@ -331,7 +333,7 @@ fn a_hidden_tool_leaves_the_picker_and_a_pinned_one_goes_to_the_top() {
         pinned,
         ..Default::default()
     };
-    let tools = vec![
+    let tools = [
         mk("Launcher", false, false),
         mk("Never used", true, false),
         mk("SSEEdit", false, true),

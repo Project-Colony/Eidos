@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=28769fd12c94a2f9a6a9fda35b67b39cc433502b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
 
 # Používání Eidosu
 
@@ -149,8 +149,10 @@ museli udělovat.
 
 `sudo setcap cap_sys_admin+ep "$(command -v eidos)"` je **volitelné** a otevírá
 přesně jednu věc: jaderný FUSE passthrough, který je ve výchozím stavu vypnutý,
-protože rozbíjí hru (níže). S touto schopností si Eidos vezme prostý připojovací
-jmenný prostor místo uživatelského; módy se nasadí v obou případech stejně.
+protože dřívější verze démona s ním rozbíjela hru a změna, která se vyhýbá
+nejpravděpodobnější příčině, zatím nebyla ve hře znovu změřena (níže). S touto
+schopností si Eidos vezme prostý připojovací jmenný prostor místo uživatelského;
+módy se nasadí v obou případech stejně.
 
 
 Proč stará rada se `setcap` zmizela - a proč se FUSE passthrough dodává vypnutý -

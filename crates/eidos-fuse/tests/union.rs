@@ -23,31 +23,53 @@
 //! cargo test -p eidos-fuse --test union
 //! EIDOS_FUSE_OPENDIR=1 cargo test -p eidos-fuse --test union
 //! ```
+//!
+//! Kernel passthrough needs CAP_SYS_ADMIN in the initial user namespace, which
+//! the user namespace above takes away. Run the test binary as root or with
+//! `cap_sys_admin+ep`, and with `EIDOS_FUSE_PASSTHROUGH=1`: the suite then keeps
+//! the initial user namespace and every mount uses passthrough.
 
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use eidos_fuse::Eidos;
 use fuser::BackgroundSession;
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-/// Enter a private user + mount namespace (the `unshare --map-root-user --mount`
-/// idiom) so our FUSE mounts are invisible to the rest of the system. Must run
-/// single-threaded, hence before the test runner does anything else.
-fn enter_private_namespace() -> std::io::Result<()> {
+/// Whether the suite kept the initial user namespace with CAP_SYS_ADMIN, so a
+/// mount can register passthrough backing files.
+static PRIVILEGED: AtomicBool = AtomicBool::new(false);
+
+/// Enter a private mount namespace so our FUSE mounts are invisible to the rest
+/// of the system. With CAP_SYS_ADMIN a bare mount namespace works, as in
+/// eidos-launch; otherwise a user namespace comes first (the
+/// `unshare --map-root-user --mount` idiom). Must run single-threaded, hence
+/// before the test runner does anything else. Returns whether it kept the
+/// initial user namespace: only that namespace, with CAP_SYS_ADMIN, lets a
+/// mount register passthrough backing files. A bare unshare also succeeds
+/// inside a container's user namespace, so `/proc/self/uid_map` must map every
+/// uid to itself too; that check only detects the initial namespace. The strict
+/// branch of `a_writer_is_refused_while_passthrough_readers_hold_the_file` also
+/// needs a kernel with FUSE passthrough (Linux 6.9 or later), and fails without
+/// it.
+fn enter_private_namespace() -> std::io::Result<bool> {
     // SAFETY: getuid/getgid always succeed.
     let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
     // SAFETY: unshare with namespace flags has no memory-safety preconditions.
-    if unsafe { libc::unshare(libc::CLONE_NEWUSER | libc::CLONE_NEWNS) } != 0 {
-        return Err(std::io::Error::last_os_error());
+    let bare = unsafe { libc::unshare(libc::CLONE_NEWNS) } == 0;
+    if !bare {
+        // SAFETY: as above.
+        if unsafe { libc::unshare(libc::CLONE_NEWUSER | libc::CLONE_NEWNS) } != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        fs::write("/proc/self/setgroups", "deny")?;
+        fs::write("/proc/self/uid_map", format!("0 {uid} 1"))?;
+        fs::write("/proc/self/gid_map", format!("0 {gid} 1"))?;
     }
-    fs::write("/proc/self/setgroups", "deny")?;
-    fs::write("/proc/self/uid_map", format!("0 {uid} 1"))?;
-    fs::write("/proc/self/gid_map", format!("0 {gid} 1"))?;
     // Stop our mounts from propagating to (or being seen by) the host.
     // SAFETY: standard mount(2) call with static C-string arguments.
     let rc = unsafe {
@@ -62,7 +84,9 @@ fn enter_private_namespace() -> std::io::Result<()> {
     if rc != 0 {
         return Err(std::io::Error::last_os_error());
     }
-    Ok(())
+    Ok(bare
+        && fs::read_to_string("/proc/self/uid_map")
+            .is_ok_and(|m| m.split_whitespace().eq(["0", "0", "4294967295"])))
 }
 
 /// A self-cleaning temp directory tree, no external deps.
@@ -170,6 +194,71 @@ fn case_insensitive_read_through_mount() {
         fs::read(mnt.join("textures/armor.dds")).unwrap(),
         b"texdata"
     );
+}
+
+/// The casefold bit of `FS_IOC_GETFLAGS` (`FS_CASEFOLD_FL` in `linux/fs.h`).
+const FS_CASEFOLD_FL: i32 = 0x4000_0000;
+
+/// `FS_IOC_GETFLAGS` on `p`: (return value, flags, errno).
+fn getflags(p: &Path) -> (i32, i32, Option<i32>) {
+    use std::os::fd::AsRawFd;
+    let f = fs::File::open(p).unwrap();
+    let mut flags: i32 = 0;
+    // SAFETY: FS_IOC_GETFLAGS writes one int through the pointer.
+    let r = unsafe { libc::ioctl(f.as_raw_fd(), libc::FS_IOC_GETFLAGS, &mut flags) };
+    (r, flags, std::io::Error::last_os_error().raw_os_error())
+}
+
+/// Whether `dir` tells Wine it folds case, by both signals, which must agree.
+fn says_casefold(dir: &Path) -> bool {
+    let (r, flags, errno) = getflags(dir);
+    let ioctl = r == 0 && flags & FS_CASEFOLD_FL != 0;
+    assert!(ioctl || errno == Some(libc::ENOTTY), "{dir:?}: {errno:?}");
+    let marker = match fs::symlink_metadata(dir.join(".ciopfs")) {
+        Ok(_) => true,
+        Err(e) => {
+            assert_eq!(e.kind(), std::io::ErrorKind::NotFound, "{dir:?}");
+            false
+        }
+    };
+    assert_eq!(ioctl, marker, "{dir:?}");
+    ioctl
+}
+
+fn getflags_reports_casefold_on_dirs_only() {
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    put(&game, "Textures/Armor.DDS", b"texdata");
+    let _s = mounted!(vec![game], over, &mnt);
+
+    let (r, flags, _) = getflags(&mnt.join("Textures"));
+    assert_eq!(r, 0);
+    assert_ne!(flags & FS_CASEFOLD_FL, 0, "flags {flags:#x}");
+    let (r, _, errno) = getflags(&mnt.join("Textures/Armor.DDS"));
+    assert_eq!((r, errno), (-1, Some(libc::ENOTTY)));
+}
+
+fn unicode_cased_names_turn_the_casefold_hint_off() {
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    put(&game, "Accents/Café.dds", b"x");
+    put(&game, "Plain/cafe.dds", b"x");
+    put(&game, "Plain/日本.txt", b"x");
+    put(&over, "Saves/Élise.ess", b"x");
+    let _s = mounted!(vec![game], over, &mnt);
+
+    assert!(says_casefold(&mnt));
+    assert!(says_casefold(&mnt.join("Plain")));
+    assert!(!says_casefold(&mnt.join("Accents")));
+    assert!(!says_casefold(&mnt.join("Saves")));
+    // A name created through the mount turns it off from then on, including
+    // the `.ciopfs` entry the kernel cached above.
+    fs::write(mnt.join("Plain/Ébène.txt"), b"x").unwrap();
+    let marker = mnt.join("Plain/.ciopfs");
+    assert!(settle(|| fs::symlink_metadata(&marker).is_err().then_some(())).is_some());
+    assert!(!says_casefold(&mnt.join("Plain")));
+    fs::remove_file(mnt.join("Plain/Ébène.txt")).unwrap();
+    assert!(!says_casefold(&mnt.join("Plain")));
 }
 
 fn write_copies_up_and_keeps_sources_pristine() {
@@ -761,6 +850,51 @@ fn rmdir_refuses_non_empty_directory() {
     assert_eq!(err.raw_os_error(), Some(libc::ENOTEMPTY)); // POSIX, not a silent recurse
 }
 
+/// A writer that opens a file while passthrough readers hold it is refused before
+/// its copy-up, so its O_TRUNC cannot leave an empty Overwrite copy that hides
+/// the mod's file. Without passthrough every open is normal and the writer goes
+/// through as before.
+fn a_writer_is_refused_while_passthrough_readers_hold_the_file() {
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    let data: Vec<u8> = (0..(1 << 20)).map(|i| (i % 251) as u8).collect();
+    put(&game, "big.bsa", &data);
+    let passthrough = PRIVILEGED.load(Ordering::Relaxed)
+        && std::env::var("EIDOS_FUSE_PASSTHROUGH")
+            .is_ok_and(|v| !v.trim().is_empty() && v.trim() != "0");
+    let s = mounted!(vec![game.clone()], over.clone(), &mnt);
+
+    // Two readers of one inode: with a backing id per open, the second failed
+    // with EIO.
+    let reader = fs::File::open(mnt.join("big.bsa")).unwrap();
+    assert!(fs::read(mnt.join("big.bsa")).unwrap() == data);
+    let open_writer = || {
+        fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(mnt.join("big.bsa"))
+    };
+    let writer = open_writer();
+    if passthrough {
+        let err = writer.expect_err("a writer opened beside a passthrough reader");
+        assert_eq!(err.raw_os_error(), Some(libc::ETXTBSY), "{err}");
+        assert!(
+            !over.join("big.bsa").exists(),
+            "the refused writer left an Overwrite copy"
+        );
+        assert!(fs::read(mnt.join("big.bsa")).unwrap() == data);
+        drop(reader);
+        // The daemon sees the reader's RELEASE shortly after close returns.
+        assert!(settle(|| open_writer().ok()).is_some());
+    } else {
+        drop(writer.unwrap());
+        drop(reader);
+    }
+    drop(s);
+    assert!(fs::read(game.join("big.bsa")).unwrap() == data);
+    assert_eq!(fs::read(over.join("big.bsa")).unwrap(), b"");
+}
+
 fn large_file_round_trips_through_cached_handle() {
     let t = Tmp::new();
     let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
@@ -1047,6 +1181,19 @@ fn receipt_failures_preserve_completed_namespace_and_retry_order() {
         .unwrap()
         .sync_all()
         .is_err());
+    // close(2) sends FLUSH: a read-only handle skips it, a writable one still
+    // reports the receipt failure.
+    {
+        use std::os::fd::IntoRawFd;
+        let ro = fs::File::open(mnt.join("Keep.esp")).unwrap().into_raw_fd();
+        assert_eq!(unsafe { libc::close(ro) }, 0);
+        let rw = fs::OpenOptions::new()
+            .write(true)
+            .open(mnt.join("Created.esp"))
+            .unwrap()
+            .into_raw_fd();
+        assert_eq!(unsafe { libc::close(rw) }, -1);
+    }
     fs::remove_file(t.0.join("profile")).unwrap();
     fs::rename(t.0.join("saved-profile"), t.0.join("profile")).unwrap();
     fs::File::open(mnt.join("Created.esp"))
@@ -1193,7 +1340,10 @@ fn main() {
     // run in the host namespace and skip the delete test, which is the only one
     // sensitive to a host service racing on the mount.
     let isolated = match enter_private_namespace() {
-        Ok(()) => true,
+        Ok(privileged) => {
+            PRIVILEGED.store(privileged, Ordering::Relaxed);
+            true
+        }
         Err(e) => {
             eprintln!(
                 "note: running in the host namespace; host services may race the mounts ({e})"
@@ -1330,6 +1480,11 @@ fn main() {
             true,
         ),
         (
+            "a_writer_is_refused_while_passthrough_readers_hold_the_file",
+            a_writer_is_refused_while_passthrough_readers_hold_the_file,
+            false,
+        ),
+        (
             "large_file_round_trips_through_cached_handle",
             large_file_round_trips_through_cached_handle,
             false,
@@ -1342,6 +1497,16 @@ fn main() {
         (
             "creating_a_symlink_lands_in_overwrite",
             creating_a_symlink_lands_in_overwrite,
+            false,
+        ),
+        (
+            "getflags_reports_casefold_on_dirs_only",
+            getflags_reports_casefold_on_dirs_only,
+            false,
+        ),
+        (
+            "unicode_cased_names_turn_the_casefold_hint_off",
+            unicode_cased_names_turn_the_casefold_hint_off,
             false,
         ),
         (

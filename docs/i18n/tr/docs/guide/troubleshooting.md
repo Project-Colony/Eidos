@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=8f0ea64ea39bdda653b7726249aa2b3377b772dc -->
 
 # Sorun giderme ve tanılama
 
@@ -42,29 +42,32 @@ böylece burada bile katmanların kendisi dokunulmamış kalır.
 #### Passthrough neden öntanımlı olarak kapalı
 
 Passthrough, çekirdeğe gerçek dayanak dosyasını verir, böylece okumalar bu
-daemon'u büsbütün atlar. Burada doğruluğa mal olan bir verim kazancıdır. Skyrim
-SE 1.6.1170, proton-cachyos 11.0, çekirdek 7.1.4, aynı 82 eklentilik yükleme
-sırası üzerinde A/B ölçüldü; tek değişken, ikili dosyanın yeteneği taşıyıp
-taşımadığıydı:
+daemon'u büsbütün atlar. Aşağıdaki A/B, daemon'un önceki bir sürümüyle, ileride
+"FUSE passthrough, oyunun hiçbir mod içeriğini yüklemesine engel oluyor" bilinen
+sorununda anlatılan değişiklikten önce ölçüldü. Bu değişiklik en olası nedenden
+kaçınıyor, ama henüz bir oyunda yeniden ölçülmedi, bu yüzden passthrough o
+ölçülene kadar öntanımlı olarak kapalı kalıyor. Skyrim SE 1.6.1170,
+proton-cachyos 11.0, çekirdek 7.1.4, aynı 82 eklentilik yükleme sırası üzerinde
+A/B ölçüldü; tek değişken, ikili dosyanın yeteneği taşıyıp taşımadığıydı:
 
 | passthrough | `STATUS_ACCESS_VIOLATION` ile `NtCreateFile` başarısızlıkları |
 |-------------|--------------------------------------------------------------|
 | açık        | 152 - 75 `.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`              |
 | kapalı      | 0                                                            |
 
-Açıkken oyun kendi arşivlerinin ya da eklentilerinin hiçbirini açmaz; bu, oyun
-içinde sadece orada olmayan modlar olarak görünür - hata yok, günlük satırı yok.
-Kapalıyken aynı yükleme sırası, eklentileri, arşivleri ve Papyrus betikleri
-çalışır durumdayken oyuna ulaşır.
+Açıkken oyun kendi arşivlerinin ya da eklentilerinin hiçbirini açmıyordu; bu,
+oyun içinde orada olmayan modlar olarak görünüyordu - hata yok, günlük satırı
+yok. Kapalıyken aynı yükleme sırası, eklentileri, arşivleri ve Papyrus betikleri
+çalışır durumdayken oyuna ulaşıyordu.
 
-Bu hata daemon'un içinden görünmez; bulunmasını pahalı kılan da budur: kendi
-`open`'ımız her seferinde başarılı olur ve çekirdek bir dayanak dosyasını hiçbir
-zaman geri çevirmez (`EIDOS_FUSE_TRACE=open` ile, başarısız olan tam bir oturum
-boyunca doğrulandı: sıfır `open FAILED`, sıfır `passthrough refused`). Hata,
-daemon `opened_passthrough` yanıtını verdikten sonra üretilir, dolayısıyla
-daemon tarafındaki hiçbir günlükleme onu göremez. Uzantıya özgü de değildir -
-arşivleri de eklentileri de, yani oyunun çalışması boyunca açık tuttuğu
-dosyaları vurur.
+Bu hata daemon'un içinden görünmüyordu; bulunmasını pahalı kılan da buydu:
+daemon'un kendi `open`'ı her seferinde başarılı oluyordu ve çekirdek bir dayanak
+dosyasını hiçbir zaman geri çevirmiyordu (`EIDOS_FUSE_TRACE=open` ile, başarısız
+olan tam bir oturum boyunca doğrulandı: sıfır `open FAILED`, sıfır
+`passthrough refused`). Hata, daemon `opened_passthrough` yanıtını verdikten
+sonra üretiliyordu, dolayısıyla daemon tarafındaki hiçbir günlükleme onu
+göremiyordu. Uzantıya özgü de değildi - arşivleri de eklentileri de, yani oyunun
+çalışması boyunca açık tuttuğu dosyaları vuruyordu.
 
 `EIDOS_FUSE_PASSTHROUGH=1` onu geri açar; ne kazandırdığını ölçmek ya da düzeneği
 yeniden sınamak için. Başlatıcıdaki ve Diagnostics sekmesindeki yetenek uyarıları
@@ -161,19 +164,21 @@ giden bir sembolik bağla değiştirir.
 **Wine, bağlamanın harf katlaması yaptığını anlayamıyordu.** Düzeltildi ve
 önemli olan buydu.
 
-"bu dosya sistemi harf duyarsız mı" diye soran bir API yok, bu yüzden Wine'ın
-`get_dir_case_sensitivity` işlevi, CIOPFS'in sunduğu dizinlerde bıraktığı imi
-arar. İm yoksa Wine harf DUYARLI varsayar ve yazımı bayt bayt eşleşmeyen her
-arama, harf duyarsız bir eşleşme bulmak için TÜM dizini okumaya geri düşer.
-Bethesda oyunları, dosya `ccBGSSSE001-Fish.bsa` iken `data/ccbgssse001-fish.bsa`
-ister, dolayısıyla bu neredeyse her varlıkta tetiklendi: sekiz saniyede 4471 im
+Wine'ın `get_dir_case_sensitivity` işlevi önce dizine `FS_IOC_GETFLAGS` ile
+sorar, sonra CIOPFS'in sunduğu dizinlerde bıraktığı imi arar. İkisi de yoksa
+Wine harf DUYARLI varsayar ve yazımı bayt bayt eşleşmeyen her arama, harf
+duyarsız bir eşleşme bulmak için TÜM dizini okumaya geri düşer. Bethesda
+oyunları, dosya `ccBGSSSE001-Fish.bsa` iken `data/ccbgssse001-fish.bsa` ister,
+dolayısıyla bu neredeyse her varlıkta tetiklendi: sekiz saniyede 4471 im
 yoklaması ve 2236 tam dizin yeniden okuması, doksan saniyede de `Data` için
 195796 sayım. Skyrim SE ana menüsüne hiç ulaşamadı - daemon bir çekirdeğin
 %92'sini yakarken 240 MB yerleşik bellekte öylece durdu.
 
-Eidos en baştan beri `resolve_read` içinde harf katlaması yapıyordu. Bütün bedel,
-bunu hiç söylememesiydi. `lookup` artık `.ciopfs` yanıtı veriyor; `readdir` onu
-hâlâ listelemiyor.
+Eidos en baştan beri `resolve_read` içinde harf katlaması yapıyordu. Bütün
+bedel, bunu hiç söylememesiydi. `lookup` artık `.ciopfs` yanıtı veriyor;
+`readdir` onu hâlâ listelemiyor. `ioctl` ayrıca dizinler için
+`FS_IOC_GETFLAGS`'a casefold bayrağıyla yanıt verir; güncel Wine imi aramadan
+önce bunu sorar.
 
 İki şey bunu yalnızca yavaş değil, öldürücü kıldı. Bedel dizin boyutuyla
 ölçeklenir, bu yüzden Anniversary içeriğini kurmak (`Data` 37 dosyadan 177'ye)
@@ -197,24 +202,48 @@ geliyor.
 **`FOPEN_KEEP_CACHE` kapalı.** Düzeltildi ve nedenini bilmeye değer. Hiç mod
 kurulu değilken, ana menüden saniyeler sonra Skyrim SE'yi bir null başvurusuyla,
 her seferinde çökertiyordu; çekirdek tarafındaki diğer üç önbellek tek tek
-elenerek ayıklandı ve yalnızca bu önemliydi. Onu yitirmek o sırada bedelsiz
-ölçülmüştü, ama o ölçüm `FUSE_PASSTHROUGH` etkinken alınmıştı; orada daemon
-*sıfır* okuma sunar (`EIDOS_FUSE_STATS` tam bir yükleme için `read 0` bildirdi)
-ve çekirdek o sayfaları zaten dayanak dosyaya karşı önbelleğe alıyordu.
-Passthrough artık öntanımlı olarak kapalı (aşağıda), dolayısıyla o savın
-geçerliliği kalmadı ve gerçek bedel ölçülmedi - çökme, her durumda onu kapalı
-bırakmak için yeterli bir gerekçe. İncelemek için `EIDOS_FUSE_KEEP_CACHE=1` ile
-yeniden açın; iki bayrak artık birbirine dolanmış değil, bu yüzden tek başına
-sınanabiliyor.
+elenerek ayıklandı ve yalnızca bu önemliydi. Bu eleme `FUSE_PASSTHROUGH` açıkken
+yapıldı ve çekirdek, `FOPEN_KEEP_CACHE` taşıyan bir passthrough açmasını EIO ile
+başarısız kılar; yani bayrak açıkken her passthrough açması başarısız oluyordu.
+Oyunu çökerten belki de bu başarısız açmalardı ve bayrağın kendisi, passthrough
+kapalıyken, hiç sınanmadı. Passthrough yanıtları artık onu taşımıyor. Onu
+yitirmek o sırada bedelsiz ölçülmüştü, ama passthrough açıkken daemon *sıfır*
+okuma sunar (`EIDOS_FUSE_STATS` tam bir yükleme için `read 0` bildirdi),
+dolayısıyla passthrough öntanımlı olarak kapalıyken (aşağıda) gerçek bedel
+ölçülmedi. Tek başına sınamak için `EIDOS_FUSE_KEEP_CACHE=1` ile yeniden açın.
 
 ### FUSE passthrough, oyunun hiçbir mod içeriğini yüklemesine engel oluyor
 
-Kapatılarak düzeltildi; `EIDOS_FUSE_PASSTHROUGH=1` onu geri getirir. Passthrough
-açıkken Skyrim SE, çekirdek 7.1.4 üzerinde kendi dosyalarının 152'sini (75
-`.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`) `STATUS_ACCESS_VIOLATION` ile açamıyor;
-kapalıyken bu sayı 0 - yani hiçbir mod içeriği yüklenmiyor, sessizce. Çekirdek
-hatayı, daemon `opened_passthrough` yanıtını verdikten sonra üretir, bu yüzden
-daemon'un kendi günlükleri temiz bir çalışma gösterir (sıfır başarısız açma,
-sıfır geri çevrilmiş dayanak dosya). Çekirdek yolundaki kök neden saptanmadı;
-anahtar, yeniden sınanabilsin diye ve image-mapping'in buna ihtiyaç duyduğu
-ortaya çıkarsa passthrough yalnızca DLL'lere daraltılabilsin diye tutuluyor.
+Daemon artık en olası nedenden kaçınıyor (aşağıda), ama bu henüz bir oyunda
+yeniden ölçülmedi, bu yüzden passthrough öntanımlı olarak kapalı kalıyor;
+`EIDOS_FUSE_PASSTHROUGH=1` onu açar. Bu değişiklikten önce, passthrough açıkken
+Skyrim SE, çekirdek 7.1.4 üzerinde kendi dosyalarının 152'sini (75 `.bsa`, 65
+`.esl`, 10 `.esm`, 2 `.esp`) `STATUS_ACCESS_VIOLATION` ile açamıyordu;
+kapalıyken bu sayı 0'dı - yani hiçbir mod içeriği yüklenmiyordu, sessizce.
+Çekirdek hatayı, daemon `opened_passthrough` yanıtını verdikten sonra
+üretiyordu, bu yüzden daemon'un kendi günlükleri temiz bir çalışma gösteriyordu
+(sıfır başarısız açma, sıfır geri çevrilmiş dayanak dosya).
+
+Çekirdek her inode'a tek bir dayanak dosya bağlar (`fs/fuse/iomode.c`). Zaten
+bir dayanak dosyası olan bir inode için ikinci bir dayanak kimliği getiren açma
+EIO ile başarısız olur; dayanak dosyası olan bir inode'un normal açması
+(`FOPEN_PASSTHROUGH` olmadan) da öyle. `FOPEN_KEEP_CACHE` taşıyan bir
+passthrough açması da EIO ile başarısız olur. Daemon eskiden her açmada yeni bir
+kimlik kaydediyordu, bu yüzden oyunun zaten açık tuttuğu bir dosyanın ikinci
+açması başarısız oluyordu. Wine, EIO'yu `STATUS_ACCESS_VIOLATION` olarak
+bildirir; 152 başarısız açmanın ardındaki hata budur. Bu kural çekirdeğin kaynak
+kodundan okundu ve o 152 başarısızlıkla örtüşüyor, bu da onu en olası neden
+yapıyor.
+
+Daemon artık inode başına tek bir dayanak dosya kaydediyor; bu dosyayı inode'un
+tüm passthrough açmaları paylaşıyor ve bir passthrough açmasında
+`FOPEN_KEEP_CACHE` hiçbir zaman ayarlanmıyor. Passthrough yalnızca oyun ve mod
+katmanlarındaki, 1 MiB ya da daha büyük olan veya `.dll`, `.exe` ya da `.asi`
+ile biten dosyaların salt okunur açmalarını kapsar. O dayanak dosya
+kaydedildikten sonra dosyanın her salt okunur açması onu kullanır; dosyanın
+normal açmaları sürdükçe yeni okuyucular da normal açma alır. Overwrite'taki bir
+dosya hiçbir zaman passthrough'dan geçmez ve eklenti zaman damgalarını yansıtan
+bir bağlama onu hiç kullanmaz. Passthrough okuyucularının tuttuğu bir dosyayı
+yazmak için yapılan bir açma, herhangi bir copy-up'tan önce ETXTBSY alır
+(Wine'da: `STATUS_SHARING_VIOLATION`); böylece `O_TRUNC` ile yapılan bir açma,
+Overwrite'ta modun dosyasını gizleyen boş bir kopya bırakamaz.

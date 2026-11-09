@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=e00626e360d8e5b283304045968cc7a6bd6af061 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b937d42496b32ed847c0e3b6387e5e7564b79331 -->
 
 # Eidos のインストール
 
@@ -104,13 +104,17 @@ eidos play skyrimse -- %command%  # 何でも統合ビュー越しに実行す�
 
 ## 任意: FUSE パススルー
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` は任意のケーパビリティを付与しますが、パススルーは有効にしません。
-これを付けるのはバンドルまたはソースビルドの独立した `eidos` バイナリであり、
-ウィンドウでもある `eidos-linux` には決して付けません([SECURITY.md](../../../../../SECURITY.md))。
-実行時に有効にするには、別途 `EIDOS_FUSE_PASSTHROUGH=1` を指定します。**既定では無効で、ほぼ確実にそのままがよい**です。
-Skyrim SE で実測したところ、ゲームが自分の書庫やプラグインを開けなくなり、
-MOD が黙って読み込まれません。このスイッチは仕組みを再検証するためにあり、
-推奨されているからではありません。
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` は任意のケーパビリティを付
+与しますが、パススルーは有効にしません。これを付けるのはバンドルまたはソースビル
+ドの独立した `eidos` バイナリであり、ウィンドウでもある `eidos-linux` には決して
+付けません([SECURITY.md](../../../../../SECURITY.md))。実行時に有効にするには、
+別途 `EIDOS_FUSE_PASSTHROUGH=1` を指定します。既定では無効です。以前のデーモンで
+は、パススルーを有効にすると Skyrim SE が自分の書庫やプラグインを開けなくなり、
+MOD が黙って読み込まれませんでした。最も可能性の高い原因は、そのデーモンがオープ
+ンのたびに新しいバッキングファイルを登録していたのに、カーネルは inode ごとに一
+つしか受け付けないことです。デーモンはいま一つのファイルのパススルーのオープン全
+部で一つを共有しますが、それはまだゲームで再測定されていません。それまではテスト
+のためだけにパススルーを有効にしてください。
 
 詳細と、その判断の裏にある実測値は
 [troubleshooting.ja.md](troubleshooting.md) に。

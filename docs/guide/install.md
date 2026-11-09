@@ -106,13 +106,16 @@ see [usage.md](usage.md#instances-global-and-portable). The full tour is in
 
 ## Optional: FUSE passthrough
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` grants the optional capability; it does not enable passthrough.
-It goes on the separate `eidos` binary of the bundle or a source build, never on
-`eidos-linux`, which is also the window ([SECURITY.md](../../SECURITY.md)).
-`EIDOS_FUSE_PASSTHROUGH=1` is the separate runtime switch. It is **off by default and you almost certainly want it that way**:
-measured on Skyrim SE it stops the game opening its own archives and plugins, so
-mods silently do not load. The switch exists to re-test the mechanism, not
-because it is recommended.
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` grants the optional
+capability; it does not enable passthrough. It goes on the separate `eidos`
+binary of the bundle or a source build, never on `eidos-linux`, which is also
+the window ([SECURITY.md](../../SECURITY.md)). `EIDOS_FUSE_PASSTHROUGH=1` is the
+separate runtime switch, and it is off by default. With passthrough on, an
+earlier daemon stopped Skyrim SE opening its own archives and plugins, so mods
+silently did not load. The most likely cause is that it registered a new
+backing file on every open while the kernel accepts one per inode. The daemon
+now shares one between all the passthrough opens of a file, but that has not
+been re-measured in a game. Until it has, turn passthrough on only to test it.
 
 Details, and the measurements behind that decision, in
 [troubleshooting.md](troubleshooting.md).

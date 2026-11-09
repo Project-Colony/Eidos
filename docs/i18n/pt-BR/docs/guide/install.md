@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=e00626e360d8e5b283304045968cc7a6bd6af061 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b937d42496b32ed847c0e3b6387e5e7564b79331 -->
 
 # Instalar o Eidos
 
@@ -107,14 +107,19 @@ em [usage.pt-BR.md](usage.md).
 
 ## Opcional: passthrough do FUSE
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` concede a capacidade opcional, mas não ativa o passthrough.
-Ela vai no binário `eidos` separado do pacote de versão ou de uma compilação a
-partir do código, nunca no `eidos-linux`, que também é a janela
-([SECURITY.md](../../../../../SECURITY.md)).
-`EIDOS_FUSE_PASSTHROUGH=1` é a opção separada para ativá-lo durante a execução. Ele está **desligado por padrão e você quase certamente quer que
-continue assim**: medido no Skyrim SE, ele impede o jogo de abrir os próprios
-arquivos e plugins, de modo que os mods silenciosamente não carregam. A chave
-existe para retestar o mecanismo, não porque seja recomendada.
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` concede a capacidade
+opcional, mas não ativa o passthrough. Ela vai no binário `eidos` separado do
+pacote de versão ou de uma compilação a partir do código, nunca no
+`eidos-linux`, que também é a janela
+([SECURITY.md](../../../../../SECURITY.md)). `EIDOS_FUSE_PASSTHROUGH=1` é a
+opção separada para ativá-lo durante a execução, e ele está desligado por
+padrão. Com o passthrough ligado, uma versão anterior do daemon impedia o Skyrim
+SE de abrir os próprios arquivos e plugins, de modo que os mods silenciosamente
+não carregavam. A causa mais provável é que ela registrava um arquivo de
+respaldo novo a cada abertura, enquanto o kernel aceita um só por inode. O
+daemon agora compartilha um entre todas as aberturas em passthrough de um
+arquivo, mas isso ainda não foi medido de novo em um jogo. Até lá, ligue o
+passthrough só para testá-lo.
 
 Detalhes, e as medições por trás dessa decisão, em
 [troubleshooting.pt-BR.md](troubleshooting.md).

@@ -757,7 +757,12 @@ mod tests {
                 Some("textures/synthetic/diffuse.dds")
             );
             let frame = render(&scene, top(), &HashMap::new(), &AtomicBool::new(false)).unwrap();
-            assert!(frame.rgba.chunks_exact(4).any(|p| p != BACKGROUND));
+            assert!(frame
+                .rgba
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .any(|p| *p != BACKGROUND));
         }
     }
 
@@ -887,7 +892,14 @@ mod tests {
         let maps = HashMap::new();
         let cancel = AtomicBool::new(false);
         let solid = render(&basic, top(), &maps, &cancel).unwrap();
-        let count = |f: &Frame| f.rgba.chunks_exact(4).filter(|p| *p != BACKGROUND).count();
+        let count = |f: &Frame| {
+            f.rgba
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .filter(|p| **p != BACKGROUND)
+                .count()
+        };
         assert_eq!(pixel(&solid, 320, 210), [160, 168, 180, 255]);
         let mut tiny = mesh(0.0, "", 1.0);
         tiny["positions"] = json!([[-1e-15, -1e-15, 0], [1e-15, -1e-15, 0], [0, 1e-15, 0]]);

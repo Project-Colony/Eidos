@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=8f0ea64ea39bdda653b7726249aa2b3377b772dc -->
 
 # Solución de problemas y diagnóstico
 
@@ -41,29 +41,33 @@ omite), de modo que las propias capas siguen intactas incluso aquí.
 #### Por qué el passthrough está desactivado por defecto
 
 El passthrough entrega al núcleo el archivo de respaldo real, de forma que las
-lecturas se saltan este demonio por completo. Es una ganancia de rendimiento que
-aquí cuesta corrección. Medido en A/B sobre Skyrim SE 1.6.1170, proton-cachyos 11.0,
-núcleo 7.1.4, el mismo orden de carga de 82 complementos, con la única variable de
-si el binario llevaba la capacidad:
+lecturas se saltan este demonio por completo. El A/B de abajo se midió con una
+versión anterior del demonio, antes del cambio descrito más abajo en el problema
+conocido «El passthrough de FUSE impide que el juego cargue contenido de mods».
+Ese cambio evita la causa más probable, pero aún no se ha vuelto a medir en un
+juego, así que el passthrough sigue desactivado por defecto hasta que se mida.
+Medido en A/B sobre Skyrim SE 1.6.1170, proton-cachyos 11.0, núcleo 7.1.4, el
+mismo orden de carga de 82 complementos, con la única variable de si el binario
+llevaba la capacidad:
 
 | passthrough | fallos de `NtCreateFile` con `STATUS_ACCESS_VIOLATION` |
 |-------------|---------------------------------------------------------|
 | activado    | 152 - 75 `.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`        |
 | desactivado | 0                                                       |
 
-Con él activado el juego no abre ninguno de sus propios archivos ni complementos, lo
-que en el juego se manifiesta como mods que simplemente no están - sin error, sin
-línea de registro. Desactivado, el mismo orden de carga llega a la partida con sus
-complementos, archivos y guiones Papyrus vivos.
+Con él activado el juego no abría ninguno de sus propios archivos ni
+complementos, lo que en el juego se manifestaba como mods que no estaban - sin
+error, sin línea de registro. Desactivado, el mismo orden de carga llegaba a la
+partida con sus complementos, archivos y guiones Papyrus vivos.
 
-El fallo es invisible desde dentro del demonio, que es lo que lo hizo caro de
-encontrar: nuestro propio `open` tiene éxito siempre y el núcleo nunca rechaza un
+El fallo era invisible desde dentro del demonio, que es lo que lo hizo caro de
+encontrar: su propio `open` tenía éxito siempre y el núcleo nunca rechazaba un
 archivo de respaldo (verificado a lo largo de una sesión completa fallida con
-`EIDOS_FUSE_TRACE=open`: cero `open FAILED`, cero `passthrough refused`). El error
-se produce después de que el demonio haya respondido `opened_passthrough`, así que
-ningún registro del lado del demonio puede verlo. Tampoco depende de la extensión:
-golpea archivos y complementos por igual, es decir, los ficheros que el juego
-mantiene abiertos durante toda su ejecución.
+`EIDOS_FUSE_TRACE=open`: cero `open FAILED`, cero `passthrough refused`). El
+error se producía después de que el demonio hubiera respondido
+`opened_passthrough`, así que ningún registro del lado del demonio podía verlo.
+Tampoco dependía de la extensión: golpeaba archivos y complementos por igual, es
+decir, los ficheros que el juego mantiene abiertos durante toda su ejecución.
 
 `EIDOS_FUSE_PASSTHROUGH=1` lo vuelve a activar, para medir lo que aporta o para
 volver a probar el mecanismo. Los avisos de capacidad en el lanzador y en la pestaña
@@ -156,20 +160,23 @@ actualización del prefijo.
 **Wine no podía saber que el montaje pliega mayúsculas y minúsculas.** Corregido, y
 era el que importaba.
 
-No existe API para «¿este sistema de archivos distingue mayúsculas?», así que
-`get_dir_case_sensitivity` de Wine olfatea el marcador que CIOPFS deja en los
-directorios que sirve. Si falta, Wine supone que SÍ distingue, y toda búsqueda cuya
-grafía no coincida byte a byte recae en leer el directorio ENTERO para encontrar una
-coincidencia sin distinción de mayúsculas. Los juegos de Bethesda piden
-`data/ccbgssse001-fish.bsa` cuando el archivo es `ccBGSSSE001-Fish.bsa`, así que
-saltaba en casi todos los recursos: 4471 sondeos del marcador y 2236 relecturas
-completas de directorio en ocho segundos, y 195796 enumeraciones de `Data` en
-noventa. Skyrim SE nunca llegaba a su menú principal: se quedaba en 240 MB
-residentes mientras el demonio quemaba el 92 % de un núcleo.
+`get_dir_case_sensitivity` de Wine pregunta primero al directorio con
+`FS_IOC_GETFLAGS` y después olfatea el marcador que CIOPFS deja en los
+directorios que sirve. Si faltan ambos, Wine supone que SÍ distingue, y toda
+búsqueda cuya grafía no coincida byte a byte recae en leer el directorio ENTERO
+para encontrar una coincidencia sin distinción de mayúsculas. Los juegos de
+Bethesda piden `data/ccbgssse001-fish.bsa` cuando el archivo es
+`ccBGSSSE001-Fish.bsa`, así que saltaba en casi todos los recursos: 4471 sondeos
+del marcador y 2236 relecturas completas de directorio en ocho segundos, y
+195796 enumeraciones de `Data` en noventa. Skyrim SE nunca llegaba a su menú
+principal: se quedaba en 240 MB residentes mientras el demonio quemaba el 92 %
+de un núcleo.
 
-Eidos plegaba mayúsculas en `resolve_read` desde el principio. Todo el coste venía
-de no decirlo nunca. Ahora `lookup` responde `.ciopfs`; `readdir` sigue sin
-listarlo.
+Eidos plegaba mayúsculas en `resolve_read` desde el principio. Todo el coste
+venía de no decirlo nunca. Ahora `lookup` responde `.ciopfs`; `readdir` sigue
+sin listarlo. `ioctl` también responde `FS_IOC_GETFLAGS` en los directorios con
+el indicador de casefold, que el Wine actual pregunta antes de buscar el
+marcador.
 
 Dos cosas lo volvieron mortal en lugar de meramente lento. El coste escala con el
 tamaño del directorio, así que instalar el contenido Anniversary (`Data` de 37 a 177
@@ -189,27 +196,55 @@ había nada y guardaba eso. No demostrado, y merece revisarse. En cualquier caso
 guarda de captura (una captura que vacía por completo el conjunto activo se rechaza
 sea cual sea su tamaño) significa que ya no puede dañar el perfil.
 
-**`FOPEN_KEEP_CACHE` está apagado.** Corregido, y vale la pena saber por qué. Hacía
-que Skyrim SE se cerrara por desreferencia nula segundos después del menú principal,
-de forma determinista, sin un solo mod instalado; las otras tres cachés del lado del
-núcleo se descartaron una a una por bisección y sólo ésta importaba. Su pérdida se
-midió entonces como gratuita, pero esa medición se hizo con `FUSE_PASSTHROUGH`
-activo, donde el demonio sirve *cero* lecturas (`EIDOS_FUSE_STATS` informó `read 0`
-en una carga completa) y el núcleo ya cacheaba esas páginas contra el archivo de
-respaldo. El passthrough está ahora apagado por defecto (más abajo), así que aquel
-argumento ya no vale y el coste real está sin medir - el cierre basta de todos modos
-para dejarlo apagado. Reactívalo con `EIDOS_FUSE_KEEP_CACHE=1` para investigar; las
-dos banderas ya no están enredadas, así que ahora puede probarse por sí sola.
+**`FOPEN_KEEP_CACHE` está apagado.** Corregido, y vale la pena saber por qué.
+Hacía que Skyrim SE se cerrara por desreferencia nula segundos después del menú
+principal, de forma determinista, sin un solo mod instalado; las otras tres
+cachés del lado del núcleo se descartaron una a una por bisección y sólo ésta
+importaba. Esa bisección se hizo con `FUSE_PASSTHROUGH` activo, y el núcleo hace
+fallar con EIO una apertura en passthrough que lleva `FOPEN_KEEP_CACHE`, así que
+con la bandera activa fallaba cada apertura en passthrough. Puede que fueran
+esas aperturas fallidas las que cerraban el juego, y la bandera por sí sola, con
+el passthrough apagado, nunca se ha probado. Las respuestas en passthrough ya no
+la llevan. Su pérdida se midió entonces como gratuita, pero con el passthrough
+activo el demonio sirve *cero* lecturas (`EIDOS_FUSE_STATS` informó `read 0` en
+una carga completa), así que con el passthrough apagado por defecto (más abajo)
+el coste real está sin medir. Reactívalo con `EIDOS_FUSE_KEEP_CACHE=1` para
+probarlo por sí solo.
 
 ### El passthrough de FUSE impide que el juego cargue contenido de mods
 
-Corregido apagándolo; `EIDOS_FUSE_PASSTHROUGH=1` lo devuelve. Con el passthrough
-activo, Skyrim SE falla al abrir 152 de sus propios archivos (75 `.bsa`, 65 `.esl`,
-10 `.esm`, 2 `.esp`) con `STATUS_ACCESS_VIOLATION`, frente a 0 con él apagado, en el
-núcleo 7.1.4 - de modo que no se carga ningún contenido de mods, en silencio. El
-núcleo levanta el error después de que el demonio haya respondido
-`opened_passthrough`, así que los propios registros del demonio muestran una
-ejecución limpia (cero aperturas fallidas, cero archivos de respaldo rechazados). La
-causa raíz en la ruta del núcleo no está establecida; el interruptor se conserva
-para poder volver a probarlo, y para que el passthrough pudiera limitarse sólo a
-DLL si resultara que el mapeo de imágenes lo necesita.
+El demonio evita ahora la causa más probable (abajo), pero eso aún no se ha
+vuelto a medir en un juego, así que el passthrough sigue apagado por defecto;
+`EIDOS_FUSE_PASSTHROUGH=1` lo activa. Antes de ese cambio, con el passthrough
+activo, Skyrim SE fallaba al abrir 152 de sus propios archivos (75 `.bsa`, 65
+`.esl`, 10 `.esm`, 2 `.esp`) con `STATUS_ACCESS_VIOLATION`, frente a 0 con él
+apagado, en el núcleo 7.1.4 - de modo que no se cargaba ningún contenido de
+mods, en silencio. El núcleo levantaba el error después de que el demonio
+hubiera respondido `opened_passthrough`, así que los propios registros del
+demonio mostraban una ejecución limpia (cero aperturas fallidas, cero archivos
+de respaldo rechazados).
+
+El núcleo asocia un único archivo de respaldo a cada inodo (`fs/fuse/iomode.c`).
+Una apertura que trae un segundo identificador de respaldo para un inodo que ya
+tiene uno falla con EIO, igual que una apertura normal (sin `FOPEN_PASSTHROUGH`)
+de un inodo que tiene archivo de respaldo. Una apertura en passthrough que lleva
+`FOPEN_KEEP_CACHE` también falla con EIO. El demonio registraba un identificador
+nuevo en cada apertura, así que fallaba la segunda apertura de un archivo que el
+juego ya tenía abierto. Wine informa EIO como `STATUS_ACCESS_VIOLATION`, el
+error detrás de las 152 aperturas fallidas. Esta regla sale del código fuente
+del núcleo y coincide con esos 152 fallos, lo que la convierte en la causa más
+probable.
+
+El demonio registra ahora un único archivo de respaldo por inodo, compartido por
+todas sus aperturas en passthrough, y nunca pone `FOPEN_KEEP_CACHE` en una
+apertura en passthrough. El passthrough sólo cubre aperturas de sólo lectura de
+archivos de las capas del juego y de los mods que midan 1 MiB o más o terminen
+en `.dll`, `.exe` o `.asi`. Una vez registrado ese archivo de respaldo, toda
+apertura de sólo lectura del archivo lo usa, y mientras el archivo tenga
+aperturas normales, los lectores nuevos también reciben aperturas normales. Un
+archivo del Overwrite nunca pasa por el passthrough, y un montaje que proyecta
+las marcas de tiempo de los complementos no lo usa en absoluto. Una apertura
+para escritura de un archivo que retienen lectores en passthrough recibe ETXTBSY
+(en Wine: `STATUS_SHARING_VIOLATION`) antes de cualquier copy-up, así que una
+apertura con `O_TRUNC` no puede dejar en el Overwrite una copia vacía que oculte
+el archivo del mod.

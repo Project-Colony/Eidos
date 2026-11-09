@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=8f0ea64ea39bdda653b7726249aa2b3377b772dc -->
 
 # Fehlersuche und Diagnose
 
@@ -41,29 +41,34 @@ Verzeichnis), sodass die Schichten selbst auch hier unberührt bleiben.
 #### Warum Passthrough standardmäßig aus ist
 
 Passthrough übergibt dem Kernel die echte Hintergrunddatei, sodass Lesevorgänge
-diesen Daemon vollständig umgehen. Es ist ein Durchsatzgewinn, der hier
-Korrektheit kostet. A/B gemessen auf Skyrim SE 1.6.1170, proton-cachyos 11.0,
-Kernel 7.1.4, dieselbe Ladereihenfolge mit 82 Plugins, einzige Variable war, ob das
-Binary die Capability trug:
+diesen Daemon vollständig umgehen. Das A/B unten wurde mit einer früheren
+Version des Daemons gemessen, vor der Änderung, die weiter unten im bekannten
+Problem „FUSE-Passthrough verhindert, dass das Spiel Mod-Inhalte lädt“
+beschrieben ist. Diese Änderung vermeidet die wahrscheinlichste Ursache, wurde
+aber noch nicht erneut in einem Spiel gemessen, deshalb bleibt Passthrough
+standardmäßig aus, bis das geschehen ist. A/B gemessen auf Skyrim SE 1.6.1170,
+proton-cachyos 11.0, Kernel 7.1.4, dieselbe Ladereihenfolge mit 82 Plugins,
+einzige Variable war, ob das Binary die Capability trug:
 
 | Passthrough | `NtCreateFile`-Fehlschläge mit `STATUS_ACCESS_VIOLATION` |
 |-------------|----------------------------------------------------------|
 | an          | 152 - 75 `.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`          |
 | aus         | 0                                                        |
 
-Mit eingeschaltetem Passthrough öffnet das Spiel keines seiner eigenen Archive oder
-Plugins, was sich im Spiel als schlicht nicht vorhandene Mods zeigt - kein Fehler,
-keine Logzeile. Ausgeschaltet erreicht dieselbe Ladereihenfolge das Spielgeschehen
-mit lebendigen Plugins, Archiven und Papyrus-Skripten.
+Mit eingeschaltetem Passthrough öffnete das Spiel keines seiner eigenen Archive
+oder Plugins, was sich im Spiel als nicht vorhandene Mods zeigte - kein Fehler,
+keine Logzeile. Ausgeschaltet erreichte dieselbe Ladereihenfolge das
+Spielgeschehen mit lebendigen Plugins, Archiven und Papyrus-Skripten.
 
-Der Fehlschlag ist von innerhalb des Daemons unsichtbar, was ihn teuer zu finden
-machte: unser eigenes `open` gelingt jedes Mal, und der Kernel weist nie eine
+Der Fehlschlag war von innerhalb des Daemons unsichtbar, was ihn teuer zu finden
+machte: sein eigenes `open` gelang jedes Mal, und der Kernel wies nie eine
 Hintergrunddatei ab (über eine ganze fehlschlagende Sitzung mit
-`EIDOS_FUSE_TRACE=open` geprüft: null `open FAILED`, null `passthrough refused`).
-Der Fehler entsteht, nachdem der Daemon `opened_passthrough` geantwortet hat, also
-kann ihn keine daemonseitige Protokollierung sehen. Er ist auch nicht
-endungsspezifisch - er trifft Archive und Plugins gleichermaßen, also die Dateien,
-die das Spiel über seine gesamte Laufzeit offen hält.
+`EIDOS_FUSE_TRACE=open` geprüft: null `open FAILED`, null
+`passthrough refused`). Der Fehler entstand, nachdem der Daemon
+`opened_passthrough` geantwortet hatte, also konnte ihn keine daemonseitige
+Protokollierung sehen. Er war auch nicht endungsspezifisch - er traf Archive und
+Plugins gleichermaßen, also die Dateien, die das Spiel über seine gesamte
+Laufzeit offen hält.
 
 `EIDOS_FUSE_PASSTHROUGH=1` schaltet es wieder ein, um zu messen, was es bringt, oder
 um den Mechanismus erneut zu prüfen. Die Capability-Warnungen im Starter und im
@@ -156,21 +161,23 @@ seinen eigenen Baum.
 **Wine konnte nicht erkennen, dass das Mount Groß-/Kleinschreibung faltet.**
 Behoben, und das war der, auf den es ankam.
 
-Es gibt keine API für "ist dieses Dateisystem case-insensitiv", also schnüffelt
-Wines `get_dir_case_sensitivity` nach dem Marker, den CIOPFS in den von ihm
-bedienten Verzeichnissen hinterlässt. Fehlt er, nimmt Wine case-SENSITIV an, und
-jede Suche, deren Schreibweise nicht Byte für Byte passt, fällt darauf zurück, das
-GANZE Verzeichnis zu lesen, um eine Übereinstimmung ohne Rücksicht auf Groß- und
-Kleinschreibung zu finden. Bethesda-Spiele fragen nach `data/ccbgssse001-fish.bsa`,
-während die Datei `ccBGSSSE001-Fish.bsa` heißt, also feuerte das bei nahezu jedem
-Asset: 4471 Marker-Abfragen und 2236 vollständige Verzeichnis-Neulesungen in acht
-Sekunden, und 195796 Aufzählungen von `Data` in neunzig. Skyrim SE erreichte nie
-sein Hauptmenü - es saß bei 240 MB resident, während der Daemon 92 % eines Kerns
-verbrannte.
+Wines `get_dir_case_sensitivity` fragt das Verzeichnis zuerst per
+`FS_IOC_GETFLAGS`, dann schnüffelt es nach dem Marker, den CIOPFS in den von ihm
+bedienten Verzeichnissen hinterlässt. Fehlt beides, nimmt Wine case-SENSITIV an,
+und jede Suche, deren Schreibweise nicht Byte für Byte passt, fällt darauf
+zurück, das GANZE Verzeichnis zu lesen, um eine Übereinstimmung ohne Rücksicht
+auf Groß- und Kleinschreibung zu finden. Bethesda-Spiele fragen nach
+`data/ccbgssse001-fish.bsa`, während die Datei `ccBGSSSE001-Fish.bsa` heißt,
+also feuerte das bei nahezu jedem Asset: 4471 Marker-Abfragen und 2236
+vollständige Verzeichnis-Neulesungen in acht Sekunden, und 195796 Aufzählungen
+von `Data` in neunzig. Skyrim SE erreichte nie sein Hauptmenü - es saß bei
+240 MB resident, während der Daemon 92 % eines Kerns verbrannte.
 
-Eidos faltete Groß- und Kleinschreibung in `resolve_read` von Anfang an. Die ganzen
-Kosten entstanden nur daraus, es nie zu sagen. `lookup` antwortet nun `.ciopfs`;
-`readdir` listet es weiterhin nicht.
+Eidos faltete Groß- und Kleinschreibung in `resolve_read` von Anfang an. Die
+ganzen Kosten entstanden nur daraus, es nie zu sagen. `lookup` antwortet nun
+`.ciopfs`; `readdir` listet es weiterhin nicht. `ioctl` beantwortet außerdem
+`FS_IOC_GETFLAGS` auf Verzeichnissen mit dem Casefold-Flag, das aktuelles Wine
+vor der Suche nach dem Marker abfragt.
 
 Zwei Dinge machten es tödlich statt bloß langsam. Die Kosten skalieren mit der
 Verzeichnisgröße, also brachte das Installieren der Anniversary-Inhalte (`Data` von
@@ -194,26 +201,54 @@ beschädigen kann.
 
 **`FOPEN_KEEP_CACHE` ist aus.** Behoben, und es lohnt zu wissen, warum. Es ließ
 Skyrim SE Sekunden nach dem Hauptmenü deterministisch an einer
-Null-Dereferenzierung abstürzen, ohne einen einzigen installierten Mod; die anderen
-drei kernelseitigen Caches wurden einzeln herausbisektiert, und nur dieser war von
-Bedeutung. Sein Verlust wurde damals als kostenlos gemessen, aber diese Messung
-entstand mit aktivem `FUSE_PASSTHROUGH`, wo der Daemon *null* Lesevorgänge bedient
-(`EIDOS_FUSE_STATS` meldete `read 0` für einen vollständigen Ladevorgang) und der
-Kernel diese Seiten bereits gegen die Hintergrunddatei cachte. Passthrough ist
-inzwischen standardmäßig aus (siehe oben), also gilt das Argument nicht mehr und die
-echten Kosten sind ungemessen - der Absturz allein ist Grund genug, es aus zu
-lassen. Mit `EIDOS_FUSE_KEEP_CACHE=1` zum Untersuchen wieder einschalten; die beiden
-Flags sind nicht mehr verwoben, es lässt sich also nun für sich testen.
+Null-Dereferenzierung abstürzen, ohne einen einzigen installierten Mod; die
+anderen drei kernelseitigen Caches wurden einzeln herausbisektiert, und nur
+dieser war von Bedeutung. Diese Bisektion lief mit eingeschaltetem
+`FUSE_PASSTHROUGH`, und der Kernel lässt ein Passthrough-Öffnen, das
+`FOPEN_KEEP_CACHE` trägt, mit EIO scheitern, also scheiterte mit dem Flag jedes
+Passthrough-Öffnen. Vielleicht waren es diese gescheiterten Öffnungen, die das
+Spiel abstürzen ließen, und das Flag allein, mit ausgeschaltetem Passthrough,
+wurde nie getestet. Passthrough-Antworten tragen es nicht mehr. Sein Verlust
+wurde damals als kostenlos gemessen, aber mit eingeschaltetem Passthrough
+bedient der Daemon *null* Lesevorgänge (`EIDOS_FUSE_STATS` meldete `read 0` für
+einen vollständigen Ladevorgang), also sind die echten Kosten bei standardmäßig
+ausgeschaltetem Passthrough (siehe unten) ungemessen. Mit
+`EIDOS_FUSE_KEEP_CACHE=1` wieder einschalten, um es für sich zu testen.
 
 ### FUSE-Passthrough verhindert, dass das Spiel Mod-Inhalte lädt
 
-Behoben, indem es abgeschaltet wurde; `EIDOS_FUSE_PASSTHROUGH=1` holt es zurück. Mit
-eingeschaltetem Passthrough scheitert Skyrim SE daran, 152 seiner eigenen Dateien zu
-öffnen (75 `.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`) mit `STATUS_ACCESS_VIOLATION`,
-gegenüber 0 ohne, auf Kernel 7.1.4 - also lädt stillschweigend kein Mod-Inhalt. Der
-Kernel meldet den Fehler, nachdem der Daemon `opened_passthrough` geantwortet hat,
-sodass die Logs des Daemons einen sauberen Lauf zeigen (null fehlgeschlagene
-Öffnungen, null abgewiesene Hintergrunddateien). Die Grundursache im Kernelpfad ist
-nicht geklärt; der Schalter bleibt, damit sich das erneut prüfen lässt und damit
-Passthrough auf DLLs eingegrenzt werden könnte, falls sich zeigt, dass das
-Image-Mapping ihn braucht.
+Der Daemon vermeidet jetzt die wahrscheinlichste Ursache (unten), aber das wurde
+noch nicht erneut in einem Spiel gemessen, deshalb bleibt Passthrough
+standardmäßig aus; `EIDOS_FUSE_PASSTHROUGH=1` schaltet es ein. Vor der Änderung
+scheiterte Skyrim SE mit eingeschaltetem Passthrough daran, 152 seiner eigenen
+Dateien zu öffnen (75 `.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`), mit
+`STATUS_ACCESS_VIOLATION`, gegenüber 0 ohne, auf Kernel 7.1.4 - also lud
+stillschweigend kein Mod-Inhalt. Der Kernel meldete den Fehler, nachdem der
+Daemon `opened_passthrough` geantwortet hatte, sodass die Logs des Daemons einen
+sauberen Lauf zeigten (null fehlgeschlagene Öffnungen, null abgewiesene
+Hintergrunddateien).
+
+Der Kernel bindet eine einzige Hintergrunddatei an jeden Inode
+(`fs/fuse/iomode.c`). Ein Öffnen, das für einen Inode, der schon eine hat, eine
+zweite Hintergrunddatei-ID mitbringt, scheitert mit EIO, ebenso ein normales
+Öffnen (ohne `FOPEN_PASSTHROUGH`) eines Inodes, der eine Hintergrunddatei hat.
+Ein Passthrough-Öffnen, das `FOPEN_KEEP_CACHE` trägt, scheitert ebenfalls mit
+EIO. Der Daemon registrierte früher bei jedem Öffnen eine neue ID, also
+scheiterte das zweite Öffnen einer Datei, die das Spiel schon offen hielt. Wine
+meldet EIO als `STATUS_ACCESS_VIOLATION`, den Fehler hinter den 152
+gescheiterten Öffnungen. Diese Regel stammt aus dem Kernel-Quelltext und passt
+zu diesen 152 Fehlschlägen, was sie zur wahrscheinlichsten Ursache macht.
+
+Der Daemon registriert jetzt eine Hintergrunddatei pro Inode, die sich alle
+Passthrough-Öffnungen dieses Inodes teilen, und setzt `FOPEN_KEEP_CACHE` nie bei
+einem Passthrough-Öffnen. Passthrough gilt nur für schreibgeschützte Öffnungen
+von Dateien aus den Spiel- und Mod-Schichten, die 1 MiB oder größer sind oder
+auf `.dll`, `.exe` oder `.asi` enden. Sobald für eine Datei eine
+Hintergrunddatei registriert ist, nutzt jedes schreibgeschützte Öffnen diese,
+und solange die Datei normale Öffnungen hat, bekommen neue Leser ebenfalls
+normale Öffnungen. Eine Datei im Overwrite geht nie über Passthrough, und ein
+Mount, der Plugin-Zeitstempel projiziert, nutzt es gar nicht. Ein Schreiber, der
+eine Datei öffnet, während Passthrough-Leser sie halten, bekommt ETXTBSY (in
+Wine: `STATUS_SHARING_VIOLATION`), bevor irgendein Copy-up läuft, sodass ein
+Öffnen mit `O_TRUNC` keine leere Overwrite-Kopie hinterlassen kann, die die
+Datei des Mods verdeckt.

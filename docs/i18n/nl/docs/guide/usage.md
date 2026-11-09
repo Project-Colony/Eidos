@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=28769fd12c94a2f9a6a9fda35b67b39cc433502b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
 
 # Eidos gebruiken
 
@@ -157,10 +157,11 @@ Eidos draait volledig zonder root. Het koppelt in een privé-user- +
 mount-naamruimte, dus geen setuid-helper, geen daemon, en niets te verlenen.
 
 `sudo setcap cap_sys_admin+ep "$(command -v eidos)"` is **optioneel** en regelt
-precies één ding: kernel-FUSE-passthrough, dat standaard uit staat omdat het het
-spel breekt (hieronder). Met die capability neemt Eidos een gewone
-mount-naamruimte in plaats van een user-naamruimte; mods worden hoe dan ook
-identiek uitgerold.
+precies één ding: kernel-FUSE-passthrough, dat standaard uit staat omdat een
+eerdere versie van de daemon er het spel mee brak en de wijziging die de
+waarschijnlijkste oorzaak vermijdt nog niet opnieuw in een spel gemeten is
+(hieronder). Met die capability neemt Eidos een gewone mount-naamruimte in
+plaats van een user-naamruimte; mods worden hoe dan ook identiek uitgerold.
 
 
 Waarom het oude `setcap`-advies weg is - en waarom FUSE-passthrough uit

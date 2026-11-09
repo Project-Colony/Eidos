@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=8f0ea64ea39bdda653b7726249aa2b3377b772dc -->
 
 # Rozwiązywanie problemów i diagnostyka
 
@@ -39,10 +39,14 @@ warstwy pozostają nietknięte nawet tutaj.
 
 #### Dlaczego passthrough jest domyślnie wyłączony
 
-Passthrough przekazuje jądru prawdziwy plik bazowy, dzięki czemu odczyty całkowicie
-omijają tego demona. To zysk przepustowości, który tutaj kosztuje poprawność.
-Zmierzone A/B na Skyrim SE 1.6.1170, proton-cachyos 11.0, jądro 7.1.4, ta sama
-kolejność wczytywania 82 wtyczek, przy jedynej zmiennej: czy plik binarny nosił tę
+Passthrough przekazuje jądru prawdziwy plik bazowy, dzięki czemu odczyty
+całkowicie omijają tego demona. Pomiar A/B poniżej wykonano z wcześniejszą
+wersją demona, przed zmianą opisaną niżej w znanym problemie „Passthrough FUSE
+nie pozwala grze wczytać żadnej zawartości modów”. Ta zmiana omija najbardziej
+prawdopodobną przyczynę, ale nie zmierzono jej jeszcze ponownie w grze, więc
+passthrough pozostaje domyślnie wyłączony, dopóki to nie nastąpi. Zmierzone A/B
+na Skyrim SE 1.6.1170, proton-cachyos 11.0, jądro 7.1.4, ta sama kolejność
+wczytywania 82 wtyczek, przy jedynej zmiennej: czy plik binarny nosił tę
 zdolność:
 
 | passthrough | niepowodzenia `NtCreateFile` z `STATUS_ACCESS_VIOLATION` |
@@ -50,18 +54,19 @@ zdolność:
 | włączony    | 152 - 75 `.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`         |
 | wyłączony   | 0                                                        |
 
-Przy włączonym gra nie otwiera żadnego z własnych archiwów ani wtyczek, co w grze
-objawia się jako mody, których po prostu nie ma - bez błędu, bez wiersza w
-dzienniku. Przy wyłączonym ta sama kolejność wczytywania dociera do rozgrywki z
-żywymi wtyczkami, archiwami i skryptami Papyrus.
+Przy włączonym gra nie otwierała żadnego z własnych archiwów ani wtyczek, co w
+grze objawiało się jako mody, których nie było - bez błędu, bez wiersza w
+dzienniku. Przy wyłączonym ta sama kolejność wczytywania docierała do rozgrywki
+z żywymi wtyczkami, archiwami i skryptami Papyrus.
 
-Awaria jest niewidoczna z wnętrza demona i to właśnie uczyniło jej znalezienie
-kosztownym: nasze własne `open` udaje się za każdym razem, a jądro nigdy nie odmawia
-pliku bazowego (sprawdzone na całej nieudanej sesji z `EIDOS_FUSE_TRACE=open`: zero
-`open FAILED`, zero `passthrough refused`). Błąd powstaje po tym, jak demon
-odpowiedział `opened_passthrough`, więc żadne logowanie po stronie demona go nie
-zobaczy. Nie zależy też od rozszerzenia - uderza tak samo w archiwa i wtyczki, czyli
-w pliki, które gra trzyma otwarte przez cały czas działania.
+Awaria była niewidoczna z wnętrza demona i to właśnie uczyniło jej znalezienie
+kosztownym: jego własne `open` udawało się za każdym razem, a jądro nigdy nie
+odmawiało pliku bazowego (sprawdzone na całej nieudanej sesji z
+`EIDOS_FUSE_TRACE=open`: zero `open FAILED`, zero `passthrough refused`). Błąd
+powstawał po tym, jak demon odpowiedział `opened_passthrough`, więc żadne
+logowanie po stronie demona nie mogło go zobaczyć. Nie zależał też od
+rozszerzenia - uderzał tak samo w archiwa i wtyczki, czyli w pliki, które gra
+trzyma otwarte przez cały czas działania.
 
 `EIDOS_FUSE_PASSTHROUGH=1` włącza go z powrotem, by zmierzyć, co daje, albo by
 ponownie przetestować mechanizm. Ostrzeżenia o zdolności w launcherze i w zakładce
@@ -150,21 +155,23 @@ aktualizacji prefiksu zastępuje `mscoree.dll` dowiązaniem do własnego drzewa.
 **Wine nie potrafiło stwierdzić, że montowanie składa wielkość liter.** Naprawione i
 to był ten, który miał znaczenie.
 
-Nie istnieje API „czy ten system plików jest niewrażliwy na wielkość liter", więc
-`get_dir_case_sensitivity` w Wine węszy za znacznikiem, który CIOPFS zostawia w
-obsługiwanych przez siebie katalogach. Gdy go brak, Wine zakłada WRAŻLIWOŚĆ na
-wielkość liter, a każde wyszukanie, którego pisownia nie zgadza się bajt w bajt,
-cofa się do przeczytania CAŁEGO katalogu w poszukiwaniu dopasowania bez względu na
-wielkość liter. Gry Bethesdy proszą o `data/ccbgssse001-fish.bsa`, podczas gdy plik
+`get_dir_case_sensitivity` w Wine najpierw pyta katalog przez `FS_IOC_GETFLAGS`,
+potem węszy za znacznikiem, który CIOPFS zostawia w obsługiwanych przez siebie
+katalogach. Gdy brak obu, Wine zakłada WRAŻLIWOŚĆ na wielkość liter, a każde
+wyszukanie, którego pisownia nie zgadza się bajt w bajt, cofa się do
+przeczytania CAŁEGO katalogu w poszukiwaniu dopasowania bez względu na wielkość
+liter. Gry Bethesdy proszą o `data/ccbgssse001-fish.bsa`, podczas gdy plik
 nazywa się `ccBGSSSE001-Fish.bsa`, więc uruchamiało się to przy niemal każdym
-zasobie: 4471 sondowań znacznika i 2236 pełnych ponownych odczytów katalogu w osiem
-sekund oraz 195796 wyliczeń `Data` w dziewięćdziesiąt. Skyrim SE nigdy nie dochodził
-do menu głównego - siedział na 240 MB rezydentnych, podczas gdy demon spalał 92 %
-rdzenia.
+zasobie: 4471 sondowań znacznika i 2236 pełnych ponownych odczytów katalogu w
+osiem sekund oraz 195796 wyliczeń `Data` w dziewięćdziesiąt. Skyrim SE nigdy nie
+dochodził do menu głównego - siedział na 240 MB rezydentnych, podczas gdy demon
+spalał 92 % rdzenia.
 
-Eidos składał wielkość liter w `resolve_read` od samego początku. Cały koszt brał się
-z tego, że nigdy tego nie powiedział. `lookup` odpowiada teraz `.ciopfs`; `readdir`
-nadal go nie wypisuje.
+Eidos składał wielkość liter w `resolve_read` od samego początku. Cały koszt
+brał się z tego, że nigdy tego nie powiedział. `lookup` odpowiada teraz
+`.ciopfs`; `readdir` nadal go nie wypisuje. `ioctl` odpowiada też na
+`FS_IOC_GETFLAGS` dla katalogów flagą casefold, o którą obecny Wine pyta przed
+szukaniem znacznika.
 
 Dwie rzeczy uczyniły to śmiertelnym, a nie tylko powolnym. Koszt rośnie z rozmiarem
 katalogu, więc zainstalowanie zawartości Anniversary (`Data` z 37 plików do 177)
@@ -185,27 +192,53 @@ inaczej, zabezpieczenie przechwytywania (przechwycenie, które całkowicie czyś
 aktywnych, jest odrzucane przy każdym rozmiarze) sprawia, że nie może to już
 uszkodzić profilu.
 
-**`FOPEN_KEEP_CACHE` jest wyłączony.** Naprawione i warto wiedzieć dlaczego. Wywalał
-Skyrim SE na wyłuskaniu wskaźnika zerowego kilka sekund po menu głównym,
-deterministycznie, przy zerze zainstalowanych modów; pozostałe trzy cache po stronie
-jądra zostały wyeliminowane pojedynczo przez bisekcję i tylko ten miał znaczenie.
-Jego utratę zmierzono wtedy jako darmową, ale ten pomiar wykonano przy aktywnym
-`FUSE_PASSTHROUGH`, gdzie demon obsługuje *zero* odczytów (`EIDOS_FUSE_STATS`
-raportował `read 0` przy pełnym wczytaniu), a jądro i tak już buforowało te strony
-względem pliku bazowego. Passthrough jest teraz domyślnie wyłączony (poniżej), więc
-tamten argument już nie obowiązuje, a rzeczywisty koszt pozostaje niezmierzony - sama
-awaria i tak wystarcza, by zostawić go wyłączonym. Włącz z powrotem
-`EIDOS_FUSE_KEEP_CACHE=1`, by badać; obie flagi nie są już splątane, więc teraz można
-go testować osobno.
+**`FOPEN_KEEP_CACHE` jest wyłączony.** Naprawione i warto wiedzieć dlaczego.
+Wywalał Skyrim SE na wyłuskaniu wskaźnika zerowego kilka sekund po menu głównym,
+deterministycznie, przy zerze zainstalowanych modów; pozostałe trzy cache po
+stronie jądra zostały wyeliminowane pojedynczo przez bisekcję i tylko ten miał
+znaczenie. Ta bisekcja szła przy włączonym `FUSE_PASSTHROUGH`, a jądro kończy
+błędem EIO otwarcie przez passthrough, które niesie `FOPEN_KEEP_CACHE`, więc z
+tą flagą każde otwarcie przez passthrough się nie udawało. Być może to te
+nieudane otwarcia wywalały grę, a samej flagi, przy wyłączonym passthrough,
+nigdy nie przetestowano. Odpowiedzi przez passthrough już jej nie niosą. Jego
+utratę zmierzono wtedy jako darmową, ale przy włączonym passthrough demon
+obsługuje *zero* odczytów (`EIDOS_FUSE_STATS` raportował `read 0` przy pełnym
+wczytaniu), więc przy passthrough domyślnie wyłączonym (poniżej) rzeczywisty
+koszt pozostaje niezmierzony. Włącz go z powrotem przez
+`EIDOS_FUSE_KEEP_CACHE=1`, by przetestować go osobno.
 
 ### Passthrough FUSE nie pozwala grze wczytać żadnej zawartości modów
 
-Naprawione przez wyłączenie; `EIDOS_FUSE_PASSTHROUGH=1` przywraca go. Przy włączonym
-passthrough Skyrim SE nie potrafi otworzyć 152 własnych plików (75 `.bsa`, 65 `.esl`,
-10 `.esm`, 2 `.esp`) z `STATUS_ACCESS_VIOLATION`, wobec 0 przy wyłączonym, na jądrze
-7.1.4 - a więc żadna zawartość modów się nie wczytuje, po cichu. Jądro zgłasza błąd
-po tym, jak demon odpowiedział `opened_passthrough`, więc własne dzienniki demona
-pokazują czysty przebieg (zero nieudanych otwarć, zero odrzuconych plików bazowych).
-Przyczyna źródłowa w ścieżce jądra nie została ustalona; przełącznik zostaje, żeby
-dało się to przetestować ponownie i żeby passthrough można było zawęzić wyłącznie do
-bibliotek DLL, gdyby okazało się, że mapowanie obrazów tego potrzebuje.
+Demon omija teraz najbardziej prawdopodobną przyczynę (niżej), ale nie zmierzono
+tego jeszcze ponownie w grze, więc passthrough pozostaje domyślnie wyłączony;
+`EIDOS_FUSE_PASSTHROUGH=1` go włącza. Przed tą zmianą, przy włączonym
+passthrough, Skyrim SE nie potrafił otworzyć 152 własnych plików (75 `.bsa`, 65
+`.esl`, 10 `.esm`, 2 `.esp`) z `STATUS_ACCESS_VIOLATION`, wobec 0 przy
+wyłączonym, na jądrze 7.1.4 - a więc żadna zawartość modów się nie wczytywała,
+po cichu. Jądro zgłaszało błąd po tym, jak demon odpowiedział
+`opened_passthrough`, więc własne dzienniki demona pokazywały czysty przebieg
+(zero nieudanych otwarć, zero odrzuconych plików bazowych).
+
+Jądro wiąże z każdym i-węzłem jeden plik bazowy (`fs/fuse/iomode.c`). Otwarcie,
+które dla i-węzła mającego już plik bazowy przynosi drugi identyfikator pliku
+bazowego, kończy się błędem EIO, podobnie jak zwykłe otwarcie (bez
+`FOPEN_PASSTHROUGH`) i-węzła, który ma plik bazowy. Otwarcie przez passthrough
+niosące `FOPEN_KEEP_CACHE` również kończy się błędem EIO. Demon rejestrował
+wcześniej nowy identyfikator przy każdym otwarciu, więc drugie otwarcie pliku,
+który gra już trzymała otwarty, się nie udawało. Wine zgłasza EIO jako
+`STATUS_ACCESS_VIOLATION`, czyli błąd stojący za 152 nieudanymi otwarciami. Ta
+reguła pochodzi z kodu źródłowego jądra i zgadza się z tymi 152 niepowodzeniami,
+co czyni ją najbardziej prawdopodobną przyczyną.
+
+Demon rejestruje teraz jeden plik bazowy na i-węzeł, wspólny dla wszystkich jego
+otwarć przez passthrough, i nigdy nie ustawia `FOPEN_KEEP_CACHE` przy otwarciu
+przez passthrough. Passthrough obejmuje tylko otwarcia tylko do odczytu plików z
+warstw gry i modów, które mają 1 MiB lub więcej albo kończą się na `.dll`,
+`.exe` lub `.asi`. Gdy ten plik bazowy jest już zarejestrowany, każde otwarcie
+pliku tylko do odczytu go używa, a dopóki plik ma zwykłe otwarcia, nowi
+czytelnicy też dostają zwykłe otwarcia. Plik z Overwrite nigdy nie idzie przez
+passthrough, a montowanie, które rzutuje znaczniki czasu wtyczek, w ogóle go nie
+używa. Otwarcie do zapisu pliku, który trzymają czytelnicy przez passthrough,
+dostaje ETXTBSY (w Wine: `STATUS_SHARING_VIOLATION`) przed jakimkolwiek copy-up,
+więc otwarcie z `O_TRUNC` nie może zostawić w Overwrite pustej kopii, która
+ukryłaby plik moda.

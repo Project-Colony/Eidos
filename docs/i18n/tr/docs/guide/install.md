@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=e00626e360d8e5b283304045968cc7a6bd6af061 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b937d42496b32ed847c0e3b6387e5e7564b79331 -->
 
 # Eidos kurulumu
 
@@ -106,14 +106,19 @@ bkz. [usage.md](usage.md#örnekler-global-ve-taşınabilir). Tam gezinti
 
 ## İsteğe bağlı: FUSE passthrough
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` isteğe bağlı yetkiyi verir, ancak passthrough özelliğini etkinleştirmez.
-Bu yetki paketin ya da bir kaynak derlemesinin ayrı `eidos` ikili dosyasına
-verilir, hiçbir zaman aynı zamanda pencere de olan `eidos-linux` dosyasına
-verilmez ([SECURITY.md](../../../../../SECURITY.md)).
-`EIDOS_FUSE_PASSTHROUGH=1`, çalışma zamanında kullanılan ayrı anahtardır. **Öntanımlı olarak kapalıdır ve neredeyse kesinlikle öyle
-kalmasını istersiniz**: Skyrim SE üzerinde ölçüldüğünde oyunun kendi arşivlerini
-ve eklentilerini açmasını engelliyor, böylece modlar sessizce yüklenmiyor. Bu
-anahtar, düzeneği yeniden sınamak için var; önerildiği için değil.
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` isteğe bağlı yetkiyi verir,
+ancak passthrough özelliğini etkinleştirmez. Bu yetki paketin ya da bir kaynak
+derlemesinin ayrı `eidos` ikili dosyasına verilir, hiçbir zaman aynı zamanda
+pencere de olan `eidos-linux` dosyasına verilmez
+([SECURITY.md](../../../../../SECURITY.md)). `EIDOS_FUSE_PASSTHROUGH=1`, çalışma
+zamanında kullanılan ayrı anahtardır ve öntanımlı olarak kapalıdır. Passthrough
+açıkken daemon'un önceki bir sürümü Skyrim SE'nin kendi arşivlerini ve
+eklentilerini açmasını engelliyordu, böylece modlar sessizce yüklenmiyordu. En
+olası neden, bu sürümün her açmada yeni bir dayanak dosya kaydetmesiydi;
+çekirdek ise inode başına yalnızca bir tane kabul eder. Daemon artık bir
+dosyanın tüm passthrough açmaları arasında bir tane paylaştırıyor, ama bu henüz
+bir oyunda yeniden ölçülmedi. O zamana kadar passthrough'u yalnızca sınamak için
+açın.
 
 Ayrıntılar ve o kararın arkasındaki ölçümler
 [troubleshooting.md](troubleshooting.md) içinde.

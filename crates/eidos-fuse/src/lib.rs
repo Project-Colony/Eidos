@@ -22,21 +22,30 @@
 //!   path ever seen.
 //! - `readdir` is served from a snapshot taken at `opendir`, so offsets stay
 //!   stable even if the directory changes mid-enumeration.
-//! - Kernel passthrough is requested best-effort but needs real root, so the
-//!   rootless daemon serves reads/writes itself; `writeback_cache` is negotiated
-//!   instead to make writable shared mmap correct and coalesce writes.
+//! - Kernel passthrough is off by default and needs CAP_SYS_ADMIN in the
+//!   initial user namespace, so the rootless daemon serves reads and writes
+//!   itself. `writeback_cache` is not negotiated (`init` says why).
 
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::Metadata;
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::UNIX_EPOCH;
+use std::time::{Duration, Instant, UNIX_EPOCH};
+
+/// One parent's recorded negatives: folded name, then (exact spelling, recorded at).
+#[derive(Default)]
+struct NegativeDir {
+    names: HashMap<String, Vec<(String, Instant)>>,
+    /// Spellings held in `names`, kept so a miss checks the cap without a walk.
+    len: usize,
+}
 
 use eidos_core::LayerStack;
-use fuser::{BackgroundSession, FileAttr, FileType, Generation, INodeNo, ReplyEntry};
+use fuser::{BackgroundSession, BackingId, FileAttr, FileType, Generation, INodeNo, ReplyEntry};
 
 mod timestamps;
 pub use timestamps::{read_plugin_mtimes, recover_plugin_mtimes, PluginTimestamps};
@@ -44,6 +53,7 @@ pub use timestamps::{read_plugin_mtimes, recover_plugin_mtimes, PluginTimestamps
 mod config;
 mod inodes;
 mod ops;
+mod passthrough;
 mod stats;
 mod sys;
 #[cfg(test)]
@@ -51,6 +61,7 @@ mod tests;
 
 use config::*;
 use inodes::*;
+use passthrough::*;
 use stats::*;
 use sys::*;
 
@@ -136,6 +147,9 @@ pub struct Eidos {
     uid: u32,
     gid: u32,
     open_files: Mutex<HashMap<u64, OpenFile>>,
+    /// The backing id each inode shares among its passthrough opens, and its
+    /// live opens of each kind. See `passthrough.rs`.
+    passthrough: Mutex<Passthrough<BackingId>>,
     /// Per-handle directory state. The snapshot is `None` until the first
     /// `readdir` asks for it - see `opendir` for why building it eagerly was a
     /// disaster - and once taken it stays fixed for the handle's life so offsets
@@ -156,14 +170,19 @@ pub struct Eidos {
     dir_cache: Mutex<DirCache>,
     next_fh: AtomicU64,
     stats: Stats,
-    /// Negative dentries handed to the kernel, as `(parent_ino, exact name)`.
+    /// Negative dentries handed to the kernel: parent inode, then ASCII-folded
+    /// name, then the exact spellings denied with the time each was recorded.
     ///
     /// The kernel keys its dentry cache on the EXACT name bytes while Eidos
     /// resolves case-insensitively, so a negative cached for `Foo.esp` would
     /// survive a later create of `foo.esp` and the game would be told a file it
     /// can plainly see does not exist. We remember what we denied so that a
-    /// create can invalidate precisely those spellings.
-    negatives: Mutex<HashMap<u64, Vec<String>>>,
+    /// create can invalidate precisely those spellings. A record older than the
+    /// kernel TTL it justified ([`NEG_TTL_RECORDED`]) no longer covers anything;
+    /// `record_negative` drops such records only once the parent reaches its
+    /// 4096 cap, and any change of a name in the parent drops the other
+    /// spellings that fold to that name.
+    negatives: Mutex<HashMap<u64, NegativeDir>>,
     /// Positive dentries handed to the kernel, keyed by inode: the
     /// `(parent_ino, exact name)` spellings it now caches for that file.
     ///
@@ -172,8 +191,13 @@ pub struct Eidos {
     /// recorded spelling would keep resolving to the moved file for the whole
     /// entry TTL and serve its contents under a name that no longer exists.
     aliases: Mutex<HashMap<u64, Vec<(u64, String)>>>,
-    /// Set once the session is mounted; used to push those invalidations.
-    notifier: Arc<Mutex<Option<fuser::Notifier>>>,
+    /// Directory inode -> whether a name in it needs Unicode case folding, which
+    /// Eidos does not do, so the directory must not claim to fold case. Read from
+    /// the layers on first ask; `dir_changed` sets it and nothing clears it.
+    unicode_case_dirs: Mutex<HashMap<u64, bool>>,
+    /// Set once the session is mounted: feeds the one thread that owns the
+    /// kernel notifier and pushes these invalidations.
+    notifier: Arc<Mutex<Option<std::sync::mpsc::Sender<Inval>>>>,
     /// The kernel advertised `FUSE_NO_OPENDIR_SUPPORT`, so it can open and read
     /// directories without asking us. Negotiated in `init`; see [`Eidos::opendir`].
     no_opendir: AtomicBool,
@@ -222,6 +246,14 @@ fn kind_of_type(ft: &std::fs::FileType) -> FileType {
     }
 }
 
+/// A kernel cache invalidation, applied by the notifier thread.
+pub(crate) enum Inval {
+    /// Drop the dentry `name` in directory inode `.0`.
+    Entry(u64, std::ffi::OsString),
+    /// Drop all cached pages of an inode.
+    Inode(u64),
+}
+
 impl Eidos {
     /// Build a union over the given layers (highest priority first) and a
     /// writable overwrite layer.
@@ -261,6 +293,7 @@ impl Eidos {
             uid,
             gid,
             open_files: Mutex::new(HashMap::new()),
+            passthrough: Mutex::new(Passthrough::default()),
             open_dirs: Mutex::new(HashMap::new()),
             dir_cache: Mutex::new(DirCache::default()),
             next_fh: AtomicU64::new(1),
@@ -269,8 +302,14 @@ impl Eidos {
             stats: Stats::default(),
             negatives: Mutex::new(HashMap::new()),
             aliases: Mutex::new(HashMap::new()),
+            unicode_case_dirs: Mutex::new(HashMap::new()),
             notifier: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Size of the lower index this filesystem was built with, if any.
+    pub fn index_summary(&self) -> Option<eidos_core::IndexSummary> {
+        self.stack.index_summary()
     }
 
     /// Mount at `mountpoint`, blocking until the filesystem is unmounted.
@@ -286,8 +325,34 @@ impl Eidos {
         // create invalidate a stale, differently-cased negative dentry.
         let notifier_slot = Arc::clone(&self.notifier);
         let session = fuser::Session::new(self, mountpoint, &mount_config())?;
-        *notifier_slot.lock_recover() = Some(session.notifier());
+        let notifier = session.notifier();
+        let (tx, rx) = std::sync::mpsc::channel();
+        // Ends when the filesystem, and with it the sender, is dropped.
+        std::thread::spawn(move || {
+            for msg in rx {
+                match msg {
+                    Inval::Entry(parent, name) => {
+                        let _ = notifier.inval_entry(INodeNo(parent), &name);
+                    }
+                    Inval::Inode(ino) => {
+                        let _ = notifier.inval_inode(INodeNo(ino), 0, 0);
+                    }
+                }
+            }
+        });
+        *notifier_slot.lock_recover() = Some(tx);
         session.spawn()
+    }
+
+    /// Queue kernel notifications for the notifier thread. Never send them from
+    /// inside a request handler: the kernel may need locks the request holds, so
+    /// a direct call deadlocks the mount. The queue returns at once.
+    pub(crate) fn notify(&self, msgs: impl IntoIterator<Item = Inval>) {
+        if let Some(tx) = self.notifier.lock_recover().as_ref() {
+            for m in msgs {
+                let _ = tx.send(m);
+            }
+        }
     }
 
     /// The virtual path of `name` inside the directory inode `parent`.
@@ -309,22 +374,19 @@ impl Eidos {
     /// hundreds of `read_dir` calls for one absent file, and it is exactly the
     /// metadata storm that stalls a Bethesda game's startup for minutes.
     ///
-    /// The TTL is deliberately short. The kernel keys its negative dentries on the
-    /// exact name bytes while Eidos folds case, so a negative cached for `Foo.esp`
-    /// would survive a create of `foo.esp` through the mount until it expires.
-    /// Creation through this mount is safe regardless (the kernel re-issues a real
-    /// lookup for O_CREAT and for every LOOKUP_EXCL path), so the window only
-    /// concerns a differently-cased create, which self-heals in seconds.
-    fn reply_negative(&self, parent: u64, name: &str, reply: ReplyEntry) {
-        // Remember the exact spelling we denied, capped so a probe storm cannot
-        // grow this without bound (the kernel forgets on its own TTL anyway).
-        {
-            let mut neg = self.negatives.lock_recover();
-            let names = neg.entry(parent).or_default();
-            if names.len() < 4096 && !names.iter().any(|n| n == name) {
-                names.push(name.to_string());
-            }
-        }
+    /// A recorded miss gets an hour: a differently-cased create invalidates the
+    /// recorded spellings through the notifier. A miss the per-parent cap could
+    /// not record keeps the 60 s TTL, since nothing could invalidate it. The
+    /// kernel keys on exact name bytes while Eidos folds case, which is why the
+    /// record exists. Creation through this mount is safe regardless (the kernel
+    /// re-issues a real lookup for O_CREAT and for every LOOKUP_EXCL path).
+    ///
+    /// `definitive` is true only for a miss the immutable index answered. A
+    /// transient stat failure on a file that exists is not definitive: it is
+    /// neither recorded nor given more than the short TTL, since no create
+    /// would ever invalidate it.
+    fn reply_negative(&self, parent: u64, name: &str, definitive: bool, reply: ReplyEntry) {
+        let ttl = self.negative_ttl(parent, name, definitive);
         // ino = 0 IS the negative dentry; no inode is minted or refcounted for a
         // path that does not exist.
         let blank = FileAttr {
@@ -344,7 +406,52 @@ impl Eidos {
             blksize: 4096,
             flags: 0,
         };
-        reply.entry(&NEG_TTL, &blank, Generation(0));
+        reply.entry(ttl, &blank, Generation(0));
+    }
+
+    fn negative_ttl(&self, parent: u64, name: &str, definitive: bool) -> &'static Duration {
+        if definitive && self.record_negative(parent, name) {
+            &NEG_TTL_RECORDED
+        } else {
+            &NEG_TTL
+        }
+    }
+
+    /// Remember the exact spelling we denied so a create can invalidate it.
+    /// Returns false when the per-parent cap stopped the record: such a miss
+    /// gets the short TTL, because nothing could invalidate it.
+    fn record_negative(&self, parent: u64, name: &str) -> bool {
+        let now = Instant::now();
+        let max_age = Duration::from_secs(NEG_TTL_RECORDED_SECS);
+        let mut neg = self.negatives.lock_recover();
+        let dir = neg.entry(parent).or_default();
+        let key = name.to_ascii_lowercase();
+        if let Some((_, at)) = dir
+            .names
+            .get_mut(&key)
+            .and_then(|v| v.iter_mut().find(|(n, _)| n == name))
+        {
+            *at = now;
+            return true;
+        }
+        if dir.len >= 4096 {
+            // A record older than the TTL it justified no longer covers anything,
+            // so it only matters once it holds a place under the cap.
+            dir.names.retain(|_, v| {
+                v.retain(|(_, at)| now.duration_since(*at) < max_age);
+                !v.is_empty()
+            });
+            dir.len = dir.names.values().map(Vec::len).sum();
+            if dir.len >= 4096 {
+                return false;
+            }
+        }
+        dir.names
+            .entry(key)
+            .or_default()
+            .push((name.to_string(), now));
+        dir.len += 1;
+        true
     }
 
     /// Remember a spelling the kernel now caches for `ino`, so a later rename can
@@ -381,21 +488,14 @@ impl Eidos {
         if stale.is_empty() {
             return;
         }
-        // Off the handler thread: see `invalidate_folded_negatives` - notifying
-        // the kernel from inside a request deadlocks the mount.
-        let Some(notifier) = self.notifier.lock_recover().clone() else {
-            return;
-        };
-        std::thread::spawn(move || {
-            for (parent, name) in stale {
-                let _ = notifier.inval_entry(INodeNo(parent), OsStr::new(&name));
-            }
-        });
+        // Queued: see `notify`.
+        self.notify(
+            stale
+                .into_iter()
+                .map(|(parent, name)| Inval::Entry(parent, name.into())),
+        );
     }
 
-    /// Drop any negative dentry the kernel holds for a name that case-folds to
-    /// `name` in `parent`. Called whenever an entry is created, so a probe for
-    /// `Foo.esp` cannot keep hiding a freshly created `foo.esp`.
     /// Drop the kernel's cached pages for one inode.
     ///
     /// Needed when a copy-up swaps the file backing a virtual path: the inode
@@ -406,14 +506,7 @@ impl Eidos {
     ///
     /// `(0, 0)` means the whole inode.
     fn invalidate_page_cache(&self, ino: u64) {
-        let Some(notifier) = self.notifier.lock_recover().clone() else {
-            return;
-        };
-        // Detached, for the same reason as `invalidate_folded_negatives`: a
-        // notification sent from inside a request handler can deadlock the mount.
-        std::thread::spawn(move || {
-            let _ = notifier.inval_inode(INodeNo(ino), 0, 0);
-        });
+        self.notify([Inval::Inode(ino)]);
     }
 
     /// A name just appeared in or vanished from `parent`. Drop that directory's
@@ -429,38 +522,69 @@ impl Eidos {
     fn dir_changed(&self, parent: u64, name: &str) {
         self.invalidate_dir_of(parent);
         self.invalidate_folded_negatives(parent, name);
+        // A removal sets it too: the flag never clears, and a stale one only
+        // costs Wine its own scan of this directory.
+        if eidos_core::has_unicode_case(name)
+            && self.unicode_case_dirs.lock_recover().insert(parent, true) == Some(false)
+        {
+            // The kernel keeps a `.ciopfs` answered before for the entry TTL.
+            self.notify([Inval::Entry(
+                parent,
+                OsStr::from_bytes(ops::CIOPFS_MARKER).to_owned(),
+            )]);
+        }
     }
 
+    /// Whether directory `dir` may tell Wine it folds case (`FS_IOC_GETFLAGS`
+    /// and the `.ciopfs` marker): not when a name in it needs Unicode case
+    /// folding, because Wine then skips its own scan, which would find it.
+    fn folds_case(&self, dir: u64) -> bool {
+        if let Some(&unicode) = self.unicode_case_dirs.lock_recover().get(&dir) {
+            return !unicode;
+        }
+        let Some(vpath) = self.inodes.lock_recover().path(dir) else {
+            return false;
+        };
+        let unicode = self.stack.dir_has_unicode_case(&vpath);
+        // `or_insert`: a create racing this read may have set it already.
+        !*self
+            .unicode_case_dirs
+            .lock_recover()
+            .entry(dir)
+            .or_insert(unicode)
+    }
+
+    /// Drop any negative dentry the kernel holds for a name that case-folds to
+    /// `name` in `parent`. Called through `dir_changed` on any change of a name in
+    /// `parent` (create, mkdir, symlink, unlink, rmdir, both sides of a rename), so
+    /// a probe for `Foo.esp` cannot keep hiding a freshly created `foo.esp`.
     fn invalidate_folded_negatives(&self, parent: u64, name: &str) {
         let stale: Vec<String> = {
             let mut neg = self.negatives.lock_recover();
-            let Some(names) = neg.get_mut(&parent) else {
+            let Some(dir) = neg.get_mut(&parent) else {
+                return;
+            };
+            let key = name.to_ascii_lowercase();
+            let Some(names) = dir.names.get_mut(&key) else {
                 return;
             };
             // Exact matches are handled by the kernel itself when it instantiates
             // the new dentry; only the OTHER spellings need a nudge.
-            let (stale, keep): (Vec<String>, Vec<String>) = names
-                .drain(..)
-                .partition(|n| n.eq_ignore_ascii_case(name) && n != name);
-            *names = keep;
-            stale
+            let (stale, keep): (Vec<_>, Vec<_>) = names.drain(..).partition(|(n, _)| n != name);
+            if keep.is_empty() {
+                dir.names.remove(&key);
+            } else {
+                *names = keep;
+            }
+            dir.len -= stale.len();
+            stale.into_iter().map(|(n, _)| n).collect()
         };
         if stale.is_empty() {
             return;
         }
-        // MUST NOT run inline. A notification is a message TO the kernel, and the
-        // kernel may need locks that the request we are still answering holds, so
-        // calling inval_entry from inside a handler deadlocks the mount (observed:
-        // the create never returns). Hand it to a detached thread; the kernel
-        // applies it as soon as this request completes.
-        let Some(notifier) = self.notifier.lock_recover().clone() else {
-            return;
-        };
-        std::thread::spawn(move || {
-            for s in stale {
-                let _ = notifier.inval_entry(INodeNo(parent), OsStr::new(&s));
-            }
-        });
+        // MUST NOT run inline (deadlocks the mount, observed: the create never
+        // returns); `notify` hands it to the notifier thread.
+        self.notify(stale.into_iter().map(|s| Inval::Entry(parent, s.into())));
     }
 
     /// Build a `FileAttr` from a real file's metadata, owned by the mounting
@@ -625,7 +749,7 @@ impl Eidos {
         };
         let (negative_dirs, negative_names) = {
             let n = self.negatives.lock_recover();
-            (n.len(), n.values().map(Vec::len).sum::<usize>())
+            (n.len(), n.values().map(|d| d.len).sum::<usize>())
         };
         let (listings, children) = {
             let c = self.dir_cache.lock_recover();

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=28769fd12c94a2f9a6a9fda35b67b39cc433502b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
 
 # Usar o Eidos
 
@@ -157,9 +157,10 @@ conceder.
 
 `sudo setcap cap_sys_admin+ep "$(command -v eidos)"` é **opcional** e libera
 exatamente uma coisa: o passthrough FUSE do kernel, que vem desligado por padrão
-porque quebra o jogo (abaixo). Com a capability, o Eidos toma um espaço de nomes
-de montagem simples em vez de um de usuário; os mods são implantados igual de um
-jeito ou de outro.
+porque uma versão anterior do daemon quebrava o jogo com ele e a mudança que
+evita a causa mais provável ainda não foi medida de novo em um jogo (abaixo).
+Com a capability, o Eidos toma um espaço de nomes de montagem simples em vez de
+um de usuário; os mods são implantados igual de um jeito ou de outro.
 
 
 Por que o antigo conselho do `setcap` sumiu - e por que o passthrough FUSE vem

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=28769fd12c94a2f9a6a9fda35b67b39cc433502b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
 
 # Utiliser Eidos
 
@@ -169,9 +169,11 @@ autoriser.
 
 `sudo setcap cap_sys_admin+ep "$(command -v eidos)"` est **facultatif** et ne
 conditionne qu'une seule chose : le passthrough FUSE du noyau, désactivé par
-défaut parce qu'il casse le jeu (voir plus bas). Avec cette capability, Eidos
-prend un simple espace de noms de montage au lieu d'un espace de noms
-utilisateur ; le déploiement des mods est identique dans les deux cas.
+défaut parce qu'une version antérieure du démon cassait le jeu avec, et que le
+changement qui évite la cause la plus probable n'a pas encore été remesuré en
+jeu (voir plus bas). Avec cette capability, Eidos prend un simple espace de noms
+de montage au lieu d'un espace de noms utilisateur ; le déploiement des mods est
+identique dans les deux cas.
 
 
 Pourquoi l'ancien conseil `setcap` a disparu - et pourquoi le passthrough FUSE

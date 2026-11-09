@@ -246,6 +246,40 @@ fn the_other_handlers_and_the_index_verdicts_are_reported() {
     assert!(out.contains("overwrite index built 4 time(s)"), "{out}");
 }
 
+#[test]
+fn passthrough_counts_appear_once_an_open_tried_passthrough() {
+    let s = Stats::default();
+    let r = eidos_core::ResolveStats::default();
+    assert!(!s.report(&r, &|_| None).contains("passthrough"));
+    Stats::bump(&s.pt_reused);
+    Stats::bump(&s.pt_writer_refused);
+    let out = s.report(&r, &|_| None);
+    assert!(
+        out.contains(
+            "passthrough: 0 new backing ids, 1 reused, 0 forced normal, \
+             1 writers refused, 0 registrations failed"
+        ),
+        "{out}"
+    );
+}
+
+#[test]
+fn copy_up_counts_appear_once_one_happened() {
+    let s = Stats::default();
+    let r = eidos_core::ResolveStats::default();
+    assert!(!s.report(&r, &|_| None).contains("copy-ups"));
+    Stats::bump(&s.cu_setattr);
+    Stats::bump(&s.writer_closed_unwritten);
+    let out = s.report(&r, &|_| None);
+    assert!(
+        out.contains(
+            "copy-ups: 0 open for write, 0 truncating create, 1 setattr, 0 xattr, \
+             0 write without handle; 1 write handles closed with no write"
+        ),
+        "{out}"
+    );
+}
+
 // ---- The read-shape survey -------------------------------------------------
 //
 // The survey exists to answer four questions the totals cannot: what sizes the
@@ -613,4 +647,73 @@ fn invalidating_unread_directories_keeps_no_per_path_state() {
     assert!(cache.publish("listed", &scan, Arc::new(vec![])).is_some());
     cache.invalidate(Some("listed"));
     assert!(cache.entries.is_empty());
+}
+
+#[test]
+fn recorded_negative_gets_the_long_ttl_and_a_capped_one_the_short() {
+    let eidos = Eidos::new(vec![], std::env::temp_dir().join("eidos-neg-ttl"));
+    assert!(eidos.record_negative(1, "Foo.esp"));
+    assert!(
+        eidos.record_negative(1, "Foo.esp"),
+        "re-recording stays recorded"
+    );
+    assert!(*NEG_TTL_RECORDED > *NEG_TTL);
+    for i in 1..4096 {
+        assert!(eidos.record_negative(1, &format!("n{i}")));
+    }
+    assert!(
+        !eidos.record_negative(1, "one-too-many"),
+        "cap hit: short TTL"
+    );
+    assert!(eidos.record_negative(2, "x"), "the cap is per parent");
+}
+
+#[test]
+fn the_cap_evicts_aged_negative_records() {
+    let eidos = Eidos::new(vec![], std::env::temp_dir().join("eidos-neg-age"));
+    for i in 0..4096 {
+        assert!(eidos.record_negative(1, &format!("n{i}")));
+    }
+    let aged = Instant::now() - Duration::from_secs(NEG_TTL_RECORDED_SECS + 1);
+    eidos
+        .negatives
+        .lock_recover()
+        .get_mut(&1)
+        .unwrap()
+        .names
+        .get_mut("n0")
+        .unwrap()[0]
+        .1 = aged;
+    assert!(
+        eidos.record_negative(1, "new"),
+        "the aged record gives its place"
+    );
+    let neg = eidos.negatives.lock_recover();
+    assert!(!neg[&1].names.contains_key("n0"));
+    assert!(neg[&1].names.contains_key("new"));
+    assert_eq!(neg[&1].len, 4096, "the count follows the sweep");
+}
+
+#[test]
+fn create_invalidates_every_other_spelling_of_a_recorded_negative() {
+    let eidos = Eidos::new(vec![], std::env::temp_dir().join("eidos-neg-create"));
+    for n in ["foo.esp", "FOO.ESP", "Foo.esp"] {
+        eidos.record_negative(1, n);
+    }
+    eidos.invalidate_folded_negatives(1, "Foo.esp");
+    let neg = eidos.negatives.lock_recover();
+    let left: Vec<_> = neg[&1].names["foo.esp"]
+        .iter()
+        .map(|(n, _)| n.as_str())
+        .collect();
+    assert_eq!(left, ["Foo.esp"], "only the exact spelling stays");
+    assert_eq!(neg[&1].len, 1, "the count drops with the spellings");
+}
+
+#[test]
+fn non_definitive_negative_is_short_and_unrecorded() {
+    let eidos = Eidos::new(vec![], std::env::temp_dir().join("eidos-neg-nondef"));
+    assert_eq!(eidos.negative_ttl(1, "Stat.esp", false), &*NEG_TTL);
+    assert!(!eidos.negatives.lock_recover().contains_key(&1));
+    assert_eq!(eidos.negative_ttl(1, "Gone.esp", true), &*NEG_TTL_RECORDED);
 }

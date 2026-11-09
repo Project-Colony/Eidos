@@ -433,7 +433,12 @@ pub(crate) mod tests {
             assert_eq!(scene.meshes.len(), 1);
             let image =
                 nif_render::render(&scene, Default::default(), &HashMap::new(), &cancel).unwrap();
-            assert!(image.rgba.chunks_exact(4).any(|p| p != [24, 27, 34, 255]));
+            assert!(image
+                .rgba
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .any(|p| *p != [24, 27, 34, 255]));
         }
         assert!(parse_with_helper(b"not a model", &helper, &cancel).is_err());
         assert!(

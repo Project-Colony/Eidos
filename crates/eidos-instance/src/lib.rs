@@ -2954,7 +2954,7 @@ mod whole_audit_regressions {
         let i = &fixture.0;
         let save = i.active().saves_dir().join("Save.ess");
         put(&save, b"save");
-        fs::set_permissions(&save, fs::Permissions::from_mode(0)).unwrap();
+        fs::set_permissions(&save, fs::Permissions::from_mode(0o0)).unwrap();
         let result = i.profile("Copy").create_from(&i.active());
         fs::set_permissions(&save, fs::Permissions::from_mode(0o644)).unwrap();
         assert!(result.is_err());
@@ -2976,7 +2976,7 @@ mod whole_audit_regressions {
         fs::write(i.manifest_path(), good).unwrap();
         assert!(i.set_active_profile("../outside").is_err());
         assert!(i.set_active_profile("Missing").is_err());
-        fs::set_permissions(i.manifest_path(), fs::Permissions::from_mode(0)).unwrap();
+        fs::set_permissions(i.manifest_path(), fs::Permissions::from_mode(0o0)).unwrap();
         let result = i.set_active_profile("Other");
         fs::set_permissions(i.manifest_path(), fs::Permissions::from_mode(0o644)).unwrap();
         assert!(result.is_err());
@@ -3014,9 +3014,9 @@ mod whole_audit_regressions {
         let fixture = Fixture::new();
         let i = &fixture.0;
         let entry = i.create_empty_mod("Mod").unwrap();
-        i.save_modlist(&[entry.clone()]).unwrap();
+        i.save_modlist(std::slice::from_ref(&entry)).unwrap();
         let path = i.active().dir().join("modlist.txt");
-        fs::set_permissions(&path, fs::Permissions::from_mode(0)).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o0)).unwrap();
         let result = i.save_modlist(&[entry]);
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
         assert!(result.is_err());
@@ -3081,7 +3081,7 @@ mod whole_audit_regressions {
 
         // An unreadable `mods/` may be a drive that is not mounted: never an
         // answer to forget from.
-        fs::set_permissions(i.mods_dir(), fs::Permissions::from_mode(0)).unwrap();
+        fs::set_permissions(i.mods_dir(), fs::Permissions::from_mode(0o0)).unwrap();
         let result = i.missing_mods();
         fs::set_permissions(i.mods_dir(), fs::Permissions::from_mode(0o755)).unwrap();
         assert!(result.is_err(), "{result:?}");

@@ -1297,8 +1297,10 @@ mod tests {
     fn a_skyrim_save_with_a_fourth_segment_is_still_refused() {
         // The old strictness must survive for Skyrim: an unexpected 4th segment
         // means a format this parser does not know, not two thirds of an answer.
-        let mut info = SaveInfo::default();
-        info.game_date = "1.2.3.4".to_string();
+        let info = SaveInfo {
+            game_date: "1.2.3.4".to_string(),
+            ..SaveInfo::default()
+        };
         assert_eq!(info.playtime(), None);
     }
 
@@ -1386,8 +1388,10 @@ mod tests {
     #[test]
     fn a_garbled_skyrim_playtime_is_still_refused() {
         // The Fallout leniency must not leak onto Skyrim: "12abc" is not 12 there.
-        let mut info = SaveInfo::default();
-        info.game_date = "12abc.5.3".to_string();
+        let mut info = SaveInfo {
+            game_date: "12abc.5.3".to_string(),
+            ..SaveInfo::default()
+        };
         assert_eq!(info.playtime(), None, "Skyrim's field is strict integers");
         info.engine = SaveEngine::Fallout4;
         assert_eq!(

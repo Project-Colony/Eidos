@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=e00626e360d8e5b283304045968cc7a6bd6af061 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b937d42496b32ed847c0e3b6387e5e7564b79331 -->
 
 # Instalar Eidos
 
@@ -108,14 +108,18 @@ El recorrido completo está en [usage.es.md](usage.md).
 
 ## Opcional: passthrough de FUSE
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` concede la capacidad opcional, pero no activa el passthrough.
-Se aplica al binario `eidos` separado del paquete o de una compilación desde el
-código fuente, nunca a `eidos-linux`, que también es la ventana
-([SECURITY.md](../../../../../SECURITY.md)).
-`EIDOS_FUSE_PASSTHROUGH=1` es el interruptor independiente durante la ejecución. Está **desactivado por defecto y casi con seguridad lo quieres así**:
-medido en Skyrim SE, impide que el juego abra sus propios archivos y complementos,
-de modo que los mods no se cargan, en silencio. El interruptor existe para volver
-a probar el mecanismo, no porque se recomiende.
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` concede la capacidad
+opcional, pero no activa el passthrough. Se aplica al binario `eidos` separado
+del paquete o de una compilación desde el código fuente, nunca a `eidos-linux`,
+que también es la ventana ([SECURITY.md](../../../../../SECURITY.md)).
+`EIDOS_FUSE_PASSTHROUGH=1` es el interruptor independiente durante la ejecución,
+y está desactivado por defecto. Con el passthrough activo, una versión anterior
+del demonio impedía que Skyrim SE abriera sus propios archivos y complementos,
+de modo que los mods no se cargaban, en silencio. La causa más probable es que
+registraba un archivo de respaldo nuevo en cada apertura, mientras que el núcleo
+acepta uno solo por inodo. El demonio ahora comparte uno entre todas las
+aperturas en passthrough de un archivo, pero eso aún no se ha vuelto a medir en
+un juego. Hasta entonces, activa el passthrough sólo para probarlo.
 
 Los detalles, y las mediciones detrás de esa decisión, en
 [troubleshooting.es.md](troubleshooting.md).

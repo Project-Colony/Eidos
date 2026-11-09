@@ -145,9 +145,11 @@ Eidos runs fully rootless. It mounts in a private user + mount namespace, so no
 setuid helper, no daemon, and nothing to grant.
 
 `sudo setcap cap_sys_admin+ep "$(command -v eidos)"` is **optional** and gates
-exactly one thing: kernel FUSE passthrough, which is off by default because it
-breaks the game (below). With the capability Eidos takes a plain mount namespace
-instead of a user namespace; mods deploy identically either way.
+exactly one thing: kernel FUSE passthrough, which is off by default because an
+earlier daemon broke the game with it and the change that avoids the most likely
+cause has not been re-measured in a game (below). With the capability Eidos
+takes a plain mount namespace instead of a user namespace; mods deploy
+identically either way.
 
 
 Why the old `setcap` advice is gone - and why FUSE passthrough ships off - is

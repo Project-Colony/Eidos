@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=e00626e360d8e5b283304045968cc7a6bd6af061 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b937d42496b32ed847c0e3b6387e5e7564b79331 -->
 
 # Eidos installeren
 
@@ -104,14 +104,19 @@ volledige rondleiding staat in [usage.md](usage.md).
 
 ## Optioneel: FUSE-passthrough
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` verleent de optionele capability, maar schakelt passthrough niet in.
-Ze hoort op het afzonderlijke `eidos`-binaire bestand van de bundel of van een
-build vanuit de broncode, nooit op `eidos-linux`, dat ook het venster is
-([SECURITY.md](../../../../../SECURITY.md)).
-`EIDOS_FUSE_PASSTHROUGH=1` is de afzonderlijke schakelaar tijdens het uitvoeren. Het staat **standaard uit en dat wil je vrijwel zeker zo laten**:
-gemeten op Skyrim SE belet het het spel zijn eigen archieven en plugins te
-openen, zodat mods stilzwijgend niet laden. De schakelaar bestaat om het
-mechanisme opnieuw te testen, niet omdat hij aanbevolen wordt.
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` verleent de optionele
+capability, maar schakelt passthrough niet in. Ze hoort op het afzonderlijke
+`eidos`-binaire bestand van de bundel of van een build vanuit de broncode, nooit
+op `eidos-linux`, dat ook het venster is
+([SECURITY.md](../../../../../SECURITY.md)). `EIDOS_FUSE_PASSTHROUGH=1` is de
+afzonderlijke schakelaar tijdens het uitvoeren, en die staat standaard uit. Met
+passthrough aan belette een eerdere versie van de daemon Skyrim SE zijn eigen
+archieven en plugins te openen, zodat mods stilzwijgend niet laadden. De
+waarschijnlijkste oorzaak is dat die bij elke opening een nieuw onderliggend
+bestand registreerde, terwijl de kernel er maar één per inode aanvaardt. De
+daemon deelt er nu één tussen alle passthrough-openingen van een bestand, maar
+dat is nog niet opnieuw in een spel gemeten. Zet passthrough tot dan alleen aan
+om het te testen.
 
 Details, en de metingen achter die beslissing, in
 [troubleshooting.md](troubleshooting.md).

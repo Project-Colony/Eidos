@@ -248,10 +248,15 @@ pub(crate) fn ikey(vpath: &str) -> String {
 }
 
 /// An open file: its resolved backing path plus the real fd, kept open so
-/// reads/writes use `pread`/`pwrite` without re-resolving. `backing` holds the
-/// kernel passthrough registration when it could be set up (privileged only).
+/// reads/writes use `pread`/`pwrite` without re-resolving. `_backing` is set when
+/// this open goes through kernel passthrough (privileged only): the inode's one
+/// backing id, closed when the last handle holding it is released.
 pub(crate) struct OpenFile {
     pub(crate) _real: PathBuf,
     pub(crate) file: Arc<File>,
-    pub(crate) _backing: Option<BackingId>,
+    pub(crate) _backing: Option<Arc<BackingId>>,
+    /// Opened for writing, and whether any write arrived: a writer closed with
+    /// none is a copy-up (or truncation) that bought nothing.
+    pub(crate) writable: bool,
+    pub(crate) wrote: std::sync::atomic::AtomicBool,
 }

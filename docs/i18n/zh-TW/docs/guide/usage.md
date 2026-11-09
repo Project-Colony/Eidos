@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=28769fd12c94a2f9a6a9fda35b67b39cc433502b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
 
 # 使用 Eidos
 
@@ -115,9 +115,9 @@ Eidos 完全不需要 root 就能執行。它掛載在私有的 user + mount 命
 setuid 輔助程式、沒有常駐程式,也沒有什麼權限要授予。
 
 `sudo setcap cap_sys_admin+ep "$(command -v eidos)"` 是**選用的**,而且只管一件事:
-核心 FUSE passthrough,它預設關閉,因為它會弄壞遊戲(見下)。帶著這個 capability
-時,Eidos 取用的是單純的 mount 命名空間而不是 user 命名空間;兩種方式部署模組的
-結果一模一樣。
+核心 FUSE passthrough,它預設關閉,因為較早版本的常駐程式開著它會弄壞遊戲,而避開最
+可能原因的變更還沒在遊戲裡重新測量過(見下)。帶著這個 capability 時,Eidos 取用的
+是單純的 mount 命名空間而不是 user 命名空間;兩種方式部署模組的結果一模一樣。
 
 
 舊的 `setcap` 建議為什麼消失了 - 以及 FUSE passthrough 為什麼出貨時就關著 - 在

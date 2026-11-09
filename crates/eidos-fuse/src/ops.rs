@@ -15,32 +15,71 @@ use std::time::SystemTime;
 
 use fuser::{
     BsdFileFlags, Errno, FileHandle, Filesystem, FopenFlags, Generation, INodeNo, InitFlags,
-    KernelConfig, LockOwner, OpenFlags, RenameFlags, ReplyAttr, ReplyCreate, ReplyData,
-    ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyOpen, ReplyStatfs, ReplyWrite, ReplyXattr,
-    Request, TimeOrNow, WriteFlags,
+    IoctlFlags, KernelConfig, LockOwner, OpenFlags, RenameFlags, ReplyAttr, ReplyCreate, ReplyData,
+    ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyIoctl, ReplyOpen, ReplyStatfs, ReplyWrite,
+    ReplyXattr, Request, TimeOrNow, WriteFlags,
 };
 
 use crate::*;
 
-/// The marker CIOPFS leaves in every directory it serves, and the only way Wine
-/// can tell that a filesystem folds case (`get_dir_case_sensitivity` in
-/// `dlls/ntdll/unix/file.c` stats it). Eidos answers it in `lookup` so Wine skips
-/// its brute-force directory rescan on every mis-cased path - see the comment
-/// there for what that rescan costs.
+/// The marker CIOPFS leaves in every directory it serves. Wine stats it in
+/// `get_dir_case_sensitivity` (`dlls/ntdll/unix/file.c`) after asking
+/// `FS_IOC_GETFLAGS` and `fstatfs`; older Wine only knows this one. Eidos answers
+/// it in `lookup` so Wine skips its brute-force directory rescan on every
+/// mis-cased path - see the comment there for what that rescan costs.
 pub(crate) const CIOPFS_MARKER: &[u8] = b".ciopfs";
+
+/// What `FS_IOC_GETFLAGS` answers for a directory that folds case, so Wine
+/// skips its `fstatfs` and `.ciopfs` probes. Any other directory gets ENOTTY.
+const FS_CASEFOLD_FL: u32 = 0x4000_0000;
 
 impl Eidos {
     /// An error after a completed mutation prevents the kernel's usual dentry
     /// update. Notify after replying, outside its request locks.
     fn invalidate_failed_entry(&self, parent: INodeNo, name: &OsStr) {
-        let Some(notifier) = self.notifier.lock_recover().clone() else {
-            return;
-        };
-        let name = name.to_owned();
-        std::thread::spawn(move || {
-            let _ = notifier.inval_entry(parent, &name);
-            let _ = notifier.inval_inode(parent, 0, 0);
-        });
+        self.notify([
+            Inval::Entry(parent.0, name.to_owned()),
+            Inval::Inode(parent.0),
+        ]);
+    }
+
+    /// Whether this mount negotiates kernel passthrough (see
+    /// `passthrough_enabled`). Never while plugin timestamps are projected.
+    fn passthrough_on(&self) -> bool {
+        passthrough_enabled() && self.plugin_timestamps.is_none()
+    }
+
+    /// `open_for_write`, counting under `cause` when it really copies a lower
+    /// file up. The extra lookup only runs while `EIDOS_FUSE_STATS` is set.
+    fn copy_up(&self, vpath: &str, cause: &AtomicU64) -> std::io::Result<PathBuf> {
+        if *STATS_ON && self.stack.needs_copy_up(vpath) {
+            Stats::bump(cause);
+        }
+        self.stack.open_for_write(vpath)
+    }
+
+    /// Run `writer`, the copy-up or truncation of a writer's open, once the
+    /// writer counts among the normal opens of its inode (`ino`, asked only
+    /// when passthrough is on). While passthrough opens of the inode are live,
+    /// answer ETXTBSY and never run `writer`: the kernel would fail that writer
+    /// with EIO anyway, and an O_TRUNC copy left empty in the Overwrite would
+    /// hide the mod's file from then on. Wine reports ETXTBSY as
+    /// `STATUS_SHARING_VIOLATION`.
+    fn with_writer_slot<R>(
+        &self,
+        ino: impl FnOnce() -> u64,
+        writer: impl FnOnce() -> R,
+    ) -> Result<(Option<WriterSlot<'_, BackingId>>, R), Errno> {
+        if !self.passthrough_on() {
+            return Ok((None, writer()));
+        }
+        match WriterSlot::take_then(&self.passthrough, ino(), writer) {
+            Some((slot, done)) => Ok((Some(slot), done)),
+            None => {
+                Stats::bump(&self.stats.pt_writer_refused);
+                Err(Errno::ETXTBSY)
+            }
+        }
     }
 }
 
@@ -65,10 +104,11 @@ impl Filesystem for Eidos {
         // FUSE passthrough: negotiate the capability and a non-zero stack depth so
         // the kernel routes reads/writes/mmap straight to the real backing file.
         // OFF unless asked for - see `passthrough_enabled` for the measurement that
-        // put it there: with it on, Skyrim SE fails to open every archive and plugin
-        // it needs. Don't negotiate what we won't use, so a run with it off is a
-        // clean baseline rather than the capability sitting there unused.
-        if passthrough_enabled() && self.plugin_timestamps.is_none() {
+        // put it there and its likely cause: with it on, Skyrim SE failed to open
+        // its archives and plugins. Don't negotiate what we won't use, so a run
+        // with it off is a clean baseline rather than the capability sitting
+        // there unused.
+        if self.passthrough_on() {
             let _ = config.add_capabilities(InitFlags::FUSE_PASSTHROUGH);
             let _ = config.set_max_stack_depth(1);
         }
@@ -153,6 +193,8 @@ impl Filesystem for Eidos {
         if freed {
             self.aliases.lock_recover().remove(&ino.0);
             self.negatives.lock_recover().remove(&ino.0);
+            self.unicode_case_dirs.lock_recover().remove(&ino.0);
+            self.passthrough.lock_recover().forget(ino.0);
         }
     }
 
@@ -172,26 +214,48 @@ impl Filesystem for Eidos {
         let accmode = flags.0 & libc::O_ACCMODE;
         let want_write = accmode == libc::O_WRONLY || accmode == libc::O_RDWR;
         let truncating = want_write && flags.0 & libc::O_TRUNC != 0;
-        let real = if want_write {
-            // O_TRUNC discards the existing content, so don't pay to copy the lower
-            // file up first - just prepare the overwrite path (parents + clear
-            // whiteout) and create it empty below. Otherwise copy-up so the backing
-            // file is the Overwrite copy, never the read-only mod/game file.
-            let prepared = if truncating {
-                self.stack.prepare_overwrite(&vpath)
-            } else {
-                self.stack.open_for_write(&vpath)
-            };
+        // A writer's slot; every early return below gives it back.
+        let (writer_slot, real) = if want_write {
+            let prepared = self.with_writer_slot(
+                || ino.0,
+                || -> std::io::Result<PathBuf> {
+                    // O_TRUNC discards the existing content, so don't pay to copy the
+                    // lower file up first - just prepare the overwrite path (parents +
+                    // clear whiteout) and create it empty. Otherwise copy-up so the
+                    // backing file is the Overwrite copy, never the read-only mod/game
+                    // file.
+                    if !truncating {
+                        return self.copy_up(&vpath, &self.stats.cu_open_write);
+                    }
+                    let real = self.stack.prepare_overwrite(&vpath)?;
+                    if real.is_dir() {
+                        return Ok(real);
+                    }
+                    // O_TRUNC makes the name appear, so it goes through the stack like
+                    // every other creation; the remaining opens here only ever touch a
+                    // name that already exists.
+                    Stats::bump(&self.stats.cu_trunc_create);
+                    self.stack.create_truncated(&vpath)?;
+                    let receipt = self.remove_projected_time(&vpath);
+                    self.invalidate_page_cache(ino.0);
+                    receipt?;
+                    Ok(real)
+                },
+            );
             match prepared {
-                Ok(p) => p,
-                Err(e) => {
+                Ok((slot, Ok(real))) => (slot, real),
+                Ok((_, Err(e))) => {
                     reply.error(e.into());
+                    return;
+                }
+                Err(e) => {
+                    reply.error(e);
                     return;
                 }
             }
         } else {
             match self.stack.resolve_read(&vpath) {
-                Some(p) => p,
+                Some(p) => (None, p),
                 None => {
                     reply.error(Errno::ENOENT);
                     return;
@@ -204,23 +268,6 @@ impl Filesystem for Eidos {
             return;
         }
 
-        // O_TRUNC makes the name appear, so it goes through the stack like every
-        // other creation; the remaining opens here only ever touch a name that
-        // already exists.
-        if truncating {
-            match self.stack.create_truncated(&vpath).and_then(|created| {
-                let receipt = self.remove_projected_time(&vpath);
-                self.invalidate_page_cache(ino.0);
-                receipt?;
-                Ok(created)
-            }) {
-                Ok(_) => {}
-                Err(e) => {
-                    reply.error(e.into());
-                    return;
-                }
-            }
-        }
         let mut opts = OpenOptions::new();
         if want_write {
             opts.read(true).write(true);
@@ -249,15 +296,35 @@ impl Filesystem for Eidos {
             self.invalidate_page_cache(ino.0);
         }
 
-        // Cache the open fd under a fresh handle; try to register it for kernel
-        // passthrough (no-op fallback when rootless, where it returns EPERM).
+        // Cache the open fd under a fresh handle. Only read-only opens can go
+        // through kernel passthrough (`passthrough.rs` decides which): the kernel
+        // reopens the backing file with the open's own flags, so a writer sharing
+        // a reader's backing id would write into the mod's file.
         let fh = self.next_fh.fetch_add(1, Ordering::Relaxed);
-        let backing = if !passthrough_enabled() || self.plugin_timestamps.is_some() {
+        let backing = if want_write || !self.passthrough_on() {
             None
         } else {
-            match reply.open_backing(file.as_fd()) {
-                Ok(b) => Some(b),
-                Err(e) => {
+            let eligible = passthrough_eligible(&real, self.stack.overwrite_root(), &file);
+            let served = self
+                .passthrough
+                .lock_recover()
+                .open_read(ino.0, eligible, || reply.open_backing(file.as_fd()));
+            match served {
+                ReadOpen::New(b) => {
+                    Stats::bump(&self.stats.pt_new);
+                    Some(b)
+                }
+                ReadOpen::Reused(b) => {
+                    Stats::bump(&self.stats.pt_reused);
+                    Some(b)
+                }
+                ReadOpen::ForcedNormal => {
+                    Stats::bump(&self.stats.pt_forced_normal);
+                    None
+                }
+                ReadOpen::Normal => None,
+                ReadOpen::Unregistered(e) => {
+                    Stats::bump(&self.stats.pt_register_failed);
                     // Passthrough is an optimisation, never a requirement: the
                     // daemon serves the reads itself when the kernel will not take
                     // a backing file. Worth SAYING, though - a silent fallback here
@@ -269,20 +336,31 @@ impl Filesystem for Eidos {
                 }
             }
         };
+        if let Some(slot) = writer_slot {
+            slot.keep();
+        }
         let mut files = self.open_files.lock_recover();
         // One entry operation, not an insert followed by a lookup-and-unwrap: the
         // handle is freshly allocated so the slot is provably vacant, but "provably"
         // was doing that work as a panic site inside a handler - and a panic here
         // does not return an errno, it kills a daemon thread out from under the
         // game. The entry both inserts and hands back the reference.
-        let flags = file_open_flags();
+        let mut flags = file_open_flags();
+        if !want_write {
+            // A read-only handle has nothing to flush, and the kernel skips its
+            // dirty-page writeback at close only because such an fd cannot hold a
+            // shared writable mapping. Ignored on kernels older than 5.16.
+            flags |= FopenFlags::FOPEN_NOFLUSH;
+        }
         let of = files.entry(fh).or_insert(OpenFile {
             _real: real,
             file: Arc::new(file),
             _backing: backing,
+            writable: want_write,
+            wrote: Default::default(),
         });
         match of._backing.as_ref() {
-            Some(b) => reply.opened_passthrough(FileHandle(fh), flags, b),
+            Some(b) => reply.opened_passthrough(FileHandle(fh), passthrough_flags(flags), b),
             None => reply.opened(FileHandle(fh), flags),
         }
     }
@@ -290,7 +368,7 @@ impl Filesystem for Eidos {
     fn release(
         &self,
         _req: &Request,
-        _ino: INodeNo,
+        ino: INodeNo,
         fh: FileHandle,
         _flags: OpenFlags,
         _lock_owner: Option<LockOwner>,
@@ -298,8 +376,20 @@ impl Filesystem for Eidos {
         reply: ReplyEmpty,
     ) {
         let _t = self.stats.release.start();
-        // Drops the cached fd and any passthrough registration (no-op for fh 0).
-        self.open_files.lock_recover().remove(&fh.0);
+        // Drops the cached fd (no-op for fh 0). A passthrough handle's backing id
+        // closes with the last handle that holds it.
+        let released = self.open_files.lock_recover().remove(&fh.0);
+        if released
+            .as_ref()
+            .is_some_and(|of| of.writable && !of.wrote.load(Ordering::Relaxed))
+        {
+            Stats::bump(&self.stats.writer_closed_unwritten);
+        }
+        if let Some(of) = released.filter(|_| self.passthrough_on()) {
+            self.passthrough
+                .lock_recover()
+                .release(ino.0, of._backing.is_some());
+        }
         match self.flush_projected_times() {
             Ok(()) => reply.ok(),
             Err(e) => reply.error(e.into()),
@@ -317,13 +407,14 @@ impl Filesystem for Eidos {
         // Tell Wine this directory is case-insensitive, so it stops proving it the
         // hard way.
         //
-        // Wine has no way to ask a filesystem whether it folds case, so
-        // `get_dir_case_sensitivity` sniffs for the marker CIOPFS leaves in every
-        // directory it serves. Without it Wine assumes case-SENSITIVE, and every
-        // lookup whose spelling does not match byte-for-byte falls back to reading
-        // the WHOLE directory to search for a case-insensitive match. Bethesda
-        // games ask for `data/ccbgssse001-fish.bsa` while the file is
-        // `ccBGSSSE001-Fish.bsa`, so that fallback fires on nearly every asset.
+        // `get_dir_case_sensitivity` first asks `FS_IOC_GETFLAGS` (see `ioctl`),
+        // then sniffs for the marker CIOPFS leaves in every directory it serves;
+        // older Wine only has the marker. Without either Wine assumes
+        // case-SENSITIVE, and every lookup whose spelling does not match
+        // byte-for-byte falls back to reading the WHOLE directory to search for a
+        // case-insensitive match. Bethesda games ask for
+        // `data/ccbgssse001-fish.bsa` while the file is `ccBGSSSE001-Fish.bsa`, so
+        // that fallback fires on nearly every asset.
         //
         // Measured on Skyrim SE through this mount: 4471 `.ciopfs` probes and 2236
         // full directory re-reads in EIGHT SECONDS, 195796 `opendir`s of Data in
@@ -333,7 +424,8 @@ impl Filesystem for Eidos {
         //
         // Answered on lookup only, and deliberately absent from `readdir`: it is a
         // signal to Wine, not a file the game should ever enumerate or open.
-        if name.as_bytes() == CIOPFS_MARKER {
+        // Withheld where a name needs Unicode case folding (see `folds_case`).
+        if name.as_bytes() == CIOPFS_MARKER && self.folds_case(parent.0) {
             Stats::bump(&self.stats.marker);
             let ino = self.inodes.lock_recover().lookup(&vpath);
             reply.entry(&TTL, &self.marker_attr(ino), Generation(0));
@@ -343,7 +435,7 @@ impl Filesystem for Eidos {
         // Resolve + stat without the inode lock held.
         let Some(real) = self.stack.resolve_read(&vpath) else {
             Stats::bump(&self.stats.lookup_miss);
-            self.reply_negative(parent.0, &name.to_string_lossy(), reply);
+            self.reply_negative(parent.0, &name.to_string_lossy(), true, reply);
             return;
         };
         match fs::symlink_metadata(&real) {
@@ -355,7 +447,8 @@ impl Filesystem for Eidos {
             }
             Err(_) => {
                 Stats::bump(&self.stats.lookup_miss);
-                self.reply_negative(parent.0, &name.to_string_lossy(), reply);
+                // The index found the file; this stat failure may be transient.
+                self.reply_negative(parent.0, &name.to_string_lossy(), false, reply);
             }
         }
     }
@@ -427,10 +520,10 @@ impl Filesystem for Eidos {
             .get(&fh.0)
             .map(|o| o.file.clone());
         if let Some(file) = cached {
-            match read_full_at(&file, offset, size as usize) {
-                Ok(buf) => reply.data(&buf),
+            read_full_at(&file, offset, size as usize, |r| match r {
+                Ok(b) => reply.data(b),
                 Err(e) => reply.error(e.into()),
-            }
+            });
             return;
         }
 
@@ -446,8 +539,11 @@ impl Filesystem for Eidos {
             reply.error(Errno::ENOENT);
             return;
         };
-        match File::open(&real).and_then(|f| read_full_at(&f, offset, size as usize)) {
-            Ok(buf) => reply.data(&buf),
+        match File::open(&real) {
+            Ok(f) => read_full_at(&f, offset, size as usize, |r| match r {
+                Ok(b) => reply.data(b),
+                Err(e) => reply.error(e.into()),
+            }),
             Err(e) => reply.error(e.into()),
         }
     }
@@ -660,18 +756,30 @@ impl Filesystem for Eidos {
         // clears any whiteout WITHOUT copying a deleted lower-layer file up, and
         // truncate(true) guarantees zero length. Using open_for_write here would
         // resurrect the old bytes of a deleted mod/game file into the "new" file.
-        let opened = (|| -> std::io::Result<(PathBuf, File, Metadata)> {
-            let (dest, file) = self.stack.create_truncated(&vpath)?;
-            self.dir_changed(parent.0, &name.to_string_lossy());
-            self.remove_projected_time(&vpath)?;
-            let meta = fs::symlink_metadata(&dest)?;
-            Ok((dest, file, meta))
-        })();
-        let (real, file, meta) = match opened {
-            Ok(t) => t,
-            Err(e) => {
+        //
+        // A writer like any other: refused before create_truncated empties the
+        // file, if passthrough opens of it are live. The passthrough table needs
+        // the inode before the file exists.
+        let opened = self.with_writer_slot(
+            || self.inodes.lock_recover().intern(&vpath),
+            || -> std::io::Result<(PathBuf, File, Metadata)> {
+                Stats::bump(&self.stats.cu_trunc_create);
+                let (dest, file) = self.stack.create_truncated(&vpath)?;
+                self.dir_changed(parent.0, &name.to_string_lossy());
+                self.remove_projected_time(&vpath)?;
+                let meta = fs::symlink_metadata(&dest)?;
+                Ok((dest, file, meta))
+            },
+        );
+        let (writer_slot, (real, file, meta)) = match opened {
+            Ok((slot, Ok(t))) => (slot, t),
+            Ok((_, Err(e))) => {
                 reply.error(e.into());
                 self.invalidate_failed_entry(parent, name);
+                return;
+            }
+            Err(e) => {
+                reply.error(e);
                 return;
             }
         };
@@ -679,36 +787,31 @@ impl Filesystem for Eidos {
         let ino = self.inodes.lock_recover().lookup(&vpath);
         let attr = self.attr(ino, &meta);
         let fh = self.next_fh.fetch_add(1, Ordering::Relaxed);
-        let backing = if passthrough_enabled() && self.plugin_timestamps.is_none() {
-            reply.open_backing(file.as_fd()).ok()
-        } else {
-            None
-        };
-        let mut files = self.open_files.lock_recover();
+        if let Some(slot) = writer_slot {
+            slot.keep();
+        }
+        // The new file is in the Overwrite and open for writing, so it never goes
+        // through passthrough.
+        //
         // Same shape as open(): entry instead of insert-then-unwrap, because an
         // unwrap in a handler is a panic site and a panic takes the daemon down.
-        let of = files.entry(fh).or_insert(OpenFile {
-            _real: real,
-            file: Arc::new(file),
-            _backing: backing,
-        });
-        match of._backing.as_ref() {
-            Some(b) => reply.created_passthrough(
-                &TTL,
-                &attr,
-                Generation(0),
-                FileHandle(fh),
-                FopenFlags::empty(),
-                b,
-            ),
-            None => reply.created(
-                &TTL,
-                &attr,
-                Generation(0),
-                FileHandle(fh),
-                FopenFlags::empty(),
-            ),
-        }
+        self.open_files
+            .lock_recover()
+            .entry(fh)
+            .or_insert(OpenFile {
+                _real: real,
+                file: Arc::new(file),
+                _backing: None,
+                writable: true,
+                wrote: Default::default(),
+            });
+        reply.created(
+            &TTL,
+            &attr,
+            Generation(0),
+            FileHandle(fh),
+            FopenFlags::empty(),
+        );
     }
 
     fn write(
@@ -726,11 +829,10 @@ impl Filesystem for Eidos {
         Stats::bump(&self.stats.write);
         let _t = Timed::start(&self.stats.ns_write);
         // Fast path: pwrite the cached (copied-up) fd from `open`/`create`.
-        let cached = self
-            .open_files
-            .lock_recover()
-            .get(&fh.0)
-            .map(|o| o.file.clone());
+        let cached = self.open_files.lock_recover().get(&fh.0).map(|o| {
+            o.wrote.store(true, Ordering::Relaxed);
+            o.file.clone()
+        });
         if let Some(file) = cached {
             let result = write_all_at(&file, data, offset).and_then(|_| {
                 self.inodes
@@ -758,7 +860,7 @@ impl Filesystem for Eidos {
             }
         };
         let written = (|| -> std::io::Result<()> {
-            let dest = self.stack.open_for_write(&vpath)?;
+            let dest = self.copy_up(&vpath, &self.stats.cu_write)?;
             let f = OpenOptions::new().write(true).open(&dest)?;
             write_all_at(&f, data, offset)
         })();
@@ -887,7 +989,7 @@ impl Filesystem for Eidos {
         // timestamps; ownership is intentionally ignored (the game runs as us).
         if mode.is_some() || size.is_some() || atime.is_some() || mtime.is_some() {
             let r = (|| -> std::io::Result<()> {
-                let dest = self.stack.open_for_write(&vpath)?;
+                let dest = self.copy_up(&vpath, &self.stats.cu_setattr)?;
                 // Only a size change needs the file open, and the open must come
                 // AFTER any mode change: Wine clearing FILE_ATTRIBUTE_READONLY
                 // arrives as a mode-only setattr, and opening read-write first
@@ -1065,6 +1167,7 @@ impl Filesystem for Eidos {
                 for dead in clobbered {
                     self.aliases.lock_recover().remove(&dead);
                     self.negatives.lock_recover().remove(&dead);
+                    self.unicode_case_dirs.lock_recover().remove(&dead);
                     if receipt.is_err() {
                         self.invalidate_page_cache(dead);
                     }
@@ -1154,7 +1257,7 @@ impl Filesystem for Eidos {
             return;
         }
         let r = (|| -> std::io::Result<()> {
-            let dest = self.stack.open_for_write(&vpath)?;
+            let dest = self.copy_up(&vpath, &self.stats.cu_xattr)?;
             xattr_set(&dest, name, value, flags)
         })();
         match r {
@@ -1194,12 +1297,37 @@ impl Filesystem for Eidos {
             return;
         }
         let r = (|| -> std::io::Result<()> {
-            let dest = self.stack.open_for_write(&vpath)?;
+            let dest = self.copy_up(&vpath, &self.stats.cu_xattr)?;
             xattr_remove(&dest, name)
         })();
         match r {
             Ok(()) => reply.ok(),
             Err(e) => reply.error(to_errno(&e)),
+        }
+    }
+
+    fn ioctl(
+        &self,
+        _req: &Request,
+        ino: INodeNo,
+        _fh: FileHandle,
+        flags: IoctlFlags,
+        cmd: u32,
+        _in_data: &[u8],
+        out_size: u32,
+        reply: ReplyIoctl,
+    ) {
+        if cmd != libc::FS_IOC_GETFLAGS as u32 {
+            let _t = self.stats.ioctl_other.start();
+            return reply.error(Errno::ENOTTY);
+        }
+        let _t = self.stats.ioctl_getflags.start();
+        // The kernel sets FUSE_IOCTL_DIR from S_ISDIR and asks for sizeof(int);
+        // a longer reply would be rejected.
+        if flags.contains(IoctlFlags::FUSE_IOCTL_DIR) && out_size >= 4 && self.folds_case(ino.0) {
+            reply.ioctl(0, &FS_CASEFOLD_FL.to_ne_bytes())
+        } else {
+            reply.error(Errno::ENOTTY)
         }
     }
 

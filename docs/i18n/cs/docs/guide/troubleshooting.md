@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=5a5cf24f22226149a129938621400a7131291277 -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=8f0ea64ea39bdda653b7726249aa2b3377b772dc -->
 
 # Řešení potíží a diagnostika
 
@@ -42,27 +42,31 @@ takže samotné vrstvy zůstávají nedotčené i tady.
 #### Proč je passthrough ve výchozím stavu vypnutý
 
 Passthrough předá jádru skutečný podkladový soubor, takže čtení tohoto démona
-úplně obcházejí. Je to zisk v propustnosti, který tady stojí správnost. Měřeno
-A/B na Skyrim SE 1.6.1170, proton-cachyos 11.0, jádro 7.1.4, stejné pořadí
-načítání s 82 pluginy, jediná proměnná byla, zda binárka nesla tu capability:
+úplně obcházejí. Měření A/B níže proběhlo s dřívější verzí démona, před změnou
+popsanou dál ve známém problému „FUSE passthrough brání hře načíst jakýkoli
+obsah módů“. Tato změna se vyhýbá nejpravděpodobnější příčině, ale ve hře zatím
+nebyla znovu změřena, takže passthrough zůstává ve výchozím stavu vypnutý, dokud
+se to nestane. Měřeno A/B na Skyrim SE 1.6.1170, proton-cachyos 11.0, jádro
+7.1.4, stejné pořadí načítání s 82 pluginy, jediná proměnná byla, zda binárka
+nesla tu capability:
 
 | passthrough | selhání `NtCreateFile` se `STATUS_ACCESS_VIOLATION` |
 |-------------|--------------------------------------------------------|
 | zapnutý     | 152 - 75 `.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`        |
 | vypnutý     | 0                                                      |
 
-Se zapnutým hra neotevře žádný ze svých archivů ani pluginů, což se ve hře
-projeví jako módy, které prostě nejsou - žádná chyba, žádný řádek v logu.
-S vypnutým totéž pořadí načítání dojde ke hraní se živými pluginy, archivy
-a Papyrus skripty.
+Se zapnutým hra neotevřela žádný ze svých archivů ani pluginů, což se ve hře
+projevilo jako módy, které nejsou - žádná chyba, žádný řádek v logu. S vypnutým
+totéž pořadí načítání došlo ke hraní se živými pluginy, archivy a Papyrus
+skripty.
 
-Selhání je zevnitř démona neviditelné, což ho udělalo drahým na nalezení: naše
-vlastní `open` uspěje pokaždé a jádro nikdy neodmítne podkladový soubor
-(ověřeno napříč celou selhávající relací s `EIDOS_FUSE_TRACE=open`: nula
-`open FAILED`, nula `passthrough refused`). Chyba vzniká až poté, co démon
-odpoví `opened_passthrough`, takže ji žádné logování na straně démona nevidí.
-Není ani vázaná na příponu - trefuje archivy stejně jako pluginy, tedy soubory,
-které hra drží otevřené po celý svůj běh.
+Selhání bylo zevnitř démona neviditelné, což ho udělalo drahým na nalezení: jeho
+vlastní `open` uspělo pokaždé a jádro nikdy neodmítlo podkladový soubor (ověřeno
+napříč celou selhávající relací s `EIDOS_FUSE_TRACE=open`: nula `open FAILED`,
+nula `passthrough refused`). Chyba vznikala až poté, co démon odpověděl
+`opened_passthrough`, takže ji žádné logování na straně démona nemohlo vidět.
+Nebyla ani vázaná na příponu - trefovala archivy stejně jako pluginy, tedy
+soubory, které hra drží otevřené po celý svůj běh.
 
 `EIDOS_FUSE_PASSTHROUGH=1` jej zase zapne, pro měření toho, co přináší, nebo
 pro opětovné testování mechanismu. Varování o capability ve spouštěči a na kartě
@@ -157,20 +161,21 @@ aktualizaci prefixu.
 **Wine nedokázal poznat, že připojení sjednocuje velikost písmen.** Opraveno,
 a byl to ten problém, na kterém záleželo.
 
-Neexistuje API pro „je tenhle souborový systém case-insensitive", takže Wine ve
-své `get_dir_case_sensitivity` čichá po značce, kterou CIOPFS nechává
-v adresářích, jež obsluhuje. Když chybí, Wine předpokládá case-SENSITIVE
-a každé vyhledání, jehož zápis se neshoduje bajt po bajtu, spadne zpátky ke
-čtení CELÉHO adresáře, aby našlo shodu bez ohledu na velikost písmen. Hry od
-Bethesdy se ptají na `data/ccbgssse001-fish.bsa`, zatímco soubor je
-`ccBGSSSE001-Fish.bsa`, takže to vystřelilo skoro u každého assetu: 4471 dotazů
-na značku a 2236 úplných opětovných čtení adresáře za osm sekund a 195796 výčtů
-`Data` za devadesát. Skyrim SE se nikdy nedostal do hlavní nabídky - seděl na
-240 MB rezidentní paměti, zatímco démon spaloval 92 % jádra.
+Wine se ve své `get_dir_case_sensitivity` nejprve zeptá adresáře přes
+`FS_IOC_GETFLAGS` a potom čichá po značce, kterou CIOPFS nechává v adresářích,
+jež obsluhuje. Když chybí obojí, Wine předpokládá case-SENSITIVE a každé
+vyhledání, jehož zápis se neshoduje bajt po bajtu, spadne zpátky ke čtení CELÉHO
+adresáře, aby našlo shodu bez ohledu na velikost písmen. Hry od Bethesdy se
+ptají na `data/ccbgssse001-fish.bsa`, zatímco soubor je `ccBGSSSE001-Fish.bsa`,
+takže to vystřelilo skoro u každého assetu: 4471 dotazů na značku a 2236 úplných
+opětovných čtení adresáře za osm sekund a 195796 výčtů `Data` za devadesát.
+Skyrim SE se nikdy nedostal do hlavní nabídky - seděl na 240 MB rezidentní
+paměti, zatímco démon spaloval 92 % jádra.
 
 Eidos sjednocoval velikost písmen v `resolve_read` od začátku. Celá ta cena byla
 za to, že to nikdy neřekl. `lookup` teď odpovídá `.ciopfs`; `readdir` jej stále
-nevypisuje.
+nevypisuje. `ioctl` navíc na adresářích odpovídá na `FS_IOC_GETFLAGS` příznakem
+casefold, na který se současný Wine ptá dřív, než začne hledat značku.
 
 Fatálním, ne jen pomalým, to udělaly dvě věci. Cena roste s velikostí adresáře,
 takže instalace obsahu Anniversary (`Data` ze 37 souborů na 177) to překlopila.
@@ -190,25 +195,49 @@ zachytávání (zachycení, které úplně vyprázdní aktivní sadu, je odmítn
 jakékoli velikosti) znamená, že už profil poškodit nemůže.
 
 **`FOPEN_KEEP_CACHE` je vypnutý.** Opraveno a stojí za to vědět proč. Shazoval
-Skyrim SE na null dereferenci pár sekund po hlavní nabídce, deterministicky,
-s nula nainstalovanými módy; ostatní tři cache na straně jádra byly
-vybisektovány jednotlivě a záležel jen tenhle. Jeho ztráta byla tehdy naměřena
-jako zadarmo, jenže to měření vzniklo s aktivním `FUSE_PASSTHROUGH`, kde démon
-obsluhuje *nula* čtení (`EIDOS_FUSE_STATS` hlásil `read 0` za celé načtení)
-a jádro už ty stránky cachovalo proti podkladovému souboru. Passthrough je teď
-ve výchozím stavu vypnutý (níže), takže ten argument už neplatí a skutečná cena
-je nezměřená - pád je stejně dost dobrý důvod nechat jej vypnutý. Znovu zapnete
-přes `EIDOS_FUSE_KEEP_CACHE=1`, chcete-li to zkoumat; ty dva přepínače už nejsou
-provázané, takže se teď dá testovat samostatně.
+Skyrim SE na null dereferenci pár sekund po hlavní nabídce, deterministicky, s
+nula nainstalovanými módy; ostatní tři cache na straně jádra byly vybisektovány
+jednotlivě a záležel jen tenhle. Ta bisekce běžela se zapnutým
+`FUSE_PASSTHROUGH` a jádro nechá otevření přes passthrough, které nese
+`FOPEN_KEEP_CACHE`, selhat s EIO, takže se zapnutým příznakem selhalo každé
+otevření přes passthrough. Možná právě tato neúspěšná otevření shazovala hru, a
+samotný příznak s vypnutým passthroughem nebyl nikdy otestován. Odpovědi přes
+passthrough jej už nenesou. Jeho ztráta byla tehdy naměřena jako zadarmo, jenže
+se zapnutým passthroughem démon obsluhuje *nula* čtení (`EIDOS_FUSE_STATS`
+hlásil `read 0` za celé načtení), takže s passthroughem ve výchozím stavu
+vypnutým (níže) je skutečná cena nezměřená. Znovu jej zapnete přes
+`EIDOS_FUSE_KEEP_CACHE=1`, chcete-li jej otestovat samostatně.
 
 ### FUSE passthrough brání hře načíst jakýkoli obsah módů
 
-Opraveno tím, že se vypnul; `EIDOS_FUSE_PASSTHROUGH=1` jej vrátí zpět. Se
-zapnutým passthroughem Skyrim SE neotevře 152 vlastních souborů (75 `.bsa`, 65
-`.esl`, 10 `.esm`, 2 `.esp`) se `STATUS_ACCESS_VIOLATION`, proti 0 s vypnutým,
-na jádře 7.1.4 - takže se tiše nenačte žádný obsah módů. Jádro vyvolá chybu
-poté, co démon odpověděl `opened_passthrough`, takže vlastní logy démona
-ukazují čistý běh (nula neúspěšných otevření, nula odmítnutých podkladových
-souborů). Kořenová příčina v cestě jádrem není zjištěna; přepínač se zachovává,
-aby šlo mechanismus znovu otestovat a aby se passthrough dal zúžit jen na DLL,
-kdyby se ukázalo, že to mapování obrazů potřebuje.
+Démon se teď vyhýbá nejpravděpodobnější příčině (níže), ale ve hře to zatím
+nebylo znovu změřeno, takže passthrough zůstává ve výchozím stavu vypnutý;
+`EIDOS_FUSE_PASSTHROUGH=1` jej zapne. Před touto změnou Skyrim SE se zapnutým
+passthroughem neotevřel 152 vlastních souborů (75 `.bsa`, 65 `.esl`, 10 `.esm`,
+2 `.esp`) se `STATUS_ACCESS_VIOLATION`, proti 0 s vypnutým, na jádře 7.1.4 -
+takže se tiše nenačetl žádný obsah módů. Jádro vyvolalo chybu poté, co démon
+odpověděl `opened_passthrough`, takže vlastní logy démona ukazovaly čistý běh
+(nula neúspěšných otevření, nula odmítnutých podkladových souborů).
+
+Jádro váže na každý inode jediný podkladový soubor (`fs/fuse/iomode.c`).
+Otevření, které pro inode, jenž už jeden má, přinese druhé ID podkladového
+souboru, selže s EIO, stejně jako normální otevření (bez `FOPEN_PASSTHROUGH`)
+inodu, který podkladový soubor má. Otevření přes passthrough, které nese
+`FOPEN_KEEP_CACHE`, selže s EIO také. Démon dřív registroval při každém otevření
+nové ID, takže selhalo druhé otevření souboru, který hra už držela otevřený.
+Wine hlásí EIO jako `STATUS_ACCESS_VIOLATION`, což je chyba za 152 neúspěšnými
+otevřeními. Toto pravidlo pochází ze zdrojového kódu jádra a odpovídá těm 152
+selháním, a proto je nejpravděpodobnější příčinou.
+
+Démon teď registruje jediný podkladový soubor na inode, sdílený všemi jeho
+otevřeními přes passthrough, a otevření přes passthrough nikdy nenastaví
+`FOPEN_KEEP_CACHE`. Passthrough se týká jen otevření pouze pro čtení u souborů z
+vrstev hry a módů, které mají 1 MiB nebo víc nebo končí na `.dll`, `.exe` či
+`.asi`. Jakmile je ten podkladový soubor zaregistrovaný, používá jej každé
+otevření souboru pouze pro čtení, a dokud má soubor normální otevření, dostanou
+normální otevření i noví čtenáři. Soubor v Overwrite přes passthrough nikdy
+nejde a připojení, které promítá časová razítka pluginů, jej nepoužívá vůbec.
+Otevření pro zápis u souboru, který drží čtenáři přes passthrough, dostane
+ETXTBSY (ve Wine: `STATUS_SHARING_VIOLATION`) dřív, než proběhne jakýkoli
+copy-up, takže otevření s `O_TRUNC` nemůže v Overwrite nechat prázdnou kopii,
+která by skryla soubor módu.
