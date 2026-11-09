@@ -74,6 +74,8 @@ pub struct GameDef {
     /// The Nexus Mods game domain (nxm:// host, API path), e.g.
     /// `skyrimspecialedition`. VR editions share their parent game's Nexus.
     pub nexus_game: &'static str,
+    /// Other Nexus domains whose mods this game also accepts.
+    pub nexus_sources: &'static [&'static str],
     /// Steam application id, used to locate the install via the Steam library.
     pub steam_app_id: u32,
     /// Exact GOG product IDs accepted from installed manifests.
@@ -188,6 +190,35 @@ impl GameDef {
         }
     }
 
+    /// Whether a mod from Nexus domain `domain` belongs to this game: its own
+    /// domain or one of `nexus_sources`.
+    pub fn accepts_domain(&self, domain: &str) -> bool {
+        !domain.is_empty()
+            && (self.nexus_game.eq_ignore_ascii_case(domain)
+                || self
+                    .nexus_sources
+                    .iter()
+                    .any(|d| d.eq_ignore_ascii_case(domain)))
+    }
+
+    /// The Nexus domain for a mod's `gameName`. No name gives this game's own
+    /// domain (`None` when it has none); a name gives that game's domain.
+    pub fn nexus_domain_for(&self, game_name: Option<&str>) -> Option<&'static str> {
+        match game_name.filter(|n| !n.is_empty()) {
+            None => Some(self.nexus_game).filter(|d| !d.is_empty()),
+            Some(name) => nexus_domain_of(name),
+        }
+    }
+
+    /// The `gameName` to write for a mod from `domain`: this game's short name
+    /// when the domain is its own, else the short name of the first game on it.
+    pub fn game_name_for_domain<'a>(&self, domain: &'a str) -> &'a str {
+        if self.nexus_game.eq_ignore_ascii_case(domain) && !self.short_name.is_empty() {
+            return self.short_name;
+        }
+        short_name_for_domain(domain).unwrap_or(domain)
+    }
+
     /// The definition for an Eidos game id (built-in or user TOML), or `None`.
     pub fn for_id(id: &str) -> Option<&'static GameDef> {
         all().iter().find(|g| g.id.eq_ignore_ascii_case(id))
@@ -209,6 +240,32 @@ pub fn all() -> &'static [GameDef] {
         }
         games
     })
+}
+
+/// The Nexus domain of the game a `gameName` names: matched on `short_name`,
+/// then `nexus_game`, then `id`, ignoring case. Empty or unknown gives `None`.
+pub fn nexus_domain_of(game_name: &str) -> Option<&'static str> {
+    if game_name.is_empty() {
+        return None;
+    }
+    let by = |key: fn(&GameDef) -> &'static str| {
+        all()
+            .iter()
+            .find(|g| key(g).eq_ignore_ascii_case(game_name))
+    };
+    by(|g| g.short_name)
+        .or_else(|| by(|g| g.nexus_game))
+        .or_else(|| by(|g| g.id))
+        .map(|g| g.nexus_game)
+        .filter(|d| !d.is_empty())
+}
+
+/// The short name of the first game (in [`all`] order) on Nexus domain `domain`.
+pub fn short_name_for_domain(domain: &str) -> Option<&'static str> {
+    all()
+        .iter()
+        .find(|g| !g.short_name.is_empty() && g.nexus_game.eq_ignore_ascii_case(domain))
+        .map(|g| g.short_name)
 }
 
 /// The directory user TOML game definitions are read from.
@@ -255,6 +312,8 @@ struct RawGameDef {
     short_name: String,
     #[serde(default)]
     nexus_game: String,
+    #[serde(default)]
+    nexus_sources: Vec<String>,
     #[serde(default)]
     steam_app_id: u32,
     #[serde(default)]
@@ -322,6 +381,7 @@ impl RawGameDef {
             name: leak(self.name),
             short_name: leak(self.short_name),
             nexus_game: leak(self.nexus_game),
+            nexus_sources: leak_vec(self.nexus_sources),
             steam_app_id: self.steam_app_id,
             gog_ids: leak_vec(self.gog_ids),
             epic_ids: leak_vec(self.epic_ids),
@@ -856,5 +916,61 @@ mod tests {
                 .loader,
             "skse64_loader.exe"
         );
+    }
+
+    #[test]
+    fn nexus_domains_resolve_from_short_names_domains_and_ids() {
+        for (name, want) in [
+            ("SkyrimSE", Some("skyrimspecialedition")),
+            ("skyrimspecialedition", Some("skyrimspecialedition")),
+            ("skyrimse", Some("skyrimspecialedition")),
+            ("SkyrimVR", Some("skyrimspecialedition")),
+            ("Fallout4VR", Some("fallout4")),
+            ("FalloutNV", Some("newvegas")),
+            ("EnderalSE", Some("enderalspecialedition")),
+            ("Nehrim", None),
+            ("", None),
+        ] {
+            assert_eq!(nexus_domain_of(name), want, "{name}");
+        }
+        assert_eq!(
+            short_name_for_domain("skyrimspecialedition"),
+            Some("SkyrimSE")
+        );
+    }
+
+    #[test]
+    fn enderal_se_accepts_the_skyrim_se_domain_and_names_it_by_its_short_name() {
+        let enderal = GameDef::for_id("enderalse").unwrap();
+        let vr = GameDef::for_id("skyrimvr").unwrap();
+        let se = GameDef::for_id("skyrimse").unwrap();
+        assert!(enderal.accepts_domain("skyrimspecialedition"));
+        assert!(vr.accepts_domain("skyrimspecialedition"));
+        assert!(!se.accepts_domain("enderalspecialedition"));
+        assert_eq!(
+            enderal.nexus_domain_for(None),
+            Some("enderalspecialedition")
+        );
+        assert_eq!(
+            enderal.nexus_domain_for(Some("SkyrimSE")),
+            Some("skyrimspecialedition")
+        );
+        assert_eq!(enderal.nexus_domain_for(Some("Nehrim")), None);
+        assert_eq!(
+            enderal.game_name_for_domain("skyrimspecialedition"),
+            "SkyrimSE"
+        );
+        assert_eq!(vr.game_name_for_domain("skyrimspecialedition"), "SkyrimVR");
+        assert_eq!(se.game_name_for_domain("skyrim"), "Skyrim");
+        assert_eq!(se.game_name_for_domain("madeupdomain"), "madeupdomain");
+    }
+
+    #[test]
+    fn nexus_sources_parse_from_a_user_definition() {
+        let g = parse_game(
+            "id=\"x\"\nname=\"X\"\ndata_dir=\"Data\"\nnexus_game=\"x\"\nnexus_sources=[\"skyrim\"]",
+        )
+        .unwrap();
+        assert!(g.accepts_domain("skyrim") && g.accepts_domain("X"));
     }
 }
