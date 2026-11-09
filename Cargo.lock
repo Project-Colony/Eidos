@@ -1332,6 +1332,7 @@ name = "eidos-nexus"
 version = "1.22.0"
 dependencies = [
  "base64",
+ "eidos-gamedef",
  "eidos-instance",
  "libc",
  "md-5",

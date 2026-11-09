@@ -176,11 +176,6 @@ impl RealHooks<'_> {
         } else {
             &m.domain_name
         };
-        let short = eidos_games::catalog()
-            .iter()
-            .find(|g| g.nexus_game.eq_ignore_ascii_case(domain))
-            .map(|g| g.short_name)
-            .unwrap_or(domain);
         let dl = self.inst.downloads_dir();
         std::fs::read_dir(&dl)
             .ok()?
@@ -192,8 +187,12 @@ impl RealHooks<'_> {
                 let archive = p.with_extension("");
                 (meta.file_id()? == want
                     && meta.mod_id()? == mod_id
+                    // Any name for this domain: `SkyrimSE`, the domain itself,
+                    // or `SkyrimVR` as a VR instance records it.
                     && meta.game_name().is_some_and(|game| {
-                        game.eq_ignore_ascii_case(short) || game.eq_ignore_ascii_case(domain)
+                        game.eq_ignore_ascii_case(domain)
+                            || eidos_games::nexus_domain_of(&game)
+                                .is_some_and(|d| d.eq_ignore_ascii_case(domain))
                     })
                     && archive.is_file()
                     && !PathBuf::from(format!("{}.unfinished", archive.display())).exists())
@@ -802,7 +801,12 @@ impl Hooks for RealHooks<'_> {
                                     self.nexus.file_info(&gate, domain, mod_id, file_id)
                                 {
                                     let _ = eidos_nexus::write_download_meta(
-                                        &dest, domain, &nxm, &url, &file, &remote,
+                                        &dest,
+                                        self.game.def.game_name_for_domain(domain),
+                                        &nxm,
+                                        &url,
+                                        &file,
+                                        &remote,
                                     );
                                 }
                                 checked_archive(m, dest, &mut self.checked_archive)

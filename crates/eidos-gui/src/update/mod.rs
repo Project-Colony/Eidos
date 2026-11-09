@@ -2126,13 +2126,8 @@ pub(crate) fn recompute_collection_states(app: &mut App) {
     // collection using an LE asset). `meta.ini` records the game by its SHORT
     // name ("SkyrimSE") while a collection names the DOMAIN
     // ("skyrimspecialedition"), so the two are translated through the game
-    // definitions rather than compared as strings.
-    let short_for_domain = |domain: &str| -> Option<&'static str> {
-        eidos_gamedef::all()
-            .iter()
-            .find(|d| d.nexus_game.eq_ignore_ascii_case(domain))
-            .map(|d| d.short_name)
-    };
+    // definitions rather than compared as strings. Every short name on a domain
+    // counts: Skyrim VR records the SE domain's mods as "SkyrimVR".
     let downloaded: Vec<_> = app
         .created
         .as_ref()
@@ -2157,10 +2152,11 @@ pub(crate) fn recompute_collection_states(app: &mut App) {
         .mods
         .iter()
         .map(|m| {
-            let want = short_for_domain(&m.domain).unwrap_or(&m.domain);
             let game_matches = |have: Option<&str>| {
                 have.is_some_and(|have| {
-                    have.eq_ignore_ascii_case(want) || have.eq_ignore_ascii_case(&m.domain)
+                    have.eq_ignore_ascii_case(&m.domain)
+                        || eidos_gamedef::nexus_domain_of(have)
+                            .is_some_and(|d| d.eq_ignore_ascii_case(&m.domain))
                 })
             };
             let candidates: Vec<_> = app

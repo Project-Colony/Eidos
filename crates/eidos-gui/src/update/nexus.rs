@@ -86,24 +86,44 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(t("status_connect_nexus_first").to_string());
                 return Task::none();
             }
-            let domain = selected_game(app).map(|g| g.def.nexus_game.to_string());
+            let def = selected_game(app).map(|g| g.def);
             let folder = app.mods.get(i).map(|m| m.name.clone()).unwrap_or_default();
+            // The mod's own domain, from the game its meta.ini names: a Skyrim SE
+            // mod in an Enderal SE instance is endorsed on Skyrim SE's page.
             let info = app
                 .created
                 .as_ref()
                 .zip(app.mods.get(i))
                 .filter(|(_, m)| !m.is_separator())
-                .map(|(inst, m)| {
+                .zip(def)
+                .map(|((inst, m), def)| {
                     let meta = inst.mod_meta(&m.name);
+                    let game = meta.game_name().filter(|g| !g.is_empty());
                     (
                         meta.mod_id(),
+                        def.nexus_domain_for(game.as_deref())
+                            .ok_or((m.display_name(), game)),
                         meta.version().unwrap_or_default(),
                         meta.endorsed(),
                     )
                 });
-            let (Some(domain), Some((Some(mod_id), version, endorsed))) = (domain, info) else {
+            let Some((Some(mod_id), domain, version, endorsed)) = info else {
                 app.status = Some(t("status_no_nexus_id_endorse").to_string());
                 return Task::none();
+            };
+            let domain = match domain {
+                Ok(domain) => domain.to_string(),
+                Err((name, Some(game))) => {
+                    app.status = Some(tf(
+                        "status_unknown_nexus_game",
+                        &[("name", &name), ("game", &game)],
+                    ));
+                    return Task::none();
+                }
+                Err((_, None)) => {
+                    app.status = Some(t("status_no_nexus_id_endorse").to_string());
+                    return Task::none();
+                }
             };
             // Toggle: endorse when not yet endorsed, abstain when already endorsed.
             let Some(instance) = app.created.as_ref().map(|i| i.root.clone()) else {
@@ -185,7 +205,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(t("status_connect_nexus_first").to_string());
                 return Task::none();
             }
-            let Some(domain) = selected_game(app).map(|g| g.def.nexus_game.to_string()) else {
+            let Some(def) = selected_game(app).map(|g| g.def) else {
                 return Task::none();
             };
             let Some(inst) = app.created.clone() else {
@@ -200,7 +220,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 // pool, never on the executor that runs the timers.
                 smol::unblock(move || {
                     let nexus = eidos_nexus::Nexus::connect()?;
-                    eidos_nexus::check_updates(&nexus, &inst, &domain)
+                    eidos_nexus::check_updates(&nexus, &inst, def)
                 }),
                 Message::UpdatesChecked,
             );

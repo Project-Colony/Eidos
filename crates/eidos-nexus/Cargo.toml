@@ -30,3 +30,5 @@ base64.workspace = true
 # signs with RSA-1024, which needs ring's explicitly-named legacy verifier.
 ring.workspace = true
 eidos-instance = { path = "../eidos-instance" }
+# A mod's `gameName` names the Nexus domain its update check and links use.
+eidos-gamedef = { path = "../eidos-gamedef" }

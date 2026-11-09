@@ -939,6 +939,7 @@ fn dl_row(name: &str) -> DownloadRow {
         version: String::new(),
         mod_name: None,
         mod_id: None,
+        game_name: None,
         state: DownloadState::Ready,
         downloaded: 1,
         total: 1,
@@ -1396,6 +1397,17 @@ fn the_join_does_not_claim_more_than_it_knows() {
     // (3) An outdated copy is not the version the collection asks for.
     let (mut app, root) = collection_app_with(
         &[("Outdated", first, "gameName=SkyrimSE\nversion=0.0.1-old\n")],
+        &[],
+        &[],
+    );
+    let st = state(&mut app);
+    assert_eq!(st[0], MemberState::OtherVersion);
+    let _ = fs::remove_dir_all(&root);
+
+    // A Skyrim VR install records the SE domain's mods as `SkyrimVR`: still
+    // this member's mod, not another game's.
+    let (mut app, root) = collection_app_with(
+        &[("Vr", first, "gameName=SkyrimVR\nversion=0.0.1-old\n")],
         &[],
         &[],
     );

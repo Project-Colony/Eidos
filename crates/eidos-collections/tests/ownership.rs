@@ -277,6 +277,61 @@ fn a_stale_download_sidecar_does_not_hide_a_later_complete_archive() {
 }
 
 #[test]
+fn a_skyrim_vr_download_recorded_under_its_own_short_name_is_found_again() {
+    // The driver and `eidos nxm` record a Skyrim VR download from the Skyrim SE
+    // domain as `SkyrimVR`; a resumed collection must not fetch it again.
+    let temp = Fixture::new();
+    let inst = eidos_instance::Instance::portable(temp.0.join("instance"));
+    inst.create().unwrap();
+    fs::create_dir_all(inst.downloads_dir()).unwrap();
+    let game = eidos_games::DetectedGame {
+        source: Default::default(),
+        def: eidos_games::GameDef::for_id("skyrimvr").unwrap(),
+        install_path: temp.0.join("game"),
+        data_path: temp.0.join("game/Data"),
+        compatdata: None,
+        steam_name: "test".into(),
+    };
+    let archive = inst.downloads_dir().join("member.zip");
+    fs::write(&archive, b"archive").unwrap();
+    fs::write(
+        inst.downloads_dir().join("member.zip.meta"),
+        "[General]\ngameName=SkyrimVR\nmodID=1\nfileID=1\n",
+    )
+    .unwrap();
+    let member = Mod {
+        name: "Member".into(),
+        source: Source {
+            kind: eidos_collections::manifest::SourceType::Browse,
+            file_id: Some(1),
+            mod_id: Some(1),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let nexus = eidos_nexus::Nexus::with_bearer("synthetic-no-network");
+    let mut say = |_: String| {};
+    let mut hooks = RealHooks {
+        payload_root: std::path::PathBuf::new(),
+        allow_runtime_mismatch: false,
+        checked_archive: None,
+        nexus: &nexus,
+        inst: &inst,
+        game: &game,
+        game_id: "skyrimvr".into(),
+        say: &mut say,
+        collection_domain: "skyrimspecialedition".into(),
+        owner: "test:1".into(),
+        renamed: vec![],
+        kept: vec![],
+    };
+    assert_eq!(
+        hooks.obtain(&member),
+        eidos_collections::install::Obtained::Ready(archive)
+    );
+}
+
+#[test]
 fn bundle_clone_patch_pipeline_resumes_and_failed_replacement_retains_owned_and_personal_bytes() {
     use eidos_collections::{install::run, Collection, FileHash, SourceType};
     let temp = Fixture::new();

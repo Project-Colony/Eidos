@@ -46,6 +46,8 @@ pub(crate) struct DownloadRow {
     /// The sidecar's `url=` is NOT usable for this: it is the CDN link, which
     /// carries an expiry and a signature and is dead within the hour.
     pub(crate) mod_id: Option<u64>,
+    /// The sidecar's `gameName`, which names the Nexus domain the mod page is on.
+    pub(crate) game_name: Option<String>,
     /// The derived install status.
     pub(crate) state: DownloadState,
     /// Bytes on disk so far. Equals `size` once finished.

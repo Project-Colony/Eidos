@@ -79,11 +79,19 @@ pub(crate) fn refresh_meta_cache(app: &mut App) {
                 // is what MO2's `validated=` is for, and honouring it means a
                 // mod already vouched for in MO2 arrives here quiet.
                 invalid_data: !meta.validated() && !eidos_install::folder_looks_valid(&path, rules),
+                // A game that takes this mod's domain is not "another game":
+                // Enderal SE takes Skyrim SE mods, Skyrim VR and Fallout 4 VR
+                // take their base game's.
                 other_game: meta
                     .game_name()
                     .filter(|_| !meta.validated())
                     .filter(|g| !g.is_empty() && !short.is_empty())
-                    .filter(|g| !g.eq_ignore_ascii_case(short)),
+                    .filter(|g| !g.eq_ignore_ascii_case(short))
+                    .filter(|g| {
+                        !eidos_games::nexus_domain_of(g)
+                            .zip(game)
+                            .is_some_and(|(d, def)| def.accepts_domain(d))
+                    }),
             },
         );
     }
@@ -4159,6 +4167,50 @@ mod tests {
         // from a folder never had a game recorded, and warning about that would
         // flag half a list.
         assert_eq!(app.meta_cache["Silent"].other_game, None);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_mod_from_an_accepted_domain_is_not_another_game() {
+        let root = temp_portable("enderalse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        let rows = [
+            ("Sse", "SkyrimSE"),
+            ("FromCollection", "skyrimspecialedition"),
+            ("Own", "EnderalSE"),
+            ("Fo4", "Fallout4"),
+        ];
+        for (name, game) in rows {
+            let dir = root.join("mods").join(name);
+            fs::create_dir_all(dir.join("Meshes")).unwrap();
+            fs::write(
+                dir.join("meta.ini"),
+                format!("[General]\ngameName={game}\n"),
+            )
+            .unwrap();
+        }
+        let mut app = app_for_game("enderalse");
+        app.created = Some(inst);
+        app.mods = rows
+            .iter()
+            .map(|(n, _)| ModEntry {
+                name: (*n).to_string(),
+                enabled: true,
+                path: root.join("mods").join(n),
+                unmanaged: false,
+            })
+            .collect();
+        app.screen = Screen::Main;
+        refresh_meta_cache(&mut app);
+
+        assert_eq!(app.meta_cache["Sse"].other_game, None);
+        assert_eq!(app.meta_cache["FromCollection"].other_game, None);
+        assert_eq!(app.meta_cache["Own"].other_game, None);
+        assert_eq!(
+            app.meta_cache["Fo4"].other_game.as_deref(),
+            Some("Fallout4")
+        );
         let _ = fs::remove_dir_all(&root);
     }
 

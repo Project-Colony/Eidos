@@ -716,6 +716,7 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("status_connect_nexus_first", "Connectez d'abord un compte Nexus (Préférences, ou `eidos nexus key <KEY>`)."),
     ("status_connect_nexus_first_short", "Connectez d'abord un compte Nexus (Préférences)."),
     ("status_no_nexus_id_endorse", "Ce mod n'a pas d'identifiant Nexus à recommander."),
+    ("status_unknown_nexus_game", "« {name} » a été téléchargé pour {game}, un jeu dont Eidos ne connaît pas le site Nexus."),
     ("status_endorsing", "Recommandation sur Nexus..."),
     ("status_abstaining", "Abstention sur Nexus..."),
     ("status_endorse_meta_busy", "Recommandation enregistrée sur Nexus, mais les métadonnées locales sont occupées : {error}"),

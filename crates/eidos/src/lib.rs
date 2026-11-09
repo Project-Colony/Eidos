@@ -127,7 +127,7 @@ fn cmd_nexus(args: &[String]) {
             let inst = target.inst;
             let nexus = nexus_client();
 
-            let result = match eidos_nexus::check_updates(&nexus, &inst, game.def.nexus_game) {
+            let result = match eidos_nexus::check_updates(&nexus, &inst, game.def) {
                 Ok(result) => result,
                 Err(error) => {
                     eidos_log::info!("Update check failed: {error}");

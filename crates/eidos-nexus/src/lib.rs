@@ -1687,10 +1687,11 @@ pub struct UpdateCheckResult {
 }
 
 /// Run the shared CLI/GUI Nexus update check across every mod in `inst`.
-/// `nexus_game` is the game's Nexus domain
-/// (`GameDef::nexus_game`, e.g. `skyrimspecialedition`).
+/// Each mod is looked up on the domain its own `gameName` names
+/// ([`GameDef::nexus_domain_for`](eidos_gamedef::GameDef::nexus_domain_for)),
+/// so an Enderal SE instance checks its Skyrim SE mods on `skyrimspecialedition`.
 ///
-/// MO2's strategy: one `updated?period=1m` bulk query, then an individual
+/// MO2's strategy: one `updated?period=1m` bulk query per domain, then an individual
 /// `mod_info` only for mods in that window's intersection OR never/long-ago
 /// checked (so an update published over a month ago is not missed on a fresh
 /// instance). Each queried mod has `newestVersion` and `lastNexusUpdate` written
@@ -1704,23 +1705,12 @@ pub struct UpdateCheckResult {
 pub fn check_updates(
     nexus: &Nexus,
     inst: &eidos_instance::Instance,
-    nexus_game: &str,
+    game: &eidos_gamedef::GameDef,
 ) -> Result<UpdateCheckResult, String> {
-    // One "updated this month" query, then only fetch the intersection - stays
-    // inside the API rate limits (MO2's approach).
-    let updated = match nexus.updated_mod_ids(nexus_game, "1m") {
-        Ok(v) => v,
-        // An exhausted budget is a state to report, not a failure: the caller
-        // shows "the budget is spent" rather than an error toast, and nothing
-        // about the mod list is wrong - it just could not be refreshed.
-        Err(e) if is_rate_limited(&e) => {
-            return Ok(UpdateCheckResult {
-                rate_limited: true,
-                ..Default::default()
-            });
-        }
-        Err(e) => return Err(e),
-    };
+    // One "updated this month" query per domain, asked the first time a mod on
+    // that domain needs it, then only fetch the intersection - stays inside the
+    // API rate limits (MO2's approach).
+    let mut updated: std::collections::HashMap<&str, Vec<u64>> = Default::default();
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1735,6 +1725,17 @@ pub fn check_updates(
             continue;
         };
         result.checked += 1;
+        let game_name = meta.game_name().filter(|n| !n.is_empty());
+        let Some(domain) = game.nexus_domain_for(game_name.as_deref()) else {
+            let why = match game_name {
+                Some(n) => format!(
+                    "its gameName '{n}' names no game Eidos knows, so its Nexus page cannot be found"
+                ),
+                None => format!("{} has no Nexus site Eidos knows", game.name),
+            };
+            result.failures.push((m.name.clone(), why));
+            continue;
+        };
 
         // The `updated?period=1m` list is only trustworthy for mods checked within
         // that window. A mod never checked - or checked over a month ago - gets an
@@ -1744,8 +1745,26 @@ pub fn check_updates(
             .last_nexus_update()
             .map(|t| now.saturating_sub(t) > MONTH)
             .unwrap_or(true);
-        if !stale && !updated.contains(&mod_id) {
-            continue;
+        if !stale {
+            if !updated.contains_key(domain) {
+                match nexus.updated_mod_ids(domain, "1m") {
+                    Ok(ids) => {
+                        updated.insert(domain, ids);
+                    }
+                    // An exhausted budget is a state to report, not a failure: the
+                    // caller shows "the budget is spent" rather than an error
+                    // toast, and nothing about the mod list is wrong - it just
+                    // could not be refreshed.
+                    Err(e) if is_rate_limited(&e) => {
+                        result.rate_limited = true;
+                        break;
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+            if !updated[domain].contains(&mod_id) {
+                continue;
+            }
         }
         // Stop before building the request, not after it is refused. The choke
         // point in `get` would reject it anyway; checking here is what makes the
@@ -1756,7 +1775,7 @@ pub fn check_updates(
         }
         result.queried += 1;
 
-        match nexus.mod_info(nexus_game, mod_id) {
+        match nexus.mod_info(domain, mod_id) {
             Ok(remote) => {
                 let Some(meta) =
                     apply_mod_update(inst, &m.name, &meta, &remote, now).map_err(|error| {
@@ -3618,6 +3637,56 @@ mod update_metadata_integrity_tests {
         fs::write(&path, [0xff, 0xfe]).unwrap();
         assert!(apply_mod_update(&inst, "Personal", &snapshot, &remote, 125).is_err());
         assert_eq!(fs::read(&path).unwrap(), [0xff, 0xfe]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn each_mod_is_checked_on_its_own_domain_and_an_unknown_game_costs_no_request() {
+        let root = std::env::temp_dir().join(format!("eidos-update-domain-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let inst = eidos_instance::Instance::portable(root.clone());
+        inst.create().unwrap();
+        let add = |name: &str, meta: &str| {
+            fs::create_dir_all(inst.mods_dir().join(name)).unwrap();
+            fs::write(inst.meta_path(name), meta).unwrap();
+            inst.register_installed_mod(name).unwrap();
+        };
+        // Checked a moment ago, so only the "updated this month" list can send it.
+        let now = oauth::now_unix();
+        add(
+            "Nehrim Mod",
+            &format!("[General]\ngameName=Nehrim\nmodid=5\nlastNexusUpdate={now}\n"),
+        );
+        // A spent budget refuses any request before it is sent: nothing here
+        // can reach the network.
+        let nexus = Nexus::with_bearer("synthetic");
+        nexus.limits.set(RateLimits {
+            hourly_remaining: Some(0),
+            hourly_reset: Some(next_hour_utc(now)),
+            ..Default::default()
+        });
+        let enderal = eidos_gamedef::GameDef::for_id("enderalse").unwrap();
+
+        let r = check_updates(&nexus, &inst, enderal).unwrap();
+        assert_eq!(
+            r.failures,
+            [(
+                "Nehrim Mod".to_string(),
+                "its gameName 'Nehrim' names no game Eidos knows, so its Nexus page cannot be found"
+                    .to_string()
+            )]
+        );
+        assert!(
+            !r.rate_limited,
+            "no domain list was needed, so none was asked for"
+        );
+
+        add(
+            "Sse Mod",
+            &format!("[General]\ngameName=SkyrimSE\nmodid=6\nlastNexusUpdate={now}\n"),
+        );
+        let r = check_updates(&nexus, &inst, enderal).unwrap();
+        assert!(r.rate_limited, "the SkyrimSE mod needed its domain's list");
         fs::remove_dir_all(root).unwrap();
     }
 }
