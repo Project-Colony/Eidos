@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=80ee63cfac4035db5e5010e5c389ef6bc6f5a370 -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -330,7 +330,7 @@ co by skutečný běh dostal.
 
 ## Proměnné prostředí a nástroje spuštěné bez Protonu
 
-Dva klíče v `<instance>/tools.ini` zatím nemají v dialogu Executables žádné
+Tři klíče v `<instance>/tools.ini` zatím nemají v dialogu Executables žádné
 pole, takže je do sekce nástroje dopište ručně. Každý řádek `env=NAME=value`
 nastaví jednu proměnnou jen pro běhy tohoto nástroje:
 
@@ -374,6 +374,19 @@ nepotřebují, pokud nastavení hry v Heroicu (`GamesConfig/<appName>.json`) uv�
 build Wine nebo Protonu: Eidos je spustí s tímto buildem v prefixu hry
 z Heroicu a `eidos prereqs <instance> --install` ho předá winetricks. Kopie
 nainstalovaná jen přes Legendary žádná nastavení Heroicu nemá.
+
+`slr=1` spustí nástroj i import do registru před ním uvnitř kontejneru Steam
+Linux Runtime, který jmenuje Proton nástroje (`require_tool_appid` v jeho
+`toolmanifest.vdf`), stejně jako Steam spouští hru. Tento runtime musí být
+nainstalovaný v některé knihovně Steamu; pokud není, běh se zastaví a uvede
+aplikaci Steamu, kterou je třeba nainstalovat. `eidos prereqs` dál spouští
+winetricks na hostiteli a nástroj s `runner=native` tento klíč ignoruje.
+Kontejner vidí vaši domovskou složku a knihovnu Steamu se hrou. Nástroj, mod
+nebo runtime kdekoli jinde, například na jiném disku, potřebuje
+`env=STEAM_COMPAT_MOUNTS=/ta/cesta` (více cest oddělte `:`). Proton
+nainstalovaný v `/usr/share/steam/compatibilitytools.d` s `slr=1` nejspíš použít
+nepůjde, protože `/usr` uvnitř kontejneru patří runtimu. Běh nástroje uvnitř
+kontejneru zatím nebyl testován.
 
 `eidos tool <instance> run <title> --print` ukáže výsledný příkaz a každou
 proměnnou, kterou běh nastaví nad zděděné prostředí, včetně těchto řádků.

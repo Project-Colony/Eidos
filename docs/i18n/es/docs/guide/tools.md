@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=80ee63cfac4035db5e5010e5c389ef6bc6f5a370 -->
 
 # Herramientas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -350,7 +350,7 @@ herramienta que las ve discrepar falla de forma rara en vez de clara.
 
 ## Variables de entorno y herramientas sin Proton
 
-Dos claves de `<instance>/tools.ini` todavía no tienen campo en el diálogo de
+Tres claves de `<instance>/tools.ini` todavía no tienen campo en el diálogo de
 Executables, así que añádelas a mano en la sección de la herramienta. Cada línea
 `env=NAME=value` fija una variable solo para las ejecuciones de esa herramienta:
 
@@ -396,6 +396,20 @@ esa entrada si los ajustes del juego en Heroic (`GamesConfig/<appName>.json`)
 indican una versión de Wine o Proton: Eidos las ejecuta con esa versión en el
 prefijo de Heroic del juego, y `eidos prereqs <instance> --install` se la pasa a
 winetricks. Una copia instalada solo con Legendary no tiene ajustes de Heroic.
+
+`slr=1` inicia la herramienta, y la importación al registro que la precede,
+dentro del contenedor de Steam Linux Runtime que indica el Proton de la
+herramienta (`require_tool_appid` en su `toolmanifest.vdf`), igual que Steam
+inicia el juego. Ese runtime debe estar instalado en una biblioteca de Steam; si
+no lo está, la ejecución se detiene e indica la aplicación de Steam que hay que
+instalar. `eidos prereqs` sigue ejecutando winetricks en el host, y una
+herramienta con `runner=native` ignora la clave. El contenedor ve tu carpeta
+personal y la biblioteca de Steam del juego. Una herramienta, un mod o un
+runtime en cualquier otro sitio, en otro disco por ejemplo, necesita
+`env=STEAM_COMPAT_MOUNTS=/esa/ruta` (varias rutas separadas por `:`). Un Proton
+instalado en `/usr/share/steam/compatibilitytools.d` probablemente no sirva con
+`slr=1`, porque `/usr` dentro del contenedor es el del runtime. Todavía no se ha
+probado ninguna herramienta dentro del contenedor.
 
 `eidos tool <instance> run <title> --print` muestra la orden final y cada
 variable que la ejecución fija sobre el entorno heredado, incluidas estas

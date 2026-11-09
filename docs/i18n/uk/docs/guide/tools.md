@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=80ee63cfac4035db5e5010e5c389ef6bc6f5a370 -->
 
 # Інструменти: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -340,7 +340,7 @@ Creation Kit - окремий застосунок Steam і хоче власн�
 
 ## Змінні середовища та інструменти без Proton
 
-Два ключі `<instance>/tools.ini` поки не мають поля в діалозі Executables, тож
+Три ключі `<instance>/tools.ini` поки не мають поля в діалозі Executables, тож
 допишіть їх у секцію інструмента вручну. Кожен рядок `env=NAME=value` задає одну
 змінну лише для запусків цього інструмента:
 
@@ -384,6 +384,19 @@ env=WINEPREFIX=/home/me/Games/Heroic/Prefixes/default/Skyrim
 вказано збірку Wine або Proton: Eidos запускає їх цією збіркою в префіксі Heroic
 для гри, а `eidos prereqs <instance> --install` передає її winetricks. Копія,
 встановлена лише через Legendary, не має налаштувань Heroic.
+
+`slr=1` запускає інструмент, і імпорт у реєстр перед ним, усередині контейнера
+Steam Linux Runtime, який указує Proton інструмента (`require_tool_appid` у його
+`toolmanifest.vdf`), так само, як Steam запускає гру. Це середовище виконання
+має бути встановлене в одній із бібліотек Steam; якщо його немає, запуск
+зупиняється й називає застосунок Steam, який треба встановити. `eidos prereqs` і
+далі запускає winetricks на хості, а інструмент із `runner=native` ігнорує цей
+ключ. Контейнер бачить вашу домашню теку та бібліотеку Steam із грою.
+Інструменту, моду чи середовищу виконання деінде, наприклад на іншому диску,
+потрібен `env=STEAM_COMPAT_MOUNTS=/цей/шлях` (кілька шляхів розділяються `:`).
+Proton, встановлений у `/usr/share/steam/compatibilitytools.d`, імовірно, не
+працюватиме з `slr=1`, бо `/usr` усередині контейнера належить середовищу
+виконання. Запуск інструмента всередині контейнера ще не перевірявся.
 
 `eidos tool <instance> run <title> --print` показує остаточну команду і кожну
 змінну, яку запуск задає поверх успадкованого середовища, разом із цими рядками.

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=80ee63cfac4035db5e5010e5c389ef6bc6f5a370 -->
 
 # Strumenti: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -345,7 +345,7 @@ l'esecuzione vera.
 
 ## Variabili d'ambiente e strumenti avviati senza Proton
 
-Due chiavi di `<instance>/tools.ini` non hanno ancora un campo nella finestra
+Tre chiavi di `<instance>/tools.ini` non hanno ancora un campo nella finestra
 Executables, quindi aggiungile a mano nella sezione dello strumento. Ogni riga
 `env=NAME=value` imposta una variabile solo per le esecuzioni di quello
 strumento:
@@ -392,6 +392,20 @@ di questa voce se le impostazioni Heroic del gioco (`GamesConfig/<appName>.json`
 indicano una build di Wine o Proton: Eidos li avvia con quella build nel
 prefisso Heroic del gioco, e `eidos prereqs <instance> --install` la passa a
 winetricks. Una copia installata solo con Legendary non ha impostazioni Heroic.
+
+`slr=1` avvia lo strumento, e l'importazione nel registro che lo precede, dentro
+il contenitore Steam Linux Runtime indicato dal Proton dello strumento
+(`require_tool_appid` nel suo `toolmanifest.vdf`), come Steam avvia il gioco.
+Quel runtime deve essere installato in una libreria di Steam; altrimenti
+l'esecuzione si ferma e indica l'app di Steam da installare. `eidos prereqs`
+continua a eseguire winetricks sull'host, e uno strumento con `runner=native`
+ignora la chiave. Il contenitore vede la tua cartella home e la libreria di
+Steam del gioco. Uno strumento, una mod o un runtime altrove, per esempio su un
+altro disco, richiede `env=STEAM_COMPAT_MOUNTS=/quel/percorso` (più percorsi
+separati da `:`). Un Proton installato in
+`/usr/share/steam/compatibilitytools.d` probabilmente non è utilizzabile con
+`slr=1`, perché `/usr` dentro il contenitore è quello del runtime. Nessuna
+esecuzione di uno strumento nel contenitore è stata ancora provata.
 
 `eidos tool <instance> run <title> --print` mostra il comando finale e ogni
 variabile che l'esecuzione imposta sopra l'ambiente ereditato, comprese queste

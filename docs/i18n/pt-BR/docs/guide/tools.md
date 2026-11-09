@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=80ee63cfac4035db5e5010e5c389ef6bc6f5a370 -->
 
 # Ferramentas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -344,7 +344,7 @@ e uma ferramenta que as vê discordar falha de forma estranha em vez de clara.
 
 ## Variáveis de ambiente e ferramentas rodadas sem Proton
 
-Duas chaves de `<instance>/tools.ini` ainda não têm campo na janela Executables,
+Três chaves de `<instance>/tools.ini` ainda não têm campo na janela Executables,
 então adicione-as à mão na seção da ferramenta. Cada linha `env=NAME=value`
 define uma variável só para as execuções daquela ferramenta:
 
@@ -391,6 +391,20 @@ indicam uma versão de Wine ou Proton: o Eidos as roda com essa versão no prefi
 Heroic do jogo, e `eidos prereqs <instance> --install` a passa para o
 winetricks. Uma cópia instalada só com o Legendary não tem configurações do
 Heroic.
+
+`slr=1` inicia a ferramenta, e a importação no registro que vem antes dela,
+dentro do contêiner do Steam Linux Runtime que o Proton da ferramenta indica
+(`require_tool_appid` no seu `toolmanifest.vdf`), do jeito que o Steam inicia o
+jogo. Esse runtime precisa estar instalado em uma biblioteca do Steam; se não
+estiver, a execução para e indica o app do Steam a instalar. `eidos prereqs`
+continua rodando o winetricks no host, e uma ferramenta com `runner=native`
+ignora a chave. O contêiner enxerga sua pasta pessoal e a biblioteca do Steam do
+jogo. Uma ferramenta, um mod ou um runtime em outro lugar, em outro disco por
+exemplo, precisa de `env=STEAM_COMPAT_MOUNTS=/esse/caminho` (vários caminhos
+separados por `:`). Um Proton instalado em
+`/usr/share/steam/compatibilitytools.d` provavelmente não funciona com `slr=1`,
+porque o `/usr` dentro do contêiner é o do runtime. Nenhuma execução de
+ferramenta dentro do contêiner foi testada ainda.
 
 `eidos tool <instance> run <title> --print` mostra o comando final e cada
 variável que a execução define por cima do ambiente herdado, incluindo essas

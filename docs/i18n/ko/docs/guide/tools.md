@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=80ee63cfac4035db5e5010e5c389ef6bc6f5a370 -->
 
 # 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -319,7 +319,7 @@ Windows에서 이것은 다른 런처를 뜻합니다. 여기서는 이미 만�
 
 ## 환경 변수, 그리고 Proton 없이 실행하는 도구
 
-`<instance>/tools.ini`의 키 두 개는 아직 Executables 대화 상자에 입력란이
+`<instance>/tools.ini`의 키 세 개는 아직 Executables 대화 상자에 입력란이
 없으므로, 도구의 섹션에 직접 적어 넣으십시오. `env=NAME=value` 줄 하나가 그
 도구의 실행에만 적용되는 변수 하나를 설정합니다:
 
@@ -363,6 +363,15 @@ Heroic으로 설치한 GOG 또는 Epic 사본에서는, 게임의 Heroic 설정
 이런 항목이 필요 없습니다. Eidos는 그 빌드로 게임의 Heroic 프리픽스 안에서
 도구를 실행하고, `eidos prereqs <instance> --install`도 그 빌드를 winetricks에
 넘깁니다. Legendary만으로 설치한 사본에는 Heroic 설정이 없습니다.
+
+`slr=1`은 도구와 그 앞의 레지스트리 가져오기를 도구의 Proton 빌드가 지정하는 Steam Linux Runtime 컨테이너 안에서
+시작합니다(`toolmanifest.vdf`의 `require_tool_appid`). Steam이 게임을 시작하는 방식과 같습니다. 그
+런타임은 Steam 라이브러리 중 하나에 설치되어 있어야 하며, 없으면 실행이 멈추고 설치할 Steam 앱을 알려 줍니다. `eidos
+prereqs`는 계속 호스트에서 winetricks를 실행하고, `runner=native` 도구는 이 키를 무시합니다. 컨테이너는 홈 폴더와
+게임의 Steam 라이브러리를 봅니다. 다른 곳, 예를 들어 다른 드라이브에 있는 도구, 모드, 런타임에는
+`env=STEAM_COMPAT_MOUNTS=/그/경로`가 필요합니다(여러 경로는 `:`로 구분).
+`/usr/share/steam/compatibilitytools.d`에 설치한 Proton은 컨테이너 안의 `/usr`가 런타임의 것이므로
+`slr=1`로는 아마 쓸 수 없습니다. 컨테이너 안에서 도구를 실행하는 것은 아직 시험하지 않았습니다.
 
 `eidos tool <instance> run <title> --print`는 최종 명령과, 실행이 상속된 환경
 위에 설정하는 모든 변수를 이 줄들까지 포함해 보여 줍니다.

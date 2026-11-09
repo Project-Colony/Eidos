@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=80ee63cfac4035db5e5010e5c389ef6bc6f5a370 -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -286,7 +286,7 @@ Creation Kit 是獨立的 Steam 應用程式,要用自己的 AppID;少數幾個�
 
 ## 環境變數,以及不經過 Proton 的工具
 
-`<instance>/tools.ini` 裡有兩個鍵在 Executables 對話框中還沒有對應的欄位,
+`<instance>/tools.ini` 裡有三個鍵在 Executables 對話框中還沒有對應的欄位,
 需要手動寫進工具所在的區段。每一行 `env=NAME=value` 設定一個只對這個工具的
 執行生效的變數:
 
@@ -327,6 +327,14 @@ Windows 程式,要寫它在遊戲 `Data` 資料夾下的路徑,合併檢視就�
 項目:Eidos 用那個版本在遊戲的 Heroic 前綴裡執行它們,
 `eidos prereqs <instance> --install` 也把它交給 winetricks。只用 Legendary
 安裝的副本沒有 Heroic 設定。
+
+`slr=1` 會讓工具及其之前的登錄檔匯入,在工具的 Proton 版本所指定的 Steam Linux Runtime 容器裡啟動(見其 `toolmanifest.vdf` 中的 `require_tool_appid`),與 Steam 啟動遊戲的方式相同。
+這個執行階段必須裝在某個 Steam 媒體庫中;沒有裝的話,執行會停下,並指出需要安裝的 Steam 應用程式。
+`eidos prereqs` 仍在主機上執行 winetricks,`runner=native` 的工具會忽略這個鍵。
+容器能看到你的家目錄與遊戲所在的 Steam 媒體庫。
+放在其他地方(例如另一顆磁碟上)的工具、mod 或執行階段,需要 `env=STEAM_COMPAT_MOUNTS=/那個/路徑`(多個路徑以 `:` 分隔)。
+裝在 `/usr/share/steam/compatibilitytools.d` 下的 Proton 很可能無法搭配 `slr=1` 使用,因為容器裡的 `/usr` 是執行階段自己的。
+目前還沒有在容器裡實際執行過工具。
 
 `eidos tool <instance> run <title> --print` 會顯示最終的命令,以及這次執行在繼承的
 環境之上設定的每一個變數,包括這些行。

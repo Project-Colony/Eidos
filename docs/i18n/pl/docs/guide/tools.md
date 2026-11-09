@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=80ee63cfac4035db5e5010e5c389ef6bc6f5a370 -->
 
 # Narzędzia: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -340,7 +340,7 @@ dokładnie to, co dostałoby prawdziwe uruchomienie.
 
 ## Zmienne środowiskowe i narzędzia uruchamiane bez Protona
 
-Dwa klucze w `<instance>/tools.ini` nie mają jeszcze pola w oknie Executables,
+Trzy klucze w `<instance>/tools.ini` nie mają jeszcze pola w oknie Executables,
 więc dopisz je ręcznie w sekcji narzędzia. Każdy wiersz `env=NAME=value` ustawia
 jedną zmienną tylko dla uruchomień tego narzędzia:
 
@@ -386,6 +386,19 @@ takiego wpisu, jeśli ustawienia gry w Heroic (`GamesConfig/<appName>.json`)
 wskazują build Wine lub Protona: Eidos uruchamia je tym buildem w prefiksie
 Heroic tej gry, a `eidos prereqs <instance> --install` przekazuje go do
 winetricks. Kopia zainstalowana samym Legendary nie ma ustawień Heroic.
+
+`slr=1` uruchamia narzędzie, a także poprzedzający je import do rejestru,
+wewnątrz kontenera Steam Linux Runtime, który wskazuje Proton narzędzia
+(`require_tool_appid` w jego `toolmanifest.vdf`), tak jak Steam uruchamia grę.
+Ten runtime musi być zainstalowany w którejś bibliotece Steam; jeśli nie jest,
+uruchomienie się zatrzymuje i podaje aplikację Steam do zainstalowania. `eidos
+prereqs` nadal uruchamia winetricks na hoście, a narzędzie z `runner=native`
+ignoruje ten klucz. Kontener widzi twój folder domowy i bibliotekę Steam z grą.
+Narzędzie, mod lub runtime w innym miejscu, na przykład na innym dysku, wymaga
+`env=STEAM_COMPAT_MOUNTS=/ta/ścieżka` (kilka ścieżek oddziel `:`). Proton
+zainstalowany w `/usr/share/steam/compatibilitytools.d` prawdopodobnie nie
+zadziała z `slr=1`, bo `/usr` w kontenerze należy do runtime'u. Uruchomienie
+narzędzia w kontenerze nie było jeszcze testowane.
 
 `eidos tool <instance> run <title> --print` pokazuje końcowe polecenie i każdą
 zmienną, którą uruchomienie ustawia ponad odziedziczonym środowiskiem, łącznie

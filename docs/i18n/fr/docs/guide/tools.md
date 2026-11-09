@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=80ee63cfac4035db5e5010e5c389ef6bc6f5a370 -->
 
 # Outils : xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -354,7 +354,7 @@ exactement ce que recevrait la vraie exécution.
 
 ## Variables d'environnement et outils lancés sans Proton
 
-Deux clés de `<instance>/tools.ini` n'ont pas encore de champ dans la boîte de
+Trois clés de `<instance>/tools.ini` n'ont pas encore de champ dans la boîte de
 dialogue Executables ; ajoutez-les à la main dans la section de l'outil. Chaque
 ligne `env=NAME=value` définit une variable pour les exécutions de cet outil
 seulement :
@@ -403,6 +403,19 @@ d'une telle entrée quand les réglages Heroic du jeu
 Eidos les lance avec cette version dans le préfixe Heroic du jeu, et
 `eidos prereqs <instance> --install` la donne à winetricks. Une copie installée
 avec Legendary seul n'a pas de réglages Heroic.
+
+`slr=1` lance l'outil, et l'import dans le registre qui le précède, dans le
+conteneur Steam Linux Runtime que nomme le Proton de l'outil
+(`require_tool_appid` dans son `toolmanifest.vdf`), comme Steam lance le jeu. Ce
+runtime doit être installé dans une bibliothèque Steam ; sinon, l'exécution
+s'arrête et nomme l'application Steam à installer. `eidos prereqs` exécute
+toujours winetricks sur l'hôte, et un outil en `runner=native` ignore la clé. Le
+conteneur voit votre dossier personnel et la bibliothèque Steam du jeu. Un
+outil, un mod ou un runtime situé ailleurs, sur un autre disque par exemple,
+demande `env=STEAM_COMPAT_MOUNTS=/ce/chemin` (plusieurs chemins séparés par
+`:`). Un Proton installé sous `/usr/share/steam/compatibilitytools.d` n'est
+probablement pas utilisable avec `slr=1`, car `/usr` dans le conteneur est celui
+du runtime. Aucune exécution d'outil dans le conteneur n'a encore été testée.
 
 `eidos tool <instance> run <title> --print` montre la commande finale et chaque
 variable que l'exécution définit par-dessus l'environnement hérité, ces lignes

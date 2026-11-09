@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=80ee63cfac4035db5e5010e5c389ef6bc6f5a370 -->
 
 # ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -320,7 +320,7 @@ Proton は一方を、Steam 自身のライブラリはもう一方を読み、�
 
 ## 環境変数と、Proton を使わないツール
 
-`<instance>/tools.ini` のキーのうち二つは、Executables ダイアログにまだ入力欄が
+`<instance>/tools.ini` のキーのうち三つは、Executables ダイアログにまだ入力欄が
 ありません。ツールのセクションに手で書き足してください。`env=NAME=value` の行
 一つが、そのツールの実行にだけ効く変数を一つ設定します。
 
@@ -366,6 +366,14 @@ Heroic でインストールした GOG または Epic のコピーでは、ゲ�
 Heroic プレフィックスの中で実行し、`eidos prereqs <instance> --install` も
 winetricks にそのビルドを使わせます。Legendary だけでインストールしたコピーには
 Heroic の設定がありません。
+
+`slr=1` を書くと、ツールとその前のレジストリのインポートを、ツールの Proton ビルドが指定する Steam Linux Runtime のコンテナ内で起動します (`toolmanifest.vdf` の `require_tool_appid`)。Steam がゲームを起動するのと同じ方法です。
+そのランタイムはいずれかの Steam ライブラリにインストールされている必要があり、ない場合は実行を止めて、インストールすべき Steam アプリを示します。
+`eidos prereqs` は引き続きホスト上で winetricks を実行し、`runner=native` のツールはこのキーを無視します。
+コンテナから見えるのはホームフォルダーとゲームの Steam ライブラリです。
+それ以外の場所、たとえば別のドライブにあるツール、MOD、ランタイムには `env=STEAM_COMPAT_MOUNTS=/その/パス` が必要です (複数のパスは `:` で区切ります)。
+`/usr/share/steam/compatibilitytools.d` にインストールした Proton は、コンテナ内の `/usr` がランタイムのものなので、`slr=1` ではおそらく使えません。
+コンテナ内でのツールの実行はまだ試していません。
 
 `eidos tool <instance> run <title> --print` は、最終的なコマンドと、実行が継承した
 環境の上に設定する変数すべてを、これらの行も含めて表示します。

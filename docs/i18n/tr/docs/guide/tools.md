@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=80ee63cfac4035db5e5010e5c389ef6bc6f5a370 -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -344,7 +344,7 @@ alacağını gösterir.
 
 ## Ortam değişkenleri ve Proton'suz çalışan araçlar
 
-`<instance>/tools.ini` içindeki iki anahtarın Executables penceresinde henüz bir
+`<instance>/tools.ini` içindeki üç anahtarın Executables penceresinde henüz bir
 alanı yok; bu yüzden onları aracın bölümüne elle ekleyin. Her `env=NAME=value`
 satırı, yalnızca o aracın çalıştırmaları için bir değişken ayarlar:
 
@@ -391,6 +391,19 @@ araçların böyle bir girdiye ihtiyacı yoktur: Eidos onları bu sürümle oyun
 Heroic önekinde çalıştırır ve `eidos prereqs <instance> --install` bu sürümü
 winetricks'e verir. Yalnızca Legendary ile kurulmuş bir kopyanın Heroic
 ayarları yoktur.
+
+`slr=1`, aracı ve ondan önceki kayıt defteri aktarımını, aracın Proton sürümünün
+belirttiği Steam Linux Runtime kapsayıcısı içinde başlatır (`toolmanifest.vdf`
+dosyasındaki `require_tool_appid`); Steam oyunu da böyle başlatır. Bu çalışma
+zamanı bir Steam kitaplığında kurulu olmalıdır; değilse çalıştırma durur ve
+kurulması gereken Steam uygulamasını söyler. `eidos prereqs` winetricks'i yine
+ana makinede çalıştırır ve `runner=native` olan bir araç bu anahtarı yok sayar.
+Kapsayıcı ev klasörünüzü ve oyunun Steam kitaplığını görür. Başka bir yerdeki,
+örneğin başka bir sürücüdeki bir araç, mod ya da çalışma zamanı için
+`env=STEAM_COMPAT_MOUNTS=/o/yol` gerekir (birden çok yol `:` ile ayrılır).
+`/usr/share/steam/compatibilitytools.d` altına kurulmuş bir Proton, kapsayıcı
+içindeki `/usr` çalışma zamanına ait olduğundan, büyük olasılıkla `slr=1` ile
+kullanılamaz. Kapsayıcı içinde bir araç çalıştırması henüz denenmedi.
 
 `eidos tool <instance> run <title> --print`, son komutu ve çalıştırmanın
 devralınan ortamın üzerine ayarladığı her değişkeni, bu satırlar dahil, gösterir.

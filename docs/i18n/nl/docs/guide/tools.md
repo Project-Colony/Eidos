@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=80ee63cfac4035db5e5010e5c389ef6bc6f5a370 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -345,7 +345,7 @@ andere, en een tool die ze ziet verschillen faalt vreemd in plaats van duidelijk
 
 ## Omgevingsvariabelen en tools zonder Proton
 
-Twee sleutels in `<instance>/tools.ini` hebben nog geen veld in het
+Drie sleutels in `<instance>/tools.ini` hebben nog geen veld in het
 Executables-venster, dus zet je ze met de hand in de sectie van de tool. Elke
 regel `env=NAME=value` zet één variabele die alleen geldt wanneer die tool
 draait:
@@ -394,6 +394,19 @@ regel niet nodig als de Heroic-instellingen van het spel
 met die build in het Heroic-prefix van het spel, en
 `eidos prereqs <instance> --install` geeft die door aan winetricks. Een kopie
 die alleen met Legendary is geïnstalleerd, heeft geen Heroic-instellingen.
+
+`slr=1` start de tool, en de registerimport ervoor, in de container van de Steam
+Linux Runtime die de Proton-build van de tool noemt (`require_tool_appid` in
+zijn `toolmanifest.vdf`), zoals Steam het spel start. Die runtime moet in een
+Steam-bibliotheek geïnstalleerd zijn; anders stopt de run en noemt hij de
+Steam-app die je moet installeren. `eidos prereqs` draait winetricks nog steeds
+op de host, en een tool met `runner=native` negeert de sleutel. De container
+ziet je thuismap en de Steam-bibliotheek van het spel. Een tool, mod of runtime
+ergens anders, bijvoorbeeld op een andere schijf, heeft
+`env=STEAM_COMPAT_MOUNTS=/dat/pad` nodig (meerdere paden gescheiden door `:`).
+Een Proton-build onder `/usr/share/steam/compatibilitytools.d` is met `slr=1`
+waarschijnlijk niet bruikbaar, omdat `/usr` in de container die van de runtime
+is. Een toolrun in de container is nog niet getest.
 
 `eidos tool <instance> run <title> --print` toont het uiteindelijke commando en
 elke variabele die de draai boven op de geërfde omgeving zet, deze regels

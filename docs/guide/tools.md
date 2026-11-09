@@ -325,7 +325,7 @@ shows exactly what the real run would get.
 
 ## Environment variables and tools that run without Proton
 
-Two keys of `<instance>/tools.ini` have no field in the Executables dialog yet,
+Three keys of `<instance>/tools.ini` have no field in the Executables dialog yet,
 so add them to the tool's section by hand. Each `env=NAME=value` line sets one
 variable for that tool's runs only:
 
@@ -369,6 +369,19 @@ game's Heroic settings (`GamesConfig/<appName>.json`) name a Wine or Proton
 build: Eidos runs them with that build in the game's Heroic prefix, and
 `eidos prereqs <instance> --install` gives it to winetricks. A copy installed
 with Legendary alone has no Heroic settings.
+
+`slr=1` starts the tool, and the registry import before it, inside the Steam
+Linux Runtime container that the tool's Proton build names (`require_tool_appid`
+in its `toolmanifest.vdf`), the way Steam starts the game. That runtime must be
+installed in a Steam library; if it is not, the run stops and names the Steam
+app to install. `eidos prereqs` still runs winetricks on the host, and a
+`runner=native` tool ignores the key. The container sees your home folder and
+the game's Steam library. A tool, a mod or a runtime anywhere else, on another
+drive for example, needs `env=STEAM_COMPAT_MOUNTS=/that/path` (several paths
+separated by `:`). A Proton build installed under
+`/usr/share/steam/compatibilitytools.d` is probably not usable with `slr=1`,
+because `/usr` inside the container is the runtime's own. No tool run inside the
+container has been tested yet.
 
 `eidos tool <instance> run <title> --print` shows the final command and every
 variable the run sets on top of the inherited environment, these lines

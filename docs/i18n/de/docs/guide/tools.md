@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2e8427160995756ef33bc8ab388f5b4992ee4a80 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=80ee63cfac4035db5e5010e5c389ef6bc6f5a370 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -356,7 +356,7 @@ Lauf bekäme.
 
 ## Umgebungsvariablen und Tools ohne Proton
 
-Zwei Schlüssel in `<instance>/tools.ini` haben im Executables-Dialog noch kein
+Drei Schlüssel in `<instance>/tools.ini` haben im Executables-Dialog noch kein
 Feld; tragen Sie sie von Hand in den Abschnitt des Tools ein. Jede Zeile
 `env=NAME=value` setzt eine Variable nur für die Läufe dieses Tools:
 
@@ -405,6 +405,20 @@ Tools keinen solchen Eintrag, wenn die Heroic-Einstellungen des Spiels
 startet sie mit diesem Build im Heroic-Präfix des Spiels, und
 `eidos prereqs <instance> --install` gibt ihn an winetricks weiter. Eine nur
 mit Legendary installierte Kopie hat keine Heroic-Einstellungen.
+
+`slr=1` startet das Tool und den Registry-Import davor im Container der Steam
+Linux Runtime, die der Proton-Build des Tools nennt (`require_tool_appid` in
+seiner `toolmanifest.vdf`), so wie Steam das Spiel startet. Diese Runtime muss
+in einer Steam-Bibliothek installiert sein; sonst bricht der Lauf ab und nennt
+die Steam-App, die zu installieren ist. `eidos prereqs` führt winetricks
+weiterhin auf dem Host aus, und ein Tool mit `runner=native` ignoriert den
+Schlüssel. Der Container sieht Ihren Home-Ordner und die Steam-Bibliothek des
+Spiels. Ein Tool, ein Mod oder eine Runtime an anderer Stelle, etwa auf einem
+anderen Laufwerk, braucht `env=STEAM_COMPAT_MOUNTS=/dieser/pfad` (mehrere Pfade
+durch `:` getrennt). Ein Proton-Build unter
+`/usr/share/steam/compatibilitytools.d` ist mit `slr=1` vermutlich nicht
+nutzbar, weil `/usr` im Container das der Runtime ist. Ein Tool-Lauf im
+Container wurde noch nicht getestet.
 
 `eidos tool <instance> run <title> --print` zeigt den endgültigen Befehl und
 jede Variable, die der Lauf über der geerbten Umgebung setzt, diese Zeilen
