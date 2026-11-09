@@ -157,9 +157,9 @@ aktualizaci prefixu.
 **Wine nedokázal poznat, že připojení sjednocuje velikost písmen.** Opraveno,
 a byl to ten problém, na kterém záleželo.
 
-Neexistuje API pro „je tenhle souborový systém case-insensitive", takže Wine ve
-své `get_dir_case_sensitivity` čichá po značce, kterou CIOPFS nechává
-v adresářích, jež obsluhuje. Když chybí, Wine předpokládá case-SENSITIVE
+Wine se ve své `get_dir_case_sensitivity` nejprve zeptá adresáře přes
+`FS_IOC_GETFLAGS` a potom čichá po značce, kterou CIOPFS nechává v adresářích,
+jež obsluhuje. Když chybí obojí, Wine předpokládá case-SENSITIVE
 a každé vyhledání, jehož zápis se neshoduje bajt po bajtu, spadne zpátky ke
 čtení CELÉHO adresáře, aby našlo shodu bez ohledu na velikost písmen. Hry od
 Bethesdy se ptají na `data/ccbgssse001-fish.bsa`, zatímco soubor je
@@ -170,7 +170,8 @@ na značku a 2236 úplných opětovných čtení adresáře za osm sekund a 1957
 
 Eidos sjednocoval velikost písmen v `resolve_read` od začátku. Celá ta cena byla
 za to, že to nikdy neřekl. `lookup` teď odpovídá `.ciopfs`; `readdir` jej stále
-nevypisuje.
+nevypisuje. `ioctl` navíc na adresářích odpovídá na `FS_IOC_GETFLAGS` příznakem
+casefold, na který se současné Wine ptá dřív, než začne hledat značku.
 
 Fatálním, ne jen pomalým, to udělaly dvě věci. Cena roste s velikostí adresáře,
 takže instalace obsahu Anniversary (`Data` ze 37 souborů na 177) to překlopila.
