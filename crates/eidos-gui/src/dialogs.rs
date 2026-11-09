@@ -472,20 +472,7 @@ pub(crate) fn about_dialog<'a>() -> Element<'a, Message> {
         .into()
 }
 
-/// Whether the user opted into FUSE passthrough. Read from this process's own
-/// environment because the launch environment is inherited from it (Steam launch
-/// options land here first, then on the `eidos` child).
-///
-/// It is off by default: passthrough stops the game opening its own archives and
-/// plugins (see `passthrough_enabled` in eidos-fuse for the measurement). This
-/// gates the capability warnings, which are only meaningful to someone who
-/// actually wants passthrough.
-pub(crate) fn passthrough_requested() -> bool {
-    std::env::var("EIDOS_FUSE_PASSTHROUGH").is_ok_and(|v| {
-        let v = v.trim();
-        !v.is_empty() && v != "0"
-    })
-}
+pub(crate) use eidos::check::passthrough_requested;
 
 /// The CAP_SYS_ADMIN warning banner, shown only when the user asked for
 /// passthrough and the launch binary cannot deliver it (every rebuild wipes the

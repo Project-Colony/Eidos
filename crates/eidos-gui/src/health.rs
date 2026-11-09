@@ -34,6 +34,7 @@
 
 use std::path::PathBuf;
 
+use eidos::check::PrefixFacts;
 use eidos_gamefeatures::RegistryStatus;
 use eidos_games::DetectedGame;
 
@@ -41,25 +42,8 @@ use crate::message::Message;
 use crate::modinfo::{DiagLevel, Diagnostic};
 use crate::{t, tf};
 
-/// Everything the prefix checks need, read once so the checks themselves stay
-/// pure and testable. Gathering is I/O; deciding is not.
-pub(crate) struct PrefixFacts {
-    /// The game's display name, for messages a user has to act on.
-    pub(crate) game_name: String,
-    pub(crate) registry: RegistryStatus,
-    /// Where `dosdevices/s:` points, if it exists.
-    pub(crate) gamedrive_found: Option<PathBuf>,
-    /// Where EIDOS points it for a tool launch: the library ROOT, the directory
-    /// that HOLDS `steamapps`. Taken from `library_path`, the same function whose
-    /// value is handed to Proton, so this can never disagree with what Eidos
-    /// passes. Steam, launching the game, leaves it on `<root>/steamapps`
-    /// instead - both are sound, and the check below accepts both.
-    pub(crate) gamedrive_want: Option<PathBuf>,
-}
-
-/// Read the prefix's health off disk. `None` when the game has no prefix path at
-/// all, which is not a fault worth reporting - the game may simply never have
-/// been set up to run under Proton.
+/// [`eidos::check::prefix_facts`], with the registry read through
+/// [`registry_status_memo`]. `None` when the game has no prefix path at all.
 pub(crate) fn prefix_facts(game: &DetectedGame) -> Option<PrefixFacts> {
     let compat = game.compatdata.as_ref()?;
     // Read once and hand to both consumers: the registry check resolves the
@@ -129,70 +113,14 @@ fn registry_status_memo(
     status
 }
 
-/// Turn the facts into cards. Pure: no I/O, no `App`, so the interesting cases
-/// can be written down as tests instead of reproduced by hand on a real prefix.
+/// Turn the facts into cards through [`eidos::check::prefix_findings`]. Pure:
+/// no I/O, no `App`, so the interesting cases can be written down as tests
+/// instead of reproduced by hand on a real prefix.
 pub(crate) fn prefix_checks(f: &PrefixFacts) -> Vec<Diagnostic> {
-    let mut out = Vec::new();
-    let game = &f.game_name;
-
-    match &f.registry {
-        RegistryStatus::NotApplicable | RegistryStatus::Correct => {}
-        RegistryStatus::PrefixUninitialised => out.push(Diagnostic {
-            level: DiagLevel::Problem,
-            title: tf("health_no_prefix", &[("game", game)]),
-            detail: tf("health_no_prefix_detail", &[("game", game)]),
-            actions: Vec::new(),
-        }),
-        RegistryStatus::Stale { found, want } => out.push(Diagnostic {
-            level: DiagLevel::Problem,
-            title: tf("health_registry_stale", &[("game", game)]),
-            detail: match found {
-                // Showing the wrong value is the point: it is the exact path the
-                // tool is about to complain about, and the only thing that lets
-                // someone connect that complaint to Eidos.
-                Some(bad) => tf("health_registry_wrong", &[("found", &bad), ("want", &want)]),
-                None => tf(
-                    "health_registry_missing",
-                    &[("game", game), ("want", &want)],
-                ),
-            },
-            actions: Vec::new(),
-        }),
-    }
-
-    // The game drive. Proton recreates `dosdevices/s:` from whatever it is
-    // handed on EVERY run, and the two things that hand it something disagree
-    // on purpose: Eidos passes the library ROOT for a tool (so BodySlide's
-    // `<drive>\steamapps\common\<game>` search lands), Steam passes
-    // `<root>/steamapps` for the game. Both are sound; each launcher re-points
-    // the link before it runs anything. The old version of this check called
-    // Steam's value a fault, which lit the card after every game launch for as
-    // long as the instance existed. What IS a fault is a link that matches
-    // neither: a library that moved, or a prefix copied from another machine.
-    // Then every `S:`-relative path already stored in the prefix - the launcher's
-    // `installed path` above all - resolves nowhere, and a tool that WRITES
-    // there creates the directory outside the mount instead of failing.
-    if let (Some(found), Some(want)) = (&f.gamedrive_found, &f.gamedrive_want) {
-        let steam = want.join("steamapps");
-        if found != want && *found != steam {
-            out.push(Diagnostic {
-                level: DiagLevel::Problem,
-                title: t("health_gamedrive").to_string(),
-                detail: tf(
-                    "health_gamedrive_detail",
-                    &[
-                        ("found", &found.display()),
-                        ("tool", &want.display()),
-                        ("steam", &steam.display()),
-                        ("game", game),
-                    ],
-                ),
-                actions: Vec::new(),
-            });
-        }
-    }
-
-    out
+    eidos::check::prefix_findings(f)
+        .iter()
+        .map(finding_card)
+        .collect()
 }
 
 /// Render one `eidos::check` finding through its `diag_<code>` strings.

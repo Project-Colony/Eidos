@@ -792,7 +792,7 @@ fn contested_paths_are_scanned_once_per_map_and_mod() {
 #[test]
 fn health_report_redacts_home_paths() {
     let home = std::env::var("HOME").unwrap();
-    let f = ReportFacts {
+    let f = eidos::check::ReportFacts {
         version: "1.0.0".into(),
         game_id: "skyrimse".into(),
         proton_build: "GE-Proton11-1".into(),

@@ -151,7 +151,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::CopyHealthReport => {
-            let text = health_report(&report_facts(app), &app.diag);
+            let facts = eidos::check::report_facts(
+                &home(),
+                crate::state::selected_game(app),
+                app.cap_missing,
+            );
+            let text = health_report(&facts, &app.diag);
             app.status = Some(t("status_report_copied").to_string());
             return iced::clipboard::write(text);
         }
