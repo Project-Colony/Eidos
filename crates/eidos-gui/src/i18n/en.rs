@@ -697,6 +697,8 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("status_plugins_moved", "Moved {n} plugin(s) to {row}."),
     ("status_plugins_all_active", "Every plugin that can be active already is."),
     ("status_plugins_none_to_deactivate", "Nothing left to deactivate: the rest are loaded by the game itself."),
+    ("status_plugins_shown_all_active", "Every shown plugin that can be active already is."),
+    ("status_plugins_shown_none_to_deactivate", "None of the shown plugins can be deactivated: they are inactive or loaded by the game itself."),
     ("status_plugins_activated", "Activated {n} plugin(s)."),
     ("status_plugins_deactivated", "Deactivated {n} plugin(s)."),
     ("status_select_plugin_first", "Select a plugin first."),

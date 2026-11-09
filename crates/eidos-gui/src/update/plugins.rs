@@ -606,11 +606,16 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     .collect()
             };
             if names.is_empty() {
-                app.status = Some(if on {
-                    t("status_plugins_all_active").to_string()
-                } else {
-                    t("status_plugins_none_to_deactivate").to_string()
-                });
+                let filtering = !app.plugin_search.trim().is_empty();
+                app.status = Some(
+                    t(match (on, filtering) {
+                        (true, false) => "status_plugins_all_active",
+                        (false, false) => "status_plugins_none_to_deactivate",
+                        (true, true) => "status_plugins_shown_all_active",
+                        (false, true) => "status_plugins_shown_none_to_deactivate",
+                    })
+                    .to_string(),
+                );
                 return Task::none();
             }
             let held = hold_plugin_selection(app);
@@ -767,6 +772,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.typing = true;
             app.plugin_search = q;
             app.plugin_drag = None;
+            // The menu would stay over a slot the filter now fills with another row.
+            app.menu_plugin = None;
             // As in the mod list: a selection the filter hides would be acted on
             // unseen by the batch buttons or Space.
             let shown: HashSet<usize> = drawn_plugin_rows(app).into_iter().collect();

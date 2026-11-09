@@ -1822,6 +1822,9 @@ pub(crate) fn drawn_plugin_rows(app: &App) -> Vec<usize> {
     let Some(list) = app.plugins.as_ref() else {
         return Vec::new();
     };
+    if query.is_empty() {
+        return (0..list.plugins.len()).collect();
+    }
     (0..list.plugins.len())
         .filter(|&i| list.plugins[i].name.to_lowercase().contains(&query))
         .collect()

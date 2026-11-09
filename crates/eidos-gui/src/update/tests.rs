@@ -5017,6 +5017,16 @@ fn deactivate_all_under_a_filter_touches_only_the_shown_plugins() {
         .map(|p| p.name.as_str())
         .collect();
     assert_eq!(on, ["Armour.esp"], "the hidden row keeps its state");
+    // Nothing shown is left to change: the status speaks of the shown rows.
+    let _ = update_inner(&mut app, Message::PluginsSetAll(false));
+    assert_eq!(
+        app.status.as_deref(),
+        Some(t("status_plugins_shown_none_to_deactivate"))
+    );
+    // A menu opened on a row does not survive the filter changing.
+    app.menu_plugin = Some(1);
+    let _ = update_inner(&mut app, Message::PluginSearchChanged("armour".into()));
+    assert_eq!(app.menu_plugin, None);
 }
 
 #[test]
