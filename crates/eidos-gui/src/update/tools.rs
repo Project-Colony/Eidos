@@ -155,6 +155,38 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.status = Some(t("status_report_copied").to_string());
             return iced::clipboard::write(text);
         }
+        Message::HealthFix(code) => {
+            if let Some(r) = &app.running {
+                // A capture at the end of the run would overwrite a profile INI edit.
+                app.status = Some(tf("status_still_running", &[("title", &r.title)]));
+                return Task::none();
+            }
+            let (Some(inst), Some(game)) = (app.created.as_ref(), selected_game(app)) else {
+                return Task::none();
+            };
+            let mods: Vec<_> = app
+                .mods
+                .iter()
+                .rev()
+                .filter(|m| m.is_active() && !m.is_unmanaged())
+                .map(|m| (m.name.clone(), m.path.clone()))
+                .collect();
+            let done = match code {
+                "fullscreen_blocks_framegen" => {
+                    let ini = inst.active().ini_path("SkyrimPrefs.ini");
+                    eidos::check::graphics::fix_fullscreen(&ini).map(|()| ini)
+                }
+                "enb_linux_version" => {
+                    eidos::check::graphics::fix_enb_linux_version(game, inst, &mods)
+                }
+                _ => return Task::none(),
+            };
+            app.status = Some(match done {
+                Ok(p) => tf("status_fix_applied", &[("path", &p.display())]),
+                Err(e) => tf("status_fix_failed", &[("error", &e)]),
+            });
+            app.diag_dirty = true;
+        }
         Message::LogCopy => {
             let Some(pane) = &app.log_pane else {
                 return Task::none();

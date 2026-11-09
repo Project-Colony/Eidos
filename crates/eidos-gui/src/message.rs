@@ -489,6 +489,8 @@ pub(crate) enum Message {
     LogCopy,
     /// Put the redacted diagnostic report on the clipboard.
     CopyHealthReport,
+    /// Apply the fix a Health card offers, named by its finding code.
+    HealthFix(&'static str),
     /// Open the logs folder in a file manager.
     LogOpenFolder,
     // ---- INI editor (MO2's bundled INI Editor tool plugin) ----

@@ -3,6 +3,7 @@
 //! CLI prints the code and its args.
 
 pub mod extender;
+pub mod graphics;
 pub mod launch_option;
 
 use std::path::{Path, PathBuf};
@@ -51,6 +52,9 @@ pub const CODES: &[&str] = &[
     "launch_option_binary_missing",
     "launch_option_no_command",
     "launch_option_other_copy",
+    "nvapi_missing",
+    "fullscreen_blocks_framegen",
+    "enb_linux_version",
 ];
 
 /// The instance's enabled mods, highest priority first.
@@ -84,20 +88,33 @@ pub fn host_findings(
         inst.launch_record().last_good.as_ref(),
         &extender::current_build(game, mods, &overwrite),
     ));
+    let this_exe = std::env::current_exe().ok();
+    let mut options = None;
     if game.is_steam() && game.compatdata.is_some() {
-        let options = eidos_games::steam_launch_options(home, game.def.steam_app_id);
+        options = eidos_games::steam_launch_options(home, game.def.steam_app_id);
         let path: Vec<PathBuf> = std::env::var_os("PATH")
             .map(|p| std::env::split_paths(&p).collect())
             .unwrap_or_default();
-        if let Ok(this_exe) = std::env::current_exe() {
+        if let Some(this_exe) = &this_exe {
             out.extend(launch_option::launch_option_findings(
                 options.as_deref(),
-                &this_exe,
+                this_exe,
                 home,
                 &path,
                 game.def,
             ));
         }
+    }
+    if game.prefix().is_some() {
+        let this_exe = this_exe.unwrap_or_else(|| PathBuf::from("eidos"));
+        out.extend(graphics::graphics_findings(&graphics::graphics_facts(
+            game,
+            inst,
+            mods,
+            options.as_deref(),
+            &this_exe,
+            home,
+        )));
     }
     out
 }

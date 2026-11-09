@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=a2dfee4604b4e78f8f22e935fab06fbfe6d4d301 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
 
 # Community Shaders, DLSS ve kare üretimi
 
@@ -8,6 +8,8 @@ Hepsi Linux'ta Eidos üzerinden çalışır - CS ve paketleri sıradan modlar gi
 ve birleşim onların DLL'lerini her şey gibi sunar - ama üç şey oyunun içinden
 **anlaşılamaz** ve her biri özelliğin sessizce hiçbir şey yapmamasına yol açar. Bu
 sayfa onların listesi; gerçek bir kurulumda zor yoldan öğrenildi.
+
+Sağlık sekmesi bunlardan üçünü sizin yerinize denetler: bir NVIDIA sürücüsü ve Upscaling paketi varken ve oyunun Proton sürümü NVAPI'yi varsayılan olarak kapalı bırakırken NVAPI değişkenini (GE-Proton11-9 ve Proton 11.0 onu açar), profilin `SkyrimPrefs.ini` dosyasındaki özel tam ekranı ve aşağıda anlatılan ENB satırını. Son ikisinin Düzelt düğmesi vardır.
 
 ## DLSS'in gereksindiği başlatma seçeneği
 
@@ -105,6 +107,10 @@ kazanmak için yapılmıştır.
 Eidos her çalıştırmadan sonra PGPatcher'ın kendi `cfg/` ve `log/` klasörlerini o
 moda taşır ve PGPatcher ardından
 "Output directory has non-PGPatcher related files" hatasıyla durur.
+
+## Proton altında ENB: LinuxVersion
+
+Jackify, Proton altında kurduğu her ENB için `enblocal.ini` dosyasının `[GLOBAL]` bölümüne `LinuxVersion=true` yazar. ENB'nin kendi belgeleri bu anahtarı anlatmaz. Sağlık sekmesi bu satırı olmayan bir `enblocal.ini` dosyasını bildirir; Düzelt düğmesi kazanan `enblocal.ini` dosyasının satır eklenmiş bir kopyasını `overwrite/Root/` içine yazar, böylece ENB modu kendi dosyasını korur.
 
 ## Sayıları sonradan okumak
 

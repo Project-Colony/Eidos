@@ -5638,6 +5638,27 @@ fn setup_prereqs_is_refused_while_a_run_is_tracked() {
     let _ = fs::remove_dir_all(root);
 }
 
+#[test]
+fn health_fix_is_refused_while_a_game_runs() {
+    let (mut app, root) = list_app(&["Keep"]);
+    let prefs_path = app
+        .created
+        .as_ref()
+        .unwrap()
+        .active()
+        .ini_path("SkyrimPrefs.ini");
+    start_run(
+        &mut app,
+        "Skyrim".into(),
+        std::process::Command::new("/bin/true"),
+    );
+    let _ = update_inner(&mut app, Message::HealthFix("fullscreen_blocks_framegen"));
+    assert!(app.status.as_deref().unwrap().contains("Skyrim"));
+    assert!(!prefs_path.exists());
+    app.running.take();
+    let _ = fs::remove_dir_all(root);
+}
+
 /// Wait for the tracked run's child to exit, then let the poll finish it.
 fn finish_tracked_run(app: &mut App) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);

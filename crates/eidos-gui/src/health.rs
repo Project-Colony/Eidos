@@ -37,6 +37,7 @@ use std::path::PathBuf;
 use eidos_gamefeatures::RegistryStatus;
 use eidos_games::DetectedGame;
 
+use crate::message::Message;
 use crate::modinfo::{DiagLevel, Diagnostic};
 use crate::{t, tf};
 
@@ -209,7 +210,17 @@ pub(crate) fn finding_card(f: &eidos::check::Finding) -> Diagnostic {
         },
         title: tf(&format!("diag_{}", f.code), &args),
         detail: tf(&format!("diag_{}_detail", f.code), &args),
-        actions: Vec::new(),
+        actions: finding_actions(f),
+    }
+}
+
+/// The findings Eidos can fix itself get a Fix button.
+pub(crate) fn finding_actions(f: &eidos::check::Finding) -> Vec<(String, Message)> {
+    match f.code {
+        "fullscreen_blocks_framegen" | "enb_linux_version" => {
+            vec![(t("diag_action_fix").to_string(), Message::HealthFix(f.code))]
+        }
+        _ => Vec::new(),
     }
 }
 
@@ -262,6 +273,26 @@ mod tests {
             gamedrive_found: Some(PathBuf::from("/mnt/Jeux/SteamLibrary/steamapps")),
             gamedrive_want: Some(PathBuf::from("/mnt/Jeux/SteamLibrary")),
         }
+    }
+
+    #[test]
+    fn fixable_cards_carry_a_fix_button() {
+        use eidos::check::{Finding, Level};
+        let a = finding_actions(&Finding {
+            code: "enb_linux_version",
+            level: Level::Advice,
+            args: vec![],
+        });
+        assert!(matches!(
+            a.as_slice(),
+            [(_, Message::HealthFix("enb_linux_version"))]
+        ));
+        let none = finding_actions(&Finding {
+            code: "nvapi_missing",
+            level: Level::Advice,
+            args: vec![],
+        });
+        assert!(none.is_empty());
     }
 
     #[test]
