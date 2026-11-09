@@ -372,6 +372,69 @@ fn make_root_private() -> std::io::Result<()> {
     })
 }
 
+/// Names the kernel setting that most likely stopped the private namespace
+/// setup (unshare, uid_map writes, making `/` private, bind mounts), with the
+/// command that changes it. Inputs are file contents (`None` when the file is
+/// absent) so each case can be tested; `fuse_error` is the error from opening
+/// `/dev/fuse` read-write. Ubuntu 24.04 lets `unshare` succeed and fails later
+/// with EPERM, so callers should use this for any error out of [`launch`].
+pub fn namespace_block_reason(
+    userns_clone: Option<&str>,
+    max_user_namespaces: Option<&str>,
+    apparmor_restrict: Option<&str>,
+    fuse_error: Option<std::io::ErrorKind>,
+) -> Option<String> {
+    let is = |v: Option<&str>, want: &str| v.is_some_and(|v| v.trim() == want);
+    if is(userns_clone, "0") {
+        return Some(
+            "unprivileged user namespaces are disabled (kernel.unprivileged_userns_clone=0). \
+             Enable them with: sudo sysctl -w kernel.unprivileged_userns_clone=1"
+                .into(),
+        );
+    }
+    if is(max_user_namespaces, "0") {
+        return Some(
+            "the user namespace limit is 0 (user.max_user_namespaces=0). \
+             Raise it with: sudo sysctl -w user.max_user_namespaces=15000"
+                .into(),
+        );
+    }
+    if is(apparmor_restrict, "1") {
+        return Some(
+            "AppArmor restricts unprivileged user namespaces \
+             (kernel.apparmor_restrict_unprivileged_userns=1). \
+             Lift it with: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0"
+                .into(),
+        );
+    }
+    fuse_error.map(|kind| match kind {
+        std::io::ErrorKind::NotFound => "/dev/fuse does not exist. Load the module with: \
+             sudo modprobe fuse"
+            .into(),
+        _ => format!(
+            "/dev/fuse cannot be opened for reading and writing ({kind}). \
+             Check its permissions (normally mode 0666) and your user's access to it"
+        ),
+    })
+}
+
+/// [`namespace_block_reason`] fed from the running system.
+pub fn namespace_block_reason_from_system() -> Option<String> {
+    let read = |p: &str| std::fs::read_to_string(p).ok();
+    let fuse = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/fuse")
+        .err()
+        .map(|e| e.kind());
+    namespace_block_reason(
+        read("/proc/sys/kernel/unprivileged_userns_clone").as_deref(),
+        read("/proc/sys/user/max_user_namespaces").as_deref(),
+        read("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").as_deref(),
+        fuse,
+    )
+}
+
 /// Enter a private user + mount namespace, mount the union, run the command
 /// through it, then unmount on exit. Returns the command's exit status.
 pub fn launch(mut spec: LaunchSpec) -> std::io::Result<ExitStatus> {
@@ -733,6 +796,29 @@ pub fn binary_has_cap_sys_admin(binary: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn namespace_block_names_the_setting() {
+        let r = |a, b, c, d| namespace_block_reason(a, b, c, d);
+        assert!(r(Some("0\n"), None, None, None)
+            .unwrap()
+            .contains("unprivileged_userns_clone"));
+        assert!(r(Some("1"), Some("0\n"), None, None)
+            .unwrap()
+            .contains("max_user_namespaces"));
+        assert!(r(None, Some("15000"), Some("1\n"), None)
+            .unwrap()
+            .contains("apparmor_restrict"));
+        assert!(r(None, None, None, Some(std::io::ErrorKind::NotFound))
+            .unwrap()
+            .contains("modprobe"));
+        assert!(
+            r(None, None, None, Some(std::io::ErrorKind::PermissionDenied))
+                .unwrap()
+                .contains("permissions")
+        );
+        assert!(r(Some("1"), Some("15000"), Some("0"), None).is_none());
+    }
 
     #[test]
     fn missing_binary_or_xattr_reports_no_cap() {
