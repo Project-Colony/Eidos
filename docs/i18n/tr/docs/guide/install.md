@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=159c034d20f656f379fb1e707a2804ecb4a0df37 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b937d42496b32ed847c0e3b6387e5e7564b79331 -->
 
 # Eidos kurulumu
 
@@ -113,11 +113,12 @@ pencere de olan `eidos-linux` dosyasına verilmez
 ([SECURITY.md](../../../../../SECURITY.md)). `EIDOS_FUSE_PASSTHROUGH=1`, çalışma
 zamanında kullanılan ayrı anahtardır ve öntanımlı olarak kapalıdır. Passthrough
 açıkken daemon'un önceki bir sürümü Skyrim SE'nin kendi arşivlerini ve
-eklentilerini açmasını engelliyordu, böylece modlar sessizce yüklenmiyordu. Bu
-neden düzeltildi (çekirdek inode başına tek bir dayanak dosya kabul eder ve
-daemon artık bir dosyanın tüm passthrough açmaları arasında bir tane
-paylaştırıyor), ama düzeltme henüz gerçek bir oyun oturumunda ölçülmedi. O
-zamana kadar passthrough'u yalnızca sınamak için açın.
+eklentilerini açmasını engelliyordu, böylece modlar sessizce yüklenmiyordu. En
+olası neden, bu sürümün her açmada yeni bir dayanak dosya kaydetmesiydi;
+çekirdek ise inode başına yalnızca bir tane kabul eder. Daemon artık bir
+dosyanın tüm passthrough açmaları arasında bir tane paylaştırıyor, ama bu henüz
+bir oyunda yeniden ölçülmedi. O zamana kadar passthrough'u yalnızca sınamak için
+açın.
 
 Ayrıntılar ve o kararın arkasındaki ölçümler
 [troubleshooting.md](troubleshooting.md) içinde.

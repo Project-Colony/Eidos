@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c007e61144ed8abc1a9ab52e7bf18c6af3a6f5f5 -->
 
 # Używanie Eidos
 
@@ -152,9 +152,10 @@ niczego do nadania.
 
 `sudo setcap cap_sys_admin+ep "$(command -v eidos)"` jest **opcjonalne** i
 otwiera dokładnie jedną rzecz: jądrowy passthrough FUSE, domyślnie wyłączony, bo
-psuje grę (niżej). Z tą zdolnością Eidos bierze zwykłą przestrzeń nazw
-montowania zamiast przestrzeni nazw użytkownika; mody wdrażają się tak samo w
-obu przypadkach.
+wcześniejsza wersja demona psuła z nim grę, a zmiany, która omija najbardziej
+prawdopodobną przyczynę, nie zmierzono jeszcze ponownie w grze (niżej). Z tą
+zdolnością Eidos bierze zwykłą przestrzeń nazw montowania zamiast przestrzeni
+nazw użytkownika; mody wdrażają się tak samo w obu przypadkach.
 
 
 Dlaczego dawna rada z `setcap` zniknęła - i dlaczego passthrough FUSE jest

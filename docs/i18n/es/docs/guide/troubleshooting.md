@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=287e0b2cc22bc21eb741f1bc3189c44d9d4b9e5f -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=8f0ea64ea39bdda653b7726249aa2b3377b772dc -->
 
 # Solución de problemas y diagnóstico
 
@@ -41,12 +41,13 @@ omite), de modo que las propias capas siguen intactas incluso aquí.
 #### Por qué el passthrough está desactivado por defecto
 
 El passthrough entrega al núcleo el archivo de respaldo real, de forma que las
-lecturas se saltan este demonio por completo. El A/B de abajo es anterior a la
-corrección descrita más abajo en el problema conocido «El passthrough de FUSE
-impide que el juego cargue contenido de mods». Esa corrección aún no se ha
-medido en un juego, así que el passthrough sigue desactivado por defecto. Medido
-en A/B sobre Skyrim SE 1.6.1170, proton-cachyos 11.0, núcleo 7.1.4, el mismo
-orden de carga de 82 complementos, con la única variable de si el binario
+lecturas se saltan este demonio por completo. El A/B de abajo se midió con una
+versión anterior del demonio, antes del cambio descrito más abajo en el problema
+conocido «El passthrough de FUSE impide que el juego cargue contenido de mods».
+Ese cambio evita la causa más probable, pero aún no se ha vuelto a medir en un
+juego, así que el passthrough sigue desactivado por defecto hasta que se mida.
+Medido en A/B sobre Skyrim SE 1.6.1170, proton-cachyos 11.0, núcleo 7.1.4, el
+mismo orden de carga de 82 complementos, con la única variable de si el binario
 llevaba la capacidad:
 
 | passthrough | fallos de `NtCreateFile` con `STATUS_ACCESS_VIOLATION` |
@@ -54,19 +55,19 @@ llevaba la capacidad:
 | activado    | 152 - 75 `.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`        |
 | desactivado | 0                                                       |
 
-Con él activado el juego no abre ninguno de sus propios archivos ni complementos, lo
-que en el juego se manifiesta como mods que simplemente no están - sin error, sin
-línea de registro. Desactivado, el mismo orden de carga llega a la partida con sus
-complementos, archivos y guiones Papyrus vivos.
+Con él activado el juego no abría ninguno de sus propios archivos ni
+complementos, lo que en el juego se manifestaba como mods que no estaban - sin
+error, sin línea de registro. Desactivado, el mismo orden de carga llegaba a la
+partida con sus complementos, archivos y guiones Papyrus vivos.
 
-El fallo es invisible desde dentro del demonio, que es lo que lo hizo caro de
-encontrar: nuestro propio `open` tiene éxito siempre y el núcleo nunca rechaza un
+El fallo era invisible desde dentro del demonio, que es lo que lo hizo caro de
+encontrar: su propio `open` tenía éxito siempre y el núcleo nunca rechazaba un
 archivo de respaldo (verificado a lo largo de una sesión completa fallida con
-`EIDOS_FUSE_TRACE=open`: cero `open FAILED`, cero `passthrough refused`). El error
-se produce después de que el demonio haya respondido `opened_passthrough`, así que
-ningún registro del lado del demonio puede verlo. Tampoco depende de la extensión:
-golpea archivos y complementos por igual, es decir, los ficheros que el juego
-mantiene abiertos durante toda su ejecución.
+`EIDOS_FUSE_TRACE=open`: cero `open FAILED`, cero `passthrough refused`). El
+error se producía después de que el demonio hubiera respondido
+`opened_passthrough`, así que ningún registro del lado del demonio podía verlo.
+Tampoco dependía de la extensión: golpeaba archivos y complementos por igual, es
+decir, los ficheros que el juego mantiene abiertos durante toda su ejecución.
 
 `EIDOS_FUSE_PASSTHROUGH=1` lo vuelve a activar, para medir lo que aporta o para
 volver a probar el mecanismo. Los avisos de capacidad en el lanzador y en la pestaña
@@ -212,9 +213,9 @@ probarlo por sí solo.
 
 ### El passthrough de FUSE impide que el juego cargue contenido de mods
 
-Corregido en el demonio, pero la corrección aún no se ha medido en una sesión de
-juego real, así que el passthrough sigue apagado por defecto;
-`EIDOS_FUSE_PASSTHROUGH=1` lo activa. Antes de la corrección, con el passthrough
+El demonio evita ahora la causa más probable (abajo), pero eso aún no se ha
+vuelto a medir en un juego, así que el passthrough sigue apagado por defecto;
+`EIDOS_FUSE_PASSTHROUGH=1` lo activa. Antes de ese cambio, con el passthrough
 activo, Skyrim SE fallaba al abrir 152 de sus propios archivos (75 `.bsa`, 65
 `.esl`, 10 `.esm`, 2 `.esp`) con `STATUS_ACCESS_VIOLATION`, frente a 0 con él
 apagado, en el núcleo 7.1.4 - de modo que no se cargaba ningún contenido de
@@ -230,7 +231,9 @@ de un inodo que tiene archivo de respaldo. Una apertura en passthrough que lleva
 `FOPEN_KEEP_CACHE` también falla con EIO. El demonio registraba un identificador
 nuevo en cada apertura, así que fallaba la segunda apertura de un archivo que el
 juego ya tenía abierto. Wine informa EIO como `STATUS_ACCESS_VIOLATION`, el
-error detrás de las 152 aperturas fallidas.
+error detrás de las 152 aperturas fallidas. Esta regla sale del código fuente
+del núcleo y coincide con esos 152 fallos, lo que la convierte en la causa más
+probable.
 
 El demonio registra ahora un único archivo de respaldo por inodo, compartido por
 todas sus aperturas en passthrough, y nunca pone `FOPEN_KEEP_CACHE` en una

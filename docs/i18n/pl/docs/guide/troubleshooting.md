@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=287e0b2cc22bc21eb741f1bc3189c44d9d4b9e5f -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=8f0ea64ea39bdda653b7726249aa2b3377b772dc -->
 
 # Rozwiązywanie problemów i diagnostyka
 
@@ -40,30 +40,33 @@ warstwy pozostają nietknięte nawet tutaj.
 #### Dlaczego passthrough jest domyślnie wyłączony
 
 Passthrough przekazuje jądru prawdziwy plik bazowy, dzięki czemu odczyty
-całkowicie omijają tego demona. Pomiar A/B poniżej pochodzi sprzed poprawki
-opisanej niżej w znanym problemie „Passthrough FUSE nie pozwala grze wczytać
-żadnej zawartości modów”. Tej poprawki jeszcze nie zmierzono w grze, więc
-passthrough pozostaje domyślnie wyłączony. Zmierzone A/B na Skyrim SE 1.6.1170,
-proton-cachyos 11.0, jądro 7.1.4, ta sama kolejność wczytywania 82 wtyczek, przy
-jedynej zmiennej: czy plik binarny nosił tę zdolność:
+całkowicie omijają tego demona. Pomiar A/B poniżej wykonano z wcześniejszą
+wersją demona, przed zmianą opisaną niżej w znanym problemie „Passthrough FUSE
+nie pozwala grze wczytać żadnej zawartości modów”. Ta zmiana omija najbardziej
+prawdopodobną przyczynę, ale nie zmierzono jej jeszcze ponownie w grze, więc
+passthrough pozostaje domyślnie wyłączony, dopóki to nie nastąpi. Zmierzone A/B
+na Skyrim SE 1.6.1170, proton-cachyos 11.0, jądro 7.1.4, ta sama kolejność
+wczytywania 82 wtyczek, przy jedynej zmiennej: czy plik binarny nosił tę
+zdolność:
 
 | passthrough | niepowodzenia `NtCreateFile` z `STATUS_ACCESS_VIOLATION` |
 |-------------|----------------------------------------------------------|
 | włączony    | 152 - 75 `.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`         |
 | wyłączony   | 0                                                        |
 
-Przy włączonym gra nie otwiera żadnego z własnych archiwów ani wtyczek, co w grze
-objawia się jako mody, których po prostu nie ma - bez błędu, bez wiersza w
-dzienniku. Przy wyłączonym ta sama kolejność wczytywania dociera do rozgrywki z
-żywymi wtyczkami, archiwami i skryptami Papyrus.
+Przy włączonym gra nie otwierała żadnego z własnych archiwów ani wtyczek, co w
+grze objawiało się jako mody, których nie było - bez błędu, bez wiersza w
+dzienniku. Przy wyłączonym ta sama kolejność wczytywania docierała do rozgrywki
+z żywymi wtyczkami, archiwami i skryptami Papyrus.
 
-Awaria jest niewidoczna z wnętrza demona i to właśnie uczyniło jej znalezienie
-kosztownym: nasze własne `open` udaje się za każdym razem, a jądro nigdy nie odmawia
-pliku bazowego (sprawdzone na całej nieudanej sesji z `EIDOS_FUSE_TRACE=open`: zero
-`open FAILED`, zero `passthrough refused`). Błąd powstaje po tym, jak demon
-odpowiedział `opened_passthrough`, więc żadne logowanie po stronie demona go nie
-zobaczy. Nie zależy też od rozszerzenia - uderza tak samo w archiwa i wtyczki, czyli
-w pliki, które gra trzyma otwarte przez cały czas działania.
+Awaria była niewidoczna z wnętrza demona i to właśnie uczyniło jej znalezienie
+kosztownym: jego własne `open` udawało się za każdym razem, a jądro nigdy nie
+odmawiało pliku bazowego (sprawdzone na całej nieudanej sesji z
+`EIDOS_FUSE_TRACE=open`: zero `open FAILED`, zero `passthrough refused`). Błąd
+powstawał po tym, jak demon odpowiedział `opened_passthrough`, więc żadne
+logowanie po stronie demona nie mogło go zobaczyć. Nie zależał też od
+rozszerzenia - uderzał tak samo w archiwa i wtyczki, czyli w pliki, które gra
+trzyma otwarte przez cały czas działania.
 
 `EIDOS_FUSE_PASSTHROUGH=1` włącza go z powrotem, by zmierzyć, co daje, albo by
 ponownie przetestować mechanizm. Ostrzeżenia o zdolności w launcherze i w zakładce
@@ -206,15 +209,15 @@ koszt pozostaje niezmierzony. Włącz go z powrotem przez
 
 ### Passthrough FUSE nie pozwala grze wczytać żadnej zawartości modów
 
-Naprawione w demonie, ale poprawki jeszcze nie zmierzono w prawdziwej sesji gry,
-więc passthrough pozostaje domyślnie wyłączony; `EIDOS_FUSE_PASSTHROUGH=1` go
-włącza. Przed poprawką, przy włączonym passthrough, Skyrim SE nie potrafił
-otworzyć 152 własnych plików (75 `.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`) z
-`STATUS_ACCESS_VIOLATION`, wobec 0 przy wyłączonym, na jądrze 7.1.4 - a więc
-żadna zawartość modów się nie wczytywała, po cichu. Jądro zgłaszało błąd po tym,
-jak demon odpowiedział `opened_passthrough`, więc własne dzienniki demona
-pokazywały czysty przebieg (zero nieudanych otwarć, zero odrzuconych plików
-bazowych).
+Demon omija teraz najbardziej prawdopodobną przyczynę (niżej), ale nie zmierzono
+tego jeszcze ponownie w grze, więc passthrough pozostaje domyślnie wyłączony;
+`EIDOS_FUSE_PASSTHROUGH=1` go włącza. Przed tą zmianą, przy włączonym
+passthrough, Skyrim SE nie potrafił otworzyć 152 własnych plików (75 `.bsa`, 65
+`.esl`, 10 `.esm`, 2 `.esp`) z `STATUS_ACCESS_VIOLATION`, wobec 0 przy
+wyłączonym, na jądrze 7.1.4 - a więc żadna zawartość modów się nie wczytywała,
+po cichu. Jądro zgłaszało błąd po tym, jak demon odpowiedział
+`opened_passthrough`, więc własne dzienniki demona pokazywały czysty przebieg
+(zero nieudanych otwarć, zero odrzuconych plików bazowych).
 
 Jądro wiąże z każdym i-węzłem jeden plik bazowy (`fs/fuse/iomode.c`). Otwarcie,
 które dla i-węzła mającego już plik bazowy przynosi drugi identyfikator pliku
@@ -223,7 +226,9 @@ bazowego, kończy się błędem EIO, podobnie jak zwykłe otwarcie (bez
 niosące `FOPEN_KEEP_CACHE` również kończy się błędem EIO. Demon rejestrował
 wcześniej nowy identyfikator przy każdym otwarciu, więc drugie otwarcie pliku,
 który gra już trzymała otwarty, się nie udawało. Wine zgłasza EIO jako
-`STATUS_ACCESS_VIOLATION`, czyli błąd stojący za 152 nieudanymi otwarciami.
+`STATUS_ACCESS_VIOLATION`, czyli błąd stojący za 152 nieudanymi otwarciami. Ta
+reguła pochodzi z kodu źródłowego jądra i zgadza się z tymi 152 niepowodzeniami,
+co czyni ją najbardziej prawdopodobną przyczyną.
 
 Demon rejestruje teraz jeden plik bazowy na i-węzeł, wspólny dla wszystkich jego
 otwarć przez passthrough, i nigdy nie ustawia `FOPEN_KEEP_CACHE` przy otwarciu

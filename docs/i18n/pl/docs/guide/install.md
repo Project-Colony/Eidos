@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=159c034d20f656f379fb1e707a2804ecb4a0df37 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b937d42496b32ed847c0e3b6387e5e7564b79331 -->
 
 # Instalacja Eidos
 
@@ -118,10 +118,11 @@ wykonywalnemu `eidos` z pakietu albo z kompilacji ze źródeł, nigdy
 `EIDOS_FUSE_PASSTHROUGH=1` to osobny przełącznik używany podczas uruchamiania i
 jest domyślnie wyłączony. Przy włączonym passthrough wcześniejsza wersja demona
 nie pozwalała Skyrim SE otworzyć własnych archiwów i wtyczek, przez co mody po
-cichu się nie wczytywały. Ta przyczyna jest naprawiona (jądro przyjmuje jeden
-plik bazowy na i-węzeł, a demon dzieli teraz jeden między wszystkie otwarcia
-pliku przez passthrough), ale poprawki jeszcze nie zmierzono w prawdziwej sesji
-gry. Do tego czasu włączaj passthrough tylko po to, by go testować.
+cichu się nie wczytywały. Najbardziej prawdopodobna przyczyna to rejestrowanie
+nowego pliku bazowego przy każdym otwarciu, podczas gdy jądro przyjmuje jeden na
+i-węzeł. Demon dzieli teraz jeden między wszystkie otwarcia pliku przez
+passthrough, ale nie zmierzono tego jeszcze ponownie w grze. Do tego czasu
+włączaj passthrough tylko po to, by go testować.
 
 Szczegóły i pomiary stojące za tą decyzją w
 [troubleshooting.md](troubleshooting.md).

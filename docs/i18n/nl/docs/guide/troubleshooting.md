@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=287e0b2cc22bc21eb741f1bc3189c44d9d4b9e5f -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=8f0ea64ea39bdda653b7726249aa2b3377b772dc -->
 
 # Probleemoplossing en diagnostiek
 
@@ -43,31 +43,33 @@ weglaat), zodat de lagen zelf ook hier ongerept blijven.
 #### Waarom passthrough standaard uit staat
 
 Passthrough geeft de kernel het echte onderliggende bestand, zodat lezingen deze
-daemon volledig overslaan. De A/B hieronder dateert van vóór de oplossing die
-verderop staat beschreven bij het bekende probleem "FUSE-passthrough belet het
-spel enige modinhoud te laden". Die oplossing is nog niet in een spel gemeten,
-dus passthrough blijft standaard uit. A/B gemeten op Skyrim SE 1.6.1170,
-proton-cachyos 11.0, kernel 7.1.4, dezelfde laadvolgorde van 82 plugins, met als
-enige variabele of het binaire bestand de capability droeg:
+daemon volledig overslaan. De A/B hieronder is gemeten met een eerdere versie
+van de daemon, vóór de wijziging die verderop staat beschreven bij het bekende
+probleem "FUSE-passthrough belet het spel enige modinhoud te laden". Die
+wijziging vermijdt de waarschijnlijkste oorzaak, maar is nog niet opnieuw in een
+spel gemeten, dus passthrough blijft standaard uit tot dat gebeurd is. A/B
+gemeten op Skyrim SE 1.6.1170, proton-cachyos 11.0, kernel 7.1.4, dezelfde
+laadvolgorde van 82 plugins, met als enige variabele of het binaire bestand de
+capability droeg:
 
 | passthrough | `NtCreateFile`-fouten met `STATUS_ACCESS_VIOLATION`    |
 |-------------|--------------------------------------------------------|
 | aan         | 152 - 75 `.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`        |
 | uit         | 0                                                      |
 
-Met passthrough aan opent het spel geen enkel eigen archief of plugin, wat in het
-spel zichtbaar wordt als mods die er domweg niet zijn - geen fout, geen logregel.
-Met passthrough uit bereikt dezelfde laadvolgorde het spelen, met haar plugins,
+Met passthrough aan opende het spel geen enkel eigen archief of plugin, wat in
+het spel zichtbaar werd als mods die er niet waren - geen fout, geen logregel.
+Met passthrough uit bereikte dezelfde laadvolgorde het spelen, met haar plugins,
 archieven en Papyrus-scripts actief.
 
-De storing is van binnen de daemon onzichtbaar, en dat is wat het duur maakte om
-haar te vinden: onze eigen `open` slaagt elke keer en de kernel weigert nooit een
-onderliggend bestand (geverifieerd over een volledige mislukte sessie met
-`EIDOS_FUSE_TRACE=open`: nul `open FAILED`, nul `passthrough refused`). De fout
-ontstaat nadat de daemon `opened_passthrough` geantwoord heeft, dus geen enkele
-logging aan de daemonkant kan haar zien. Ze is ook niet extensiespecifiek - ze
-treft archieven en plugins evengoed, dat wil zeggen de bestanden die het spel
-zijn hele draaitijd open houdt.
+De storing was van binnen de daemon onzichtbaar, en dat is wat het duur maakte
+om haar te vinden: zijn eigen `open` slaagde elke keer en de kernel weigerde
+nooit een onderliggend bestand (geverifieerd over een volledige mislukte sessie
+met `EIDOS_FUSE_TRACE=open`: nul `open FAILED`, nul `passthrough refused`). De
+fout ontstond nadat de daemon `opened_passthrough` geantwoord had, dus geen
+enkele logging aan de daemonkant kon haar zien. Ze was ook niet
+extensiespecifiek - ze trof archieven en plugins evengoed, dat wil zeggen de
+bestanden die het spel zijn hele draaitijd open houdt.
 
 `EIDOS_FUSE_PASSTHROUGH=1` zet het weer aan, om te meten wat het oplevert of om
 het mechanisme opnieuw te testen. De capability-waarschuwingen in de launcher en
@@ -197,12 +199,12 @@ Daarna: het hoofdmenu, 2,1 GB resident, daemon op 0% CPU.
 bewerkingstellers zeggen hoeveel; 195796 opsommingen van één map zijn onzichtbaar
 in een totaal.
 
-**Dat het spel `plugins.txt` leeg herschreef** was zeer waarschijnlijk hetzelfde -
-een `Data` die het binnen geen redelijke tijd kon opsommen, dus concludeerde
-het dat er niets was en bewaarde dat. Niet bewezen, en het opnieuw nakijken
-waard. Hoe dan ook betekent de capture-bewaking (een capture die de actieve set
-volledig leegmaakt, wordt bij elke omvang geweigerd) dat het het profiel niet
-meer kan beschadigen.
+**Dat het spel `plugins.txt` leeg herschreef** was zeer waarschijnlijk
+hetzelfde - een `Data` die het binnen geen redelijke tijd kon opsommen, dus
+concludeerde het dat er niets was en bewaarde dat. Niet bewezen, en het opnieuw
+nakijken waard. Hoe dan ook betekent de capture-bewaking (een capture die de
+actieve set volledig leegmaakt, wordt bij elke omvang geweigerd) dat het het
+profiel niet meer kan beschadigen.
 
 **`FOPEN_KEEP_CACHE` staat uit.** Opgelost, en het is de moeite waard te weten
 waarom. Het liet Skyrim SE crashen op een null-dereferentie, seconden na het
@@ -221,15 +223,15 @@ testen.
 
 ### FUSE-passthrough belet het spel enige modinhoud te laden
 
-Opgelost in de daemon, maar de oplossing is nog niet in een echte spelsessie
-gemeten, dus passthrough blijft standaard uit; `EIDOS_FUSE_PASSTHROUGH=1` zet
-het aan. Vóór de oplossing slaagde Skyrim SE er met passthrough aan niet in 152
-van zijn eigen bestanden (75 `.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`) te openen,
-met `STATUS_ACCESS_VIOLATION`, tegenover 0 met passthrough uit, op kernel
-7.1.4 - dus laadde er stilzwijgend geen modinhoud. De kernel wierp de fout op
-nadat de daemon `opened_passthrough` geantwoord had, dus de eigen logs van de
-daemon toonden een schone draaibeurt (nul mislukte openingen, nul geweigerde
-onderliggende bestanden).
+De daemon vermijdt nu de waarschijnlijkste oorzaak (hieronder), maar dat is nog
+niet opnieuw in een spel gemeten, dus passthrough blijft standaard uit;
+`EIDOS_FUSE_PASSTHROUGH=1` zet het aan. Vóór die wijziging slaagde Skyrim SE er
+met passthrough aan niet in 152 van zijn eigen bestanden (75 `.bsa`, 65 `.esl`,
+10 `.esm`, 2 `.esp`) te openen, met `STATUS_ACCESS_VIOLATION`, tegenover 0 met
+passthrough uit, op kernel 7.1.4 - dus laadde er stilzwijgend geen modinhoud. De
+kernel wierp de fout op nadat de daemon `opened_passthrough` geantwoord had, dus
+de eigen logs van de daemon toonden een schone draaibeurt (nul mislukte
+openingen, nul geweigerde onderliggende bestanden).
 
 De kernel koppelt één onderliggend bestand aan elke inode (`fs/fuse/iomode.c`).
 Een opening die voor een inode die er al een heeft een tweede id van een
@@ -238,7 +240,9 @@ onderliggend bestand meebrengt, mislukt met EIO, net als een normale opening
 Een passthrough-opening die `FOPEN_KEEP_CACHE` draagt, mislukt ook met EIO. De
 daemon registreerde vroeger bij elke opening een nieuwe id, dus mislukte de
 tweede opening van een bestand dat het spel al open hield. Wine meldt EIO als
-`STATUS_ACCESS_VIOLATION`, de fout achter de 152 mislukte openingen.
+`STATUS_ACCESS_VIOLATION`, de fout achter de 152 mislukte openingen. Deze regel
+komt uit de broncode van de kernel en past bij die 152 mislukkingen, wat haar de
+waarschijnlijkste oorzaak maakt.
 
 De daemon registreert nu één onderliggend bestand per inode, gedeeld door al
 zijn passthrough-openingen, en zet nooit `FOPEN_KEEP_CACHE` op een

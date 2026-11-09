@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=287e0b2cc22bc21eb741f1bc3189c44d9d4b9e5f -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=8f0ea64ea39bdda653b7726249aa2b3377b772dc -->
 
 # Řešení potíží a diagnostika
 
@@ -42,30 +42,31 @@ takže samotné vrstvy zůstávají nedotčené i tady.
 #### Proč je passthrough ve výchozím stavu vypnutý
 
 Passthrough předá jádru skutečný podkladový soubor, takže čtení tohoto démona
-úplně obcházejí. Měření A/B níže předchází opravě popsané dál ve známém problému
-„FUSE passthrough brání hře načíst jakýkoli obsah módů“. Tato oprava zatím
-nebyla změřena ve hře, takže passthrough zůstává ve výchozím stavu vypnutý.
-Měřeno A/B na Skyrim SE 1.6.1170, proton-cachyos 11.0, jádro 7.1.4, stejné
-pořadí načítání s 82 pluginy, jediná proměnná byla, zda binárka nesla tu
-capability:
+úplně obcházejí. Měření A/B níže proběhlo s dřívější verzí démona, před změnou
+popsanou dál ve známém problému „FUSE passthrough brání hře načíst jakýkoli
+obsah módů“. Tato změna se vyhýbá nejpravděpodobnější příčině, ale ve hře zatím
+nebyla znovu změřena, takže passthrough zůstává ve výchozím stavu vypnutý, dokud
+se to nestane. Měřeno A/B na Skyrim SE 1.6.1170, proton-cachyos 11.0, jádro
+7.1.4, stejné pořadí načítání s 82 pluginy, jediná proměnná byla, zda binárka
+nesla tu capability:
 
 | passthrough | selhání `NtCreateFile` se `STATUS_ACCESS_VIOLATION` |
 |-------------|--------------------------------------------------------|
 | zapnutý     | 152 - 75 `.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`        |
 | vypnutý     | 0                                                      |
 
-Se zapnutým hra neotevře žádný ze svých archivů ani pluginů, což se ve hře
-projeví jako módy, které prostě nejsou - žádná chyba, žádný řádek v logu.
-S vypnutým totéž pořadí načítání dojde ke hraní se živými pluginy, archivy
-a Papyrus skripty.
+Se zapnutým hra neotevřela žádný ze svých archivů ani pluginů, což se ve hře
+projevilo jako módy, které nejsou - žádná chyba, žádný řádek v logu. S vypnutým
+totéž pořadí načítání došlo ke hraní se živými pluginy, archivy a Papyrus
+skripty.
 
-Selhání je zevnitř démona neviditelné, což ho udělalo drahým na nalezení: naše
-vlastní `open` uspěje pokaždé a jádro nikdy neodmítne podkladový soubor
-(ověřeno napříč celou selhávající relací s `EIDOS_FUSE_TRACE=open`: nula
-`open FAILED`, nula `passthrough refused`). Chyba vzniká až poté, co démon
-odpoví `opened_passthrough`, takže ji žádné logování na straně démona nevidí.
-Není ani vázaná na příponu - trefuje archivy stejně jako pluginy, tedy soubory,
-které hra drží otevřené po celý svůj běh.
+Selhání bylo zevnitř démona neviditelné, což ho udělalo drahým na nalezení: jeho
+vlastní `open` uspělo pokaždé a jádro nikdy neodmítlo podkladový soubor (ověřeno
+napříč celou selhávající relací s `EIDOS_FUSE_TRACE=open`: nula `open FAILED`,
+nula `passthrough refused`). Chyba vznikala až poté, co démon odpověděl
+`opened_passthrough`, takže ji žádné logování na straně démona nemohlo vidět.
+Nebyla ani vázaná na příponu - trefovala archivy stejně jako pluginy, tedy
+soubory, které hra drží otevřené po celý svůj běh.
 
 `EIDOS_FUSE_PASSTHROUGH=1` jej zase zapne, pro měření toho, co přináší, nebo
 pro opětovné testování mechanismu. Varování o capability ve spouštěči a na kartě
@@ -209,14 +210,14 @@ vypnutým (níže) je skutečná cena nezměřená. Znovu jej zapnete přes
 
 ### FUSE passthrough brání hře načíst jakýkoli obsah módů
 
-Opraveno v démonovi, ale oprava zatím nebyla změřena ve skutečném herním sezení,
-takže passthrough zůstává ve výchozím stavu vypnutý; `EIDOS_FUSE_PASSTHROUGH=1`
-jej zapne. Před opravou Skyrim SE se zapnutým passthroughem neotevřel 152
-vlastních souborů (75 `.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`) se
-`STATUS_ACCESS_VIOLATION`, proti 0 s vypnutým, na jádře 7.1.4 - takže se tiše
-nenačetl žádný obsah módů. Jádro vyvolalo chybu poté, co démon odpověděl
-`opened_passthrough`, takže vlastní logy démona ukazovaly čistý běh (nula
-neúspěšných otevření, nula odmítnutých podkladových souborů).
+Démon se teď vyhýbá nejpravděpodobnější příčině (níže), ale ve hře to zatím
+nebylo znovu změřeno, takže passthrough zůstává ve výchozím stavu vypnutý;
+`EIDOS_FUSE_PASSTHROUGH=1` jej zapne. Před touto změnou Skyrim SE se zapnutým
+passthroughem neotevřel 152 vlastních souborů (75 `.bsa`, 65 `.esl`, 10 `.esm`,
+2 `.esp`) se `STATUS_ACCESS_VIOLATION`, proti 0 s vypnutým, na jádře 7.1.4 -
+takže se tiše nenačetl žádný obsah módů. Jádro vyvolalo chybu poté, co démon
+odpověděl `opened_passthrough`, takže vlastní logy démona ukazovaly čistý běh
+(nula neúspěšných otevření, nula odmítnutých podkladových souborů).
 
 Jádro váže na každý inode jediný podkladový soubor (`fs/fuse/iomode.c`).
 Otevření, které pro inode, jenž už jeden má, přinese druhé ID podkladového
@@ -225,7 +226,8 @@ inodu, který podkladový soubor má. Otevření přes passthrough, které nese
 `FOPEN_KEEP_CACHE`, selže s EIO také. Démon dřív registroval při každém otevření
 nové ID, takže selhalo druhé otevření souboru, který hra už držela otevřený.
 Wine hlásí EIO jako `STATUS_ACCESS_VIOLATION`, což je chyba za 152 neúspěšnými
-otevřeními.
+otevřeními. Toto pravidlo pochází ze zdrojového kódu jádra a odpovídá těm 152
+selháním, a proto je nejpravděpodobnější příčinou.
 
 Démon teď registruje jediný podkladový soubor na inode, sdílený všemi jeho
 otevřeními přes passthrough, a otevření přes passthrough nikdy nenastaví

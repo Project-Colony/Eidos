@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c007e61144ed8abc1a9ab52e7bf18c6af3a6f5f5 -->
 
 # Eidos 사용하기
 
@@ -132,9 +132,10 @@ Eidos는 완전히 rootless로 동작합니다. 비공개 user + mount 네임스
 마운트하므로 setuid 도우미도, 데몬도, 부여할 것도 없습니다.
 
 `sudo setcap cap_sys_admin+ep "$(command -v eidos)"`는 **선택**이며 딱 한 가지를
-좌우합니다: 커널 FUSE 패스스루. 게임을 망가뜨리기 때문에 기본값은 꺼짐입니다
-(아래 참고). 이 능력이 있으면 Eidos는 user 네임스페이스 대신 평범한 mount
-네임스페이스를 씁니다. 모드 배치는 어느 쪽이든 동일합니다.
+좌우합니다: 커널 FUSE 패스스루. 예전 버전의 데몬이 이것으로 게임을 망가뜨렸고
+가장 유력한 원인을 피하는 변경이 아직 게임에서 다시 측정되지 않았기 때문에
+기본값은 꺼짐입니다 (아래 참고). 이 능력이 있으면 Eidos는 user 네임스페이스 대신
+평범한 mount 네임스페이스를 씁니다. 모드 배치는 어느 쪽이든 동일합니다.
 
 
 예전의 `setcap` 안내가 사라진 이유와 FUSE 패스스루가 꺼진 채로 배포되는 이유는

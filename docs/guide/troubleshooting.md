@@ -39,28 +39,30 @@ layers themselves stay pristine even here.
 #### Why passthrough is off by default
 
 Passthrough hands the kernel the real backing file so reads skip this daemon
-entirely. The A/B below predates the fix described in the known issue "FUSE
-passthrough stops the game loading any mod content" further down. That fix has
-not been measured in a game yet, so passthrough stays off by default. Measured
-A/B on Skyrim SE 1.6.1170, proton-cachyos 11.0, kernel 7.1.4, the same 82-plugin
-load order, the only variable being whether the binary carried the capability:
+entirely. The A/B below was measured with an earlier daemon, before the change
+described in the known issue "FUSE passthrough stops the game loading any mod
+content" further down. That change avoids the most likely cause but has not
+been re-measured in a game, so passthrough stays off by default until it is.
+Measured A/B on Skyrim SE 1.6.1170, proton-cachyos 11.0, kernel 7.1.4, the same
+82-plugin load order, the only variable being whether the binary carried the
+capability:
 
 | passthrough | `NtCreateFile` failures with `STATUS_ACCESS_VIOLATION` |
 |-------------|--------------------------------------------------------|
 | on          | 152 - 75 `.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`        |
 | off         | 0                                                      |
 
-With it on the game opens none of its own archives or plugins, which surfaces
-in-game as mods that simply are not there - no error, no log line. With it off
-the same load order reaches gameplay with its plugins, archives and Papyrus
-scripts live.
+With it on, the game opened none of its own archives or plugins, which surfaced
+in-game as mods that were not there - no error, no log line. With it off the
+same load order reached gameplay with its plugins, archives and Papyrus scripts
+live.
 
-The failure is invisible from inside the daemon, which is what made it expensive
-to find: our own `open` succeeds every time and the kernel never refuses a
-backing file (verified across a full failing session with
+The failure was invisible from inside the daemon, which is what made it
+expensive to find: its own `open` succeeded every time and the kernel never
+refused a backing file (verified across a full failing session with
 `EIDOS_FUSE_TRACE=open`: zero `open FAILED`, zero `passthrough refused`). The
-error is produced after the daemon replies `opened_passthrough`, so no
-daemon-side logging can see it. It is not extension-specific either - it hits
+error was produced after the daemon replied `opened_passthrough`, so no
+daemon-side logging could see it. It was not extension-specific either - it hit
 archives and plugins alike, i.e. the files the game holds open for its whole run.
 
 `EIDOS_FUSE_PASSTHROUGH=1` turns it back on, for measuring what it buys or for
@@ -204,14 +206,14 @@ passthrough off by default (below) the real cost is unmeasured. Re-enable with
 
 ### FUSE passthrough stops the game loading any mod content
 
-Fixed in the daemon, but the fix has not been measured in a real game session
-yet, so passthrough stays off by default; `EIDOS_FUSE_PASSTHROUGH=1` turns it
-on. Before the fix, with passthrough on, Skyrim SE failed to open 152 of its own
-files (75 `.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`) with
-`STATUS_ACCESS_VIOLATION`, against 0 with it off, on kernel 7.1.4 - so no mod
-content loaded, silently. The kernel raised the error after the daemon had
-replied `opened_passthrough`, so the daemon's own logs showed a clean run (zero
-failed opens, zero refused backing files).
+The daemon now avoids the most likely cause (below), but that has not been
+re-measured in a game, so passthrough stays off by default;
+`EIDOS_FUSE_PASSTHROUGH=1` turns it on. Before the change, with passthrough on,
+Skyrim SE failed to open 152 of its own files (75 `.bsa`, 65 `.esl`, 10 `.esm`,
+2 `.esp`) with `STATUS_ACCESS_VIOLATION`, against 0 with it off, on
+kernel 7.1.4 - so no mod content loaded, silently. The kernel raised the error
+after the daemon had replied `opened_passthrough`, so the daemon's own logs
+showed a clean run (zero failed opens, zero refused backing files).
 
 The kernel binds one backing file per inode (`fs/fuse/iomode.c`). An open that
 brings a second backing id for an inode that already has one fails with EIO, and
@@ -219,7 +221,9 @@ so does a normal open (without `FOPEN_PASSTHROUGH`) of an inode that has a
 backing. A passthrough open that carries `FOPEN_KEEP_CACHE` fails with EIO too.
 The daemon used to register a new backing id on every open, so the second open
 of a file the game already held open failed. Wine reports EIO as
-`STATUS_ACCESS_VIOLATION`, the error behind the 152 failed opens.
+`STATUS_ACCESS_VIOLATION`, the error behind the 152 failed opens. This rule is
+read from the kernel source and matches those 152 failures, which makes it the
+most likely cause.
 
 The daemon now registers one backing per inode, shared by all its passthrough
 opens, and never sets `FOPEN_KEEP_CACHE` on a passthrough open. Passthrough

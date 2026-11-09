@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c007e61144ed8abc1a9ab52e7bf18c6af3a6f5f5 -->
 
 # Eidos の使い方
 
@@ -125,10 +125,11 @@ INI エディタも同じく、開いた後に変わったファイルの上へ�
 Eidos は完全に rootless で動きます。プライベートな user + mount 名前空間の中で
 マウントするので、setuid のヘルパーもデーモンも要らず、与える権限もありません。
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` は**任意**で、開くのは
-ただ一つ、カーネルの FUSE パススルーだけです。これはゲームを壊すため既定では
-無効です(下記)。この capability があると、Eidos は user 名前空間ではなく素の
-mount 名前空間を取ります。MOD の展開はどちらでも同じです。
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` は**任意**で、開くのはただ
+一つ、カーネルの FUSE パススルーだけです。以前のデーモンがこれでゲームを壊し、最
+も可能性の高い原因を避ける変更がまだゲームで再測定されていないため、既定では無効
+です(下記)。この capability があると、Eidos は user 名前空間ではなく素の mount
+名前空間を取ります。MOD の展開はどちらでも同じです。
 
 
 昔の `setcap` の案内が消えた理由 - そして FUSE パススルーが無効で出荷される

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=287e0b2cc22bc21eb741f1bc3189c44d9d4b9e5f -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=8f0ea64ea39bdda653b7726249aa2b3377b772dc -->
 
 # Sorun giderme ve tanılama
 
@@ -42,31 +42,32 @@ böylece burada bile katmanların kendisi dokunulmamış kalır.
 #### Passthrough neden öntanımlı olarak kapalı
 
 Passthrough, çekirdeğe gerçek dayanak dosyasını verir, böylece okumalar bu
-daemon'u büsbütün atlar. Aşağıdaki A/B, ileride "FUSE passthrough, oyunun hiçbir
-mod içeriğini yüklemesine engel oluyor" bilinen sorununda anlatılan düzeltmeden
-öncedir. Bu düzeltme henüz bir oyunda ölçülmedi, bu yüzden passthrough öntanımlı
-olarak kapalı kalıyor. Skyrim SE 1.6.1170, proton-cachyos 11.0, çekirdek 7.1.4,
-aynı 82 eklentilik yükleme sırası üzerinde A/B ölçüldü; tek değişken, ikili
-dosyanın yeteneği taşıyıp taşımadığıydı:
+daemon'u büsbütün atlar. Aşağıdaki A/B, daemon'un önceki bir sürümüyle, ileride
+"FUSE passthrough, oyunun hiçbir mod içeriğini yüklemesine engel oluyor" bilinen
+sorununda anlatılan değişiklikten önce ölçüldü. Bu değişiklik en olası nedenden
+kaçınıyor, ama henüz bir oyunda yeniden ölçülmedi, bu yüzden passthrough o
+ölçülene kadar öntanımlı olarak kapalı kalıyor. Skyrim SE 1.6.1170,
+proton-cachyos 11.0, çekirdek 7.1.4, aynı 82 eklentilik yükleme sırası üzerinde
+A/B ölçüldü; tek değişken, ikili dosyanın yeteneği taşıyıp taşımadığıydı:
 
 | passthrough | `STATUS_ACCESS_VIOLATION` ile `NtCreateFile` başarısızlıkları |
 |-------------|--------------------------------------------------------------|
 | açık        | 152 - 75 `.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`              |
 | kapalı      | 0                                                            |
 
-Açıkken oyun kendi arşivlerinin ya da eklentilerinin hiçbirini açmaz; bu, oyun
-içinde sadece orada olmayan modlar olarak görünür - hata yok, günlük satırı yok.
-Kapalıyken aynı yükleme sırası, eklentileri, arşivleri ve Papyrus betikleri
-çalışır durumdayken oyuna ulaşır.
+Açıkken oyun kendi arşivlerinin ya da eklentilerinin hiçbirini açmıyordu; bu,
+oyun içinde orada olmayan modlar olarak görünüyordu - hata yok, günlük satırı
+yok. Kapalıyken aynı yükleme sırası, eklentileri, arşivleri ve Papyrus betikleri
+çalışır durumdayken oyuna ulaşıyordu.
 
-Bu hata daemon'un içinden görünmez; bulunmasını pahalı kılan da budur: kendi
-`open`'ımız her seferinde başarılı olur ve çekirdek bir dayanak dosyasını hiçbir
-zaman geri çevirmez (`EIDOS_FUSE_TRACE=open` ile, başarısız olan tam bir oturum
-boyunca doğrulandı: sıfır `open FAILED`, sıfır `passthrough refused`). Hata,
-daemon `opened_passthrough` yanıtını verdikten sonra üretilir, dolayısıyla
-daemon tarafındaki hiçbir günlükleme onu göremez. Uzantıya özgü de değildir -
-arşivleri de eklentileri de, yani oyunun çalışması boyunca açık tuttuğu
-dosyaları vurur.
+Bu hata daemon'un içinden görünmüyordu; bulunmasını pahalı kılan da buydu:
+daemon'un kendi `open`'ı her seferinde başarılı oluyordu ve çekirdek bir dayanak
+dosyasını hiçbir zaman geri çevirmiyordu (`EIDOS_FUSE_TRACE=open` ile, başarısız
+olan tam bir oturum boyunca doğrulandı: sıfır `open FAILED`, sıfır
+`passthrough refused`). Hata, daemon `opened_passthrough` yanıtını verdikten
+sonra üretiliyordu, dolayısıyla daemon tarafındaki hiçbir günlükleme onu
+göremiyordu. Uzantıya özgü de değildi - arşivleri de eklentileri de, yani oyunun
+çalışması boyunca açık tuttuğu dosyaları vuruyordu.
 
 `EIDOS_FUSE_PASSTHROUGH=1` onu geri açar; ne kazandırdığını ölçmek ya da düzeneği
 yeniden sınamak için. Başlatıcıdaki ve Diagnostics sekmesindeki yetenek uyarıları
@@ -213,9 +214,9 @@ dolayısıyla passthrough öntanımlı olarak kapalıyken (aşağıda) gerçek b
 
 ### FUSE passthrough, oyunun hiçbir mod içeriğini yüklemesine engel oluyor
 
-Daemon'da düzeltildi, ama düzeltme henüz gerçek bir oyun oturumunda ölçülmedi,
-bu yüzden passthrough öntanımlı olarak kapalı kalıyor;
-`EIDOS_FUSE_PASSTHROUGH=1` onu açar. Düzeltmeden önce, passthrough açıkken
+Daemon artık en olası nedenden kaçınıyor (aşağıda), ama bu henüz bir oyunda
+yeniden ölçülmedi, bu yüzden passthrough öntanımlı olarak kapalı kalıyor;
+`EIDOS_FUSE_PASSTHROUGH=1` onu açar. Bu değişiklikten önce, passthrough açıkken
 Skyrim SE, çekirdek 7.1.4 üzerinde kendi dosyalarının 152'sini (75 `.bsa`, 65
 `.esl`, 10 `.esm`, 2 `.esp`) `STATUS_ACCESS_VIOLATION` ile açamıyordu;
 kapalıyken bu sayı 0'dı - yani hiçbir mod içeriği yüklenmiyordu, sessizce.
@@ -230,7 +231,9 @@ EIO ile başarısız olur; dayanak dosyası olan bir inode'un normal açması
 passthrough açması da EIO ile başarısız olur. Daemon eskiden her açmada yeni bir
 kimlik kaydediyordu, bu yüzden oyunun zaten açık tuttuğu bir dosyanın ikinci
 açması başarısız oluyordu. Wine, EIO'yu `STATUS_ACCESS_VIOLATION` olarak
-bildirir; 152 başarısız açmanın ardındaki hata budur.
+bildirir; 152 başarısız açmanın ardındaki hata budur. Bu kural çekirdeğin kaynak
+kodundan okundu ve o 152 başarısızlıkla örtüşüyor, bu da onu en olası neden
+yapıyor.
 
 Daemon artık inode başına tek bir dayanak dosya kaydediyor; bu dosyayı inode'un
 tüm passthrough açmaları paylaşıyor ve bir passthrough açmasında

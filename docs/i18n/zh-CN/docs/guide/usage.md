@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c007e61144ed8abc1a9ab52e7bf18c6af3a6f5f5 -->
 
 # 使用 Eidos
 
@@ -105,9 +105,10 @@ Add separator、Remove,以及把 Overwrite 变成一个模组,都会在动 `mods
 Eidos 完全以无 root 方式运行。它挂载在私有的 user + mount 命名空间里,所以没有 setuid
 助手程序,没有守护进程,也没有什么要授权的。
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` 是**可选的**,只决定一件事:内核
-FUSE passthrough,而它默认关闭,因为它会弄坏游戏(见下)。带上这个 capability 后,
-Eidos 取的是普通的 mount 命名空间而不是 user 命名空间;两种方式部署模组的结果一模一样。
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` 是**可选的**,只决定一件事:
+内核 FUSE passthrough,而它默认关闭,因为较早版本的守护进程开着它会弄坏游戏,而避开
+最可能原因的改动还没有在游戏里重新测量过(见下)。带上这个 capability 后,Eidos 取
+的是普通的 mount 命名空间而不是 user 命名空间;两种方式部署模组的结果一模一样。
 
 
 旧的 `setcap` 建议为什么被移除 - 以及 FUSE passthrough 为什么出厂就是关的 - 在

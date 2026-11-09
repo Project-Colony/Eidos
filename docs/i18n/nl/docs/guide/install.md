@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=159c034d20f656f379fb1e707a2804ecb4a0df37 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b937d42496b32ed847c0e3b6387e5e7564b79331 -->
 
 # Eidos installeren
 
@@ -111,11 +111,12 @@ op `eidos-linux`, dat ook het venster is
 ([SECURITY.md](../../../../../SECURITY.md)). `EIDOS_FUSE_PASSTHROUGH=1` is de
 afzonderlijke schakelaar tijdens het uitvoeren, en die staat standaard uit. Met
 passthrough aan belette een eerdere versie van de daemon Skyrim SE zijn eigen
-archieven en plugins te openen, zodat mods stilzwijgend niet laadden. Die
-oorzaak is opgelost (de kernel aanvaardt één onderliggend bestand per inode, en
-de daemon deelt er nu één tussen alle passthrough-openingen van een bestand),
-maar de oplossing is nog niet in een echte spelsessie gemeten. Zet passthrough
-tot dan alleen aan om het te testen.
+archieven en plugins te openen, zodat mods stilzwijgend niet laadden. De
+waarschijnlijkste oorzaak is dat die bij elke opening een nieuw onderliggend
+bestand registreerde, terwijl de kernel er maar één per inode aanvaardt. De
+daemon deelt er nu één tussen alle passthrough-openingen van een bestand, maar
+dat is nog niet opnieuw in een spel gemeten. Zet passthrough tot dan alleen aan
+om het te testen.
 
 Details, en de metingen achter die beslissing, in
 [troubleshooting.md](troubleshooting.md).

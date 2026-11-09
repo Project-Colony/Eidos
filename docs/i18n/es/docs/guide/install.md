@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=159c034d20f656f379fb1e707a2804ecb4a0df37 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b937d42496b32ed847c0e3b6387e5e7564b79331 -->
 
 # Instalar Eidos
 
@@ -115,11 +115,11 @@ que también es la ventana ([SECURITY.md](../../../../../SECURITY.md)).
 `EIDOS_FUSE_PASSTHROUGH=1` es el interruptor independiente durante la ejecución,
 y está desactivado por defecto. Con el passthrough activo, una versión anterior
 del demonio impedía que Skyrim SE abriera sus propios archivos y complementos,
-de modo que los mods no se cargaban, en silencio. Esa causa está corregida (el
-núcleo acepta un único archivo de respaldo por inodo, y el demonio ahora
-comparte uno entre todas las aperturas en passthrough de un archivo), pero la
-corrección aún no se ha medido en una sesión de juego real. Hasta entonces,
-activa el passthrough sólo para probarlo.
+de modo que los mods no se cargaban, en silencio. La causa más probable es que
+registraba un archivo de respaldo nuevo en cada apertura, mientras que el núcleo
+acepta uno solo por inodo. El demonio ahora comparte uno entre todas las
+aperturas en passthrough de un archivo, pero eso aún no se ha vuelto a medir en
+un juego. Hasta entonces, activa el passthrough sólo para probarlo.
 
 Los detalles, y las mediciones detrás de esa decisión, en
 [troubleshooting.es.md](troubleshooting.md).

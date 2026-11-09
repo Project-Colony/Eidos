@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=159c034d20f656f379fb1e707a2804ecb4a0df37 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b937d42496b32ed847c0e3b6387e5e7564b79331 -->
 
 # Instalar o Eidos
 
@@ -115,10 +115,11 @@ pacote de versão ou de uma compilação a partir do código, nunca no
 opção separada para ativá-lo durante a execução, e ele está desligado por
 padrão. Com o passthrough ligado, uma versão anterior do daemon impedia o Skyrim
 SE de abrir os próprios arquivos e plugins, de modo que os mods silenciosamente
-não carregavam. Essa causa está corrigida (o kernel aceita um único arquivo de
-respaldo por inode, e o daemon agora compartilha um entre todas as aberturas em
-passthrough de um arquivo), mas a correção ainda não foi medida numa sessão de
-jogo real. Até lá, ligue o passthrough só para testá-lo.
+não carregavam. A causa mais provável é que ela registrava um arquivo de
+respaldo novo a cada abertura, enquanto o kernel aceita um só por inode. O
+daemon agora compartilha um entre todas as aberturas em passthrough de um
+arquivo, mas isso ainda não foi medido de novo em um jogo. Até lá, ligue o
+passthrough só para testá-lo.
 
 Detalhes, e as medições por trás dessa decisão, em
 [troubleshooting.pt-BR.md](troubleshooting.md).

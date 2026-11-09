@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c007e61144ed8abc1a9ab52e7bf18c6af3a6f5f5 -->
 
 # Usar Eidos
 
@@ -157,9 +157,10 @@ conceder.
 
 `sudo setcap cap_sys_admin+ep "$(command -v eidos)"` es **opcional** y controla
 exactamente una cosa: el passthrough FUSE del núcleo, que está desactivado por
-defecto porque rompe el juego (abajo). Con esa capacidad Eidos toma un espacio de
-nombres de montaje simple en vez de uno de usuario; los mods se despliegan igual
-de un modo u otro.
+defecto porque una versión anterior del demonio rompía el juego con él y el
+cambio que evita la causa más probable aún no se ha vuelto a medir en un juego
+(abajo). Con esa capacidad Eidos toma un espacio de nombres de montaje simple en
+vez de uno de usuario; los mods se despliegan igual de un modo u otro.
 
 
 Por qué desapareció el viejo consejo de `setcap` - y por qué el passthrough FUSE

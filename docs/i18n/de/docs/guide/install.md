@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=159c034d20f656f379fb1e707a2804ecb4a0df37 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b937d42496b32ed847c0e3b6387e5e7564b79331 -->
 
 # Eidos installieren
 
@@ -115,11 +115,11 @@ Capability, aktiviert aber kein Passthrough. Sie gehört auf die separate
 separate Schalter zur Laufzeit, und er ist standardmäßig aus. Mit
 eingeschaltetem Passthrough hinderte eine frühere Version des Daemons Skyrim SE
 daran, seine eigenen Archive und Plugins zu öffnen, sodass Mods stillschweigend
-nicht luden. Diese Ursache ist behoben (der Kernel akzeptiert eine
-Hintergrunddatei pro Inode, und der Daemon teilt jetzt eine zwischen allen
-Passthrough-Öffnungen einer Datei), aber die Korrektur wurde noch nicht in einer
-echten Spielsitzung gemessen. Bis dahin schalten Sie Passthrough nur zum Testen
-ein.
+nicht luden. Die wahrscheinlichste Ursache ist, dass sie bei jedem Öffnen eine
+neue Hintergrunddatei registrierte, während der Kernel nur eine pro Inode
+akzeptiert. Der Daemon teilt jetzt eine zwischen allen Passthrough-Öffnungen
+einer Datei, aber das wurde noch nicht erneut in einem Spiel gemessen. Bis dahin
+schalten Sie Passthrough nur zum Testen ein.
 
 Einzelheiten und die Messungen hinter dieser Entscheidung in
 [troubleshooting.md](troubleshooting.md).

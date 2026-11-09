@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=159c034d20f656f379fb1e707a2804ecb4a0df37 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b937d42496b32ed847c0e3b6387e5e7564b79331 -->
 
 # 安裝 Eidos
 
@@ -102,10 +102,10 @@ passthrough。它要加在發行套件或原始碼建置中獨立的 `eidos` 執
 `eidos-linux` 上,因為那個檔案同時也是視窗
 ([SECURITY.md](../../../../../SECURITY.md))。執行時需另行設定
 `EIDOS_FUSE_PASSTHROUGH=1` 才會啟用,它預設關閉。passthrough 開著時,較早版本的常
-駐程式會讓 Skyrim SE 打不開自己的封裝檔與外掛,於是模組靜悄悄地不載入。這個原因已
-經修正(核心每個 inode 只接受一個後端檔案,常駐程式現在讓一個檔案的所有 passthrough
-開啟共用同一個),但修正還沒在真實的遊戲工作階段裡測量過。在那之前,只為了測試才開
-啟 passthrough。
+駐程式會讓 Skyrim SE 打不開自己的封裝檔與外掛,於是模組靜悄悄地不載入。最可能的原
+因是它每次開啟都註冊一個新的後端檔案,而核心每個 inode 只接受一個。常駐程式現在讓
+一個檔案的所有 passthrough 開啟共用同一個,但這還沒在遊戲裡重新測量過。在那之前,
+只為了測試才開啟 passthrough。
 
 細節以及支撐該決定的實測數據,見
 [troubleshooting.md](troubleshooting.md)。

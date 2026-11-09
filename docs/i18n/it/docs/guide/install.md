@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=159c034d20f656f379fb1e707a2804ecb4a0df37 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b937d42496b32ed847c0e3b6387e5e7564b79331 -->
 
 # Installare Eidos
 
@@ -117,11 +117,11 @@ la finestra ([SECURITY.md](../../../../../SECURITY.md)).
 `EIDOS_FUSE_PASSTHROUGH=1` è il comando separato per attivarlo durante
 l’esecuzione, ed è disattivato per impostazione predefinita. Con il passthrough
 attivo, una versione precedente del demone impediva a Skyrim SE di aprire i
-propri archivi e plugin, così le mod silenziosamente non si caricavano. Quella
-causa è stata eliminata (il kernel accetta un solo file di appoggio per inode, e
-il demone ora ne condivide uno tra tutte le aperture in passthrough di un file),
-ma la correzione non è ancora stata misurata in una vera sessione di gioco. Fino
-ad allora, attiva il passthrough solo per provarlo.
+propri archivi e plugin, così le mod silenziosamente non si caricavano. La causa
+più probabile è che registrava un nuovo file di appoggio a ogni apertura, mentre
+il kernel ne accetta uno solo per inode. Il demone ora ne condivide uno tra
+tutte le aperture in passthrough di un file, ma questo non è ancora stato
+rimisurato in un gioco. Fino ad allora, attiva il passthrough solo per provarlo.
 
 I dettagli, e le misure dietro quella decisione, in
 [troubleshooting.it.md](troubleshooting.md).

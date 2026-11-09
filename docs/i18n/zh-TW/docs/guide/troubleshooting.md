@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=287e0b2cc22bc21eb741f1bc3189c44d9d4b9e5f -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=8f0ea64ea39bdda653b7726249aa2b3377b772dc -->
 
 # 疑難排解與診斷
 
@@ -37,23 +37,24 @@ fusermount3 -u /mnt/point
 
 #### 為什麼 passthrough 預設關閉
 
-Passthrough 把真正的後端檔案交給核心,於是讀取完全跳過這個常駐程式。下面的 A/B 早
-於後文已知問題「FUSE passthrough 讓遊戲載入不了任何模組內容」所描述的修正。這個
-修正還沒在遊戲裡測量過,所以 passthrough 預設維持關閉。在 Skyrim SE 1.6.1170、
-proton-cachyos 11.0、核心 7.1.4、同一份 82 個外掛的載入順序上做 A/B 實測,唯一的
-變因是執行檔有沒有帶上那個能力:
+Passthrough 把真正的後端檔案交給核心,於是讀取完全跳過這個常駐程式。下面的 A/B 是
+用較早版本的常駐程式測的,早於後文已知問題「FUSE passthrough 讓遊戲載入不了任何模
+組內容」所描述的變更。這個變更避開了最可能的原因,但還沒在遊戲裡重新測量過,所以在
+重新測量之前 passthrough 預設維持關閉。在 Skyrim SE 1.6.1170、proton-cachyos
+11.0、核心 7.1.4、同一份 82 個外掛的載入順序上做 A/B 實測,唯一的變因是執行檔有沒
+有帶上那個能力:
 
 | passthrough | `NtCreateFile` 以 `STATUS_ACCESS_VIOLATION` 失敗的次數 |
 |-------------|--------------------------------------------------------|
 | 開啟        | 152 - 75 個 `.bsa`、65 個 `.esl`、10 個 `.esm`、2 個 `.esp` |
 | 關閉        | 0                                                      |
 
-開著時,遊戲一個自己的封裝檔或外掛都打不開,在遊戲裡呈現出來就是模組根本不存在 -
-沒有錯誤,沒有一行日誌。關掉時,同一份載入順序能走到實際遊玩,外掛、封裝檔與
+開著時,遊戲當時一個自己的封裝檔或外掛都打不開,在遊戲裡呈現出來就是模組不存在 -
+沒有錯誤,沒有一行日誌。關掉時,同一份載入順序走到了實際遊玩,外掛、封裝檔與
 Papyrus 腳本都活著。
 
-這個失敗從常駐程式內部是看不見的,這正是它難找的原因:我們自己的 `open` 每次都
-成功,核心也從來不拒絕後端檔案(以 `EIDOS_FUSE_TRACE=open` 追完一整場失敗的執行
+這個失敗當時從常駐程式內部是看不見的,這正是它難找的原因:常駐程式自己的 `open` 每
+次都成功,核心也從未拒絕後端檔案(以 `EIDOS_FUSE_TRACE=open` 追完一整場失敗的執行
 驗證過:零筆 `open FAILED`,零筆 `passthrough refused`)。錯誤是在常駐程式回覆
 `opened_passthrough` 之後才產生的,所以常駐程式這一側再怎麼記錄都看不到。它也不挑
 副檔名 - 封裝檔與外掛一視同仁,也就是遊戲整場執行期間一直開著的那些檔案。
@@ -179,20 +180,21 @@ Skyrim SE 因空指標解參考而當機,可穩定重現,而且一個模組都�
 
 ### FUSE passthrough 讓遊戲載入不了任何模組內容
 
-已在常駐程式中修正,但修正還沒在真實的遊戲工作階段裡測量過,所以 passthrough 預設
-維持關閉;`EIDOS_FUSE_PASSTHROUGH=1` 可以開啟它。修正之前,在核心 7.1.4 上,passthrough
-開著時,Skyrim SE 有 152 個自己的檔案(75 個 `.bsa`、65 個 `.esl`、10 個 `.esm`、2
-個 `.esp`)以 `STATUS_ACCESS_VIOLATION` 開啟失敗,關掉時是 0 個 - 於是沒有任何模組
-內容會載入,而且悄無聲息。核心是在常駐程式回覆 `opened_passthrough` 之後才拋出這
-個錯誤,所以常駐程式自己的日誌顯示的是一場乾淨的執行(零次開啟失敗,零次後端檔案被
-拒)。
+常駐程式現在避開了最可能的原因(見下),但這還沒在遊戲裡重新測量過,所以 passthrough
+預設維持關閉;`EIDOS_FUSE_PASSTHROUGH=1` 可以開啟它。這次變更之前,在核心 7.1.4 上,
+passthrough 開著時,Skyrim SE 有 152 個自己的檔案(75 個 `.bsa`、65 個 `.esl`、10
+個 `.esm`、2 個 `.esp`)以 `STATUS_ACCESS_VIOLATION` 開啟失敗,關掉時是 0 個 - 於
+是沒有任何模組內容會載入,而且悄無聲息。核心是在常駐程式回覆 `opened_passthrough`
+之後才拋出這個錯誤,所以常駐程式自己的日誌顯示的是一場乾淨的執行(零次開啟失敗,零
+次後端檔案被拒)。
 
 核心為每個 inode 只綁定一個後端檔案(`fs/fuse/iomode.c`)。如果一個 inode 已經有後
 端檔案,再帶來第二個後端檔案 ID 的開啟會以 EIO 失敗;對已有後端檔案的 inode 做一般
 開啟(不帶 `FOPEN_PASSTHROUGH`)也一樣。帶有 `FOPEN_KEEP_CACHE` 的 passthrough 開
 啟同樣以 EIO 失敗。以前的常駐程式每次開啟都註冊一個新的 ID,所以遊戲已經開著的檔
 案被第二次開啟時就會失敗。Wine 把 EIO 回報為 `STATUS_ACCESS_VIOLATION`,這正是那
-152 次開啟失敗背後的錯誤。
+152 次開啟失敗背後的錯誤。這條規則是從核心原始碼讀出來的,而且與那 152 次失敗吻合,
+所以它是最可能的原因。
 
 現在常駐程式每個 inode 只註冊一個後端檔案,由該 inode 的所有 passthrough 開啟共用,
 而且從不在 passthrough 開啟上設定 `FOPEN_KEEP_CACHE`。Passthrough 只用於遊戲層和

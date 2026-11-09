@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c007e61144ed8abc1a9ab52e7bf18c6af3a6f5f5 -->
 
 # Eidos kullanımı
 
@@ -150,9 +150,11 @@ Eidos tamamen rootsuz çalışır. Özel bir kullanıcı + bağlama ad alanı i�
 bağlar; yani setuid yardımcısı yok, artalan süreci yok ve verilecek bir şey yok.
 
 `sudo setcap cap_sys_admin+ep "$(command -v eidos)"` **isteğe bağlıdır** ve tam
-olarak tek bir şeyi açar: çekirdek FUSE passthrough'u; o da oyunu bozduğu için
-öntanımlı olarak kapalıdır (aşağıda). Bu yetenekle Eidos, bir kullanıcı ad alanı
-yerine düz bir bağlama ad alanı alır; modlar iki durumda da aynı biçimde yerleşir.
+olarak tek bir şeyi açar: çekirdek FUSE passthrough'u; daemon'un önceki bir
+sürümü onunla oyunu bozduğu ve en olası nedenden kaçınan değişiklik henüz bir
+oyunda yeniden ölçülmediği için o, öntanımlı olarak kapalıdır (aşağıda). Bu
+yetenekle Eidos, bir kullanıcı ad alanı yerine düz bir bağlama ad alanı alır;
+modlar iki durumda da aynı biçimde yerleşir.
 
 
 Eski `setcap` önerisinin neden ortadan kalktığı - ve FUSE passthrough'un neden

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=159c034d20f656f379fb1e707a2804ecb4a0df37 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b937d42496b32ed847c0e3b6387e5e7564b79331 -->
 
 # Installer Eidos
 
@@ -118,11 +118,12 @@ binaire `eidos` séparé du paquet ou d'une compilation depuis les sources, jama
 `EIDOS_FUSE_PASSTHROUGH=1` est le réglage d’activation distinct à l’exécution,
 et il est désactivé par défaut. Passthrough activé, une version antérieure du
 démon empêchait Skyrim SE d'ouvrir ses propres archives et plugins, si bien que
-les mods ne se chargeaient pas, en silence. Cette cause est corrigée (le noyau
-accepte un seul fichier sous-jacent par inode, et le démon en partage désormais
-un entre toutes les ouvertures en passthrough d'un fichier), mais le correctif
-n'a pas encore été mesuré dans une vraie session de jeu. D'ici là, n'activez le
-passthrough que pour le tester.
+les mods ne se chargeaient pas, en silence. La cause la plus probable est
+qu'elle enregistrait un nouveau fichier sous-jacent à chaque ouverture, alors
+que le noyau n'en accepte qu'un par inode. Le démon en partage désormais un
+entre toutes les ouvertures en passthrough d'un fichier, mais cela n'a pas
+encore été remesuré en jeu. D'ici là, n'activez le passthrough que pour le
+tester.
 
 Les détails, et les mesures derrière cette décision, dans
 [troubleshooting.md](troubleshooting.md).

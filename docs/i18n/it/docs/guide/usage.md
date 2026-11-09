@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=871b15707113ecd473192f25686e6f6607b4dde5 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c007e61144ed8abc1a9ab52e7bf18c6af3a6f5f5 -->
 
 # Usare Eidos
 
@@ -157,9 +157,11 @@ Eidos gira interamente senza root. Monta in uno spazio dei nomi privato di utent
 
 `sudo setcap cap_sys_admin+ep "$(command -v eidos)"` è **facoltativo** e comanda
 esattamente una cosa: il passthrough FUSE del kernel, disattivato per
-impostazione predefinita perché rompe il gioco (sotto). Con la capability Eidos
-prende un semplice spazio dei nomi di mount invece di uno di utente; le mod
-vengono distribuite in modo identico in entrambi i casi.
+impostazione predefinita perché una versione precedente del demone rompeva il
+gioco con esso e la modifica che evita la causa più probabile non è ancora stata
+rimisurata in un gioco (sotto). Con la capability Eidos prende un semplice
+spazio dei nomi di mount invece di uno di utente; le mod vengono distribuite in
+modo identico in entrambi i casi.
 
 
 Perché il vecchio consiglio su `setcap` non c'è più - e perché il passthrough

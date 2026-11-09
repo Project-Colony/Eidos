@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=159c034d20f656f379fb1e707a2804ecb4a0df37 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b937d42496b32ed847c0e3b6387e5e7564b79331 -->
 
 # Instalace Eidosu
 
@@ -114,10 +114,11 @@ z balíku nebo ze sestavení ze zdrojů, nikdy na `eidos-linux`, který je záro
 oknem ([SECURITY.md](../../../../../SECURITY.md)). `EIDOS_FUSE_PASSTHROUGH=1` je
 samostatný přepínač při spuštění a ve výchozím stavu je vypnutý. Se zapnutým
 passthroughem dřívější verze démona bránila Skyrim SE otevřít vlastní archivy a
-pluginy, takže se módy tiše nenačetly. Tato příčina je opravená (jádro přijímá
-jediný podkladový soubor na inode a démon jej teď sdílí mezi všemi otevřeními
-souboru přes passthrough), ale oprava zatím nebyla změřena ve skutečném herním
-sezení. Do té doby passthrough zapínejte jen kvůli testování.
+pluginy, takže se módy tiše nenačetly. Nejpravděpodobnější příčinou je, že při
+každém otevření registrovala nový podkladový soubor, zatímco jádro přijímá
+jediný na inode. Démon teď jeden sdílí mezi všemi otevřeními souboru přes
+passthrough, ale ve hře to zatím nebylo znovu změřeno. Do té doby passthrough
+zapínejte jen kvůli testování.
 
 Podrobnosti a měření za tímto rozhodnutím v
 [troubleshooting.cs.md](troubleshooting.md).

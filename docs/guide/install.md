@@ -112,10 +112,10 @@ binary of the bundle or a source build, never on `eidos-linux`, which is also
 the window ([SECURITY.md](../../SECURITY.md)). `EIDOS_FUSE_PASSTHROUGH=1` is the
 separate runtime switch, and it is off by default. With passthrough on, an
 earlier daemon stopped Skyrim SE opening its own archives and plugins, so mods
-silently did not load. That cause is fixed (the kernel accepts one backing file
-per inode, and the daemon now shares one between all the passthrough opens of a
-file), but the fix has not been measured in a real game session yet. Until it
-has, turn passthrough on only to test it.
+silently did not load. The most likely cause is that it registered a new
+backing file on every open while the kernel accepts one per inode. The daemon
+now shares one between all the passthrough opens of a file, but that has not
+been re-measured in a game. Until it has, turn passthrough on only to test it.
 
 Details, and the measurements behind that decision, in
 [troubleshooting.md](troubleshooting.md).

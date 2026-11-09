@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=159c034d20f656f379fb1e707a2804ecb4a0df37 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b937d42496b32ed847c0e3b6387e5e7564b79331 -->
 
 # 安装 Eidos
 
@@ -102,9 +102,9 @@ passthrough。它应当加在捆绑包或源码构建中单独的 `eidos` 二进
 `eidos-linux` 上,因为后者同时也是窗口([SECURITY.md](../../../../../SECURITY.md))。
 运行时需另行设置 `EIDOS_FUSE_PASSTHROUGH=1` 才会启用,它默认关闭。passthrough 开
 启时,早先版本的守护进程会让 Skyrim SE 打不开自己的档案与插件,于是模组静悄悄地不
-加载。这个原因已经修复(内核每个 inode 只接受一个后备文件,守护进程现在让一个文件
-的所有 passthrough 打开共享同一个),但修复还没有在真实的游戏会话里测量过。在那之
-前,只为了测试才打开 passthrough。
+加载。最可能的原因是它每次打开都注册一个新的后备文件,而内核每个 inode 只接受一个。
+守护进程现在让一个文件的所有 passthrough 打开共享同一个,但这还没有在游戏里重新测
+量过。在那之前,只为了测试才打开 passthrough。
 
 细节以及支撑该决定的实测数据,见
 [troubleshooting.zh-CN.md](troubleshooting.md)。
