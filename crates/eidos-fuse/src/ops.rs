@@ -417,7 +417,7 @@ impl Filesystem for Eidos {
         // Resolve + stat without the inode lock held.
         let Some(real) = self.stack.resolve_read(&vpath) else {
             Stats::bump(&self.stats.lookup_miss);
-            self.reply_negative(parent.0, &name.to_string_lossy(), reply);
+            self.reply_negative(parent.0, &name.to_string_lossy(), true, reply);
             return;
         };
         match fs::symlink_metadata(&real) {
@@ -429,7 +429,8 @@ impl Filesystem for Eidos {
             }
             Err(_) => {
                 Stats::bump(&self.stats.lookup_miss);
-                self.reply_negative(parent.0, &name.to_string_lossy(), reply);
+                // The index found the file; this stat failure may be transient.
+                self.reply_negative(parent.0, &name.to_string_lossy(), false, reply);
             }
         }
     }

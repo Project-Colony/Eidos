@@ -367,12 +367,13 @@ impl Eidos {
     /// kernel keys on exact name bytes while Eidos folds case, which is why the
     /// record exists. Creation through this mount is safe regardless (the kernel
     /// re-issues a real lookup for O_CREAT and for every LOOKUP_EXCL path).
-    fn reply_negative(&self, parent: u64, name: &str, reply: ReplyEntry) {
-        let ttl = if self.record_negative(parent, name) {
-            &NEG_TTL_RECORDED
-        } else {
-            &NEG_TTL
-        };
+    ///
+    /// `definitive` is true only for a miss the immutable index answered. A
+    /// transient stat failure on a file that exists is not definitive: it is
+    /// neither recorded nor given more than the short TTL, since no create
+    /// would ever invalidate it.
+    fn reply_negative(&self, parent: u64, name: &str, definitive: bool, reply: ReplyEntry) {
+        let ttl = self.negative_ttl(parent, name, definitive);
         // ino = 0 IS the negative dentry; no inode is minted or refcounted for a
         // path that does not exist.
         let blank = FileAttr {
@@ -393,6 +394,14 @@ impl Eidos {
             flags: 0,
         };
         reply.entry(ttl, &blank, Generation(0));
+    }
+
+    fn negative_ttl(&self, parent: u64, name: &str, definitive: bool) -> &'static Duration {
+        if definitive && self.record_negative(parent, name) {
+            &NEG_TTL_RECORDED
+        } else {
+            &NEG_TTL
+        }
     }
 
     /// Remember the exact spelling we denied so a create can invalidate it.

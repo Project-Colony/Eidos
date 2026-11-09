@@ -679,3 +679,11 @@ fn create_invalidates_every_other_spelling_of_a_recorded_negative() {
     let left: Vec<_> = neg[&1]["foo.esp"].iter().map(|(n, _)| n.as_str()).collect();
     assert_eq!(left, ["Foo.esp"], "only the exact spelling stays");
 }
+
+#[test]
+fn non_definitive_negative_is_short_and_unrecorded() {
+    let eidos = Eidos::new(vec![], std::env::temp_dir().join("eidos-neg-nondef"));
+    assert_eq!(eidos.negative_ttl(1, "Stat.esp", false), &*NEG_TTL);
+    assert!(!eidos.negatives.lock_recover().contains_key(&1));
+    assert_eq!(eidos.negative_ttl(1, "Gone.esp", true), &*NEG_TTL_RECORDED);
+}
