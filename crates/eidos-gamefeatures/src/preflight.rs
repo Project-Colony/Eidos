@@ -1,4 +1,5 @@
-//! Read-only checks of PE and SKSE compatibility declarations. No DLL is loaded.
+//! Read-only checks of PE and script extender compatibility declarations. No
+//! DLL is loaded.
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex, PoisonError};
@@ -25,11 +26,25 @@ pub struct SkseDeclaration {
     pub skse_required: Version,
 }
 
+/// `F4SEPluginVersionData`; `SFSEPluginVersionData` has the same layout.
+#[derive(Debug, Clone)]
+pub struct XseDeclaration {
+    /// The export it was read from: `F4SEPlugin_Version` or `SFSEPlugin_Version`.
+    pub export: &'static str,
+    pub data_version: u32,
+    pub name: String,
+    pub address_independence: u32,
+    pub structure_independence: u32,
+    pub compatible_versions: Vec<Version>,
+    pub reserved_breaking: u32,
+}
+
 #[derive(Debug, Clone)]
 pub struct PeInfo {
     pub machine: u16,
     pub file_version: Option<Version>,
     pub skse_version: Option<SkseDeclaration>,
+    pub xse_version: Option<XseDeclaration>,
     pub timestamp: u32,
 }
 
@@ -62,33 +77,135 @@ pub fn address_library_name(runtime: Version) -> String {
     format!("versionlib-{a}-{b}-{c}-0.bin")
 }
 
-/// Inspect the files the game will see. Mod roots are highest priority first;
-/// Overwrite wins over them, and the installed game is the final fallback.
-pub fn scan_skse(
+/// Inspect the script extender plugins the game will see. Mod roots are
+/// highest priority first; Overwrite wins over them, and the installed game is
+/// the final fallback.
+pub fn scan_extender_plugins(
     game: &eidos_gamedef::GameDef,
     game_data: &Path,
     game_root: &Path,
     mods: &[(String, PathBuf)],
     overwrite: &Path,
 ) -> Vec<PreflightDiagnostic> {
-    if !matches!(game.id, "skyrimse" | "enderalse" | "skyrimvr") {
+    let machine = match game.id {
+        "skyrimse" | "enderalse" | "skyrimvr" => {
+            return scan_skse(game, game_data, game_root, mods, overwrite)
+        }
+        "fallout4" | "starfield" => 0x8664,
+        "oblivion" | "falloutnv" | "fallout3" => 0x14c,
+        _ => return Vec::new(),
+    };
+    let Some(row) = extender(game.id) else {
+        return Vec::new();
+    };
+    let data = merged_data(game_data, mods, overwrite);
+    let dlls = plugin_dlls(&data, row.plugins_dir);
+    if dlls.is_empty() {
         return Vec::new();
     }
+    let mut diagnostics = Vec::new();
+    let mut rules = None;
+    if machine == 0x8664 {
+        let root = merged_root(game_root, mods, overwrite);
+        let runtime = version_or_card(
+            &root,
+            game_root,
+            game.game_binary,
+            "runtime_metadata_unverified",
+            "runtime",
+            &mut diagnostics,
+        );
+        rules = runtime.and_then(|runtime| {
+            let rules = xse_rules(game.id, runtime)?;
+            let library = data.resolve(&format!(
+                "{}/{}",
+                row.plugins_dir,
+                (rules.library_name)(runtime)
+            ));
+            Some((runtime, rules, library))
+        });
+    }
+    for (_, path) in dlls {
+        let origin = data.origin(&path);
+        match &rules {
+            Some((runtime, rules, library)) => diagnostics.extend(check_xse_plugin(
+                &path,
+                &origin,
+                *runtime,
+                rules,
+                library.as_deref(),
+            )),
+            // Old-gen Fallout 4, an unread runtime, or a 32-bit game.
+            None => diagnostics.extend(plugin_pe(&path, &origin, machine).err()),
+        }
+    }
+    diagnostics
+}
+
+fn scan_skse(
+    game: &eidos_gamedef::GameDef,
+    game_data: &Path,
+    game_root: &Path,
+    mods: &[(String, PathBuf)],
+    overwrite: &Path,
+) -> Vec<PreflightDiagnostic> {
     let Some(extender) = game.script_extender.as_ref() else {
         return Vec::new();
     };
     let data = merged_data(game_data, mods, overwrite);
-    let dlls: Vec<_> = data
-        .list_dir("SKSE/Plugins")
-        .into_iter()
-        .filter(|(name, path)| name.to_ascii_lowercase().ends_with(".dll") && !path.is_dir())
-        .collect();
+    let dlls = plugin_dlls(&data, "SKSE/Plugins");
     if dlls.is_empty() {
         return Vec::new();
     }
     let root = merged_root(game_root, mods, overwrite);
     let mut diagnostics = Vec::new();
-    let mut version = |name: &str, code, label: &str| match runtime_version(&root, name) {
+    let runtime = version_or_card(
+        &root,
+        game_root,
+        game.game_binary,
+        "runtime_metadata_unverified",
+        "runtime",
+        &mut diagnostics,
+    );
+    let skse = version_or_card(
+        &root,
+        game_root,
+        extender.loader,
+        "skse_metadata_unverified",
+        "SKSE",
+        &mut diagnostics,
+    );
+    let library =
+        runtime.and_then(|v| data.resolve(&format!("SKSE/Plugins/{}", address_library_name(v))));
+    let context = SkseContext {
+        runtime,
+        skse,
+        address_library: library.as_deref(),
+    };
+    for (_, path) in dlls {
+        diagnostics.extend(check_skse_plugin(&path, &data.origin(&path), &context));
+    }
+    diagnostics
+}
+
+/// The `.dll` files of the merged directory `dir`.
+fn plugin_dlls(data: &Merged, dir: &str) -> Vec<(String, PathBuf)> {
+    data.list_dir(dir)
+        .into_iter()
+        .filter(|(name, path)| name.to_ascii_lowercase().ends_with(".dll") && !path.is_dir())
+        .collect()
+}
+
+/// `runtime_version` of `name`, or None once an Unverified `code` card says why.
+fn version_or_card(
+    root: &Merged,
+    game_root: &Path,
+    name: &str,
+    code: &'static str,
+    label: &str,
+    diagnostics: &mut Vec<PreflightDiagnostic>,
+) -> Option<Version> {
+    match runtime_version(root, name) {
         Ok(version) => Some(version),
         Err(why) => {
             let path = root.resolve(name).unwrap_or_else(|| game_root.join(name));
@@ -101,20 +218,7 @@ pub fn scan_skse(
             });
             None
         }
-    };
-    let runtime = version(game.game_binary, "runtime_metadata_unverified", "runtime");
-    let skse = version(extender.loader, "skse_metadata_unverified", "SKSE");
-    let library =
-        runtime.and_then(|v| data.resolve(&format!("SKSE/Plugins/{}", address_library_name(v))));
-    let context = SkseContext {
-        runtime,
-        skse,
-        address_library: library.as_deref(),
-    };
-    for (_, path) in dlls {
-        diagnostics.extend(check_skse_plugin(&path, &data.origin(&path), &context));
     }
-    diagnostics
 }
 
 /// A merged view of one tree (Data, or the game root): enabled mods highest
@@ -250,11 +354,7 @@ pub fn extender_facts(
     let row = extender(game.id)?;
     let root = merged_root(game_root, mods, overwrite);
     let is_file = |name: &str| root.resolve(name).is_some_and(|p| p.is_file());
-    let plugin_dlls = merged_data(game_data, mods, overwrite)
-        .list_dir(row.plugins_dir)
-        .iter()
-        .filter(|(name, path)| name.to_ascii_lowercase().ends_with(".dll") && !path.is_dir())
-        .count();
+    let plugin_dlls = plugin_dlls(&merged_data(game_data, mods, overwrite), row.plugins_dir).len();
     let runtime = if game.game_binary.is_empty() {
         None
     } else {
@@ -527,6 +627,7 @@ fn inspect<Pe: object::read::pe::ImageNtHeaders>(read: Limited<'_>) -> Result<Pe
     let file: PeFile<'_, Pe, _> = PeFile::parse(read).map_err(|e| e.to_string())?;
     let sections = file.section_table();
     let mut declaration = None;
+    let mut xse = None;
     if let Some(dir) = file.data_directory(object::pe::IMAGE_DIRECTORY_ENTRY_EXPORT) {
         let rva = dir.virtual_address.get(LE);
         let bytes = read_rva(read, sections, rva, dir.size.get(LE))?;
@@ -538,14 +639,27 @@ fn inspect<Pe: object::read::pe::ImageNtHeaders>(read: Limited<'_>) -> Result<Pe
             let name = table
                 .name_from_pointer(pointer)
                 .map_err(|e| e.to_string())?;
-            if name == b"SKSEPlugin_Version" {
-                let ExportTarget::Address(rva) =
-                    table.target_by_index(index).map_err(|e| e.to_string())?
-                else {
-                    return Err("forwarded SKSEPlugin_Version export is unverified".into());
-                };
+            let Some(export) = [
+                "SKSEPlugin_Version",
+                "F4SEPlugin_Version",
+                "SFSEPlugin_Version",
+            ]
+            .into_iter()
+            .find(|export| export.as_bytes() == name) else {
+                continue;
+            };
+            let ExportTarget::Address(rva) =
+                table.target_by_index(index).map_err(|e| e.to_string())?
+            else {
+                return Err(format!("forwarded {export} export is unverified"));
+            };
+            if export == "SKSEPlugin_Version" {
                 declaration = Some(parse_declaration(read_rva(read, sections, rva, 848)?)?);
-                break;
+            } else {
+                xse = Some(parse_xse_declaration(
+                    export,
+                    read_rva(read, sections, rva, 604)?,
+                )?);
             }
         }
     }
@@ -605,6 +719,7 @@ fn inspect<Pe: object::read::pe::ImageNtHeaders>(read: Limited<'_>) -> Result<Pe
         timestamp: file.nt_headers().file_header().time_date_stamp.get(LE),
         file_version: version,
         skse_version: declaration,
+        xse_version: xse,
     })
 }
 
@@ -664,35 +779,241 @@ fn parse_file_version(bytes: &[u8]) -> Result<Version, String> {
     ]))
 }
 
-fn parse_declaration(bytes: &[u8]) -> Result<SkseDeclaration, String> {
-    let name = bytes.get(8..264).ok_or("truncated SKSE name")?;
+/// The `name[256]` field at offset 8, which every extender's declaration has.
+fn plugin_name(bytes: &[u8]) -> Result<String, String> {
+    let name = bytes.get(8..264).ok_or("truncated plugin name")?;
     let end = name
         .iter()
         .position(|b| *b == 0)
-        .ok_or("unterminated SKSE name")?;
+        .ok_or("unterminated plugin name")?;
     if end == 0 {
-        return Err("empty SKSE plugin name".into());
+        return Err("empty plugin name".into());
     }
-    let name = std::str::from_utf8(&name[..end])
-        .map_err(|_| "invalid SKSE name encoding")?
-        .to_string();
+    Ok(std::str::from_utf8(&name[..end])
+        .map_err(|_| "invalid plugin name encoding")?
+        .to_string())
+}
+
+/// The packed `compatibleVersions[16]` at `at`, up to the first zero.
+fn packed_versions(bytes: &[u8], at: usize) -> Result<Vec<Version>, String> {
     let mut versions = Vec::new();
-    for at in (780..844).step_by(4) {
+    for at in (at..at + 64).step_by(4) {
         let packed = dword(bytes, at)?;
         if packed == 0 {
             break;
         }
         versions.push(unpack(packed));
     }
+    Ok(versions)
+}
+
+fn parse_declaration(bytes: &[u8]) -> Result<SkseDeclaration, String> {
     Ok(SkseDeclaration {
         data_version: dword(bytes, 0)?,
         plugin_version: dword(bytes, 4)?,
-        name,
+        name: plugin_name(bytes)?,
         version_independence_ex: dword(bytes, 772)?,
         version_independence: dword(bytes, 776)?,
-        compatible_versions: versions,
+        compatible_versions: packed_versions(bytes, 780)?,
         skse_required: unpack(dword(bytes, 844)?),
     })
+}
+
+/// `dataVersion` 0, `name` 8, `addressIndependence` 520, `structureIndependence`
+/// 524, `compatibleVersions` 528, `reservedBreaking` 600 (f4se and sfse PluginAPI.h).
+fn parse_xse_declaration(export: &'static str, bytes: &[u8]) -> Result<XseDeclaration, String> {
+    Ok(XseDeclaration {
+        export,
+        data_version: dword(bytes, 0)?,
+        name: plugin_name(bytes)?,
+        address_independence: dword(bytes, 520)?,
+        structure_independence: dword(bytes, 524)?,
+        compatible_versions: packed_versions(bytes, 528)?,
+        reserved_breaking: dword(bytes, 600)?,
+    })
+}
+
+/// What a 64-bit Fallout 4 or Starfield loader accepts for one runtime, from
+/// its `CheckPluginCompatibility`. The masks are `addressIndependence` and
+/// `structureIndependence` bits.
+#[derive(Debug, Clone, Copy)]
+pub struct XseRules {
+    pub export: &'static str,
+    /// Any of these bits makes the plugin address independent.
+    pub address_ok: u32,
+    /// Any of these bits makes the plugin structure independent.
+    pub structure_ok: u32,
+    /// Any of these bits needs the Address Library file for the runtime.
+    pub library_flags: u32,
+    pub known_address: u32,
+    pub known_structure: u32,
+    pub library_name: fn(Version) -> String,
+}
+
+/// None for a game or runtime whose loader does not read the declaration
+/// (old-gen Fallout 4 before 1.10.980, Starfield before 1.15.216).
+pub fn xse_rules(game_id: &str, runtime: Version) -> Option<XseRules> {
+    let fallout4 = |ok, library_flags| XseRules {
+        export: "F4SEPlugin_Version",
+        address_ok: ok,
+        structure_ok: ok,
+        library_flags,
+        known_address: 0b111,
+        known_structure: 0b111,
+        library_name: fallout4_library_name,
+    };
+    match game_id {
+        "fallout4" if runtime >= Version([1, 11, 137, 0]) => Some(fallout4(0b101, 0b100)),
+        "fallout4" if runtime >= Version([1, 10, 980, 0]) => Some(fallout4(0b011, 0b010)),
+        "starfield" if runtime >= Version([1, 15, 216, 0]) => Some(XseRules {
+            export: "SFSEPlugin_Version",
+            address_ok: 0b101,
+            structure_ok: 0b1001,
+            library_flags: 0b110,
+            known_address: 0b111,
+            known_structure: 0b1111,
+            library_name: address_library_name,
+        }),
+        _ => None,
+    }
+}
+
+/// Fallout 4's Address Library file for `runtime`: `version-1-10-984-0.bin`.
+fn fallout4_library_name(runtime: Version) -> String {
+    let [a, b, c, _] = runtime.0;
+    format!("version-{a}-{b}-{c}-0.bin")
+}
+
+fn readable_file(path: &Path) -> bool {
+    std::fs::File::open(path)
+        .and_then(|f| f.metadata())
+        .is_ok_and(|m| m.is_file() && m.len() > 0)
+}
+
+/// The PE metadata of an extender plugin built for `machine` (0x8664 or
+/// 0x14c), or the `pe_unverified` or `pe_architecture` card.
+fn plugin_pe(path: &Path, origin_mod: &str, machine: u16) -> Result<PeInfo, PreflightDiagnostic> {
+    let card = |code, severity, detail| PreflightDiagnostic {
+        code,
+        severity,
+        path: path.to_path_buf(),
+        origin_mod: origin_mod.into(),
+        detail,
+    };
+    let info = inspect_pe(path).map_err(|e| {
+        card(
+            "pe_unverified",
+            DiagnosticSeverity::Unverified,
+            format!("Could not inspect PE metadata: {e}. Compatibility is unverified."),
+        )
+    })?;
+    if info.machine != machine {
+        let bits = if machine == 0x14c { 32 } else { 64 };
+        return Err(card(
+            "pe_architecture",
+            DiagnosticSeverity::Error,
+            format!(
+                "PE machine 0x{:04X} cannot load in a {bits}-bit game process.",
+                info.machine
+            ),
+        ));
+    }
+    Ok(info)
+}
+
+/// Check a winning F4SE or SFSE plugin's declaration as the loader does for
+/// `runtime`, without loading it. `address_library` is the resolved winning
+/// library file for `runtime`, not a mod directory.
+pub fn check_xse_plugin(
+    path: &Path,
+    origin_mod: &str,
+    runtime: Version,
+    rules: &XseRules,
+    address_library: Option<&Path>,
+) -> Vec<PreflightDiagnostic> {
+    use DiagnosticSeverity::{Error, Unverified, Warning};
+    let info = match plugin_pe(path, origin_mod, 0x8664) {
+        Ok(info) => info,
+        Err(card) => return vec![card],
+    };
+    let mut out = Vec::new();
+    let mut add = |code, severity, detail| {
+        out.push(PreflightDiagnostic {
+            code,
+            severity,
+            path: path.to_path_buf(),
+            origin_mod: origin_mod.into(),
+            detail,
+        })
+    };
+    let export = rules.export;
+    let Some(v) = info.xse_version.filter(|v| v.export == export) else {
+        add("xse_no_version_data", Warning, format!("No {export} export: the script extender skips this DLL. A plugin built for the old-gen game will not load; a helper library that is not a plugin is fine."));
+        return out;
+    };
+    if v.data_version == 0 {
+        add(
+            "xse_bad_version_data",
+            Error,
+            format!("{export} has data version 0; the loader reports: disabled, bad version data."),
+        );
+        return out;
+    }
+    if v.data_version != 1 {
+        add(
+            "xse_declaration_unverified",
+            Unverified,
+            format!(
+                "{export} data version {} is unsupported; compatibility is unverified.",
+                v.data_version
+            ),
+        );
+        return out;
+    }
+    if v.address_independence & !rules.known_address != 0
+        || v.structure_independence & !rules.known_structure != 0
+    {
+        add(
+            "xse_flags_unverified",
+            Unverified,
+            format!("Unknown compatibility flags in {export}; their meaning is unverified."),
+        );
+        return out;
+    }
+    if v.address_independence & rules.library_flags != 0
+        && !address_library.is_some_and(readable_file)
+    {
+        // F4SEPlugin_Version: F4SE/Plugins.
+        let dir = export.trim_end_matches("Plugin_Version");
+        add(
+            "address_library_missing",
+            Error,
+            format!(
+                "The plugin requires a readable {} in the merged {dir}/Plugins directory.",
+                (rules.library_name)(runtime)
+            ),
+        );
+    }
+    let independent = v.address_independence & rules.address_ok != 0
+        && v.structure_independence & rules.structure_ok != 0
+        && v.reserved_breaking == 0;
+    if !independent && !v.compatible_versions.contains(&runtime) {
+        let declared = if v.compatible_versions.is_empty() {
+            "no compatible runtime".to_string()
+        } else {
+            v.compatible_versions
+                .iter()
+                .map(Version::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        add(
+            "runtime_mismatch",
+            Error,
+            format!("The plugin declares {declared}; the game is {runtime}."),
+        );
+    }
+    out
 }
 
 /// Check the winning Skyrim SE plugin against known runtime metadata. A matching
@@ -777,19 +1098,15 @@ pub fn check_skse_plugin(
                 return out;
             }
             if v.version_independence & 1 != 0 {
-                match context.address_library {
-                    Some(p)
-                        if std::fs::File::open(p)
-                            .and_then(|f| f.metadata())
-                            .is_ok_and(|m| m.is_file() && m.len() > 0) => {}
-                    _ => add(
+                if !context.address_library.is_some_and(readable_file) {
+                    add(
                         "address_library_missing",
                         Error,
                         format!(
                             "The plugin requires a readable {} in the merged SKSE/Plugins directory.",
                             address_library_name(runtime)
                         ),
-                    ),
+                    );
                 }
                 // Match SKSE's explicit pre-V5 build-window exception. Unknown
                 // timestamps cannot establish which Address Library ABI was used.
@@ -927,6 +1244,202 @@ mod tests {
         b
     }
 
+    /// `fixture()` with an `F4SEPluginVersionData` layout (SFSE shares it)
+    /// under `export` in place of the SKSE declaration.
+    fn xse_fixture(export: &[u8; 18], addr: u32, structure: u32, versions: &[u32]) -> Vec<u8> {
+        let mut b = fixture();
+        b[0x250..0x262].copy_from_slice(export);
+        b[0x300..0x300 + 848].fill(0);
+        u32at(&mut b, 0x300, 1);
+        b[0x308..0x30d].copy_from_slice(b"Test\0");
+        u32at(&mut b, 0x300 + 520, addr);
+        u32at(&mut b, 0x300 + 524, structure);
+        for (i, v) in versions.iter().enumerate() {
+            u32at(&mut b, 0x300 + 528 + i * 4, *v);
+        }
+        b
+    }
+
+    fn game(id: &str) -> &'static eidos_gamedef::GameDef {
+        eidos_gamedef::builtin()
+            .iter()
+            .find(|g| g.id == id)
+            .unwrap()
+    }
+
+    fn temp_tree(tag: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "eidos-preflight-{tag}-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ))
+    }
+
+    #[test]
+    fn f4se_ng_plugin_on_ae_runtime_is_a_runtime_mismatch() {
+        let f = Tmp::new(&xse_fixture(b"F4SEPlugin_Version", 2, 2, &[0x010A3D80]));
+        let rules = xse_rules("fallout4", Version([1, 11, 137, 0])).unwrap();
+        let d = check_xse_plugin(&f.0, "Old Mod", Version([1, 11, 137, 0]), &rules, None);
+        assert!(
+            d.iter().any(|d| d.code == "runtime_mismatch"
+                && d.severity == DiagnosticSeverity::Error
+                && d.detail.contains("1.10.984.0")
+                && d.detail.contains("1.11.137.0")),
+            "{d:?}"
+        );
+    }
+
+    #[test]
+    fn f4se_ae_plugin_with_the_library_flag_needs_the_versioned_bin() {
+        let f = Tmp::new(&xse_fixture(b"F4SEPlugin_Version", 4, 4, &[]));
+        let rules = xse_rules("fallout4", Version([1, 11, 137, 0])).unwrap();
+        let d = check_xse_plugin(&f.0, "M", Version([1, 11, 137, 0]), &rules, None);
+        assert!(d
+            .iter()
+            .any(|d| d.code == "address_library_missing"
+                && d.detail.contains("version-1-11-137-0.bin")));
+        let lib = Tmp::new(b"library");
+        assert!(
+            check_xse_plugin(&f.0, "M", Version([1, 11, 137, 0]), &rules, Some(&lib.0)).is_empty()
+        );
+    }
+
+    #[test]
+    fn f4se_ng_rules_apply_between_980_and_137() {
+        let f = Tmp::new(&xse_fixture(b"F4SEPlugin_Version", 2, 2, &[]));
+        let lib = Tmp::new(b"library");
+        let rules = xse_rules("fallout4", Version([1, 10, 984, 0])).unwrap();
+        assert!(
+            check_xse_plugin(&f.0, "M", Version([1, 10, 984, 0]), &rules, Some(&lib.0)).is_empty()
+        );
+    }
+
+    #[test]
+    fn a_dll_without_the_export_is_skipped_by_the_extender() {
+        let mut b = fixture();
+        u32at(&mut b, 0x98 + 112, 0); // no export directory
+        u32at(&mut b, 0x98 + 116, 0);
+        let f = Tmp::new(&b);
+        let rules = xse_rules("fallout4", Version([1, 10, 984, 0])).unwrap();
+        let d = check_xse_plugin(&f.0, "M", Version([1, 10, 984, 0]), &rules, None);
+        assert_eq!(
+            (d[0].code, d[0].severity),
+            ("xse_no_version_data", DiagnosticSeverity::Warning)
+        );
+        // Another extender's declaration is not the one this loader reads.
+        let f = Tmp::new(&xse_fixture(b"SFSEPlugin_Version", 2, 2, &[]));
+        let d = check_xse_plugin(&f.0, "M", Version([1, 10, 984, 0]), &rules, None);
+        assert_eq!(d[0].code, "xse_no_version_data", "{d:?}");
+    }
+
+    #[test]
+    fn unknown_xse_flag_bits_are_unverified() {
+        let f = Tmp::new(&xse_fixture(b"F4SEPlugin_Version", 8, 1, &[]));
+        let rules = xse_rules("fallout4", Version([1, 11, 137, 0])).unwrap();
+        assert!(
+            check_xse_plugin(&f.0, "M", Version([1, 11, 137, 0]), &rules, None)
+                .iter()
+                .any(|d| d.code == "xse_flags_unverified")
+        );
+    }
+
+    #[test]
+    fn xse_data_version_zero_is_rejected_and_other_versions_are_unverified() {
+        let rules = xse_rules("fallout4", Version([1, 11, 137, 0])).unwrap();
+        for (data_version, code, severity) in [
+            (0, "xse_bad_version_data", DiagnosticSeverity::Error),
+            (
+                2,
+                "xse_declaration_unverified",
+                DiagnosticSeverity::Unverified,
+            ),
+        ] {
+            let mut b = xse_fixture(b"F4SEPlugin_Version", 4, 4, &[]);
+            u32at(&mut b, 0x300, data_version);
+            let f = Tmp::new(&b);
+            let d = check_xse_plugin(&f.0, "M", Version([1, 11, 137, 0]), &rules, None);
+            assert_eq!(
+                d.iter().map(|d| (d.code, d.severity)).collect::<Vec<_>>(),
+                [(code, severity)]
+            );
+        }
+    }
+
+    #[test]
+    fn sfse_v2_library_and_1_14_70_layout_are_independent() {
+        let f = Tmp::new(&xse_fixture(b"SFSEPlugin_Version", 4, 8, &[]));
+        let rules = xse_rules("starfield", Version([1, 15, 216, 0])).unwrap();
+        let d = check_xse_plugin(&f.0, "M", Version([1, 15, 216, 0]), &rules, None);
+        assert!(
+            d.iter().any(|d| d.code == "address_library_missing"
+                && d.detail.contains("versionlib-1-15-216-0.bin")),
+            "{d:?}"
+        );
+        assert!(!d.iter().any(|d| d.code == "runtime_mismatch"), "{d:?}");
+    }
+
+    #[test]
+    fn old_gen_runtime_reports_nothing_per_plugin() {
+        let root = temp_tree("f4se");
+        let plugins = root.join("Data/F4SE/Plugins");
+        std::fs::create_dir_all(&plugins).unwrap();
+        let mut exe = fixture();
+        u32at(&mut exe, 0x930, 0x0001000A);
+        u32at(&mut exe, 0x934, 163 << 16);
+        std::fs::write(root.join("Fallout4.exe"), &exe).unwrap();
+        std::fs::write(root.join("f4se_loader.exe"), b"loader").unwrap();
+        let mut dll = fixture();
+        u32at(&mut dll, 0x98 + 112, 0);
+        u32at(&mut dll, 0x98 + 116, 0);
+        std::fs::write(plugins.join("a.dll"), dll).unwrap();
+        let (data, ow) = (root.join("Data"), root.join("overwrite"));
+        assert!(xse_rules("fallout4", Version([1, 10, 163, 0])).is_none());
+        let old_gen = scan_extender_plugins(game("fallout4"), &data, &root, &[], &ow);
+        // The same tree on 1.11.137, plus an AE plugin whose library is present.
+        u32at(&mut exe, 0x930, 0x0001000B);
+        u32at(&mut exe, 0x934, 137 << 16);
+        std::fs::write(root.join("Fallout4.exe"), &exe).unwrap();
+        let ae = xse_fixture(b"F4SEPlugin_Version", 4, 4, &[]);
+        std::fs::write(plugins.join("b.dll"), ae).unwrap();
+        std::fs::write(plugins.join("version-1-11-137-0.bin"), b"library").unwrap();
+        let next_gen = scan_extender_plugins(game("fallout4"), &data, &root, &[], &ow);
+        std::fs::remove_dir_all(&root).unwrap();
+        assert!(old_gen.is_empty(), "{old_gen:?}");
+        assert_eq!(next_gen.len(), 1, "{next_gen:?}");
+        assert_eq!(next_gen[0].code, "xse_no_version_data");
+        assert_eq!(next_gen[0].path, plugins.join("a.dll"));
+        assert_eq!(next_gen[0].origin_mod, "Game");
+    }
+
+    #[test]
+    fn a_64_bit_dll_in_a_32_bit_game_is_an_architecture_error() {
+        let root = temp_tree("obse");
+        let plugins = root.join("Data/OBSE/Plugins");
+        std::fs::create_dir_all(&plugins).unwrap();
+        std::fs::write(plugins.join("x.dll"), fixture()).unwrap();
+        let mut x86 = fixture();
+        u16at(&mut x86, 0x84, 0x14c);
+        std::fs::write(plugins.join("y.dll"), x86).unwrap();
+        let (data, ow) = (root.join("Data"), root.join("overwrite"));
+        let d = scan_extender_plugins(game("oblivion"), &data, &root, &[], &ow);
+        assert_eq!(d.len(), 1, "{d:?}");
+        assert_eq!(
+            (d[0].code, d[0].severity),
+            ("pe_architecture", DiagnosticSeverity::Error)
+        );
+        assert_eq!(d[0].path, plugins.join("x.dll"));
+        std::fs::remove_file(plugins.join("x.dll")).unwrap();
+        std::fs::write(plugins.join("z.dll"), b"MZ").unwrap();
+        let d = scan_extender_plugins(game("falloutnv"), &data, &root, &[], &ow);
+        assert!(d.is_empty(), "NVSE/Plugins is not OBSE/Plugins: {d:?}");
+        let d = scan_extender_plugins(game("oblivion"), &data, &root, &[], &ow);
+        std::fs::remove_dir_all(&root).unwrap();
+        assert_eq!(
+            d.iter().map(|d| (d.code, d.severity)).collect::<Vec<_>>(),
+            [("pe_unverified", DiagnosticSeverity::Unverified)]
+        );
+    }
+
     #[test]
     fn merged_preflight_uses_winners_and_honors_dll_and_library_whiteouts() {
         let root = std::env::temp_dir().join(format!(
@@ -972,14 +1485,14 @@ mod tests {
             .iter()
             .find(|g| g.id == "skyrimse")
             .unwrap();
-        let found = scan_skse(game, &base.join("Data"), &base, &mods, &ow);
+        let found = scan_extender_plugins(game, &base.join("Data"), &base, &mods, &ow);
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].code, "address_library_missing");
         assert_eq!(found[0].origin_mod, "Higher");
         assert_eq!(found[0].path, high.join("SKSE/Plugins/TEST.DLL"));
         std::fs::create_dir_all(ow.join("Root")).unwrap();
         std::fs::write(ow.join("Root/.eidoswh.skyrimse.exe"), []).unwrap();
-        let found = scan_skse(game, &base.join("Data"), &base, &mods, &ow);
+        let found = scan_extender_plugins(game, &base.join("Data"), &base, &mods, &ow);
         assert!(found.iter().any(|d| d.code == "runtime_metadata_unverified"
             && d.severity == DiagnosticSeverity::Unverified));
         assert!(!found.iter().any(|d| d.code == "runtime_mismatch"));
@@ -1046,7 +1559,7 @@ mod tests {
     }
 
     #[test]
-    fn merged_preflight_reports_unknown_loader_and_ignores_non_skse_games() {
+    fn merged_preflight_reports_unknown_loader_and_ignores_another_extenders_plugins() {
         let root = std::env::temp_dir().join(format!(
             "eidos-preflight-loader-{}-{}",
             std::process::id(),
@@ -1059,7 +1572,7 @@ mod tests {
             .iter()
             .find(|g| g.id == "skyrimse")
             .unwrap();
-        let found = scan_skse(
+        let found = scan_extender_plugins(
             game,
             &root.join("Data"),
             &root,
@@ -1071,7 +1584,7 @@ mod tests {
             .iter()
             .find(|g| g.id == "fallout4")
             .unwrap();
-        assert!(scan_skse(
+        assert!(scan_extender_plugins(
             game,
             &root.join("Data"),
             &root,

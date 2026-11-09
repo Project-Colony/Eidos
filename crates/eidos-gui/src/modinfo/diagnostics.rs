@@ -326,7 +326,7 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 .iter()
                 .map(crate::health::finding_card),
         );
-        for d in eidos_gamefeatures::preflight::scan_skse(
+        for d in eidos_gamefeatures::preflight::scan_extender_plugins(
             game.def,
             &game.data_path,
             &game.install_path,

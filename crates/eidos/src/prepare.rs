@@ -31,7 +31,7 @@ fn runtime_diagnostics(
     inst: &Instance,
 ) -> Vec<eidos_gamefeatures::preflight::PreflightDiagnostic> {
     let mods = crate::check::active_mods(inst);
-    eidos_gamefeatures::preflight::scan_skse(
+    eidos_gamefeatures::preflight::scan_extender_plugins(
         game.def,
         &game.data_path,
         &game.install_path,
