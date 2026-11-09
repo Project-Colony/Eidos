@@ -767,6 +767,14 @@ pub(crate) fn run_through_view(
     }
 }
 
+/// `sLanguage` from the active profile's primary game INI, if the game has one.
+fn game_language(game: &DetectedGame, inst: &Instance) -> Option<String> {
+    let ini = eidos_gamefeatures::ini_files_for(game.def.id).first()?;
+    let bytes = std::fs::read(inst.active().ini_path(ini)).ok()?;
+    let text = String::from_utf8_lossy(&bytes);
+    eidos_ini::get_key(&text, "General", "sLanguage").map(str::to_owned)
+}
+
 /// The variables a run sets on top of the inherited environment: `env` (what
 /// the caller built), then what every run gets, then the tool's own `env=`
 /// lines, which replace any earlier value of the same name. `eidos tool --print`
@@ -789,7 +797,14 @@ pub(crate) fn run_env(
     // accented, Cyrillic or CJK character. Steam's pressure-vessel can strip the
     // locale on the way in, so this covers both `eidos play` and `eidos tool`. An
     // existing UTF-8 locale is left untouched.
-    env.extend(eidos_launch::utf8_locale_env_from_process());
+    // A game language with a non-1252 code page gets a matching LC_CTYPE when the
+    // user set no locale of their own; otherwise the C.UTF-8 fallback applies.
+    match game_language(game, inst)
+        .and_then(|l| eidos_launch::game_language_locale_env_from_process(&l))
+    {
+        Some(locale) => env.extend(locale),
+        None => env.extend(eidos_launch::utf8_locale_env_from_process()),
+    }
     // Xalia is Proton's accessibility/gamepad overlay for Wine dialogs. A modded
     // Bethesda game has no use for it, and the build shipped with several current
     // Proton forks throws a fatal Mono MissingMethodException the moment it starts

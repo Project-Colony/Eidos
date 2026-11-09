@@ -777,6 +777,74 @@ pub fn utf8_locale_env_from_process() -> Vec<(String, String)> {
     )
 }
 
+/// UTF-8 locale candidates for a Bethesda `sLanguage` value whose ANSI code page
+/// is not 1252 (Russian 1251, Polish/Czech/Hungarian 1250, Turkish 1254,
+/// Japanese 932, Chinese 936/950, Korean 949). Other languages get none.
+fn language_locales(language: &str) -> &'static [&'static str] {
+    match language.trim().to_ascii_lowercase().as_str() {
+        "russian" => &["ru_RU.UTF-8"],
+        "polish" => &["pl_PL.UTF-8"],
+        "czech" => &["cs_CZ.UTF-8"],
+        "hungarian" => &["hu_HU.UTF-8"],
+        "turkish" => &["tr_TR.UTF-8"],
+        "japanese" => &["ja_JP.UTF-8"],
+        "chinese" | "chinesetraditional" | "chinese_traditional" => &["zh_TW.UTF-8"],
+        "chinesesimplified" | "chinese_simplified" => &["zh_CN.UTF-8"],
+        "korean" => &["ko_KR.UTF-8"],
+        _ => &[],
+    }
+}
+
+/// Whether the C library accepts `name` as a `LC_CTYPE` locale on this host.
+fn locale_installed(name: &str) -> bool {
+    let Ok(c) = std::ffi::CString::new(name) else {
+        return false;
+    };
+    // SAFETY: newlocale takes a valid NUL-terminated name and a null base; a
+    // non-null result is freed right away.
+    let loc = unsafe { libc::newlocale(libc::LC_CTYPE_MASK, c.as_ptr(), std::ptr::null_mut()) };
+    if loc.is_null() {
+        return false;
+    }
+    unsafe { libc::freelocale(loc) };
+    true
+}
+
+/// `LC_CTYPE` for a game language whose code page is not 1252, so Wine picks the
+/// matching Unix codepage. Applies only when the user set none of `LC_ALL`,
+/// `LC_CTYPE` and `LANG`; `installed` says which locales the host has. `None`
+/// means change nothing (the caller keeps [`utf8_locale_env`]).
+pub fn game_language_locale_env(
+    lc_all: Option<&str>,
+    lc_ctype: Option<&str>,
+    lang: Option<&str>,
+    language: &str,
+    installed: impl Fn(&str) -> bool,
+) -> Option<Vec<(String, String)>> {
+    if [lc_all, lc_ctype, lang]
+        .into_iter()
+        .flatten()
+        .any(|v| !v.is_empty())
+    {
+        return None;
+    }
+    let name = language_locales(language).iter().find(|n| installed(n))?;
+    Some(vec![("LC_CTYPE".to_string(), (*name).to_string())])
+}
+
+/// [`game_language_locale_env`] against this process's environment and the
+/// host's installed locales.
+pub fn game_language_locale_env_from_process(language: &str) -> Option<Vec<(String, String)>> {
+    let get = |k: &str| std::env::var(k).ok();
+    game_language_locale_env(
+        get("LC_ALL").as_deref(),
+        get("LC_CTYPE").as_deref(),
+        get("LANG").as_deref(),
+        language,
+        locale_installed,
+    )
+}
+
 /// Whether `binary` carries CAP_SYS_ADMIN in its file capabilities (the
 /// `setcap cap_sys_admin+ep` state FUSE passthrough needs). Reads the
 /// `security.capability` xattr directly, so it works without the libcap tools.
@@ -877,6 +945,31 @@ mod tests {
         assert!(utf8_locale_env(Some("en_US.UTF-8"), None, Some("C")).is_empty());
         // An empty variable is not set: fall through to the next one.
         assert!(utf8_locale_env(Some(""), None, Some("en_US.UTF-8")).is_empty());
+    }
+
+    #[test]
+    fn game_language_picks_a_codepage_locale_only_for_unset_env() {
+        let all = |_: &str| true;
+        let ru = game_language_locale_env(None, None, None, "RUSSIAN", all);
+        assert_eq!(
+            ru,
+            Some(vec![("LC_CTYPE".to_string(), "ru_RU.UTF-8".to_string())])
+        );
+        assert_eq!(
+            game_language_locale_env(Some(""), None, None, "japanese", all).unwrap()[0].1,
+            "ja_JP.UTF-8"
+        );
+        assert_eq!(
+            game_language_locale_env(None, None, None, "ChineseSimplified", all).unwrap()[0].1,
+            "zh_CN.UTF-8"
+        );
+        // Code page 1252 languages, unknown ones and a user locale change nothing.
+        assert!(game_language_locale_env(None, None, None, "FRENCH", all).is_none());
+        assert!(game_language_locale_env(None, None, Some("C"), "RUSSIAN", all).is_none());
+        // No matching locale on the host: change nothing.
+        assert!(game_language_locale_env(None, None, None, "RUSSIAN", |_| false).is_none());
+        // The real newlocale check accepts C.UTF-8 and rejects nonsense.
+        assert!(!locale_installed("xx_XX.nonsense"));
     }
 
     #[test]
