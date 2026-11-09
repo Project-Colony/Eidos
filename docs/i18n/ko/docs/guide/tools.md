@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=8062635fdeb4cf10e0e1055a5a64c5b46d13f613 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=21bf9773a77eafde0226799b69158680985f3963 -->
 
 # 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -107,7 +107,7 @@ Eidos가 그 도구에 어떤 런타임 사전 요구 사항을 마련할지 결
 | `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
 | `synthesis` | `dotnet8`, `vcrun2022` |
-| `pandora` | `dotnetdesktop8` |
+| `pandora` | `dotnet10` |
 | `fnis` | `dotnet48` |
 | `nemesis`, `loot` | `vcrun2022` |
 | 그 밖의 모든 것 | 없음 |

@@ -287,9 +287,10 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             );
     }
     let mut head = Column::new().spacing(2).push(top);
+    // Shown in the notice slot below, between drags.
+    let mut notices: Vec<String> = Vec::new();
     if !missing.is_empty() {
-        head =
-            head.push(text(tf("plugins_missing_masters", &[("n", &missing.len())])).size(sz(12)));
+        notices.push(tf("plugins_missing_masters", &[("n", &missing.len())]));
     }
 
     // A pin the engine had to overrule. Silence here would leave the user
@@ -307,17 +308,14 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         } else {
             String::new()
         };
-        head = head.push(
-            text(tf(
-                "plugins_pins_violated",
-                &[
-                    ("n", &violated.len()),
-                    ("names", &names.join(", ")),
-                    ("tail", &tail),
-                ],
-            ))
-            .size(sz(11)),
-        );
+        notices.push(tf(
+            "plugins_pins_violated",
+            &[
+                ("n", &violated.len()),
+                ("names", &names.join(", ")),
+                ("tail", &tail),
+            ],
+        ));
     }
 
     let header = Row::new()
@@ -391,19 +389,38 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     };
     // Said once, above the list, while the drag is live: the boundary is visible
     // as a place the line stops, and this explains what is stopping it.
-    if let Some(d) = drag {
-        let msg = if d.range.is_stuck(d.block.first().copied().unwrap_or(d.from)) {
-            pinned_by(&d.range)
-        } else {
-            match (&d.range.after, &d.range.before) {
-                (Some(a), Some(b)) => tf("plugin_drag_between", &[("after", &a), ("before", &b)]),
-                (Some(a), None) => tf("plugin_drag_after", &[("after", &a)]),
-                (None, Some(b)) => tf("plugin_drag_before", &[("before", &b)]),
-                (None, None) => t("plugin_drag_free").to_string(),
+    let notices = drag
+        .map(|d| {
+            if d.range.is_stuck(d.block.first().copied().unwrap_or(d.from)) {
+                pinned_by(&d.range)
+            } else {
+                match (&d.range.after, &d.range.before) {
+                    (Some(a), Some(b)) => {
+                        tf("plugin_drag_between", &[("after", &a), ("before", &b)])
+                    }
+                    (Some(a), None) => tf("plugin_drag_after", &[("after", &a)]),
+                    (None, Some(b)) => tf("plugin_drag_before", &[("before", &b)]),
+                    (None, None) => t("plugin_drag_free").to_string(),
+                }
             }
-        };
-        head = head.push(text(msg).size(sz(11)));
-    }
+        })
+        .map_or(notices, |h| vec![h]);
+    // ALWAYS in the flow at a fixed two lines, like the mod list's legend: a
+    // line that appeared on press moved every row under a still pointer, the
+    // row that slid under it aimed the drag, and a plain click moved the plugin
+    // (#120). The missing-master and broken-pin lines share it for the same
+    // reason, since a checkbox or pin click makes them come and go. Two lines
+    // let a hint naming two plugins wrap instead of losing the second name;
+    // anything past them is clipped rather than allowed to grow the slot.
+    head = head.push(
+        container(
+            notices
+                .into_iter()
+                .fold(Column::new(), |c, n| c.push(text(n).size(sz(11)))),
+        )
+        .height(Length::Fixed(scaled(30.0)))
+        .clip(true),
+    );
     let dragging = drag.is_some();
     for (i, p) in list.plugins.iter().enumerate() {
         let idx = p.index.clone().unwrap_or_else(|| "--".to_string());

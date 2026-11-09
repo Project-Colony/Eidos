@@ -126,6 +126,20 @@ pub fn read_tools(path: &Path) -> Vec<Tool> {
         }
     }
     out.retain(|t| !t.exe.as_os_str().is_empty());
+    // Eidos 1.21.0 and older seeded Pandora with dotnetdesktop8, which cannot
+    // start the net10.0 builds Pandora has shipped since 4.1.0, and an entry
+    // keeps its prereqs= for good. Only that old seed value on a Pandora whose
+    // runtimeconfig says net10.0 is changed: Pandora 2.x targets net8.0 and
+    // runs on it, and a relative exe is not resolved here, so both keep theirs.
+    for t in &mut out {
+        if t.prereqs == ["dotnetdesktop8"]
+            && t.title.to_ascii_lowercase().contains("pandora")
+            && fs::read_to_string(t.exe.with_extension("runtimeconfig.json"))
+                .is_ok_and(|c| c.contains("\"net10.0\""))
+        {
+            t.prereqs = vec!["dotnet10".to_string()];
+        }
+    }
     out
 }
 
@@ -469,7 +483,10 @@ pub fn default_prereqs(title: &str) -> Vec<String> {
     let verbs: &[&str] = if has("synthesis") {
         &["dotnet8", "vcrun2022"]
     } else if has("pandora") {
-        &["dotnetdesktop8"]
+        // Avalonia, not WPF, so Microsoft.NETCore.App alone runs it, and it has
+        // targeted net10.0 since Pandora 4.1.0. "Install .NET Desktop Runtime" is
+        // the apphost's message for any GUI exe that finds no runtime at all.
+        &["dotnet10"]
     } else if has("fnis") {
         &["dotnet48"]
     } else if has("bodyslide") || has("outfit") {
@@ -763,6 +780,25 @@ mod tests {
     }
 
     #[test]
+    fn old_pandora_seed_moves_to_dotnet10_only_on_net10() {
+        let d = tmp_dir();
+        let p = d.join("tools.ini");
+        let cfg = |tfm: &str| format!("{{\"runtimeOptions\": {{\"tfm\": \"{tfm}\"}}}}");
+        fs::write(d.join("Pandora 5.runtimeconfig.json"), cfg("net10.0")).unwrap();
+        fs::write(d.join("Pandora 2.runtimeconfig.json"), cfg("net8.0")).unwrap();
+        let ini = format!(
+            "[Tool/Pandora 5]\nexe={0}/Pandora 5.exe\nprereqs=dotnetdesktop8\n\
+             [Tool/Pandora 2]\nexe={0}/Pandora 2.exe\nprereqs=dotnetdesktop8\n",
+            d.display()
+        );
+        fs::write(&p, ini).unwrap();
+        let t = read_tools(&p);
+        assert_eq!(t[0].prereqs, vec!["dotnet10"]);
+        assert_eq!(t[1].prereqs, vec!["dotnetdesktop8"]);
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
     fn missing_file_is_empty() {
         assert!(read_tools(Path::new("/no/such/tools.ini")).is_empty());
     }
@@ -917,6 +953,10 @@ mod tests {
             vec!["d3dx9_43", "d3dcompiler_47"]
         );
         assert_eq!(default_prereqs("FNIS"), vec!["dotnet48"]);
+        assert_eq!(
+            default_prereqs("Pandora Behaviour Engine+"),
+            vec!["dotnet10"]
+        );
         assert!(default_prereqs("SSEEdit").is_empty()); // Delphi, needs nothing extra
         assert!(default_prereqs("skse64_loader").is_empty());
     }

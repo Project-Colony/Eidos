@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.1](https://github.com/Project-Colony/Eidos/compare/v1.21.0...v1.21.1) (2026-11-09)
+
+
+### Fixes
+
+* **gui:** keep the plugin list still on click, and give Pandora 5 the .NET 10 runtime ([#121](https://github.com/Project-Colony/Eidos/issues/121)) ([6182774](https://github.com/Project-Colony/Eidos/commit/61827747a1b2aebc66bc95f2a15216cbadd70fc5))
+
 ## [1.21.0](https://github.com/Project-Colony/Eidos/compare/v1.20.0...v1.21.0) (2026-11-07)
 
 
