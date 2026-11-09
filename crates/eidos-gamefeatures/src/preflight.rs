@@ -250,7 +250,7 @@ pub fn scan_fontconfig(
 type ArchiveMemo<T> = Mutex<HashMap<PathBuf, (u64, SystemTime, T)>>;
 /// The `.swf` members of each archive, lowercased.
 static SWF_MEMBERS: LazyLock<ArchiveMemo<Vec<String>>> = LazyLock::new(Default::default);
-/// How many compressed audio members each Fallout 4 BA2 holds.
+/// How many compressed audio members each Fallout 4 (or VR) BA2 holds.
 static PACKED_AUDIO: LazyLock<ArchiveMemo<usize>> = LazyLock::new(Default::default);
 
 /// `read()` for `path`, reused while the file keeps its size and mtime. The GUI
@@ -275,13 +275,14 @@ fn memoised<T: Clone>(memo: &ArchiveMemo<T>, path: &Path, read: impl FnOnce() ->
 }
 
 /// Warn about mod BA2 archives that store `.wav` or `.xwm` audio compressed
-/// (Fallout 4 can crash on it). The installed game's own archives are not read.
+/// (Fallout 4 and Fallout 4 VR can crash on it). The installed game's own
+/// archives are not read.
 pub fn scan_compressed_audio(
     game: &eidos_gamedef::GameDef,
     mods: &[(String, PathBuf)],
     overwrite: &Path,
 ) -> Vec<PreflightDiagnostic> {
-    if game.id != "fallout4" {
+    if !matches!(game.id, "fallout4" | "fallout4vr") {
         return Vec::new();
     }
     let data = eidos_core::LayerStack::new_unindexed(
@@ -1201,12 +1202,18 @@ mod tests {
         };
         let mods = [("Voices".to_string(), m)];
         let found = scan_compressed_audio(game("fallout4"), &mods, &ow);
+        let vr = scan_compressed_audio(game("fallout4vr"), &mods, &ow);
         let other = scan_compressed_audio(game("skyrimse"), &mods, &ow);
         let _ = std::fs::remove_dir_all(&root);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].code, "ba2_compressed_audio");
         assert_eq!(found[0].detail, "Voice - Main.ba2: 1");
         assert_eq!(found[0].origin_mod, "Voices");
+        assert_eq!(
+            vr.len(),
+            1,
+            "Fallout 4 VR reads the same BA2 v1 GNRL archives"
+        );
         assert!(other.is_empty());
     }
 }
