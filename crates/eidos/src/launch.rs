@@ -775,7 +775,7 @@ pub(crate) fn run_through_view(
             // they get for the most likely failure here - a mount point or a game
             // directory that is not where the descriptor says.
             eidos_log::warn!("eidos: launch failed: {e}");
-            if let Some(why) = eidos_launch::namespace_block_reason_from_system() {
+            if let Some(why) = eidos_launch::namespace_block_reason_from_system(&e) {
                 eidos_log::warn!("eidos:   the private namespace is probably blocked: {why}");
             }
             if e.kind() == std::io::ErrorKind::NotFound {

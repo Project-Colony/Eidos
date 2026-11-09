@@ -418,8 +418,21 @@ pub fn namespace_block_reason(
     })
 }
 
-/// [`namespace_block_reason`] fed from the running system.
-pub fn namespace_block_reason_from_system() -> Option<String> {
+/// True when `e` is the kind of failure a blocked namespace produces. Anything
+/// else (missing mount point, exec error) has nothing to do with the sysctls.
+pub fn is_namespace_errno(e: &std::io::Error) -> bool {
+    matches!(
+        e.raw_os_error(),
+        Some(libc::EPERM | libc::EACCES | libc::ENOSPC)
+    )
+}
+
+/// [`namespace_block_reason`] fed from the running system, for the launch error
+/// `e`. Returns `None` unless `e` looks like a namespace failure.
+pub fn namespace_block_reason_from_system(e: &std::io::Error) -> Option<String> {
+    if !is_namespace_errno(e) {
+        return None;
+    }
     let read = |p: &str| std::fs::read_to_string(p).ok();
     let fuse = std::fs::OpenOptions::new()
         .read(true)
@@ -818,6 +831,16 @@ mod tests {
                 .contains("permissions")
         );
         assert!(r(Some("1"), Some("15000"), Some("0"), None).is_none());
+    }
+
+    #[test]
+    fn namespace_hint_gated_on_errno() {
+        let os = std::io::Error::from_raw_os_error;
+        assert!(is_namespace_errno(&os(libc::EPERM)));
+        assert!(is_namespace_errno(&os(libc::EACCES)));
+        assert!(is_namespace_errno(&os(libc::ENOSPC)));
+        assert!(!is_namespace_errno(&os(libc::ENOENT)));
+        assert!(!is_namespace_errno(&std::io::Error::other("exec")));
     }
 
     #[test]
