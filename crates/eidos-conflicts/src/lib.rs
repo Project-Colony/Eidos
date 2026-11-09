@@ -11,10 +11,10 @@
 
 pub mod archives;
 pub use archives::{
-    archive_identity, export_archive_member, export_archive_member_checked, read_archive_member,
-    read_archive_member_checked, read_archive_members, write_archive_member, ActiveArchive,
-    ArchiveDiagnostic, ArchiveError, ArchiveIdentity, ArchiveMemberInfo, AssetNode, AssetProvider,
-    MAX_LZ4_BLOCK_BYTES,
+    archive_identity, export_archive_member, export_archive_member_checked, extract_archive,
+    read_archive_member, read_archive_member_checked, read_archive_members, write_archive_member,
+    ActiveArchive, ArchiveDiagnostic, ArchiveError, ArchiveIdentity, ArchiveMemberInfo, AssetNode,
+    AssetProvider, MAX_LZ4_BLOCK_BYTES,
 };
 
 use std::borrow::Borrow;

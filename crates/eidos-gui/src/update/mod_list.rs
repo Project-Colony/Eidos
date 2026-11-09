@@ -879,6 +879,43 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 }
             }
         }
+        Message::ExtractArchive(mod_name, archive) => {
+            let Some(inst) = &app.created else {
+                return Task::none();
+            };
+            let Some(m) = app.mods.iter().find(|m| m.name == mod_name) else {
+                return Task::none();
+            };
+            let source = m.path.join(&archive);
+            let name = extracted_mod_name(&archive);
+            let dest = inst.mods_dir().join(&name);
+            // Checked here for a clear message; the worker's rename refuses it too.
+            if dest.symlink_metadata().is_ok() {
+                app.status = Some(tf("status_extract_exists", &[("name", &name)]));
+                return Task::none();
+            }
+            app.status = Some(tf(
+                "status_extracting_archive",
+                &[("archive", &archive), ("name", &name)],
+            ));
+            return Task::perform(
+                crate::background_work::run(move || {
+                    eidos_conflicts::extract_archive(&source, &dest, 16 * 1024 * 1024 * 1024)
+                        .map(|_| dest)
+                        .map_err(|e| e.to_string())
+                }),
+                move |result| Message::ArchiveExtracted(name, result),
+            );
+        }
+        Message::ArchiveExtracted(name, result) => match result {
+            Ok(dest) => after_install(app, &name, dest, false, None),
+            Err(error) => {
+                app.status = Some(tf(
+                    "status_extract_failed",
+                    &[("name", &name), ("error", &error)],
+                ))
+            }
+        },
         // ---- Export the mod list (MO2's Export to csv) -----------------------
         Message::ShowExportDialog => {
             app.file_menu_open = false;

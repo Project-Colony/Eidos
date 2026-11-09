@@ -103,10 +103,14 @@ struct Directory<R> {
     budget: u64,
     requested: Option<String>,
     selected: Option<(String, Payload)>,
+    /// Every member's payload, in directory order, for whole-archive extraction.
+    every: Option<Vec<(String, Payload)>>,
 }
 impl<R: Read + Seek> Directory<R> {
     fn select(&mut self, name: &str, payload: Payload) {
-        if self
+        if let Some(every) = &mut self.every {
+            every.push((name.to_owned(), payload));
+        } else if self
             .requested
             .as_deref()
             .is_some_and(|s| s.eq_ignore_ascii_case(name))
@@ -162,11 +166,12 @@ pub fn read_archive_members(path: &Path) -> Result<Vec<String>> {
     read_members(File::open(path)?)
 }
 fn read_members<R: Read + Seek>(reader: R) -> Result<Vec<String>> {
-    Ok(parse_directory(reader, None)?.1)
+    Ok(parse_directory(reader, None, false)?.1)
 }
 fn parse_directory<R: Read + Seek>(
     mut reader: R,
     requested: Option<&str>,
+    every: bool,
 ) -> Result<(Directory<R>, Vec<String>)> {
     let len = reader.seek(SeekFrom::End(0))?;
     let mut d = Directory {
@@ -175,6 +180,7 @@ fn parse_directory<R: Read + Seek>(
         budget: MAX_DIRECTORY,
         requested: requested.map(|s| path(s.as_bytes())).transpose()?,
         selected: None,
+        every: every.then(Vec::new),
     };
     let magic = d.read(0, 4)?;
     let members = match magic.as_slice() {
@@ -341,7 +347,7 @@ fn ba2<R: Read + Seek>(d: &mut Directory<R>) -> Result<Vec<String>> {
         match u32_at(&d.read(32, 4)?, 0) {
             0 => Codec::Zlib,
             3 => Codec::Lz4Block,
-            method if d.requested.is_some() => {
+            method if d.requested.is_some() || d.every.is_some() => {
                 return Err(ArchiveError::Unsupported(format!(
                     "BA2 compression method {method}"
                 )))

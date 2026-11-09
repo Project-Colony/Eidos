@@ -1,7 +1,8 @@
-//! Single-member export to a user-chosen filename, anchored to an open directory.
+//! Member export to disk: one member to a user-chosen filename, anchored to an
+//! open directory, or every member into a new folder.
 use super::*;
 use std::fs::{self, Metadata, OpenOptions};
-use std::io::Write;
+use std::io::{BufWriter, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
@@ -127,6 +128,75 @@ pub fn export_archive_member_checked(
     }
     publish_stage(&stage, &parent, &name, original.as_ref())?;
     Ok(info)
+}
+/// Writes every member of `source` into the new folder `destination`, one member
+/// at a time, and returns how many files it wrote. The members go to a hidden
+/// stage beside `destination` that is renamed into place only once all of them
+/// decoded, so a failure leaves no partial folder and an existing one is never
+/// replaced. Member paths were already refused by the directory reader when
+/// they hold `..`, start with `/` or name a drive. `max_bytes` bounds each member.
+pub fn extract_archive(source: &Path, destination: &Path, max_bytes: u64) -> Result<usize> {
+    let (mut file, identity) = open_source(source, None)?;
+    let (mut d, _) = parse_directory(&mut file, None, true)?;
+    let members = d.every.take().unwrap_or_default();
+    let parent = destination
+        .parent()
+        .ok_or_else(|| corrupt("missing extraction parent"))?;
+    // The `.eidos-install-<pid>-` prefix keeps the stage out of the mod list, and
+    // Health clears it as install debris if Eidos dies part-way.
+    let stage = tempfile::Builder::new()
+        .prefix(&format!(".eidos-install-{}-", std::process::id()))
+        .tempdir_in(parent)?;
+    // A child of the 0700 stage, so the published folder gets the usual umask mode.
+    let root = stage.path().join("mod");
+    fs::create_dir(&root)?;
+    let mut spellings = HashMap::new();
+    let count = members.len();
+    for (name, payload) in members {
+        let (dir, file_name) = name.rsplit_once('/').unwrap_or(("", &name));
+        let dir = root.join(first_spelling(&mut spellings, dir));
+        fs::create_dir_all(&dir)?;
+        let out = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(dir.join(file_name))?;
+        let mut out = BufWriter::new(out);
+        write_payload(&mut *d.reader, payload, max_bytes, &mut out)?;
+        out.into_inner().map_err(|e| e.into_error())?;
+    }
+    identity.verify_file(&file)?;
+    if archive_identity(source)? != identity {
+        return Err(corrupt("archive path changed while extracting"));
+    }
+    rustix::fs::renameat_with(
+        rustix::fs::CWD,
+        &root,
+        rustix::fs::CWD,
+        destination,
+        rustix::fs::RenameFlags::NOREPLACE,
+    )
+    .map_err(io::Error::from)?;
+    Ok(count)
+}
+/// The first spelling seen of `dir`, compared without ASCII case, so `Textures/`
+/// and `textures/` members share one folder as they would on Windows.
+fn first_spelling(seen: &mut HashMap<String, String>, dir: &str) -> String {
+    if dir.is_empty() {
+        return String::new();
+    }
+    let key = dir.to_ascii_lowercase();
+    if let Some(spelled) = seen.get(&key) {
+        return spelled.clone();
+    }
+    let (parent, last) = dir.rsplit_once('/').unwrap_or(("", dir));
+    let parent = first_spelling(seen, parent);
+    let spelled = if parent.is_empty() {
+        last.to_owned()
+    } else {
+        format!("{parent}/{last}")
+    };
+    seen.insert(key, spelled.clone());
+    spelled
 }
 fn publish_stage(
     stage: &tempfile::NamedTempFile,

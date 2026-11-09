@@ -5781,3 +5781,35 @@ fn an_unlocked_run_neither_disarms_confirmations_nor_drops_the_selection() {
     assert_eq!(app.selected_mods.len(), 2);
     let _ = fs::remove_dir_all(root);
 }
+
+#[test]
+fn archive_extraction_names_the_new_mod_and_never_reuses_a_folder() {
+    let (mut app, root) = list_app(&["Source"]);
+    assert_eq!(
+        extracted_mod_name("Source - Textures.bsa"),
+        "Source - Textures (extracted)"
+    );
+    let taken = root.join("mods/Source (extracted)");
+    fs::create_dir_all(&taken).unwrap();
+    fs::write(taken.join("keep.txt"), b"mine").unwrap();
+    let _ = update_inner(
+        &mut app,
+        Message::ExtractArchive("Source".into(), "Source.ba2".into()),
+    );
+    assert!(app.status.as_deref().unwrap().contains("already exists"));
+    assert_eq!(fs::read(taken.join("keep.txt")).unwrap(), b"mine");
+    // The worker's answer registers the new folder like an install.
+    let fresh = root.join("mods/Other (extracted)");
+    fs::create_dir_all(&fresh).unwrap();
+    let _ = update_inner(
+        &mut app,
+        Message::ArchiveExtracted("Other (extracted)".into(), Ok(fresh)),
+    );
+    assert!(app.mods.iter().any(|m| m.name == "Other (extracted)"));
+    let _ = update_inner(
+        &mut app,
+        Message::ArchiveExtracted("Third (extracted)".into(), Err("disk full".into())),
+    );
+    assert!(app.status.as_deref().unwrap().contains("disk full"));
+    fs::remove_dir_all(root).unwrap();
+}
