@@ -844,3 +844,20 @@ fn a_contested_data_row_tooltip_lists_every_other_provider() {
     let tip = super::files::also_in_tip(&["Mod B".to_string(), "Mod C".to_string()]);
     assert!(tip.ends_with("Mod B, Mod C"), "{tip}");
 }
+
+#[test]
+fn nexus_files_rows_mark_installed_and_successor() {
+    let fixture = eidos_nexus::ModFiles::from_payload(
+        &serde_json::from_str(include_str!(
+            "../../../eidos-nexus/tests/data/mod_files.json"
+        ))
+        .unwrap(),
+    );
+    let rows = file_rows(&fixture, 42, &[(42, 101)], "1.2");
+    let row = |id| rows.iter().find(|r| r.file.file_id == id).unwrap();
+    assert!(row(101).installed && !row(101).successor);
+    assert!(row(103).successor && !row(103).installed);
+    assert!(rows
+        .windows(2)
+        .all(|w| w[0].file.uploaded_timestamp >= w[1].file.uploaded_timestamp));
+}

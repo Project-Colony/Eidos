@@ -16,6 +16,7 @@ mod downloads;
 mod files;
 mod install;
 mod main_screen;
+mod nexus_files;
 mod plugins;
 mod saves;
 
@@ -26,6 +27,7 @@ pub(crate) use downloads::*;
 pub(crate) use files::*;
 pub(crate) use install::*;
 pub(crate) use main_screen::*;
+pub(crate) use nexus_files::*;
 pub(crate) use plugins::*;
 pub(crate) use saves::*;
 
@@ -630,7 +632,7 @@ pub(crate) fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
                 .style(button::secondary),
         );
 
-    let tabs = Row::new()
+    let mut tabs = Row::new()
         .spacing(4)
         .push(info_tab_btn(
             t("info_tab_general"),
@@ -657,6 +659,13 @@ pub(crate) fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
             InfoTab::Notes,
             info_mix(app, InfoTab::Notes),
         ));
+    if nexus_files_target(app, i).is_some() {
+        tabs = tabs.push(info_tab_btn(
+            t("info_tab_nexus_files"),
+            InfoTab::NexusFiles,
+            info_mix(app, InfoTab::NexusFiles),
+        ));
+    }
 
     let content = match app.info_tab {
         InfoTab::General => info_general(app, m),
@@ -664,6 +673,7 @@ pub(crate) fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
         InfoTab::Filetree => info_filetree(app, i, m),
         InfoTab::IniTweaks => info_ini_tweaks(app, i, m),
         InfoTab::Notes => info_notes(app),
+        InfoTab::NexusFiles => info_nexus_files(app, i, m),
     };
 
     let card = Column::new()

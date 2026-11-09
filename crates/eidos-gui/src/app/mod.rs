@@ -53,6 +53,8 @@ pub(crate) enum InfoTab {
     /// The mod's `INI Tweaks/` fragments, individually enabled.
     IniTweaks,
     Notes,
+    /// The mod's file list on Nexus, fetched on first open.
+    NexusFiles,
 }
 
 /// A keyboard navigation intent, independent of which list will answer it.
@@ -429,6 +431,9 @@ pub(crate) struct App {
     // ---- Endorse / update in-flight + counts ----
     /// The mod index whose Nexus endorse is in flight (greys the toolbar button).
     pub(crate) endorsing: Option<usize>,
+    /// Nexus file lists asked for this session, by `(domain, mod id)`.
+    pub(crate) nexus_files: HashMap<(String, u64), Result<eidos_nexus::ModFiles, String>>,
+    pub(crate) nexus_files_loading: Option<(String, u64)>,
     /// Enabled mods that are endorsed (recomputed in `mods_changed`).
     pub(crate) endorsed_count: usize,
     /// Enabled mods with a Nexus update available (recomputed in `mods_changed`).

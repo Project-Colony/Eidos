@@ -420,6 +420,8 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         addons_open: false,
         addon_findings: Vec::new(),
         endorsing: None,
+        nexus_files: HashMap::new(),
+        nexus_files_loading: None,
         endorsed_count: 0,
         updated_count: 0,
         nexus_hourly_left: None,
@@ -621,7 +623,10 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
 /// Ask the desktop who owns `nxm://` links. `xdg-mime` is a process, so this
 /// runs on the blocking pool, never in `diagnostics()`.
 pub(crate) fn read_nxm_handler() -> Task<Message> {
-    Task::perform(smol::unblock(eidos::nxm_handler::read), Message::NxmHandlerRead)
+    Task::perform(
+        smol::unblock(eidos::nxm_handler::read),
+        Message::NxmHandlerRead,
+    )
 }
 
 /// Reload the tool list for the open instance (user `tools.ini` + per-game

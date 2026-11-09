@@ -147,6 +147,11 @@ pub fn decide_update(page_version: &str, files: &ModFiles, installed: &[u64]) ->
     })
 }
 
+/// The mod page opened on one file, with the mod-manager download asked for.
+pub fn file_page_url(domain: &str, mod_id: u64, file_id: u64) -> String {
+    format!("https://www.nexusmods.com/{domain}/mods/{mod_id}?tab=files&file_id={file_id}&nmm=1")
+}
+
 impl Nexus {
     /// `games/{game}/mods/{id}/files`. Refuses a closed gate like `file_info`.
     pub fn mod_files(&self, gate: &ModGate, game: &str, mod_id: u64) -> Result<ModFiles, String> {
@@ -166,6 +171,14 @@ mod tests {
         ModFiles::from_payload(
             &serde_json::from_str(include_str!("../tests/data/mod_files.json")).unwrap(),
         )
+    }
+
+    #[test]
+    fn file_page_url_asks_for_the_mod_manager_download() {
+        assert_eq!(
+            file_page_url("skyrimspecialedition", 7, 9),
+            "https://www.nexusmods.com/skyrimspecialedition/mods/7?tab=files&file_id=9&nmm=1"
+        );
     }
 
     #[test]

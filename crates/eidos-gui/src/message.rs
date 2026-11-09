@@ -409,6 +409,13 @@ pub(crate) enum Message {
     // ---- Endorse / per-mod flags (MO2 endorseMod) ----
     /// Toggle endorse <-> abstain for a mod, based on its current state.
     ModEndorse(usize),
+    /// A mod's Nexus file list arrived (or failed). Keyed by domain and mod id
+    /// so an answer for another mod is cached, not shown.
+    NexusFilesFetched {
+        domain: String,
+        mod_id: u64,
+        result: Result<eidos_nexus::ModFiles, String>,
+    },
     /// The endorse/abstain finished: the new endorsed state, or an error.
     /// Endorse round-trip done. Carries the mod's FOLDER NAME (not an index): the
     /// list can shift while the network call is in flight, and writing the result

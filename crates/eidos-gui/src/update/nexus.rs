@@ -143,6 +143,18 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 move |r| Message::ModEndorsed(instance.clone(), folder.clone(), mod_id, r),
             );
         }
+        Message::NexusFilesFetched {
+            domain,
+            mod_id,
+            result,
+        } => {
+            let key = (domain, mod_id);
+            // Only the answer to the request this window is waiting for.
+            if app.nexus_files_loading.as_ref() == Some(&key) {
+                app.nexus_files_loading = None;
+                app.nexus_files.insert(key, result);
+            }
+        }
         Message::ModEndorsed(instance, folder, mod_id, result) => {
             if app.created.as_ref().is_none_or(|i| i.root != instance) {
                 return Task::none();
