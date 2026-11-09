@@ -393,6 +393,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
                     "eidos tool: '{title}' needs {names} - run `eidos prereqs {id} --install` to set it up (downloads from Microsoft)."
                 );
             }
+            let wineserver_wait = run.as_ref().and_then(|r| r.wineserver_wait());
             // Tier 3: point the tool at any runtime it declares. Nothing is
             // installed into the prefix - the variable IS the mechanism, which is
             // why an absent runtime must contribute nothing rather than a path
@@ -478,6 +479,13 @@ pub(crate) fn cmd_tool(args: &[String]) {
                     ),
                     _ => {}
                 }
+            }
+            // Outside the view, before the tool starts: see `wineserver_wait`.
+            if let Some(Err(e)) = wineserver_wait.map(|mut w| w.status()) {
+                eidos_log::warn!(
+                    "eidos: could not wait for the prefix's wineserver ({e}); if '{title}' does \
+                     not see the mods, close the game and run it again."
+                );
             }
             run_through_view(
                 // The RESOLVED game, not the CLI argument: see the note in

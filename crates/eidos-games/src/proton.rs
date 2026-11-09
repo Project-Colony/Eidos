@@ -14,6 +14,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crate::{quoted_pair, steam_libraries};
 
@@ -57,6 +58,20 @@ impl ProtonRun {
     /// skips Proton's game-drive setup.
     pub fn run_in_prefix(&self, exe: &Path, args: &[String]) -> Vec<String> {
         self.with_verb("runinprefix", exe, args)
+    }
+
+    /// For a plain Wine build, the `wineserver -w` that `proton waitforexitandrun`
+    /// runs itself, to start before the tool and outside the merged view. Wine
+    /// opens files inside wineserver, so a tool that joins a server started
+    /// outside the view (the regedit import just before, or the game itself)
+    /// reads and writes the real game folder.
+    pub fn wineserver_wait(&self) -> Option<Command> {
+        if !self.plain_wine {
+            return None;
+        }
+        let mut cmd = Command::new(self.proton.with_file_name("wineserver"));
+        cmd.arg("-w").envs(self.env.iter().map(|(k, v)| (k, v)));
+        Some(cmd)
     }
 
     fn with_verb(&self, verb: &str, exe: &Path, args: &[String]) -> Vec<String> {
@@ -392,6 +407,25 @@ pub fn is_flatpak_steam(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_a_plain_wine_run_waits_for_its_wineserver() {
+        use super::heroic_run;
+        use std::ffi::OsStr;
+        use std::path::Path;
+        let prefix = Path::new("/p/wine");
+        let wine = heroic_run(Path::new("/w/bin/wine"), false, prefix);
+        let wait = wine.wineserver_wait().expect("plain Wine waits");
+        assert_eq!(wait.get_program(), "/w/bin/wineserver");
+        assert_eq!(wait.get_args().collect::<Vec<_>>(), ["-w"]);
+        assert_eq!(
+            wait.get_envs().collect::<Vec<_>>(),
+            [(OsStr::new("WINEPREFIX"), Some(OsStr::new("/p/wine")))]
+        );
+        // `proton waitforexitandrun` already waits.
+        let proton = heroic_run(Path::new("/g/proton"), true, prefix);
+        assert!(proton.wineserver_wait().is_none());
+    }
+
     #[test]
     fn the_library_path_is_the_root_that_holds_steamapps() {
         use super::library_path;
