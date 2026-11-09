@@ -5,10 +5,10 @@ body:
   - type: markdown
     attributes:
       value: |
-        The **diagnostic report** is the one thing that answers most questions up
-        front: distro, kernel, Proton build, Steam packaging, FUSE state and the
-        Health checks. In the GUI, open the **Diagnostics** tab and press **Copy
-        report**, then paste it below. Everything else is optional.
+        The diagnostic report answers most questions up front: distro, kernel,
+        Proton build, Steam packaging, FUSE state and the Health checks. In the
+        GUI, open the **Diagnostics** tab and press **Copy report**, then paste it
+        below. Everything else is optional.
 
   - type: textarea
     id: what-happened
