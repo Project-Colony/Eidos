@@ -136,8 +136,8 @@ pub struct Plugin {
     pub is_light: bool,
     /// Medium plugin (Starfield ESH).
     pub is_medium: bool,
-    /// The header counts zero records and groups: nothing to load, usually a
-    /// master-only stub other plugins depend on.
+    /// The header counts zero records and groups. Such a plugin usually exists
+    /// so the game loads the BSA or BA2 of the same name.
     pub is_dummy: bool,
     /// Header data could not be read; an empty master list is then unknown.
     pub header_error: Option<String>,
