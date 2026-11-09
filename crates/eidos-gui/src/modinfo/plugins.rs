@@ -391,19 +391,35 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     };
     // Said once, above the list, while the drag is live: the boundary is visible
     // as a place the line stops, and this explains what is stopping it.
-    if let Some(d) = drag {
-        let msg = if d.range.is_stuck(d.block.first().copied().unwrap_or(d.from)) {
-            pinned_by(&d.range)
-        } else {
-            match (&d.range.after, &d.range.before) {
-                (Some(a), Some(b)) => tf("plugin_drag_between", &[("after", &a), ("before", &b)]),
-                (Some(a), None) => tf("plugin_drag_after", &[("after", &a)]),
-                (None, Some(b)) => tf("plugin_drag_before", &[("before", &b)]),
-                (None, None) => t("plugin_drag_free").to_string(),
+    let hint = drag
+        .map(|d| {
+            if d.range.is_stuck(d.block.first().copied().unwrap_or(d.from)) {
+                pinned_by(&d.range)
+            } else {
+                match (&d.range.after, &d.range.before) {
+                    (Some(a), Some(b)) => {
+                        tf("plugin_drag_between", &[("after", &a), ("before", &b)])
+                    }
+                    (Some(a), None) => tf("plugin_drag_after", &[("after", &a)]),
+                    (None, Some(b)) => tf("plugin_drag_before", &[("before", &b)]),
+                    (None, None) => t("plugin_drag_free").to_string(),
+                }
             }
-        };
-        head = head.push(text(msg).size(sz(11)));
-    }
+        })
+        .unwrap_or_default();
+    // ALWAYS in the flow, one line high, like the mod list's legend: a line
+    // that appeared on press moved every row under a still pointer, the row
+    // that slid under it aimed the drag, and a plain click moved the plugin
+    // (#120). Unwrapped and clipped so a long name cannot grow it to two lines.
+    head = head.push(
+        container(
+            text(hint)
+                .size(sz(11))
+                .wrapping(iced::widget::text::Wrapping::None),
+        )
+        .height(Length::Fixed(scaled(15.0)))
+        .clip(true),
+    );
     let dragging = drag.is_some();
     for (i, p) in list.plugins.iter().enumerate() {
         let idx = p.index.clone().unwrap_or_else(|| "--".to_string());

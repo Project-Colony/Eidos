@@ -706,12 +706,16 @@ fn rows_aim_only_during_a_drag() {
 
     let _ = crate::update::update_inner(&mut app, Message::PluginDragStart(0));
     assert!(app.plugin_drag.is_some(), "the press armed a plugin drag");
-    // The drag puts its range line above the list, which moves every row
-    // down, so the rows are found again and the pointer settled on one first.
+    // The range line has a slot of its own above the list, so the press moves
+    // no row: a row sliding under a still pointer aimed the drag (#120).
     let panel = || crate::modinfo::plugins_panel(&app);
-    let a = label(panel(), &mut renderer, "AimA.esp", 0);
-    let c = label(panel(), &mut renderer, "AimC.esp", 0);
-    let (cache, _) = frame(panel(), &mut renderer, cache, &moved(a), a, None);
+    assert_eq!(
+        label(panel(), &mut renderer, "AimA.esp", 0),
+        a,
+        "the drag hint moved the rows"
+    );
+    let (cache, messages) = frame(panel(), &mut renderer, cache, &moved(a), a, None);
+    assert!(aimed(&messages).is_empty(), "no false enter: {messages:?}");
     let (_, messages) = frame(panel(), &mut renderer, cache, &moved(c), c, None);
     assert_eq!(aimed(&messages), vec![2], "{messages:?}");
 }
