@@ -49,6 +49,15 @@ impl Eidos {
         passthrough_enabled() && self.plugin_timestamps.is_none()
     }
 
+    /// `open_for_write`, counting under `cause` when it really copies a lower
+    /// file up. The extra lookup only runs while `EIDOS_FUSE_STATS` is set.
+    fn copy_up(&self, vpath: &str, cause: &AtomicU64) -> std::io::Result<PathBuf> {
+        if *STATS_ON && self.stack.needs_copy_up(vpath) {
+            Stats::bump(cause);
+        }
+        self.stack.open_for_write(vpath)
+    }
+
     /// Run `writer`, the copy-up or truncation of a writer's open, once the
     /// writer counts among the normal opens of its inode (`ino`, asked only
     /// when passthrough is on). While passthrough opens of the inode are live,
@@ -216,7 +225,7 @@ impl Filesystem for Eidos {
                     // backing file is the Overwrite copy, never the read-only mod/game
                     // file.
                     if !truncating {
-                        return self.stack.open_for_write(&vpath);
+                        return self.copy_up(&vpath, &self.stats.cu_open_write);
                     }
                     let real = self.stack.prepare_overwrite(&vpath)?;
                     if real.is_dir() {
@@ -225,6 +234,7 @@ impl Filesystem for Eidos {
                     // O_TRUNC makes the name appear, so it goes through the stack like
                     // every other creation; the remaining opens here only ever touch a
                     // name that already exists.
+                    Stats::bump(&self.stats.cu_trunc_create);
                     self.stack.create_truncated(&vpath)?;
                     let receipt = self.remove_projected_time(&vpath);
                     self.invalidate_page_cache(ino.0);
@@ -346,6 +356,8 @@ impl Filesystem for Eidos {
             _real: real,
             file: Arc::new(file),
             _backing: backing,
+            writable: want_write,
+            wrote: Default::default(),
         });
         match of._backing.as_ref() {
             Some(b) => reply.opened_passthrough(FileHandle(fh), passthrough_flags(flags), b),
@@ -367,6 +379,12 @@ impl Filesystem for Eidos {
         // Drops the cached fd (no-op for fh 0). A passthrough handle's backing id
         // closes with the last handle that holds it.
         let released = self.open_files.lock_recover().remove(&fh.0);
+        if released
+            .as_ref()
+            .is_some_and(|of| of.writable && !of.wrote.load(Ordering::Relaxed))
+        {
+            Stats::bump(&self.stats.writer_closed_unwritten);
+        }
         if let Some(of) = released.filter(|_| self.passthrough_on()) {
             self.passthrough
                 .lock_recover()
@@ -745,6 +763,7 @@ impl Filesystem for Eidos {
         let opened = self.with_writer_slot(
             || self.inodes.lock_recover().intern(&vpath),
             || -> std::io::Result<(PathBuf, File, Metadata)> {
+                Stats::bump(&self.stats.cu_trunc_create);
                 let (dest, file) = self.stack.create_truncated(&vpath)?;
                 self.dir_changed(parent.0, &name.to_string_lossy());
                 self.remove_projected_time(&vpath)?;
@@ -783,6 +802,8 @@ impl Filesystem for Eidos {
                 _real: real,
                 file: Arc::new(file),
                 _backing: None,
+                writable: true,
+                wrote: Default::default(),
             });
         reply.created(
             &TTL,
@@ -808,11 +829,10 @@ impl Filesystem for Eidos {
         Stats::bump(&self.stats.write);
         let _t = Timed::start(&self.stats.ns_write);
         // Fast path: pwrite the cached (copied-up) fd from `open`/`create`.
-        let cached = self
-            .open_files
-            .lock_recover()
-            .get(&fh.0)
-            .map(|o| o.file.clone());
+        let cached = self.open_files.lock_recover().get(&fh.0).map(|o| {
+            o.wrote.store(true, Ordering::Relaxed);
+            o.file.clone()
+        });
         if let Some(file) = cached {
             let result = write_all_at(&file, data, offset).and_then(|_| {
                 self.inodes
@@ -840,7 +860,7 @@ impl Filesystem for Eidos {
             }
         };
         let written = (|| -> std::io::Result<()> {
-            let dest = self.stack.open_for_write(&vpath)?;
+            let dest = self.copy_up(&vpath, &self.stats.cu_write)?;
             let f = OpenOptions::new().write(true).open(&dest)?;
             write_all_at(&f, data, offset)
         })();
@@ -969,7 +989,7 @@ impl Filesystem for Eidos {
         // timestamps; ownership is intentionally ignored (the game runs as us).
         if mode.is_some() || size.is_some() || atime.is_some() || mtime.is_some() {
             let r = (|| -> std::io::Result<()> {
-                let dest = self.stack.open_for_write(&vpath)?;
+                let dest = self.copy_up(&vpath, &self.stats.cu_setattr)?;
                 // Only a size change needs the file open, and the open must come
                 // AFTER any mode change: Wine clearing FILE_ATTRIBUTE_READONLY
                 // arrives as a mode-only setattr, and opening read-write first
@@ -1237,7 +1257,7 @@ impl Filesystem for Eidos {
             return;
         }
         let r = (|| -> std::io::Result<()> {
-            let dest = self.stack.open_for_write(&vpath)?;
+            let dest = self.copy_up(&vpath, &self.stats.cu_xattr)?;
             xattr_set(&dest, name, value, flags)
         })();
         match r {
@@ -1277,7 +1297,7 @@ impl Filesystem for Eidos {
             return;
         }
         let r = (|| -> std::io::Result<()> {
-            let dest = self.stack.open_for_write(&vpath)?;
+            let dest = self.copy_up(&vpath, &self.stats.cu_xattr)?;
             xattr_remove(&dest, name)
         })();
         match r {

@@ -119,6 +119,14 @@ pub struct LayerStack {
     ow: std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<OwIndex>>>>,
 }
 
+/// How big the lower index is, for the line the launcher logs after a build.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IndexSummary {
+    pub layers: usize,
+    pub entries: usize,
+    pub dirs: usize,
+}
+
 /// What the read-only layers provide, resolved once at construction.
 ///
 /// The whole design rests on one property: **the layers never change while
@@ -566,6 +574,15 @@ impl LayerStack {
             readonly_overwrite,
             ow: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
+    }
+
+    /// Size of the lower index, or `None` when this stack walks the layers.
+    pub fn index_summary(&self) -> Option<IndexSummary> {
+        self.lower.as_ref().map(|l| IndexSummary {
+            layers: self.layers.len(),
+            entries: l.entries.len(),
+            dirs: l.dirs.len(),
+        })
     }
 
     /// Why this stack resolves by walking every layer instead of through the
@@ -3304,6 +3321,20 @@ mod tests {
             read(&stack.resolve_read("config/settings.ini").unwrap()),
             "tweaked"
         );
+    }
+
+    #[test]
+    fn index_summary_counts_what_the_layers_provide() {
+        let t = TempTree::new();
+        let (a, b, over) = (t.sub("a"), t.sub("b"), t.sub("over"));
+        put(&a, "x/one.txt", "1");
+        put(&b, "x/two.txt", "2");
+        let stack = LayerStack::new(vec![a, b], over);
+        let i = stack.index_summary().expect("indexed");
+        assert_eq!(i.layers, 2);
+        // x, x/one.txt, x/two.txt: the root directory is not an entry.
+        assert_eq!(i.entries, 3);
+        assert!(i.dirs >= 1);
     }
 
     #[test]

@@ -299,6 +299,11 @@ impl Eidos {
         }
     }
 
+    /// Size of the lower index this filesystem was built with, if any.
+    pub fn index_summary(&self) -> Option<eidos_core::IndexSummary> {
+        self.stack.index_summary()
+    }
+
     /// Mount at `mountpoint`, blocking until the filesystem is unmounted.
     pub fn mount(self, mountpoint: &Path) -> std::io::Result<()> {
         fuser::mount(self, mountpoint, &mount_config())

@@ -255,4 +255,8 @@ pub(crate) struct OpenFile {
     pub(crate) _real: PathBuf,
     pub(crate) file: Arc<File>,
     pub(crate) _backing: Option<Arc<BackingId>>,
+    /// Opened for writing, and whether any write arrived: a writer closed with
+    /// none is a copy-up (or truncation) that bought nothing.
+    pub(crate) writable: bool,
+    pub(crate) wrote: std::sync::atomic::AtomicBool,
 }

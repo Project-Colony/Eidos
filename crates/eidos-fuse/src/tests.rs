@@ -263,6 +263,23 @@ fn passthrough_counts_appear_once_an_open_tried_passthrough() {
     );
 }
 
+#[test]
+fn copy_up_counts_appear_once_one_happened() {
+    let s = Stats::default();
+    let r = eidos_core::ResolveStats::default();
+    assert!(!s.report(&r, &|_| None).contains("copy-ups"));
+    Stats::bump(&s.cu_setattr);
+    Stats::bump(&s.writer_closed_unwritten);
+    let out = s.report(&r, &|_| None);
+    assert!(
+        out.contains(
+            "copy-ups: 0 open for write, 0 truncating create, 1 setattr, 0 xattr, \
+             0 write without handle; 1 write handles closed with no write"
+        ),
+        "{out}"
+    );
+}
+
 // ---- The read-shape survey -------------------------------------------------
 //
 // The survey exists to answer four questions the totals cannot: what sizes the

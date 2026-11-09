@@ -110,6 +110,18 @@ pub(crate) struct Stats {
     pub(crate) pt_writer_refused: AtomicU64,
     /// Backing files the kernel refused (EPERM without `CAP_SYS_ADMIN`).
     pub(crate) pt_register_failed: AtomicU64,
+    /// Copy-ups of a lower file into the Overwrite, by what asked for them. Only
+    /// counted while `EIDOS_FUSE_STATS` is set. `cu_trunc_create` counts
+    /// truncating creates instead (no payload is copied for those).
+    pub(crate) cu_open_write: AtomicU64,
+    pub(crate) cu_trunc_create: AtomicU64,
+    pub(crate) cu_setattr: AtomicU64,
+    pub(crate) cu_xattr: AtomicU64,
+    /// A write with no open handle (fh 0).
+    pub(crate) cu_write: AtomicU64,
+    /// Write handles closed without one write: the copy-up they caused was
+    /// wasted, which is what a deferred copy-up would save.
+    pub(crate) writer_closed_unwritten: AtomicU64,
     /// How many times each directory was opened, by path.
     ///
     /// The totals say a session opened directories half a million times. They
@@ -727,6 +739,7 @@ impl Stats {
             g(&self.write),
         ) + &self.more_counts()
             + &self.passthrough_counts()
+            + &self.copy_up_counts()
             + &self.timings(r)
             + &self.read_shape(path_of)
             + &self.dir_shape()
@@ -758,6 +771,27 @@ impl Stats {
             return String::new();
         }
         format!("\n  other ops: {}", ran.join(", "))
+    }
+
+    /// Copy-ups by cause, when any happened.
+    fn copy_up_counts(&self) -> String {
+        let g = |c: &AtomicU64| c.load(Ordering::Relaxed);
+        let c = [
+            g(&self.cu_open_write),
+            g(&self.cu_trunc_create),
+            g(&self.cu_setattr),
+            g(&self.cu_xattr),
+            g(&self.cu_write),
+            g(&self.writer_closed_unwritten),
+        ];
+        if c.iter().all(|&n| n == 0) {
+            return String::new();
+        }
+        format!(
+            "\n  copy-ups: {} open for write, {} truncating create, {} setattr, {} xattr, \
+             {} write without handle; {} write handles closed with no write",
+            c[0], c[1], c[2], c[3], c[4], c[5]
+        )
     }
 
     /// How opens went through passthrough, when any tried to.
