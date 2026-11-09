@@ -194,6 +194,25 @@ pub(crate) fn prefix_checks(f: &PrefixFacts) -> Vec<Diagnostic> {
     out
 }
 
+/// Render one `eidos::check` finding through its `diag_<code>` strings.
+pub(crate) fn finding_card(f: &eidos::check::Finding) -> Diagnostic {
+    debug_assert!(eidos::check::CODES.contains(&f.code), "{}", f.code);
+    let args: Vec<(&str, &dyn std::fmt::Display)> = f
+        .args
+        .iter()
+        .map(|(k, v)| (*k, v as &dyn std::fmt::Display))
+        .collect();
+    Diagnostic {
+        level: match f.level {
+            eidos::check::Level::Problem => DiagLevel::Problem,
+            eidos::check::Level::Advice => DiagLevel::Advice,
+        },
+        title: tf(&format!("diag_{}", f.code), &args),
+        detail: tf(&format!("diag_{}_detail", f.code), &args),
+        actions: Vec::new(),
+    }
+}
+
 /// Whether Eidos can reach Nexus on the user's behalf. Not a card about the
 /// account - the status bar already names it - but about the CAPABILITY, because
 /// signed out is the state in which "Mod Manager Download" silently does nothing
@@ -243,6 +262,31 @@ mod tests {
             gamedrive_found: Some(PathBuf::from("/mnt/Jeux/SteamLibrary/steamapps")),
             gamedrive_want: Some(PathBuf::from("/mnt/Jeux/SteamLibrary")),
         }
+    }
+
+    #[test]
+    fn every_finding_code_has_english_strings() {
+        for code in eidos::check::CODES {
+            for key in [format!("diag_{code}"), format!("diag_{code}_detail")] {
+                assert_ne!(t(&key), key, "missing {key} in en.rs");
+            }
+        }
+    }
+
+    #[test]
+    fn a_finding_renders_its_args() {
+        let f = eidos::check::Finding {
+            code: "extender_runtime_missing",
+            level: eidos::check::Level::Problem,
+            args: vec![
+                ("loader", "skse64_loader.exe".into()),
+                ("dll", "skse64_1_6_1179.dll".into()),
+                ("runtime", "1.6.1179.0".into()),
+            ],
+        };
+        let d = finding_card(&f);
+        assert_eq!(d.level, DiagLevel::Problem);
+        assert!(d.detail.contains("skse64_1_6_1179.dll"), "{}", d.detail);
     }
 
     #[test]

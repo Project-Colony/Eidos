@@ -30,13 +30,7 @@ fn runtime_diagnostics(
     game: &DetectedGame,
     inst: &Instance,
 ) -> Vec<eidos_gamefeatures::preflight::PreflightDiagnostic> {
-    let mods = inst
-        .modlist()
-        .into_iter()
-        .rev()
-        .filter(|m| m.is_active())
-        .map(|m| (m.name, m.path))
-        .collect::<Vec<_>>();
+    let mods = crate::check::active_mods(inst);
     eidos_gamefeatures::preflight::scan_skse(
         game.def,
         &game.data_path,
@@ -103,6 +97,11 @@ pub(crate) fn prepare_plugins(
             d.origin_mod,
             d.detail
         );
+    }
+    let mods = crate::check::active_mods(inst);
+    let home = std::env::var_os("HOME").map_or_else(|| PathBuf::from("/"), PathBuf::from);
+    for f in crate::check::host_findings(&home, game, inst, &mods) {
+        eidos_log::warn!("eidos play: {:?} [{}] {}", f.level, f.code, f.args_line());
     }
     let spec = game.plugin_spec()?;
     let Some(prefix) = game.prefix() else {

@@ -84,6 +84,21 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 // `start_run` can take `&mut app`.
                 let (cmd, se_warning) =
                     play_command(id, &inst_arg, &game.install_path, inst, &app.launch_command);
+                // A loader whose runtime DLL for this game version is missing
+                // stops at startup; the loader-missing case has its own note.
+                let extender_note = eidos_gamefeatures::preflight::extender_facts(
+                    game.def,
+                    &game.data_path,
+                    &game.install_path,
+                    &eidos::check::active_mods(inst),
+                    &inst.overwrite_dir(),
+                )
+                .and_then(|f| {
+                    eidos::check::extender::extender_findings(&f)
+                        .into_iter()
+                        .find(|f| f.code == "extender_runtime_missing")
+                })
+                .map(|f| crate::health::finding_card(&f).title);
                 start_run(app, game_name, cmd);
                 // Marked here, where the game is the thing launched: its exit
                 // re-walks only the Overwrite (see `finish_run`).
@@ -93,6 +108,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 // Prepend advisories to whatever status start_run set.
                 for note in [
                     se_warning,
+                    extender_note,
                     both_active.then(|| t("status_enb_and_cs").to_string()),
                 ]
                 .into_iter()

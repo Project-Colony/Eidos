@@ -321,6 +321,11 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
             .filter(|m| m.is_active() && !m.is_unmanaged())
             .map(|m| (m.name.clone(), m.path.clone()))
             .collect::<Vec<_>>();
+        out.extend(
+            eidos::check::host_findings(&home(), game, inst, &mods)
+                .iter()
+                .map(crate::health::finding_card),
+        );
         for d in eidos_gamefeatures::preflight::scan_skse(
             game.def,
             &game.data_path,

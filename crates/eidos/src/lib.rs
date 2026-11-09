@@ -13,6 +13,7 @@
 
 use std::process::exit;
 
+pub mod check;
 mod collection;
 mod export;
 mod games;

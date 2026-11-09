@@ -77,16 +77,7 @@ pub fn scan_skse(
     let Some(extender) = game.script_extender.as_ref() else {
         return Vec::new();
     };
-    let mut data_layers = mods.to_vec();
-    data_layers.push(("Game".into(), game_data.to_path_buf()));
-    // Unindexed, both this stack and the root one below: each answers one
-    // listing and a couple of lookups, and the GUI's health checks run this on
-    // every mod toggle. An index would first walk every file of every mod (and,
-    // for the root, the whole game install) to answer those few questions.
-    let data = eidos_core::LayerStack::new_unindexed(
-        data_layers.iter().map(|(_, p)| p.clone()).collect(),
-        overwrite.to_path_buf(),
-    );
+    let data = merged_data(game_data, mods, overwrite);
     let dlls: Vec<_> = data
         .list_dir("SKSE/Plugins")
         .into_iter()
@@ -95,7 +86,85 @@ pub fn scan_skse(
     if dlls.is_empty() {
         return Vec::new();
     }
-    let mut root_layers: Vec<_> = mods
+    let root = merged_root(game_root, mods, overwrite);
+    let mut diagnostics = Vec::new();
+    let mut version = |name: &str, code, label: &str| match runtime_version(&root, name) {
+        Ok(version) => Some(version),
+        Err(why) => {
+            let path = root.resolve(name).unwrap_or_else(|| game_root.join(name));
+            diagnostics.push(PreflightDiagnostic {
+                code,
+                severity: DiagnosticSeverity::Unverified,
+                origin_mod: root.origin(&path),
+                path,
+                detail: format!("Unverified {label} version: {why}."),
+            });
+            None
+        }
+    };
+    let runtime = version(game.game_binary, "runtime_metadata_unverified", "runtime");
+    let skse = version(extender.loader, "skse_metadata_unverified", "SKSE");
+    let library =
+        runtime.and_then(|v| data.resolve(&format!("SKSE/Plugins/{}", address_library_name(v))));
+    let context = SkseContext {
+        runtime,
+        skse,
+        address_library: library.as_deref(),
+    };
+    for (_, path) in dlls {
+        diagnostics.extend(check_skse_plugin(&path, &data.origin(&path), &context));
+    }
+    diagnostics
+}
+
+/// A merged view of one tree (Data, or the game root): enabled mods highest
+/// priority first, the instance Overwrite on top, the installed game last.
+/// Unindexed on purpose: each caller answers a listing and a couple of lookups,
+/// and the GUI's health checks run on every mod toggle. An index would first
+/// walk every file of every mod (and, for the root, the whole game install).
+pub struct Merged {
+    stack: eidos_core::LayerStack,
+    layers: Vec<(String, PathBuf)>,
+    overwrite: PathBuf,
+}
+
+impl Merged {
+    fn new(layers: Vec<(String, PathBuf)>, overwrite: PathBuf) -> Self {
+        let stack = eidos_core::LayerStack::new_unindexed(
+            layers.iter().map(|(_, p)| p.clone()).collect(),
+            overwrite.clone(),
+        );
+        Self {
+            stack,
+            layers,
+            overwrite,
+        }
+    }
+
+    pub fn resolve(&self, rel: &str) -> Option<PathBuf> {
+        self.stack.resolve_read(rel)
+    }
+
+    pub fn list_dir(&self, rel: &str) -> Vec<(String, PathBuf)> {
+        self.stack.list_dir(rel)
+    }
+
+    /// The mod name, "Overwrite", "Game" or "Unverified source".
+    pub fn origin(&self, path: &Path) -> String {
+        layer_origin(path, &self.layers, &self.overwrite)
+    }
+}
+
+pub fn merged_data(game_data: &Path, mods: &[(String, PathBuf)], overwrite: &Path) -> Merged {
+    let mut layers = mods.to_vec();
+    layers.push(("Game".into(), game_data.to_path_buf()));
+    Merged::new(layers, overwrite.to_path_buf())
+}
+
+/// Each mod's `Root/` child (any case) plus the game root; `overwrite` is the
+/// instance Overwrite, `Root` is joined inside.
+pub fn merged_root(game_root: &Path, mods: &[(String, PathBuf)], overwrite: &Path) -> Merged {
+    let mut layers: Vec<_> = mods
         .iter()
         .filter_map(|(name, path)| {
             std::fs::read_dir(path)
@@ -108,58 +177,102 @@ pub fn scan_skse(
                 .map(|e| (name.clone(), e.path()))
         })
         .collect();
-    root_layers.push(("Game".into(), game_root.to_path_buf()));
-    let root_overwrite = overwrite.join("Root");
-    let root = eidos_core::LayerStack::new_unindexed(
-        root_layers.iter().map(|(_, p)| p.clone()).collect(),
-        root_overwrite.clone(),
-    );
-    let mut diagnostics = Vec::new();
-    let mut version = |name: &str, code, label: &str| {
-        let resolved = root.resolve_read(name);
-        let result = resolved
-            .as_ref()
-            .ok_or_else(|| format!("{name} is absent from the merged game root"))
-            .and_then(|p| inspect_pe(p))
-            .and_then(|p| {
-                if p.machine != 0x8664 {
-                    return Err("the winning executable is not x64".into());
-                }
-                p.file_version
-                    .ok_or_else(|| "no readable file-version resource".into())
-            });
-        match result {
-            Ok(version) => Some(version),
-            Err(why) => {
-                let path = resolved.unwrap_or_else(|| game_root.join(name));
-                diagnostics.push(PreflightDiagnostic {
-                    code,
-                    severity: DiagnosticSeverity::Unverified,
-                    origin_mod: layer_origin(&path, &root_layers, &root_overwrite),
-                    path,
-                    detail: format!("Unverified {label} version: {why}."),
-                });
-                None
-            }
-        }
-    };
-    let runtime = version(game.game_binary, "runtime_metadata_unverified", "runtime");
-    let skse = version(extender.loader, "skse_metadata_unverified", "SKSE");
-    let library = runtime
-        .and_then(|v| data.resolve_read(&format!("SKSE/Plugins/{}", address_library_name(v))));
-    let context = SkseContext {
-        runtime,
-        skse,
-        address_library: library.as_deref(),
-    };
-    for (_, path) in dlls {
-        diagnostics.extend(check_skse_plugin(
-            &path,
-            &layer_origin(&path, &data_layers, overwrite),
-            &context,
-        ));
+    layers.push(("Game".into(), game_root.to_path_buf()));
+    Merged::new(layers, overwrite.join("Root"))
+}
+
+/// The file version of the winning x64 executable `game_binary` in `root`.
+pub fn runtime_version(root: &Merged, game_binary: &str) -> Result<Version, String> {
+    let path = root
+        .resolve(game_binary)
+        .ok_or_else(|| format!("{game_binary} is absent from the merged game root"))?;
+    let info = inspect_pe(&path)?;
+    if info.machine != 0x8664 {
+        return Err("the winning executable is not x64".into());
     }
-    diagnostics
+    info.file_version
+        .ok_or_else(|| "no readable file-version resource".into())
+}
+
+/// Where a game's script extender keeps its plugins and, for the 64-bit
+/// extenders, the prefix of the runtime DLL the loader needs next to itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Extender {
+    pub plugins_dir: &'static str,
+    pub runtime_dll: Option<&'static str>,
+}
+
+pub fn extender(game_id: &str) -> Option<Extender> {
+    let (plugins_dir, runtime_dll) = match game_id {
+        "skyrimse" | "enderalse" => ("SKSE/Plugins", Some("skse64")),
+        "skyrimvr" => ("SKSE/Plugins", Some("sksevr")),
+        "skyrim" => ("SKSE/Plugins", None),
+        "fallout4" => ("F4SE/Plugins", Some("f4se")),
+        "fallout4vr" => ("F4SE/Plugins", Some("f4sevr")),
+        "starfield" => ("SFSE/Plugins", Some("sfse")),
+        "falloutnv" => ("NVSE/Plugins", None),
+        "fallout3" => ("FOSE/Plugins", None),
+        "oblivion" => ("OBSE/Plugins", None),
+        _ => return None,
+    };
+    Some(Extender {
+        plugins_dir,
+        runtime_dll,
+    })
+}
+
+/// `skse64_1_6_1170.dll`: the loader looks for this file for runtime 1.6.1170.
+pub fn extender_runtime_dll(prefix: &str, runtime: Version) -> String {
+    let [a, b, c, _] = runtime.0;
+    format!("{prefix}_{a}_{b}_{c}.dll")
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtenderFacts {
+    pub loader: &'static str,
+    pub loader_found: bool,
+    pub plugins_dir: &'static str,
+    pub plugin_dlls: usize,
+    pub runtime: Option<Version>,
+    pub runtime_dll: Option<String>,
+    pub runtime_dll_found: bool,
+}
+
+/// None when the game has no `script_extender` or no `extender()` row.
+pub fn extender_facts(
+    game: &eidos_gamedef::GameDef,
+    game_data: &Path,
+    game_root: &Path,
+    mods: &[(String, PathBuf)],
+    overwrite: &Path,
+) -> Option<ExtenderFacts> {
+    let se = game.script_extender.as_ref()?;
+    let row = extender(game.id)?;
+    let root = merged_root(game_root, mods, overwrite);
+    let is_file = |name: &str| root.resolve(name).is_some_and(|p| p.is_file());
+    let plugin_dlls = merged_data(game_data, mods, overwrite)
+        .list_dir(row.plugins_dir)
+        .iter()
+        .filter(|(name, path)| name.to_ascii_lowercase().ends_with(".dll") && !path.is_dir())
+        .count();
+    let runtime = if game.game_binary.is_empty() {
+        None
+    } else {
+        runtime_version(&root, game.game_binary).ok()
+    };
+    let runtime_dll = runtime
+        .zip(row.runtime_dll)
+        .map(|(v, prefix)| extender_runtime_dll(prefix, v));
+    let runtime_dll_found = runtime_dll.as_deref().is_some_and(is_file);
+    Some(ExtenderFacts {
+        loader: se.loader,
+        loader_found: is_file(se.loader),
+        plugins_dir: row.plugins_dir,
+        plugin_dlls,
+        runtime,
+        runtime_dll,
+        runtime_dll_found,
+    })
 }
 
 /// The fonts MO2 treats as always present: `Skyrim - Interface.bsa` ships them.
@@ -870,6 +983,65 @@ mod tests {
         assert!(found.iter().any(|d| d.code == "runtime_metadata_unverified"
             && d.severity == DiagnosticSeverity::Unverified));
         assert!(!found.iter().any(|d| d.code == "runtime_mismatch"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn extender_runtime_dll_names_follow_the_loader_convention() {
+        assert_eq!(
+            extender_runtime_dll("skse64", Version([1, 6, 1170, 0])),
+            "skse64_1_6_1170.dll"
+        );
+        assert_eq!(extender("fallout4").unwrap().plugins_dir, "F4SE/Plugins");
+        assert_eq!(extender("starfield").unwrap().runtime_dll, Some("sfse"));
+        assert_eq!(extender("falloutnv").unwrap().runtime_dll, None);
+        assert!(extender("stellarblade").is_none());
+    }
+
+    #[test]
+    fn runtime_version_reads_the_winning_root_executable() {
+        let root = std::env::temp_dir().join(format!(
+            "eidos-preflight-ext-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
+        let high = root.join("high");
+        let ow = root.join("overwrite");
+        let base = root.join("game");
+        std::fs::create_dir_all(base.join("Data")).unwrap();
+        std::fs::create_dir_all(high.join("Root")).unwrap();
+        std::fs::create_dir_all(&ow).unwrap();
+        std::fs::write(base.join("SkyrimSE.exe"), b"bad lower executable").unwrap();
+        std::fs::write(high.join("Root/SKYRIMSE.EXE"), fixture()).unwrap();
+        let mods = vec![("Downgrade".to_string(), high.clone())];
+        let merged = merged_root(&base, &mods, &ow);
+        assert_eq!(
+            runtime_version(&merged, "SkyrimSE.exe"),
+            Ok(Version([1, 7, 104, 0]))
+        );
+        assert_eq!(merged.origin(&high.join("Root/SKYRIMSE.EXE")), "Downgrade");
+        // Same tree plus a loader and a plugin, but no skse64_1_7_104.dll in any layer.
+        std::fs::write(high.join("Root/skse64_loader.exe"), b"loader").unwrap();
+        std::fs::create_dir_all(high.join("SKSE/Plugins")).unwrap();
+        std::fs::write(high.join("SKSE/Plugins/A.dll"), b"x").unwrap();
+        let game = eidos_gamedef::builtin()
+            .iter()
+            .find(|g| g.id == "skyrimse")
+            .unwrap();
+        let f = extender_facts(game, &base.join("Data"), &base, &mods, &ow).unwrap();
+        assert!(f.loader_found);
+        assert_eq!(f.plugin_dlls, 1);
+        assert_eq!(f.runtime_dll.as_deref(), Some("skse64_1_7_104.dll"));
+        assert!(!f.runtime_dll_found);
+        std::fs::write(high.join("Root/skse64_1_7_104.dll"), b"rt").unwrap();
+        let f = extender_facts(game, &base.join("Data"), &base, &mods, &ow).unwrap();
+        assert!(f.runtime_dll_found);
+        let stellar = eidos_gamedef::builtin()
+            .iter()
+            .find(|g| g.id == "stellarblade");
+        if let Some(g) = stellar {
+            assert!(extender_facts(g, &base.join("Data"), &base, &mods, &ow).is_none());
+        }
         std::fs::remove_dir_all(root).unwrap();
     }
 
