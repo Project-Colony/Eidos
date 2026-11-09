@@ -37,14 +37,10 @@ impl Eidos {
     /// An error after a completed mutation prevents the kernel's usual dentry
     /// update. Notify after replying, outside its request locks.
     fn invalidate_failed_entry(&self, parent: INodeNo, name: &OsStr) {
-        let Some(notifier) = self.notifier.lock_recover().clone() else {
-            return;
-        };
-        let name = name.to_owned();
-        std::thread::spawn(move || {
-            let _ = notifier.inval_entry(parent, &name);
-            let _ = notifier.inval_inode(parent, 0, 0);
-        });
+        self.notify([
+            Inval::Entry(parent.0, name.to_owned()),
+            Inval::Inode(parent.0),
+        ]);
     }
 
     /// Whether this mount negotiates kernel passthrough (see

@@ -182,8 +182,9 @@ pub struct Eidos {
     /// Eidos does not do, so the directory must not claim to fold case. Read from
     /// the layers on first ask; `dir_changed` sets it and nothing clears it.
     unicode_case_dirs: Mutex<HashMap<u64, bool>>,
-    /// Set once the session is mounted; used to push those invalidations.
-    notifier: Arc<Mutex<Option<fuser::Notifier>>>,
+    /// Set once the session is mounted: feeds the one thread that owns the
+    /// kernel notifier and pushes these invalidations.
+    notifier: Arc<Mutex<Option<std::sync::mpsc::Sender<Inval>>>>,
     /// The kernel advertised `FUSE_NO_OPENDIR_SUPPORT`, so it can open and read
     /// directories without asking us. Negotiated in `init`; see [`Eidos::opendir`].
     no_opendir: AtomicBool,
@@ -230,6 +231,14 @@ fn kind_of_type(ft: &std::fs::FileType) -> FileType {
     } else {
         FileType::RegularFile
     }
+}
+
+/// A kernel cache invalidation, applied by the notifier thread.
+pub(crate) enum Inval {
+    /// Drop the dentry `name` in directory inode `.0`.
+    Entry(u64, std::ffi::OsString),
+    /// Drop all cached pages of an inode.
+    Inode(u64),
 }
 
 impl Eidos {
@@ -298,8 +307,34 @@ impl Eidos {
         // create invalidate a stale, differently-cased negative dentry.
         let notifier_slot = Arc::clone(&self.notifier);
         let session = fuser::Session::new(self, mountpoint, &mount_config())?;
-        *notifier_slot.lock_recover() = Some(session.notifier());
+        let notifier = session.notifier();
+        let (tx, rx) = std::sync::mpsc::channel();
+        // Ends when the filesystem, and with it the sender, is dropped.
+        std::thread::spawn(move || {
+            for msg in rx {
+                match msg {
+                    Inval::Entry(parent, name) => {
+                        let _ = notifier.inval_entry(INodeNo(parent), &name);
+                    }
+                    Inval::Inode(ino) => {
+                        let _ = notifier.inval_inode(INodeNo(ino), 0, 0);
+                    }
+                }
+            }
+        });
+        *notifier_slot.lock_recover() = Some(tx);
         session.spawn()
+    }
+
+    /// Queue kernel notifications for the notifier thread. Never send them from
+    /// inside a request handler: the kernel may need locks the request holds, so
+    /// a direct call deadlocks the mount. The queue returns at once.
+    pub(crate) fn notify(&self, msgs: impl IntoIterator<Item = Inval>) {
+        if let Some(tx) = self.notifier.lock_recover().as_ref() {
+            for m in msgs {
+                let _ = tx.send(m);
+            }
+        }
     }
 
     /// The virtual path of `name` inside the directory inode `parent`.
@@ -393,16 +428,12 @@ impl Eidos {
         if stale.is_empty() {
             return;
         }
-        // Off the handler thread: see `invalidate_folded_negatives` - notifying
-        // the kernel from inside a request deadlocks the mount.
-        let Some(notifier) = self.notifier.lock_recover().clone() else {
-            return;
-        };
-        std::thread::spawn(move || {
-            for (parent, name) in stale {
-                let _ = notifier.inval_entry(INodeNo(parent), OsStr::new(&name));
-            }
-        });
+        // Queued: see `notify`.
+        self.notify(
+            stale
+                .into_iter()
+                .map(|(parent, name)| Inval::Entry(parent, name.into())),
+        );
     }
 
     /// Drop any negative dentry the kernel holds for a name that case-folds to
@@ -418,14 +449,7 @@ impl Eidos {
     ///
     /// `(0, 0)` means the whole inode.
     fn invalidate_page_cache(&self, ino: u64) {
-        let Some(notifier) = self.notifier.lock_recover().clone() else {
-            return;
-        };
-        // Detached, for the same reason as `invalidate_folded_negatives`: a
-        // notification sent from inside a request handler can deadlock the mount.
-        std::thread::spawn(move || {
-            let _ = notifier.inval_inode(INodeNo(ino), 0, 0);
-        });
+        self.notify([Inval::Inode(ino)]);
     }
 
     /// A name just appeared in or vanished from `parent`. Drop that directory's
@@ -447,13 +471,10 @@ impl Eidos {
             && self.unicode_case_dirs.lock_recover().insert(parent, true) == Some(false)
         {
             // The kernel keeps a `.ciopfs` answered before for the entry TTL.
-            // Off the handler thread, as in `invalidate_folded_negatives`.
-            if let Some(notifier) = self.notifier.lock_recover().clone() {
-                std::thread::spawn(move || {
-                    let marker = OsStr::from_bytes(ops::CIOPFS_MARKER);
-                    let _ = notifier.inval_entry(INodeNo(parent), marker);
-                });
-            }
+            self.notify([Inval::Entry(
+                parent,
+                OsStr::from_bytes(ops::CIOPFS_MARKER).to_owned(),
+            )]);
         }
     }
 
@@ -493,19 +514,9 @@ impl Eidos {
         if stale.is_empty() {
             return;
         }
-        // MUST NOT run inline. A notification is a message TO the kernel, and the
-        // kernel may need locks that the request we are still answering holds, so
-        // calling inval_entry from inside a handler deadlocks the mount (observed:
-        // the create never returns). Hand it to a detached thread; the kernel
-        // applies it as soon as this request completes.
-        let Some(notifier) = self.notifier.lock_recover().clone() else {
-            return;
-        };
-        std::thread::spawn(move || {
-            for s in stale {
-                let _ = notifier.inval_entry(INodeNo(parent), OsStr::new(&s));
-            }
-        });
+        // MUST NOT run inline (deadlocks the mount, observed: the create never
+        // returns); `notify` hands it to the notifier thread.
+        self.notify(stale.into_iter().map(|s| Inval::Entry(parent, s.into())));
     }
 
     /// Build a `FileAttr` from a real file's metadata, owned by the mounting
