@@ -155,6 +155,11 @@ pub fn read_tools(path: &Path) -> Vec<Tool> {
                 }
             }
             "runner" if v.eq_ignore_ascii_case("native") => tool.runner = Runner::Native,
+            "runner" if !v.is_empty() && !v.eq_ignore_ascii_case("proton") => eprintln!(
+                "eidos: tools.ini: '{}' has runner={v}, which Eidos does not know (accepted: \
+                 native, proton); the tool runs through Proton.",
+                tool.title
+            ),
             "slr" => tool.slr = matches!(v, "true" | "1" | "yes" | "on"),
             _ => {}
         }
