@@ -978,6 +978,8 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("diag_orphan_archives", "{n} archive(s) no active plugin loads"),
     ("diag_orphan_archives_detail", "{list}. These archives match neither an enabled plugin's game-specific archive names nor the effective INI archive lists."),
     ("diag_tab_n", "Diagnostics ({n})"),
+    ("diag_copy_report", "Copy report"),
+    ("status_report_copied", "Report copied to the clipboard."),
     ("diag_tab", "Diagnostics"),
     ("diag_no_problems", "No problems found."),
     ("diag_n_problems", "{n} problem(s) need attention."),

@@ -749,6 +749,111 @@ pub(crate) fn diagnostics_tab_label(app: &App) -> String {
     }
 }
 
+/// What the copied report states about the machine and the setup, gathered
+/// apart from the text so the builder can be tested without a real host.
+pub(crate) struct ReportFacts {
+    pub(crate) version: String,
+    pub(crate) game_id: String,
+    pub(crate) proton_build: String,
+    pub(crate) flatpak_steam: bool,
+    pub(crate) passthrough_requested: bool,
+    pub(crate) cap_missing: bool,
+    pub(crate) session: &'static str,
+    pub(crate) distro: String,
+    pub(crate) kernel: String,
+    pub(crate) dev_fuse: bool,
+    pub(crate) fusermount3: bool,
+}
+
+fn yes_no(b: bool) -> &'static str {
+    if b {
+        "yes"
+    } else {
+        "no"
+    }
+}
+
+/// Plain text for a bug report. Every line goes through `eidos_log::redact`
+/// (home path, user name), because titles and Proton paths can carry both.
+pub(crate) fn health_report(f: &ReportFacts, checks: &[Diagnostic]) -> String {
+    let passthrough = match (f.passthrough_requested, f.cap_missing) {
+        (false, _) => "off (default)",
+        (true, true) => "requested, launch capability missing",
+        (true, false) => "requested, launch capability present",
+    };
+    let mut lines = vec![
+        format!("Eidos: {}", f.version),
+        format!("Game: {}", f.game_id),
+        format!("Proton: {}", f.proton_build),
+        format!("Flatpak Steam: {}", yes_no(f.flatpak_steam)),
+        format!("Passthrough: {passthrough}"),
+        format!("Session: {}", f.session),
+        format!("Distro: {}", f.distro),
+        format!("Kernel: {}", f.kernel),
+        format!(
+            "/dev/fuse: {}",
+            if f.dev_fuse { "present" } else { "missing" }
+        ),
+        format!(
+            "fusermount3: {}",
+            if f.fusermount3 { "found" } else { "not found" }
+        ),
+        String::new(),
+        "Health:".to_string(),
+    ];
+    for d in checks {
+        let state = match d.level {
+            DiagLevel::Problem => "problem",
+            DiagLevel::Advice => "advice",
+            DiagLevel::Ok => "ok",
+        };
+        lines.push(format!("- [{state}] {}", d.title));
+    }
+    lines
+        .iter()
+        .map(|l| eidos_log::redact(l).into_owned())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Read the facts off the running host and the selected game.
+pub(crate) fn report_facts(app: &App) -> ReportFacts {
+    let game = crate::state::selected_game(app);
+    let run = game.and_then(|g| {
+        let cd = g.compatdata.as_ref()?;
+        eidos_games::proton_command(&home(), g.def.steam_app_id, cd, &g.install_path)
+    });
+    let proton_build = run
+        .as_ref()
+        .and_then(|r| r.proton.parent()?.file_name())
+        .map_or_else(|| "unknown".into(), |n| n.to_string_lossy().into_owned());
+    let distro = std::fs::read_to_string("/etc/os-release")
+        .ok()
+        .and_then(|s| {
+            s.lines()
+                .find_map(|l| l.strip_prefix("PRETTY_NAME="))
+                .map(|v| v.trim_matches('"').to_string())
+        })
+        .unwrap_or_else(|| "unknown".into());
+    let kernel = std::fs::read_to_string("/proc/sys/kernel/osrelease")
+        .map_or_else(|_| "unknown".into(), |s| s.trim().to_string());
+    let fusermount3 = std::env::var_os("PATH")
+        .is_some_and(|p| std::env::split_paths(&p).any(|d| d.join("fusermount3").is_file()));
+    ReportFacts {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        game_id: game.map_or_else(|| "none".into(), |g| g.def.id.to_string()),
+        proton_build,
+        flatpak_steam: run.is_some_and(|r| r.flatpak),
+        passthrough_requested: passthrough_requested(),
+        cap_missing: app.cap_missing,
+        session: if on_wayland() { "Wayland" } else { "X11" },
+        distro,
+        kernel,
+        dev_fuse: std::path::Path::new("/dev/fuse").exists(),
+        fusermount3,
+    }
+}
+
 pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
     // The same cache the tab label reads, so the count on the tab and the cards
     // in the panel can never tell two different stories.
@@ -765,7 +870,8 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
     let mut col = Column::new()
         .spacing(8)
         .push(text(t("diag_tab")).size(sz(13)))
-        .push(text(summary).size(sz(12)));
+        .push(text(summary).size(sz(12)))
+        .push(tool_btn(t("diag_copy_report"), Message::CopyHealthReport));
     for d in checks {
         let (tag, color) = match d.level {
             DiagLevel::Problem => (t("diag_tag_problem"), pal().error),

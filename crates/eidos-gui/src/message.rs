@@ -480,6 +480,8 @@ pub(crate) enum Message {
     LogRefresh,
     /// Put the shown records on the clipboard.
     LogCopy,
+    /// Put the redacted diagnostic report on the clipboard.
+    CopyHealthReport,
     /// Open the logs folder in a file manager.
     LogOpenFolder,
     // ---- INI editor (MO2's bundled INI Editor tool plugin) ----
