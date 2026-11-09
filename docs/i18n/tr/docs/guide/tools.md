@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=226e33d31b260039513531ac88c3bdeefae8bb0b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2e5a1e8e03e41d94d1b49bde188087efab2adb1b -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -341,9 +341,9 @@ bir ada sahip satır yok sayılır.
 
 `runner=native`, `exe`'yi Proton olmadan doğrudan çalıştırır. Birleşik görünüm
 her araçta olduğu gibi bağlanır ve `arg0=`, `arg1=` satırları onun
-argümanlarıdır. Bunu bir Linux programı için ya da Steam'in yönetmediği bir
-kopyanın (Heroic, Legendary) aracı için kullanın: `exe` o kopyanın Wine'ıdır,
-Windows programı ilk argümandır ve önek `env=` ile gelir.
+argümanlarıdır. Bunu bir Linux programı için ya da Steam'in yönetmediği ve
+Heroic'in çalıştırıcı kaydetmediği bir kopyanın aracı için kullanın: `exe` o
+kopyanın Wine'ıdır, Windows programı ilk argümandır ve önek `env=` ile gelir.
 
 ```ini
 [Tool/SSEEdit (GOG)]
@@ -361,6 +361,13 @@ programı için, birleşik görünümün onu gösterdiği oyunun `Data` klasör�
 yolunu verin. Yerel bir araç Proton adımlarını atlar: yukarıdaki kayıt defteri
 anahtarı, Steam'in shader önbelleği, boş .NET kökleri ve Steam katmanının
 `LD_PRELOAD`'dan çıkarılması.
+
+Heroic ile kurulmuş bir GOG ya da Epic kopyasında, oyunun Heroic ayarları
+(`GamesConfig/<appName>.json`) bir Wine ya da Proton sürümü belirtiyorsa
+araçların böyle bir girdiye ihtiyacı yoktur: Eidos onları bu sürümle oyunun
+Heroic önekinde çalıştırır ve `eidos prereqs <instance> --install` bu sürümü
+winetricks'e verir. Yalnızca Legendary ile kurulmuş bir kopyanın Heroic
+ayarları yoktur.
 
 `eidos tool <instance> run <title> --print`, son komutu ve çalıştırmanın
 devralınan ortamın üzerine ayarladığı her değişkeni, bu satırlar dahil, gösterir.

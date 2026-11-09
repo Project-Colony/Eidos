@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=226e33d31b260039513531ac88c3bdeefae8bb0b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2e5a1e8e03e41d94d1b49bde188087efab2adb1b -->
 
 # 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -322,9 +322,9 @@ DLL을 모두 그 안에 나열해야 합니다. 이름은 영문자, 숫자, `_
 
 `runner=native`는 Proton 없이 `exe` 자체를 실행합니다. 병합된 뷰는 다른 모든
 도구와 똑같이 마운트되고, `arg0=`, `arg1=` 줄이 그 인수가 됩니다. Linux
-프로그램이나, Steam이 관리하지 않는 사본(Heroic, Legendary)용 도구에 이것을
-쓰십시오. `exe`는 그 사본의 Wine이고, Windows 프로그램이 첫 번째 인수이며,
-프리픽스는 `env=`에서 옵니다.
+프로그램이나, Steam이 관리하지 않고 Heroic에도 러너 기록이 없는 사본용 도구에
+이것을 쓰십시오. `exe`는 그 사본의 Wine이고, Windows 프로그램이 첫 번째
+인수이며, 프리픽스는 `env=`에서 옵니다.
 
 ```ini
 [Tool/SSEEdit (GOG)]
@@ -341,6 +341,12 @@ env=WINEPREFIX=/home/me/Games/Heroic/Prefixes/default/Skyrim
 그것을 보여 주는 게임의 `Data` 폴더 아래 경로를 적으십시오. 네이티브 도구는
 Proton 단계를 건너뜁니다. 위에서 설명한 레지스트리 키, Steam의 셰이더 캐시,
 빈 .NET 루트, 그리고 `LD_PRELOAD`에서 Steam 오버레이를 빼는 일입니다.
+
+Heroic으로 설치한 GOG 또는 Epic 사본에서는, 게임의 Heroic 설정
+(`GamesConfig/<appName>.json`)에 Wine이나 Proton 빌드가 지정되어 있으면 도구에
+이런 항목이 필요 없습니다. Eidos는 그 빌드로 게임의 Heroic 프리픽스 안에서
+도구를 실행하고, `eidos prereqs <instance> --install`도 그 빌드를 winetricks에
+넘깁니다. Legendary만으로 설치한 사본에는 Heroic 설정이 없습니다.
 
 `eidos tool <instance> run <title> --print`는 최종 명령과, 실행이 상속된 환경
 위에 설정하는 모든 변수를 이 줄들까지 포함해 보여 줍니다.

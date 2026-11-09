@@ -326,14 +326,17 @@ pub enum RegistryOutcome {
 ///
 /// `proton_argv` builds the command for a `runinprefix` invocation - the verb
 /// that runs a program in the existing prefix without Proton's game-drive setup.
+/// `compatdata` is Steam's directory around `prefix`, `None` for a copy Steam
+/// does not run; Eidos keeps its marker there, or in the prefix without one.
 pub fn ensure_registry(
-    compatdata: &Path,
+    prefix: &Path,
+    compatdata: Option<&Path>,
     install_path: &Path,
     registry_name: &str,
     proton_argv: impl FnOnce(&Path) -> Vec<String>,
     proton_env: &[(String, String)],
 ) -> io::Result<RegistryOutcome> {
-    let prefix = compatdata.join("pfx");
+    let state = compatdata.unwrap_or(prefix);
     // Never touch an uninitialised prefix: Proton creates user.reg on first run,
     // and importing before that races its own bootstrap.
     if !prefix.join("user.reg").is_file() {
@@ -341,12 +344,12 @@ pub fn ensure_registry(
     }
     // A live wineserver caches the registry in memory and rewrites it on
     // shutdown, so importing now would be silently undone. Refuse instead.
-    let busy = crate::prefix_busy(&prefix, compatdata);
+    let busy = crate::prefix_busy_at(prefix, compatdata);
     if !busy.is_empty() {
         return Ok(RegistryOutcome::PrefixBusy(busy));
     }
 
-    let marker = marker_path(compatdata, registry_name);
+    let marker = marker_path(state, registry_name);
     let want = to_windows_path(install_path);
     // Both must agree before skipping: the marker says we did the work, the
     // registry says the work is still there. Another program overwriting the key
@@ -361,7 +364,7 @@ pub fn ensure_registry(
     }
 
     let blob = registry_blob(registry_name, install_path);
-    let reg_file = compatdata.join(".eidos_registry").join("eidos.reg");
+    let reg_file = state.join(".eidos_registry").join("eidos.reg");
     if let Some(parent) = reg_file.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -444,7 +447,8 @@ mod tests {
         fs::create_dir_all(dir.join("pfx")).unwrap();
         // No user.reg: Proton has not bootstrapped this prefix yet.
         let ran = ensure_registry(
-            &dir,
+            &dir.join("pfx"),
+            Some(&dir),
             Path::new("/games/Skyrim"),
             "Skyrim Special Edition",
             |_| vec!["/bin/false".to_string()],
@@ -460,6 +464,36 @@ mod tests {
             "must not import into a prefix Proton has not created yet, and must say so"
         );
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_prefix_without_compatdata_keeps_the_marker_inside_it() {
+        let prefix = std::env::temp_dir().join(format!("eidos-reg-wine-{}", std::process::id()));
+        fs::create_dir_all(&prefix).unwrap();
+        fs::write(prefix.join("user.reg"), "").unwrap();
+        let mut argv = Vec::new();
+        let ran = ensure_registry(
+            &prefix,
+            None,
+            Path::new("/games/Skyrim"),
+            "Skyrim Special Edition",
+            |reg| {
+                argv = vec!["/bin/true".to_string(), reg.display().to_string()];
+                argv.clone()
+            },
+            &[],
+        )
+        .unwrap();
+        assert_eq!(ran, RegistryOutcome::Imported);
+        assert_eq!(
+            argv[1],
+            prefix
+                .join(".eidos_registry/eidos.reg")
+                .display()
+                .to_string()
+        );
+        assert!(marker_path(&prefix, "Skyrim Special Edition").is_file());
+        let _ = fs::remove_dir_all(&prefix);
     }
 
     // ---- "is the key still right?" ------------------------------------------

@@ -3282,6 +3282,7 @@ mod tests {
             app_id: "1711230643".into(),
             prefix: None,
             heroic: true,
+            runner: None,
         };
         app.games.push(gog);
         let root = temp_portable("skyrimse");

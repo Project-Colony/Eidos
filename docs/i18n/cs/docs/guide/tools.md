@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=226e33d31b260039513531ac88c3bdeefae8bb0b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2e5a1e8e03e41d94d1b49bde188087efab2adb1b -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -328,9 +328,9 @@ s jiným jménem se ignoruje.
 
 `runner=native` spustí přímo `exe`, bez Protonu. Sloučený pohled se připojí jako
 u každého nástroje a řádky `arg0=`, `arg1=` jsou jeho argumenty. Použijte to pro
-linuxový program nebo pro nástroj ke kopii, kterou nespravuje Steam (Heroic,
-Legendary): `exe` je Wine této kopie, program pro Windows je první argument a
-prefix přijde z `env=`.
+linuxový program nebo pro nástroj ke kopii, kterou nespravuje Steam a pro kterou
+Heroic nemá zapsaný žádný runner: `exe` je Wine této kopie, program pro Windows
+je první argument a prefix přijde z `env=`.
 
 ```ini
 [Tool/SSEEdit (GOG)]
@@ -347,6 +347,12 @@ sloučenou cestu se přepisuje jen `exe`: u programu pro Windows uvnitř módu
 zadejte jeho cestu ve složce `Data` hry, kde ho ukazuje sloučený pohled. Nativní
 nástroj vynechá kroky pro Proton: klíč registru popsaný výše, shader cache
 Steamu, prázdné kořeny .NET a odstranění overlaye Steamu z `LD_PRELOAD`.
+
+U kopie z GOG nebo Epicu nainstalované přes Heroic takový záznam nástroje
+nepotřebují, pokud nastavení hry v Heroicu (`GamesConfig/<appName>.json`) uvádí
+build Wine nebo Protonu: Eidos je spustí s tímto buildem v prefixu hry
+z Heroicu a `eidos prereqs <instance> --install` ho předá winetricks. Kopie
+nainstalovaná jen přes Legendary žádná nastavení Heroicu nemá.
 
 `eidos tool <instance> run <title> --print` ukáže výsledný příkaz a každou
 proměnnou, kterou běh nastaví nad zděděné prostředí, včetně těchto řádků.

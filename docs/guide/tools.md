@@ -324,8 +324,8 @@ any other name is ignored.
 
 `runner=native` runs `exe` itself, without Proton. The merged view is mounted
 as for any tool, and the `arg0=`, `arg1=` lines are its arguments. Use it for a
-Linux program, or for a tool on a copy Steam does not manage (Heroic,
-Legendary): `exe` is that copy's Wine, the Windows program is the first
+Linux program, or for a tool on a copy Steam does not manage and Heroic records
+no runner for: `exe` is that copy's Wine, the Windows program is the first
 argument, and the prefix comes from `env=`.
 
 ```ini
@@ -343,6 +343,12 @@ to its merged path: for a Windows program inside a mod, give its path under the
 game's `Data` folder, where the merged view shows it. A native tool skips the
 Proton steps: the registry key above, Steam's shader cache, the empty .NET
 roots, and taking Steam's overlay out of `LD_PRELOAD`.
+
+On a GOG or Epic copy installed with Heroic, tools need no such entry when the
+game's Heroic settings (`GamesConfig/<appName>.json`) name a Wine or Proton
+build: Eidos runs them with that build in the game's Heroic prefix, and
+`eidos prereqs <instance> --install` gives it to winetricks. A copy installed
+with Legendary alone has no Heroic settings.
 
 `eidos tool <instance> run <title> --print` shows the final command and every
 variable the run sets on top of the inherited environment, these lines

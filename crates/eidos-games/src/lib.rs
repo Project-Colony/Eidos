@@ -590,6 +590,98 @@ mod tests {
     }
 
     #[test]
+    fn heroic_settings_give_tools_the_copys_own_runner_without_steam() {
+        // No Steam under this home: a Heroic run must not need a Steam root.
+        let t = Tmp::new();
+        t.mkdir("game/Data");
+        t.mkdir("prefixes/proton/pfx");
+        t.mkdir("prefixes/wine");
+        t.write("tools/GE-Proton/proton", "");
+        t.write("tools/wine-ge/bin/wine", "");
+        let home = t.0.join("home");
+        t.write(
+            "home/.config/heroic/gog_store/installed.json",
+            &serde_json::json!({
+                "installed":[{"appName":"1711230643", "install_path":t.0.join("game"), "platform":"windows"}]
+            })
+            .to_string(),
+        );
+        let with = |wine_version: serde_json::Value, prefix: &str| {
+            t.write(
+                "home/.config/heroic/GamesConfig/1711230643.json",
+                &serde_json::json!({
+                    "1711230643":{"winePrefix":t.0.join(prefix),"wineVersion":wine_version}
+                })
+                .to_string(),
+            );
+            let games = detect(&home);
+            assert_eq!(games.len(), 1);
+            assert!(games[0].prefix().is_some(), "the prefix is still detected");
+            games[0].heroic_run().cloned()
+        };
+        let exe = Path::new("/g/SSEEdit.exe");
+        let args = ["-a".to_string()];
+
+        let proton = t.0.join("tools/GE-Proton/proton");
+        let run = with(
+            serde_json::json!({"type":"proton","bin":proton,"name":"GE-Proton"}),
+            "prefixes/proton",
+        )
+        .expect("a Proton runner");
+        let env = |k: &str| run.env.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
+        assert_eq!(
+            env("STEAM_COMPAT_DATA_PATH"),
+            Some(t.0.join("prefixes/proton").to_string_lossy().into_owned()),
+            "Proton gets the directory that holds pfx"
+        );
+        assert_eq!(env("STEAM_COMPAT_CLIENT_INSTALL_PATH").as_deref(), Some(""));
+        assert_eq!(env("UMU_ID").as_deref(), Some(""));
+        for steam in ["SteamAppId", "SteamGameId", "STEAM_COMPAT_APP_ID"] {
+            assert_eq!(env(steam), None, "{steam} set for a Heroic copy");
+        }
+        let p = proton.to_string_lossy().into_owned();
+        assert_eq!(
+            run.command(exe, &args),
+            [p.as_str(), "waitforexitandrun", "/g/SSEEdit.exe", "-a"]
+        );
+
+        // Heroic strips single quotes from bin, so a quoted one still counts.
+        let wine = t.0.join("tools/wine-ge/bin/wine");
+        let w = wine.to_string_lossy().into_owned();
+        let run = with(
+            serde_json::json!({"type":"wine","bin":format!("'{w}'")}),
+            "prefixes/wine",
+        )
+        .expect("a Wine runner");
+        let prefix = fs::canonicalize(t.0.join("prefixes/wine")).unwrap();
+        assert_eq!(
+            run.env,
+            [(
+                "WINEPREFIX".to_string(),
+                prefix.to_string_lossy().into_owned()
+            )]
+        );
+        assert_eq!(
+            run.command(exe, &args),
+            [w.as_str(), "/g/SSEEdit.exe", "-a"]
+        );
+        assert_eq!(
+            run.run_in_prefix(Path::new("regedit"), &["x.reg".into()]),
+            [w.as_str(), "regedit", "x.reg"]
+        );
+
+        // No usable bin: the prefix stays, tools keep refusing.
+        for missing in [
+            serde_json::json!({"type":"proton"}),
+            serde_json::json!({"type":"proton","bin":"tools/GE-Proton/proton"}),
+            serde_json::json!({"type":"proton","bin":t.0.join("tools/none/proton")}),
+            serde_json::json!({"type":"proton","bin":t.0.join("tools/GE-Proton")}),
+        ] {
+            assert_eq!(with(missing.clone(), "prefixes/proton"), None, "{missing}");
+        }
+    }
+
+    #[test]
     fn no_steam_no_games() {
         let t = Tmp::new();
         assert!(detect(&t.0.join("empty-home")).is_empty());

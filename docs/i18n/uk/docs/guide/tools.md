@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=226e33d31b260039513531ac88c3bdeefae8bb0b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2e5a1e8e03e41d94d1b49bde188087efab2adb1b -->
 
 # Інструменти: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -337,8 +337,8 @@ Eidos застосовує ці рядки після всього, що зад�
 `runner=native` запускає сам `exe`, без Proton. Об'єднаний вигляд монтується як
 для будь-якого інструмента, а рядки `arg0=`, `arg1=` стають його аргументами. Це
 потрібно для програми під Linux або для інструмента до копії, якою не керує
-Steam (Heroic, Legendary): `exe` - це Wine цієї копії, програма для Windows іде
-першим аргументом, а префікс задається через `env=`.
+Steam і для якої Heroic не записав ранер: `exe` - це Wine цієї копії, програма
+для Windows іде першим аргументом, а префікс задається через `env=`.
 
 ```ini
 [Tool/SSEEdit (GOG)]
@@ -355,6 +355,12 @@ env=WINEPREFIX=/home/me/Games/Heroic/Prefixes/default/Skyrim
 шлях у теці `Data` гри, де її показує об'єднаний вигляд. Нативний інструмент
 пропускає кроки Proton: ключ реєстру, описаний вище, кеш шейдерів Steam,
 порожні корені .NET і вилучення оверлея Steam з `LD_PRELOAD`.
+
+Для копії з GOG або Epic, встановленої через Heroic, такий запис інструментам
+не потрібен, якщо в налаштуваннях гри в Heroic (`GamesConfig/<appName>.json`)
+вказано збірку Wine або Proton: Eidos запускає їх цією збіркою в префіксі Heroic
+для гри, а `eidos prereqs <instance> --install` передає її winetricks. Копія,
+встановлена лише через Legendary, не має налаштувань Heroic.
 
 `eidos tool <instance> run <title> --print` показує остаточну команду і кожну
 змінну, яку запуск задає поверх успадкованого середовища, разом із цими рядками.

@@ -984,6 +984,7 @@ mod extender_tests {
                 app_id: "synthetic".into(),
                 prefix: Some(prefix.clone()),
                 heroic: true,
+                runner: None,
             },
             install_path: root.join("game"),
             data_path: root.join("game/Data"),
@@ -1080,6 +1081,7 @@ mod extender_tests {
             app_id: "synthetic".into(),
             prefix: game.prefix(),
             heroic: true,
+            runner: None,
         };
         assert!(!steam_cloud_save_target(&game, &saves));
         std::fs::remove_dir_all(root).unwrap();

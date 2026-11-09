@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=226e33d31b260039513531ac88c3bdeefae8bb0b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2e5a1e8e03e41d94d1b49bde188087efab2adb1b -->
 
 # Ferramentas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -341,8 +341,9 @@ não começa com dígito. Uma linha com qualquer outro nome é ignorada.
 `runner=native` roda o próprio `exe`, sem Proton. A visão combinada é montada
 como para qualquer ferramenta, e as linhas `arg0=`, `arg1=` são os argumentos
 dele. Use isso para um programa Linux, ou para uma ferramenta de uma cópia que o
-Steam não gerencia (Heroic, Legendary): `exe` é o Wine dessa cópia, o programa
-Windows é o primeiro argumento e o prefixo vem de `env=`.
+Steam não gerencia e para a qual o Heroic não registra nenhum runner: `exe` é o
+Wine dessa cópia, o programa Windows é o primeiro argumento e o prefixo vem de
+`env=`.
 
 ```ini
 [Tool/SSEEdit (GOG)]
@@ -360,6 +361,13 @@ informe o caminho dele sob a pasta `Data` do jogo, onde a visão combinada o
 mostra. Uma ferramenta nativa pula as etapas do Proton: a chave de registro
 descrita acima, o cache de shaders do Steam, as raízes .NET vazias e a remoção
 do overlay do Steam de `LD_PRELOAD`.
+
+Numa cópia GOG ou Epic instalada pelo Heroic, as ferramentas não precisam dessa
+entrada quando as configurações do jogo no Heroic (`GamesConfig/<appName>.json`)
+indicam uma versão de Wine ou Proton: o Eidos as roda com essa versão no prefixo
+Heroic do jogo, e `eidos prereqs <instance> --install` a passa para o
+winetricks. Uma cópia instalada só com o Legendary não tem configurações do
+Heroic.
 
 `eidos tool <instance> run <title> --print` mostra o comando final e cada
 variável que a execução define por cima do ambiente herdado, incluindo essas

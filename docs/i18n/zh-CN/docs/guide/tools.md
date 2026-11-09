@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=226e33d31b260039513531ac88c3bdeefae8bb0b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2e5a1e8e03e41d94d1b49bde188087efab2adb1b -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -293,8 +293,8 @@ Eidos 在设置完它自己的所有变量之后才应用这些行,所以这里�
 组成,不以数字开头。名字不合规则的行会被忽略。
 
 `runner=native` 不经过 Proton,直接运行 `exe` 本身。合并视图照常挂载,
-`arg0=`、`arg1=` 这些行就是它的参数。Linux 程序,或者 Steam 不管理的副本
-(Heroic、Legendary)上的工具,都用这种方式:`exe` 是那个副本的 Wine,Windows
+`arg0=`、`arg1=` 这些行就是它的参数。Linux 程序,或者 Steam 不管理、Heroic
+也没有记录运行器的副本上的工具,都用这种方式:`exe` 是那个副本的 Wine,Windows
 程序是第一个参数,前缀由 `env=` 指定。
 
 ```ini
@@ -311,6 +311,12 @@ env=WINEPREFIX=/home/me/Games/Heroic/Prefixes/default/Skyrim
 Windows 程序,要写它在游戏 `Data` 文件夹下的路径,合并视图就是在那里显示它的。
 原生工具会跳过 Proton 的步骤:上面讲的注册表键、Steam 的着色器缓存、空的 .NET
 根目录,以及从 `LD_PRELOAD` 中去掉 Steam 覆盖层。
+
+用 Heroic 安装的 GOG 或 Epic 副本,如果游戏的 Heroic 设置
+(`GamesConfig/<appName>.json`)指定了 Wine 或 Proton 版本,工具就不需要这样的
+条目:Eidos 用那个版本在游戏的 Heroic 前缀里运行它们,
+`eidos prereqs <instance> --install` 也把它交给 winetricks。只用 Legendary
+安装的副本没有 Heroic 设置。
 
 `eidos tool <instance> run <title> --print` 会显示最终的命令,以及这次运行在继承的
 环境之上设置的每一个变量,包括这些行。

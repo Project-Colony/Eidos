@@ -965,7 +965,7 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("diag_flatpak_proton", "Proton comes from the Flatpak Steam install"),
     ("diag_flatpak_proton_detail", "It ships its runtime and steamclient libraries inside the sandbox, so running it from the host may fail. Install a Proton in ~/.steam/root/compatibilitytools.d/ and select it for this game."),
     ("diag_manual_launch", "{source} installation: manual launch"),
-    ("diag_manual_launch_detail", "Add a tool with runner=native in tools.ini that starts the installation's runner with its prefix, or use eidos play <instance> -- <runner> <game>. Automatic Steam/Proton tool setup does not apply to this copy."),
+    ("diag_manual_launch_detail", "Add a tool with runner=native in tools.ini that starts the installation's runner with its prefix, or use eidos play <instance> -- <runner> <game>. Other tools run with the Wine or Proton build that Heroic records for this copy, when it records one."),
     ("diag_no_prefix", "No Proton prefix found"),
     ("diag_no_prefix_detail", "Launch the game once through Steam so its prefix exists; until then the load order and INIs cannot be deployed."),
     ("diag_no_se_log", "No script-extender log yet"),

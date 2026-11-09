@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=226e33d31b260039513531ac88c3bdeefae8bb0b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2e5a1e8e03e41d94d1b49bde188087efab2adb1b -->
 
 # ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -327,9 +327,9 @@ Eidos が組み立てる `WINEDLLOVERRIDES` も同じで、これを設定する
 
 `runner=native` は Proton を通さずに `exe` そのものを実行します。統合ビューは
 どのツールとも同じようにマウントされ、`arg0=`、`arg1=` の行がその引数に
-なります。Linux のプログラムや、Steam が管理していないコピー (Heroic、
-Legendary) 向けのツールにはこれを使います。`exe` はそのコピーの Wine、Windows
-のプログラムが最初の引数で、プレフィックスは `env=` で指定します。
+なります。Linux のプログラムや、Steam が管理しておらず Heroic にもランナーの
+記録がないコピー向けのツールにはこれを使います。`exe` はそのコピーの Wine、
+Windows のプログラムが最初の引数で、プレフィックスは `env=` で指定します。
 
 ```ini
 [Tool/SSEEdit (GOG)]
@@ -347,6 +347,13 @@ env=WINEPREFIX=/home/me/Games/Heroic/Prefixes/default/Skyrim
 指定してください。ネイティブのツールでは Proton 用の手順は行われません。上で
 述べたレジストリキー、Steam のシェーダーキャッシュ、空の .NET ルート、
 `LD_PRELOAD` からの Steam オーバーレイの除去がそれです。
+
+Heroic でインストールした GOG または Epic のコピーでは、ゲームの Heroic 設定
+(`GamesConfig/<appName>.json`) に Wine か Proton のビルドが記録されていれば、
+ツールにこのエントリは要りません。Eidos はツールをそのビルドで、ゲームの
+Heroic プレフィックスの中で実行し、`eidos prereqs <instance> --install` も
+winetricks にそのビルドを使わせます。Legendary だけでインストールしたコピーには
+Heroic の設定がありません。
 
 `eidos tool <instance> run <title> --print` は、最終的なコマンドと、実行が継承した
 環境の上に設定する変数すべてを、これらの行も含めて表示します。

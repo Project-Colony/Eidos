@@ -21,9 +21,10 @@ use crate::{quoted_pair, steam_libraries};
 pub const STEAM_FLATPAK_ID: &str = "com.valvesoftware.Steam";
 
 /// A ready-to-spawn Proton invocation for one app.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProtonRun {
-    /// The `proton` entry script (run as `proton waitforexitandrun <exe> [args...]`).
+    /// The `proton` entry script (run as `proton waitforexitandrun <exe> [args...]`),
+    /// or a `wine` binary when [`plain_wine`](Self::plain_wine) is set.
     pub proton: PathBuf,
     /// Environment Proton needs: `STEAM_COMPAT_DATA_PATH` (the app's compatdata),
     /// `STEAM_COMPAT_CLIENT_INSTALL_PATH` (the Steam root), the Steam app id
@@ -34,6 +35,9 @@ pub struct ProtonRun {
     /// the host (see [`is_flatpak_steam`]), but front ends warn, because its
     /// sandbox libraries may not resolve.
     pub flatpak: bool,
+    /// `proton` is a plain Wine build (Heroic's `wine` runner type): it takes no
+    /// verb and finds its prefix in `WINEPREFIX`.
+    pub plain_wine: bool,
 }
 
 impl ProtonRun {
@@ -46,13 +50,53 @@ impl ProtonRun {
     /// previous session. `waitforexitandrun` is what Steam itself invokes for the
     /// game, matching Eidos's exclusive single-process tool launch.
     pub fn command(&self, exe: &Path, args: &[String]) -> Vec<String> {
-        let mut v = vec![
-            self.proton.to_string_lossy().into_owned(),
-            "waitforexitandrun".to_string(),
-            exe.to_string_lossy().into_owned(),
-        ];
+        self.with_verb("waitforexitandrun", exe, args)
+    }
+
+    /// The argv that runs `exe` in the existing prefix with `runinprefix`, which
+    /// skips Proton's game-drive setup.
+    pub fn run_in_prefix(&self, exe: &Path, args: &[String]) -> Vec<String> {
+        self.with_verb("runinprefix", exe, args)
+    }
+
+    fn with_verb(&self, verb: &str, exe: &Path, args: &[String]) -> Vec<String> {
+        let mut v = vec![self.proton.to_string_lossy().into_owned()];
+        if !self.plain_wine {
+            v.push(verb.to_string());
+        }
+        v.push(exe.to_string_lossy().into_owned());
         v.extend(args.iter().cloned());
         v
+    }
+}
+
+/// The run for a copy Heroic manages, with the build and prefix its settings
+/// for the game name. Nothing here reads Steam: a Heroic-only machine has no
+/// Steam root, and no Steam app id is set.
+pub(crate) fn heroic_run(bin: &Path, proton: bool, prefix: &Path) -> ProtonRun {
+    let prefix = prefix.to_string_lossy().into_owned();
+    let env = if proton {
+        vec![
+            ("STEAM_COMPAT_DATA_PATH".to_string(), prefix),
+            // The proton script indexes this one without checking for it. Empty
+            // means there is no Steam client to copy files from.
+            (
+                "STEAM_COMPAT_CLIENT_INSTALL_PATH".to_string(),
+                String::new(),
+            ),
+            // Present, GE-Proton starts the program without steam.exe. Empty, the
+            // checks that read its value (a umu-<appid> id, protonfixes' extra
+            // drives over $HOME and /mnt) stay off.
+            ("UMU_ID".to_string(), String::new()),
+        ]
+    } else {
+        vec![("WINEPREFIX".to_string(), prefix)]
+    };
+    ProtonRun {
+        proton: bin.to_path_buf(),
+        env,
+        flatpak: false,
+        plain_wine: !proton,
     }
 }
 
@@ -287,6 +331,7 @@ pub fn proton_command(
         proton,
         env,
         flatpak,
+        plain_wine: false,
     })
 }
 

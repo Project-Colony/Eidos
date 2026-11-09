@@ -270,9 +270,11 @@ pub(crate) fn cmd_tool(args: &[String]) {
             // prefix, and none of the Proton-only steps below.
             let native = tool.runner == eidos_instance::Runner::Native;
             let compat = game.compatdata.as_deref();
-            let run = match compat {
+            let run = match (compat, game.heroic_run()) {
                 _ if native => None,
-                None => {
+                // A Heroic copy: the Wine or Proton and prefix its settings name.
+                (_, Some(run)) => Some(run.clone()),
+                (None, None) => {
                     eidos_log::info!(
                         "No Steam Proton prefix for {id}. For a Heroic/Legendary copy, set \
                          runner=native on the tool in tools.ini, with exe= the copy's own runner \
@@ -280,7 +282,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
                     );
                     exit(1);
                 }
-                Some(compat) => {
+                (Some(compat), None) => {
                     let Some(run) = eidos_games::proton_command(
                         &home(),
                         game.def.steam_app_id,
@@ -310,25 +312,22 @@ pub(crate) fn cmd_tool(args: &[String]) {
             // for every run started from the GUI - the one way anyone starts one.
             // `game` is the already-resolved target a dozen lines above; there is
             // no second lookup left to get wrong.
-            if let (Some(run), Some(compat)) = (&run, compat) {
-                let proton = run.proton.clone();
-                let env = run.env.clone();
+            if let (Some(run), Some(prefix)) = (&run, game.prefix()) {
                 match eidos_gamefeatures::ensure_registry(
+                    &prefix,
                     compat,
                     &game.install_path,
                     game.def.registry_name,
+                    // `runinprefix`, not the game verb: this must not run
+                    // Proton's game-drive setup, only a program in the
+                    // existing prefix.
                     |reg_file| {
-                        vec![
-                            proton.to_string_lossy().into_owned(),
-                            // `runinprefix`, not the game verb: this must not run
-                            // Proton's game-drive setup, only a program in the
-                            // existing prefix.
-                            "runinprefix".to_string(),
-                            "regedit".to_string(),
-                            reg_file.to_string_lossy().into_owned(),
-                        ]
+                        run.run_in_prefix(
+                            Path::new("regedit"),
+                            &[reg_file.to_string_lossy().into_owned()],
+                        )
                     },
-                    &env,
+                    &run.env,
                 ) {
                     Ok(RegistryOutcome::Imported) => {
                         eidos_log::info!("eidos: registered the game path in the Wine prefix")
@@ -339,9 +338,10 @@ pub(crate) fn cmd_tool(args: &[String]) {
                     // lines are the only thing that connects that to Eidos.
                     Ok(RegistryOutcome::PrefixUninitialised) => eidos_log::warn!(
                         "eidos: the Wine prefix has not been created yet, so the game path is not \
-                         registered - launch {} once through Steam first, or '{title}' may open on \
+                         registered - launch {} once through {} first, or '{title}' may open on \
                          an empty folder.",
-                        game.def.name
+                        game.def.name,
+                        if game.is_steam() { "Steam" } else { "Heroic" }
                     ),
                     Ok(RegistryOutcome::PrefixBusy(busy)) => {
                         let who = busy
@@ -423,7 +423,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
             // shows them. The Creation Kit override is a different Steam app, so
             // the game's shader cache would be the wrong one for it. Not for a
             // native tool: a Linux .NET program needs the host's DOTNET_ROOT.
-            if let Some(compat) = compat.filter(|_| !native) {
+            if !native {
                 apply_tool_env_facts(
                     &mut env,
                     compat,
@@ -527,19 +527,20 @@ fn print_plan(
 
 /// Env a Windows tool needs from the host, not from the instance.
 ///
-/// Steam's shader cache for the game (only when its directory exists - Steam's
-/// tree is never written to - and never over a variable the user exported),
+/// Steam's shader cache for the game (only for a Steam copy and when its
+/// directory exists - Steam's tree is never written to - and never over a
+/// variable the user exported),
 /// empty .NET roots so a host SDK cannot hijack a framework-dependent tool, and
 /// no Steam overlay in `LD_PRELOAD`. `host` reads the inherited environment.
 fn apply_tool_env_facts(
     env: &mut Vec<(String, String)>,
-    compat: &Path,
+    compat: Option<&Path>,
     game_app_id: u32,
     app_id_override: bool,
     host: impl Fn(&str) -> Option<String>,
 ) {
     let mut push = |k: &str, v: String| env.push((k.to_string(), v));
-    if !app_id_override {
+    if let Some(compat) = compat.filter(|_| !app_id_override) {
         let cache = compat.join(format!("../../shadercache/{game_app_id}"));
         if cache.is_dir() {
             let c = |sub: &str| cache.join(sub).to_string_lossy().into_owned();
@@ -723,7 +724,7 @@ mod env_fact_tests {
     fn shader_cache_vars_follow_the_cache_dir_and_never_override_the_user() {
         let (root, compat) = library(true);
         let mut env = vec![];
-        apply_tool_env_facts(&mut env, &compat, 489830, false, |k| {
+        apply_tool_env_facts(&mut env, Some(&compat), 489830, false, |k| {
             (k == "MESA_SHADER_CACHE_MAX_SIZE").then(|| "1G".to_string())
         });
         assert!(get(&env, "STEAM_COMPAT_SHADER_PATH")
@@ -737,10 +738,10 @@ mod env_fact_tests {
         assert_eq!(get(&env, "MESA_GLSL_CACHE_DIR"), None);
         std::fs::create_dir(root.join("steamapps/shadercache/489830/DXVK_state_cache")).unwrap();
         let mut env = vec![];
-        apply_tool_env_facts(&mut env, &compat, 489830, false, |_| None);
+        apply_tool_env_facts(&mut env, Some(&compat), 489830, false, |_| None);
         assert!(get(&env, "DXVK_STATE_CACHE_PATH").is_some());
         let mut env = vec![];
-        apply_tool_env_facts(&mut env, &compat, 489830, true, |_| None);
+        apply_tool_env_facts(&mut env, Some(&compat), 489830, true, |_| None);
         assert_eq!(get(&env, "STEAM_COMPAT_SHADER_PATH"), None);
         let _ = std::fs::remove_dir_all(root);
     }
@@ -749,7 +750,7 @@ mod env_fact_tests {
     fn no_shader_vars_and_no_dir_created_when_steam_has_no_cache() {
         let (root, compat) = library(false);
         let mut env = vec![];
-        apply_tool_env_facts(&mut env, &compat, 489830, false, |_| None);
+        apply_tool_env_facts(&mut env, Some(&compat), 489830, false, |_| None);
         assert_eq!(get(&env, "STEAM_COMPAT_SHADER_PATH"), None);
         assert!(!root.join("steamapps/shadercache").exists());
         let _ = std::fs::remove_dir_all(root);
@@ -758,11 +759,11 @@ mod env_fact_tests {
     #[test]
     fn dotnet_roots_are_blanked_unless_the_tool_sets_one() {
         let mut env = vec![];
-        apply_tool_env_facts(&mut env, Path::new("/nope"), 1, false, |_| None);
+        apply_tool_env_facts(&mut env, None, 1, false, |_| None);
         assert_eq!(get(&env, "DOTNET_ROOT"), Some(""));
         assert_eq!(get(&env, "DOTNET_ROOT_X64"), Some(""));
         let mut env = vec![("DOTNET_ROOT".to_string(), "/rt".to_string())];
-        apply_tool_env_facts(&mut env, Path::new("/nope"), 1, false, |_| None);
+        apply_tool_env_facts(&mut env, None, 1, false, |_| None);
         assert_eq!(get(&env, "DOTNET_ROOT"), Some("/rt"));
         assert_eq!(env.iter().filter(|(k, _)| k == "DOTNET_ROOT").count(), 1);
     }
@@ -799,12 +800,12 @@ mod env_fact_tests {
     fn steam_overlay_leaves_ld_preload_but_other_entries_stay() {
         let pre = "/a/gameoverlayrenderer.so:/b/libx.so /c/gameoverlayrenderer.so";
         let mut env = vec![];
-        apply_tool_env_facts(&mut env, Path::new("/nope"), 1, false, |k| {
+        apply_tool_env_facts(&mut env, None, 1, false, |k| {
             (k == "LD_PRELOAD").then(|| pre.to_string())
         });
         assert_eq!(get(&env, "LD_PRELOAD"), Some("/b/libx.so"));
         let mut env = vec![];
-        apply_tool_env_facts(&mut env, Path::new("/nope"), 1, false, |k| {
+        apply_tool_env_facts(&mut env, None, 1, false, |k| {
             (k == "LD_PRELOAD").then(|| "/b/libx.so".to_string())
         });
         assert_eq!(get(&env, "LD_PRELOAD"), None);
