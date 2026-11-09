@@ -11,25 +11,40 @@ use std::time::UNIX_EPOCH;
 
 use fuser::{Errno, TimeOrNow};
 
+thread_local! {
+    // Grow-only: a FUSE worker keeps one buffer instead of allocating and
+    // zero-filling `size` bytes on every READ.
+    static READ_BUF: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
 /// Read up to `size` bytes at `offset` via `pread`, looping over short reads and
-/// stopping at EOF. `pread` does not disturb a shared file offset, so concurrent
-/// reads on one handle are safe.
-pub(crate) fn read_full_at(file: &File, mut offset: u64, size: usize) -> std::io::Result<Vec<u8>> {
-    let mut buf = vec![0u8; size];
-    let mut filled = 0;
-    while filled < size {
-        match file.read_at(&mut buf[filled..], offset) {
-            Ok(0) => break, // EOF
-            Ok(n) => {
-                filled += n;
-                offset += n as u64;
-            }
-            Err(ref e) if e.kind() == ErrorKind::Interrupted => continue,
-            Err(e) => return Err(e),
+/// stopping at EOF, then hand the bytes read (or the error) to `f` (they live in a per-thread
+/// buffer, so they must not outlive it). `pread` does not disturb a shared file
+/// offset, so concurrent reads on one handle are safe.
+pub(crate) fn read_full_at<R>(
+    file: &File,
+    mut offset: u64,
+    size: usize,
+    f: impl FnOnce(std::io::Result<&[u8]>) -> R,
+) -> R {
+    READ_BUF.with_borrow_mut(|buf| {
+        if buf.len() < size {
+            buf.resize(size, 0);
         }
-    }
-    buf.truncate(filled);
-    Ok(buf)
+        let mut filled = 0;
+        while filled < size {
+            match file.read_at(&mut buf[filled..size], offset) {
+                Ok(0) => break, // EOF
+                Ok(n) => {
+                    filled += n;
+                    offset += n as u64;
+                }
+                Err(ref e) if e.kind() == ErrorKind::Interrupted => continue,
+                Err(e) => return f(Err(e)),
+            }
+        }
+        f(Ok(&buf[..filled]))
+    })
 }
 
 /// Write all of `data` at `offset` via `pwrite`, looping over short writes.
@@ -194,4 +209,23 @@ pub(crate) fn statvfs_of(path: &Path) -> std::io::Result<libc::statvfs> {
         return Err(std::io::Error::last_os_error());
     }
     Ok(st)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn read_full_at_reuses_buffer_across_sizes() {
+        let mut tmp = tempfile::tempfile().unwrap();
+        let data: Vec<u8> = (0..=255u8).cycle().take(10_000).collect();
+        tmp.write_all(&data).unwrap();
+        let big = read_full_at(&tmp, 0, 8192, |r| r.unwrap().to_vec());
+        assert_eq!(big, data[..8192]);
+        let small = read_full_at(&tmp, 100, 16, |r| r.unwrap().to_vec());
+        assert_eq!(small, data[100..116]);
+        let eof = read_full_at(&tmp, 9_990, 64, |r| r.unwrap().to_vec());
+        assert_eq!(eof, data[9_990..]);
+    }
 }

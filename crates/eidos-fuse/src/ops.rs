@@ -502,10 +502,10 @@ impl Filesystem for Eidos {
             .get(&fh.0)
             .map(|o| o.file.clone());
         if let Some(file) = cached {
-            match read_full_at(&file, offset, size as usize) {
-                Ok(buf) => reply.data(&buf),
+            read_full_at(&file, offset, size as usize, |r| match r {
+                Ok(b) => reply.data(b),
                 Err(e) => reply.error(e.into()),
-            }
+            });
             return;
         }
 
@@ -521,8 +521,11 @@ impl Filesystem for Eidos {
             reply.error(Errno::ENOENT);
             return;
         };
-        match File::open(&real).and_then(|f| read_full_at(&f, offset, size as usize)) {
-            Ok(buf) => reply.data(&buf),
+        match File::open(&real) {
+            Ok(f) => read_full_at(&f, offset, size as usize, |r| match r {
+                Ok(b) => reply.data(b),
+                Err(e) => reply.error(e.into()),
+            }),
             Err(e) => reply.error(e.into()),
         }
     }

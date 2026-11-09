@@ -1181,6 +1181,7 @@ dependencies = [
  "eidos-core",
  "fuser",
  "libc",
+ "tempfile",
 ]
 
 [[package]]

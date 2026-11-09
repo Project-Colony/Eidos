@@ -16,6 +16,7 @@ libc.workspace = true
 # Integration tests mount a real union and check kernel-level behaviour.
 fuser.workspace = true
 libc.workspace = true
+tempfile.workspace = true
 
 # The union integration test enters a private user+mount namespace (so its
 # mounts are invisible to host desktop services and match how the product runs),
