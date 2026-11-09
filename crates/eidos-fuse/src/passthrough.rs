@@ -186,8 +186,21 @@ pub(crate) struct WriterSlot<'a, B> {
 }
 
 impl<'a, B> WriterSlot<'a, B> {
+    /// Take the place, then run `writer`, the copy-up or truncation of the
+    /// open, without the table locked. `None`, and `writer` never runs, while
+    /// passthrough opens of `ino` are live.
+    pub(crate) fn take_then<R>(
+        table: &'a Mutex<Passthrough<B>>,
+        ino: u64,
+        writer: impl FnOnce() -> R,
+    ) -> Option<(Self, R)> {
+        let slot = Self::take(table, ino)?;
+        let done = writer();
+        Some((slot, done))
+    }
+
     /// `None` while passthrough opens of `ino` are live.
-    pub(crate) fn take(table: &'a Mutex<Passthrough<B>>, ino: u64) -> Option<Self> {
+    fn take(table: &'a Mutex<Passthrough<B>>, ino: u64) -> Option<Self> {
         let taken = table.lock_recover().open_write(ino);
         taken.then_some(WriterSlot { table, ino })
     }
@@ -239,10 +252,25 @@ mod tests {
     fn a_writer_is_refused_while_passthrough_opens_are_live() {
         let table = Mutex::new(Passthrough::default());
         let _reader = passthrough(table.lock_recover().open_read(1, true, || Ok(7)));
-        assert!(WriterSlot::take(&table, 1).is_none());
+        let refused =
+            WriterSlot::take_then(&table, 1, || panic!("copied up beside a passthrough open"));
+        assert!(refused.is_none());
         // The refusal took no place, so the reader's release empties the inode.
         table.lock_recover().release(1, true);
         assert!(table.lock_recover().inodes.is_empty());
+    }
+
+    #[test]
+    fn a_writer_copies_up_only_once_it_counts_as_a_normal_open() {
+        let table = Mutex::new(Passthrough::<u32>::default());
+        let (slot, refs) = WriterSlot::take_then(&table, 1, || {
+            // try_lock: the copy-up of a large file never holds the table lock.
+            table.try_lock().unwrap().inodes[&1].normal_refs
+        })
+        .unwrap();
+        assert_eq!(refs, 1);
+        slot.keep();
+        assert_eq!(table.lock_recover().inodes[&1].normal_refs, 1);
     }
 
     #[test]
@@ -252,7 +280,8 @@ mod tests {
             passthrough(table.lock_recover().open_read(1, true, || Ok(7)));
         }
         table.lock_recover().release(1, true);
-        assert!(WriterSlot::take(&table, 1).is_none());
+        let refused = WriterSlot::take_then(&table, 1, || panic!("copied up beside a reader"));
+        assert!(refused.is_none());
         table.lock_recover().release(1, true);
         WriterSlot::take(&table, 1).unwrap().keep();
         assert_eq!(table.lock_recover().inodes[&1].normal_refs, 1);

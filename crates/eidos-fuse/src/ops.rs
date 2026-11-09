@@ -53,16 +53,28 @@ impl Eidos {
         passthrough_enabled() && self.plugin_timestamps.is_none()
     }
 
-    /// Count a writer among the normal opens of `ino`, or answer ETXTBSY while
-    /// passthrough opens of it are live. Called before any copy-up or
-    /// truncation: the kernel would fail that writer with EIO anyway, and an
-    /// O_TRUNC copy left empty in the Overwrite would hide the mod's file from
-    /// then on. Wine reports ETXTBSY as `STATUS_SHARING_VIOLATION`.
-    fn take_writer_slot(&self, ino: u64) -> Result<WriterSlot<'_, BackingId>, Errno> {
-        WriterSlot::take(&self.passthrough, ino).ok_or_else(|| {
-            Stats::bump(&self.stats.pt_writer_refused);
-            Errno::ETXTBSY
-        })
+    /// Run `writer`, the copy-up or truncation of a writer's open, once the
+    /// writer counts among the normal opens of its inode (`ino`, asked only
+    /// when passthrough is on). While passthrough opens of the inode are live,
+    /// answer ETXTBSY and never run `writer`: the kernel would fail that writer
+    /// with EIO anyway, and an O_TRUNC copy left empty in the Overwrite would
+    /// hide the mod's file from then on. Wine reports ETXTBSY as
+    /// `STATUS_SHARING_VIOLATION`.
+    fn with_writer_slot<R>(
+        &self,
+        ino: impl FnOnce() -> u64,
+        writer: impl FnOnce() -> R,
+    ) -> Result<(Option<WriterSlot<'_, BackingId>>, R), Errno> {
+        if !self.passthrough_on() {
+            return Ok((None, writer()));
+        }
+        match WriterSlot::take_then(&self.passthrough, ino(), writer) {
+            Some((slot, done)) => Ok((Some(slot), done)),
+            None => {
+                Stats::bump(&self.stats.pt_writer_refused);
+                Err(Errno::ETXTBSY)
+            }
+        }
     }
 }
 
@@ -197,38 +209,47 @@ impl Filesystem for Eidos {
         let accmode = flags.0 & libc::O_ACCMODE;
         let want_write = accmode == libc::O_WRONLY || accmode == libc::O_RDWR;
         let truncating = want_write && flags.0 & libc::O_TRUNC != 0;
-        // Taken before the copy-up below; every early return gives it back.
-        let writer_slot = if want_write && self.passthrough_on() {
-            match self.take_writer_slot(ino.0) {
-                Ok(slot) => Some(slot),
+        // A writer's slot; every early return below gives it back.
+        let (writer_slot, real) = if want_write {
+            let prepared = self.with_writer_slot(
+                || ino.0,
+                || -> std::io::Result<PathBuf> {
+                    // O_TRUNC discards the existing content, so don't pay to copy the
+                    // lower file up first - just prepare the overwrite path (parents +
+                    // clear whiteout) and create it empty. Otherwise copy-up so the
+                    // backing file is the Overwrite copy, never the read-only mod/game
+                    // file.
+                    if !truncating {
+                        return self.stack.open_for_write(&vpath);
+                    }
+                    let real = self.stack.prepare_overwrite(&vpath)?;
+                    if real.is_dir() {
+                        return Ok(real);
+                    }
+                    // O_TRUNC makes the name appear, so it goes through the stack like
+                    // every other creation; the remaining opens here only ever touch a
+                    // name that already exists.
+                    self.stack.create_truncated(&vpath)?;
+                    let receipt = self.remove_projected_time(&vpath);
+                    self.invalidate_page_cache(ino.0);
+                    receipt?;
+                    Ok(real)
+                },
+            );
+            match prepared {
+                Ok((slot, Ok(real))) => (slot, real),
+                Ok((_, Err(e))) => {
+                    reply.error(e.into());
+                    return;
+                }
                 Err(e) => {
                     reply.error(e);
                     return;
                 }
             }
         } else {
-            None
-        };
-        let real = if want_write {
-            // O_TRUNC discards the existing content, so don't pay to copy the lower
-            // file up first - just prepare the overwrite path (parents + clear
-            // whiteout) and create it empty below. Otherwise copy-up so the backing
-            // file is the Overwrite copy, never the read-only mod/game file.
-            let prepared = if truncating {
-                self.stack.prepare_overwrite(&vpath)
-            } else {
-                self.stack.open_for_write(&vpath)
-            };
-            match prepared {
-                Ok(p) => p,
-                Err(e) => {
-                    reply.error(e.into());
-                    return;
-                }
-            }
-        } else {
             match self.stack.resolve_read(&vpath) {
-                Some(p) => p,
+                Some(p) => (None, p),
                 None => {
                     reply.error(Errno::ENOENT);
                     return;
@@ -241,23 +262,6 @@ impl Filesystem for Eidos {
             return;
         }
 
-        // O_TRUNC makes the name appear, so it goes through the stack like every
-        // other creation; the remaining opens here only ever touch a name that
-        // already exists.
-        if truncating {
-            match self.stack.create_truncated(&vpath).and_then(|created| {
-                let receipt = self.remove_projected_time(&vpath);
-                self.invalidate_page_cache(ino.0);
-                receipt?;
-                Ok(created)
-            }) {
-                Ok(_) => {}
-                Err(e) => {
-                    reply.error(e.into());
-                    return;
-                }
-            }
-        }
         let mut opts = OpenOptions::new();
         if want_write {
             opts.read(true).write(true);
@@ -722,39 +726,35 @@ impl Filesystem for Eidos {
         };
         let vpath = join(&parent_vpath, &name.to_string_lossy());
 
-        // A writer like any other: refused before create_truncated empties the
-        // file, if passthrough opens of it are live.
-        let writer_slot = if self.passthrough_on() {
-            let ino = self.inodes.lock_recover().intern(&vpath);
-            match self.take_writer_slot(ino) {
-                Ok(slot) => Some(slot),
-                Err(e) => {
-                    reply.error(e);
-                    return;
-                }
-            }
-        } else {
-            None
-        };
-
         // Materialise the file (and any missing parents) in the Overwrite layer.
         // CREATE means "this file did not exist" (the kernel only sends it after a
         // negative lookup), so the new file must start EMPTY: prepare_overwrite
         // clears any whiteout WITHOUT copying a deleted lower-layer file up, and
         // truncate(true) guarantees zero length. Using open_for_write here would
         // resurrect the old bytes of a deleted mod/game file into the "new" file.
-        let opened = (|| -> std::io::Result<(PathBuf, File, Metadata)> {
-            let (dest, file) = self.stack.create_truncated(&vpath)?;
-            self.dir_changed(parent.0, &name.to_string_lossy());
-            self.remove_projected_time(&vpath)?;
-            let meta = fs::symlink_metadata(&dest)?;
-            Ok((dest, file, meta))
-        })();
-        let (real, file, meta) = match opened {
-            Ok(t) => t,
-            Err(e) => {
+        //
+        // A writer like any other: refused before create_truncated empties the
+        // file, if passthrough opens of it are live. The passthrough table needs
+        // the inode before the file exists.
+        let opened = self.with_writer_slot(
+            || self.inodes.lock_recover().intern(&vpath),
+            || -> std::io::Result<(PathBuf, File, Metadata)> {
+                let (dest, file) = self.stack.create_truncated(&vpath)?;
+                self.dir_changed(parent.0, &name.to_string_lossy());
+                self.remove_projected_time(&vpath)?;
+                let meta = fs::symlink_metadata(&dest)?;
+                Ok((dest, file, meta))
+            },
+        );
+        let (writer_slot, (real, file, meta)) = match opened {
+            Ok((slot, Ok(t))) => (slot, t),
+            Ok((_, Err(e))) => {
                 reply.error(e.into());
                 self.invalidate_failed_entry(parent, name);
+                return;
+            }
+            Err(e) => {
+                reply.error(e);
                 return;
             }
         };
