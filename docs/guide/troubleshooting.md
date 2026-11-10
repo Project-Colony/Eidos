@@ -263,3 +263,9 @@ passthrough, and a mount that projects plugin timestamps does not use it at all.
 A writer that opens a file while passthrough readers hold it gets ETXTBSY (Wine:
 `STATUS_SHARING_VIOLATION`) before any copy-up, so an `O_TRUNC` open cannot
 leave an empty Overwrite copy that hides the mod's file.
+
+### The Mod Manager Download button does nothing
+
+Preferences > Downloads shows which program receives `nxm://` links. Health adds a card when that program is not Eidos, is missing, or when none is set. The Register button writes `eidos-nxm.desktop` and makes it the default handler for `x-scheme-handler/nxm`. From a terminal, `eidos nxm --register` does the same.
+
+If the status already names Eidos and the button still does nothing, the browser may be using a choice it made earlier. Clear the saved choice for nxm links in the browser's settings so that it asks again. A Flatpak browser cannot start host programs itself and hands the link over through the desktop portal, which reads the handler registered on the host.

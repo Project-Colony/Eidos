@@ -1,0 +1,17 @@
+{
+  "files": [
+    {"file_id": 101, "name": "Main", "file_name": "m-1-0.7z", "version": "1.0", "category_id": 4, "size_in_bytes": 1000, "uploaded_timestamp": 1000},
+    {"file_id": 102, "name": "Main", "file_name": "m-1-1.7z", "version": "1.1", "category_id": 4, "size_kb": 2, "uploaded_timestamp": 2000},
+    {"file_id": 103, "name": "Main", "file_name": "m-1-2.7z", "version": "1.2", "category_id": 1, "size_in_bytes": 3000, "uploaded_timestamp": 3000},
+    {"file_id": 201, "name": "Extra", "file_name": "x-0-9.7z", "version": "0.9", "category_id": 3, "size_in_bytes": 500, "uploaded_timestamp": 1500},
+    {"file_id": 301, "name": "Old", "file_name": "o-2-0.7z", "version": "2.0", "category_id": 7, "size_in_bytes": 700, "uploaded_timestamp": 1200},
+    {"file_id": 402, "name": "Loop", "file_name": "l-3-0.7z", "version": "3.0", "category_id": 1, "size_in_bytes": 900, "uploaded_timestamp": 4000}
+  ],
+  "file_updates": [
+    {"old_file_id": 101, "new_file_id": 102},
+    {"old_file_id": 102, "new_file_id": 103},
+    {"old_file_id": 301, "new_file_id": 302},
+    {"old_file_id": 401, "new_file_id": 402},
+    {"old_file_id": 402, "new_file_id": 401}
+  ]
+}

@@ -99,6 +99,33 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     }
                 }
             }
+            let walk = nexus::walk_tick(app);
+            // An update's new file has landed: install it over its folder, once
+            // no other install is under way.
+            // shortcut: matched on the listed rows, so a Downloads filter hiding
+            // the new file holds the install until it is cleared; scan with
+            // `find_download` if that bites.
+            let arrived = app.pending_update.as_ref().and_then(|p| {
+                app.downloads
+                    .iter()
+                    .find(|r| {
+                        r.mod_id == Some(p.mod_id)
+                            && r.file_id == Some(p.file_id)
+                            && !matches!(
+                                r.state,
+                                DownloadState::Downloading
+                                    | DownloadState::Stalled
+                                    | DownloadState::Paused
+                            )
+                    })
+                    .map(|r| r.path.clone())
+            });
+            if let Some(path) = arrived.filter(|_| !install_busy(app)) {
+                let folder = app.pending_update.take().expect("matched above").folder;
+                app.update_target = Some(folder.clone());
+                return Task::batch([walk, open_mod_archive(app, path, folder, false)]);
+            }
+            return walk;
         }
         Message::DeleteDownload(name) => {
             app.confirm_delete_download = Some(name);

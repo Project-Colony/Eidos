@@ -18,6 +18,7 @@ eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
 eidos check skyrimse              # Health checks without the window (--json for scripts)
 eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
+eidos nexus update skyrimse --apply  # install the Nexus files that replaced yours
 eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
 eidos unpack backup.eidos <folder>   # put it back on the other machine
 ```
@@ -247,6 +248,16 @@ with its exact page URL for you to fetch yourself. That is a Nexus business
 rule, and no amount of retrying gets past it. Fetch them through the site's
 button and run the command again: those members are looked for in `downloads/`
 on every run, so the collection finishes as you supply it.
+
+In the window, a free account gets
+*Fetch the N missing required files, one by one* in the collection pane in
+place of the batch fetch. It opens the first missing required file's page on
+Nexus, waits for that file to land in `downloads/`, then opens the next. You
+still press the page's download button for each file. The pane shows how far
+along it is (*3 of 12*), with *Skip* and *Stop*. When another file of the same
+mod lands instead, the pane names both file ids and keeps waiting for the
+pinned one. Optional members are not part of it and keep their own *Open*
+button.
 
 Applied as the collection describes: **binary patches** (each checked against
 its recorded CRC), **file overrides** (the named files are hidden with
@@ -565,6 +576,38 @@ same button unhides. "Remove N installed" deletes the archives of mods you have
 already installed, in two clicks, and only the ones **on screen**: the filter is
 how you said which ones you meant.
 
+### Mod updates
+
+The update button at the right end of the toolbar compares each installed file
+with the file that replaced it on Nexus. Authors mark a new upload as the
+successor of an older one, and Eidos follows that chain from the file id the
+mod's `meta.ini` records. When the chain names no successor, the mod page's
+version is compared instead.
+
+The **Nexus files** tab of "Information..." lists the mod's files on Nexus,
+newest first, and marks the one installed here and the one that replaces it.
+That second row has an **Update** button. With a premium account Eidos downloads
+the file itself. With a free account it opens the file's page, where Mod Manager
+Download sends the file back, and the install starts when the archive arrives in
+`downloads/`. From there it is the usual install: a FOMOD opens on the answers
+the mod was installed with, then the prompt offers Replace with "Keep a backup of
+the existing mod" ticked, whatever you chose at the last prompt. Replace keeps
+the mod's priority and enabled state.
+
+A folder that holds several Nexus files, such as a main file with an optional
+file merged into it, is refused: replacing it with the new main file would drop
+the others. Update those by hand.
+
+`eidos nexus update skyrimse --apply` runs the same check, then on a premium
+account downloads each new file and installs it over its folder with
+`--replace --backup`. On a free account it prints `OPEN <url>` for each file
+page instead. Folders that merge several files are skipped with the reason. A
+FOMOD mod with no recorded answers, such as one installed before Eidos kept
+them, is not reinstalled with the installer's defaults: that update fails with a
+message to update the mod once from the window, which records the answers. A
+FOMOD whose installer has nothing to choose is installed as usual. The command
+exits 1 if any update failed.
+
 ### Nexus collections
 
 Paste a collection link - or click one on the site - and Eidos lists the
@@ -579,6 +622,8 @@ A collection can only be read against **its own game**. Open a Skyrim collection
 with a Fallout 4 instance loaded and it refuses by name rather than joining the
 members against the wrong mod list, where every "installed" and every "missing"
 would be noise wearing the shape of an answer.
+
+When you run Check for updates, Eidos also asks Nexus for the latest revision of each collection installed in this instance. A line above the mod list names every collection with a newer revision and counts the mods added (+), updated (~) and dropped (-); hover it for their names. The counts are missing when the installed revision's recipe is no longer cached. **Update** opens the newer revision in the collection pane, where *Install this collection* runs it. The list is rebuilt on every check and is not saved.
 
 ### Offline mode
 
@@ -597,7 +642,7 @@ whichever node Nexus offered first.
 **Categories** are editable, not just displayed: assign them to one mod or a
 whole selection, edit the catalog itself from the same dialog, and pull the
 game's official category list from Nexus. Both catalog files are MO2's own
-(`categories.dat` and `nexuscatmap.dat`), so a shared instance keeps one catalog.
+(`categories.dat` and `nexuscatmap.dat`), so a shared instance keeps one catalog. A mod downloaded from Nexus is categorised at install, once Fetch from Nexus has mapped the catalog.
 
 **View -> INI editor** edits the profile's game INIs - the copy that persists,
 rather than the one buried in the Proton prefix that is overwritten at every
@@ -608,6 +653,12 @@ Installing accepts everything: the Simple and FOMOD paths, plus Wrye Bash
 **BAIN** packages (tick the sub-packages, which merge in order) and a **manual**
 picker that shows the archive tree and lets you point at the data root when no
 heuristic recognises the layout. No archive is refused.
+
+Reinstalling or updating a FOMOD mod opens the wizard with the answers of its
+last install ticked, on the first step whose options changed since then, with
+the changes listed. **Reinstall with new choices** starts from the installer's
+defaults instead. `eidos install --replace` or `--merge` reuses the stored
+answers and refuses, listing the changes, when they no longer fit.
 
 **Diagnostics** runs live health checks: the launch capability above all, missing
 masters (the single most reliable crash predictor), archives no active plugin
@@ -621,6 +672,7 @@ not start Eidos with `%command%`, NVAPI left off for DLSS, exclusive fullscreen
 that stops frame generation, an ENB `enblocal.ini` without `LinuxVersion=true`,
 the plugin declarations of F4SE and SFSE plugins, and the crash log of the last
 session with the mods it names.
+Check for updates also reads each mod's Nexus requirements. Diagnostics lists a required mod that is missing or disabled, with Ignore for a requirement met another way.
 
 To launch the game through the GUI, set the game's Steam launch option to the
 binary's absolute path (Steam doesn't see `~/.cargo/bin` on PATH):

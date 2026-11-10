@@ -38,6 +38,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.info_anim.start();
             }
             app.info_tab = t;
+            if t == InfoTab::NexusFiles {
+                if let Some((domain, mod_id)) =
+                    app.info_mod.and_then(|i| nexus_files_target(app, i))
+                {
+                    return fetch_nexus_files(app, domain, mod_id);
+                }
+            }
         }
         Message::NotesChanged(s) => {
             app.typing = true;

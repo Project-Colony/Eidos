@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=b5edc34c215538169c79791bdca9a79b41d45e15 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=92ef50801ef60cd7ea02e2a2f2538c313e3aeca1 -->
 
 # Usar o Eidos
 
@@ -20,6 +20,7 @@ eidos play skyrimse               # mostrar o que seria montado
 eidos play skyrimse -- <command>  # rodar <command> com os mods montados sobre o jogo
 eidos check skyrimse              # verificações de saúde sem a janela (--json para scripts)
 eidos collection skyrimse <link>  # instalar uma coleção do Nexus do jeito que o autor dela a montou
+eidos nexus update skyrimse --apply  # instalar os arquivos do Nexus que substituíram os seus
 eidos pack skyrimse backup.eidos  # a instância inteira num arquivo só, para levá-la a outro lugar
 eidos unpack backup.eidos <folder>   # repô-la na outra máquina
 ```
@@ -250,6 +251,16 @@ membro é reportado com a URL exata da página dele para você mesmo buscá-lo. 
 cima dela. Busque-os pelo botão do site e rode o comando de novo: esses membros
 são procurados em `downloads/` a cada execução, então a coleção vai se
 completando conforme você os fornece.
+
+Na janela, uma conta gratuita ganha no painel da coleção
+*Fetch the N missing required files, one by one* no lugar da busca em lotes.
+Ele abre no Nexus a página do primeiro arquivo obrigatório que falta, espera
+esse arquivo chegar em `downloads/` e então abre o próximo. O botão de download
+da página continua sendo você quem aperta, em cada arquivo. O painel mostra em
+que ponto está (*3 of 12*), com *Skip* e *Stop*. Se chegar outro arquivo do
+mesmo mod no lugar, o painel cita os dois ids de arquivo e continua esperando o
+que a coleção fixa. Membros opcionais ficam de fora e mantêm o próprio botão
+*Open*.
 
 Aplicados como a coleção descreve: **patches binários** (cada um conferido com o CRC registrado), **overrides de arquivo** (os arquivos indicados são ocultados com `.mohidden`, como o MO2 faz) e os membros cujos arquivos viajam dentro do arquivo da coleção (`bundle`). Os membros que a coleção espera
 que você busque à mão (`browse`, `manual`) levam as instruções do próprio autor
@@ -590,6 +601,39 @@ hidden" traz todos de volta, e o mesmo botão desoculta. "Remove N installed"
 apaga os arquivos dos mods que você já instalou, em dois cliques, e só os que
 estão **na tela**: o filtro é como você disse quais eram.
 
+### Atualizações de mods
+
+O botão de atualização na ponta direita da barra de ferramentas compara cada
+arquivo instalado com o arquivo que o substituiu no Nexus. Os autores marcam um
+novo envio como sucessor de um mais antigo, e o Eidos segue essa cadeia a partir
+do id de arquivo que o `meta.ini` do mod registra. Quando a cadeia não aponta
+nenhum sucessor, a versão da página do mod é comparada no lugar.
+
+A aba **Nexus files** de "Information..." lista os arquivos do mod no Nexus, do
+mais novo ao mais antigo, e marca o instalado aqui e o que o substitui. Essa
+segunda linha tem um botão **Update**. Com uma conta premium, o Eidos baixa o
+arquivo sozinho. Com uma conta gratuita, ele abre a página do arquivo, onde o
+Mod Manager Download manda o arquivo de volta, e a instalação começa quando o
+pacote chega em `downloads/`. Daí em diante é a instalação de sempre: um FOMOD
+abre com as respostas com que o mod foi instalado, e depois o aviso oferece
+Replace com "Keep a backup of the existing mod" marcado, seja qual for a sua
+escolha no aviso anterior. Replace mantém a prioridade do mod e se ele está
+ativado.
+
+Uma pasta que contém vários arquivos do Nexus, como um arquivo principal com um
+opcional mesclado dentro, é recusada: substituí-la pelo novo arquivo principal
+perderia os outros. Atualize esses à mão.
+
+`eidos nexus update skyrimse --apply` faz a mesma verificação e, em uma conta
+premium, baixa cada arquivo novo e o instala sobre a pasta dele com
+`--replace --backup`. Em uma conta gratuita, imprime `OPEN <url>` para cada
+página de arquivo. Pastas que mesclam vários arquivos são puladas com o motivo.
+Um mod FOMOD sem respostas salvas, como um instalado antes de o Eidos guardá-las,
+não é reinstalado com os padrões do instalador: essa atualização falha com uma
+mensagem pedindo para atualizar o mod uma vez pela janela, que salva as
+respostas. Um FOMOD cujo instalador não oferece nada para escolher é instalado
+normalmente. O comando sai com 1 se alguma atualização falhou.
+
 ### Coleções do Nexus
 
 Cole o link de uma coleção - ou clique num na página - e o Eidos lista os
@@ -604,6 +648,8 @@ Uma coleção só pode ser lida contra **o próprio jogo dela**. Abra uma coleç
 Skyrim com uma instância de Fallout 4 carregada e ele recusa dizendo o nome, em
 vez de cruzar os membros com a lista de mods errada, onde cada "instalado" e
 cada "faltando" seria ruído com forma de resposta.
+
+Ao verificar atualizações, o Eidos também pergunta à Nexus pela última revisão de cada coleção instalada nesta instância. Uma linha acima da lista de mods nomeia cada coleção com revisão mais nova e conta os mods adicionados (+), atualizados (~) e removidos (-); passe o mouse para ver os nomes. As contagens somem quando a receita da revisão instalada não está mais no cache. **Atualizar** abre a revisão nova no painel de coleções, onde *Install this collection* a executa. A lista é refeita a cada verificação e não é salva.
 
 ### Modo offline
 
@@ -623,7 +669,7 @@ As **Categories** são editáveis, não só exibidas: atribua-as a um mod ou a u
 seleção inteira, edite o próprio catálogo pelo mesmo diálogo, e puxe do Nexus a
 lista oficial de categorias do jogo. Os dois arquivos de catálogo são os do
 próprio MO2 (`categories.dat` e `nexuscatmap.dat`), então uma instância
-compartilhada mantém um catálogo só.
+compartilhada mantém um catálogo só. Um mod baixado do Nexus é categorizado na instalação, depois que Buscar do Nexus mapeou o catálogo.
 
 **View -> INI editor** edita os INIs do jogo do perfil - a cópia que persiste, e
 não a que fica enterrada no prefixo Proton e é sobrescrita a cada início.
@@ -635,6 +681,13 @@ do Wrye Bash (marque os sub-pacotes, que são mesclados em ordem) e um seletor
 **manual** que mostra a árvore do arquivo e deixa você apontar a raiz dos dados
 quando nenhuma heurística reconhece o layout. Nenhum arquivo é recusado.
 
+Reinstalar ou atualizar um mod FOMOD abre o assistente com as respostas da
+última instalação marcadas, no primeiro passo cujas opções mudaram desde então,
+com a lista de mudanças. **Reinstall with new choices** começa, em vez disso,
+pelos padrões do instalador. `eidos install --replace` ou `--merge` reaproveita
+as respostas salvas e recusa a instalação, listando as mudanças, quando elas não
+servem mais.
+
 **Diagnostics** roda verificações de saúde ao vivo: a capacidade de iniciar
 acima de tudo, masters faltando (o preditor de crash mais confiável que existe),
 archives que nenhum plugin ativo vai carregar, se a lista de mods ainda
@@ -642,6 +695,7 @@ corresponde à pasta de mods e - depois de uma execução - o que o log do próp
 script extender diz sobre cada uma das DLLs de plugin dele, o que transforma
 "meus plugins SKSE carregaram?" de uma inferência em uma evidência.
 Também aponta uma atualização do jogo desde a última inicialização limpa, um script extender ausente ou que não bate com a versão do jogo (com a página de download do extender e um botão que instala o arquivo que você baixar), uma opção de inicialização da Steam que não inicia o Eidos com `%command%`, NVAPI desligado para DLSS, tela cheia exclusiva que impede a geração de quadros, um `enblocal.ini` de ENB sem `LinuxVersion=true`, as declarações de plugins F4SE e SFSE e o log de crash da última sessão com os mods que ele cita.
+Verificar atualizações também lê os requisitos de cada mod no Nexus. Diagnostics lista o mod exigido que está ausente ou desativado, com Ignore para um requisito atendido de outra forma.
 
 Para iniciar o jogo pela GUI, defina a opção de inicialização do Steam daquele
 jogo com o caminho absoluto do binário (o Steam não enxerga `~/.cargo/bin` no

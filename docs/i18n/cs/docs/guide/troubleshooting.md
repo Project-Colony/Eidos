@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=c9bb5a3ae78695b89ce4595223a2d2ff1902345e -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=55e68d8b6ee830b2d336ce1e96db32155a304c57 -->
 
 # Řešení potíží a diagnostika
 
@@ -269,3 +269,9 @@ Otevření pro zápis u souboru, který drží čtenáři přes passthrough, dos
 ETXTBSY (ve Wine: `STATUS_SHARING_VIOLATION`) dřív, než proběhne jakýkoli
 copy-up, takže otevření s `O_TRUNC` nemůže v Overwrite nechat prázdnou kopii,
 která by skryla soubor módu.
+
+### Tlačítko Mod Manager Download nic nedělá
+
+Předvolby > Stahování ukazují, který program přijímá odkazy `nxm://`. Zdraví přidá kartu, když tím programem není Eidos, když chybí nebo když není nastaven žádný. Tlačítko Registrovat zapíše `eidos-nxm.desktop` a nastaví ho jako výchozí obsluhu `x-scheme-handler/nxm`. Z terminálu totéž udělá `eidos nxm --register`.
+
+Pokud stav už uvádí Eidos a tlačítko přesto nic nedělá, prohlížeč možná používá dřívější volbu. V nastavení prohlížeče smažte uloženou volbu pro odkazy nxm, aby se zeptal znovu. Prohlížeč z Flatpaku nemůže spouštět programy hostitele a předá odkaz přes desktopový portál, který čte obsluhu registrovanou na hostiteli.

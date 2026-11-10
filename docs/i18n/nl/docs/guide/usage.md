@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=b5edc34c215538169c79791bdca9a79b41d45e15 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=92ef50801ef60cd7ea02e2a2f2538c313e3aeca1 -->
 
 # Eidos gebruiken
 
@@ -20,6 +20,7 @@ eidos play skyrimse               # tonen wat er gekoppeld zou worden
 eidos play skyrimse -- <command>  # <command> draaien met de mods over het spel gekoppeld
 eidos check skyrimse              # gezondheidscontroles zonder het venster (--json voor scripts)
 eidos collection skyrimse <link>  # een Nexus-collectie installeren zoals de auteur haar gebouwd heeft
+eidos nexus update skyrimse --apply  # de Nexus-bestanden installeren die de jouwe vervingen
 eidos pack skyrimse backup.eidos  # de hele instantie in één bestand, om ze elders heen te verhuizen
 eidos unpack backup.eidos <folder>   # zet ze terug op de andere machine
 ```
@@ -255,6 +256,17 @@ een zakelijke regel van Nexus, en geen hoeveelheid opnieuw proberen komt eraan
 voorbij. Haal ze op via de knop van de site en draai de opdracht opnieuw: er
 wordt bij elke run in `downloads/` naar die leden gezocht, zodat de collectie
 afgemaakt wordt naarmate jij ze aanlevert.
+
+In het venster krijgt een gratis account in het collectiepaneel
+*Fetch the N missing required files, one by one* in plaats van het ophalen in
+partijen. Het opent op Nexus de pagina van het eerste ontbrekende verplichte
+bestand, wacht tot dat bestand in `downloads/` aankomt en opent dan het
+volgende. De downloadknop van de pagina druk je nog steeds zelf in, voor elk
+bestand. Het paneel toont hoe ver het is (*3 of 12*), met *Skip* en *Stop*.
+Komt er in plaats daarvan een ander bestand van dezelfde mod binnen, dan noemt
+het paneel beide bestands-id's en blijft het wachten op het bestand dat de
+collectie vastlegt. Optionele leden doen niet mee en houden hun eigen knop
+*Open*.
 
 Toegepast zoals de collectie het beschrijft: **binaire patches** (elk gecontroleerd tegen de vastgelegde CRC), **bestandsoverrides** (de genoemde bestanden worden met `.mohidden` verborgen, zoals MO2 doet) en leden waarvan de bestanden binnen het collectiearchief meereizen (`bundle`). Leden die de collectie je met de hand
 laat ophalen (`browse`, `manual`) dragen de eigen instructies van de auteur door
@@ -601,6 +613,41 @@ zichtbaar. "Remove N installed" verwijdert de archieven van mods die je al
 geïnstalleerd hebt, in twee klikken, en alleen die **op het scherm**: met het
 filter heb je gezegd welke je bedoelde.
 
+### Mod-updates
+
+De updateknop aan het rechtereinde van de werkbalk vergelijkt elk geïnstalleerd
+bestand met het bestand dat het op Nexus verving. Auteurs markeren een nieuwe
+upload als opvolger van een oudere, en Eidos volgt die keten vanaf het
+bestands-id dat de `meta.ini` van de mod vastlegt. Noemt de keten geen opvolger,
+dan wordt in plaats daarvan de versie van de modpagina vergeleken.
+
+Het tabblad **Nexus files** van "Information..." toont de bestanden van de mod
+op Nexus, nieuwste eerst, en markeert het bestand dat hier geïnstalleerd is en
+het bestand dat het vervangt. Die tweede rij heeft een knop **Update**. Met een
+premium-account downloadt Eidos het bestand zelf. Met een gratis account opent
+het de pagina van het bestand, waar Mod Manager Download het bestand
+terugstuurt, en de installatie begint zodra het archief in `downloads/` aankomt.
+Vanaf daar is het de gewone installatie: een FOMOD opent met de antwoorden
+waarmee de mod geïnstalleerd werd, daarna biedt de vraag Replace aan met "Keep a
+backup of the existing mod" aangevinkt, wat je bij de vorige vraag ook koos.
+Replace behoudt de prioriteit van de mod en of hij aanstaat.
+
+Een map met meerdere Nexus-bestanden, zoals een hoofdbestand met een optioneel
+bestand erin samengevoegd, wordt geweigerd: hem vervangen door het nieuwe
+hoofdbestand zou de andere kwijtraken. Werk die met de hand bij.
+
+`eidos nexus update skyrimse --apply` doet dezelfde controle en downloadt daarna
+met een premium-account elk nieuw bestand en installeert het met
+`--replace --backup` over zijn map. Met een gratis account drukt het in plaats
+daarvan `OPEN <url>` af voor elke bestandspagina. Mappen die meerdere bestanden
+samenvoegen worden met de reden overgeslagen. Een FOMOD-mod zonder opgeslagen
+antwoorden, zoals een die geïnstalleerd is voordat Eidos ze bewaarde, wordt niet
+opnieuw geïnstalleerd met de standaardwaarden van het installatieprogramma: die
+update mislukt met een melding om de mod één keer vanuit het venster bij te
+werken, dat de antwoorden dan opslaat. Een FOMOD waarvan het
+installatieprogramma niets te kiezen geeft, wordt gewoon geïnstalleerd. De
+opdracht eindigt met 1 als een update mislukte.
+
 ### Nexus-collecties
 
 Plak een collectielink - of klik er een aan op de site - en Eidos toont de leden
@@ -615,6 +662,8 @@ Een collectie kan alleen tegen **haar eigen spel** gelezen worden. Open een
 Skyrim-collectie met een Fallout 4-instantie geladen en het weigert met naam en
 toenaam in plaats van de leden aan de verkeerde modlijst te koppelen, waar elke
 "installed" en elke "missing" ruis zou zijn in de vorm van een antwoord.
+
+Als u op updates controleert, vraagt Eidos Nexus ook om de nieuwste revisie van elke collectie die in deze instantie is geïnstalleerd. Een regel boven de modlijst noemt elke collectie met een nieuwere revisie en telt de toegevoegde (+), bijgewerkte (~) en vervallen (-) mods; houd de muis erboven voor de namen. De aantallen ontbreken als het recept van de geïnstalleerde revisie niet meer in de cache staat. **Bijwerken** opent de nieuwere revisie in het collectiepaneel, waar *Install this collection* hem uitvoert. De lijst wordt bij elke controle opnieuw opgebouwd en niet bewaard.
 
 ### Offlinemodus
 
@@ -635,7 +684,7 @@ dan gebeurt de download toch, vanaf het knooppunt dat Nexus als eerste aanbood.
 een hele selectie, bewerk de catalogus zelf vanuit dezelfde dialoog, en haal de
 officiële categorielijst van het spel op bij Nexus. Beide catalogusbestanden zijn
 die van MO2 (`categories.dat` en `nexuscatmap.dat`), dus een gedeelde instantie
-houdt één catalogus.
+houdt één catalogus. Een van Nexus gedownloade mod krijgt bij de installatie een categorie, zodra Ophalen van Nexus de catalogus heeft gekoppeld.
 
 **View -> INI editor** bewerkt de spel-INI's van het profiel - de kopie die
 blijft bestaan, niet die begraven in het Proton-prefix die bij elke start
@@ -648,6 +697,14 @@ en een **handmatige** kiezer die de archiefboom toont en je op de dataroot laat
 wijzen wanneer geen enkele heuristiek de indeling herkent. Geen enkel archief
 wordt geweigerd.
 
+Een FOMOD-mod opnieuw installeren of bijwerken opent de wizard met de antwoorden
+van de vorige installatie aangevinkt, op de eerste stap waarvan de opties
+sindsdien veranderd zijn, met een lijst van de wijzigingen. **Reinstall with new
+choices** begint in plaats daarvan bij de standaardwaarden van het
+installatieprogramma. `eidos install --replace` of `--merge` hergebruikt de
+opgeslagen antwoorden en weigert, met de lijst van wijzigingen, wanneer ze niet
+meer passen.
+
 **Diagnostics** draait live gezondheidscontroles: bovenal de startmogelijkheid,
 ontbrekende masters (de betrouwbaarste crashvoorspeller die er is), archieven die
 geen enkele actieve plugin zal laden, of de modlijst nog overeenkomt met de
@@ -655,6 +712,7 @@ mods-map, en - na een run - wat het eigen log van de script extender over elk va
 zijn plugin-DLL's zegt, wat "zijn mijn SKSE-plugins geladen?" van een
 gevolgtrekking in bewijs verandert.
 Het meldt ook een game-update sinds de laatste schone start, een ontbrekende script extender of een die niet bij de spelversie past (met de downloadpagina van de extender en een knop die het gedownloade archief installeert), een Steam-startoptie die Eidos niet met `%command%` start, NVAPI dat voor DLSS uit blijft, exclusief volledig scherm dat framegeneratie tegenhoudt, een ENB-`enblocal.ini` zonder `LinuxVersion=true`, de plugindeclaraties van F4SE- en SFSE-plugins, en het crashlog van de laatste sessie met de mods die het noemt.
+Op updates controleren leest ook de Nexus-vereisten van elke mod. Diagnostics toont een vereiste mod die ontbreekt of is uitgeschakeld, met Ignore voor een vereiste die op een andere manier is vervuld.
 
 Om het spel via de GUI te starten, zet je de Steam-opstartoptie van het spel op
 het absolute pad van het binaire bestand (Steam ziet `~/.cargo/bin` niet in

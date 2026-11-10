@@ -33,7 +33,7 @@ pub use proton::{
 
 /// A supported game. The catalog now lives in the shared `eidos-gamedef`
 /// descriptor; re-exported so detection callers keep using `eidos_games::GameDef`.
-pub use eidos_gamedef::{GameDef, LoadOrder};
+pub use eidos_gamedef::{nexus_domain_of, short_name_for_domain, GameDef, LoadOrder};
 
 /// The supported-game catalog (every game defined in `eidos-gamedef`).
 pub fn catalog() -> &'static [GameDef] {

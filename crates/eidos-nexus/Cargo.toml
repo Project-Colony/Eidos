@@ -12,6 +12,7 @@ edition.workspace = true
 # owns none of its transfers, so pausing one means signalling it.
 libc.workspace = true
 ureq = { workspace = true, features = ["json"] }
+serde.workspace = true
 serde_json.workspace = true
 # PKCE S256: a published transform with a published test vector. Hand-rolling a
 # hash to save a dependency would trade an audited 200 lines for our own.
@@ -30,3 +31,5 @@ base64.workspace = true
 # signs with RSA-1024, which needs ring's explicitly-named legacy verifier.
 ring.workspace = true
 eidos-instance = { path = "../eidos-instance" }
+# A mod's `gameName` names the Nexus domain its update check and links use.
+eidos-gamedef = { path = "../eidos-gamedef" }

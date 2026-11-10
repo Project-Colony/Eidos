@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=b5edc34c215538169c79791bdca9a79b41d45e15 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=92ef50801ef60cd7ea02e2a2f2538c313e3aeca1 -->
 
 # 使用 Eidos
 
@@ -19,6 +19,7 @@ eidos play skyrimse               # 显示将会挂载什么
 eidos play skyrimse -- <command>  # 在模组盖住游戏的视图下运行 <command>
 eidos check skyrimse              # 不开窗口跑健康检查(脚本用 --json)
 eidos collection skyrimse <link>  # 按作者构建它的方式安装一个 Nexus 合集
+eidos nexus update skyrimse --apply  # 安装取代了你那些文件的 Nexus 文件
 eidos pack skyrimse backup.eidos  # 整个实例装进一个文件,好搬到别处去
 eidos unpack backup.eidos <folder>   # 在另一台机器上把它放回去
 ```
@@ -188,6 +189,13 @@ eidos collection skyrimse rqhcxy --dry-run     # 读一遍它,说出将会发生
 自己去取。这是 Nexus 的一条商业规则,重试多少次也绕不过去。用站点的那个按钮把它们取
 下来,再跑一遍这条命令:这些成员每一次运行都会在 `downloads/` 里找一遍,所以你供上
 多少,合集就跟着完成多少。
+
+在窗口里,免费账号在合集面板中看到的是
+*Fetch the N missing required files, one by one*,取代分批获取。它在 Nexus 上打开
+第一个缺少的必需文件的页面,等这个文件落进 `downloads/`,再打开下一个。每个文件页面上
+的下载按钮仍然由你自己按。面板显示进度 (*3 of 12*),并提供 *Skip* 和 *Stop*。如果落
+下来的是同一个模组的另一个文件,面板会写出两个文件 id,并继续等待合集指定的那个。可选
+成员不在其中,保留各自的 *Open* 按钮。
 
 按合集的描述施加:**二进制补丁**(每个都按记录的 CRC 校验)、**文件覆盖**(指定的文件像 MO2 那样用 `.mohidden` 隐藏),以及那些文件随合集压缩包一起走的成员(`bundle`)。合集指望你手工去取的成员(`browse`、
 `manual`)会把作者自己的说明一路带进报告。一个名字已经和你某个模组撞上的成员,会用
@@ -436,6 +444,29 @@ Downloads 标签页是一个压缩包**库**,不是传输队列。按名称过�
 点击删除你已经安装过的模组的压缩包,而且只删**屏幕上**的那些:过滤就是你表明你指的是
 哪些的方式。
 
+### 模组更新
+
+工具栏右端的更新按钮会把每个已安装的文件与 Nexus 上取代它的
+文件相比较。作者会把一次新上传标记为某个旧文件的后继,Eidos 从模组 `meta.ini` 记录的
+文件 ID 出发沿这条链往下找。链上没有后继时,改为比较模组页面的版本。
+
+"Information..." 的 **Nexus files** 标签页列出该模组在 Nexus 上的文件,最新的在前,
+并标出这里安装的那个和取代它的那个。后者那一行有一个 **Update** 按钮。premium 账户由
+Eidos 自己下载文件。免费账户则打开文件页面,在那里 Mod Manager Download 把文件发回来,
+压缩包到达 `downloads/` 时安装开始。之后就是平常的安装:FOMOD 以模组安装时的答案打开,
+随后的询问提供 Replace,并勾选 "Keep a backup of the existing mod",不论你上次询问时
+选了什么。Replace 保留模组的优先级和启用状态。
+
+包含多个 Nexus 文件的文件夹(例如混入了一个可选文件的主文件)会被拒绝:用新的主文件
+替换它会丢掉其他文件。这些请手动更新。
+
+`eidos nexus update skyrimse --apply` 做同样的检查,然后在 premium 账户上下载每个新
+文件,并用 `--replace --backup` 安装到它的文件夹上。在免费账户上则改为为每个文件页面
+打印 `OPEN <url>`。合并了多个文件的文件夹会被跳过并说明原因。没有保存答案的 FOMOD
+模组(例如在 Eidos 开始保存答案之前安装的)不会用安装器的默认值重新安装:这次更新会
+失败,并提示你在窗口中更新该模组一次,窗口会保存答案。安装器没有任何可选项的 FOMOD
+照常安装。只要有一个更新失败,命令就以 1 退出。
+
 ### Nexus 合集
 
 粘贴一个合集链接 - 或者在站点上点一个 - Eidos 就会列出该修订版的成员,每一个都与当前
@@ -447,6 +478,8 @@ Downloads 标签页是一个压缩包**库**,不是传输队列。按名称过�
 一个合集只能对着**它自己的游戏**读取。在加载着 Fallout 4 实例时打开一个 Skyrim 合集,
 它会指名拒绝,而不是把成员对着错误的模组列表去比对 - 在那里每一个"已安装"和每一个
 "缺失"都是披着答案外形的噪声。
+
+检查更新时，Eidos 还会向 Nexus 询问此实例中每个已安装合集的最新修订版。模组列表上方的一行会列出有较新修订版的合集，并统计新增 (+)、更新 (~) 和移除 (-) 的模组数量，把鼠标移上去可看到名称。如果已安装修订版的配方不再缓存，则没有数量。点击**更新**会在合集面板中打开较新的修订版，由 *Install this collection* 执行安装。该列表在每次检查时重建，不会保存。
 
 ### 离线模式
 
@@ -461,7 +494,7 @@ Nexus 最先给出的那个节点。
 
 **Categories** 是可编辑的,不只是拿来显示:把它们指派给一个模组或一整批选中的模组,
 在同一个对话框里编辑目录本身,并从 Nexus 拉取这款游戏的官方分类列表。两个目录文件都是
-MO2 自己的(`categories.dat` 和 `nexuscatmap.dat`),所以共享的实例保有同一份目录。
+MO2 自己的(`categories.dat` 和 `nexuscatmap.dat`),所以共享的实例保有同一份目录。 从 Nexus 下载的模组,在“从 Nexus 获取”映射好目录之后,安装时会自动归类。
 
 **View -> INI editor** 编辑配置档的游戏 INI - 是会持久保留的那一份,而不是埋在 Proton
 前缀里、每次启动都被覆盖的那一份。**View -> Log** 读会话日志。**View -> Extensions**
@@ -471,11 +504,17 @@ MO2 自己的(`categories.dat` 和 `nexuscatmap.dat`),所以共享的实例保�
 按顺序合并),以及一个**手动**选择器 - 当没有启发式认得出布局时,它展示压缩包的目录树,
 让你指出数据根目录在哪。没有压缩包会被拒绝。
 
+重新安装或更新一个 FOMOD 模组时，向导打开时会勾好上次安装的答案，停在此后选项
+有变化的第一步，并列出变化。**Reinstall with new choices** 则从安装器的默认值开始。
+`eidos install --replace` 或 `--merge` 沿用保存的答案，答案不再适用时会列出变化并
+拒绝安装。
+
 **Diagnostics** 跑实时健康检查:首先是启动能力,缺失的 master(单一最可靠的崩溃预测
 指标),没有任何活动插件会加载的档案,模组列表是否仍与 mods 文件夹一致,以及 - 在一次
 运行之后 - 脚本扩展器自己的日志对它每一个插件 DLL 说了什么,这把"我的 SKSE 插件加载了
 吗?"从一次推断变成了证据。
 它还会报告:自上次干净启动以来的游戏更新,缺失或与游戏版本不匹配的脚本扩展器(附扩展器的下载页面,以及安装你下载的档案的按钮),没有用 `%command%` 启动 Eidos 的 Steam 启动选项,DLSS 需要却仍关闭的 NVAPI,阻止帧生成的独占全屏,没有 `LinuxVersion=true` 的 ENB `enblocal.ini`,F4SE 和 SFSE 插件的声明,以及上次会话的崩溃日志和其中点名的模组。
+检查更新时还会读取每个 mod 在 Nexus 上的前置要求。Diagnostics 会列出缺失或已禁用的前置 mod,已通过其他方式满足的要求可用 Ignore 忽略。
 
 要通过 GUI 启动游戏,把该游戏的 Steam 启动选项设成这个二进制的绝对路径(Steam 看不到
 PATH 上的 `~/.cargo/bin`):

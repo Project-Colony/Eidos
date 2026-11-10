@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=b5edc34c215538169c79791bdca9a79b41d45e15 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=92ef50801ef60cd7ea02e2a2f2538c313e3aeca1 -->
 
 # 使用 Eidos
 
@@ -19,6 +19,7 @@ eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
 eidos check skyrimse              # 不開視窗跑健康檢查(腳本用 --json)
 eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
+eidos nexus update skyrimse --apply  # install the Nexus files that replaced yours
 eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
 eidos unpack backup.eidos <folder>   # put it back on the other machine
 ```
@@ -194,6 +195,13 @@ API 看得到。安裝順序、作者給每個模組的腳本安裝器的那些�
 URL 一起回報,讓你自己去抓。那是 Nexus 的商業規則,重試再多次也繞不過去。透過網站
 的按鈕把它們抓下來,再執行一次那道命令:每一次執行都會到 `downloads/` 裡找那些
 成員,所以你補到哪裡,合集就完成到哪裡。
+
+在視窗裡,免費帳號在合集面板中看到的是
+*Fetch the N missing required files, one by one*,取代分批抓取。它會在 Nexus 上打開
+第一個缺少的必要檔案的頁面,等那個檔案落進 `downloads/`,再打開下一個。每個檔案頁面上
+的下載按鈕仍然由你自己按。面板會顯示進度 (*3 of 12*),並提供 *Skip* 和 *Stop*。如果落
+進來的是同一個模組的另一個檔案,面板會寫出兩個檔案 id,並繼續等待合集指定的那一個。
+選用成員不在其中,保留各自的 *Open* 按鈕。
 
 依合集的描述套用:**二進位修補**(每個都依記錄的 CRC 校驗)、**檔案覆寫**(指定的檔案像 MO2 那樣用 `.mohidden` 隱藏),以及那些檔案隨著合集壓縮檔一起走的成員(`bundle`)。合集預期你親手去抓的成員
 (`browse`、`manual`)會把作者自己的說明一路帶進報告裡。名稱已經和你某個模組撞上
@@ -451,6 +459,29 @@ Downloads 分頁是一座壓縮檔**圖書館**,不是傳輸佇列。可以依�
 取消隱藏。「Remove N installed」會用兩次點擊刪掉你已經安裝過的模組的壓縮檔,而且
 只刪**畫面上**的那些:篩選就是你說明自己指的是哪些的方式。
 
+### 模組更新
+
+工具列右端的更新按鈕會把每個已安裝的檔案,與 Nexus 上取代它的
+檔案相比較。作者會把一次新上傳標記為某個舊檔案的後繼,Eidos 從模組 `meta.ini` 記錄的
+檔案 ID 出發,沿著這條鏈往下找。鏈上沒有後繼時,改為比較模組頁面的版本。
+
+「Information...」的 **Nexus files** 分頁列出該模組在 Nexus 上的檔案,最新的在前,
+並標出這裡安裝的那個與取代它的那個。後者那一列有一個 **Update** 按鈕。premium 帳號由
+Eidos 自己下載檔案。免費帳號則開啟檔案頁面,在那裡 Mod Manager Download 會把檔案送回來,
+壓縮檔抵達 `downloads/` 時安裝就開始。之後就是平常的安裝:FOMOD 會以模組安裝時的答案
+開啟,接著的詢問提供 Replace,並勾選「Keep a backup of the existing mod」,不論你上次
+詢問時選了什麼。Replace 會保留模組的優先順序與啟用狀態。
+
+含有多個 Nexus 檔案的資料夾(例如混入了選用檔案的主檔案)會被拒絕:用新的主檔案取代它
+會丟掉其他檔案。這些請手動更新。
+
+`eidos nexus update skyrimse --apply` 會做同樣的檢查,然後在 premium 帳號上下載每個新
+檔案,並用 `--replace --backup` 安裝到它的資料夾上。在免費帳號上則改為替每個檔案頁面
+印出 `OPEN <url>`。合併了多個檔案的資料夾會被略過並附上原因。沒有儲存答案的 FOMOD
+模組(例如在 Eidos 開始儲存答案之前安裝的)不會用安裝程式的預設值重新安裝:這次更新會
+失敗,並提示你在視窗中更新該模組一次,視窗會儲存答案。安裝程式沒有任何可選項的 FOMOD
+照常安裝。只要有一個更新失敗,命令就以 1 結束。
+
 ### Nexus 合集
 
 貼上一條合集連結 - 或在網站上點一條 - Eidos 就會列出該修訂版的成員,每一個都和這個
@@ -462,6 +493,8 @@ Downloads 分頁是一座壓縮檔**圖書館**,不是傳輸佇列。可以依�
 一份合集只能對照**它自己的遊戲**來讀取。載入 Fallout 4 實例時開啟一份 Skyrim 合集,
 它會指名拒絕,而不是把成員和錯誤的模組清單對照 - 在那份清單上,每一個「已安裝」和
 每一個「缺少」都只是披著答案外形的雜訊。
+
+檢查更新時，Eidos 還會向 Nexus 詢問此執行個體中每個已安裝合集的最新修訂版。模組清單上方的一行會列出有較新修訂版的合集，並統計新增 (+)、更新 (~) 和移除 (-) 的模組數量，把滑鼠移上去可看到名稱。如果已安裝修訂版的配方不再快取，則沒有數量。點選**更新**會在合集面板中開啟較新的修訂版，由 *Install this collection* 執行安裝。該清單在每次檢查時重建，不會儲存。
 
 ### 離線模式
 
@@ -476,7 +509,7 @@ Downloads 分頁是一座壓縮檔**圖書館**,不是傳輸佇列。可以依�
 
 **Categories** 是可以編輯的,不只是拿來顯示:把它們指派給單一模組或整批選取、在
 同一個對話框裡編輯目錄本身,並從 Nexus 拉取該遊戲的官方類別清單。兩個目錄檔案都是
-MO2 自己的(`categories.dat` 與 `nexuscatmap.dat`),所以共用的實例只會有一份目錄。
+MO2 自己的(`categories.dat` 與 `nexuscatmap.dat`),所以共用的實例只會有一份目錄。 從 Nexus 下載的模組,在「從 Nexus 取得」對應好目錄之後,安裝時會自動歸類。
 
 **View -> INI editor** 編輯設定檔的遊戲 INI - 會留存的那一份,而不是埋在 Proton
 前綴裡、每次啟動都被覆寫的那一份。**View -> Log** 讀取工作階段日誌。
@@ -487,11 +520,17 @@ MO2 自己的(`categories.dat` 與 `nexuscatmap.dat`),所以共用的實例只�
 套件,它們會依序合併),以及一個**手動**選擇器,會顯示壓縮檔的樹狀結構,讓你在沒有
 任何啟發法認得出版面時自己指出資料根目錄。沒有任何壓縮檔會被拒絕。
 
+重新安裝或更新 FOMOD 模組時，精靈開啟時會勾好上次安裝的答案，停在之後選項有變動
+的第一步，並列出變動。**Reinstall with new choices** 則從安裝程式的預設值開始。
+`eidos install --replace` 或 `--merge` 沿用儲存的答案，答案不再適用時會列出變動並
+拒絕安裝。
+
 **Diagnostics** 會跑即時的健康檢查:首要是啟動能力、缺少的 master(最可靠的單一
 當機預測指標)、沒有任何啟用外掛會載入的封裝檔、模組清單是否仍與 mods 資料夾相符,
 以及 - 在一次執行之後 - script extender 自己的日誌對它每一個外掛 DLL 說了什麼,這把
 「我的 SKSE 外掛載入了嗎?」從推測變成證據。
 它也會回報:自上次乾淨啟動以來的遊戲更新,缺少或與遊戲版本不符的 script extender(附 extender 的下載頁面,以及安裝你下載的封裝檔的按鈕),沒有用 `%command%` 啟動 Eidos 的 Steam 啟動選項,DLSS 需要卻仍關閉的 NVAPI,阻擋畫格生成的獨佔全螢幕,沒有 `LinuxVersion=true` 的 ENB `enblocal.ini`,F4SE 與 SFSE 外掛的宣告,以及上次工作階段的當機日誌和其中點名的模組。
+檢查更新時也會讀取每個 mod 在 Nexus 上的前置需求。Diagnostics 會列出缺少或已停用的前置 mod,已用其他方式滿足的需求可用 Ignore 忽略。
 
 要透過 GUI 啟動遊戲,把該遊戲的 Steam 啟動選項設成執行檔的絕對路徑(Steam 看不到
 PATH 上的 `~/.cargo/bin`):

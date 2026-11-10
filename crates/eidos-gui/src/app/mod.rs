@@ -53,6 +53,8 @@ pub(crate) enum InfoTab {
     /// The mod's `INI Tweaks/` fragments, individually enabled.
     IniTweaks,
     Notes,
+    /// The mod's file list on Nexus, fetched on first open.
+    NexusFiles,
 }
 
 /// A keyboard navigation intent, independent of which list will answer it.
@@ -91,6 +93,18 @@ pub(crate) enum Nav {
 pub(crate) enum Pane {
     Mods,
     Plugins,
+}
+
+/// An installed collection with a newer revision on Nexus.
+#[derive(Debug, Clone)]
+pub(crate) struct CollectionNotice {
+    pub(crate) slug: String,
+    pub(crate) domain: String,
+    pub(crate) name: String,
+    pub(crate) have: u32,
+    pub(crate) latest: u32,
+    /// None when the installed revision's manifest is no longer cached.
+    pub(crate) diff: Option<eidos_collections::state::RevisionDiff>,
 }
 
 /// One Data-tab row: entry name, the layer providing it, and whether it is a
@@ -275,6 +289,8 @@ pub(crate) struct App {
     pub(crate) nexus_signing_in: bool,
     /// The last sign-in error, shown inline in the dialog.
     pub(crate) nexus_error: Option<String>,
+    /// Who owns `nxm://` links; None until the startup read answers.
+    pub(crate) nxm_handler: Option<eidos::nxm_handler::NxmHandler>,
     /// The persisted app-global settings the CLI shares (default game, tools).
     pub(crate) prefs: Settings,
     /// The window's look: theme, accent, fonts, text sizes, motion.
@@ -444,6 +460,9 @@ pub(crate) struct App {
     // ---- Endorse / update in-flight + counts ----
     /// The mod index whose Nexus endorse is in flight (greys the toolbar button).
     pub(crate) endorsing: Option<usize>,
+    /// Nexus file lists asked for this session, by `(domain, mod id)`.
+    pub(crate) nexus_files: HashMap<(String, u64), Result<eidos_nexus::ModFiles, String>>,
+    pub(crate) nexus_files_loading: Option<(String, u64)>,
     /// Enabled mods that are endorsed (recomputed in `mods_changed`).
     pub(crate) endorsed_count: usize,
     /// Enabled mods with a Nexus update available (recomputed in `mods_changed`).
@@ -462,6 +481,9 @@ pub(crate) struct App {
     /// by one.
     pub(crate) nexus_hourly_left: Option<i64>,
     pub(crate) nexus_daily_left: Option<i64>,
+    /// Installed collections with a newer revision, from the last update check.
+    /// Not persisted.
+    pub(crate) collection_notices: Vec<CollectionNotice>,
     /// A Nexus mod-update check is in flight (guards the Update button).
     pub(crate) update_in_progress: bool,
     /// A LOOT sort is in flight. The sort runs on smol's blocking pool, so
@@ -526,6 +548,11 @@ pub(crate) struct App {
     /// a failure can be reported instead of the row silently going back to
     /// Stalled.
     pub(crate) resuming: Option<(String, std::process::Child, PathBuf)>,
+    /// The update whose new file is awaited in `downloads/`.
+    pub(crate) pending_update: Option<PendingUpdate>,
+    /// The folder an update is being installed over, so its collision prompt
+    /// ticks the backup box (see `backup_default`).
+    pub(crate) update_target: Option<String>,
     /// Two-click guard for a download deletion (the row's index in `downloads`).
     pub(crate) confirm_delete_download: Option<String>,
     /// The download whose MD5 lookup is in flight, so the row can say so and a
@@ -730,6 +757,10 @@ pub(crate) enum FilterField {
 /// Nexus action). Cached so a search keystroke doesn't re-read every file.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct RowMeta {
+    /// What Nexus last said this mod requires, from `meta.ini`. `None`: never fetched.
+    pub(crate) requirements: Option<eidos_nexus::Requirements>,
+    /// Requirement keys (`<domain>:<mod_id>`, `offsite:<name>`, `dlc:<name>`) the user dismissed.
+    pub(crate) ignored_requirements: Vec<String>,
     pub(crate) version: Option<String>,
     pub(crate) mod_id: Option<u64>,
     pub(crate) installed_files: Vec<(u64, u64)>,

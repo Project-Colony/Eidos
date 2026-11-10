@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=b5edc34c215538169c79791bdca9a79b41d45e15 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=92ef50801ef60cd7ea02e2a2f2538c313e3aeca1 -->
 
 # Eidos verwenden
 
@@ -20,6 +20,7 @@ eidos play skyrimse               # zeigen, was gemountet würde
 eidos play skyrimse -- <command>  # <command> mit den über das Spiel gemounteten Mods starten
 eidos check skyrimse              # Zustandsprüfungen ohne Fenster (--json für Skripte)
 eidos collection skyrimse <link>  # eine Nexus-Collection so installieren, wie ihr Autor sie gebaut hat
+eidos nexus update skyrimse --apply  # die Nexus-Dateien installieren, die Ihre ersetzt haben
 eidos pack skyrimse backup.eidos  # die ganze Instanz in einer Datei, um sie woandershin mitzunehmen
 eidos unpack backup.eidos <folder>   # sie auf dem anderen Rechner wieder auspacken
 ```
@@ -266,6 +267,16 @@ Wiederholungen kommt daran vorbei. Holen Sie sie über den seiteneigenen Knopf u
 führen Sie den Befehl noch einmal aus: nach diesen Mitgliedern wird bei jedem
 Lauf in `downloads/` gesucht, sodass die Collection in dem Maße fertig wird, wie
 Sie sie beliefern.
+
+Im Fenster bekommt ein kostenloses Konto im Collection-Bereich statt des
+Sammelabrufs den Knopf *Fetch the N missing required files, one by one*. Er
+öffnet die Nexus-Seite der ersten fehlenden Pflichtdatei, wartet, bis diese
+Datei in `downloads/` ankommt, und öffnet dann die nächste. Den Download-Knopf
+der Seite drücken Sie weiterhin bei jeder Datei selbst. Der Bereich zeigt den
+Stand (*3 of 12*) mit *Skip* und *Stop*. Kommt stattdessen eine andere Datei
+derselben Mod an, nennt der Bereich beide Datei-IDs und wartet weiter auf die
+vorgegebene. Optionale Mitglieder gehören nicht dazu und behalten ihren eigenen
+Knopf *Open*.
 
 Angewendet, wie die Collection es beschreibt: **Binärpatches** (jeder wird gegen seine aufgezeichnete CRC geprüft), **Datei-Überschreibungen** (die genannten Dateien werden wie in MO2 mit `.mohidden` ausgeblendet) und Mitglieder, deren Dateien im Archiv der Collection selbst mitreisen (`bundle`). Mitglieder, die die Collection von Ihnen von Hand
 geholt haben will (`browse`, `manual`), tragen die eigenen Anweisungen des Autors
@@ -633,6 +644,41 @@ löscht in zwei Klicks die Archive der Mods, die Sie bereits installiert haben,
 und nur die **auf dem Bildschirm**: der Filter ist Ihre Art zu sagen, welche Sie
 meinten.
 
+### Mod-Updates
+
+Der Update-Knopf am rechten Ende der Werkzeugleiste vergleicht jede installierte
+Datei mit der Datei, die sie auf Nexus ersetzt hat. Autoren markieren einen
+neuen Upload als Nachfolger eines älteren, und Eidos folgt dieser Kette ab der
+Datei-ID, die die `meta.ini` der Mod festhält. Nennt die Kette keinen
+Nachfolger, wird stattdessen die Version der Mod-Seite verglichen.
+
+Der Reiter **Nexus files** von "Information..." listet die Dateien der Mod auf
+Nexus, die neueste zuerst, und markiert die hier installierte und die, die sie
+ersetzt. Diese zweite Zeile hat einen Knopf **Update**. Mit einem Premium-Konto
+lädt Eidos die Datei selbst herunter. Mit einem kostenlosen Konto öffnet es die
+Seite der Datei, wo Mod Manager Download die Datei zurückschickt, und die
+Installation beginnt, sobald das Archiv in `downloads/` ankommt. Danach ist es
+die gewohnte Installation: Ein FOMOD öffnet sich mit den Antworten, mit denen
+die Mod installiert wurde, dann bietet die Abfrage Replace mit angehaktem "Keep
+a backup of the existing mod" an, egal was Sie bei der letzten Abfrage gewählt
+haben. Replace behält die Priorität der Mod und ob sie aktiviert ist.
+
+Ein Ordner mit mehreren Nexus-Dateien, etwa einer Hauptdatei mit einer
+hineingemischten optionalen Datei, wird abgelehnt: Ersetzt durch die neue Hauptdatei,
+gingen die anderen verloren. Aktualisieren Sie diese von Hand.
+
+`eidos nexus update skyrimse --apply` führt dieselbe Prüfung aus und lädt dann
+bei einem Premium-Konto jede neue Datei herunter und installiert sie mit
+`--replace --backup` über ihren Ordner. Bei einem kostenlosen Konto gibt es
+stattdessen für jede Dateiseite `OPEN <url>` aus. Ordner, die mehrere Dateien
+zusammenführen, werden mit Begründung übersprungen. Ein FOMOD-Mod ohne
+gespeicherte Antworten, etwa einer, der installiert wurde, bevor Eidos sie
+aufbewahrte, wird nicht mit den Vorgaben des Installers neu installiert: Dieses
+Update schlägt fehl, mit dem Hinweis, den Mod einmal aus dem Fenster zu
+aktualisieren, das die Antworten dann speichert. Ein FOMOD, dessen Installer
+nichts zur Auswahl stellt, wird wie gewohnt installiert. Der Befehl endet mit 1,
+wenn ein Update fehlgeschlagen ist.
+
 ### Nexus-Collections
 
 Fügen Sie einen Collection-Link ein - oder klicken Sie auf der Website auf
@@ -649,6 +695,8 @@ eine Skyrim-Collection bei geladener Fallout-4-Instanz, und sie lehnt namentlich
 ab, statt die Mitglieder gegen die falsche Mod-Liste abzugleichen, wo jedes
 "installiert" und jedes "fehlend" Rauschen wäre, das die Form einer Antwort
 trägt.
+
+Wenn Sie nach Updates suchen, fragt Eidos bei Nexus auch die neueste Revision jeder in dieser Instanz installierten Kollektion ab. Eine Zeile über der Modliste nennt jede Kollektion mit neuerer Revision und zählt die hinzugekommenen (+), aktualisierten (~) und entfernten (-) Mods; die Namen erscheinen beim Darüberfahren. Die Zahlen fehlen, wenn das Rezept der installierten Revision nicht mehr im Cache liegt. **Aktualisieren** öffnet die neuere Revision im Kollektionsbereich, wo *Install this collection* sie ausführt. Die Liste wird bei jeder Prüfung neu aufgebaut und nicht gespeichert.
 
 ### Offline-Modus
 
@@ -670,7 +718,7 @@ zuerst angeboten hat.
 oder einer ganzen Auswahl zu, bearbeiten Sie den Katalog selbst aus demselben
 Dialog, und holen Sie die offizielle Kategorienliste des Spiels von Nexus. Beide
 Katalogdateien sind MO2s eigene (`categories.dat` und `nexuscatmap.dat`), sodass
-eine geteilte Instanz einen Katalog behält.
+eine geteilte Instanz einen Katalog behält. Eine von Nexus heruntergeladene Mod wird bei der Installation kategorisiert, sobald „Von Nexus abrufen“ den Katalog zugeordnet hat.
 
 **View -> INI editor** bearbeitet die Spiel-INIs des Profils - die Kopie, die
 bleibt, statt der im Proton-Präfix vergrabenen, die bei jedem Start überschrieben
@@ -683,6 +731,14 @@ werden) und eine **manuelle** Auswahl, die den Archivbaum zeigt und Sie auf die
 Datenwurzel zeigen lässt, wenn keine Heuristik das Layout erkennt. Kein Archiv
 wird abgelehnt.
 
+Eine Neuinstallation oder ein Update eines FOMOD-Mods öffnet den Assistenten mit
+den angehakten Antworten der letzten Installation, auf dem ersten Schritt,
+dessen Optionen sich seitdem geändert haben, und listet die Änderungen auf.
+**Reinstall with new choices** beginnt stattdessen mit den Vorgaben des
+Installers. `eidos install --replace` oder `--merge` verwendet die gespeicherten
+Antworten erneut und bricht mit einer Liste der Änderungen ab, wenn sie nicht
+mehr passen.
+
 **Diagnostics** führt Zustandsprüfungen live aus: vor allem die Startfähigkeit,
 fehlende Master (der mit Abstand verlässlichste Absturzvorbote), Archive, die
 kein aktives Plugin laden wird, ob die Mod-Liste noch zum mods-Ordner passt, und
@@ -690,6 +746,7 @@ kein aktives Plugin laden wird, ob die Mod-Liste noch zum mods-Ordner passt, und
 Plugin-DLLs sagt, was aus "sind meine SKSE-Plugins geladen?" statt einer
 Vermutung einen Beleg macht.
 Der Tab meldet außerdem ein Spiel-Update seit dem letzten sauberen Start, einen fehlenden Script Extender oder einen, der nicht zur Spielversion passt (mit der Download-Seite des Extenders und einer Schaltfläche, die das heruntergeladene Archiv installiert), eine Steam-Startoption, die Eidos nicht mit `%command%` startet, NVAPI, das für DLSS aus bleibt, exklusiven Vollbildmodus, der die Frame-Generierung verhindert, eine ENB-`enblocal.ini` ohne `LinuxVersion=true`, die Plugin-Deklarationen von F4SE- und SFSE-Plugins und das Crash-Log der letzten Sitzung mit den Mods, die es nennt.
+Die Update-Prüfung liest auch die Nexus-Voraussetzungen jeder Mod. Diagnostics listet eine benötigte Mod auf, die fehlt oder deaktiviert ist; mit Ignore lässt sich eine Voraussetzung ausblenden, die anders erfüllt ist.
 
 Um das Spiel durch die GUI zu starten, setzen Sie die Steam-Startoption des
 Spiels auf den absoluten Pfad der Binärdatei (Steam sieht `~/.cargo/bin` im PATH

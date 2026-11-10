@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=c9bb5a3ae78695b89ce4595223a2d2ff1902345e -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=55e68d8b6ee830b2d336ce1e96db32155a304c57 -->
 
 # 排查与诊断
 
@@ -205,3 +205,9 @@ passthrough 开启时,Skyrim SE 在内核 7.1.4 上会以 `STATUS_ACCESS_VIOLATI
 全不使用它。当 passthrough 读者还占着一个文件时,以写入方式打开它会在任何 copy-up
 之前得到 ETXTBSY(在 Wine 中是 `STATUS_SHARING_VIOLATION`),因此 `O_TRUNC` 打开不
 会在 Overwrite 里留下一个遮住模组文件的空副本。
+
+### Mod Manager Download 按钮没有反应
+
+“偏好设置 > 下载”会显示由哪个程序接收 `nxm://` 链接。如果该程序不是 Eidos、已不存在或尚未设置，“健康”页会多出一张卡片。“注册”按钮会写入 `eidos-nxm.desktop`，并把它设为 `x-scheme-handler/nxm` 的默认处理程序。在终端中，`eidos nxm --register` 的效果相同。
+
+如果状态已显示 Eidos，按钮仍然没有反应，可能是浏览器沿用了之前的选择。请在浏览器设置中清除 nxm 链接的已保存选择，让它重新询问。Flatpak 版浏览器无法直接启动宿主机上的程序，而是通过桌面门户转交链接，门户读取的是在宿主机上注册的处理程序。

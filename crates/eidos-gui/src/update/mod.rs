@@ -786,6 +786,28 @@ pub(crate) fn lock_install_target(
     Ok(guard)
 }
 
+/// Whether an install is under way, so another one has to wait.
+pub(crate) fn install_busy(app: &App) -> bool {
+    // A modal is open: the current install is still being answered.
+    app.installer.is_some() || app.fomod.is_some()
+        || app.picker.is_some()
+        || app.collision.is_some()
+        // An extraction is already running. Starting a second one would
+        // race it for `mods/<name>/` and put two 7-Zips on the same disk.
+        || app.install_job.is_some()
+        // Same reason, over twenty minutes rather than thirty seconds.
+        || app.transfer_job.is_some()
+        // And a copy step: its worker holds the instance lock.
+        || app.place_job.is_some()
+}
+
+/// Whether the backup box starts ticked for an install over `name`: the
+/// preference, or an update landing on that folder (once).
+pub(crate) fn backup_default(app: &mut App, name: &str) -> bool {
+    let update = app.update_target.take().is_some_and(|t| t == name);
+    app.prefs.retain_install_backup || update
+}
+
 pub(crate) fn finish_open(
     app: &mut App,
     result: Result<eidos_install::Opened, eidos_install::InstallError>,
@@ -843,7 +865,7 @@ pub(crate) fn finish_open(
                 Err(eidos_install::InstallError::Exists(_)) => {
                     app.collision = Some(CollisionPrompt {
                         target: target.clone(),
-                        backup: app.prefs.retain_install_backup,
+                        backup: backup_default(app, &name),
                         rename_to: suggest_free_name(&mods_dir, &name),
                         archive: path,
                         name: name.clone(),
@@ -865,16 +887,14 @@ pub(crate) fn finish_open(
             if let Some(req) = session.unmet_dependencies(&ctx) {
                 app.status = Some(tf("status_unmet_dependency", &[("requirement", &req)]));
             } else {
-                let selection = eidos_fomod::default_selection(&session.config, &ctx);
-                // Open on the first step that is actually shown. Next/Back
-                // already skip invisible steps and build_plan ignores them,
-                // but nothing seeked at open: a FOMOD whose first step is
-                // conditional rendered that page fully interactive, and
-                // every choice made on it was thrown away at install time.
-                let first = eidos_fomod::visible_steps(&session.config, &selection, &ctx)
-                    .iter()
-                    .position(|v| *v)
-                    .unwrap_or(0);
+                // A reinstall or an update replays the answers the folder was
+                // installed with; "Reinstall with new choices" starts over.
+                let stored = (!fresh)
+                    .then(|| eidos_install::collision_name(&mods_dir, session.mod_name()))
+                    .flatten()
+                    .and_then(|folder| app.created.as_ref()?.mod_meta(&folder).fomod_choices());
+                let (selection, first, replayed) =
+                    wizard_start(&session.config, &ctx, stored.as_deref());
                 app.fomod = Some(FomodWizard {
                     target: target.clone(),
                     session,
@@ -884,6 +904,7 @@ pub(crate) fn finish_open(
                     archive: path,
                     ctx,
                     hover: None,
+                    replayed,
                 });
                 app.status = Some(t("status_fomod_choose").to_string());
             }
@@ -907,7 +928,7 @@ pub(crate) fn finish_open(
                     let rename_to = suggest_free_name(&mods_dir, &name);
                     app.collision = Some(CollisionPrompt {
                         target: target.clone(),
-                        backup: app.prefs.retain_install_backup,
+                        backup: backup_default(app, &name),
                         archive: path,
                         name: name.clone(),
                         game_id: gid,
@@ -1095,6 +1116,13 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         | Message::PreviewReady(..)
         // A worker's answer arriving, not a click.
         | Message::Placed(..)
+        // Same for the answers of the nxm handler worker (read, register).
+        | Message::NxmHandlerRead(..)
+        | Message::NxmRegistered(..)
+        | Message::NexusFilesFetched { .. }
+        | Message::RequirementsRefreshed(..)
+        | Message::CollectionRevisionsChecked(..)
+        | Message::RequirementFilePicked { .. }
         | Message::ArchiveExportFinished(..)
         | Message::ArchiveExtracted(..)
         | Message::CollectionInstallChecked { .. }
@@ -1515,6 +1543,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::SettingsTabSelected(..)
         | Message::NexusSignInStart
         | Message::NexusSignInResult(..)
+        | Message::NxmHandlerRead(..)
+        | Message::RegisterNxm
+        | Message::NxmRegistered(..)
         | Message::NexusSignOut
         | Message::Preference(..)
         | Message::DismissToast
@@ -1532,8 +1563,15 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::IdentifiedDownload(..)
         | Message::ModEndorse(..)
         | Message::ModEndorsed(..)
+        | Message::NexusFilesFetched { .. }
+        | Message::NexusUpdate { .. }
         | Message::CheckUpdates
-        | Message::UpdatesChecked(..)
+        | Message::UpdatesChecked { .. }
+        | Message::RequirementsRefreshed(..)
+        | Message::CollectionRevisionsChecked(..)
+        | Message::IgnoreRequirement { .. }
+        | Message::RequirementDownload { .. }
+        | Message::RequirementFilePicked { .. }
         | Message::ShowCollection(..)
         | Message::CloseCollection
         | Message::CollectionLinkChanged(..)
@@ -1541,6 +1579,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::CollectionFetched(..)
         | Message::CollectionOpenMod(..)
         | Message::CollectionFetchMissing
+        | Message::CollectionWalkStart
+        | Message::CollectionWalkSkip
+        | Message::CollectionWalkStop
         | Message::CollectionInstall
         | Message::CollectionInstallChecked { .. }) => nexus::handle(app, m),
         m @ (Message::ShowCategoriesDialog(..)
@@ -1841,6 +1882,11 @@ pub(crate) fn open_instance(app: &mut App, inst: Instance) {
     app.loot_meta = None;
     app.endorsing = None;
     app.collection = None;
+    // Update checks are per instance; the old notices would open against this game.
+    app.collection_notices.clear();
+    // An update waits for a file in the instance it was asked from.
+    app.pending_update = None;
+    app.update_target = None;
     reload_mods(app);
     app.tab = Tab::Data;
     app.error = None;
@@ -2131,6 +2177,57 @@ pub(crate) fn next_fetch_batch(
     (queued.into_iter().take(limit).collect(), left)
 }
 
+/// The members a free account's walk fetches: missing and required, in
+/// collection order. A missing optional member keeps its row's Open button.
+pub(crate) fn walk_queue(
+    rev: &eidos_nexus::collections::CollectionRevision,
+    states: &[MemberState],
+) -> Vec<usize> {
+    rev.mods
+        .iter()
+        .zip(states)
+        .enumerate()
+        .filter(|(_, (m, s))| **s == MemberState::Missing && !m.optional)
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// One look at the walk. `arrived` holds the `(mod_id, file_id)` of finished
+/// downloads the walk had not seen yet.
+pub(crate) fn walk_step(
+    walk: &mut CollectionWalk,
+    rev: &eidos_nexus::collections::CollectionRevision,
+    states: &[MemberState],
+    arrived: &[(u64, u64)],
+) -> WalkStep {
+    let Some(&i) = walk.queue.get(walk.at) else {
+        return WalkStep::Done;
+    };
+    if states.get(i) != Some(&MemberState::Missing) {
+        walk.at += 1;
+        return walk_next(walk, states);
+    }
+    let m = &rev.mods[i];
+    arrived
+        .iter()
+        .find(|(mod_id, file_id)| *mod_id == m.mod_id && *file_id != m.file_id)
+        .map_or(WalkStep::Wait, |&(_, got)| WalkStep::Wrong {
+            want: m.file_id,
+            got,
+        })
+}
+
+/// The first member from `walk.at` on that is still missing, or `Done`.
+pub(crate) fn walk_next(walk: &mut CollectionWalk, states: &[MemberState]) -> WalkStep {
+    while let Some(&i) = walk.queue.get(walk.at) {
+        if states.get(i) == Some(&MemberState::Missing) {
+            return WalkStep::Open(i);
+        }
+        walk.at += 1;
+    }
+    WalkStep::Done
+}
+
 pub(crate) fn recompute_collection_states(app: &mut App) {
     let Some(state) = app.collection.as_ref() else {
         return;
@@ -2144,13 +2241,8 @@ pub(crate) fn recompute_collection_states(app: &mut App) {
     // collection using an LE asset). `meta.ini` records the game by its SHORT
     // name ("SkyrimSE") while a collection names the DOMAIN
     // ("skyrimspecialedition"), so the two are translated through the game
-    // definitions rather than compared as strings.
-    let short_for_domain = |domain: &str| -> Option<&'static str> {
-        eidos_gamedef::all()
-            .iter()
-            .find(|d| d.nexus_game.eq_ignore_ascii_case(domain))
-            .map(|d| d.short_name)
-    };
+    // definitions rather than compared as strings. Every short name on a domain
+    // counts: Skyrim VR records the SE domain's mods as "SkyrimVR".
     let downloaded: Vec<_> = app
         .created
         .as_ref()
@@ -2175,10 +2267,11 @@ pub(crate) fn recompute_collection_states(app: &mut App) {
         .mods
         .iter()
         .map(|m| {
-            let want = short_for_domain(&m.domain).unwrap_or(&m.domain);
             let game_matches = |have: Option<&str>| {
                 have.is_some_and(|have| {
-                    have.eq_ignore_ascii_case(want) || have.eq_ignore_ascii_case(&m.domain)
+                    have.eq_ignore_ascii_case(&m.domain)
+                        || eidos_gamedef::nexus_domain_of(have)
+                            .is_some_and(|d| d.eq_ignore_ascii_case(&m.domain))
                 })
             };
             let candidates: Vec<_> = app

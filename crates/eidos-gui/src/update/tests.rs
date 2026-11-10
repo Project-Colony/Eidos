@@ -939,6 +939,8 @@ fn dl_row(name: &str) -> DownloadRow {
         version: String::new(),
         mod_name: None,
         mod_id: None,
+        game_name: None,
+        file_id: None,
         state: DownloadState::Ready,
         downloaded: 1,
         total: 1,
@@ -1340,6 +1342,7 @@ fn a_collection_member_is_matched_against_what_the_instance_already_has() {
         error: None,
         confirm_fetch: false,
         asked: std::collections::HashSet::new(),
+        walk: None,
     });
     recompute_collection_states(&mut app);
 
@@ -1382,6 +1385,7 @@ fn the_join_does_not_claim_more_than_it_knows() {
             error: None,
             confirm_fetch: false,
             asked: std::collections::HashSet::new(),
+            walk: None,
         });
         recompute_collection_states(app);
         app.collection.as_ref().unwrap().states.clone()
@@ -1396,6 +1400,17 @@ fn the_join_does_not_claim_more_than_it_knows() {
     // (3) An outdated copy is not the version the collection asks for.
     let (mut app, root) = collection_app_with(
         &[("Outdated", first, "gameName=SkyrimSE\nversion=0.0.1-old\n")],
+        &[],
+        &[],
+    );
+    let st = state(&mut app);
+    assert_eq!(st[0], MemberState::OtherVersion);
+    let _ = fs::remove_dir_all(&root);
+
+    // A Skyrim VR install records the SE domain's mods as `SkyrimVR`: still
+    // this member's mod, not another game's.
+    let (mut app, root) = collection_app_with(
+        &[("Vr", first, "gameName=SkyrimVR\nversion=0.0.1-old\n")],
         &[],
         &[],
     );
@@ -1556,6 +1571,7 @@ fn collection_matching_uses_every_exact_merged_source_and_rejects_same_version_f
         error: None,
         confirm_fetch: false,
         asked: HashSet::new(),
+        walk: None,
     });
     recompute_collection_states(&mut app);
     assert_eq!(
@@ -1651,6 +1667,7 @@ fn fetching_the_missing_members_takes_two_clicks() {
         error: None,
         confirm_fetch: false,
         asked: std::collections::HashSet::new(),
+        walk: None,
     });
     recompute_collection_states(&mut app);
     assert!(
@@ -1696,6 +1713,7 @@ fn a_member_already_asked_for_is_not_asked_for_twice() {
         // member `missing` until the sidecar lands, so without this set the
         // pane would spawn the same transfers again on the next click.
         asked: all.into_iter().collect(),
+        walk: None,
     });
     recompute_collection_states(&mut app);
 
@@ -1707,6 +1725,122 @@ fn a_member_already_asked_for_is_not_asked_for_twice() {
     let s = app.status.clone().unwrap_or_default();
     assert!(s.contains("already started"), "{s}");
     assert!(s.contains("Look up again"), "and how to retry: {s}");
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn walk_opens_the_next_member_once_the_awaited_file_lands() {
+    use MemberState::{Downloaded, Installed, Missing};
+    let rev = captured_revision();
+    let m0 = &rev.mods[0];
+    let mut w = CollectionWalk {
+        queue: vec![0, 2],
+        at: 0,
+        seen: HashSet::new(),
+    };
+    assert_eq!(
+        walk_step(&mut w, &rev, &[Missing, Installed, Missing], &[]),
+        WalkStep::Wait
+    );
+    assert_eq!(
+        walk_step(
+            &mut w,
+            &rev,
+            &[Downloaded, Installed, Missing],
+            &[(m0.mod_id, m0.file_id)]
+        ),
+        WalkStep::Open(2)
+    );
+    assert_eq!(
+        walk_step(&mut w, &rev, &[Downloaded, Installed, Downloaded], &[]),
+        WalkStep::Done
+    );
+}
+
+#[test]
+fn walk_flags_a_different_file_of_the_same_mod_and_keeps_waiting() {
+    let rev = captured_revision();
+    let m0 = &rev.mods[0];
+    let mut w = CollectionWalk {
+        queue: vec![0],
+        at: 0,
+        seen: HashSet::new(),
+    };
+    let got = m0.file_id + 1;
+    assert_eq!(
+        walk_step(&mut w, &rev, &[MemberState::Missing], &[(m0.mod_id, got)]),
+        WalkStep::Wrong {
+            want: m0.file_id,
+            got
+        }
+    );
+    assert_eq!(w.at, 0);
+}
+
+#[test]
+fn walk_queues_missing_required_members_only() {
+    use MemberState::{Installed, Missing};
+    // rev.mods: 0 required, 1 optional, 2 required, 3 required
+    let mut rev = captured_revision();
+    rev.mods.push(rev.mods[0].clone());
+    rev.mods[1].optional = true;
+    assert_eq!(
+        walk_queue(&rev, &[Missing, Missing, Installed, Missing]),
+        [0, 3]
+    );
+}
+
+/// The tick end to end, on the two steps that open nothing: a wrong file is
+/// named and holds the counter, and the last file landing ends the walk.
+#[test]
+fn the_walk_names_a_wrong_file_then_offers_the_install_when_the_last_one_lands() {
+    let rev = captured_revision();
+    let (mod_id, want) = (rev.mods[2].mod_id, rev.mods[2].file_id);
+    let (mut app, root) = collection_app(&[], &[]);
+    app.collection = Some(CollectionState {
+        install_check: None,
+        runtime: None,
+        link: String::new(),
+        revision: Some(rev),
+        states: Vec::new(),
+        loading: false,
+        error: None,
+        confirm_fetch: false,
+        asked: HashSet::new(),
+        walk: Some(CollectionWalk {
+            queue: vec![2],
+            at: 0,
+            seen: HashSet::new(),
+        }),
+    });
+    let dl = app.created.as_ref().unwrap().downloads_dir();
+    let land = |name: &str, file_id: u64| {
+        fs::write(dl.join(name), b"x").unwrap();
+        fs::write(
+            dl.join(format!("{name}.meta")),
+            format!("[General]\ngameName=SkyrimSE\nmodID={mod_id}\nfileID={file_id}\n"),
+        )
+        .unwrap();
+    };
+
+    land("newest.7z", want + 1);
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert_eq!(
+        app.status,
+        Some(tf(
+            "collection_walk_wrong",
+            &[("want", &want), ("got", &(want + 1))]
+        ))
+    );
+    assert_eq!(
+        app.collection.as_ref().unwrap().walk.as_ref().unwrap().at,
+        0
+    );
+
+    land("pinned.7z", want);
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(app.collection.as_ref().unwrap().walk.is_none());
+    assert_eq!(app.status, Some(tf("collection_walk_done", &[("n", &1)])));
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -3607,6 +3741,42 @@ fn a_global_instance_offers_neither_rename_nor_forget() {
 }
 
 #[test]
+fn collection_notices_from_another_instance_are_dropped() {
+    let mut app = nav_app(&[]);
+    let notice = CollectionNotice {
+        slug: "abc".into(),
+        domain: "skyrimspecialedition".into(),
+        name: "Some list".into(),
+        have: 1,
+        latest: 2,
+        diff: None,
+    };
+    let _ = update_inner(
+        &mut app,
+        Message::CollectionRevisionsChecked(PathBuf::from("/elsewhere"), vec![notice]),
+    );
+    assert!(app.collection_notices.is_empty());
+}
+
+#[test]
+fn collection_notices_do_not_survive_switching_instance() {
+    let root = temp_portable("notices-switch");
+    let inst = Instance::portable(root.join("instance"));
+    inst.create().unwrap();
+    let mut app = app_for_game("morrowind");
+    app.collection_notices = vec![CollectionNotice {
+        slug: "abc".into(),
+        domain: "skyrimspecialedition".into(),
+        name: "Some list".into(),
+        have: 1,
+        latest: 2,
+        diff: None,
+    }];
+    open_instance(&mut app, inst);
+    assert!(app.collection_notices.is_empty());
+}
+
+#[test]
 fn an_update_check_records_what_is_left_of_the_budget() {
     let mut app = nav_app(&[]);
     let result = eidos_nexus::UpdateCheckResult {
@@ -3620,7 +3790,14 @@ fn an_update_check_records_what_is_left_of_the_budget() {
         unavailable: Vec::new(),
         failures: Vec::new(),
     };
-    let _ = update_inner(&mut app, Message::UpdatesChecked(Ok(result)));
+    let _ = update_inner(
+        &mut app,
+        Message::UpdatesChecked {
+            root: PathBuf::from("/nowhere"),
+            connected: true,
+            result: Ok(result),
+        },
+    );
     // It arrived in the result and used to be dropped on the floor.
     assert_eq!(app.nexus_hourly_left, Some(1388));
     assert_eq!(app.nexus_daily_left, Some(2100));
@@ -3636,7 +3813,14 @@ fn an_update_check_reports_failed_requests_as_incomplete() {
         failures: vec![("Example Mod".into(), "HTTP 503".into())],
         ..Default::default()
     };
-    let _ = update_inner(&mut app, Message::UpdatesChecked(Ok(result)));
+    let _ = update_inner(
+        &mut app,
+        Message::UpdatesChecked {
+            root: PathBuf::from("/nowhere"),
+            connected: true,
+            result: Ok(result),
+        },
+    );
     let status = app.status.as_deref().unwrap();
     assert!(status.contains("1 mod(s) could not be checked"));
     assert!(status.contains("0 update(s) found"));
@@ -4144,6 +4328,7 @@ fn collection_runtime_mismatch_requires_a_current_explicit_continuation() {
         error: None,
         confirm_fetch: false,
         asked: Default::default(),
+        walk: None,
     });
     let mismatch = eidos_collections::recipe::RuntimeCheck::Mismatch {
         observed: "1.7.104.0".into(),
@@ -4395,11 +4580,113 @@ fn a_failed_update_check_still_recounts_updates() {
     )
     .unwrap();
     app.update_in_progress = true;
-    let _ = update_inner(&mut app, Message::UpdatesChecked(Err("lock held".into())));
+    let next = update_inner(
+        &mut app,
+        Message::UpdatesChecked {
+            root: root.clone(),
+            connected: true,
+            result: Err("lock held".into()),
+        },
+    );
     assert_eq!(
         app.updated_count, 1,
         "the mod rewritten before the failure counts"
     );
+    assert_eq!(next.units(), 0, "no Nexus id, so no requirements refresh");
+    assert!(!app.update_in_progress);
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// The requirements refresh and the update check both write meta.ini under the
+/// instance lock, which a second thread of this process is refused. So the
+/// refresh starts only once the check answered, failed or not, and Check for
+/// updates stays off until the refresh answered too. Starting it signs in to
+/// Nexus for real, so these tests ask the decision and never send a check
+/// answer for an instance that has a Nexus id.
+#[test]
+fn the_requirements_refresh_runs_after_the_update_check_never_beside_it() {
+    let (mut app, root) = collection_app(&[("Mod", 42)], &[]);
+    let target = |app: &App, root: &Path, connected: bool| {
+        nexus::requirements_refresh_target(app, root, connected).map(|(i, d)| (i.root, d.id))
+    };
+    assert_eq!(
+        target(&app, &root, true),
+        Some((root.clone(), "skyrimse")),
+        "the checked instance, still open, with a Nexus mod"
+    );
+    assert_eq!(
+        target(&app, &root, false),
+        None,
+        "a check that could not sign in is not followed by a second sign-in"
+    );
+    assert_eq!(
+        target(&app, Path::new("/elsewhere"), true),
+        None,
+        "another instance was opened while the check ran"
+    );
+
+    for error in [None, Some("HTTP 502")] {
+        app.update_in_progress = true;
+        app.status = Some("Update check: 1 mod(s) checked.".into());
+        let result = error.map_or(Ok(0), |e| Err(e.to_string()));
+        let _ = update_inner(
+            &mut app,
+            Message::RequirementsRefreshed(root.clone(), result),
+        );
+        assert!(!app.update_in_progress);
+        let status = app.status.clone().unwrap();
+        assert!(status.starts_with("Update check"), "{status}");
+        assert_eq!(
+            status.contains("HTTP 502"),
+            error.is_some(),
+            "the refresh error follows the check's summary: {status}"
+        );
+    }
+    // Another instance's answer still frees the button.
+    app.update_in_progress = true;
+    let _ = update_inner(
+        &mut app,
+        Message::RequirementsRefreshed(PathBuf::from("/elsewhere"), Ok(0)),
+    );
+    assert!(!app.update_in_progress);
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// Nothing to look up, nothing started: the update check's answer for an
+/// instance whose mods have no Nexus id frees the button at once.
+#[test]
+fn an_instance_without_nexus_ids_starts_no_requirements_refresh() {
+    let root = temp_portable("skyrimse");
+    let mut app = app_for_game("skyrimse");
+    let inst = Instance::portable(root.clone());
+    inst.create().unwrap();
+    fs::create_dir_all(inst.mods_dir().join("Local")).unwrap();
+    fs::write(
+        inst.mods_dir().join("Local").join("meta.ini"),
+        "[General]\nversion=1.0\n",
+    )
+    .unwrap();
+    app.created = Some(inst);
+    app.mods = mods(&["Local"]);
+    app.screen = Screen::Main;
+    crate::state::refresh_meta_cache(&mut app);
+    assert_eq!(
+        nexus::requirements_refresh_target(&app, &root, true).map(|(i, _)| i.root),
+        None
+    );
+    for result in [Ok(Default::default()), Err("HTTP 503".to_string())] {
+        app.update_in_progress = true;
+        let next = update_inner(
+            &mut app,
+            Message::UpdatesChecked {
+                root: root.clone(),
+                connected: true,
+                result,
+            },
+        );
+        assert_eq!(next.units(), 0, "no refresh started");
+        assert!(!app.update_in_progress, "Check for updates is back on");
+    }
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -6294,4 +6581,224 @@ fn importing_mo2_executables_adds_checked_rows_with_new_titles_only() {
         "nothing saved yet"
     );
     let _ = fs::remove_dir_all(root);
+}
+
+/// Two steps: a texture size (SD recommended) and a patch step. `{snow}` names
+/// the patch option, so a rename can stand for a mod update.
+const REPLAY_XML: &str = r#"<config><installSteps order="Explicit">
+<installStep name="Main"><optionalFileGroups order="Explicit"><group name="Textures" type="SelectExactlyOne"><plugins order="Explicit">
+<plugin name="SD"><typeDescriptor><type name="Recommended"/></typeDescriptor></plugin>
+<plugin name="HD"><typeDescriptor><type name="Optional"/></typeDescriptor></plugin>
+</plugins></group></optionalFileGroups></installStep>
+<installStep name="Extras"><optionalFileGroups><group name="Patches" type="SelectAny"><plugins>
+<plugin name="{snow}"><typeDescriptor><type name="Optional"/></typeDescriptor></plugin>
+</plugins></group></optionalFileGroups></installStep>
+</installSteps></config>"#;
+
+fn replay_config(snow: &str) -> eidos_fomod::ModuleConfig {
+    eidos_fomod::ModuleConfig::parse(&REPLAY_XML.replace("{snow}", snow)).unwrap()
+}
+
+#[test]
+fn wizard_start_ticks_stored_choices_and_stops_at_a_changed_step() {
+    let ctx = eidos_fomod::Context::default();
+    let config = replay_config("Snow");
+    let picked: eidos_fomod::Selection = vec![vec![vec![false, true]], vec![vec![true]]];
+    let stored_same =
+        eidos_install::fomod_choices_json(&eidos_fomod::to_recorded(&config, &picked, &ctx));
+
+    let (sel, step, notes) = wizard_start(&config, &ctx, Some(&stored_same));
+    assert_eq!((sel, step, notes), (picked.clone(), 0, Some(vec![])));
+
+    let (_, step, notes) =
+        wizard_start(&replay_config("Snow (Cathedral)"), &ctx, Some(&stored_same));
+    assert_eq!(step, 1);
+    assert!(!notes.unwrap().is_empty());
+
+    let (sel, step, notes) = wizard_start(&config, &ctx, None);
+    assert_eq!(
+        (sel, step, notes),
+        (eidos_fomod::default_selection(&config, &ctx), 0, None)
+    );
+    // An answer that no longer reads is no answer at all.
+    assert_eq!(wizard_start(&config, &ctx, Some("{")).2, None);
+}
+
+#[test]
+fn a_reinstall_opens_on_the_stored_choices_and_new_choices_start_from_defaults() {
+    let (mut app, root) = list_app(&["Chosen"]);
+    let inst = app.created.clone().unwrap();
+    let ctx = eidos_fomod::Context::default();
+    let config = replay_config("Snow");
+    let picked: eidos_fomod::Selection = vec![vec![vec![false, true]], vec![vec![true]]];
+    let mut meta = inst.mod_meta("Chosen");
+    meta.set_fomod_choices(&eidos_install::fomod_choices_json(
+        &eidos_fomod::to_recorded(&config, &picked, &ctx),
+    ));
+    meta.write(&inst.meta_path("Chosen")).unwrap();
+    let archive = root.join("Chosen.zip");
+    let status = std::process::Command::new("python3")
+        .arg("-c")
+        .arg("import sys,zipfile\nwith zipfile.ZipFile(sys.argv[1],'w') as z: z.writestr('fomod/ModuleConfig.xml',sys.argv[2])")
+        .arg(&archive)
+        .arg(REPLAY_XML.replace("{snow}", "Snow"))
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    for fresh in [false, true] {
+        let opened =
+            eidos_install::open_archive(&archive, &inst.mods_dir(), "Chosen", "skyrimse").unwrap();
+        let target = collection_target(&app).unwrap();
+        let _ = finish_open(
+            &mut app,
+            Ok(opened),
+            archive.clone(),
+            "Chosen".into(),
+            target,
+            fresh,
+        );
+        let w = app.fomod.as_ref().expect("the wizard opened");
+        let _ = fomod_wizard_view(w);
+        if fresh {
+            assert_eq!(w.replayed, None, "new choices start from the defaults");
+            assert_eq!(w.selection, eidos_fomod::default_selection(&config, &ctx));
+        } else {
+            assert_eq!(w.replayed, Some(vec![]));
+            assert_eq!(w.selection, picked);
+            // One changed answer and "the same choices" is no longer true.
+            let _ = update_inner(&mut app, Message::FomodToggle(0, 0));
+            assert_eq!(app.fomod.as_ref().unwrap().replayed, None);
+        }
+        app.fomod = None;
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn update_is_refused_for_a_folder_that_merges_several_nexus_files() {
+    let merged =
+        "[installedFiles]\n1\\modid=42\n1\\fileid=101\n2\\modid=42\n2\\fileid=201\nsize=2\n";
+    let (mut app, root) = collection_app_with(&[("Merged", 42, merged), ("Mod", 42, "")], &[], &[]);
+    let update = |folder: &str| Message::NexusUpdate {
+        folder: folder.into(),
+        domain: "skyrimspecialedition".into(),
+        mod_id: 42,
+        file_id: 103,
+    };
+    let _ = update_inner(&mut app, update("Merged"));
+    assert!(app.pending_update.is_none());
+    assert_eq!(
+        app.status,
+        Some(tf("nexus_update_merged_refused", &[("folder", &"Merged")]))
+    );
+    // A single-file folder gets past that check; without an account it stops
+    // before anything is spawned or opened.
+    app.nexus_account = None;
+    let _ = update_inner(&mut app, update("Mod"));
+    assert!(app.pending_update.is_none());
+    assert_eq!(app.status.as_deref(), Some(t("status_connect_nexus_first")));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_second_update_waits_for_the_pending_one() {
+    let (mut app, root) = collection_app_with(&[("A", 41, ""), ("B", 42, "")], &[], &[]);
+    // No account: a check that let the click through stops before a spawn.
+    app.nexus_account = None;
+    app.pending_update = Some(PendingUpdate {
+        folder: "A".into(),
+        mod_id: 41,
+        file_id: 501,
+    });
+    let update = |folder: &str| Message::NexusUpdate {
+        folder: folder.into(),
+        domain: "skyrimspecialedition".into(),
+        mod_id: 42,
+        file_id: 103,
+    };
+    let _ = update_inner(&mut app, update("B"));
+    let pending = app
+        .pending_update
+        .as_ref()
+        .map(|p| (p.folder.as_str(), p.file_id));
+    assert_eq!(pending, Some(("A", 501)), "A's update is kept");
+    assert_eq!(
+        app.status,
+        Some(tf("status_update_still_waiting", &[("folder", &"A")]))
+    );
+    // The waiting folder itself may ask again.
+    let _ = update_inner(&mut app, update("A"));
+    assert_eq!(app.status.as_deref(), Some(t("status_connect_nexus_first")));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_finished_update_download_opens_the_install_for_that_folder() {
+    let (mut app, root) = collection_app_with(&[("Mod", 42, "")], &[], &[]);
+    app.pending_update = Some(PendingUpdate {
+        folder: "Mod".into(),
+        mod_id: 42,
+        file_id: 103,
+    });
+    let dl = app.created.as_ref().unwrap().downloads_dir();
+    let meta = "[General]\ngameName=SkyrimSE\nmodID=42\nfileID=103\n";
+    // Still arriving: nothing starts yet.
+    fs::write(dl.join("new.7z.unfinished"), b"x").unwrap();
+    fs::write(dl.join("new.7z.meta"), meta).unwrap();
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(app.pending_update.is_some());
+    assert!(app.install_job.is_none());
+
+    fs::rename(dl.join("new.7z.unfinished"), dl.join("new.7z")).unwrap();
+    // Arrived while another install runs: it waits for that one.
+    app.install_job = Some(fake_job(None));
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(app.pending_update.is_some());
+    app.install_job = None;
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(app.pending_update.is_none());
+    assert_eq!(
+        app.install_job.as_ref().map(|j| j.name.as_str()),
+        Some("Mod")
+    );
+    assert_eq!(app.update_target.as_deref(), Some("Mod"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn an_update_collision_defaults_to_keeping_a_backup() {
+    let mut app = nav_app(&[]);
+    app.prefs.retain_install_backup = false;
+    app.update_target = Some("Mod".into());
+    assert!(!backup_default(&mut app, "Other"), "another folder");
+    app.update_target = Some("Mod".into());
+    assert!(backup_default(&mut app, "Mod"));
+    assert!(!backup_default(&mut app, "Mod"), "used once");
+    app.prefs.retain_install_backup = true;
+    assert!(backup_default(&mut app, "Mod"));
+}
+
+#[test]
+fn an_update_over_its_folder_asks_with_the_backup_ticked() {
+    let (mut app, root) = list_app(&["Mod"]);
+    let inst = app.created.clone().unwrap();
+    fs::write(inst.mods_dir().join("Mod").join("old.esp"), b"x").unwrap();
+    let archive = root.join("new.zip");
+    let status = std::process::Command::new("python3")
+        .arg("-c")
+        .arg("import sys,zipfile\nwith zipfile.ZipFile(sys.argv[1],'w') as z: z.writestr('new.esp','x')")
+        .arg(&archive)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    app.prefs.retain_install_backup = false;
+    app.update_target = Some("Mod".into());
+    let opened =
+        eidos_install::open_archive(&archive, &inst.mods_dir(), "Mod", "skyrimse").unwrap();
+    let target = collection_target(&app).unwrap();
+    let _ = finish_open(&mut app, Ok(opened), archive, "Mod".into(), target, false);
+    assert!(app.collision.as_ref().expect("Replace is offered").backup);
+    assert_eq!(app.update_target, None);
+    fs::remove_dir_all(root).unwrap();
 }

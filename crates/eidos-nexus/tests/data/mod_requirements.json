@@ -1,0 +1,34 @@
+{
+  "data": {
+    "legacyModsByDomain": {
+      "nodes": [
+        {
+          "modId": 100,
+          "gameId": 1704,
+          "game": {"domainName": "skyrimspecialedition"},
+          "modRequirements": {
+            "nexusRequirements": {
+              "nodes": [
+                {"modId": 12604, "gameId": 1704, "modName": "SKSE64", "notes": "", "url": "https://www.nexusmods.com/skyrimspecialedition/mods/12604", "externalRequirement": false},
+                {"modId": 99, "gameId": 110, "modName": "Old Helper", "notes": "LE file", "url": "https://www.nexusmods.com/skyrim/mods/99", "externalRequirement": false},
+                {"modId": 0, "gameId": 0, "modName": "VC++ Redistributable", "notes": "", "url": "https://example.org/vcredist", "externalRequirement": true}
+              ]
+            },
+            "dlcRequirements": [
+              {"gameExpansion": {"name": "Dawnguard"}, "notes": "for the patch"}
+            ]
+          }
+        },
+        {
+          "modId": 101,
+          "gameId": 1704,
+          "game": {"domainName": "skyrimspecialedition"},
+          "modRequirements": {
+            "nexusRequirements": {"nodes": []},
+            "dlcRequirements": []
+          }
+        }
+      ]
+    }
+  }
+}

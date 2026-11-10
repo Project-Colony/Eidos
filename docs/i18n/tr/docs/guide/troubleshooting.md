@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=c9bb5a3ae78695b89ce4595223a2d2ff1902345e -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=55e68d8b6ee830b2d336ce1e96db32155a304c57 -->
 
 # Sorun giderme ve tanılama
 
@@ -276,3 +276,9 @@ bir bağlama onu hiç kullanmaz. Passthrough okuyucularının tuttuğu bir dosya
 yazmak için yapılan bir açma, herhangi bir copy-up'tan önce ETXTBSY alır
 (Wine'da: `STATUS_SHARING_VIOLATION`); böylece `O_TRUNC` ile yapılan bir açma,
 Overwrite'ta modun dosyasını gizleyen boş bir kopya bırakamaz.
+
+### Mod Manager Download düğmesi hiçbir şey yapmıyor
+
+Tercihler > İndirmeler, `nxm://` bağlantılarını hangi programın aldığını gösterir. Bu program Eidos değilse, yoksa ya da hiçbiri ayarlanmamışsa Sağlık bir kart ekler. Kaydet düğmesi `eidos-nxm.desktop` dosyasını yazar ve onu `x-scheme-handler/nxm` için varsayılan işleyici yapar. Terminalde aynı işi `eidos nxm --register` görür.
+
+Durum zaten Eidos diyorsa ve düğme yine de bir şey yapmıyorsa tarayıcı önceki bir seçimi kullanıyor olabilir. Tarayıcının ayarlarından nxm bağlantıları için kayıtlı seçimi silin, böylece yeniden sorar. Flatpak tarayıcı ana makinenin programlarını başlatamaz ve bağlantıyı, ana makinede kayıtlı işleyiciyi okuyan masaüstü portalı üzerinden iletir.

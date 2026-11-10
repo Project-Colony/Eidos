@@ -60,6 +60,10 @@ pub(crate) fn refresh_meta_cache(app: &mut App) {
         app.meta_cache.insert(
             name,
             RowMeta {
+                requirements: meta
+                    .nexus_requirements()
+                    .and_then(|j| serde_json::from_str(&j).ok()),
+                ignored_requirements: meta.ignored_requirements(),
                 version: meta.version(),
                 mod_id: meta.mod_id(),
                 installed_files: meta.installed_files(),
@@ -79,11 +83,19 @@ pub(crate) fn refresh_meta_cache(app: &mut App) {
                 // is what MO2's `validated=` is for, and honouring it means a
                 // mod already vouched for in MO2 arrives here quiet.
                 invalid_data: !meta.validated() && !eidos_install::folder_looks_valid(&path, rules),
+                // A game that takes this mod's domain is not "another game":
+                // Enderal SE takes Skyrim SE mods, Skyrim VR and Fallout 4 VR
+                // take their base game's.
                 other_game: meta
                     .game_name()
                     .filter(|_| !meta.validated())
                     .filter(|g| !g.is_empty() && !short.is_empty())
-                    .filter(|g| !g.eq_ignore_ascii_case(short)),
+                    .filter(|g| !g.eq_ignore_ascii_case(short))
+                    .filter(|g| {
+                        !eidos_games::nexus_domain_of(g)
+                            .zip(game)
+                            .is_some_and(|(d, def)| def.accepts_domain(d))
+                    }),
             },
         );
     }
@@ -337,6 +349,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         nexus_account: None,
         nexus_signing_in: false,
         nexus_error: None,
+        nxm_handler: None,
         // NOT `Settings::load()` under test, for two reasons that both bit.
         // Loading binds the real file, so a test dispatching "toggle lock"
         // wrote the developer's own preferences - the symptom, options
@@ -415,10 +428,13 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         addons_open: false,
         addon_findings: Vec::new(),
         endorsing: None,
+        nexus_files: HashMap::new(),
+        nexus_files_loading: None,
         endorsed_count: 0,
         updated_count: 0,
         nexus_hourly_left: None,
         nexus_daily_left: None,
+        collection_notices: Vec::new(),
         update_in_progress: false,
         sorting: false,
         ui_toolbar_visible: true,
@@ -440,6 +456,8 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         save_missing: Vec::new(),
         downloads: Vec::new(),
         resuming: None,
+        pending_update: None,
+        update_target: None,
         confirm_delete_download: None,
         identifying_download: None,
         extracting_archives: HashSet::new(),
@@ -600,6 +618,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     // `eidos-gui --collection <nxm://...>`: the nxm handler hands a collection
     // link here rather than trying to install one itself, because reading it
     // needs the mod list this window holds.
+    let startup = Task::batch([startup, read_nxm_handler()]);
     let collection = launch_args
         .iter()
         .position(|a| a == "--collection")
@@ -641,6 +660,15 @@ pub(crate) fn take_handoff_pick(inst: &Instance) -> Option<String> {
     let pick = fs::read_to_string(&path).ok();
     let _ = fs::remove_file(path);
     pick.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+/// Ask the desktop who owns `nxm://` links. `xdg-mime` is a process, so this
+/// runs on the blocking pool, never in `diagnostics()`.
+pub(crate) fn read_nxm_handler() -> Task<Message> {
+    Task::perform(
+        smol::unblock(eidos::nxm_handler::read),
+        Message::NxmHandlerRead,
+    )
 }
 
 /// Reload the tool list for the open instance (user `tools.ini` + per-game
@@ -4237,6 +4265,50 @@ mod tests {
         // from a folder never had a game recorded, and warning about that would
         // flag half a list.
         assert_eq!(app.meta_cache["Silent"].other_game, None);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_mod_from_an_accepted_domain_is_not_another_game() {
+        let root = temp_portable("enderalse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        let rows = [
+            ("Sse", "SkyrimSE"),
+            ("FromCollection", "skyrimspecialedition"),
+            ("Own", "EnderalSE"),
+            ("Fo4", "Fallout4"),
+        ];
+        for (name, game) in rows {
+            let dir = root.join("mods").join(name);
+            fs::create_dir_all(dir.join("Meshes")).unwrap();
+            fs::write(
+                dir.join("meta.ini"),
+                format!("[General]\ngameName={game}\n"),
+            )
+            .unwrap();
+        }
+        let mut app = app_for_game("enderalse");
+        app.created = Some(inst);
+        app.mods = rows
+            .iter()
+            .map(|(n, _)| ModEntry {
+                name: (*n).to_string(),
+                enabled: true,
+                path: root.join("mods").join(n),
+                unmanaged: false,
+            })
+            .collect();
+        app.screen = Screen::Main;
+        refresh_meta_cache(&mut app);
+
+        assert_eq!(app.meta_cache["Sse"].other_game, None);
+        assert_eq!(app.meta_cache["FromCollection"].other_game, None);
+        assert_eq!(app.meta_cache["Own"].other_game, None);
+        assert_eq!(
+            app.meta_cache["Fo4"].other_game.as_deref(),
+            Some("Fallout4")
+        );
         let _ = fs::remove_dir_all(&root);
     }
 

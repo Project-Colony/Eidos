@@ -324,6 +324,27 @@ fn completed_install_surfaces_persistent_missing_payload_warning() {
 }
 
 #[test]
+fn install_status_hints_at_fetch_from_nexus_for_an_unmapped_category() {
+    let (mut app, root) = list_app(&["Armour"]);
+    let inst = app.created.clone().unwrap();
+    let archive = root.join("Armour-37.7z");
+    fs::write(&archive, b"x").unwrap();
+    fs::write(root.join("Armour-37.7z.meta"), b"[General]\ncategory=37\n").unwrap();
+    let mut meta = inst.mod_meta("Armour");
+    meta.set_categories(None, &[]);
+    meta.write(&inst.meta_path("Armour")).unwrap();
+    after_install(
+        &mut app,
+        "Armour",
+        inst.mods_dir().join("Armour"),
+        false,
+        Some(&archive),
+    );
+    assert!(app.status.unwrap().contains(t("status_category_unmapped")));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn a_hidden_tool_leaves_the_picker_and_a_pinned_one_goes_to_the_top() {
     use eidos_instance::Tool;
     let mk = |title: &str, hidden: bool, pinned: bool| Tool {
@@ -862,4 +883,192 @@ fn health_report_redacts_home_paths() {
 fn a_contested_data_row_tooltip_lists_every_other_provider() {
     let tip = super::files::also_in_tip(&["Mod B".to_string(), "Mod C".to_string()]);
     assert!(tip.ends_with("Mod B, Mod C"), "{tip}");
+}
+
+#[test]
+fn nexus_files_rows_mark_installed_and_successor() {
+    let fixture = eidos_nexus::ModFiles::from_payload(
+        &serde_json::from_str(include_str!(
+            "../../../eidos-nexus/tests/data/mod_files.json"
+        ))
+        .unwrap(),
+    );
+    let rows = file_rows(&fixture, 42, &[(42, 101)], "1.2");
+    let row = |id| rows.iter().find(|r| r.file.file_id == id).unwrap();
+    assert!(row(101).installed && !row(101).successor);
+    assert!(row(103).successor && !row(103).installed);
+    assert!(rows
+        .windows(2)
+        .all(|w| w[0].file.uploaded_timestamp >= w[1].file.uploaded_timestamp));
+}
+
+mod requirement_tests {
+    use super::*;
+    use eidos_nexus::{Requirement, Requirements};
+
+    fn req(domain: &str, mod_id: u64, name: &str) -> Requirement {
+        Requirement {
+            domain: domain.into(),
+            mod_id,
+            name: name.into(),
+            notes: String::new(),
+        }
+    }
+
+    /// "Needs" requires skyrimspecialedition:1 (absent) and :2 ("Dep", disabled).
+    fn setup(reqs: Requirements) -> (Vec<ModEntry>, HashMap<String, RowMeta>) {
+        let mut list = mods(&["Needs", "Dep"]);
+        list[1].enabled = false;
+        let mut meta = HashMap::new();
+        meta.insert(
+            "Needs".to_string(),
+            RowMeta {
+                requirements: Some(reqs),
+                ..RowMeta::default()
+            },
+        );
+        meta.insert(
+            "Dep".to_string(),
+            RowMeta {
+                mod_id: Some(2),
+                ..RowMeta::default()
+            },
+        );
+        (list, meta)
+    }
+
+    fn skyrim_se() -> &'static eidos_games::GameDef {
+        eidos_games::GameDef::for_id("skyrimse").unwrap()
+    }
+
+    fn two_mods() -> Requirements {
+        Requirements {
+            mods: vec![
+                req("skyrimspecialedition", 1, "Absent"),
+                req("skyrimspecialedition", 2, "Dep"),
+            ],
+            dlc: vec![],
+        }
+    }
+
+    #[test]
+    fn a_missing_or_disabled_requirement_is_a_problem_with_actions() {
+        let (mods, meta) = setup(two_mods());
+        let out = requirement_checks(skyrim_se(), &mods, &meta, &[], false);
+        assert_eq!(
+            out.iter().filter(|d| d.level == DiagLevel::Problem).count(),
+            2
+        );
+        assert!(out.iter().all(|d| d
+            .actions
+            .iter()
+            .any(|(_, m)| matches!(m, Message::IgnoreRequirement { .. }))));
+        assert!(out.iter().all(|d| !d
+            .actions
+            .iter()
+            .any(|(_, m)| matches!(m, Message::RequirementDownload { .. }))));
+        assert!(out[0].title.contains("not installed"), "{}", out[0].title);
+        assert!(out[1].title.contains("disabled"), "{}", out[1].title);
+        // Premium adds Download for the absent one only.
+        let out = requirement_checks(skyrim_se(), &mods, &meta, &[], true);
+        let dl = |d: &Diagnostic| {
+            d.actions
+                .iter()
+                .any(|(_, m)| matches!(m, Message::RequirementDownload { .. }))
+        };
+        assert!(dl(&out[0]) && !dl(&out[1]));
+    }
+
+    #[test]
+    fn an_enabled_copy_by_mod_id_or_merged_file_satisfies_it() {
+        let (mut mods, mut meta) = setup(two_mods());
+        mods[1].enabled = true;
+        meta.get_mut("Dep").unwrap().installed_files = vec![(1, 10)];
+        assert!(requirement_checks(skyrim_se(), &mods, &meta, &[], false).is_empty());
+    }
+
+    #[test]
+    fn an_ignored_requirement_raises_nothing() {
+        let (mods, mut meta) = setup(two_mods());
+        meta.get_mut("Needs").unwrap().ignored_requirements = vec!["skyrimspecialedition:1".into()];
+        let out = requirement_checks(skyrim_se(), &mods, &meta, &[], false);
+        let keys: Vec<_> = out
+            .iter()
+            .flat_map(|d| &d.actions)
+            .filter_map(|(_, m)| match m {
+                Message::IgnoreRequirement { key, .. } => Some(key.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(keys, ["skyrimspecialedition:2"]);
+    }
+
+    #[test]
+    fn a_dlc_requirement_matching_a_present_plugin_is_silent() {
+        let (mods, meta) = setup(Requirements {
+            mods: vec![],
+            dlc: vec!["Dawnguard".into(), "Far Harbor: needs the quest".into()],
+        });
+        let out = requirement_checks(skyrim_se(), &mods, &meta, &["Dawnguard.esm".into()], false);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].level, DiagLevel::Advice);
+        assert!(out[0].title.contains("Far Harbor"), "{}", out[0].title);
+    }
+
+    /// 1500 mods, each needing the two before it and one that is absent: one
+    /// map lookup per requirement, not a scan of the list (Health reruns this
+    /// after every toggle, on the UI thread).
+    #[test]
+    fn a_large_list_finds_each_requirement_by_lookup() {
+        let n = 1500u64;
+        let names: Vec<String> = (0..n).map(|i| format!("Mod {i}")).collect();
+        let list = mods(&names.iter().map(String::as_str).collect::<Vec<_>>());
+        let mut meta = HashMap::new();
+        for i in 0..n {
+            let mut reqs: Vec<Requirement> = (1..=2)
+                .filter(|d| i >= *d)
+                .map(|d| req("skyrimspecialedition", 10_000 + i - d, ""))
+                .collect();
+            reqs.push(req("skyrimspecialedition", 1, "Absent"));
+            meta.insert(
+                names[i as usize].clone(),
+                RowMeta {
+                    mod_id: Some(10_000 + i),
+                    requirements: Some(Requirements {
+                        mods: reqs,
+                        dlc: vec![],
+                    }),
+                    ..RowMeta::default()
+                },
+            );
+        }
+        let start = std::time::Instant::now();
+        let out = requirement_checks(skyrim_se(), &list, &meta, &[], false);
+        println!(
+            "REQUIREMENT_CHECKS mods={n} us={}",
+            start.elapsed().as_micros()
+        );
+        assert_eq!(out.len(), n as usize, "only the absent one, once per mod");
+        assert!(out.iter().all(|d| d.title.contains("Absent")));
+    }
+
+    #[test]
+    fn an_off_site_requirement_is_advice_with_its_name_and_no_link() {
+        let (mods, meta) = setup(Requirements {
+            mods: vec![req("", 0, "VC++ Redistributable")],
+            dlc: vec![],
+        });
+        let out = requirement_checks(skyrim_se(), &mods, &meta, &[], true);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].level, DiagLevel::Advice);
+        assert!(
+            out[0].title.contains("VC++ Redistributable"),
+            "{}",
+            out[0].title
+        );
+        assert!(matches!(
+            out[0].actions.as_slice(),
+            [(_, Message::IgnoreRequirement { key, .. })] if key == "offsite:VC++ Redistributable"
+        ));
+    }
 }

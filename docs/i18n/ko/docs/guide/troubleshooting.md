@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=c9bb5a3ae78695b89ce4595223a2d2ff1902345e -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=55e68d8b6ee830b2d336ce1e96db32155a304c57 -->
 
 # 문제 해결과 진단
 
@@ -242,3 +242,9 @@ SE를 결정론적으로 죽였습니다. 나머지 커널 쪽 캐시 셋은 하
 패스스루 독자가 붙잡고 있는 파일을 쓰기용으로 열면 어떤 copy-up보다도 먼저
 ETXTBSY(Wine에서는 `STATUS_SHARING_VIOLATION`)를 받으므로, `O_TRUNC` 열기가 모드
 파일을 가리는 빈 사본을 Overwrite에 남길 수 없습니다.
+
+### Mod Manager Download 버튼이 아무 반응이 없을 때
+
+설정 > 다운로드에는 `nxm://` 링크를 받는 프로그램이 표시됩니다. 그 프로그램이 Eidos가 아니거나, 없거나, 지정된 것이 없으면 상태 점검에 카드가 추가됩니다. 등록 버튼은 `eidos-nxm.desktop`을 만들고 `x-scheme-handler/nxm`의 기본 처리기로 지정합니다. 터미널에서는 `eidos nxm --register`가 같은 일을 합니다.
+
+상태에 이미 Eidos가 표시되는데도 버튼이 반응하지 않으면, 브라우저가 이전에 한 선택을 쓰고 있을 수 있습니다. 브라우저 설정에서 nxm 링크에 저장된 선택을 지워 다시 묻도록 하세요. Flatpak 브라우저는 호스트 프로그램을 직접 실행할 수 없고, 호스트에 등록된 처리기를 읽는 데스크톱 포털을 통해 링크를 넘깁니다.

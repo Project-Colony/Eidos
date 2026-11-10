@@ -58,6 +58,20 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // and input subscription frozen behind it.
             return Task::perform(smol::unblock(nexus_sign_in), Message::NexusSignInResult);
         }
+        Message::NxmHandlerRead(h) => app.nxm_handler = Some(h),
+        Message::RegisterNxm => {
+            return Task::perform(
+                smol::unblock(|| eidos::nxm_handler::register().map(|_| ())),
+                Message::NxmRegistered,
+            );
+        }
+        Message::NxmRegistered(result) => {
+            app.status = Some(match result {
+                Ok(()) => t("status_nxm_registered").to_string(),
+                Err(e) => tf("status_nxm_register_failed", &[("error", &e)]),
+            });
+            return crate::state::read_nxm_handler();
+        }
         Message::NexusSignInResult(result) => {
             app.nexus_signing_in = false;
             match result {
