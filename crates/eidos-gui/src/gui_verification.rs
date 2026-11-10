@@ -951,3 +951,46 @@ fn nexus_file_buttons_fit_inside_the_mod_info_card() {
         assert!(b.height < line * 1.5, "wrapped: {b:?}");
     }
 }
+
+/// Collection notices arrive seconds after Check for updates, maybe while the
+/// pointer is on a row. They go under the list, so no row moves when they do.
+#[test]
+fn collection_notices_never_move_the_mod_rows() {
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    let mods_dir = app.created.as_ref().unwrap().mods_dir();
+    app.mods = ["Alpha", "Beta"]
+        .into_iter()
+        .map(|name| ModEntry {
+            name: name.into(),
+            enabled: true,
+            path: mods_dir.join(name),
+            unmanaged: false,
+        })
+        .collect();
+    let mut renderer = renderer();
+    let before = label(crate::view(&app), &mut renderer, "Beta", 0);
+    let notice = CollectionNotice {
+        slug: "abc".into(),
+        domain: "oblivion".into(),
+        name: "Some list".into(),
+        have: 1,
+        latest: 2,
+        diff: None,
+    };
+    app.collection_notices = vec![notice.clone(), notice];
+    frame(
+        crate::view(&app),
+        &mut renderer,
+        Cache::new(),
+        &[],
+        Point::ORIGIN,
+        Some("collection-notices"),
+    );
+    assert_eq!(label(crate::view(&app), &mut renderer, "Beta", 0), before);
+    let drawn = positions(crate::view(&app), &mut renderer).labels;
+    assert!(
+        drawn.iter().any(|(s, _)| s.contains("Some list")),
+        "the notice is drawn: {drawn:?}"
+    );
+}
