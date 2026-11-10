@@ -23,7 +23,8 @@ pub struct LaunchEnv {
 /// Read the text of a `launch-env.ini`. Blank lines and lines starting with `#`
 /// or `;` are skipped. Any other line that is not `env=NAME=value` with a valid
 /// name, or `wrapper=` with a command, is ignored and its 1-based number
-/// returned, so the editor can name it.
+/// returned, so the editor can name it. A wrapper whose first word is
+/// `NAME=value`, as in Steam's launch options, is not a command.
 pub fn parse_launch_env(text: &str) -> (LaunchEnv, Vec<usize>) {
     let mut out = LaunchEnv::default();
     let mut ignored = Vec::new();
@@ -39,7 +40,14 @@ pub fn parse_launch_env(text: &str) -> (LaunchEnv, Vec<usize>) {
         let wrapper = line
             .strip_prefix("wrapper=")
             .map(str::trim)
-            .filter(|w| !w.is_empty());
+            .filter(|w| !w.is_empty())
+            // `NAME=value cmd` would run `NAME=value` as the program and put the value in the report.
+            .filter(|w| {
+                let first = w.split_whitespace().next().unwrap_or("");
+                !first
+                    .split_once('=')
+                    .is_some_and(|(name, _)| is_env_name(name))
+            });
         match (var, wrapper) {
             (Some((name, value)), _) => out.env.push((name.to_string(), value.to_string())),
             (None, Some(w)) => out.wrappers.push(w.to_string()),
@@ -64,7 +72,7 @@ mod tests {
 
     #[test]
     fn launch_env_reads_env_and_wrapper_lines_and_names_the_ones_it_ignores() {
-        let text = "# comment\nenv=PROTON_ENABLE_NVAPI=1\nenv=1BAD=x\n\nwrapper=gamemoderun\nenv=NOVALUE\nwrapper=\nfoo=bar\n; note\nenv=DXVK_HUD=fps\nwrapper=gamescope -W 1280 -H 800 -f -- %command%\n";
+        let text = "# comment\nenv=PROTON_ENABLE_NVAPI=1\nenv=1BAD=x\n\nwrapper=gamemoderun\nenv=NOVALUE\nwrapper=\nfoo=bar\n; note\nenv=DXVK_HUD=fps\nwrapper=gamescope -W 1280 -H 800 -f -- %command%\nwrapper=PROTON_ENABLE_NVAPI=1 gamemoderun %command%\n";
         let (l, ignored) = parse_launch_env(text);
         assert_eq!(
             l.env,
@@ -77,7 +85,7 @@ mod tests {
             l.wrappers,
             ["gamemoderun", "gamescope -W 1280 -H 800 -f -- %command%"]
         );
-        assert_eq!(ignored, [3, 6, 7, 8]);
+        assert_eq!(ignored, [3, 6, 7, 8, 12]);
     }
 
     #[test]
