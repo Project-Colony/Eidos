@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=423c553c7c39162e947aa28fa65b37fc33c675b8 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=25a1ec0af89508cf1c8d9ee3a8851ab91cf0d6af -->
 
 # Używanie Eidos
 
@@ -598,6 +598,8 @@ gra zapisała, w prawdziwy mod jednym krokiem. **Saves** rozbiera nagłówek ka�
 zapisu - postać, poziom, lokacja, czas gry - i porównuje wpieczoną w niego listę
 wtyczek z twoją bieżącą, wraz z przyciskiem włączającym mody, których potrzebuje,
 bo nazwanie ich i zostawienie cię z tym to ta nudna połowa.
+
+Po najechaniu na wtyczkę widać, skąd pochodzi, jej autora, wersję nagłówka i formularza, pierwsze 300 znaków opisu, jej mastery oraz, po sortowaniu LOOT, komunikaty LOOT.
 
 „Information..." otwiera okno dla pojedynczego moda: ogólne, konflikty, drzewo
 plików, poprawki INI, notatki. Z drzewa plików (i z drzewa Data) każdy plik można

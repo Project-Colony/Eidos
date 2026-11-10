@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=423c553c7c39162e947aa28fa65b37fc33c675b8 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=25a1ec0af89508cf1c8d9ee3a8851ab91cf0d6af -->
 
 # Usare Eidos
 
@@ -629,6 +629,8 @@ ogni salvataggio - personaggio, livello, luogo, tempo di gioco - e confronta
 l'elenco di plugin cotto dentro con quello attuale, con un pulsante che attiva
 le mod che gli servono, perché nominarle e lasciare il resto a te è la metà
 noiosa.
+
+Passando il mouse su un plugin si vedono la sua origine, l'autore, la versione dell'intestazione e del modulo, i primi 300 caratteri della descrizione, i suoi master e, dopo un ordinamento con LOOT, i messaggi di LOOT.
 
 "Information..." apre una finestra per mod: generale, conflitti, albero dei
 file, modifiche agli INI, note. Dall'albero dei file (e dall'albero Data)

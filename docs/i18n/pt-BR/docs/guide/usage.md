@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=423c553c7c39162e947aa28fa65b37fc33c675b8 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=25a1ec0af89508cf1c8d9ee3a8851ab91cf0d6af -->
 
 # Usar o Eidos
 
@@ -599,6 +599,8 @@ num mod de verdade, em um passo. **Saves** lê o cabeçalho de cada save -
 personagem, nível, local, tempo de jogo - e compara a lista de plugins gravada
 nele com a sua lista atual, com um botão que ativa os mods de que ele precisa,
 porque nomeá-los e deixar o resto com você é a metade chata.
+
+Ao passar o mouse sobre um plugin, aparecem sua origem, o autor, a versão do cabeçalho e do formulário, os primeiros 300 caracteres da descrição, seus masters e, após uma ordenação com o LOOT, as mensagens do LOOT.
 
 "Information..." abre um diálogo por mod: geral, conflitos, árvore de arquivos,
 INI tweaks, notas. A partir da árvore de arquivos (e da árvore Data) qualquer

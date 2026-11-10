@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=423c553c7c39162e947aa28fa65b37fc33c675b8 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=25a1ec0af89508cf1c8d9ee3a8851ab91cf0d6af -->
 
 # 使用 Eidos
 
@@ -444,6 +444,8 @@ Filters 按钮为每个条件列出一行:已启用、有冲突、有更新、�
 真正的模组。**Saves** 解析每个存档的头部 - 角色、等级、地点、游戏时长 - 并把烘进存档
 的插件列表与你当前的做差异比较,还带一个按钮来启用它需要的模组,因为只把它们的名字
 念出来、剩下的留给你自己弄,那是无聊的那一半。
+
+将鼠标悬停在插件上,会显示它的来源、作者、头部版本和表单版本、说明的前 300 个字符、它的主文件,以及在 LOOT 排序之后 LOOT 的消息。
 
 "Information..." 打开一个按模组的对话框:general、conflicts、filetree、INI tweaks、
 notes。从 filetree(以及从 Data 树)里,任何文件都可以被**隐藏** - 重命名为

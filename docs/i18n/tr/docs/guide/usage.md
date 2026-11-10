@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=423c553c7c39162e947aa28fa65b37fc33c675b8 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=25a1ec0af89508cf1c8d9ee3a8851ab91cf0d6af -->
 
 # Eidos kullanımı
 
@@ -594,6 +594,8 @@ açıklar. **Overwrite**, oyunun yazdığını tek adımda gerçek bir moda dön
 süresi - ve içine gömülü eklenti listesini geçerli listenizle karşılaştırır;
 gerektirdiği modları etkinleştiren bir düğmeyle birlikte, çünkü onları adlandırıp
 gerisini size bırakmak işin sıkıcı yarısıdır.
+
+Bir eklentinin üzerine gelince kaynağı, yazarı, başlık ve form sürümü, açıklamasının ilk 300 karakteri, master dosyaları ve LOOT sıralamasından sonra LOOT iletileri görünür.
 
 "Information...", mod başına bir iletişim kutusu açar: genel, çakışmalar, dosya
 ağacı, INI ayarlamaları, notlar. Dosya ağacından (ve Data ağacından) herhangi bir

@@ -507,6 +507,10 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         } else {
             tf("plugin_tip_origin", &[("name", &p.origin_mod)])
         };
+        for l in author_version_lines(p) {
+            tip.push('\n');
+            tip.push_str(&l);
+        }
         if engine_owned {
             tip.push('\n');
             tip.push_str(t("plugin_tip_engine_owned"));
@@ -549,6 +553,10 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             }
             tip.push('\n');
             tip.push_str(t("plugin_tip_after_masters"));
+        }
+        if let Some(l) = description_line(p) {
+            tip.push('\n');
+            tip.push_str(&l);
         }
         // The LOOT verdicts from the last sort - MO2's plugin flags: a compact
         // badge in its own column, the detail folded into the hover the row
@@ -772,10 +780,72 @@ pub(crate) fn plugin_tint(
     }
 }
 
+fn author_version_lines(p: &eidos_plugins::Plugin) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Some(a) = &p.author {
+        out.push(tf("plugin_tip_author", &[("name", a)]));
+    }
+    match (p.header_version, p.form_version) {
+        (Some(h), Some(f)) => out.push(tf(
+            "plugin_tip_versions",
+            &[("header", &format!("{h:.2}")), ("form", &f)],
+        )),
+        (Some(h), None) => out.push(tf(
+            "plugin_tip_header_version",
+            &[("header", &format!("{h:.2}"))],
+        )),
+        _ => {}
+    }
+    out
+}
+
+fn description_line(p: &eidos_plugins::Plugin) -> Option<String> {
+    let d = p.description.as_deref()?;
+    let mut text: String = d.chars().take(300).collect();
+    if d.chars().count() > 300 {
+        text.push_str("...");
+    }
+    Some(tf("plugin_tip_description", &[("text", &text)]))
+}
+
+/// Author, versions and description lines of a plugin's hover, in order.
+#[cfg(test)]
+pub(crate) fn header_tip_lines(p: &eidos_plugins::Plugin) -> Vec<String> {
+    let mut v = author_version_lines(p);
+    v.extend(description_line(p));
+    v
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_support::plugin_row;
+
+    #[test]
+    fn header_tip_names_author_versions_and_cuts_a_long_description() {
+        let _look = crate::test_support::look_lock();
+        let mut p = plugin_row("A.esp", "Mod");
+        p.author = Some("Zo\u{eb}".into());
+        p.header_version = Some(1.71);
+        p.form_version = Some(44);
+        p.description = Some(format!("{}\u{e9}", "x".repeat(299)) + &"y".repeat(100));
+        let lines = header_tip_lines(&p);
+        assert_eq!(lines[0], tf("plugin_tip_author", &[("name", &"Zo\u{eb}")]));
+        assert_eq!(
+            lines[1],
+            tf("plugin_tip_versions", &[("header", &"1.71"), ("form", &44)])
+        );
+        assert!(
+            lines[2].contains(&format!("{}\u{e9}...", "x".repeat(299))) && !lines[2].contains('y')
+        );
+        p.form_version = None;
+        p.author = None;
+        p.description = None;
+        assert_eq!(
+            header_tip_lines(&p),
+            [tf("plugin_tip_header_version", &[("header", &"1.71")])]
+        );
+    }
     use eidos_gamefeatures::archives::{ArchiveActivation, ArchivePlan};
 
     #[test]

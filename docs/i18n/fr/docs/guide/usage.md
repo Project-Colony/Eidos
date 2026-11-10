@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=423c553c7c39162e947aa28fa65b37fc33c675b8 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=25a1ec0af89508cf1c8d9ee3a8851ab91cf0d6af -->
 
 # Utiliser Eidos
 
@@ -643,6 +643,8 @@ un vrai mod en une seule étape. **Saves** analyse l'en-tête de chaque sauvegar
 - personnage, niveau, lieu, temps de jeu - et compare la liste de plugins qui y
 est gravée à la vôtre, avec un bouton qui active les mods dont elle a besoin,
 parce que les nommer et vous laisser faire le reste, c'est la moitié ennuyeuse.
+
+Au survol d'un plugin s'affichent son origine, son auteur, sa version d'en-tête et de formulaire, les 300 premiers caractères de sa description, ses masters et, après un tri LOOT, les messages de LOOT.
 
 « Information... » ouvre une boîte de dialogue par mod : général, conflits,
 arborescence des fichiers, INI tweaks, notes. Depuis l'arborescence (et depuis

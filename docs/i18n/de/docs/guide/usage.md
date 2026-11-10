@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=423c553c7c39162e947aa28fa65b37fc33c675b8 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=25a1ec0af89508cf1c8d9ee3a8851ab91cf0d6af -->
 
 # Eidos verwenden
 
@@ -641,6 +641,8 @@ geschrieben hat. **Saves** liest den Kopf jedes Spielstands - Charakter, Stufe,
 Ort, Spielzeit - und vergleicht die darin eingebackene Plugin-Liste mit Ihrer
 aktuellen, mit einem Knopf, der die benötigten Mods aktiviert, denn sie zu
 benennen und Sie damit sitzenzulassen ist die langweilige Hälfte.
+
+Beim Überfahren eines Plugins erscheinen seine Herkunft, sein Autor, die Header- und die Formularversion, die ersten 300 Zeichen der Beschreibung, seine Master und nach einer LOOT-Sortierung die Meldungen von LOOT.
 
 "Information..." öffnet einen Dialog je Mod: Allgemeines, Konflikte, Dateibaum,
 INI-Anpassungen, Notizen. Aus dem Dateibaum (und aus dem Data-Baum) kann jede

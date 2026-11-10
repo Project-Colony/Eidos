@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=423c553c7c39162e947aa28fa65b37fc33c675b8 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=25a1ec0af89508cf1c8d9ee3a8851ab91cf0d6af -->
 
 # Eidos gebruiken
 
@@ -611,6 +611,8 @@ openen). De kop telt de ingeschakelde plugins per indexruimte tegen de limiet va
 en vergelijkt de erin gebakken pluginlijst met je huidige, met een knop die de
 mods inschakelt die ze nodig heeft, want ze benoemen en het verder aan jou laten
 is de saaie helft.
+
+Als u over een plugin beweegt, ziet u waar die vandaan komt, de auteur, de header- en formulierversie, de eerste 300 tekens van de beschrijving, de masters en, na een LOOT-sortering, de berichten van LOOT.
 
 "Information..." opent een dialoog per mod: algemeen, conflicten, bestandsboom,
 INI-tweaks, notities. Vanuit de bestandsboom (en vanuit de Data-boom) kan elk

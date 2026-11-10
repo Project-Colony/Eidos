@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=423c553c7c39162e947aa28fa65b37fc33c675b8 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=25a1ec0af89508cf1c8d9ee3a8851ab91cf0d6af -->
 
 # Eidos の使い方
 
@@ -544,6 +544,8 @@ MOD に変えます。**Saves** は各セーブのヘッダを解析し - キャ
 場所、プレイ時間 - そこに焼き込まれたプラグイン一覧を今のものと突き合わせ、
 必要な MOD を有効にするボタンを添えます。名前を挙げて後はご自由に、では退屈な
 ほうの半分だからです。
+
+プラグインにカーソルを合わせると、入手元、作者、ヘッダーとフォームのバージョン、説明の先頭300文字、マスター、そして LOOT でソートした後は LOOT のメッセージが表示されます。
 
 「Information...」は MOD ごとのダイアログを開きます。general、conflicts、
 filetree、INI tweaks、notes。filetree から(そして Data の木から)どのファイルも
