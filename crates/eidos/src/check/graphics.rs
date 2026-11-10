@@ -63,7 +63,8 @@ pub fn graphics_facts(
 
     let mut nvapi_off_by_default = false;
     let mut proton_build = String::new();
-    if game.is_steam() {
+    // Only the NVAPI card reads the Proton build, and it is for these two games.
+    if cs_game && game.is_steam() {
         if let Some(compat) = &game.compatdata {
             let run = eidos_games::proton_command(
                 home,
@@ -305,6 +306,56 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn only_skyrim_se_and_enderal_se_read_the_proton_script() {
+        let root = scratch("proton");
+        let steam = root.join("home/.steam/steam");
+        std::fs::create_dir_all(steam.join("config")).unwrap();
+        std::fs::write(
+            steam.join("config/config.vdf"),
+            "\"InstallConfigStore\"\n{\n}\n",
+        )
+        .unwrap();
+        let tool = steam.join("compatibilitytools.d/Proton-Test");
+        std::fs::create_dir_all(&tool).unwrap();
+        std::fs::write(
+            tool.join("proton"),
+            "    use_nvapi = 'enablenvapi' in g_session.compat_config\n",
+        )
+        .unwrap();
+        let compat = root.join("compatdata");
+        std::fs::create_dir_all(&compat).unwrap();
+        std::fs::write(compat.join("version"), "Proton-Test\n").unwrap();
+        let inst = Instance::portable(root.join("instance"));
+        inst.create().unwrap();
+        let game_dir = root.join("game");
+        std::fs::create_dir_all(game_dir.join("Data")).unwrap();
+        let facts = |id: &str| {
+            let game = DetectedGame {
+                source: Default::default(),
+                def: eidos_games::catalog().iter().find(|g| g.id == id).unwrap(),
+                install_path: game_dir.clone(),
+                data_path: game_dir.join("Data"),
+                compatdata: Some(compat.clone()),
+                steam_name: "synthetic".into(),
+            };
+            graphics_facts(
+                &game,
+                &inst,
+                &[],
+                None,
+                Path::new("eidos"),
+                &root.join("home"),
+            )
+        };
+        let se = facts("skyrimse");
+        assert!(se.nvapi_off_by_default);
+        assert_eq!(se.proton_build, "Proton-Test");
+        let fo4 = facts("fallout4");
+        assert!(!fo4.nvapi_off_by_default);
+        assert_eq!(fo4.proton_build, "");
     }
 
     #[test]
