@@ -37,6 +37,7 @@ mod anim;
 mod app;
 mod archive_conflicts;
 mod background_work;
+mod bisect;
 mod dds_preview;
 mod dialogs;
 mod file_preview;
@@ -68,6 +69,7 @@ mod wizard;
 
 use app::*;
 use archive_conflicts::*;
+use bisect::*;
 use dialogs::*;
 use file_preview::{Preview, PREVIEW_TEXT_CAP};
 use fomod::{fomod_ink_faint, fomod_ink_soft, fomod_wizard_view, wizard_start, FomodWizard};

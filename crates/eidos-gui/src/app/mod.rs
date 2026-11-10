@@ -246,6 +246,16 @@ pub(crate) struct App {
     pub(crate) test_state: Option<(eidos_instance::TestRun, eidos_instance::TestState)>,
     /// The open review of an ended test run.
     pub(crate) test_review: Option<TestReview>,
+    /// The bisect search (A37) as `bisect.json` held it when the window last
+    /// read it, and whether its panel is showing.
+    pub(crate) bisect: Option<eidos_instance::Bisect>,
+    pub(crate) bisect_open: bool,
+    /// The enabled managed mods and the plugin rows, read when the panel opens
+    /// and after each step, so the view never walks plugin headers.
+    pub(crate) bisect_universe: (Vec<String>, Vec<eidos_plugins::Plugin>),
+    /// The mods Setup shows as always on and Start pins, read when the panel
+    /// opens: finding the extender's mod reads every mod's `Root` folder.
+    pub(crate) bisect_pinned: Vec<String>,
     /// Drift states the user chose to play with, for this window only:
     /// `(receipt id, hash of the inputs)`. Never saved.
     pub(crate) play_anyway: Vec<(String, u64)>,

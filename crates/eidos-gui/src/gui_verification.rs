@@ -1721,3 +1721,114 @@ fn the_review_keeps_one_height() {
         "the French header is {header} px tall"
     );
 }
+
+/// Setup, Ready, Running, Answer and Result fill one fixed stage area, so the
+/// bottom row (Hide) never moves.
+#[test]
+fn the_bisect_panel_keeps_its_bottom_row_in_place() {
+    use eidos_instance::{Answer, Bisect, TestRun};
+    let _look = crate::test_support::look_lock();
+    let names = ["A", "B", "C", "D", "E", "F", "G", "H"];
+    let (mut app, root) = crate::test_support::list_app(&names);
+    let inst = app.created.clone().unwrap();
+    let mut renderer = renderer();
+    let mut hide_y = |app: &App| label(bisect_panel(app), &mut renderer, t("bisect_hide"), 0).y;
+    app.bisect_open = true;
+    app.bisect_universe = bisect_universe(&app);
+    let setup = hide_y(&app); // Setup: no search yet
+    assert_eq!(bisect_stage(&app), BisectStage::Setup);
+    app.bisect_pinned = (0..60)
+        .map(|i| format!("A selected mod with a long name {i}"))
+        .collect();
+    assert_eq!(
+        hide_y(&app),
+        setup,
+        "a long always-on list moved the bottom row"
+    );
+    let mut b = Bisect::new("Default", vec![], names.map(String::from).to_vec(), 1);
+    app.bisect = Some(b.clone());
+    assert_eq!(bisect_stage(&app), BisectStage::Ready);
+    assert_eq!(hide_y(&app), setup, "Ready moved the bottom row");
+    b.begin_step(vec!["A".into(), "B".into(), "C".into(), "D".into()]);
+    app.bisect = Some(b.clone());
+    inst.request_test_run(&TestRun {
+        profile: "Default".into(),
+        game: "skyrimse".into(),
+        mods: Some(vec!["A".into()]),
+        bisect: true,
+        requested: 1,
+        ..Default::default()
+    })
+    .unwrap();
+    load_test_state(&mut app, false);
+    assert_eq!(bisect_stage(&app), BisectStage::Running);
+    assert_eq!(hide_y(&app), setup, "Running moved the bottom row");
+    inst.begin_test_run(&inst.profile("Default"), "skyrimse", &[], None, false, 2)
+        .unwrap();
+    // Task 89 adds: a crash log with a 200-character path under test-run/docs/SKSE
+    inst.end_test_run(Some(1), 3).unwrap();
+    load_test_state(&mut app, false);
+    assert_eq!(bisect_stage(&app), BisectStage::Answer);
+    assert_eq!(hide_y(&app), setup, "Answer moved the bottom row");
+    for _ in 0..3 {
+        b.answer(Answer::Bad);
+        b.begin_step(vec!["A".into()]);
+    }
+    b.answer(Answer::Bad);
+    app.bisect = Some(b.clone());
+    assert_eq!(bisect_stage(&app), BisectStage::Result);
+    assert_eq!(hide_y(&app), setup, "Result moved the bottom row");
+    b.profile = "Other".into();
+    app.bisect = Some(b);
+    assert_eq!(bisect_stage(&app), BisectStage::OtherProfile);
+    assert_eq!(
+        hide_y(&app),
+        setup,
+        "another profile's search moved the bottom row"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// The French Setup (with a long always-on list) and Ready stages keep their
+/// action button inside the fixed stage area, at the default and the largest
+/// text size: the area clips, so a button below it could not be pressed.
+#[test]
+fn the_french_bisect_actions_fit_the_stage_area() {
+    use colony_ui::i18n::Locale;
+    use colony_ui::typography::{FontSize, TextSize};
+    let _look = crate::test_support::look_lock();
+    let (mut app, root) = crate::test_support::list_app(&["A", "B", "C"]);
+    app.bisect_universe = bisect_universe(&app);
+    app.bisect_pinned = (0..60).map(|i| format!("A selected mod {i}")).collect();
+    let mut renderer = renderer();
+    let fr = |key| crate::i18n::t_in(Locale::Fr, key);
+    let ready = eidos_instance::Bisect::new("Default", vec![], app.bisect_universe.0.clone(), 0);
+    for (font, text) in [
+        (FontSize::Default, TextSize::Default),
+        (FontSize::Large, TextSize::XLarge),
+    ] {
+        let mut look = crate::preferences::UiPreferences::default();
+        look.standard.font_size = font;
+        look.standard.text_size_a11y = text;
+        look.standard.apply();
+        for (search, action) in [
+            (None, fr("bisect_start").to_string()),
+            (
+                Some(ready.clone()),
+                fr("bisect_run_step").replace("{n}", "1"),
+            ),
+        ] {
+            app.bisect = search;
+            let panel = crate::i18n::with_locale(Locale::Fr, || bisect_panel(&app));
+            let drawn = positions(panel, &mut renderer).labels;
+            let at = |s: &str| drawn.iter().find(|(l, _)| l == s).unwrap().1;
+            let (button, hide) = (at(&action), at(fr("bisect_hide")));
+            // Hide's own padding (6) and the card spacing (10) lie between them.
+            assert!(
+                button.y + button.height + 6.0 <= hide.y - 16.0,
+                "{font:?} x {text:?}: {action} at {button:?}, Hide at {hide:?}"
+            );
+        }
+    }
+    let _ = std::fs::remove_dir_all(root);
+}

@@ -337,6 +337,8 @@ pub(crate) fn subscription(app: &App) -> iced::Subscription<Message> {
         // Behind the review, Ctrl+R would start one over the files it lists.
         && app.test_dialog.is_none()
         && app.test_review.is_none()
+        // Behind the bisect panel, a selection would change the always-on mods.
+        && !app.bisect_open
     {
         subs.push(shortcuts);
     }

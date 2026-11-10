@@ -5,7 +5,7 @@
 use super::*;
 use eidos_instance::{TestGroup, TestState};
 
-fn now() -> u64 {
+pub(super) fn now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs())
@@ -13,11 +13,13 @@ fn now() -> u64 {
 
 /// Read the instance's test run into `app.test_state`, which the view reads
 /// instead of the lock. A run that died is closed as unfinished first. With
-/// `open`, an ended run opens its review (a bisect step's is the bisect
-/// panel's), and a waiting request says so when the status bar is empty.
+/// `open`, `bisect.json` is read too, an ended run opens its review (a step of
+/// the search opens the bisect panel instead), and a waiting request says so
+/// when the status bar is empty.
 pub(crate) fn load_test_state(app: &mut App, open: bool) {
     let Some(inst) = app.created.as_ref() else {
         app.test_state = None;
+        app.bisect = None;
         return;
     };
     let mut state = inst.test_run_state();
@@ -31,8 +33,13 @@ pub(crate) fn load_test_state(app: &mut App, open: bool) {
     if !open {
         return;
     }
+    app.bisect = app.created.as_ref().and_then(Instance::read_bisect);
     match &app.test_state {
-        Some((run, TestState::Ended)) if !run.bisect => open_review(app),
+        // A step whose search was stopped has no panel left: its review opens.
+        Some((run, TestState::Ended)) if run.bisect && app.bisect.is_some() => {
+            super::bisect::open_panel(app)
+        }
+        Some((_, TestState::Ended)) => open_review(app),
         Some((run, TestState::Requested)) if app.status.is_none() => {
             app.status = Some(tf("test_waiting", &[("profile", &run.profile)]));
         }
@@ -41,7 +48,7 @@ pub(crate) fn load_test_state(app: &mut App, open: bool) {
 }
 
 /// Open the review of the test run `app.test_state` holds.
-fn open_review(app: &mut App) {
+pub(super) fn open_review(app: &mut App) {
     let (Some(inst), Some((run, _))) = (app.created.as_ref(), app.test_state.as_ref()) else {
         return;
     };

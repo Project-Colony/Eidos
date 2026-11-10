@@ -637,6 +637,16 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         layers = layers.push(scrim).push(dialog);
     }
 
+    // Under the review: a step refused for a waiting review opens it on top.
+    if app.bisect_open {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::BisectHide)
+            .on_right_press(Message::BisectHide);
+        let dialog =
+            container(mouse_area(bisect_panel(app)).on_press(Message::Noop)).center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
+    }
+
     if let Some(choice) = app.test_dialog {
         let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
             .on_press(Message::CloseTestDialog)

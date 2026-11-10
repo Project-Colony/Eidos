@@ -8767,3 +8767,180 @@ fn the_end_of_the_test_run_opens_the_review_and_a_stop_still_says_stopped() {
         let _ = fs::remove_dir_all(root);
     }
 }
+
+#[test]
+fn starting_a_search_pins_the_selection_and_the_extender_mod() {
+    let (mut app, root) = list_app(&["SKSE", "A", "B", "C"]);
+    let loader = root.join("mods/SKSE/Root/skse64_loader.exe");
+    fs::create_dir_all(loader.parent().unwrap()).unwrap();
+    fs::write(&loader, "loader").unwrap();
+    app.created
+        .as_ref()
+        .unwrap()
+        .save_modlist(&app.mods)
+        .unwrap();
+    app.selected_mods = [1].into_iter().collect();
+    let _ = update_inner(&mut app, Message::OpenBisect);
+    assert!(app.bisect_open);
+    assert_eq!(bisect_stage(&app), BisectStage::Setup);
+    let _ = update_inner(&mut app, Message::BisectStart);
+    let b = app.created.as_ref().unwrap().read_bisect().unwrap();
+    assert_eq!(
+        b.pinned,
+        ["A", "SKSE"],
+        "the selection in display order, then the extender's mod"
+    );
+    assert_eq!(b.candidates, ["B", "C"]);
+    assert_eq!(app.bisect.as_ref(), Some(&b));
+    let _ = update_inner(&mut app, Message::BisectHide);
+    assert!(!app.bisect_open && app.created.as_ref().unwrap().read_bisect() == Some(b));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn run_step_requests_a_bisect_test_run_with_the_split() {
+    use eidos_instance::BisectStep;
+    let (mut app, root) = list_app(&["A", "B", "C", "D"]);
+    let _ = update_inner(&mut app, Message::OpenBisect);
+    let _ = update_inner(&mut app, Message::BisectStart);
+    assert_eq!(bisect_stage(&app), BisectStage::Ready);
+    let _ = update_inner(&mut app, Message::BisectRunStep);
+    let inst = app.created.as_ref().unwrap();
+    let run = inst.test_run().unwrap();
+    assert!(run.bisect);
+    assert_eq!(run.mods, Some(vec!["A".into(), "B".into()]));
+    assert_eq!(
+        inst.read_bisect().unwrap().steps,
+        [BisectStep {
+            tested: vec!["A".into(), "B".into()],
+            answer: None
+        }]
+    );
+    assert!(
+        app.running.is_none(),
+        "no launch command: Run only sets its hint"
+    );
+    assert!(app
+        .status
+        .as_deref()
+        .unwrap()
+        .starts_with(t("status_test_prefix")));
+    assert_eq!(bisect_stage(&app), BisectStage::Running);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_refused_step_request_leaves_the_search_as_it_was() {
+    let (mut app, root) = list_app(&["A", "B", "C", "D"]);
+    let _ = update_inner(&mut app, Message::OpenBisect);
+    let _ = update_inner(&mut app, Message::BisectStart);
+    let before = app.created.as_ref().unwrap().read_bisect();
+    // A tool run (or a freeze) holds the instance lock; the lock is
+    // re-entrant on one thread, so another thread holds it.
+    let holder = app.created.clone().unwrap();
+    let (held_tx, held) = std::sync::mpsc::channel();
+    let (release, release_rx) = std::sync::mpsc::channel::<()>();
+    let tool = std::thread::spawn(move || {
+        let _lock = holder.try_lock("a tool run").unwrap();
+        held_tx.send(()).unwrap();
+        let _ = release_rx.recv();
+    });
+    held.recv().unwrap();
+    let _ = update_inner(&mut app, Message::BisectRunStep);
+    drop(release);
+    tool.join().unwrap();
+    let inst = app.created.as_ref().unwrap();
+    assert!(inst.test_run().is_none());
+    assert_eq!(
+        inst.read_bisect(),
+        before,
+        "no step for a run that never started"
+    );
+    assert!(app
+        .status
+        .as_deref()
+        .unwrap()
+        .starts_with(&t("status_test_failed").replace("{error}", "")));
+    assert_eq!(bisect_stage(&app), BisectStage::Ready);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn run_step_waits_for_the_review_of_a_normal_test_run() {
+    let (mut app, root) = ended_test_app();
+    let inst = app.created.clone().unwrap();
+    inst.write_bisect(&eidos_instance::Bisect::new(
+        "Default",
+        vec![],
+        vec!["Keep".into(), "Other".into()],
+        1,
+    ))
+    .unwrap();
+    load_test_state(&mut app, true);
+    assert!(
+        app.test_review.is_some() && !app.bisect_open,
+        "a normal run opens its review"
+    );
+    app.test_review = None;
+    let _ = update_inner(&mut app, Message::OpenBisect);
+    let _ = update_inner(&mut app, Message::BisectRunStep);
+    assert_eq!(app.status.as_deref(), Some(t("status_bisect_review_first")));
+    assert!(app.test_review.is_some());
+    assert!(inst.read_bisect().unwrap().steps.is_empty());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_search_resumes_after_the_window_reopens() {
+    use eidos_instance::{Bisect, TestRun};
+    let (mut app, root) = list_app(&["A", "B", "C", "D"]);
+    let inst = app.created.clone().unwrap();
+    // Saved with every mod on: `open_instance` reads the list back from disk.
+    inst.save_modlist(&app.mods).unwrap();
+    let mut b = Bisect::new(
+        "Default",
+        vec![],
+        ["A", "B", "C", "D"].map(String::from).to_vec(),
+        1,
+    );
+    b.begin_step(vec!["A".into(), "B".into()]);
+    inst.write_bisect(&b).unwrap();
+    // The step's test run ended while no window was open.
+    inst.request_test_run(&TestRun {
+        profile: "Default".into(),
+        game: "skyrimse".into(),
+        mods: Some(vec!["A".into(), "B".into()]),
+        bisect: true,
+        requested: 1,
+        ..Default::default()
+    })
+    .unwrap();
+    inst.begin_test_run(&inst.profile("Default"), "skyrimse", &[], None, false, 2)
+        .unwrap();
+    inst.end_test_run(Some(0), 3).unwrap();
+    app.bisect = None;
+    open_instance(&mut app, inst);
+    assert!(app.bisect_open && app.test_review.is_none());
+    assert_eq!(app.bisect.as_ref(), Some(&b));
+    assert_eq!(bisect_stage(&app), BisectStage::Answer);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_search_of_another_profile_offers_no_step() {
+    let (mut app, root) = list_app(&["A", "B"]);
+    let inst = app.created.clone().unwrap();
+    inst.write_bisect(&eidos_instance::Bisect::new(
+        "Other",
+        vec![],
+        vec!["A".into(), "B".into()],
+        1,
+    ))
+    .unwrap();
+    load_test_state(&mut app, true);
+    let _ = update_inner(&mut app, Message::OpenBisect);
+    assert_eq!(bisect_stage(&app), BisectStage::OtherProfile);
+    let _ = update_inner(&mut app, Message::BisectRunStep);
+    assert!(inst.test_run().is_none());
+    let _ = fs::remove_dir_all(root);
+}

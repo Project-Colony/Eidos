@@ -9,6 +9,7 @@
 
 use crate::*;
 
+mod bisect;
 mod categories;
 mod downloads;
 mod files;
@@ -1478,6 +1479,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::ReviewChoose(..)
         | Message::ReviewApply
         | Message::ReviewLater) => test_run::handle(app, m),
+        m @ (Message::OpenBisect
+        | Message::BisectStart
+        | Message::BisectRunStep
+        | Message::BisectHide) => bisect::handle(app, m),
         m @ (Message::OverwriteToModStart
         | Message::ToolOutputModChanged(..)
         | Message::OverwriteToModName(..)
@@ -1992,6 +1997,7 @@ pub(crate) fn open_instance(app: &mut App, inst: Instance) {
     // ended, or died, since the window last looked.
     app.test_dialog = None;
     app.test_review = None;
+    app.bisect_open = false;
     load_test_state(app, true);
 }
 

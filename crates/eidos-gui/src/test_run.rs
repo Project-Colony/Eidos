@@ -34,17 +34,8 @@ pub(crate) fn test_mods(app: &App, choice: TestChoice) -> Option<Vec<String>> {
         TestChoice::Vanilla => Some(Vec::new()),
         TestChoice::Selected => {
             let chosen: Vec<String> = real_selection(app).into_iter().map(name).collect();
-            let universe: Vec<String> = app
-                .mods
-                .iter()
-                .filter(|m| m.is_active() && !m.is_unmanaged())
-                .map(|m| m.name.clone())
-                .collect();
-            Some(eidos_instance::with_masters(
-                &chosen,
-                &universe,
-                &plugin_rows(app),
-            ))
+            let (universe, plugins) = bisect_universe(app);
+            Some(eidos_instance::with_masters(&chosen, &universe, &plugins))
         }
     }
 }

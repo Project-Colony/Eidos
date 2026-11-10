@@ -168,6 +168,12 @@ pub(crate) enum Message {
     ReviewChoose(eidos_instance::TestGroup, bool),
     ReviewApply,
     ReviewLater,
+    /// The bisect panel (A37): open it, start a search, run the next step as a
+    /// test run, hide it (nothing changes on disk).
+    OpenBisect,
+    BisectStart,
+    BisectRunStep,
+    BisectHide,
     ExecTogglePinned,
     ExecMakeShortcut,
     /// Executables dialog: list the entries of a foreign `ModOrganizer.ini`,
