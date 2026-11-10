@@ -43,8 +43,10 @@ open, or a game it does not detect.
 `eidos check <instance> --json` prints one JSON object instead. Its top-level
 fields are `eidos` (the version), `game`, `instance`, `system` (`proton`,
 `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`,
-`fusermount3`) and `findings`. Each finding is a `code`, a `level` (`problem` or
-`advice`) and its `args`; the Diagnostics tab shows the sentence for each code.
+`fusermount3`, `max_map_count`, `open_files_hard`) and `findings`.
+`max_map_count` and `open_files_hard` are numbers, or `null` when Eidos could
+not read them. Each finding is a `code`, a `level` (`problem` or `advice`) and
+its `args`; the Diagnostics tab shows the sentence for each code.
 
 ### A shell in the merged view
 

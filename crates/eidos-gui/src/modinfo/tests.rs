@@ -907,6 +907,8 @@ fn health_report_redacts_home_paths() {
         kernel: "7.2.0".into(),
         dev_fuse: true,
         fusermount3: true,
+        max_map_count: Some(1048576),
+        open_files_hard: Some(524288),
     };
     let checks = [Diagnostic {
         level: DiagLevel::Problem,
@@ -919,6 +921,10 @@ fn health_report_redacts_home_paths() {
     assert!(r.contains("- [problem] Cannot read ~/mods"), "{r}");
     assert!(r.contains("Proton: GE-Proton11-1"));
     assert!(r.contains("Flatpak Steam: unknown"), "{r}");
+    assert!(
+        r.contains("vm.max_map_count: 1048576") && r.contains("Open files (hard limit): 524288"),
+        "{r}"
+    );
 }
 
 #[test]
@@ -1128,4 +1134,236 @@ fn mod_information_lists_what_a_mod_requires_and_what_requires_it() {
     assert_eq!(app.info_requirements.0, ["ModB (A.esp needs B.esm)"]);
     let _ = update(&mut app, Message::ShowModInfo(1));
     assert_eq!(app.info_requirements.1, ["ModA (A.esp needs B.esm)"]);
+}
+
+/// Layers highest priority first, as `conflict_layers` hands them over. Rows: Patch = 1, Master = 2.
+fn map_of(layers: &[(u32, &str, &[&str])]) -> eidos_conflicts::ConflictMap {
+    let parts: Vec<_> = layers
+        .iter()
+        .map(|(origin, name, files)| {
+            let layer = eidos_conflicts::Layer {
+                origin: *origin,
+                name: name.to_string(),
+                root: PathBuf::new(),
+            };
+            (
+                layer,
+                (
+                    files.iter().map(|f| f.to_string()).collect::<Vec<_>>(),
+                    false,
+                ),
+            )
+        })
+        .collect();
+    eidos_conflicts::ConflictMap::build_from(&parts)
+}
+fn patch_list() -> PluginList {
+    let mut patch = plugin_row("Patch.esp", "Patch");
+    patch.masters = vec!["Master.esm".into()];
+    PluginList {
+        plugins: vec![plugin_row("Master.esm", "Master"), patch],
+        ..Default::default()
+    }
+}
+#[test]
+fn a_patch_that_loses_files_to_its_master_gets_a_move_button() {
+    let list = patch_list();
+    let map = map_of(&[
+        (
+            2,
+            "Master",
+            &["Master.esm", "meshes/a.nif", "textures/a.dds"],
+        ),
+        (1, "Patch", &["Patch.esp", "meshes/a.nif", "textures/a.dds"]),
+        (0, "[skyrimse]", &[]),
+    ]);
+    let d = patch_order_checks(&list, &map);
+    assert_eq!(d.len(), 1);
+    assert_eq!(d[0].level, DiagLevel::Advice);
+    assert_eq!(
+        d[0].title,
+        tf(
+            "diag_patch_loses",
+            &[("patch", &"Patch"), ("master", &"Master"), ("n", &2)]
+        )
+    );
+    assert!(
+        d[0].detail.contains("meshes/a.nif")
+            && d[0].detail.contains("Patch.esp")
+            && d[0].detail.contains("Master.esm")
+    );
+    assert!(
+        matches!(&d[0].actions[..], [(_, Message::MoveModBelow { folder, below })] if folder == "Patch" && below == "Master")
+    );
+}
+#[test]
+fn a_patch_that_wins_or_shares_nothing_with_its_master_says_nothing() {
+    let list = patch_list();
+    let none = |list: &PluginList, map: &eidos_conflicts::ConflictMap| {
+        patch_order_checks(list, map).is_empty()
+    };
+    let map = map_of(&[
+        (2, "Patch", &["Patch.esp", "meshes/a.nif"]),
+        (1, "Master", &["Master.esm", "meshes/a.nif"]),
+        (0, "[skyrimse]", &[]),
+    ]);
+    assert!(none(&list, &map), "the patch already wins");
+    let mut from_game = list.clone();
+    from_game.plugins[0].origin_mod = String::new();
+    let map = map_of(&[
+        (2, "Other", &["meshes/a.nif"]),
+        (1, "Patch", &["Patch.esp", "meshes/a.nif"]),
+        (0, "[skyrimse]", &["Master.esm"]),
+    ]);
+    assert!(none(&from_game, &map), "a game master");
+    let map = map_of(&[
+        (3, "Other", &["meshes/a.nif"]),
+        (2, "Master", &["Master.esm"]),
+        (1, "Patch", &["Patch.esp", "meshes/a.nif"]),
+        (0, "[skyrimse]", &[]),
+    ]);
+    assert!(none(&list, &map), "an unrelated mod wins the file");
+    let mut same = list.clone();
+    same.plugins[1].origin_mod = "Master".into();
+    let map = map_of(&[
+        (2, "Master", &["Master.esm", "Patch.esp", "meshes/a.nif"]),
+        (0, "[skyrimse]", &[]),
+    ]);
+    assert!(none(&same, &map), "one mod");
+}
+#[test]
+fn patch_order_card_lists_eight_files_and_counts_the_rest() {
+    let list = patch_list();
+    let shared: Vec<String> = (0..10).map(|i| format!("meshes/f{i}.nif")).collect();
+    let with = |plugin: &'static str| {
+        std::iter::once(plugin)
+            .chain(shared.iter().map(String::as_str))
+            .collect::<Vec<_>>()
+    };
+    let (master, patch) = (with("Master.esm"), with("Patch.esp"));
+    let map = map_of(&[
+        (2, "Master", &master),
+        (1, "Patch", &patch),
+        (0, "[skyrimse]", &[]),
+    ]);
+    let d = patch_order_checks(&list, &map);
+    assert_eq!(
+        d[0].title,
+        tf(
+            "diag_patch_loses",
+            &[("patch", &"Patch"), ("master", &"Master"), ("n", &10)]
+        )
+    );
+    assert!(d[0].detail.contains("meshes/f7.nif") && !d[0].detail.contains("meshes/f8.nif"));
+    assert!(d[0].detail.contains(&tf("diag_and_n_more", &[("n", &2)])));
+}
+#[test]
+fn patch_order_cards_come_in_name_order() {
+    let patch = |name: &str, folder: &str, master: &str| {
+        let mut p = plugin_row(name, folder);
+        p.masters = vec![master.into()];
+        p
+    };
+    let list = PluginList {
+        plugins: vec![
+            plugin_row("Zeta.esm", "Zeta"),
+            plugin_row("Alpha.esm", "Alpha"),
+            patch("Zeta Patch.esp", "Zeta Patch", "Zeta.esm"),
+            patch("Alpha Patch.esp", "Alpha Patch", "Alpha.esm"),
+        ],
+        ..Default::default()
+    };
+    let map = map_of(&[
+        (4, "Zeta", &["Zeta.esm", "z.nif"]),
+        (3, "Alpha", &["Alpha.esm", "a.nif"]),
+        (2, "Zeta Patch", &["Zeta Patch.esp", "z.nif"]),
+        (1, "Alpha Patch", &["Alpha Patch.esp", "a.nif"]),
+        (0, "[skyrimse]", &[]),
+    ]);
+    let first: Vec<String> = patch_order_checks(&list, &map)
+        .into_iter()
+        .map(|d| d.title)
+        .collect();
+    assert!(first[0].contains("Alpha Patch"));
+    for _ in 0..5 {
+        assert_eq!(
+            patch_order_checks(&list, &map)
+                .into_iter()
+                .map(|d| d.title)
+                .collect::<Vec<_>>(),
+            first
+        );
+    }
+}
+
+#[test]
+fn a_mod_that_replaces_extender_scripts_is_named_with_its_files() {
+    let map = map_of(&[
+        (2, "Old Mod", &["Scripts/Actor.pex", "Scripts/Quest.pex"]),
+        (
+            1,
+            "SKSE",
+            &[
+                "Root/skse64_loader.exe",
+                "Scripts/Actor.pex",
+                "Scripts/Form.pex",
+            ],
+        ),
+        (0, "[skyrimse]", &[]),
+    ]);
+    let d = extender_script_checks(&map, "skse64_loader.exe", "SKSE", false);
+    assert_eq!(d.len(), 1);
+    assert_eq!(
+        d[0].title,
+        tf(
+            "diag_extender_scripts",
+            &[("mod", &"Old Mod"), ("n", &1), ("extender", &"SKSE")]
+        )
+    );
+    assert!(d[0].detail.contains("Scripts/Actor.pex") && !d[0].detail.contains("Quest.pex"));
+    assert!(
+        matches!(&d[0].actions[..], [(_, Message::MoveModBelow { folder, below })] if folder == "SKSE" && below == "Old Mod")
+    );
+}
+#[test]
+fn a_hand_copied_extender_is_checked_against_the_game_data() {
+    let map = map_of(&[
+        (1, "Old Mod", &["Scripts/Actor.pex"]),
+        (0, "[skyrimse]", &["Scripts/Actor.pex"]),
+    ]);
+    let d = extender_script_checks(&map, "skse64_loader.exe", "SKSE", true);
+    assert_eq!(d.len(), 1);
+    assert!(d[0].actions.is_empty());
+    assert!(d[0].detail.starts_with(&tf(
+        "diag_extender_scripts_game_detail",
+        &[
+            ("mod", &"Old Mod"),
+            ("extender", &"SKSE"),
+            ("files", &"Scripts/Actor.pex")
+        ]
+    )));
+    assert!(extender_script_checks(&map, "skse64_loader.exe", "SKSE", false).is_empty());
+}
+#[test]
+fn sources_and_the_extenders_own_winning_scripts_say_nothing() {
+    let map = map_of(&[
+        (2, "SKSE", &["Root/skse64_loader.exe", "Scripts/Actor.pex"]),
+        (1, "Old Mod", &["Scripts/Actor.pex"]),
+        (0, "[skyrimse]", &[]),
+    ]);
+    assert!(extender_script_checks(&map, "skse64_loader.exe", "SKSE", false).is_empty());
+    let map = map_of(&[
+        (2, "Old Mod", &["Scripts/Source/Actor.psc"]),
+        (
+            1,
+            "SKSE",
+            &[
+                "Root/skse64_loader.exe",
+                "Scripts/Actor.pex",
+                "Scripts/Source/Actor.psc",
+            ],
+        ),
+        (0, "[skyrimse]", &[]),
+    ]);
+    assert!(extender_script_checks(&map, "skse64_loader.exe", "SKSE", false).is_empty());
 }

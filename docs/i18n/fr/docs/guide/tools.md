@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=4cb3ab1260fe32bf41a1a9fdf03479f0c1d74b50 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
 
 # Outils : xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -512,6 +512,16 @@ dossier du jeu au-dessus. Réglé un niveau trop haut, un batch build annonce
 jamais les chercher. Eidos les rattrape - ils atterrissent dans `Overwrite/Root/`
 plutôt que dans votre installation - mais rien ne cloche du point de vue du jeu,
 sinon que vos corps ne sont pas construits.
+
+Eidos le vérifie pour vous. Avant une exécution de BodySlide ou d'Outfit Studio,
+la barre d'état prévient quand `GameDataPath` ou `OutputDataPath` dans le
+`CalienteTools/BodySlide/Config.xml` qui l'emporte ne mène pas au dossier `Data`
+du jeu pendant l'exécution, et l'onglet Health affiche la même carte avec la
+valeur à indiquer. Pour un chemin en `S:`, Eidos suit la correspondance qu'il
+donne à `S:` pour un outil : le dossier de la bibliothèque Steam. Un
+`OutputDataPath` dans le dossier `mods/` de l'instance, pour un mod de sortie,
+est accepté. Health affiche aussi une carte quand `Overwrite/Root/` contient un
+dossier `meshes` ou `textures`.
 
 La sortie des outils a sa place dans l'Overwrite. Quand une exécution produit
 quelque chose qui vaut la peine d'être gardé, **Overwrite -> Create mod...** en

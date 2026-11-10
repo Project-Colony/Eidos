@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=4cb3ab1260fe32bf41a1a9fdf03479f0c1d74b50 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
 
 # ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -446,6 +446,8 @@ Eidos はツールを正しい場所に、正しい DLL とともに置きます
 探さない場所に 1439 個のメッシュを書きます。Eidos はそれを受け止め -
 インストール先ではなく `Overwrite/Root/` に着地します - しかしゲームから
 見れば、体型が作られていないこと以外に何もおかしくありません。
+
+Eidos はこれを確認します。BodySlide または Outfit Studio を実行する前に、優先される `CalienteTools/BodySlide/Config.xml` の `GameDataPath` か `OutputDataPath` が実行中にゲームの `Data` フォルダに通じていないと、ステータス行が警告し、Health タブには設定すべき値を添えた同じカードが表示されます。`S:` のパスは、Eidos がツール用に `S:` を割り当てるとおり、Steam ライブラリのフォルダとして読みます。インスタンスの `mods/` フォルダ内の `OutputDataPath` は、出力 MOD 用として受け入れます。`Overwrite/Root/` に `meshes` または `textures` フォルダがある場合も、Health にカードが表示されます。
 
 ツールの出力は Overwrite に属します。実行が取っておく価値のあるものを生んだら、
 **Overwrite -> Create mod...** でそれを普通の MOD に変えられます。他と同じ

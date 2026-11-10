@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=4cb3ab1260fe32bf41a1a9fdf03479f0c1d74b50 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
 
 # Инструменты: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -495,6 +495,15 @@ processed successfully» и запишет 1439 мешей туда, где иг
 искать. Eidos их ловит - они попадают в `Overwrite/Root/`, а не в вашу
 установку - но с точки зрения игры всё в порядке, кроме того что ваши тела не
 собраны.
+
+Eidos проверяет это за вас. Перед запуском BodySlide или Outfit Studio строка
+состояния предупреждает, если `GameDataPath` или `OutputDataPath` в побеждающем
+`CalienteTools/BodySlide/Config.xml` во время запуска не ведёт в папку `Data`
+игры, а вкладка Health показывает ту же карточку со значением, которое нужно
+задать. Путь на `S:` читается так, как Eidos сопоставляет `S:` для инструмента,
+то есть с папкой библиотеки Steam. `OutputDataPath` внутри папки `mods/`
+инстанции, для мода вывода, принимается. Health также показывает карточку, когда
+в `Overwrite/Root/` есть папка `meshes` или `textures`.
 
 Вывод инструментов принадлежит Overwrite. Когда запуск производит что-то
 стоящее, **Overwrite -> Create mod...** превращает это в обычный мод, который

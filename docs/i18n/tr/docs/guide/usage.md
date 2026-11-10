@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c98fae670683bd0430c0a21677a9e155c27567de -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=0433d51887d1d1997dd785a7a18f7a4be58dfcd5 -->
 
 # Eidos kullanımı
 
@@ -35,7 +35,7 @@ takımı tamamlar; tam liste için `eidos`'u argümansız çalıştırın.
 
 `eidos check <instance>`, **Diagnostics** sekmesindeki prefix, eklenti, eksik master ve script extender denetimlerini pencereyi açmadan çalıştırır; böylece bunlar SSH üzerinden ya da Game Mode'da çalışabilir ve bir hata raporuna eklenebilir. **Copy report** ile aynı sistem satırlarını, ardından her bulgu için bir satır yazdırır; ev klasörünüz `~`, oturum adınız `<user>` olarak gösterilir. Çıkış kodu, hiçbir sorun bulunmadığında 0 (yalnızca öneriler yine 0 verir), en az bir sorun bulunduğunda 1, Eidos denetleyemediğinde 2'dir: yanlış argümanlar, açamadığı bir örnek ya da algılamadığı bir oyun.
 
-`eidos check <instance> --json` bunun yerine tek bir JSON nesnesi yazdırır. Üst düzey alanları `eidos` (sürüm), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`) ve `findings`'dir. Her bulgu bir `code`, bir `level` (`problem` ya da `advice`) ve kendi `args` alanından oluşur; Diagnostics sekmesi her kodun cümlesini gösterir.
+`eidos check <instance> --json` bunun yerine tek bir JSON nesnesi yazdırır. Üst düzey alanları `eidos` (sürüm), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`, `max_map_count`, `open_files_hard`) ve `findings`'dir. `max_map_count` ve `open_files_hard` birer sayıdır; Eidos bunları okuyamadığında `null` olur. Her bulgu bir `code`, bir `level` (`problem` ya da `advice`) ve kendi `args` alanından oluşur; Diagnostics sekmesi her kodun cümlesini gösterir.
 
 ### Birleşik görünümde bir kabuk
 

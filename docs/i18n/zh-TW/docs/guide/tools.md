@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=4cb3ab1260fe32bf41a1a9fdf03479f0c1d74b50 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -398,6 +398,8 @@ Eidos 把工具擺在對的位置,配上對的 DLL。工具接下來拿它的設
 批次建置會回報「All sets processed successfully」,然後把 1439 個 mesh 寫到
 遊戲永遠不會去找的地方。Eidos 會接住它們 - 它們落在 `Overwrite/Root/` 而不是
 你的安裝目錄裡 - 但從遊戲的角度看一切正常,只不過你的身體模型沒建出來。
+
+Eidos 會替你檢查這一點。在執行 BodySlide 或 Outfit Studio 之前，如果勝出的 `CalienteTools/BodySlide/Config.xml` 裡的 `GameDataPath` 或 `OutputDataPath` 在執行期間沒有通到遊戲的 `Data` 資料夾，狀態列會發出警告，Health 分頁也會顯示同一張卡片，並給出該設定的值。`S:` 路徑依照 Eidos 為工具對應 `S:` 的方式來讀，也就是 Steam 收藏庫資料夾。位於實例 `mods/` 資料夾內、用於輸出模組的 `OutputDataPath` 會被接受。當 `Overwrite/Root/` 裡有 `meshes` 或 `textures` 資料夾時，Health 也會顯示一張卡片。
 
 工具的輸出本來就該待在 Overwrite。當一次執行產生了值得留下的東西,
 **Overwrite -> Create mod...** 會把它變成一個普通模組,可以像其他模組一樣

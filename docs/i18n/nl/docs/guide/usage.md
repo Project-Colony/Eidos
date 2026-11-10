@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c98fae670683bd0430c0a21677a9e155c27567de -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=0433d51887d1d1997dd785a7a18f7a4be58dfcd5 -->
 
 # Eidos gebruiken
 
@@ -35,7 +35,7 @@ het geheel compleet; draai `eidos` zonder argumenten voor de volledige lijst.
 
 `eidos check <instance>` draait de controles op prefix, plugins, ontbrekende masters en script extender uit het tabblad **Diagnostics** zonder het venster te openen, zodat ze via SSH of in Game Mode kunnen draaien en in een bugrapport terechtkomen. Het drukt dezelfde systeemregels af als **Copy report**, daarna één regel per bevinding, met je thuismap getoond als `~` en je inlognaam als `<user>`. De exitcode is 0 als er geen probleem is gevonden (alleen adviezen geven nog steeds 0), 1 als er minstens één probleem is gevonden, en 2 als Eidos niet kon controleren: verkeerde argumenten, een instantie die het niet kan openen, of een spel dat het niet detecteert.
 
-`eidos check <instance> --json` drukt in plaats daarvan één JSON-object af. De velden op het hoogste niveau zijn `eidos` (de versie), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`) en `findings`. Elke bevinding is een `code`, een `level` (`problem` of `advice`) en zijn `args`; het tabblad Diagnostics toont de zin bij elke code.
+`eidos check <instance> --json` drukt in plaats daarvan één JSON-object af. De velden op het hoogste niveau zijn `eidos` (de versie), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`, `max_map_count`, `open_files_hard`) en `findings`. `max_map_count` en `open_files_hard` zijn getallen, of `null` als Eidos ze niet kon lezen. Elke bevinding is een `code`, een `level` (`problem` of `advice`) en zijn `args`; het tabblad Diagnostics toont de zin bij elke code.
 
 ### Een shell in de samengevoegde weergave
 

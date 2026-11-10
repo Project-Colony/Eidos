@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c98fae670683bd0430c0a21677a9e155c27567de -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=0433d51887d1d1997dd785a7a18f7a4be58dfcd5 -->
 
 # Eidos verwenden
 
@@ -36,7 +36,7 @@ vollständige Liste.
 
 `eidos check <instance>` führt die Prüfungen des Tabs **Diagnostics** für Präfix, Plugins, fehlende Master und Script Extender aus, ohne das Fenster zu öffnen, sodass sie über SSH oder im Game Mode laufen und in einen Fehlerbericht wandern können. Es gibt dieselben Systemzeilen aus wie **Copy report**, dann eine Zeile pro Befund, wobei Ihr Home-Ordner als `~` und Ihr Anmeldename als `<user>` erscheint. Der Exit-Code ist 0, wenn kein Problem gefunden wurde (reine Hinweise ergeben weiterhin 0), 1, wenn mindestens ein Problem gefunden wurde, und 2, wenn Eidos nicht prüfen konnte: falsche Argumente, eine Instanz, die es nicht öffnen kann, oder ein Spiel, das es nicht erkennt.
 
-`eidos check <instance> --json` gibt stattdessen ein einziges JSON-Objekt aus. Seine Felder der obersten Ebene sind `eidos` (die Version), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`) und `findings`. Jeder Befund besteht aus einem `code`, einem `level` (`problem` oder `advice`) und seinen `args`; der Tab Diagnostics zeigt den Satz zu jedem Code.
+`eidos check <instance> --json` gibt stattdessen ein einziges JSON-Objekt aus. Seine Felder der obersten Ebene sind `eidos` (die Version), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`, `max_map_count`, `open_files_hard`) und `findings`. `max_map_count` und `open_files_hard` sind Zahlen, oder `null`, wenn Eidos sie nicht lesen konnte. Jeder Befund besteht aus einem `code`, einem `level` (`problem` oder `advice`) und seinen `args`; der Tab Diagnostics zeigt den Satz zu jedem Code.
 
 ### Eine Shell in der zusammengeführten Ansicht
 

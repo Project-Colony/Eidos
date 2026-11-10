@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c98fae670683bd0430c0a21677a9e155c27567de -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=0433d51887d1d1997dd785a7a18f7a4be58dfcd5 -->
 
 # Používání Eidosu
 
@@ -35,7 +35,7 @@ doplňují; úplný seznam vypíše `eidos` bez argumentů.
 
 `eidos check <instance>` spustí kontroly prefixu, pluginů, chybějících masterů a script extenderu z karty **Diagnostics**, aniž by otevřel okno, takže mohou běžet přes SSH nebo v Game Mode a skončit v hlášení chyby. Vypíše stejné systémové řádky jako **Copy report** a pak jeden řádek na každé zjištění, s domovskou složkou zobrazenou jako `~` a přihlašovacím jménem jako `<user>`. Návratový kód je 0, když se nenašel žádný problém (samotné rady stále dávají 0), 1, když se našel aspoň jeden problém, a 2, když Eidos nemohl kontrolu provést: chybné argumenty, instance, kterou nedokáže otevřít, nebo hra, kterou nerozpozná.
 
-`eidos check <instance> --json` místo toho vypíše jeden objekt JSON. Jeho pole nejvyšší úrovně jsou `eidos` (verze), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`) a `findings`. Každé zjištění tvoří `code`, `level` (`problem` nebo `advice`) a jeho `args`; karta Diagnostics ukazuje větu ke každému kódu.
+`eidos check <instance> --json` místo toho vypíše jeden objekt JSON. Jeho pole nejvyšší úrovně jsou `eidos` (verze), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`, `max_map_count`, `open_files_hard`) a `findings`. `max_map_count` a `open_files_hard` jsou čísla, nebo `null`, když je Eidos nedokázal přečíst. Každé zjištění tvoří `code`, `level` (`problem` nebo `advice`) a jeho `args`; karta Diagnostics ukazuje větu ke každému kódu.
 
 ### Shell ve sloučeném pohledu
 

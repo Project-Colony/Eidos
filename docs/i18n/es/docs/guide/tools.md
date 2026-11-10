@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=4cb3ab1260fe32bf41a1a9fdf03479f0c1d74b50 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
 
 # Herramientas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -506,6 +506,16 @@ informa «All sets processed successfully» y escribe 1439 mallas donde el juego
 nunca las buscará. Eidos las recoge - aterrizan en `Overwrite/Root/` en vez de en
 tu instalación - pero nada está mal desde el punto de vista del juego salvo que
 tus cuerpos no están construidos.
+
+Eidos lo comprueba por ti. Antes de ejecutar BodySlide u Outfit Studio, la línea
+de estado avisa cuando `GameDataPath` u `OutputDataPath` en el
+`CalienteTools/BodySlide/Config.xml` que gana no lleva a la carpeta `Data` del
+juego durante la ejecución, y la pestaña Health muestra la misma tarjeta con el
+valor que hay que poner. Una ruta en `S:` se lee como Eidos asigna `S:` para una
+herramienta, a la carpeta de la biblioteca de Steam. Se acepta un
+`OutputDataPath` dentro de la carpeta `mods/` de la instancia, para un mod de
+salida. Health también muestra una tarjeta cuando `Overwrite/Root/` contiene una
+carpeta `meshes` o `textures`.
 
 La salida de las herramientas va en el Overwrite. Cuando una ejecución produce
 algo que merece la pena conservar, **Overwrite -> Create mod...** lo convierte en
