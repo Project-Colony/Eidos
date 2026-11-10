@@ -116,6 +116,20 @@ fn main() -> iced::Result {
         eidos_log::info!("{note}");
     }
     eidos_log::info!("eidos-gui {} starting", env!("CARGO_PKG_VERSION"));
+    // "Start the game at once" (A30): built here, once, because `new` consumes
+    // the Run list pick the hand-off left; the window reuses it when it opens.
+    let prebuilt = std::cell::RefCell::new(None);
+    if !launch_command.is_empty() && Settings::load().start_game_directly {
+        let (mut app, task) = new(launch_command.clone());
+        if start_directly(
+            &mut app,
+            std::env::var_os("EIDOS_WINDOW").is_some_and(|v| v == "1"),
+        ) {
+            eidos_log::info!("started the game without the window: Health is clear");
+            std::process::exit(wait_direct_run(&app));
+        }
+        *prebuilt.borrow_mut() = Some((app, task));
+    }
     // The title moved out of `application` and onto a builder; the first argument
     // is now the boot function that `run_with` used to take. It must be `Fn`, not
     // `FnOnce` - which is why the `.clone()` stays: without it the closure would
@@ -131,8 +145,10 @@ fn main() -> iced::Result {
                 // Timed whole as well, so the log shows what the conflict walk
                 // leaves of the wait before the window appears.
                 move || {
-                    timing::time("App::new", timing::on().then_some("startup"), || {
-                        new(launch_command.clone())
+                    prebuilt.borrow_mut().take().unwrap_or_else(|| {
+                        timing::time("App::new", timing::on().then_some("startup"), || {
+                            new(launch_command.clone())
+                        })
                     })
                 },
                 update,

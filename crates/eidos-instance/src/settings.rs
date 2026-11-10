@@ -297,6 +297,9 @@ pub struct Settings {
     /// network, and the parts of the window that would have asked say why
     /// rather than failing with a connection error.
     pub offline: bool,
+    /// Start the game without showing the window when a store opened Eidos
+    /// with the game's command and Health lists no problem. Off by default.
+    pub start_game_directly: bool,
     /// Where the user keeps their modding tools, shared across instances.
     ///
     /// xEdit, DynDOLOD and their kind live nowhere in particular: in the game
@@ -332,6 +335,7 @@ impl Default for Settings {
             split: 0.6,
             remember_window: true,
             offline: false,
+            start_game_directly: false,
             tools_dir: None,
             mod_columns: None,
             preferred_servers: Vec::new(),
@@ -440,6 +444,10 @@ impl Settings {
                     s.offline =
                         matches!(v.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on")
                 }
+                "start_game_directly" => {
+                    s.start_game_directly =
+                        matches!(v.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on")
+                }
                 // Comma-separated so one line holds an ordering, which is what
                 // this is - a list where position means something.
                 // An EMPTY value is meaningful here - every column off - which is
@@ -505,6 +513,9 @@ impl Settings {
         ));
         if self.offline {
             out.push_str("offline=true\n");
+        }
+        if self.start_game_directly {
+            out.push_str("start_game_directly=true\n");
         }
         if let Some(dir) = &self.tools_dir {
             out.push_str(&format!("tools_dir={dir}\n"));
@@ -761,6 +772,7 @@ mod tests {
         let s = Settings {
             path: None,
             offline: false,
+            start_game_directly: true,
             preferred_servers: Vec::new(),
             mod_columns: None,
             tools_dir: None,
@@ -774,6 +786,14 @@ mod tests {
         };
         let parsed = Settings::parse(&s.to_ini());
         assert_eq!(parsed, s);
+    }
+
+    #[test]
+    fn start_game_directly_is_off_unless_written_on() {
+        assert!(!Settings::default().start_game_directly);
+        assert!(Settings::parse("start_game_directly=true\n").start_game_directly);
+        assert!(!Settings::parse("start_game_directly=maybe\n").start_game_directly);
+        assert!(!Settings::default().to_ini().contains("start_game_directly"));
     }
 
     #[test]
@@ -888,6 +908,7 @@ mod tests {
         let s = Settings {
             path: None,
             offline: false,
+            start_game_directly: true,
             preferred_servers: Vec::new(),
             mod_columns: None,
             tools_dir: None,

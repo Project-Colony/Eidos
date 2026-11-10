@@ -297,13 +297,22 @@ impl Sections<'_> {
             "running",
             t("settings_section_running"),
             t("settings_running_desc"),
-            [functional_toggle(
-                &self.typo,
-                t("settings_lock_gui"),
-                t("settings_lock_gui_desc"),
-                app.prefs.lock_gui,
-                Message::ToggleLockGui(!app.prefs.lock_gui),
-            )],
+            [
+                functional_toggle(
+                    &self.typo,
+                    t("settings_lock_gui"),
+                    t("settings_lock_gui_desc"),
+                    app.prefs.lock_gui,
+                    Message::ToggleLockGui(!app.prefs.lock_gui),
+                ),
+                functional_toggle(
+                    &self.typo,
+                    t("settings_start_directly"),
+                    t("settings_start_directly_desc"),
+                    app.prefs.start_game_directly,
+                    Message::ToggleStartDirectly(!app.prefs.start_game_directly),
+                ),
+            ],
         )
     }
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=bb2eee28d0132a3916b2b4106f3e985018164993 -->
 
 # Používání Eidosu
 
@@ -700,6 +700,8 @@ absolutní cestu k binárce (Steam nevidí `~/.cargo/bin` v PATH):
 Eidos se otevře na instanci té hry - té, kterou jste použili naposledy, takže
 přenosná instance se najde znovu stejně jako globální; kliknutím na Run ji
 spustíte skrz sloučený pohled.
+
+Se zapnutou volbou **Start the game at once when a store opens Eidos** (Preferences, General, Running a game) Eidos toto kliknutí přeskočí: zkontroluje Health a spustí hru, aniž by ukázal své okno. Okno se otevře jako obvykle, když Health hlásí problém, když seznam modů vyžaduje pozornost nebo když nástroj nastavený ke spuštění před hraním má zastaralý výstup. Chcete-li okno pro jedno spuštění, dejte před příkaz `EIDOS_WINDOW=1`: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Mimo Steam Run nespouští hru sám přes Proton nebo Wine. Požádá obchod, kterému
 kopie patří, aby ji spustil, a obchod spustí Eidos:

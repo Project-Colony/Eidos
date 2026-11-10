@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=bb2eee28d0132a3916b2b4106f3e985018164993 -->
 
 # Eidos の使い方
 
@@ -673,6 +673,8 @@ GUI からゲームを起動するには、そのゲームの Steam 起動オプ
 Eidos はそのゲームのインスタンスで開きます - 最後に使ったものなので、ポータブル
 インスタンスもグローバルと同じように見つかります。Run を押せば統合ビュー越しに
 起動します。
+
+**Start the game at once when a store opens Eidos** をオンにすると (Preferences、General、Running a game)、Eidos はこのクリックを省きます。Health を確認し、ウィンドウを表示せずにゲームを起動します。Health が問題を挙げたとき、MOD リストに対応が必要なとき、プレイ前に実行するよう設定したツールの出力が古いときは、いつもどおりウィンドウが開きます。1 回の起動だけウィンドウを出したい場合は、コマンドの前に `EIDOS_WINDOW=1` を付けます (`EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`)。
 
 Steam の外では、Run は Proton や Wine でゲームを自分で起動しません。そのコピーを持つストアに起動を頼み、ストアが Eidos を起動します。
 

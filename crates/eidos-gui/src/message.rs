@@ -314,6 +314,8 @@ pub(crate) enum Message {
     DefaultGameChanged(Option<String>),
     /// Toggle "lock the GUI while a game/tool runs" (MO2's `lock_gui`).
     ToggleLockGui(bool),
+    /// Toggle starting the game without the window when a store opens Eidos.
+    ToggleStartDirectly(bool),
     /// Set how fast the mod list scrolls when a drag rests on an edge.
     DragScrollSpeedChanged(f32),
     /// Open or close one collapsible section of the Preferences page.

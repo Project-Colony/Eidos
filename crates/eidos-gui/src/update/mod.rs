@@ -26,6 +26,8 @@ mod tools;
 mod window;
 mod wizard;
 
+pub(crate) use launch::{start_directly, wait_direct_run};
+
 /// Open `archive` on a worker thread, reporting 7-Zip's percentage as it goes.
 ///
 /// Everything here used to happen inline in `update()`. The work is identical;
@@ -1565,6 +1567,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::PreferredServersChanged(..)
         | Message::DefaultGameChanged(..)
         | Message::ToggleLockGui(..)
+        | Message::ToggleStartDirectly(..)
         | Message::ToolsDirChanged(..)
         | Message::BrowseToolsDir) => preferences::handle(app, m),
         m @ (Message::IdentifyDownload(..)

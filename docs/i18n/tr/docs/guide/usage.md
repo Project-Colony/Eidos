@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=bb2eee28d0132a3916b2b4106f3e985018164993 -->
 
 # Eidos kullanımı
 
@@ -731,6 +731,8 @@ dosyanın mutlak yoluna ayarlayın (Steam, PATH'te `~/.cargo/bin`'i görmez):
 Eidos o oyunun örneğinde açılır - en son kullandığınızda, yani taşınabilir bir
 örnek de global olan gibi yeniden bulunur; birleşik görünüm üzerinden başlatmak
 için Run'a tıklayın.
+
+**Start the game at once when a store opens Eidos** açıkken (Preferences, General, Running a game) Eidos bu tıklamayı atlar: Health'i denetler ve oyunu penceresini göstermeden başlatır. Health bir sorun bildirdiğinde, mod listesi ilgi gerektirdiğinde ya da oynamadan önce çalışacak şekilde ayarlanmış bir aracın çıktısı eskidiğinde pencere her zamanki gibi açılır. Pencereyi tek bir başlatma için isterseniz komutun önüne `EIDOS_WINDOW=1` ekleyin: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Steam dışında Run oyunu kendisi Proton ya da Wine ile başlatmaz. Kopyanın sahibi
 olan mağazadan onu başlatmasını ister, mağaza da Eidos'u başlatır:

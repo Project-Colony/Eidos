@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=bb2eee28d0132a3916b2b4106f3e985018164993 -->
 
 # 使用 Eidos
 
@@ -561,6 +561,8 @@ PATH 上的 `~/.cargo/bin`):
 
 Eidos 會在該遊戲的實例上開啟 - 你上次用的那一個,所以可攜實例和全域實例一樣會被再
 找到;點 Run 就會穿過合併檢視啟動它。
+
+開啟 **Start the game at once when a store opens Eidos**(Preferences、General、Running a game)後,Eidos 會省掉這次點擊:它先檢查 Health,再不顯示視窗直接啟動遊戲。Health 列出問題、模組清單需要處理,或設為在遊戲前執行的工具輸出已過期時,視窗照常開啟。想在某一次啟動時看到視窗,就在命令前加上 `EIDOS_WINDOW=1`:`EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`。
 
 在 Steam 之外,Run 不會自己用 Proton 或 Wine 啟動遊戲。它請擁有這份副本的商店來啟動,再由商店啟動 Eidos:
 

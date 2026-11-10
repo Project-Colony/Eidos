@@ -5948,6 +5948,72 @@ fn the_hand_off_pick_is_taken_once() {
 }
 
 #[test]
+fn a_direct_start_needs_a_store_window_the_preference_and_no_override() {
+    let (mut app, root) = list_app(&[]);
+    app.launch_command = vec!["/bin/true".into()];
+    assert!(!start_directly(&mut app, false), "preference off");
+    app.prefs.start_game_directly = true;
+    assert!(!start_directly(&mut app, true), "EIDOS_WINDOW=1");
+    app.launch_command.clear();
+    assert!(
+        !start_directly(&mut app, false),
+        "no store opened this window"
+    );
+    // The nxm handler opens a window with arguments too, and they name no game.
+    app.launch_command = vec![
+        "--collection".into(),
+        "nxm://skyrimspecialedition/collections/x".into(),
+    ];
+    assert!(!start_directly(&mut app, false), "a collection link");
+    assert!(app.running.is_none());
+    assert!(
+        app.status.is_none(),
+        "nothing to explain when it was never asked"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_direct_start_waits_for_the_window_on_a_health_problem() {
+    let (mut app, root) = list_app(&[]);
+    // The store's command names the game's own executable.
+    app.launch_command = vec![app.games[0]
+        .install_path
+        .join("SkyrimSE.exe")
+        .display()
+        .to_string()];
+    app.prefs.start_game_directly = true;
+    // Fixture check, before the call that would otherwise press Run: list_app's
+    // Steam copy has no compatdata, so Health holds diag_no_prefix.
+    app.diag_dirty = true;
+    refresh_diagnostics(&mut app);
+    assert!(app.diag.iter().any(|d| d.level == DiagLevel::Problem));
+    assert!(!start_directly(&mut app, false));
+    assert!(app.running.is_none());
+    assert_eq!(
+        app.status.as_deref(),
+        Some(
+            tf(
+                "status_direct_start_held",
+                &[("game", &"Skyrim Special Edition")]
+            )
+            .as_str()
+        )
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn the_direct_run_exits_with_the_childs_code() {
+    let (mut app, root) = list_app(&[]);
+    let mut cmd = std::process::Command::new("sh");
+    cmd.args(["-c", "exit 3"]);
+    start_run(&mut app, "Game".into(), cmd);
+    assert_eq!(wait_direct_run(&app), 3);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn setup_prereqs_is_refused_while_a_run_is_tracked() {
     // winetricks and the running game share one prefix.
     let (mut app, root) = list_app(&["Keep"]);

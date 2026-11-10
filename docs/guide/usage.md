@@ -716,6 +716,14 @@ Eidos opens on the game's instance - the one you last used, so a portable
 instance is found again just like the global one; click Run to launch it
 through the merged view.
 
+With **Start the game at once when a store opens Eidos** on (Preferences,
+General, Running a game), Eidos skips that click: it checks Health and starts
+the game without showing its window. The window opens as usual when Health
+lists a problem, when the mod list needs attention, or when a tool set to run
+before playing has an out-of-date output. To get the window for one launch, put
+`EIDOS_WINDOW=1` before the command:
+`EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
+
 Outside Steam, Run does not start the game through Proton or Wine itself. It
 asks the store that owns the copy to start it, and the store starts Eidos:
 

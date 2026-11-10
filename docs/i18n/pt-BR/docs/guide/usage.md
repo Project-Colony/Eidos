@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=bb2eee28d0132a3916b2b4106f3e985018164993 -->
 
 # Usar o Eidos
 
@@ -736,6 +736,8 @@ PATH):
 O Eidos abre na instância daquele jogo - a que você usou por último, então uma
 instância portátil é reencontrada igual à global; clique em Run para iniciá-la
 através da visão combinada.
+
+Com **Start the game at once when a store opens Eidos** ligado (Preferences, General, Running a game), o Eidos pula esse clique: ele verifica o Health e inicia o jogo sem mostrar a janela. A janela abre como sempre quando o Health aponta um problema, quando a lista de mods precisa de atenção ou quando uma ferramenta configurada para rodar antes de jogar tem uma saída desatualizada. Para ter a janela em uma única inicialização, coloque `EIDOS_WINDOW=1` antes do comando: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Fora do Steam, o Run não inicia o jogo por conta própria com Proton ou Wine. Ele
 pede à loja dona da cópia que o inicie, e a loja inicia o Eidos:

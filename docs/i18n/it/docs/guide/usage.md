@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=bb2eee28d0132a3916b2b4106f3e985018164993 -->
 
 # Usare Eidos
 
@@ -771,6 +771,8 @@ gioco al percorso assoluto del binario (Steam non vede `~/.cargo/bin` nel PATH):
 Eidos si apre sull'istanza di quel gioco - quella che hai usato per ultima, così
 un'istanza portatile viene ritrovata proprio come quella globale; clicca Run per
 avviarlo attraverso la vista unita.
+
+Con **Start the game at once when a store opens Eidos** attivo (Preferences, General, Running a game), Eidos salta quel clic: controlla Health e avvia il gioco senza mostrare la sua finestra. La finestra si apre come al solito quando Health segnala un problema, quando la lista delle mod richiede attenzione o quando uno strumento impostato per girare prima di giocare ha un output non aggiornato. Per avere la finestra in un solo avvio, metti `EIDOS_WINDOW=1` davanti al comando: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Fuori da Steam, Run non avvia il gioco da sé con Proton o Wine. Chiede allo
 store a cui appartiene la copia di avviarlo, e lo store avvia Eidos:
