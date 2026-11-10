@@ -24,7 +24,7 @@ de fichier, dans :
   boutique, ou sa copie du jeu), et les arborescences `Root/` des mods activés ;
 - le `mods/` de cette instance, là où les utilisateurs de MO2 installent leurs
   outils ;
-- le dossier d'outils que vous avez défini dans Preferences (General -> Tools), pour
+- le dossier d'outils que vous avez défini dans les Préférences (Général -> Outils), pour
   un répertoire partagé entre instances, comme `/mnt/Games/Tools`.
 
 Les générateurs courants se trouvent de la même façon, chacun pour les jeux qu'il
@@ -52,10 +52,10 @@ trouvé automatiquement.
 Après un tri LOOT, l'onglet Diagnostics liste les plugins que LOOT signale comme
 sales, pour les jeux qui ont à la fois un xEdit et des données de nettoyage LOOT
 (Skyrim LE, SE et VR, Enderal SE, Fallout 3, New Vegas, Fallout 4 et 4 VR,
-Oblivion, Starfield). Quand Eidos trouve xEdit, enregistré dans Executables ou à
+Oblivion, Starfield). Quand Eidos trouve xEdit, enregistré dans Exécutables ou à
 n'importe quel endroit de l'instance où il cherche des outils, la carte propose
-Clean all et chaque plugin sale propose Clean with QuickAutoClean dans le menu de sa
-ligne ; sinon, la carte indique d'ajouter xEdit dans Executables. Eidos ne
+Tout nettoyer et chaque plugin sale propose Nettoyer avec QuickAutoClean dans le menu de sa
+ligne ; sinon, la carte indique d'ajouter xEdit dans Exécutables. Eidos ne
 télécharge pas xEdit. Il lance le mode QuickAutoClean de xEdit sur un plugin à la
 fois, à travers la vue fusionnée, avec `-qac -autoexit -autoload`. xEdit enregistre
 le plugin nettoyé par-dessus celui qu'il a chargé, ce qui, dans la vue fusionnée,
@@ -71,13 +71,13 @@ Les sauvegardes, le cache et le journal de xEdit vont dans
 les nombres lus dans ce journal. Eidos supprime ce dossier après un nettoyage réussi
 et le garde après un échec. Eidos enregistre dans `Cleaned plugins/meta.ini` la
 taille et la date du plugin dont chaque copie a été tirée. Quand ce plugin change,
-l'onglet Diagnostics affiche **Out-of-date copy of <plugin>**, avec un bouton qui
+l'onglet Diagnostics affiche **Copie périmée de <plugin>**, avec un bouton qui
 masque l'ancienne copie.
 
 ## En ajouter un
 
-Dans l'interface : **Tools** dans la barre de menus, ou **Executables** dans la
-barre d'outils, puis Add. Depuis la ligne de commande :
+Dans l'interface : **Outils** dans la barre de menus, ou **Exécutables** dans la
+barre d'outils, puis Ajouter. Depuis la ligne de commande :
 
 ```sh
 eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
@@ -98,8 +98,8 @@ jeu, sans tenir compte de la casse, reçoit le titre de cet outil, et avec lui l
 prérequis, les arguments et le mod de capture ci-dessous. `GenerateFNISforUsers.exe`
 est FNIS, donc la ligne `--exe` ci-dessus demande `dotnet48` et capture dans
 `FNIS Output`. Tout autre exe est titré d'après son nom de fichier. Dans l'onglet
-Data, une ligne `.exe` a **Add tool**, qui ouvre la boîte de dialogue Executables
-avec l'entrée préremplie, et **Run**, qui lance le fichier une fois comme le fait
+Data, une ligne `.exe` a **Ajouter**, qui ouvre la boîte de dialogue Exécutables
+avec l'entrée préremplie, et **Lancer**, qui lance le fichier une fois comme le fait
 `--exe`. Les deux titrent le fichier de la même façon.
 
 Pour une commande qui n'est pas un outil Windows, `eidos shell skyrimse` ouvre votre
@@ -110,10 +110,10 @@ shell démonte la vue. `eidos shell skyrimse -- <command>` exécute une seule co
 et laisse le shell ouvert. Le shell tourne sans Proton ; un programme Windows passe
 par `eidos tool`.
 
-Dans la fenêtre, **Stop** termine une exécution d'outil qui se bloque : appuyez deux
+Dans la fenêtre, **Arrêter** termine une exécution d'outil qui se bloque : appuyez deux
 fois, et Eidos termine les programmes de l'exécution, puis traite ses fichiers comme
-après n'importe quelle fermeture. Avec **Notify the desktop when a long job ends**
-activé (Preferences, General, Running a game), une exécution d'outil qui se termine
+après n'importe quelle fermeture. Avec **Prévenir le bureau à la fin d'une tâche longue**
+activé (Préférences, Général, Pendant le jeu), une exécution d'outil qui se termine
 alors que la fenêtre est en arrière-plan envoie une notification de bureau.
 
 Le script extender, le binaire du jeu et le launcher sont détectés automatiquement ;
@@ -157,9 +157,9 @@ eidos tool /path/to/list import-mo2           # affiche ce qui serait ajouté
 eidos tool /path/to/list import-mo2 --write   # les ajoute
 ```
 
-Dans la fenêtre, la boîte de dialogue Executables a **Import from ModOrganizer.ini**,
-avec une case à décocher pour chaque entrée. **Add selected** place les entrées
-cochées dans la liste, et rien n'est enregistré avant d'appuyer sur Save. Seul compte
+Dans la fenêtre, la boîte de dialogue Exécutables a **Importer depuis ModOrganizer.ini**,
+avec une case à décocher pour chaque entrée. **Ajouter la sélection** place les entrées
+cochées dans la liste, et rien n'est enregistré avant d'appuyer sur Enregistrer. Seul compte
 un `ModOrganizer.ini` qu'Eidos n'a pas écrit ; voir
 [PGPatcher et PGLite](#pgpatcher-et-pglite-en-mode-mod-organizer-2) pour celui
 qu'Eidos écrit.
@@ -170,14 +170,14 @@ dossier (`D:\Lists\MyList\tools\SSEEdit.exe` devient `<list>/tools/SSEEdit.exe`)
 dans l'exécutable, le dossier de travail et les arguments. Le chargeur du script
 extender, le launcher et le binaire du jeu deviennent de simples noms, et s'exécutent
 donc depuis le dossier du jeu sur lequel Eidos monte la vue, comme les entrées
-intégrées. Le `hide` de MO2 devient **Hide from picker**, et `steamAppID` devient
-**Steam AppID**. Les entrées qui pointent ailleurs (un programme système de Windows,
+intégrées. Le `hide` de MO2 devient **Masquer du sélecteur**, et `steamAppID` devient
+**AppID Steam**. Les entrées qui pointent ailleurs (un programme système de Windows,
 un outil hors de la liste) sont signalées comme ignorées avec la raison, et un titre
 déjà présent dans `tools.ini` n'est jamais remplacé.
 
 Une entrée importée garde le titre et les arguments de MO2, et Eidos ne remplit rien à
 partir de son titre : ni prérequis, ni argument supplémentaire, ni mod de capture.
-Réglez-les dans la boîte de dialogue Executables. Une entrée PGPatcher venue d'une
+Réglez-les dans la boîte de dialogue Exécutables. Une entrée PGPatcher venue d'une
 liste faite sous Windows n'a en général pas `--ignore-mo2vfscheck` ; ajoutez-le
 (voir [plus bas](#pourquoi-pgpatcher-a-besoin-de---ignore-mo2vfscheck)).
 
@@ -214,19 +214,19 @@ boutique.
 `eidos stock-game <instance>` montre quels fichiers du jeu l'instance exécute et
 vers quelles copies elle pourrait basculer. `use <folder>` et `store` font basculer,
 et `freeze --yes` copie l'installation de la boutique dans le dossier `Stock Game` de
-l'instance et exécute depuis elle. La carte Game files de l'onglet Diagnostics fait
+l'instance et exécute depuis elle. La carte Fichiers du jeu de l'onglet Diagnostics fait
 la même chose ; voir
 [Fichiers du jeu](usage.md#fichiers-du-jeu--linstallation-de-la-boutique-ou-une-copie).
 
 ## Envoyer la sortie d'un outil dans son propre mod
 
 Un générateur (FNIS, Nemesis, BodySlide, DynDOLOD, Synthesis) écrit des centaines de
-fichiers. Par défaut ils atterrissent dans l'Overwrite avec tout le reste. Définissez
-**Capture output into** dans l'éditeur Executables et la sortie de cette exécution
+fichiers. Par défaut ils atterrissent dans l'Overwrite avec tout le reste. Dans
+l'éditeur Exécutables, réglez **Capturer la sortie dans** et la sortie de cette exécution
 ira dans ce mod-là :
 
 ```
-Executables -> (your tool) -> Capture output into: FNIS Output
+Exécutables -> (votre outil) -> Capturer la sortie dans : FNIS Output
 ```
 
 Pandora, Nemesis, FNIS, BodySlide et Synthesis arrivent avec un mod de capture déjà
@@ -255,16 +255,16 @@ suivante. Eidos prévient quand c'est le cas.
 Eidos note à partir de quels mods, de quel ordre des plugins et de quel profil la
 sortie d'un outil a été produite, la taille et la date de l'exécutable de l'outil, et
 le chemin et les arguments de l'entrée dans `tools.ini`. Quand l'un d'eux change,
-l'onglet Diagnostics affiche **Generated output inputs changed**, et la carte propose
-un bouton **Run <tool> again** qui relance l'outil avec sa configuration actuelle.
+l'onglet Diagnostics affiche **Les entrées des fichiers générés ont changé**, et la carte propose
+un bouton **Relancer <tool>** qui relance l'outil avec sa configuration actuelle.
 
 Pour un générateur dont la sortie périmée casse le jeu, comme Pandora ou Nemesis,
-ajoutez `check_before_play=1` à son entrée dans `tools.ini`, ou activez **Ask before
-playing when its output is out of date** pour lui dans la boîte de dialogue
-Executables. Run demande alors d'abord : lancer l'outil, ou jouer quand même. Play
-anyway est retenu jusqu'à ce que les mods, les plugins ou le profil changent de
+ajoutez `check_before_play=1` à son entrée dans `tools.ini`, ou activez **Demander avant
+de jouer si sa sortie n'est plus à jour** pour lui dans la boîte de dialogue
+Exécutables. Lancer demande alors d'abord : lancer l'outil, ou jouer quand même. Jouer
+quand même est retenu jusqu'à ce que les mods, les plugins ou le profil changent de
 nouveau, ou que la fenêtre se ferme. Eidos ne lance jamais l'outil de lui-même. Avec
-**Start the game at once when a store opens Eidos** activé, une telle question garde
+**Lancer le jeu directement quand une boutique ouvre Eidos** activé, une telle question garde
 la fenêtre ouverte au lieu de démarrer le jeu.
 
 ## Les prérequis et les arguments viennent du titre
@@ -288,7 +288,7 @@ exécutable enregistré sous `BS` ne reçoit rien et peut échouer au démarrage
 erreur qui ne dit rien des DLL. Nommez les outils d'après le programme.
 
 La liste est dans `default_prereqs` (`crates/eidos-instance/src/tools.rs`), et le champ
-`Prereqs` de la boîte de dialogue Executables est modifiable : le titre ne remplit que
+Prérequis de la boîte de dialogue Exécutables est modifiable : le titre ne remplit que
 la valeur par défaut.
 
 Le titre décide des arguments de la même manière, pour le seul outil qui en exige un
@@ -346,7 +346,7 @@ Un verbe de palier 2 est compté comme fait quand le `winetricks.log` du préfix
 liste, quel que soit celui qui a lancé winetricks ou protontricks, ou quand Eidos l'a
 installé dans ce même préfixe. Eidos enregistre ses propres installations dans
 `prereqs.done` dans l'instance, liées au chemin et à l'inode du préfixe, si bien
-qu'un préfixe reconstruit voit ses verbes de nouveau en attente. **Rebuild prefix**,
+qu'un préfixe reconstruit voit ses verbes de nouveau en attente. **Reconstruire le préfixe**,
 une action de Diagnostics pour une copie Steam, renomme `compatdata/<appid>` en
 `<appid>.eidos-backup-<time>` et ne supprime rien ; Steam crée un nouveau préfixe au
 prochain démarrage du jeu.
@@ -471,7 +471,7 @@ même raison) est un drapeau qui saute la vérification.
 
 Eidos l'ensemence donc. Un PGPatcher trouvé dans un dossier de mods arrive avec
 l'argument déjà mis, et taper `PGPatcher` comme titre dans la boîte de dialogue
-Executables remplit le champ Arguments de la même façon. Ce que vous tapez gagne
+Exécutables remplit le champ Arguments de la même façon. Ce que vous tapez gagne
 toujours : l'ensemencement ne remplit qu'un champ laissé vide, exactement comme les
 prérequis ci-dessus.
 
@@ -533,8 +533,8 @@ supprimez le fichier pour qu'Eidos écrive le sien.
 
 Les outils en mode Mod Organizer 2 lisent aussi le jeu dans le `gamePath` de ce
 fichier. Quand il ne nomme ni le dossier du jeu que l'instance exécute ni
-l'installation de la boutique, l'onglet Diagnostics affiche **ModOrganizer.ini points
-tools at another game folder**, avec ce chemin et le dossier du jeu que cette
+l'installation de la boutique, l'onglet Diagnostics affiche **ModOrganizer.ini indique un
+autre dossier de jeu aux outils**, avec ce chemin et le dossier du jeu que cette
 instance exécute. Changez `gamePath` dans le fichier, ou supprimez le fichier pour
 qu'Eidos écrive le sien.
 
@@ -546,10 +546,10 @@ dossier de sortie est celui d'un mod activé, comme il le fait sous MO2.
 
 ## Les programmes propres à Wine dans le préfixe du jeu
 
-Le menu File lance quatre programmes de Wine dans le préfixe du jeu : winecfg, regedit,
+Le menu Fichier lance quatre programmes de Wine dans le préfixe du jeu : winecfg, regedit,
 l'explorateur de fichiers de Wine et le désinstalleur. Ils démarrent comme n'importe
 quel outil, avec la version de Proton ou de Wine qui lance les outils du jeu, mods
-montés, et la fenêtre les attend. **Prefix drive_c** ouvre le lecteur `C:` du préfixe
+montés, et la fenêtre les attend. **drive_c du préfixe** ouvre le lecteur `C:` du préfixe
 dans votre gestionnaire de fichiers. Une ligne reste grisée tant que le préfixe n'a pas
 ce programme, ce qui arrive la première fois que la boutique lance le jeu. Depuis un
 terminal, `eidos tool <instance> run winecfg` fait la même chose, de même que
@@ -575,17 +575,17 @@ de signature NuGet (voir [plus haut](#trois-sortes-de-prérequis)). Un outil
 autre programme le tient, l'outil se lance quand même, et Eidos affiche un
 avertissement qui nomme la boutique par laquelle démarrer le jeu une fois, ou le
 programme à fermer. Quand la clé nomme un dossier autre que l'installation de la
-boutique, l'onglet Diagnostics affiche **Windows tools cannot find <game>** jusqu'à ce
+boutique, l'onglet Diagnostics affiche **Les outils Windows ne trouvent pas <game>** jusqu'à ce
 que le prochain lancement d'outil l'écrive de nouveau.
 
 ## Atteindre un outil : masquer, épingler, et un raccourci de bureau
 
 Les défauts d'un jeu comprennent des outils dont vous ne vous servirez peut-être
-jamais. Dans la boîte de dialogue Executables :
+jamais. Dans la boîte de dialogue Exécutables :
 
-- **Pin to top** place une entrée en tête de la liste Run.
-- **Hide from picker** en retire une sans la supprimer.
-- **Desktop shortcut** écrit un `.desktop` dans `~/.local/share/applications`, si bien
+- **Épingler en haut** place une entrée en tête de la liste Lancer.
+- **Masquer du sélecteur** en retire une sans la supprimer.
+- **Raccourci de bureau** écrit un `.desktop` dans `~/.local/share/applications`, si bien
   qu'il apparaît dans votre menu d'applications et dans une recherche, pas sur le
   bureau. Il exécute directement `eidos tool <instance> run <title>`, ce qui veut dire
   que l'outil démarre à travers la vue fusionnée avec le profil de cette instance sans
@@ -595,10 +595,10 @@ Masquer et épingler ne changent que la façon dont un outil est atteint, ils
 s'appliquent donc aux défauts par jeu comme à vos propres entrées.
 
 Le chargeur du script extender, le launcher et le binaire du jeu n'ont pas de bouton
-Desktop shortcut. Ils démarrent le jeu, qui démarre toujours par sa boutique, et le
+Raccourci de bureau. Ils démarrent le jeu, qui démarre toujours par sa boutique, et le
 raccourci de la boutique fait déjà cela. Un raccourci créé pour l'un d'eux avec Eidos
 1.22 ou antérieur fonctionne toujours : comme `eidos tool <instance> run <title>` tapé
-dans un terminal, il demande à la boutique de démarrer le jeu, comme Run dans une
+dans un terminal, il demande à la boutique de démarrer le jeu, comme Lancer dans une
 fenêtre qu'aucune boutique n'a ouverte. Quand le réglage de la boutique manque, la
 commande ne démarre rien et affiche quoi régler. Un raccourci n'affiche aucun message :
 lancez la même commande dans un terminal pour le lire.
@@ -625,7 +625,7 @@ identifiant de boutique qu'Eidos ne sait pas transmettre, elle dit de démarrer 
 depuis cette boutique.
 
 Un profil peut avoir son propre raccourci pour le jeu. Faites un clic droit sur le
-profil et choisissez **Desktop shortcut** : l'entrée exécute
+profil et choisissez **Raccourci de bureau** : l'entrée exécute
 `eidos tool <instance> run "<game>" --profile <name>`, qui fait de ce profil le profil
 actif, comme le choisir dans la fenêtre, puis demande à la boutique de démarrer le jeu.
 La fenêtre d'Eidos que la boutique ouvre affiche ce profil. `--profile` fonctionne avec
@@ -648,7 +648,7 @@ qu'un outil qui les voit en désaccord échoue sans erreur claire.
 ## Variables d'environnement et outils lancés sans Proton
 
 Trois clés de `<instance>/tools.ini` n'ont pas encore de champ dans la boîte de
-dialogue Executables ; ajoutez-les à la main dans la section de l'outil. Chaque ligne
+dialogue Exécutables ; ajoutez-les à la main dans la section de l'outil. Chaque ligne
 `env=NAME=value` définit une variable pour les exécutions de cet outil seulement :
 
 ```ini
@@ -721,7 +721,7 @@ dans le dossier `mods/` de cette instance ou dans votre dossier d'outils, et
 `Bethini.exe` apparaît dans la liste des outils, sur les mêmes jeux que PGPatcher.
 Lancé par Eidos, il modifie la copie des INI du jeu propre au profil. Avant chaque
 lancement d'un outil dont le titre contient `bethini`, Eidos garde un point de
-restauration de ces INI ; **Backups** dans la barre d'outils, puis **INIs**, en remet
+restauration de ces INI ; **Sauvegardes** dans la barre d'outils, puis **INI**, en remet
 un. Un INI qui n'existait pas au moment de la copie reste tel quel. La boîte de
 dialogue garde les 10 points de restauration les plus récents de chaque sorte, et en
 restaurer un sauvegarde d'abord les INI tels qu'ils sont, si bien qu'un mauvais choix
@@ -750,5 +750,5 @@ accepté. Diagnostics affiche aussi une carte quand `Overwrite/Root/` contient u
 dossier `meshes` ou `textures`.
 
 La sortie des outils a sa place dans l'Overwrite. Quand une exécution produit quelque
-chose qui vaut la peine d'être gardé, **Overwrite -> Create mod...** en fait un mod
+chose qui vaut la peine d'être gardé, **Overwrite -> Créer un mod...** en fait un mod
 ordinaire, qu'on peut ordonner, désactiver et supprimer comme n'importe quel autre.

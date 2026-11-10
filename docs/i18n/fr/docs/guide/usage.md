@@ -3,7 +3,7 @@
 # Utiliser Eidos
 
 Comment utiliser Eidos : les instances et les copies du jeu, la ligne de commande,
-les test runs, la fenêtre, les collections et les mises à jour Nexus, déplacer une
+les parties test, la fenêtre, les collections et les mises à jour Nexus, déplacer une
 instance vers une autre machine, les outils et les extensions. Pour les problèmes,
 voir [troubleshooting.md](troubleshooting.md) ; pour compiler depuis les sources et
 la disposition du dépôt, voir
@@ -143,7 +143,7 @@ exemple `eidos shell skyrimse -- ls Data/meshes` ou un outil natif comme NifSkop
 L'exécution tient le verrou de l'instance comme une session de jeu, si bien que la
 fenêtre ne peut pas enregistrer de modifications avant que vous quittiez, et elle est
 enregistrée dans `eidos sessions` sous le nom `shell`, jamais comme un lancement du
-jeu. Ctrl+C sur une commande arrête l'exécution comme le fait Stop : Eidos termine la
+jeu. Ctrl+C sur une commande arrête l'exécution comme le fait Arrêter : Eidos termine la
 commande, capture la session et démonte. Dans le shell interactif, Ctrl+C appartient au
 shell, comme d'habitude ; tapez `exit` pour terminer l'exécution.
 
@@ -179,7 +179,7 @@ ne charge, les prérequis Nexus, les plugins que LOOT signale comme sales, le bu
 Proton qui exécute le jeu, la carte Display et la sortie d'outil plus ancienne que ses
 entrées.
 
-La commande affiche les mêmes lignes système que **Copy report**, puis une ligne par
+La commande affiche les mêmes lignes système que **Copier le rapport**, puis une ligne par
 constat, avec votre dossier personnel écrit `~` et votre nom de connexion `<user>`. Le
 code de sortie est 0 quand aucun problème n'a été trouvé (un simple conseil donne
 quand même 0), 1 quand au moins un problème a été trouvé, et 2 quand Eidos n'a pas pu
@@ -204,8 +204,8 @@ du jeu, la version d'Eidos, le code de sortie et les sauvegardes créées par
 l'exécution. Les 50 plus récentes sont gardées, et `logs/` reste en dehors d'une
 instance empaquetée. `eidos sessions <instance> diff` compare l'exécution de jeu la
 plus récente terminée avec le code 0 à l'état actuel ; `diff <id>` choisit une autre
-fiche dans la liste. La liste marque un [test run](#parties-test) comme `test`, et un test
-run n'est jamais choisi comme dernier bon lancement. Une exécution que vous avez
+fiche dans la liste. La liste marque une [partie test](#parties-test) comme `test`, et une partie
+test n'est jamais choisi comme dernier bon lancement. Une exécution que vous avez
 arrêtée enregistre le code de sortie 143, donc elle n'est jamais choisie non plus.
 Eidos ne détecte pas encore les plantages ici, et un jeu qui a planté sous Proton peut
 quand même se terminer avec le code 0 : si l'exécution choisie était de celles-là,
@@ -228,10 +228,10 @@ La fenêtre travaille sur sa propre copie de la liste de mods et de l'ordre de
 chargement. Si un autre processus Eidos écrit l'une ou l'autre pendant qu'elle est
 ouverte (`eidos install` ou `eidos sort` dans un terminal, une collection, une session
 que Steam a lancée, une seconde fenêtre), la modification suivante de la fenêtre est
-refusée au lieu d'écraser ce travail. Elle recharge depuis le disque et dit *Not saved:
-another Eidos process changed the mod list. It has been reloaded - redo the change.*
+refusée au lieu d'écraser ce travail. Elle recharge depuis le disque et dit *Non enregistré : un autre
+processus Eidos a modifié la liste des mods. Elle a été rechargée, refaites la modification.*
 (ou la même chose pour l'ordre de chargement) ; seul ce clic est perdu, refaites-le
-donc. Rename, New mod, Add separator, Remove et transformer l'Overwrite en mod
+donc. Renommer, Nouveau mod vide, Ajouter un séparateur au-dessus, Supprimer et transformer l'Overwrite en mod
 vérifient avant de toucher à `mods/`, si bien qu'une modification refusée ne change rien
 sur le disque. L'éditeur d'INI refuse de même d'enregistrer par-dessus un fichier qui a
 changé depuis qu'il l'a ouvert.
@@ -252,15 +252,15 @@ Eidos (un téléchargement Steam Cloud depuis un Steam Deck, un lancement sans E
 reste cachée tant que les sauvegardes du profil sont montées. Rien ne la supprime : le
 lancement la nomme dans le journal de l'exécution (le `logs/run-*.log` de l'instance
 pour un lancement depuis la fenêtre, la console de Steam pour un lancement Steam), une
-fois chaque fois que cet ensemble de fichiers change, et l'onglet Saves compte ces
-sauvegardes sur la ligne sous son titre. Pour en jouer une, appuyez sur Import dans
-l'onglet Saves. Import copie chacune avec son cosave dans le profil et ne remplace
+fois chaque fois que cet ensemble de fichiers change, et l'onglet Sauvegardes compte ces
+sauvegardes sur la ligne sous son titre. Pour en jouer une, appuyez sur Importer dans
+l'onglet Sauvegardes. Importer copie chacune avec son cosave dans le profil et ne remplace
 jamais une sauvegarde du profil : une sauvegarde dont le nom est déjà pris par le
 profil est importée sous le nom `orphan-<time>-<name>`.
 
 ## Parties test
 
-Le bouton Test run à côté de Run démarre le jeu comme le fait Run, mais tout ce que le
+Le bouton Partie test, à côté de Lancer, démarre le jeu comme le fait Lancer, mais tout ce que le
 jeu écrit va dans `<instance>/test-run/` au lieu de votre profil, de l'Overwrite et du
 préfixe : sauvegardes nouvelles et modifiées, modifications d'INI, `plugins.txt`,
 fichiers écrits dans Data ou dans le dossier du jeu, et journaux dans
@@ -270,44 +270,44 @@ plugins ont besoin comme masters.
 
 Quand le jeu se termine, Eidos liste ces fichiers en cinq groupes (sauvegardes,
 modifications d'INI, état des plugins, production d'Overwrite, journaux) et vous demande
-de garder ou de jeter chacun. Apply attend que chaque groupe qui contient des fichiers
+de garder ou de jeter chacun. Appliquer attend que chaque groupe qui contient des fichiers
 ait une réponse. L'état des plugins n'est pas proposé quand l'exécution a utilisé un
 autre ensemble de mods que celui du profil. Garder les sauvegardes ne supprime jamais
 une sauvegarde du profil, même une que le jeu a supprimée pendant l'exécution. Garder
 la production d'Overwrite retire aussi de l'Overwrite les fichiers que le jeu a
 supprimés, et la liste les compte d'abord. Jeter quoi que ce soit demande un second
-appui. Decide later ferme la liste et laisse les fichiers dans `test-run/`, et la liste
+appui. Décider plus tard ferme la liste et laisse les fichiers dans `test-run/`, et la liste
 se rouvre la prochaine fois que vous ouvrez l'instance ou appuyez sur F5. Si Eidos ou
-l'ordinateur s'arrête pendant un test run, les fichiers restent là aussi et la liste
+l'ordinateur s'arrête pendant une partie test, les fichiers restent là aussi et la liste
 s'ouvre de la même façon.
 
-Quand la fenêtre n'a pas été lancée par la boutique du jeu, Test run confie le jeu à
-cette boutique (Steam, Heroic ou Legendary), comme le fait Run, et l'exécution que la
-boutique démarre est le test run. Si la boutique ne démarre pas le jeu, la demande
-attend : la prochaine exécution du jeu de ce profil, depuis Run ou depuis la boutique,
-est le test run, et Cancel the waiting test run l'abandonne. Un test run ne couvre que
+Quand la fenêtre n'a pas été lancée par la boutique du jeu, Partie test confie le jeu à
+cette boutique (Steam, Heroic ou Legendary), comme le fait Lancer, et l'exécution que la
+boutique démarre est la partie test. Si la boutique ne démarre pas le jeu, la demande
+attend : la prochaine exécution du jeu de ce profil, depuis Lancer ou depuis la boutique,
+est la partie test, et Annuler la partie test en attente l'abandonne. Une partie test ne couvre que
 les dossiers listés ci-dessus : les autres écritures du jeu, comme le registre de Wine,
-vont là où elles vont toujours. Les sauvegardes d'un test run n'atteignent Steam Cloud
+vont là où elles vont toujours. Les sauvegardes d'une partie test n'atteignent Steam Cloud
 qu'après que vous les avez gardées et joué une exécution normale.
 
 ### Trouver le mod à l'origine d'un problème
 
-Find the mod behind a problem, dans l'onglet Diagnostics, cherche le mod qui cause un
+Trouver le mod à l'origine d'un problème, dans l'onglet Diagnostics, cherche le mod qui cause un
 problème que vous pouvez reproduire, comme un plantage à un endroit donné. Chaque étape
-est un test run avec la moitié des suspects restants, les masters dont ils ont besoin
+est une partie test avec la moitié des suspects restants, les masters dont ils ont besoin
 et les mods que vous gardez toujours activés : les mods activés sélectionnés dans la
 liste au moment du départ, et le mod qui fournit le script extender. Après chaque
-exécution, vous répondez si le problème s'est produit. Not sure répartit les suspects
-autrement, et Run it again répète l'étape. Répondre, ou appuyer sur Run it again, jette
+exécution, vous répondez si le problème s'est produit. « Je ne sais pas » répartit les suspects
+autrement, et Relancer répète l'étape. Répondre, ou appuyer sur Relancer, jette
 les fichiers que l'étape a écrits, après un second appui. Pour en garder, appuyez
-d'abord sur See the files : cela ouvre la même liste qu'après un test run. Quand le jeu
+d'abord sur Voir les fichiers : cela ouvre la même liste qu'après une partie test. Quand le jeu
 a planté et qu'un enregistreur de plantages a écrit un journal, ou que le jeu s'est
-terminé avec un code d'erreur, Eidos marque Yes comme la réponse probable. 200 suspects
+terminé avec un code d'erreur, Eidos marque « Oui, il s'est produit » comme la réponse probable. 200 suspects
 demandent environ 8 exécutions.
 
 La recherche est enregistrée dans `<instance>/bisect.json`, si bien que vous pouvez
 fermer Eidos entre deux étapes, et elle appartient au profil dans lequel elle a
-commencé. Stop the search l'abandonne après un second appui. Le résultat nomme le mod,
+commencé. Arrêter la recherche l'abandonne après un second appui. Le résultat nomme le mod,
 ou l'ensemble de mods qui ont besoin des masters les uns des autres, et il est gardé
 dans `<instance>/logs/bisect-<time>.txt`. Les mods générés (une sortie de Nemesis ou de
 DynDOLOD, un Bashed Patch) sont construits pour la liste complète et peuvent échouer
@@ -346,14 +346,14 @@ l'installation de la boutique n'est que l'endroit où Eidos monte le résultat. 
 boutique démarre toujours le jeu, si bien que Steam garde son overlay, son cache de
 shaders et ses sauvegardes cloud.
 
-La carte Game files, en haut de l'onglet Diagnostics, montre quels fichiers l'instance
+La carte Fichiers du jeu, en haut de l'onglet Diagnostics, montre quels fichiers l'instance
 exécute, avec la version du jeu de la copie et de l'installation de la boutique, et
 bascule entre les deux. Dans un terminal, `eidos stock-game <instance>` affiche les
 mêmes faits, et `use <folder>`, `store`, `freeze` et `delete --yes` font ce que font les
 boutons de la carte. `freeze` affiche la taille et le genre de copie, et `freeze --yes`
 copie.
 
-**Freeze this version** copie l'installation de la boutique dans `<instance>/Stock Game`
+**Figer cette version** copie l'installation de la boutique dans `<instance>/Stock Game`
 et exécute le jeu depuis elle, si bien qu'une mise à jour de la boutique ne casse plus
 les plugins du script extender : la mise à jour change l'installation de la boutique,
 pas la copie. Le premier appui montre la taille et ce que le système de fichiers en
@@ -365,7 +365,7 @@ jeu. Eidos refuse tant que Steam signale le jeu occupé ou pas entièrement inst
 tant qu'un jeu ou un outil de l'instance tourne, quand l'instance contient déjà la
 copie du jeu d'une liste, une copie figée ou une copie inachevée, et quand le système de
 fichiers a moins d'espace libre qu'une copie complète n'en demande. Les copies Heroic et
-Legendary ne sont pas vérifiées pour une mise à jour en cours. Un Stop, un échec, ou une
+Legendary ne sont pas vérifiées pour une mise à jour en cours. Un appui sur Arrêter, un échec ou une
 mise à jour Steam du jeu pendant la copie laisse `Stock Game.eidos-tmp`, que la carte
 propose de supprimer ; il n'est jamais utilisé.
 
@@ -376,9 +376,9 @@ Elle ne masque pas ce qui se passe hors du dossier du jeu : une mise à jour peu
 installer des runtimes dans le préfixe Proton au lancement suivant, et Steam peut faire
 passer le jeu à un autre Proton.
 
-**Return to the store version** retire la copie du lancement suivant après un second
-appui. La copie reste sur le disque, et **Delete the copy** la supprime, là encore après
-un second appui. Delete est refusé tant que l'instance exécute encore la copie. Eidos ne
+**Revenir à la version de la boutique** retire la copie du lancement suivant après un second
+appui. La copie reste sur le disque, et **Supprimer la copie** la supprime, là encore après
+un second appui. La suppression est refusée tant que l'instance exécute encore la copie. Eidos ne
 supprime jamais le dossier `Stock Game` ou `Game Root` propre à une liste. Si le dossier
 de la copie disparaît, ou ne contient plus l'exécutable du jeu, les lancements sont
 refusés et Diagnostics nomme le dossier, si bien que la version de la boutique ne
@@ -395,19 +395,19 @@ eidos collection skyrimse rqhcxy --dry-run      # la lire et dire ce qui se pass
 eidos collection skyrimse rqhcxy --no-optional  # sauter les membres qu'elle marque facultatifs
 ```
 
-Dans la fenêtre, collez le lien dans **File -> Open a Nexus collection...**, ou cliquez
+Dans la fenêtre, collez le lien dans **Fichier -> Ouvrir une collection Nexus...**, ou cliquez
 sur l'un d'eux sur le site. Eidos liste les membres de la révision, chacun comparé à
-cette instance : installé, téléchargé ou manquant. *Install this collection* exécute
+cette instance : installé, téléchargé ou manquant. *Installer cette collection* exécute
 toute la recette sur un thread de travail, avec la barre de progression qu'utilisent
 les tâches d'empaquetage et de dépaquetage, et la barre devient le rapport à la fin. La
 fenêtre et `eidos collection` lancent la même installation.
 
-Sans lien, **File -> Open a Nexus collection...** s'ouvre sur l'onglet **Browse**. Il
+Sans lien, **Fichier -> Ouvrir une collection Nexus...** s'ouvre sur l'onglet **Parcourir**. Il
 liste les collections publiées pour le jeu de l'instance ouverte, 20 à la fois, triées
 par téléchargements, mise à jour récente ou nouveauté, et la zone de recherche réduit la
 liste aux collections dont le nom ou le texte correspond. Chaque ligne donne l'auteur,
-la dernière révision, le nombre de mods, les téléchargements et une date. **View** ouvre
-la dernière révision de cette collection dans l'onglet **Link**, comme en collant son
+la dernière révision, le nombre de mods, les téléchargements et une date. **Voir** ouvre
+la dernière révision de cette collection dans l'onglet **Lien**, comme en collant son
 lien. Les collections marquées pour adultes sont écartées sauf si votre compte Nexus
 affiche le contenu adulte, les collections sans note sont toujours écartées, et la ligne
 sous la liste compte les deux. Parcourir demande un compte Nexus connecté, comme le
@@ -481,14 +481,14 @@ membres sont cherchés dans `downloads/` à chaque exécution, si bien que la co
 termine à mesure que vous les fournissez.
 
 Dans la fenêtre, un compte gratuit a
-*Fetch the N missing required files, one by one* dans le volet de la collection à la
+*Récupérer un par un les N fichiers requis manquants* dans le volet de la collection à la
 place de la récupération par lot. Il ouvre la page du premier fichier requis manquant
 sur Nexus, attend que ce fichier arrive dans `downloads/`, puis ouvre le suivant. Vous
 appuyez toujours vous-même sur le bouton de téléchargement de la page pour chaque
-fichier. Le volet montre où il en est (*3 of 12*), avec *Skip* et *Stop*. Quand un autre
+fichier. Le volet montre où il en est (*3 sur 12*), avec *Passer* et *Arrêter*. Quand un autre
 fichier du même mod arrive à la place, le volet nomme les deux identifiants de fichier
 et continue d'attendre celui qui est visé. Les membres facultatifs n'en font pas partie
-et gardent leur propre bouton *Open*.
+et gardent leur propre bouton *Ouvrir*.
 
 Eidos applique aussi les patchs binaires (chacun vérifié contre son CRC enregistré), les
 remplacements de fichiers (les fichiers nommés sont masqués avec `.mohidden`, comme le
@@ -515,7 +515,7 @@ déplacez plus tard deux de ses mods contre une règle d'avant ou d'après, l'on
 Diagnostics montre une carte pour cette collection, nommant la première paire de ce
 genre et comptant les règles qui ne tiennent plus. Seuls les mods activés dans le
 profil actuel comptent, et les règles prises dans une boucle sont sautées, parce
-qu'aucun ordre ne peut les respecter. **Restore collection order** remet les mods de la
+qu'aucun ordre ne peut les respecter. **Restaurer l'ordre de la collection** remet les mods de la
 collection dans un ordre qui respecte chaque règle, garde votre propre ordre partout où
 les règles le permettent, et laisse où ils sont les mods qui ne sont pas dans la
 collection. Ctrl+Z l'annule. `eidos check` liste le même constat sous le nom
@@ -608,9 +608,9 @@ un avertissement disant que les données de récupération n'ont pas été utili
 | `logs/`, `.eidos.lock`, `prereqs.done`, `prereqs.log` | Des enregistrements de la machine qui a fait la sauvegarde. `prereqs.done` en particulier affirmerait que les bibliothèques runtime sont déjà installées dans un préfixe qui n'est pas là. |
 | `loot/`, sauf `userlist.yaml` | Un cache de masterlist qu'Eidos récupère de nouveau à la demande. Vos propres règles LOOT dans `userlist.yaml` ne peuvent pas être récupérées de nouveau, donc ce seul fichier est inclus. |
 | `.base/`, `.base-root/` | Des points de montage vides où les propres fichiers du jeu sont mis de côté pendant une session. |
-| `test-run/`, `bisect.json` | Un [test run](#parties-test) en attente de sa revue, et une recherche du mod derrière un problème entre deux étapes. Les deux appartiennent à des exécutions de cette machine. |
+| `test-run/`, `bisect.json` | Une [partie test](#parties-test) en attente d'examen, et une recherche du mod à l'origine d'un problème entre deux étapes. Les deux appartiennent à des exécutions de cette machine. |
 | Les fichiers à moitié écrits | Un téléchargement en pause (`*.unfinished`), une écriture atomique en cours (`*.eidos-tmp*`). |
-| Les liens symboliques | 7-Zip en suivrait un et copierait ce qu'il désigne, ce qui, pour un lien absolu, revient à tirer une arborescence étrangère dans votre sauvegarde. Ils sont signalés à la place, et la sauvegarde compte comme incomplète : un `mods/` ou un `downloads/` lié vers un autre disque n'est pas empaqueté. Pour sauvegarder volontairement sans un `downloads/` lié, passez `--no-downloads` (ou décochez *Include downloads/* dans la fenêtre) ; une exclusion délibérée ne compte pas comme un manque. |
+| Les liens symboliques | 7-Zip en suivrait un et copierait ce qu'il désigne, ce qui, pour un lien absolu, revient à tirer une arborescence étrangère dans votre sauvegarde. Ils sont signalés à la place, et la sauvegarde compte comme incomplète : un `mods/` ou un `downloads/` lié vers un autre disque n'est pas empaqueté. Pour sauvegarder volontairement sans un `downloads/` lié, passez `--no-downloads` (ou décochez *Inclure downloads/* dans la fenêtre) ; une exclusion délibérée ne compte pas comme un manque. |
 
 Une copie du jeu dans l'instance (`Stock Game`) est empaquetée comme tout autre dossier,
 si bien que la sauvegarde d'une instance figée est plus grosse de la taille du jeu. Une
@@ -629,15 +629,15 @@ si bien que le téléchargement peut être retrouvé.
 
 ### Dans la fenêtre
 
-Les deux sont dans le menu **File** : *Pack this instance...* et *Unpack a backup...*.
+Les deux sont dans le menu **Fichier** : *Archiver cette instance...* et *Restaurer une archive...*.
 Le dépaquetage est aussi sur l'écran d'accueil, sous la liste des instances, si bien
 qu'une machine sans instance peut en dépaqueter une.
 
-Avant que quoi que ce soit soit écrit, la boîte de dialogue Pack montre combien de
+Avant que quoi que ce soit soit écrit, la boîte de dialogue Archiver cette instance montre combien de
 fichiers, quelle taille, quelle part en est `downloads/`, à peu près ce que fera
-l'archive, et quels outils sont nommés mais non portés. Sa case *Write recovery data*
+l'archive, et quels outils sont nommés mais non portés. Sa case *Écrire des données de récupération à côté*
 est cochée quand par2 est installé, et grisée avec le paquet à installer quand il ne
-l'est pas. La boîte de dialogue Unpack lit le manifeste de la sauvegarde dès que vous
+l'est pas. La boîte de dialogue Restaurer une archive lit le manifeste de la sauvegarde dès que vous
 choisissez le fichier, si bien qu'elle peut vous dire quel jeu elle contient, quand elle
 a été faite, où elle vivait et lesquels de ses outils manquent ici, avant que vous
 choisissiez un dossier.
@@ -683,8 +683,8 @@ telle quelle au lieu d'en créer une nouvelle par-dessus, et un dossier qui appa
 un autre jeu est refusé.
 
 La fenêtre principale a deux volets : la liste de mods, et les onglets Data, Plugins,
-Conflicts, Overwrite, Archives, Saves, Downloads et Diagnostics, avec un bouton Run, un
-bouton Test run ([Parties test](#parties-test)) et un sélecteur de cible d'exécution. Vous
+Conflits, Overwrite, Archives, Sauvegardes, Téléchargements et Diagnostics, avec un bouton Lancer, un
+bouton Partie test ([Parties test](#parties-test)) et un sélecteur de cible d'exécution. Vous
 filtrez la liste de mods, sélectionnez, réordonnez, regroupez avec des séparateurs,
 restreignez par catégorie et faites un clic droit pour les actions. Outre l'envoi tout
 en haut et tout en bas, le menu d'un mod a les déplacements ciblés de MO2 : envoyer
@@ -692,45 +692,45 @@ au-dessus du premier mod en conflit, en dessous du dernier, à une priorité don
 dans le groupe d'un séparateur.
 
 Le sélecteur de profil change de profil. Faites un clic droit sur un profil pour
-Rename, Copy to new..., Desktop shortcut, Import from MO2... et delete, qui demande deux
-clics et refuse le profil actif ou le dernier. Import from MO2... reprend l'ordre des
-mods et l'ordre de chargement d'un profil MO2. Desktop shortcut écrit une entrée de
+Renommer, Copier vers un nouveau..., Raccourci de bureau, Importer depuis MO2... et Supprimer, qui demande deux
+clics et refuse le profil actif ou le dernier. Importer depuis MO2... reprend l'ordre des
+mods et l'ordre de chargement d'un profil MO2. Raccourci de bureau écrit une entrée de
 bureau qui exécute `eidos tool <instance> run "<game>" --profile <name>` : elle fait de
 ce profil le profil actif et demande à la boutique de démarrer le jeu (détails dans
 [tools.md](tools.md#atteindre-un-outil--masquer-épingler-et-un-raccourci-de-bureau)).
 
-Le menu **File** lance aussi winecfg, regedit, l'explorateur de fichiers de Wine et le
-désinstalleur dans le préfixe du jeu, et Prefix drive_c ouvre le lecteur `C:` du
+Le menu **Fichier** lance aussi winecfg, regedit, l'explorateur de fichiers de Wine et le
+désinstalleur dans le préfixe du jeu, et drive_c du préfixe ouvre le lecteur `C:` du
 préfixe ; voir [tools.md](tools.md#les-programmes-propres-à-wine-dans-le-préfixe-du-jeu).
-*Instances...* liste les instances qu'Eidos connaît ; Forget en retire une de cette
-liste et ne touche à rien sur le disque. *Export the mod list...* écrit la liste au
+*Instances...* liste les instances qu'Eidos connaît ; Oublier en retire une de cette
+liste et ne touche à rien sur le disque. *Exporter la liste des mods...* écrit la liste au
 format CSV de MO2, comme le fait `eidos export`.
 
 ### Préférences
 
-Cliquez sur **Eidos**, en haut à gauche, pour ouvrir Preferences à la place des deux
-volets, et cliquez de nouveau dessus (ou sur **Close**) pour revenir. General,
-Appearance et Accessibility viennent en premier, comme dans chaque programme Colony,
-puis Mod list, Nexus et About. Chaque changement s'applique et s'enregistre aussitôt ;
-il n'y a pas de bouton Save.
+Cliquez sur **Eidos**, en haut à gauche, pour ouvrir les Préférences à la place des deux
+volets, et cliquez de nouveau dessus (ou sur **Fermer**) pour revenir. Général,
+Apparence et Accessibilité viennent en premier, comme dans chaque programme Colony,
+puis Liste des mods, Nexus et À propos. Chaque changement s'applique et s'enregistre aussitôt ;
+il n'y a pas de bouton Enregistrer.
 
-- General : le jeu qu'Eidos ouvre, la taille de la fenêtre, la langue de l'interface, le
-  dossier d'outils, et la façon dont un jeu est lancé. Lock the window while a game runs
-  est activé par défaut. Start the game at once when a store opens Eidos, et la
+- Général : le jeu qu'Eidos ouvre, la taille de la fenêtre, la langue de l'interface, le
+  dossier d'outils, et la façon dont un jeu est lancé. Verrouiller la fenêtre pendant le jeu
+  est activé par défaut. Lancer le jeu directement quand une boutique ouvre Eidos, et la
   notification de bureau qui dit quand une longue tâche se termine pendant que la
   fenêtre est en arrière-plan, sont désactivés par défaut. La fenêtre parle anglais et
-  français ; System suit `LC_ALL`, `LC_MESSAGES` ou `LANG`, et le changement s'applique
+  français ; Système suit `LC_ALL`, `LC_MESSAGES` ou `LANG`, et le changement s'applique
   aussitôt. La ligne de commande `eidos` répond toujours en anglais.
-- Appearance : le thème (26 familles, 59 palettes, le parchemin d'Eidos par défaut), la
+- Apparence : le thème (26 familles, 59 palettes, le parchemin d'Eidos par défaut), la
   couleur d'accent, la taille du texte, les effets et un aperçu en direct.
-- Accessibility : le contraste élevé, une police adaptée à la dyslexie, la réduction des
-  animations et une taille de texte de lecture qui se multiplie avec celle d'Appearance.
-- Mod list : la vitesse de défilement automatique pendant qu'un mod est glissé vers le
+- Accessibilité : le contraste élevé, une police adaptée à la dyslexie, la réduction des
+  animations et une taille de texte de lecture qui se multiplie avec celle d'Apparence.
+- Liste des mods : la vitesse de défilement automatique pendant qu'un mod est glissé vers le
   bord haut ou bas de la liste.
 - Nexus : la connexion, le dossier de téléchargements, le gestionnaire `nxm://` et son
-  bouton Register, les serveurs préférés, Install downloads when they finish, et le mode
+  bouton Enregistrer Eidos pour les liens nxm, les serveurs préférés, Installer les téléchargements dès qu'ils sont terminés, et le mode
   hors ligne.
-- About : où vivent les fichiers, les raccourcis clavier, la version et la vérification
+- À propos : où vivent les fichiers, les raccourcis clavier, la version et la vérification
   de version.
 
 L'apparence et la langue de l'interface vivent dans
@@ -739,10 +739,10 @@ lit aussi (le jeu par défaut, le dossier d'outils, les serveurs Nexus, le mode 
 et le reste), vivent dans `settings.ini` à côté, et la session Nexus dans `nexus.ini`. Le
 thème qu'un Eidos plus ancien gardait dans `settings.ini` est repris la première fois.
 
-**About -> Version** contient la vérification de version, activée par défaut. Au
+**À propos -> Version** contient la vérification de version, activée par défaut. Au
 démarrage, au plus une fois par jour, Eidos demande à GitHub la dernière version de
 `Project-Colony/Eidos`. Quand elle est plus récente que la copie en cours, la barre de
-menus montre `Eidos <version> is available: release notes` après Help, et le lien ouvre
+menus montre `Eidos <version> est disponible : notes de version` après Aide, et le lien ouvre
 la page de cette version avec son journal des modifications. Eidos ne se télécharge ni ne
 se remplace jamais lui-même. La vérification est sautée en mode hors ligne. Elle est
 désactivée pour une copie installée sous `/usr` par un gestionnaire de paquets, qui la
@@ -751,9 +751,9 @@ propre installation.
 
 ### Colonnes, tri et regroupement
 
-La liste montre quatre colonnes par défaut (Category, Content, Version et Flags, celles
-que montre MO2) et en propose huit : Category, Content, Version, Author, Installed,
-Nexus id, Game, Flags. Cochez-les dans le menu View. Avec les huit activées, la colonne
+La liste montre quatre colonnes par défaut (Catégorie, Contenu, Version et Indicateurs, celles
+que montre MO2) et en propose huit : Catégorie, Contenu, Version, Auteur, Installé,
+Id Nexus, Jeu, Indicateurs. Cochez-les dans le menu Affichage. Avec les huit activées, la colonne
 du nom a peu de place.
 
 Cliquez sur un en-tête pour trier dessus, de nouveau pour inverser, et une troisième fois
@@ -761,9 +761,9 @@ pour revenir à l'ordre de chargement. La liste ne peut être glissée qu'en ord
 chargement : une position de dépôt désigne la vraie liste, et sous un tri la place d'une
 ligne à l'écran n'est pas sa place dans cette liste. Tant qu'un tri est actif, les
 bandes d'insertion ne sont pas dessinées et un glisser est refusé, comme dans MO2. Le
-menu View le dit et propose le chemin du retour.
+menu Affichage le dit et propose le chemin du retour.
 
-Le menu View peut aussi regrouper toute la liste, par catégorie ou par source (depuis
+Le menu Affichage peut aussi regrouper toute la liste, par catégorie ou par source (depuis
 Nexus, ou installé à la main). Les en-têtes de groupe ne sont pas des séparateurs : on ne
 peut ni les renommer, ni les colorer, ni les déplacer. Ils se replient, et un en-tête
 replié garde son compte. Les séparateurs sont masqués tant qu'un tri ou un regroupement
@@ -779,7 +779,7 @@ reste au lieu de rester sur le premier. Aucun ne s'arrête sur une ligne que le 
 séparateur replié ou un groupe replié masque, si bien que la prochaine pression sur
 Espace ne bascule jamais un mod que vous ne voyez pas.
 
-« Collapse others » dans le menu d'un séparateur replie tous les groupes sauf celui-là.
+« Replier les autres » dans le menu d'un séparateur replie tous les groupes sauf celui-là.
 Pendant un glisser, maintenir le pointeur immobile sur un groupe replié l'ouvre, si bien
 que le mod peut être déposé dedans ; passer dessus ne l'ouvre pas.
 
@@ -792,23 +792,23 @@ une annulation au-delà de l'un d'eux est refusée.
 
 ### Filtrer la liste
 
-Le bouton Filters ouvre une ligne par critère : active, conflicted, update available,
-no category, endorsed, tracked, has a Nexus id, has hidden files, no valid game data,
-for another game, has notes, et une ligne par type de contenu (plugins, archives BSA ou
+Le bouton Filtres ouvre une ligne par critère : actifs, en conflit, mise à jour disponible,
+sans catégorie, recommandés, suivis, avec un id Nexus, avec des fichiers masqués, sans données de jeu valides,
+pour un autre jeu, avec des notes, et une ligne par type de contenu (plugins, archives BSA ou
 BA2, textures, meshes, scripts, plugins de script extender, fichiers d'interface, son,
-FaceGen). Un clic fait passer une ligne par off, only et except. La ligne du haut
+FaceGen). Un clic fait passer une ligne d'inactive à « seulement » puis à « sauf ». La ligne du haut
 bascule entre correspondre à tous les critères activés et correspondre à l'un d'eux. La
 zone de nom et la liste des catégories restreignent toujours davantage le résultat. La
 ligne des fichiers masqués ne regarde que les mods activés.
 
 ### Ce que la liste vous dit d'un mod
 
-Deux drapeaux consultatifs, chacun un glyphe avec l'explication au survol. No valid game
-data veut dire que rien en haut du mod ne ressemble à quelque chose que ce jeu charge ;
+Deux drapeaux consultatifs, chacun un glyphe avec l'explication au survol. « Sans données de jeu
+valides » veut dire que rien en haut du mod ne ressemble à quelque chose que ce jeu charge ;
 il lui faut peut-être que ses dossiers remontent d'un niveau, ou ce n'est peut-être pas
-un mod pour ce jeu. Another game veut dire que le `meta.ini` du mod nomme un autre jeu.
-Aucun des deux ne bloque quoi que ce soit : le mod se déploie quand même. « Mark as
-valid » dans le menu de la ligne fait taire l'un comme l'autre par la clé `validated=`
+un mod pour ce jeu. « Pour un autre jeu » veut dire que le `meta.ini` du mod nomme un autre jeu.
+Aucun des deux ne bloque quoi que ce soit : le mod se déploie quand même. « Marquer comme
+valide » dans le menu de la ligne fait taire l'un comme l'autre par la clé `validated=`
 propre à MO2, si bien qu'un mod marqué valide dans un gestionnaire n'est pas signalé
 dans l'autre.
 
@@ -820,32 +820,32 @@ données de jeu valides.
 
 Avant qu'un mod soit désactivé ou retiré, Eidos lit les listes de plugins des trois
 sauvegardes les plus récentes du profil. Quand l'une d'elles utilise un plugin de ce
-mod, une barre au-dessus de la liste nomme les plugins et attend Disable anyway ou
-Cancel (Échap annule aussi). Remove ajoute les mêmes noms à son message de reclic. Seules
+mod, une barre au-dessus de la liste nomme les plugins et attend « Désactiver quand même » ou
+Annuler (Échap annule aussi). Supprimer ajoute les mêmes noms à son message de reclic. Seules
 les sauvegardes de Skyrim et de Fallout 4 sont lues ; les autres jeux désactivent sans
 demander.
 
-L'onglet General des informations d'un mod liste les mods dont il a besoin et ceux qui
+L'onglet Général des informations d'un mod liste les mods dont il a besoin et ceux qui
 ont besoin de lui, lus dans les masters des plugins activés. Désactiver un mod dont
-d'autres ont besoin montre la même barre avec Disable them too, qui désactive aussi
-chaque mod qui en a besoin et les mods qui ont besoin de ceux-là, ou Keep them enabled.
-La carte des masters manquants de l'onglet Diagnostics a Enable what provides them : elle
+d'autres ont besoin montre la même barre avec « Les désactiver aussi », qui désactive aussi
+chaque mod qui en a besoin et les mods qui ont besoin de ceux-là, ou « Les laisser activés ».
+La carte des masters manquants de l'onglet Diagnostics a « Activer ce qui les fournit » : elle
 active le mod qui contient chaque master manquant et coche un plugin master présent mais
 non coché.
 
 ### Sauvegarder un mod avant d'y toucher
 
-« Back up this mod » copie son dossier à côté sous le nom `<name>_backup` (puis
+« Sauvegarder ce mod » copie son dossier à côté sous le nom `<name>_backup` (puis
 `_backup2`, et ainsi de suite ; une sauvegarde ne remplace jamais la précédente). La
 copie n'est pas un mod : sa case ne fait rien et elle n'ajoute rien à la vue fusionnée,
-parce que la cocher déploierait deux copies d'un même mod l'une sur l'autre. « Restore
-this backup over the mod » la remet en place, en deux clics ; le contenu actuel est
+parce que la cocher déploierait deux copies d'un même mod l'une sur l'autre. « Restaurer
+cette sauvegarde sur le mod » la remet en place, en deux clics ; le contenu actuel est
 d'abord mis de côté et n'est jeté qu'une fois la copie réussie.
 
-**Backups** dans la barre d'outils garde des points de restauration de la liste de mods
+**Sauvegardes** dans la barre d'outils garde des points de restauration de la liste de mods
 du profil, de son ordre de chargement (`plugins.txt` et `loadorder.txt` ensemble) et de
-ses INI du jeu, 10 de chaque, dans `<profile>/backups/`. Back up now en ajoute un, et
-Restore sauvegarde d'abord l'état actuel, si bien qu'un mauvais choix peut être annulé.
+ses INI du jeu, 10 de chaque, dans `<profile>/backups/`. Sauvegarder maintenant en ajoute un, et
+Restaurer sauvegarde d'abord l'état actuel, si bien qu'un mauvais choix peut être annulé.
 Eidos garde aussi un point de restauration des INI avant chaque exécution de BethINI
 (voir [tools.md](tools.md#bethini-pie)).
 
@@ -856,16 +856,16 @@ dossier lit ce dossier dans chaque couche qui l'a, jamais chaque mod activé d'u
 est construit à partir de la même pile de couches que celle que sert le montage, si bien
 que les whiteouts et les fichiers masqués sont respectés et que l'onglet montre ce que le
 jeu verra. Filtrez-le par nom, restreignez-le aux fichiers contestés, démêlez ce qui est
-où avec les colonnes Size et Modified, et faites Reveal sur n'importe quelle ligne dans
+où avec les colonnes Taille et Modifié, et faites Localiser sur n'importe quelle ligne dans
 un gestionnaire de fichiers. Survoler un fichier liste les autres mods qui le livrent. Les
 `meta.ini`, `readme.txt`, `fomod/` et `Root/` de premier niveau d'un mod sont laissés hors
 de Data, dans cet onglet et dans le montage : les trois premiers sont pour le gestionnaire
 de mods, et `Root/` va plutôt dans le dossier du jeu. Un fichier que le jeu ou un outil
 écrit sous l'un de ces noms atterrit dans l'Overwrite et reste visible.
 
-Une ligne `.exe` dans Data a Add tool, qui ouvre l'éditeur Executables avec ce fichier
-renseigné (rien n'est enregistré avant d'appuyer sur Save), et Run, qui le lance une fois
-à travers la vue fusionnée comme un outil enregistré ([Outils](#outils)). Save tree écrit
+Une ligne `.exe` dans Data a un bouton Ajouter, qui ouvre l'éditeur Exécutables avec ce fichier
+renseigné (rien n'est enregistré avant d'appuyer sur Enregistrer), et un bouton Lancer, qui le lance une fois
+à travers la vue fusionnée comme un outil enregistré ([Outils](#outils)). Enregistrer l'arbre écrit
 tout l'arbre Data fusionné dans un fichier texte, une ligne par fichier avec le mod qui le
 fournit, votre dossier personnel et votre nom d'utilisateur retirés, pour un rapport de
 bug.
@@ -873,9 +873,9 @@ bug.
 **Plugins** est l'ordre de chargement ESP/ESM/ESL : basculez, réordonnez à la main, ou
 triez avec LOOT et lisez le rapport après tri, dont les liens de conseils s'ouvrent dans
 votre navigateur. Son en-tête compte les plugins activés dans chaque espace d'index
-contre la limite du jeu, par exemple `full 231/254, light 512/4096`, et devient orange
+contre la limite du jeu, par exemple `pleins 231/254, légers 512/4096`, et devient orange
 quand l'un est plein. La zone de filtre restreint la liste par nom. Espace, Ctrl+A, les
-plages avec Maj et les entrées Activate all shown et Deactivate all shown du menu de la
+plages avec Maj et les entrées Activer les plugins affichés et Désactiver les plugins affichés du menu de la
 ligne n'agissent alors que sur les lignes affichées, et un glisser est refusé tant que le
 filtre n'est pas effacé. Sélectionner un plugin teinte ses masters dans la liste de
 plugins et le mod qui le livre dans la liste de mods. Les plugins que LOOT signale comme
@@ -883,7 +883,7 @@ sales ont une carte Diagnostics qui peut les nettoyer avec xEdit
 ([tools.md](tools.md#nettoyer-un-plugin-que-loot-signale-comme-sale)).
 
 Après un tri LOOT, un plugin complet dont tous les nouveaux enregistrements tiennent dans
-la plage légère le dit au survol, et le menu de sa ligne a Flag as light. Eidos écrit une
+la plage légère le dit au survol, et le menu de sa ligne a « Marquer léger, dans un nouveau mod ». Eidos écrit une
 copie avec l'indicateur léger dans un nouveau mod nommé `<plugin> (light)` en bas de la
 liste de mods (la priorité la plus haute) et laisse l'original tranquille, si bien que
 désactiver ce mod l'annule. Il refuse quand l'une des trois sauvegardes les plus récentes
@@ -898,91 +898,91 @@ LOOT, les messages de LOOT. Sur Skyrim, Skyrim SE, Skyrim VR et Enderal SE, le j
 aussi un INI nommé d'après un plugin chargé ; la colonne INI marque ces plugins, et un
 clic ouvre ce fichier en lecture seule.
 
-**Conflicts** explique les gagnants et les perdants fichier par fichier. **Overwrite**
+**Conflits** explique les gagnants et les perdants fichier par fichier. **Overwrite**
 transforme en une étape ce que le jeu a écrit en un vrai mod.
 
 **Archives** liste chaque BSA ou BA2 que livrent les mods activés, le mod d'où il vient et
 pourquoi il se charge : un plugin actif du même nom, ou l'INI l'enregistre. Une archive que
 rien ne charge est marquée comme poids mort. Quand un autre mod livre une archive du même
-nom qui gagne le conflit, la ligne nomme ce mod. Extract décompresse une archive dans un
+nom qui gagne le conflit, la ligne nomme ce mod. Extraire décompresse une archive dans un
 nouveau mod nommé d'après elle sans son extension (`Foo.ba2` donne `Foo (extracted)`) et
 laisse l'archive dans son mod ; les fichiers libres l'emportent sur les fichiers de
 n'importe quelle archive, quel que soit l'ordre des mods.
 
-**Saves** lit l'en-tête de chaque sauvegarde (personnage, niveau, lieu, temps de jeu),
+**Sauvegardes** lit l'en-tête de chaque sauvegarde (personnage, niveau, lieu, temps de jeu),
 compare la liste de plugins qui y est stockée à l'actuelle, et a un bouton qui active les
 mods dont elle a besoin. Les sauvegardes arrivées dans le préfixe sans Eidos sont décrites
 sous [Les sauvegardes appartiennent au profil](#les-sauvegardes-appartiennent-au-profil).
 
-**Downloads** et **Diagnostics** ont leurs propres sections plus bas.
+**Téléchargements** et **Diagnostics** ont leurs propres sections plus bas.
 
 ### Informations d'un mod
 
-« Information... » ouvre une boîte de dialogue par mod avec les onglets General,
-Conflicts, Filetree, INI Tweaks, Notes, Nexus files et Nexus page. Depuis le filetree (et
+« Informations... » ouvre une boîte de dialogue par mod avec les onglets Général,
+Conflits, Fichiers, Réglages INI, Notes, Fichiers Nexus et Page Nexus. Depuis l'onglet Fichiers (et
 depuis l'arbre Data), n'importe quel fichier peut être masqué : il est renommé en
 `<name>.mohidden`, ce qui le retire de la vue fusionnée sans le supprimer, si bien que
 quelques fichiers égarés d'un mod peuvent être supprimés sans changer les priorités. Le
-filetree fait aussi les opérations ordinaires sur les fichiers : nouveau dossier,
+l'onglet Fichiers fait aussi les opérations ordinaires sur les fichiers : nouveau dossier,
 renommer, supprimer, ouvrir. Chacune refuse un chemin qui n'est pas un simple chemin à
 l'intérieur de ce mod : pas de `..`, pas de chemin absolu et pas de lien symbolique en
-route, puisqu'en suivre un pourrait supprimer un fichier hors du dossier du mod. Rename ne
+route, puisqu'en suivre un pourrait supprimer un fichier hors du dossier du mod. Renommer ne
 change que la dernière partie du chemin, si bien qu'il ne déplace jamais un fichier, et il
-refuse un nom déjà pris. Delete demande deux clics et ne peut pas être annulé.
+refuse un nom déjà pris. Supprimer demande deux clics et ne peut pas être annulé.
 
-**View** sur n'importe quelle ligne du filetree ou de l'arbre Data prévisualise le
+**Voir** sur n'importe quelle ligne de l'onglet Fichiers ou de l'arbre Data prévisualise le
 fichier : images, texte, textures DDS (choisissez le mip, la couche, la face et le canal)
 et modèles NIF statiques avec leurs textures diffuses. L'aperçu NIF a besoin de
 `eidos-nif-preview` à côté d'Eidos ou dans le `PATH` ; le paquet de version, le paquet Arch
 et les compilations depuis les sources l'ont, `eidos-linux` non. Le texte est lu jusqu'à
 64 Ko et dit où il s'est arrêté.
 
-**INI Tweaks** liste les fragments qu'un mod livre dans son dossier `INI Tweaks/` ; ceux
+**Réglages INI** liste les fragments qu'un mod livre dans son dossier `INI Tweaks/` ; ceux
 qui sont activés sont fusionnés dans l'INI du jeu du profil au lancement, dans l'ordre de
 priorité, et retirés de nouveau quand les INI de l'exécution sont capturés, si bien que
 désactiver un ajustement retire ses réglages.
 
-L'onglet **Nexus files** liste les fichiers du mod sur Nexus, le plus récent d'abord, et
+L'onglet **Fichiers Nexus** liste les fichiers du mod sur Nexus, le plus récent d'abord, et
 marque celui qui est installé ici et celui qui le remplace. Cette seconde ligne a un bouton
-**Update** ; voir [Mises à jour des mods](#mises-à-jour-des-mods).
+**Mettre à jour** ; voir [Mises à jour des mods](#mises-à-jour-des-mods).
 
-L'onglet **Nexus page** montre la description du mod et, le plus récent d'abord, le
+L'onglet **Page Nexus** montre la description du mod et, le plus récent d'abord, le
 journal des modifications de chaque version de fichier sur sa page. Eidos lit les deux la
 première fois que vous ouvrez l'onglet, par l'API GraphQL de Nexus, qui ne compte pas dans
 le budget horaire de requêtes. Il les garde jusqu'à la fermeture d'Eidos ou jusqu'à ce que
-vous appuyiez sur **Refresh**. Ils sont affichés en texte brut : le formatage BBCode et
+vous appuyiez sur **Actualiser**. Ils sont affichés en texte brut : le formatage BBCode et
 HTML est retiré, l'adresse d'un lien est écrite après son texte, et les images et les
-vidéos sont laissées de côté. **Endorse** et **Track** au-dessus du texte font ce que fait
+vidéos sont laissées de côté. **Recommander** et **Suivre** au-dessus du texte font ce que fait
 le menu contextuel du mod. La page d'un mod pour adultes reste masquée sauf si votre compte
 Nexus affiche le contenu adulte, et une page sans note reste masquée dans tous les cas.
 
 ### Téléchargements
 
-Un téléchargement peut être glissé de la liste Downloads vers une position de la liste de
+Un téléchargement peut être glissé de la liste Téléchargements vers une position de la liste de
 mods pour s'installer à cette priorité, et les archives ou dossiers déposés sur la fenêtre
 depuis un gestionnaire de fichiers s'installent aussi. Les dépôts de fichiers demandent une
 session X11 ou XWayland : winit ne les implémente que pour X11. Les téléchargements peuvent
 être mis en pause et repris : mettre en pause arrête le transfert et garde le fichier
-partiel, et Resume demande à Nexus un lien neuf et continue là où il s'était arrêté.
+partiel, et Reprendre demande à Nexus un lien neuf et continue là où il s'était arrêté.
 
-L'onglet Downloads garde les archives que vous avez téléchargées. Filtrez-le par nom (le
+L'onglet Téléchargements garde les archives que vous avez téléchargées. Filtrez-le par nom (le
 nom convivial du mod aussi, si bien que « skyui » trouve `SkyUI_5_2_SE-12604-5-2SE.7z`),
 triez par plus récent, nom, taille ou état, et masquez une archive dont vous en avez fini :
-le fichier reste et seule la ligne disparaît. « Show hidden » les ramène, et le même bouton
-les démasque. « Remove N installed » supprime les archives des mods que vous avez déjà
+le fichier reste et seule la ligne disparaît. « Afficher les masqués » les ramène, et le même bouton
+les démasque. « Retirer les N installés » supprime les archives des mods que vous avez déjà
 installés, en deux clics, et seulement celles que le filtre montre.
 
-**Preferences -> Nexus -> Install downloads when they finish** est désactivé par défaut.
+**Préférences -> Nexus -> Installer les téléchargements dès qu'ils sont terminés** est désactivé par défaut.
 Activé, un téléchargement Nexus qui se termine pendant que la fenêtre est ouverte
-s'installe sans passer par l'onglet Downloads. C'est l'installation habituelle : un FOMOD
+s'installe sans passer par l'onglet Téléchargements. C'est l'installation habituelle : un FOMOD
 ouvre son installateur, et un nom déjà présent dans la liste de mods demande quoi faire.
 Les archives qui étaient dans `downloads/` avant l'ouverture de la fenêtre ou avant que
 l'option soit activée sont laissées tranquilles, de même qu'un téléchargement dont vous avez
 annulé l'installation. Tant qu'une collection est ouverte dans le volet des collections,
 aucun téléchargement ne s'installe de lui-même, et un téléchargement qui se termine entre
 temps ne s'installera pas de lui-même plus tard non plus ; la collection installe ses
-membres. Le fichier qu'attend un Update en attente est installé par l'Update. Seuls les
-téléchargements Nexus sont installés ainsi, et un téléchargement que le filtre Downloads
+membres. Le fichier qu'attend une mise à jour en attente (bouton Mettre à jour) est installé par cette mise à jour. Seuls les
+téléchargements Nexus sont installés ainsi, et un téléchargement que le filtre de l'onglet Téléchargements
 masque attend que le filtre soit effacé. Pendant un glisser en cours, ou pendant que le jeu
 ou un autre Eidos tient l'instance, l'installation attend.
 
@@ -1001,42 +1001,42 @@ n'est enregistré, quand le fichier installé a été retiré ou archivé, ou qu
 envoyé la liste de fichiers.
 
 Chaque mod utilise le domaine Nexus du jeu que nomme son propre `meta.ini` (`gameName`), pas
-celui de l'instance : la vérification de mise à jour, Endorse, Track et Visit on Nexus y
+celui de l'instance : la vérification de mise à jour, Recommander, Suivre et Voir sur Nexus y
 vont tous. Enderal SE accepte aussi les mods `skyrimspecialedition`, si bien qu'un mod
 Skyrim SE installé dans une instance Enderal SE est vérifié sur sa page Skyrim SE. Un lien
 Mod Manager Download va à l'instance que vous avez utilisée en dernier quand son jeu accepte
 le domaine du lien. Sinon, il va à une instance du jeu dont c'est le propre domaine, avant
 celle d'un jeu qui ne fait que l'accepter. `EIDOS_INSTANCE=<folder>` remplace les deux.
 
-Track et Untrack dans le menu contextuel d'un mod ajoutent le mod à vos mods suivis sur
+Suivre et Ne plus suivre dans le menu contextuel d'un mod ajoutent le mod à vos mods suivis sur
 Nexus ou l'en retirent, si bien que les notifications du site suivent ce que vous suivez
-ici. Endorse et Abstain dans le même menu approuvent le mod sur Nexus ou retirent
+ici. Recommander et S'abstenir dans le même menu approuvent le mod sur Nexus ou retirent
 l'approbation ; le bouton d'approbation à côté du bouton de mise à jour approuve le mod
 sélectionné. Chaque vérification de mise à jour lit aussi vos approbations et vos mods suivis
-sur Nexus (deux requêtes) et règle les drapeaux Endorsed et Tracked de chaque mod pour qu'ils
+sur Nexus (deux requêtes) et règle les drapeaux Recommandé et Suivi de chaque mod pour qu'ils
 correspondent, sur le domaine Nexus propre à ce mod. Quand les deux divergent, Nexus gagne. Si
 l'une des listes ne peut pas être lue, la vérification le dit et laisse ces drapeaux comme ils
 étaient.
 
-Le bouton **Update** de l'onglet Nexus files de « Information... » installe le fichier plus
+Le bouton **Mettre à jour** de l'onglet Fichiers Nexus d'« Informations... » installe le fichier plus
 récent. Avec un compte premium, Eidos télécharge le fichier lui-même. Avec un compte gratuit,
 il ouvre la page du fichier, où Mod Manager Download renvoie le fichier, et l'installation
 démarre quand l'archive arrive dans `downloads/`. À partir de là, c'est l'installation
 habituelle : un FOMOD s'ouvre sur les réponses avec lesquelles le mod a été installé, puis
-l'invite propose Replace avec « Keep a backup of the existing mod » coché, quoi que vous ayez
-choisi à la dernière invite. Replace garde la priorité et l'état activé du mod.
+l'invite propose Remplacer avec « Garder une sauvegarde du mod existant » coché, quoi que vous ayez
+choisi à la dernière invite. Remplacer garde la priorité et l'état activé du mod.
 
-Avant qu'un Replace échange le dossier d'un mod, Eidos compare l'ancien dossier au nouveau par
-nom de fichier et par taille et lit les en-têtes des plugins des deux. Cela couvre Update, une
-mise à jour de collection et un Replace choisi à l'invite d'installation. La ligne d'état
+Avant qu'un remplacement échange le dossier d'un mod, Eidos compare l'ancien dossier au nouveau par
+nom de fichier et par taille et lit les en-têtes des plugins des deux. Cela couvre Mettre à jour, une
+mise à jour de collection et Remplacer choisi à l'invite d'installation. La ligne d'état
 compte alors les fichiers ajoutés, retirés et changés de taille, et nomme chaque master dont la
-nouvelle version a besoin et que l'ancienne n'avait pas. L'onglet **General** de
-« Information... » se termine par une section **Last update** qui liste les versions, les
+nouvelle version a besoin et que l'ancienne n'avait pas. L'onglet **Général** de la boîte
+« Informations... » se termine par une section **Dernière mise à jour** qui liste les versions, les
 plugins ajoutés ou retirés, les masters ajoutés ou retirés, les plugins dont l'indicateur ESM,
 ESL ou ESH a changé, les mods avec lesquels celui-ci partage maintenant des fichiers ou ne
 partage plus, et les fichiers. Un fichier réécrit à la même taille n'est pas listé. Le rapport
 est gardé dans `logs/updates/<mod>.json` dans l'instance, que `eidos pack` laisse de côté ; une
-installation neuve ou un Merge dans le dossier le supprime. `eidos install --replace` affiche
+installation neuve ou une fusion (Fusionner) dans le dossier le supprime. `eidos install --replace` affiche
 les mêmes comptes sur une ligne `changes:`.
 
 Un dossier qui contient plusieurs fichiers Nexus, comme un fichier principal avec un fichier
@@ -1055,22 +1055,22 @@ commande se termine avec le code 1 si une mise à jour a échoué.
 
 ### Mises à jour de collections
 
-Quand vous lancez Check for updates, Eidos demande aussi à Nexus la dernière révision de chaque
+Quand vous lancez Vérifier les mises à jour, Eidos demande aussi à Nexus la dernière révision de chaque
 collection installée dans cette instance. Une ligne au-dessus de la liste de mods nomme chaque
 collection qui a une révision plus récente et compte les mods ajoutés (+), mis à jour (~) et
 abandonnés (-) ; survolez-la pour leurs noms. Les comptes manquent quand la recette de la
-révision installée n'est plus en cache. **Update** ouvre la révision plus récente dans le volet
-des collections, où *Install this collection* l'exécute. La liste est reconstruite à chaque
+révision installée n'est plus en cache. **Mettre à jour** ouvre la révision plus récente dans le volet
+des collections, où *Installer cette collection* l'exécute. La liste est reconstruite à chaque
 vérification et n'est pas enregistrée.
 
 ### Réglages Nexus
 
-**Preferences -> Nexus -> Offline** empêche Eidos de contacter Nexus du tout, et saute la
+**Préférences -> Nexus -> Hors ligne** empêche Eidos de contacter Nexus du tout, et saute la
 vérification quotidienne de version sur GitHub. Les vérifications de mises à jour, la connexion,
 les téléchargements et les collections le disent au lieu d'échouer avec une erreur de
 connexion. C'est désactivé par défaut.
 
-**Preferred servers** classe les nœuds CDN qu'un téléchargement préfère, le meilleur d'abord.
+**Serveurs préférés** classe les nœuds CDN qu'un téléchargement préfère, le meilleur d'abord.
 Seul un compte premium reçoit jamais plus d'un miroir parmi lesquels choisir, si bien que pour
 tous les autres Nexus choisit et cela ne change rien. Quand aucun des serveurs que vous avez
 nommés n'est proposé, le téléchargement a quand même lieu, depuis le premier nœud que Nexus
@@ -1082,16 +1082,16 @@ Les catégories peuvent être attribuées à un mod ou à toute une sélection, 
 être modifié depuis la même boîte de dialogue, et la liste officielle des catégories du jeu
 peut être tirée de Nexus. Les deux fichiers de catalogue sont ceux de MO2 (`categories.dat` et
 `nexuscatmap.dat`), si bien qu'une instance partagée garde un seul catalogue. Un mod téléchargé
-depuis Nexus est catégorisé à l'installation, une fois que Fetch from Nexus a fait
+depuis Nexus est catégorisé à l'installation, une fois que Récupérer depuis Nexus a fait
 correspondre le catalogue.
 
 ### Éditeur d'INI, journal et extensions
 
-**View -> INI editor** modifie les INI du jeu du profil, la copie qu'Eidos garde ; la copie
+**Affichage -> Éditeur d'INI...** modifie les INI du jeu du profil, la copie qu'Eidos garde ; la copie
 dans le préfixe Proton est écrasée à chaque lancement. Son dernier onglet est le
 `launch-env.ini` du profil
 ([Variables et wrappers par profil](#variables-et-wrappers-par-profil)).
-**View -> Log** lit les journaux de session. **View -> Extensions** liste vos propres
+**Affichage -> Journal...** lit les journaux de session. **Affichage -> Extensions...** liste vos propres
 extensions ; voir [extensions.md](extensions.md).
 
 Quand un lancement ne trouve l'INI principal du jeu (`Skyrim.ini`, `Fallout4.ini`,
@@ -1111,7 +1111,7 @@ l'arbre de l'archive et vous laisse désigner la racine des données.
 
 Réinstaller ou mettre à jour un mod FOMOD ouvre l'assistant avec les réponses de sa dernière
 installation cochées, sur la première étape dont les options ont changé depuis, avec les
-changements listés. **Reinstall with new choices** part plutôt des valeurs par défaut de
+changements listés. **Réinstaller avec de nouveaux choix** part plutôt des valeurs par défaut de
 l'installateur. `eidos install --replace` ou `--merge` réutilise les réponses enregistrées et
 refuse, en listant les changements, quand elles ne conviennent plus.
 
@@ -1133,7 +1133,7 @@ session avec les mods qu'il nomme.
 
 Les contrôles des INI du profil et des plugins cherchent des lignes `sTestFile` dans `[General]`
 des INI personnalisés de Fallout 4, Fallout 4 VR et Starfield, qui font ignorer `plugins.txt` au
-jeu (Fix les retire de la copie du profil et garde le fichier précédent sous le nom
+jeu (Corriger les retire de la copie du profil et garde le fichier précédent sous le nom
 `<ini>.pre-fix`), les plugins `.esp` activés dans Starfield, et les plugins blueprint qui n'ont
 pas l'indicateur blueprint, le préfixe `BlueprintShips-` ou l'extension `.esm`, ou dont le
 plugin principal n'est pas activé. Les contrôles du système signalent un `vm.max_map_count` ou
@@ -1144,35 +1144,35 @@ BodySlide quand il ne pointe pas vers le `Data` du jeu, les dossiers `Data` qu'u
 corrige, et un mod qui remplace les scripts Papyrus du script extender. Le contrôle `sTestFile`
 ne s'applique qu'à Fallout 4, Fallout 4 VR et Starfield.
 
-Check for updates lit aussi les prérequis Nexus de chaque mod. Diagnostics liste un mod requis
-qui est absent ou désactivé, avec Ignore pour un prérequis satisfait autrement.
+Vérifier les mises à jour lit aussi les prérequis Nexus de chaque mod. Diagnostics liste un mod requis
+qui est absent ou désactivé, avec Ignorer pour un prérequis satisfait autrement.
 
 L'onglet montre aussi quel build de Proton exécute le jeu et prévient avant qu'un Proton plus
-ancien exécute un préfixe qu'un plus récent a préparé ; Rebuild met de côté un préfixe cassé
+ancien exécute un préfixe qu'un plus récent a préparé ; Reconstruire le préfixe met de côté un préfixe cassé
 pour que Steam en crée un nouveau
 ([troubleshooting.md](troubleshooting.md#quel-proton-lance-le-jeu-et-un-préfixe-cassé)). Les
 autres cartes signalent un préfixe jamais préparé ou dont le registre est périmé, un programme
-autre qu'Eidos qui reçoit les liens Mod Manager Download (Register le corrige), une sortie
+autre qu'Eidos qui reçoit les liens Mod Manager Download (Enregistrer Eidos pour les liens nxm le corrige), une sortie
 d'outil plus ancienne que ses entrées (avec un bouton qui relance l'outil), et une copie
 nettoyée ou légère d'un plugin dont l'original a changé depuis. Chaque carte est expliquée dans
-[troubleshooting.md](troubleshooting.md#cartes-health). **Copy report** met sur le presse-papiers
+[troubleshooting.md](troubleshooting.md#cartes-health). **Copier le rapport** met sur le presse-papiers
 un rapport du système et de chaque constat, votre dossier personnel et votre nom de connexion
 masqués, pour un rapport de bug.
 
-Pour Skyrim SE, Enderal SE et Fallout 4, Diagnostics a aussi une carte Display. Elle montre la
+Pour Skyrim SE, Enderal SE et Fallout 4, Diagnostics a aussi une carte d'affichage. Elle montre la
 taille et le mode de fenêtre réglés dans le `SkyrimPrefs.ini` du profil (`EnderalPrefs.ini`,
 `Fallout4Prefs.ini`), ou dans la copie du préfixe quand le profil n'en a pas encore. Quand
 aucun ne règle de taille, ses champs partent de l'écran connecté le plus grand listé dans
 `/sys/class/drm`, si bien qu'un Steam Deck lit 1280x800. La largeur et la hauteur sont des
-nombres entiers de 320 à 16384. Apply écrit `iSize W`, `iSize H`, `bFull Screen` et
+nombres entiers de 320 à 16384. Appliquer écrit `iSize W`, `iSize H`, `bFull Screen` et
 `bBorderless` dans la copie du profil, après avoir adopté la copie du préfixe si le profil n'en
-a pas. Quand SSE Display Tweaks règle la fenêtre, Apply écrit la même taille et le même mode
+a pas. Quand SSE Display Tweaks règle la fenêtre, Appliquer écrit la même taille et le même mode
 dans sa copie dans l'Overwrite ; le fichier du mod n'est pas changé.
 
-La carte Game files en haut de l'onglet est décrite sous
+La carte Fichiers du jeu en haut de l'onglet est décrite sous
 [Fichiers du jeu](#fichiers-du-jeu--linstallation-de-la-boutique-ou-une-copie), la carte d'ordre de collection sous
-[Garder l'ordre de la collection](#garder-lordre-de-la-collection), et Find the mod behind a
-problem sous [Parties test](#trouver-le-mod-à-lorigine-dun-problème).
+[Garder l'ordre de la collection](#garder-lordre-de-la-collection), et Trouver le mod à l'origine d'un
+problème sous [Parties test](#trouver-le-mod-à-lorigine-dun-problème).
 
 ### Lancer le jeu
 
@@ -1186,10 +1186,10 @@ absolu du programme, parce que Steam ne lit pas le `PATH` de votre shell
 
 Depuis Colony, le chemin est `~/.local/share/Colony/apps/Eidos/eidos-linux`. Eidos s'ouvre sur
 l'instance du jeu, celle que vous avez utilisée en dernier, si bien qu'une instance portable est
-retrouvée comme l'est la globale ; cliquez sur Run pour le lancer à travers la vue fusionnée.
+retrouvée comme l'est la globale ; cliquez sur Lancer pour le lancer à travers la vue fusionnée.
 
-Avec **Start the game at once when a store opens Eidos** activé (Preferences, General, Running a
-game ; désactivé par défaut), Eidos saute ce clic : il vérifie Health et démarre le jeu sans
+Avec **Lancer le jeu directement quand une boutique ouvre Eidos** activé (Préférences, Général, Pendant le
+jeu ; désactivé par défaut), Eidos saute ce clic : il vérifie Health et démarre le jeu sans
 montrer sa fenêtre. La fenêtre s'ouvre comme d'habitude quand Health liste un problème, quand la
 liste de mods demande de l'attention, quand un outil réglé pour s'exécuter avant de jouer a une
 sortie périmée, ou, pour Skyrim SE, Enderal SE et Fallout 4, quand le profil n'a pas encore de
@@ -1197,8 +1197,8 @@ taille de fenêtre (la fenêtre s'ouvre alors sur Diagnostics). Pour avoir la fe
 lancement, mettez `EIDOS_WINDOW=1` devant la commande :
 `EIDOS_WINDOW=1 ~/.local/bin/eidos-gui %command%`.
 
-Dans une fenêtre qu'aucune boutique n'a ouverte, Run ne démarre pas le jeu lui-même, et Eidos ne
-démarre jamais un jeu directement par Proton ou Wine. Run demande à la boutique qui possède la
+Dans une fenêtre qu'aucune boutique n'a ouverte, Lancer ne démarre pas le jeu lui-même, et Eidos ne
+démarre jamais un jeu directement par Proton ou Wine. Lancer demande à la boutique qui possède la
 copie de le démarrer, et la boutique démarre Eidos :
 
 - Steam exécute `steam -applaunch <appid>` quand l'option de lancement ci-dessus est définie et
@@ -1211,21 +1211,21 @@ copie de le démarrer, et la boutique démarre Eidos :
   `wrapper =` et le chemin absolu d'`eidos-gui` (ou d'`eidos-linux`) sous la section `[<app>]` du
   jeu, ou sous `[default]`.
 
-Le chargeur du script extender, le launcher et l'exécutable du jeu dans la liste Run sont tous
+Le chargeur du script extender, le launcher et l'exécutable du jeu dans la liste Lancer sont tous
 confiés à la boutique de cette façon, et il en va de même pour
 `eidos tool <instance> run <entry>` pour l'un d'eux dans un terminal. Eidos ne peut pas confier
-certaines copies à leur boutique, comme une copie GOG hors d'Heroic : Run dit alors de démarrer
+certaines copies à leur boutique, comme une copie GOG hors d'Heroic : Lancer dit alors de démarrer
 le jeu depuis cette boutique.
 
 Le transfert enregistre cette instance comme celle que vous avez utilisée en dernier, et la
-boutique ouvre alors une seconde fenêtre d'Eidos dessus. Avec Start the game at once désactivé,
-vous cliquez sur Run là ; avec lui activé, cette fenêtre démarre le jeu sans se montrer, sauf si
+boutique ouvre alors une seconde fenêtre d'Eidos dessus. Avec Lancer le jeu directement désactivé,
+vous cliquez sur Lancer là ; avec lui activé, cette fenêtre démarre le jeu sans se montrer, sauf si
 l'un des cas ci-dessus l'ouvre. La première fenêtre ne suit pas cette exécution, donc appuyez sur
 F5 dedans après avoir joué pour recharger ses listes. Quand le réglage de la boutique manque, ou
-que le chargeur du script extender n'est pas à côté de l'exécutable du jeu, Run ne démarre rien et
+que le chargeur du script extender n'est pas à côté de l'exécutable du jeu, Lancer ne démarre rien et
 montre quoi régler et où, avec le vrai chemin du binaire en cours.
 
-Pendant qu'un jeu ou un outil tourne, Run devient Stop. Deux appuis terminent tous les programmes
+Pendant qu'un jeu ou un outil tourne, Lancer devient Arrêter. Deux appuis terminent tous les programmes
 que l'exécution a démarrés, et Eidos capture alors la session et démonte comme après toute
 fermeture ; une exécution arrêtée ne compte jamais comme un lancement propre
 ([troubleshooting.md](troubleshooting.md#un-jeu-ou-un-outil-qui-ne-se-ferme-pas)).
@@ -1253,7 +1253,7 @@ wrapper=gamescope -W 1280 -H 800 -f -- %command%
 ```
 
 Elles s'appliquent à chaque `eidos play` de ce profil (le jeu démarré par le `%command%` de Steam,
-ou par Run dans une fenêtre qu'une boutique a ouverte) et à chaque exécution d'outil.
+ou par Lancer dans une fenêtre qu'une boutique a ouverte) et à chaque exécution d'outil.
 `eidos shell` reçoit les variables et aucun wrapper. La première ligne `wrapper=` est la plus
 externe. Une ligne `wrapper=` qui contient `%command%` reçoit la commande à cet endroit, comme dans
 les options de lancement de Steam ; une ligne sans lui reçoit la commande à la fin. Les wrappers
@@ -1264,12 +1264,12 @@ Une variable ici remplace la valeur qu'Eidos définit pour le même nom, et la l
 surcharges qu'Eidos définit pour ENB, ReShade et les DLL fournies, si bien qu'une DLL nommée dans
 les deux prend le réglage du profil et que les autres gardent le leur.
 
-View -> INI editor ouvre le fichier comme dernier onglet, pour chaque jeu. Les lignes vides et les
+Affichage -> Éditeur d'INI... ouvre le fichier comme dernier onglet, pour chaque jeu. Les lignes vides et les
 lignes qui commencent par `#` ou `;` sont sautées. L'enregistrement liste les numéros de ligne
 qu'Eidos ignore : les lignes qui ne sont ni `env=NAME=value` ni `wrapper=command`, et une ligne
 `wrapper=` dont le premier mot est `NAME=value`, comme le permettent les options de lancement de
 Steam ; mettez plutôt cette variable sur une ligne `env=`. `eidos play <instance>` sans commande
-liste les variables qu'une exécution reçoit et les wrappers. Copy report dans Diagnostics nomme
+liste les variables qu'une exécution reçoit et les wrappers. Copier le rapport dans Diagnostics nomme
 les variables et les programmes wrapper, sans leurs valeurs.
 
 ## Outils
@@ -1293,7 +1293,7 @@ déjà renseigné, si bien que leur sortie va dans un mod à elle (détails dans
 
 Le titre que vous donnez à un outil décide des runtimes et des DLL qu'Eidos lui fournit :
 `BodySlide` reçoit ses bibliothèques DirectX, `BS` ne reçoit rien. Dans la fenêtre, la boîte de
-dialogue Executables montre l'état réel de chaque prérequis sous le champ, et ceux qui manquent
+dialogue Exécutables montre l'état réel de chaque prérequis sous le champ, et ceux qui manquent
 sont des boutons.
 
 Le paquet de version porte les installateurs vcrun2022 (x86 et x64), le .NET 8 Desktop Runtime
