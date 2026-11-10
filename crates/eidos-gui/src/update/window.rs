@@ -266,6 +266,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 }
             }
         }
+        Message::WindowFocused(f) => app.focused = f,
         Message::CycleFocus => {
             // Only somewhere there is a list to drive.
             app.focus = match app.focus {

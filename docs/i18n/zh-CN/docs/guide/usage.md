@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ef7908232d824a69c7729e37906969aa3a374b1b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c98fae670683bd0430c0a21677a9e155c27567de -->
 
 # 使用 Eidos
 
@@ -359,7 +359,8 @@ Conflicts / Overwrite / Saves / Downloads / Diagnostics 各标签页,以及一�
 返回。和每一个 Colony 程序一样,General、Appearance 和 Accessibility 排在最前,
 然后是 Mod list、Nexus 和 About。每一项改动都立即生效并保存;没有 Save 按钮。
 
-- **General**:Eidos 打开的游戏、窗口大小、界面语言、工具文件夹,以及游戏如何运行。
+- **General**:Eidos 打开的游戏、窗口大小、界面语言、工具文件夹、游戏如何运行,
+  以及窗口在后台时是否用桌面通知告知长任务结束。
   窗口支持英语和法语;**System** 跟随 `LC_ALL`、`LC_MESSAGES` 或 `LANG`,改动立即
   生效。`eidos` 命令行始终用英语回答。
 - **Appearance**:主题(25 个系列、57 套配色,默认是 Eidos 的羊皮纸)、强调色、

@@ -7840,3 +7840,53 @@ fn a_profile_shortcut_without_a_game_entry_says_so() {
     assert!(app.profile_menu.is_none());
     let _ = fs::remove_dir_all(root);
 }
+
+#[test]
+fn a_finished_tool_run_notifies_only_while_the_window_is_away() {
+    let (mut app, root) = list_app(&[]);
+    let _ = crate::notify::take_sent();
+    let run = |app: &mut App, notify: bool, focused: bool, game: bool| {
+        app.prefs.notify_when_away = notify;
+        app.focused = focused;
+        start_run(
+            app,
+            "xEdit".into(),
+            std::process::Command::new("/bin/false"),
+        );
+        let r = app.running.as_mut().expect("the run started");
+        r.game = game;
+        let done = r.done.clone();
+        for _ in 0..50 {
+            if done.load(std::sync::atomic::Ordering::SeqCst) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        let _ = update_inner(app, Message::PollRunning);
+        crate::notify::take_sent()
+    };
+    let sent = run(&mut app, true, false, false);
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].0, "xEdit");
+    assert_eq!(Some(sent[0].1.as_str()), app.status.as_deref());
+    assert!(
+        run(&mut app, true, true, false).is_empty(),
+        "the window has focus"
+    );
+    assert!(
+        run(&mut app, false, false, false).is_empty(),
+        "the preference is off"
+    );
+    assert!(
+        run(&mut app, true, false, true).is_empty(),
+        "the game is not a long job"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_focus_change_disarms_nothing() {
+    let app = nav_app(&[]);
+    assert!(is_ambient(&app, &Message::WindowFocused(false)));
+    assert!(is_ambient(&app, &Message::WindowFocused(true)));
+}

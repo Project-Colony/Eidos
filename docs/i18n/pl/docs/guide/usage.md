@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ef7908232d824a69c7729e37906969aa3a374b1b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c98fae670683bd0430c0a21677a9e155c27567de -->
 
 # Używanie Eidos
 
@@ -479,7 +479,8 @@ Appearance i Accessibility, jak w każdym programie Colony, potem Mod list, Nexu
 i About. Każda zmiana stosuje się i zapisuje od razu; nie ma przycisku Save.
 
 - **General**: gra, którą otwiera Eidos, rozmiar okna, język interfejsu, folder
-  narzędzi i sposób uruchamiania gry. Okno mówi po angielsku i po francusku;
+  narzędzi, sposób uruchamiania gry oraz to, czy powiadomienie na pulpicie
+  informuje o końcu długiego zadania, gdy okno jest w tle. Okno mówi po angielsku i po francusku;
   **System** podąża za `LC_ALL`, `LC_MESSAGES` albo `LANG`, a zmiana działa od
   razu. Wiersz poleceń `eidos` zawsze odpowiada po angielsku.
 - **Appearance**: motyw (25 rodzin, 57 palet, domyślnie pergamin Eidosa), kolor

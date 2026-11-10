@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ef7908232d824a69c7729e37906969aa3a374b1b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c98fae670683bd0430c0a21677a9e155c27567de -->
 
 # 使用 Eidos
 
@@ -368,8 +368,9 @@ Data / Plugins / Conflicts / Overwrite / Saves / Downloads / Diagnostics 分頁,
 返回。最前面是 General、Appearance 與 Accessibility,和每個 Colony 程式一樣,接著是
 Mod list、Nexus 與 About。每項變更都會立即套用並儲存;沒有儲存按鈕。
 
-- **General**:Eidos 開啟的遊戲、視窗大小、介面語言、工具資料夾,以及遊戲的執行
-  方式。視窗介面支援英文與法文;**System** 會依循 `LC_ALL`、`LC_MESSAGES` 或
+- **General**:Eidos 開啟的遊戲、視窗大小、介面語言、工具資料夾、遊戲的執行方式,
+  以及視窗在背景時是否以桌面通知告知長時間工作結束。
+  視窗介面支援英文與法文;**System** 會依循 `LC_ALL`、`LC_MESSAGES` 或
   `LANG`,變更立即生效。`eidos` 命令列一律以英文回應。
 - **Appearance**:主題(25 個系列、57 套配色,預設為 Eidos 的羊皮紙)、強調色、
   文字大小、效果,以及即時預覽。

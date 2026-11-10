@@ -312,6 +312,13 @@ impl Sections<'_> {
                     app.prefs.start_game_directly,
                     Message::ToggleStartDirectly(!app.prefs.start_game_directly),
                 ),
+                functional_toggle(
+                    &self.typo,
+                    t("settings_notify_when_away"),
+                    t("settings_notify_when_away_desc"),
+                    app.prefs.notify_when_away,
+                    Message::ToggleNotifyWhenAway(!app.prefs.notify_when_away),
+                ),
             ],
         )
     }

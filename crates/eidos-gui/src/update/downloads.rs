@@ -75,7 +75,17 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // Cheap and bounded: one read_dir of a directory holding a few dozen
             // files. It is NOT called from view() - that lesson is already paid
             // for - so it costs twice a second, not once per frame.
+            let states = |app: &App| -> Vec<(String, DownloadState)> {
+                app.downloads
+                    .iter()
+                    .map(|r| (r.name.clone(), r.state))
+                    .collect()
+            };
+            let before = states(app);
             load_downloads(app);
+            if crate::notify::downloads_finished(&before, &states(app)) {
+                crate::notify::when_away(app, t("notify_downloads_done"), "");
+            }
             // A resume that FAILED has to say so. The child is also reaped here:
             // left unwaited it becomes a zombie, and a zombie's /proc entry is
             // what made `stop_download` wait out its whole timeout and refuse to

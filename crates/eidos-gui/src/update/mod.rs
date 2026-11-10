@@ -1087,6 +1087,10 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
     match m {
         Message::PointerAt(_)
         | Message::WindowResized(_)
+        // The user switching to another window decides nothing here; as an
+        // action it would disarm a confirmation and be dropped behind an
+        // open installer.
+        | Message::WindowFocused(_)
         // Grabbing the divider resizes the window's furniture; it is not the
         // user deciding anything about the row a confirmation is armed on.
         | Message::SplitGrab
@@ -1568,6 +1572,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::DefaultGameChanged(..)
         | Message::ToggleLockGui(..)
         | Message::ToggleStartDirectly(..)
+        | Message::ToggleNotifyWhenAway(..)
         | Message::ToolsDirChanged(..)
         | Message::BrowseToolsDir) => preferences::handle(app, m),
         m @ (Message::IdentifyDownload(..)
@@ -1691,6 +1696,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::SplitGrab
         | Message::AnimationTick
         | Message::WindowResized(..)
+        | Message::WindowFocused(..)
         | Message::CycleFocus
         | Message::SelectAllInFocus
         | Message::KeyNav(..)

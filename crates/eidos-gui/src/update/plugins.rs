@@ -247,6 +247,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 Ok(x) => x,
                 Err(e) => {
                     app.status = Some(tf("status_sort_failed", &[("error", &e)]));
+                    crate::notify::when_away(app, t("notify_sort_failed"), &e);
                     return Task::none();
                 }
             };

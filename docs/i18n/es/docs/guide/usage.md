@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ef7908232d824a69c7729e37906969aa3a374b1b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c98fae670683bd0430c0a21677a9e155c27567de -->
 
 # Usar Eidos
 
@@ -493,7 +493,9 @@ y después Mod list, Nexus y About. Cada cambio se aplica y se guarda al momento
 no hay botón de guardar.
 
 - **General**: el juego que abre Eidos, el tamaño de la ventana, el idioma de la
-  interfaz, la carpeta de herramientas y cómo se ejecuta un juego. La ventana
+  interfaz, la carpeta de herramientas, cómo se ejecuta un juego y si una
+  notificación del escritorio avisa cuando termina una tarea larga mientras la
+  ventana está en segundo plano. La ventana
   habla inglés y francés; **System** sigue `LC_ALL`, `LC_MESSAGES` o `LANG`, y el
   cambio se aplica al momento. La línea de órdenes `eidos` responde siempre en
   inglés.

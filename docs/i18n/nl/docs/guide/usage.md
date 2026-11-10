@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ef7908232d824a69c7729e37906969aa3a374b1b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c98fae670683bd0430c0a21677a9e155c27567de -->
 
 # Eidos gebruiken
 
@@ -488,7 +488,9 @@ Mod list, Nexus en About. Elke wijziging wordt meteen toegepast en opgeslagen; e
 is geen Save-knop.
 
 - **General**: het spel dat Eidos opent, de venstergrootte, de taal van de
-  interface, de tools folder en hoe een spel gestart wordt. Het venster spreekt
+  interface, de tools folder, hoe een spel gestart wordt, en of een
+  bureaubladmelding laat weten wanneer een lange taak eindigt terwijl het venster
+  op de achtergrond staat. Het venster spreekt
   Engels en Frans; **System** volgt `LC_ALL`, `LC_MESSAGES` of `LANG`, en de
   wijziging gaat meteen in. De opdrachtregel `eidos` antwoordt altijd in het Engels.
 - **Appearance**: het thema (25 families, 57 paletten, standaard het perkament

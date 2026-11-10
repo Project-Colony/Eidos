@@ -162,6 +162,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(tf("status_prefs_save_failed", &[("error", &e)]));
             }
         }
+        Message::ToggleNotifyWhenAway(v) => {
+            app.prefs.notify_when_away = v;
+            if let Err(e) = app.prefs.save() {
+                app.status = Some(tf("status_prefs_save_failed", &[("error", &e)]));
+            }
+        }
         Message::ToolsDirChanged(t) => {
             app.typing = true;
             let dir = t.trim().to_string();

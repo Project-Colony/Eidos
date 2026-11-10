@@ -684,6 +684,9 @@ pub(crate) struct App {
     /// is set, the window is blocked behind the lock overlay until it exits (or the
     /// user clicks Unlock). `None` = nothing running / not locked.
     pub(crate) running: Option<RunningState>,
+    /// Whether the window has the keyboard focus, from the window's focus
+    /// events. A desktop notification is sent only while it does not.
+    pub(crate) focused: bool,
     /// Plugins waiting for QuickAutoClean, one run at a time.
     pub(crate) clean_queue: std::collections::VecDeque<String>,
     /// The clean the tracked run is doing, if it is one.

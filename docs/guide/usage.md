@@ -466,9 +466,11 @@ come first, as in every Colony program, then Mod list, Nexus and About. Every
 change applies and saves at once; there is no Save button.
 
 - **General**: the game Eidos opens, the window size, the interface language,
-  the tools folder and how a game is run. The window speaks English and French;
-  **System** follows `LC_ALL`, `LC_MESSAGES` or `LANG`, and the change applies
-  at once. The `eidos` command line always answers in English.
+  the tools folder, how a game is run, and whether a desktop notification says
+  when a long job ends while the window is in the background. The window speaks
+  English and French; **System** follows `LC_ALL`, `LC_MESSAGES` or `LANG`, and
+  the change applies at once. The `eidos` command line always answers in
+  English.
 - **Appearance**: the theme (25 families, 57 palettes, Eidos's parchment by
   default), the accent colour, the text size, effects and a live preview.
 - **Accessibility**: high contrast, a dyslexia-friendly font, reduced motion and

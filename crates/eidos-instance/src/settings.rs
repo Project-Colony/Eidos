@@ -300,6 +300,9 @@ pub struct Settings {
     /// Start the game without showing the window when a store opened Eidos
     /// with the game's command and Health lists no problem. Off by default.
     pub start_game_directly: bool,
+    /// Send a desktop notification when a long job ends while the window is
+    /// in the background. Off by default.
+    pub notify_when_away: bool,
     /// Where the user keeps their modding tools, shared across instances.
     ///
     /// xEdit, DynDOLOD and their kind live nowhere in particular: in the game
@@ -336,6 +339,7 @@ impl Default for Settings {
             remember_window: true,
             offline: false,
             start_game_directly: false,
+            notify_when_away: false,
             tools_dir: None,
             mod_columns: None,
             preferred_servers: Vec::new(),
@@ -448,6 +452,10 @@ impl Settings {
                     s.start_game_directly =
                         matches!(v.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on")
                 }
+                "notify_when_away" => {
+                    s.notify_when_away =
+                        matches!(v.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on")
+                }
                 // Comma-separated so one line holds an ordering, which is what
                 // this is - a list where position means something.
                 // An EMPTY value is meaningful here - every column off - which is
@@ -516,6 +524,9 @@ impl Settings {
         }
         if self.start_game_directly {
             out.push_str("start_game_directly=true\n");
+        }
+        if self.notify_when_away {
+            out.push_str("notify_when_away=true\n");
         }
         if let Some(dir) = &self.tools_dir {
             out.push_str(&format!("tools_dir={dir}\n"));
@@ -773,6 +784,7 @@ mod tests {
             path: None,
             offline: false,
             start_game_directly: true,
+            notify_when_away: true,
             preferred_servers: Vec::new(),
             mod_columns: None,
             tools_dir: None,
@@ -794,6 +806,14 @@ mod tests {
         assert!(Settings::parse("start_game_directly=true\n").start_game_directly);
         assert!(!Settings::parse("start_game_directly=maybe\n").start_game_directly);
         assert!(!Settings::default().to_ini().contains("start_game_directly"));
+    }
+
+    #[test]
+    fn notify_when_away_is_off_unless_written_on() {
+        assert!(!Settings::default().notify_when_away);
+        assert!(Settings::parse("notify_when_away=true\n").notify_when_away);
+        assert!(!Settings::parse("notify_when_away=maybe\n").notify_when_away);
+        assert!(!Settings::default().to_ini().contains("notify_when_away"));
     }
 
     #[test]
@@ -909,6 +929,7 @@ mod tests {
             path: None,
             offline: false,
             start_game_directly: true,
+            notify_when_away: true,
             preferred_servers: Vec::new(),
             mod_columns: None,
             tools_dir: None,

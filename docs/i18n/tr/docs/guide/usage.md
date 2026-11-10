@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ef7908232d824a69c7729e37906969aa3a374b1b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c98fae670683bd0430c0a21677a9e155c27567de -->
 
 # Eidos kullanımı
 
@@ -476,7 +476,8 @@ Mod list, Nexus ve About. Her değişiklik anında uygulanır ve kaydedilir; Sav
 düğmesi yoktur.
 
 - **General**: Eidos'un açtığı oyun, pencere boyutu, arayüz dili, araçlar
-  klasörü ve bir oyunun nasıl çalıştırıldığı. Pencere İngilizce ve Fransızca
+  klasörü, bir oyunun nasıl çalıştırıldığı ve pencere arka plandayken uzun bir
+  iş bittiğinde bir masaüstü bildiriminin bunu söyleyip söylemeyeceği. Pencere İngilizce ve Fransızca
   konuşur; **System** `LC_ALL`, `LC_MESSAGES` ya da `LANG` değerini izler ve
   değişiklik anında uygulanır. `eidos` komut satırı her zaman İngilizce yanıt
   verir.

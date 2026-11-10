@@ -1259,6 +1259,7 @@ dependencies = [
  "serde_json",
  "smol",
  "tempfile",
+ "zbus",
 ]
 
 [[package]]

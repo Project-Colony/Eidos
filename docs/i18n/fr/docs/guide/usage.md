@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ef7908232d824a69c7729e37906969aa3a374b1b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c98fae670683bd0430c0a21677a9e155c27567de -->
 
 # Utiliser Eidos
 
@@ -512,7 +512,9 @@ Colony, puis Mod list, Nexus et About. Chaque changement s'applique et
 s'enregistre aussitôt ; il n'y a pas de bouton Save.
 
 - **General** : le jeu qu'Eidos ouvre, la taille de la fenêtre, la langue de
-  l'interface, le dossier d'outils et la façon de lancer un jeu. La fenêtre
+  l'interface, le dossier d'outils, la façon de lancer un jeu et si une notification
+  du bureau signale la fin d'une tâche longue quand la fenêtre est en
+  arrière-plan. La fenêtre
   parle anglais et français ; **System** suit `LC_ALL`, `LC_MESSAGES` ou
   `LANG`, et le changement s'applique aussitôt. La ligne de commande `eidos`
   répond toujours en anglais.

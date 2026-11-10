@@ -51,6 +51,7 @@ mod message;
 mod modinfo;
 mod nif_preview;
 mod nif_render;
+mod notify;
 mod preferences;
 mod startup;
 mod state;

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ef7908232d824a69c7729e37906969aa3a374b1b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c98fae670683bd0430c0a21677a9e155c27567de -->
 
 # Používání Eidosu
 
@@ -456,7 +456,8 @@ potom Mod list, Nexus a About. Každá změna se okamžitě použije i uloží; 
 tlačítko Uložit není.
 
 - **General**: hra, kterou Eidos otevře, velikost okna, jazyk rozhraní, složka
-  s nástroji a způsob, jakým se hra spouští. Okno mluví anglicky a francouzsky;
+  s nástroji, způsob, jakým se hra spouští, a zda oznámení na ploše řekne, kdy
+  skončí dlouhá úloha, zatímco je okno v pozadí. Okno mluví anglicky a francouzsky;
   **System** se řídí podle `LC_ALL`, `LC_MESSAGES` nebo `LANG` a změna se
   projeví okamžitě. Příkazová řádka `eidos` odpovídá vždy anglicky.
 - **Appearance**: motiv (25 rodin, 57 palet, ve výchozím stavu pergamen

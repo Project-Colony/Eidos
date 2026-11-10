@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ef7908232d824a69c7729e37906969aa3a374b1b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c98fae670683bd0430c0a21677a9e155c27567de -->
 
 # Usar o Eidos
 
@@ -479,7 +479,9 @@ Mod list, Nexus e About. Toda mudança é aplicada e salva na hora; não existe
 botão de salvar.
 
 - **General**: o jogo que o Eidos abre, o tamanho da janela, o idioma da
-  interface, a pasta de ferramentas e como um jogo é executado. A janela fala
+  interface, a pasta de ferramentas, como um jogo é executado e se uma
+  notificação da área de trabalho avisa quando uma tarefa longa termina enquanto
+  a janela está em segundo plano. A janela fala
   inglês e francês; **System** segue `LC_ALL`, `LC_MESSAGES` ou `LANG`, e a
   mudança vale na hora. A linha de comando `eidos` sempre responde em inglês.
 - **Appearance**: o tema (25 famílias, 57 paletas, o pergaminho do Eidos por

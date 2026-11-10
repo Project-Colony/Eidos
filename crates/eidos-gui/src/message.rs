@@ -316,6 +316,8 @@ pub(crate) enum Message {
     ToggleLockGui(bool),
     /// Toggle starting the game without the window when a store opens Eidos.
     ToggleStartDirectly(bool),
+    /// Toggle the desktop notification when a long job ends in the background.
+    ToggleNotifyWhenAway(bool),
     /// Set how fast the mod list scrolls when a drag rests on an edge.
     DragScrollSpeedChanged(f32),
     /// Open or close one collapsible section of the Preferences page.
@@ -704,6 +706,8 @@ pub(crate) enum Message {
     /// A frame while an archive extracts: check whether the worker finished.
     InstallPoll,
     WindowResized(iced::Size),
+    /// The window gained (`true`) or lost (`false`) the keyboard focus.
+    WindowFocused(bool),
     /// The pointer entered a FOMOD option; drives the preview pane.
     FomodHover(Option<(usize, usize)>),
     /// The pointer LEFT a FOMOD option, named so the row can only clear the hover

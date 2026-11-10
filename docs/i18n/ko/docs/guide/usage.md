@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ef7908232d824a69c7729e37906969aa3a374b1b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c98fae670683bd0430c0a21677a9e155c27567de -->
 
 # Eidos 사용하기
 
@@ -426,8 +426,9 @@ Conflicts / Overwrite / Saves / Downloads / Diagnostics 탭과 실행 대상 선
 Accessibility가 먼저 오고, 그다음 Mod list, Nexus, About이 옵니다. 모든 변경은
 즉시 적용되고 저장됩니다. Save 버튼은 없습니다.
 
-- **General**: Eidos가 여는 게임, 창 크기, 인터페이스 언어, 도구 폴더, 그리고
-  게임을 실행하는 방식. 창은 영어와 프랑스어를 지원합니다. **System**은
+- **General**: Eidos가 여는 게임, 창 크기, 인터페이스 언어, 도구 폴더, 게임을
+  실행하는 방식, 그리고 창이 뒤에 있는 동안 긴 작업이 끝나면 데스크톱 알림으로
+  알릴지 여부. 창은 영어와 프랑스어를 지원합니다. **System**은
   `LC_ALL`, `LC_MESSAGES`, `LANG`을 따르며, 변경은 즉시 적용됩니다. `eidos`
   명령줄은 언제나 영어로 답합니다.
 - **Appearance**: 테마(25개 계열, 57개 팔레트, 기본값은 Eidos의 양피지), 강조

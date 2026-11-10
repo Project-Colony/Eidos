@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ef7908232d824a69c7729e37906969aa3a374b1b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c98fae670683bd0430c0a21677a9e155c27567de -->
 
 # Usare Eidos
 
@@ -499,8 +499,9 @@ Mod list, Nexus e About. Ogni modifica si applica e si salva subito; non c'è
 alcun pulsante Save.
 
 - **General**: il gioco che Eidos apre, la dimensione della finestra, la lingua
-  dell'interfaccia, la cartella degli strumenti e il modo in cui un gioco viene
-  eseguito. La finestra parla inglese e francese; **System** segue `LC_ALL`,
+  dell'interfaccia, la cartella degli strumenti, il modo in cui un gioco viene
+  eseguito e se una notifica del desktop avvisa quando un lavoro lungo finisce
+  mentre la finestra è in secondo piano. La finestra parla inglese e francese; **System** segue `LC_ALL`,
   `LC_MESSAGES` o `LANG`, e la modifica si applica subito. La riga di comando
   `eidos` risponde sempre in inglese.
 - **Appearance**: il tema (25 famiglie, 57 palette, la pergamena di Eidos per

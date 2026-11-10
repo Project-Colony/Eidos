@@ -490,6 +490,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         profile_copy: None,
         profile_delete_confirm: None,
         running: None,
+        focused: true,
         clean_queue: Default::default(),
         cleaning: None,
         cap_missing: !eidos_launch::binary_has_cap_sys_admin(&find_eidos_binary().0),
@@ -1619,6 +1620,7 @@ pub(crate) fn finish_run(app: &mut App) {
         app.status = Some(t("status_app_exited").to_string());
         return;
     };
+    let (game, stopped, title) = (run.game, run.stopped, run.title.clone());
     let status = run.outcome.lock().ok().and_then(|s| *s);
     let failed = status.map(|st| !st.success()).unwrap_or(false);
     // Record how it ended in the log itself. The status bar says it too, but the
@@ -1717,6 +1719,11 @@ pub(crate) fn finish_run(app: &mut App) {
             (Some(a), Some(b)) => Some(format!("{a} {b}")),
             (a, b) => b.or(a),
         };
+    }
+    // A QuickAutoClean queue that went on to its next plugin is running again,
+    // so the queue sends one notification, after its last plugin.
+    if !game && !stopped && app.running.is_none() {
+        crate::notify::when_away(app, &title, app.status.as_deref().unwrap_or(""));
     }
 }
 
