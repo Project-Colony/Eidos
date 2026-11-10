@@ -191,6 +191,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 "enb_linux_version" => {
                     eidos::check::graphics::fix_enb_linux_version(game, inst, &mods)
                 }
+                "stestfile_present" => {
+                    let Some(name) = eidos::check::load_order::test_file_ini(game.def) else {
+                        return Task::none();
+                    };
+                    let ini = inst.active().ini_path(name);
+                    eidos::check::load_order::fix_test_files(&ini).map(|()| ini)
+                }
                 _ => return Task::none(),
             };
             app.status = Some(match done {
@@ -689,7 +696,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let Some(tool) = state.selected.and_then(|i| state.merged.get(i)).cloned() else {
                 return Task::none();
             };
-            match write_desktop_entry(inst, game.def.id, &tool) {
+            match write_desktop_entry(inst, game.def.id, &tool, None) {
                 Ok(path) => {
                     app.status = Some(tf("status_shortcut_written", &[("path", &path.display())]));
                 }

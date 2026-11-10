@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f8b463b3dac51b3fef63df81c7c89fd12096d721 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=7f872c8fb702f4417931831cc14a48ffb9d9e30b -->
 
 # Herramientas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -366,6 +366,12 @@ PGPatcher se detiene con un error cuando el perfil no tiene ningún mod activado
 y cuando su carpeta de salida es la carpeta de un mod activado, igual que bajo
 MO2.
 
+## Los programas propios de Wine en el prefijo del juego
+
+El menú Archivo ejecuta cuatro programas de Wine en el prefijo del juego: winecfg, regedit, el explorador de archivos de Wine y el desinstalador. Arrancan como cualquier herramienta, con la versión de Proton o Wine que ejecuta las herramientas del juego, con los mods montados, y la ventana espera a que terminen. **Prefix drive_c** abre la unidad `C:` del prefijo en su gestor de archivos. Una fila aparece atenuada hasta que el prefijo tiene ese programa, algo que ocurre la primera vez que la tienda inicia el juego.
+
+Eidos escribe por sí mismo un único valor del registro, el `installed path` del juego bajo `HKLM\Software\Bethesda Softworks\<game>`, antes de cada ejecución de una herramienta cuando es incorrecto. Un cambio hecho ahí en regedit se restablece en la siguiente ejecución.
+
 ## La ruta del juego en el prefijo
 
 Las herramientas de Windows encuentran su juego leyendo
@@ -404,6 +410,14 @@ tienda que inicie el juego, como hace Run en una ventana que no abrió ninguna
 tienda. Cuando falta el ajuste de la tienda, la orden no inicia nada y muestra
 qué poner. Un acceso directo no muestra ningún mensaje, así que ejecuta la misma
 orden en una terminal para leerlo.
+
+Un perfil puede tener su propio acceso directo para el juego. Haz clic derecho
+en el perfil y elige **Desktop shortcut**: la entrada ejecuta
+`eidos tool <instance> run "<game>" --profile <name>`, que convierte ese perfil
+en el activo, igual que elegirlo en la ventana, y luego pide a la tienda que
+inicie el juego. La ventana de Eidos que abre la tienda muestra ese perfil.
+`--profile` funciona con cualquier `eidos tool ... run` y selecciona el perfil
+antes de que arranque la herramienta; con `--print` no selecciona nada.
 
 ## Una herramienta que es su propia aplicación de Steam
 
@@ -501,6 +515,16 @@ informa «All sets processed successfully» y escribe 1439 mallas donde el juego
 nunca las buscará. Eidos las recoge - aterrizan en `Overwrite/Root/` en vez de en
 tu instalación - pero nada está mal desde el punto de vista del juego salvo que
 tus cuerpos no están construidos.
+
+Eidos lo comprueba por ti. Antes de ejecutar BodySlide u Outfit Studio, la línea
+de estado avisa cuando `GameDataPath` u `OutputDataPath` en el
+`CalienteTools/BodySlide/Config.xml` que gana no lleva a la carpeta `Data` del
+juego durante la ejecución, y la pestaña Health muestra la misma tarjeta con el
+valor que hay que poner. Una ruta en `S:` se lee como Eidos asigna `S:` para una
+herramienta, a la carpeta de la biblioteca de Steam. Se acepta un
+`OutputDataPath` dentro de la carpeta `mods/` de la instancia, para un mod de
+salida. Health también muestra una tarjeta cuando `Overwrite/Root/` contiene una
+carpeta `meshes` o `textures`.
 
 La salida de las herramientas va en el Overwrite. Cuando una ejecución produce
 algo que merece la pena conservar, **Overwrite -> Create mod...** lo convierte en

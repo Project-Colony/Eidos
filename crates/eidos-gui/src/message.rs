@@ -318,6 +318,10 @@ pub(crate) enum Message {
     DefaultGameChanged(Option<String>),
     /// Toggle "lock the GUI while a game/tool runs" (MO2's `lock_gui`).
     ToggleLockGui(bool),
+    /// Toggle starting the game without the window when a store opens Eidos.
+    ToggleStartDirectly(bool),
+    /// Toggle the desktop notification when a long job ends in the background.
+    ToggleNotifyWhenAway(bool),
     /// Set how fast the mod list scrolls when a drag rests on an edge.
     DragScrollSpeedChanged(f32),
     /// Open or close one collapsible section of the Preferences page.
@@ -326,6 +330,12 @@ pub(crate) enum Message {
     ToggleRememberWindow(bool),
     /// MO2's offline mode: cut every Nexus request.
     ToggleOffline(bool),
+    /// Install a Nexus download as soon as it finishes.
+    ToggleAutoInstall(bool),
+    /// Ask GitHub once a day at most whether a newer Eidos is out.
+    ToggleReleaseCheck(bool),
+    /// The release check's answer: the newest version, without the `v`.
+    EidosReleaseChecked(Result<String, String>),
     /// Editing the preferred-CDN list. Saved as it is typed.
     PreferredServersChanged(String),
     OpenPluginMenu(usize),
@@ -455,8 +465,11 @@ pub(crate) enum Message {
     /// list can shift while the network call is in flight, and writing the result
     /// into whatever mod now sits at the old index would corrupt its meta.ini.
     ModEndorsed(PathBuf, String, u64, Result<bool, String>),
-    /// Toggle the mod's local "Track" flag (MO2's Track; no network).
+    /// Track or untrack the mod on Nexus (MO2's Track), then store the flag.
     ModTrack(usize),
+    /// Track round-trip done: the new tracked state, or an error. Carries the
+    /// mod's FOLDER NAME (not an index), for the reason given at `ModEndorsed`.
+    ModTracked(PathBuf, String, u64, Result<bool, String>),
     /// Toggle the mod's "Ignore update" flag (MO2's Ignore update; no network).
     ModIgnoreUpdate(usize),
     // ---- mod creation (MO2 Create empty mod / Install from folder) ----
@@ -649,6 +662,8 @@ pub(crate) enum Message {
     ProfileDeleteConfirm(String),
     /// Second click: actually delete the armed profile (`Instance::delete_profile`).
     ProfileDeleteCommit(String),
+    /// Write a desktop shortcut that starts the game with this profile.
+    ProfileDesktopShortcut(String),
     // ---- drag-and-drop reorder (MO2 row drag) ----
     /// Begin a potential drag from row `i` (also selects it).
     DragStart(usize),
@@ -711,6 +726,8 @@ pub(crate) enum Message {
     /// A frame while an archive extracts: check whether the worker finished.
     InstallPoll,
     WindowResized(iced::Size),
+    /// The window gained (`true`) or lost (`false`) the keyboard focus.
+    WindowFocused(bool),
     /// The pointer entered a FOMOD option; drives the preview pane.
     FomodHover(Option<(usize, usize)>),
     /// The pointer LEFT a FOMOD option, named so the row can only clear the hover
@@ -752,6 +769,12 @@ pub(crate) enum Message {
     SendToFirstConflict(usize),
     /// Move the selection just BELOW the last mod that currently overrides it.
     SendToLastConflict(usize),
+    /// Move the mod `folder` to just below `below` in the list (so it wins their
+    /// shared files). Names, not rows: a Health card can outlive a reorder.
+    MoveModBelow {
+        folder: String,
+        below: String,
+    },
     /// Open the inline numeric-priority editor for this row.
     SendToPriorityStart(usize),
     SendToPriorityChanged(String),

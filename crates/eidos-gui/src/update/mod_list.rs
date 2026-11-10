@@ -139,6 +139,21 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             settle_folds_after_move(app, at, targets.len(), &hidden);
             mods_changed(app);
         }
+        Message::MoveModBelow { folder, below } => {
+            let row = |n: &str| app.mods.iter().position(|m| m.name == n);
+            let (Some(from), Some(target)) = (row(&folder), row(&below)) else {
+                return Task::none();
+            };
+            if from > target {
+                return Task::none();
+            }
+            let hidden = hidden_by_folds(app);
+            let at = move_block(&mut app.mods, &[from], target + 1);
+            app.selected_mod = Some(at);
+            app.selected_mods.clear();
+            settle_folds_after_move(app, at, 1, &hidden);
+            mods_changed(app);
+        }
         Message::SendToPriorityStart(i) => {
             // The menu STAYS open, exactly as `RenameStart` keeps it: the editor
             // this arms is drawn by `send_to_targets`, inside the menu card, which
@@ -773,34 +788,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.filters = ModFilters::default();
             forget_hidden_rows(app);
         }
-        // ---- per-mod local flags (Track / Ignore update) --------------------
-        Message::ModTrack(i) => {
-            app.menu_mod = None;
-            if let (Some(inst), Some(m)) = (app.created.as_ref(), app.mods.get(i)) {
-                if !m.is_separator() {
-                    let result = edit_mod_meta(inst, &m.name, |meta| {
-                        let now = !meta.tracked();
-                        meta.set_tracked(now);
-                        now
-                    });
-                    let now = match result {
-                        Ok(now) => now,
-                        Err(e) => {
-                            app.status = Some(tf("status_meta_save_failed", &[("error", &e)]));
-                            return Task::none();
-                        }
-                    };
-                    app.status = Some(tf(
-                        if now {
-                            "status_tracking"
-                        } else {
-                            "status_untracked"
-                        },
-                        &[("name", &m.display_name())],
-                    ));
-                }
-            }
-        }
+        // ---- per-mod local flag (Ignore update) ----
         Message::ModIgnoreUpdate(i) => {
             app.menu_mod = None;
             if let (Some(inst), Some(m)) = (app.created.as_ref(), app.mods.get(i)) {

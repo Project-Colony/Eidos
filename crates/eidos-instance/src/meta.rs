@@ -655,7 +655,8 @@ impl ModMeta {
         self.set("endorsed", if b { "1" } else { "0" });
     }
 
-    /// Track / untrack the mod (local flag only, MO2's "Track").
+    /// Track / untrack the mod locally (MO2's "Track"); the Nexus side is
+    /// handled by the caller.
     pub fn set_tracked(&mut self, b: bool) {
         self.set("tracked", if b { "1" } else { "0" });
     }

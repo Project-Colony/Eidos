@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=934a486c32ef664673b79db2d9a5beb6917f5a30 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
 
 # Eidos 사용하기
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # 기존 MO2 프로필의 순서 + 플러�
 eidos sort skyrimse               # 플러그인 로드 순서를 LOOT로 정렬
 eidos play skyrimse               # 무엇이 마운트될지 보기
 eidos play skyrimse -- <command>  # 게임 위에 모드를 마운트한 채 <command> 실행
+eidos shell skyrimse              # 병합된 뷰에서 셸 실행, 쓰기는 Overwrite에 저장
 eidos check skyrimse              # 창 없이 상태 검사 (스크립트용 --json)
 eidos sessions skyrimse           # 기록된 게임과 도구 실행을 최신순으로
 eidos sessions skyrimse diff      # 종료 코드 0으로 끝난 마지막 실행 이후 바뀐 내용
@@ -34,7 +35,11 @@ eidos unpack backup.eidos <folder>   # 다른 기계에서 되돌려 놓기
 
 `eidos check <instance>`는 창을 열지 않고 **Diagnostics** 탭의 프리픽스, 플러그인, 빠진 마스터, 스크립트 익스텐더 검사를 돌립니다. 그래서 SSH나 Game Mode에서도 돌릴 수 있고 버그 보고에 넣을 수 있습니다. **Copy report**와 같은 시스템 줄을 출력한 다음, 발견 사항마다 한 줄씩 출력합니다. 홈 폴더는 `~`로, 로그인 이름은 `<user>`로 표시됩니다. 종료 코드는 문제가 없으면 0(조언만 있어도 0), 문제가 하나라도 있으면 1, Eidos가 검사하지 못했으면 2입니다. 검사하지 못하는 경우는 잘못된 인수, 열 수 없는 인스턴스, 감지되지 않는 게임입니다.
 
-`eidos check <instance> --json`은 대신 JSON 객체 하나를 출력합니다. 최상위 필드는 `eidos`(버전), `game`, `instance`, `system`(`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`), `findings`입니다. 각 발견 사항은 `code`, `level`(`problem` 또는 `advice`), 그리고 그 `args`로 이루어지며, 각 코드의 문장은 Diagnostics 탭에 나옵니다.
+`eidos check <instance> --json`은 대신 JSON 객체 하나를 출력합니다. 최상위 필드는 `eidos`(버전), `game`, `instance`, `system`(`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`, `max_map_count`, `open_files_hard`), `findings`입니다. `max_map_count`와 `open_files_hard`는 숫자이며, Eidos가 읽지 못했을 때는 `null`입니다. 각 발견 사항은 `code`, `level`(`problem` 또는 `advice`), 그리고 그 `args`로 이루어지며, 각 코드의 문장은 Diagnostics 탭에 나옵니다.
+
+### 병합된 뷰의 셸
+
+`eidos shell <instance>`는 게임이 보는 모습 그대로의 게임 폴더에서 `$SHELL`(없으면 `/bin/sh`)을 시작합니다. 활성화된 모든 모드가 `Data` 위에 마운트되고, Root 모드는 게임 루트 위에 마운트되며, 거기에 쓰이는 모든 것은 Overwrite에 들어갑니다. `eidos shell <instance> -- <command>`는 대신 명령 하나만 실행합니다. 예를 들어 `eidos shell skyrimse -- ls Data/meshes`나 NifSkope 같은 네이티브 도구입니다. 이 실행은 게임 세션처럼 인스턴스 잠금을 유지하므로 종료할 때까지 창이 변경을 저장할 수 없고, `eidos sessions`에는 `shell`이라는 이름으로 기록되며 게임 실행으로는 기록되지 않습니다. 명령 실행 중 Ctrl+C는 Stop과 같은 방식으로 실행을 멈춥니다. Eidos가 명령을 끝내고, 세션을 수집하고, 마운트를 해제합니다. 대화형 셸에서 Ctrl+C는 평소처럼 셸의 것입니다. 실행을 끝내려면 `exit`를 입력합니다.
 
 ### 인스턴스: 전역과 휴대용
 
@@ -422,8 +427,9 @@ Conflicts / Overwrite / Saves / Downloads / Diagnostics 탭과 실행 대상 선
 Accessibility가 먼저 오고, 그다음 Mod list, Nexus, About이 옵니다. 모든 변경은
 즉시 적용되고 저장됩니다. Save 버튼은 없습니다.
 
-- **General**: Eidos가 여는 게임, 창 크기, 인터페이스 언어, 도구 폴더, 그리고
-  게임을 실행하는 방식. 창은 영어와 프랑스어를 지원합니다. **System**은
+- **General**: Eidos가 여는 게임, 창 크기, 인터페이스 언어, 도구 폴더, 게임을
+  실행하는 방식, 그리고 창이 뒤에 있는 동안 긴 작업이 끝나면 데스크톱 알림으로
+  알릴지 여부. 창은 영어와 프랑스어를 지원합니다. **System**은
   `LC_ALL`, `LC_MESSAGES`, `LANG`을 따르며, 변경은 즉시 적용됩니다. `eidos`
   명령줄은 언제나 영어로 답합니다.
 - **Appearance**: 테마(25개 계열, 57개 팔레트, 기본값은 Eidos의 양피지), 강조
@@ -433,6 +439,8 @@ Accessibility가 먼저 오고, 그다음 Mod list, Nexus, About이 옵니다. �
 
 이 설정은 `~/.config/Colony/Eidos/preferences.json`에 저장됩니다. 예전 Eidos가
 `settings.ini`에 두던 테마는 처음 한 번 옮겨집니다.
+
+**About -> Version**에 릴리스 확인이 있으며 기본으로 켜져 있습니다. 시작할 때 하루 한 번까지, Eidos는 GitHub에 `Project-Colony/Eidos`의 최신 릴리스를 묻습니다. 실행 중인 사본보다 새로우면 메뉴 막대의 Help 뒤에 `Eidos 1.24.0 is available: release notes`가 표시되고, 링크는 변경 내역이 담긴 그 릴리스의 페이지를 엽니다. Eidos는 스스로를 내려받거나 교체하지 않습니다. 오프라인 모드에서는 확인을 건너뜁니다. 패키지 관리자가 `/usr` 아래에 설치한 사본에서는 꺼져 있으며, 업데이트는 패키지 관리자가 합니다. `install.sh --system`이 Eidos를 두는 `/usr/local`은 직접 설치한 것으로 칩니다.
 
 ### 열, 정렬, 그룹
 
@@ -579,12 +587,21 @@ Downloads 탭은 전송 대기열이 아니라 압축 파일 **서고**입니다
 클릭으로 지우는데, **화면에 보이는** 것만 지웁니다: 필터가 곧 여러분이 어느 것을
 뜻했는지 말한 방식입니다.
 
+**Preferences -> Nexus -> Install downloads when they finish** 는 기본값이 꺼짐입니다. 켜면 창이 열려 있는 동안 끝난 Nexus 다운로드가 Downloads 탭을 거치지 않고 설치됩니다. 설치 방식은 평소와 같아서, FOMOD는 설치 창을 열고 모드 목록에 이미 있는 이름이면 어떻게 할지 묻습니다. 창을 열기 전이나 옵션을 켜기 전부터 `downloads/`에 있던 아카이브는 건드리지 않으며, 설치를 취소한 다운로드도 마찬가지입니다. 컬렉션 패널에 열려 있는 컬렉션의 구성원과 대기 중인 업데이트가 기다리는 파일은 해당 흐름만 설치합니다. 게임이나 다른 Eidos가 인스턴스를 잡고 있는 동안에는 풀릴 때까지 설치를 기다립니다.
+
 ### 모드 업데이트
 
 도구 모음 오른쪽 끝의 업데이트 버튼은 설치된 각 파일을 Nexus에서
 그것을 대체한 파일과 비교합니다. 제작자는 새 업로드를 이전 파일의 후속 파일로 표시하고,
 Eidos는 모드의 `meta.ini`에 기록된 파일 ID에서 시작해 그 사슬을 따라갑니다. 사슬이
 후속 파일을 가리키지 않으면 대신 모드 페이지의 버전을 비교합니다.
+
+모드 오른쪽 클릭 메뉴의 Track과 Untrack은 그 모드를 Nexus의 추적 중인 모드에 추가하거나
+거기서 제거하므로, 사이트 알림이 여기서 추적하는 것과 맞춰집니다. 업데이트를 확인할 때마다
+Nexus에서 추천(endorsement) 목록과 추적 중인 모드 목록도 읽어(요청 2회) 각 모드의 Endorsed와
+Tracked 플래그를 그 모드 자신의 Nexus 도메인 기준으로 맞춥니다. 둘이 다르면 Nexus가
+우선합니다. 어느 한 목록이라도 읽지 못하면 확인 결과가 그렇다고 알리고 해당 플래그는
+그대로 둡니다.
 
 "Information..."의 **Nexus files** 탭은 Nexus에 있는 모드의 파일을 최신순으로 나열하고,
 여기에 설치된 파일과 그것을 대체하는 파일을 표시합니다. 그 두 번째 행에는 **Update**
@@ -626,7 +643,7 @@ Skyrim 컬렉션을 열면, 구성 항목들을 엉뚱한 모드 목록에 맞�
 
 ### 오프라인 모드
 
-**Preferences -> Nexus -> Offline**은 Eidos가 Nexus에 접촉하는 일을 아예 멈춥니다.
+**Preferences -> Nexus -> Offline**은 Eidos가 Nexus에 접촉하는 일을 아예 멈추고, GitHub에서 하루 한 번 하는 릴리스 확인도 건너뜁니다.
 업데이트 확인, 로그인, 내려받기, 컬렉션은 연결 오류로 실패하는 대신 그렇다고
 말합니다. 켜지 않는 한 꺼져 있습니다 - 예전 Eidos가 쓴 설정 파일에는 그런 키가
 없고, 없는 것을 "켜짐"으로 읽으면 업그레이드하는 모두의 네트워크를 끊게 됩니다.
@@ -677,6 +694,8 @@ GUI를 통해 게임을 실행하려면 게임의 Steam 실행 옵션을 실행 
 Eidos는 그 게임의 인스턴스로 열립니다 - 마지막으로 쓴 것이므로 휴대용 인스턴스도
 전역 인스턴스와 똑같이 다시 찾아집니다. Run을 클릭하면 병합된 뷰를 통해
 실행됩니다.
+
+**Start the game at once when a store opens Eidos**를 켜 두면(Preferences, General, Running a game) Eidos는 그 클릭을 건너뜁니다. Health를 확인하고 창을 띄우지 않은 채 게임을 시작합니다. Health에 문제가 있을 때, 모드 목록에 확인이 필요할 때, 플레이 전에 실행하도록 설정한 도구의 출력이 오래되었을 때는 평소처럼 창이 열립니다. 한 번만 창을 보려면 명령 앞에 `EIDOS_WINDOW=1`을 붙이세요: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Steam 밖에서 Run은 Proton이나 Wine으로 게임을 직접 시작하지 않습니다. 그 사본을 가진 스토어에 시작을 요청하고, 스토어가 Eidos를 시작합니다:
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=934a486c32ef664673b79db2d9a5beb6917f5a30 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
 
 # Eidos gebruiken
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # de volgorde + pluginstatus van een bestaa
 eidos sort skyrimse               # de laadvolgorde van de plugins met LOOT sorteren
 eidos play skyrimse               # tonen wat er gekoppeld zou worden
 eidos play skyrimse -- <command>  # <command> draaien met de mods over het spel gekoppeld
+eidos shell skyrimse              # een shell in de samengevoegde weergave, schrijfacties komen in Overwrite
 eidos check skyrimse              # gezondheidscontroles zonder het venster (--json voor scripts)
 eidos sessions skyrimse           # de vastgelegde spel- en toolruns, nieuwste eerst
 eidos sessions skyrimse diff      # wat er veranderd is sinds de laatste run die met code 0 eindigde
@@ -34,7 +35,11 @@ het geheel compleet; draai `eidos` zonder argumenten voor de volledige lijst.
 
 `eidos check <instance>` draait de controles op prefix, plugins, ontbrekende masters en script extender uit het tabblad **Diagnostics** zonder het venster te openen, zodat ze via SSH of in Game Mode kunnen draaien en in een bugrapport terechtkomen. Het drukt dezelfde systeemregels af als **Copy report**, daarna één regel per bevinding, met je thuismap getoond als `~` en je inlognaam als `<user>`. De exitcode is 0 als er geen probleem is gevonden (alleen adviezen geven nog steeds 0), 1 als er minstens één probleem is gevonden, en 2 als Eidos niet kon controleren: verkeerde argumenten, een instantie die het niet kan openen, of een spel dat het niet detecteert.
 
-`eidos check <instance> --json` drukt in plaats daarvan één JSON-object af. De velden op het hoogste niveau zijn `eidos` (de versie), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`) en `findings`. Elke bevinding is een `code`, een `level` (`problem` of `advice`) en zijn `args`; het tabblad Diagnostics toont de zin bij elke code.
+`eidos check <instance> --json` drukt in plaats daarvan één JSON-object af. De velden op het hoogste niveau zijn `eidos` (de versie), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`, `max_map_count`, `open_files_hard`) en `findings`. `max_map_count` en `open_files_hard` zijn getallen, of `null` als Eidos ze niet kon lezen. Elke bevinding is een `code`, een `level` (`problem` of `advice`) en zijn `args`; het tabblad Diagnostics toont de zin bij elke code.
+
+### Een shell in de samengevoegde weergave
+
+`eidos shell <instance>` start je `$SHELL` (of `/bin/sh`) in de spelmap zoals het spel die zou zien: elke ingeschakelde mod over `Data` gekoppeld, Root-mods over de spelroot, en alles wat daar wordt geschreven komt in de Overwrite terecht. `eidos shell <instance> -- <command>` voert in plaats daarvan één commando uit, bijvoorbeeld `eidos shell skyrimse -- ls Data/meshes` of een native tool zoals NifSkope. De run houdt het instantieslot vast zoals een spelsessie, dus het venster kan geen wijzigingen opslaan tot je afsluit, en hij staat in `eidos sessions` onder de naam `shell`, nooit als spelstart. Ctrl+C bij een commando stopt de run zoals Stop: Eidos beëindigt het commando, legt de sessie vast en ontkoppelt. In de interactieve shell blijft Ctrl+C van de shell, zoals gewoonlijk; typ `exit` om de run te beëindigen.
 
 ### Instanties: globaal en draagbaar
 
@@ -484,7 +489,9 @@ Mod list, Nexus en About. Elke wijziging wordt meteen toegepast en opgeslagen; e
 is geen Save-knop.
 
 - **General**: het spel dat Eidos opent, de venstergrootte, de taal van de
-  interface, de tools folder en hoe een spel gestart wordt. Het venster spreekt
+  interface, de tools folder, hoe een spel gestart wordt, en of een
+  bureaubladmelding laat weten wanneer een lange taak eindigt terwijl het venster
+  op de achtergrond staat. Het venster spreekt
   Engels en Frans; **System** volgt `LC_ALL`, `LC_MESSAGES` of `LANG`, en de
   wijziging gaat meteen in. De opdrachtregel `eidos` antwoordt altijd in het Engels.
 - **Appearance**: het thema (25 families, 57 paletten, standaard het perkament
@@ -495,6 +502,8 @@ is geen Save-knop.
 
 Deze staan in `~/.config/Colony/Eidos/preferences.json`. Het thema dat een oudere
 Eidos in `settings.ini` bewaarde, wordt de eerste keer overgenomen.
+
+**About -> Version** bevat de releasecontrole, standaard aan. Bij het starten vraagt Eidos GitHub hoogstens één keer per dag naar de nieuwste release van `Project-Colony/Eidos`. Is die nieuwer dan de draaiende kopie, dan toont de menubalk na Help `Eidos 1.24.0 is available: release notes`, en de link opent de pagina van die release met de changelog. Eidos downloadt of vervangt zichzelf nooit. In offlinemodus wordt de controle overgeslagen. Ze staat uit voor een kopie die een pakketbeheerder onder `/usr` installeerde, want die werkt hem bij; `/usr/local`, waar `install.sh --system` Eidos neerzet, telt als je eigen installatie.
 
 ### Kolommen, sorteren en groeperen
 
@@ -662,6 +671,8 @@ zichtbaar. "Remove N installed" verwijdert de archieven van mods die je al
 geïnstalleerd hebt, in twee klikken, en alleen die **op het scherm**: met het
 filter heb je gezegd welke je bedoelde.
 
+**Preferences -> Nexus -> Install downloads when they finish** staat standaard uit. Staat de optie aan, dan wordt een Nexus-download die klaar is terwijl het venster open is geïnstalleerd zonder omweg via het tabblad Downloads. Het is de gewone installatie: een FOMOD opent zijn installatieprogramma en een naam die al in de modlijst staat vraagt wat er moet gebeuren. Archieven die al in `downloads/` stonden voordat het venster openging of voordat de optie aanging, blijven met rust, net als een download waarvan u de installatie hebt geannuleerd. Leden van een collectie die in het collectiepaneel openstaat en het bestand waarop een lopende Update wacht, worden alleen door die stromen geïnstalleerd. Zolang het spel of een andere Eidos de instantie vasthoudt, wacht de installatie tot ze vrij is.
+
 ### Mod-updates
 
 De updateknop aan het rechtereinde van de werkbalk vergelijkt elk geïnstalleerd
@@ -669,6 +680,14 @@ bestand met het bestand dat het op Nexus verving. Auteurs markeren een nieuwe
 upload als opvolger van een oudere, en Eidos volgt die keten vanaf het
 bestands-id dat de `meta.ini` van de mod vastlegt. Noemt de keten geen opvolger,
 dan wordt in plaats daarvan de versie van de modpagina vergeleken.
+
+Track en Untrack in het rechtermuismenu van een mod voegen de mod toe aan je
+gevolgde mods op Nexus of halen hem eruit, zodat de meldingen van de site
+overeenkomen met wat je hier volgt. Elke updatecontrole leest ook je
+endorsements en gevolgde mods van Nexus (twee verzoeken) en zet de vlaggen
+Endorsed en Tracked van elke mod daarnaar, op het eigen Nexus-domein van de mod.
+Verschillen die twee, dan wint Nexus. Kan een van beide lijsten niet worden
+gelezen, dan meldt de controle dat en blijven die vlaggen zoals ze waren.
 
 Het tabblad **Nexus files** van "Information..." toont de bestanden van de mod
 op Nexus, nieuwste eerst, en markeert het bestand dat hier geïnstalleerd is en
@@ -716,7 +735,7 @@ Als u op updates controleert, vraagt Eidos Nexus ook om de nieuwste revisie van 
 
 ### Offlinemodus
 
-**Preferences -> Nexus -> Offline** laat Eidos Nexus helemaal niet meer benaderen.
+**Preferences -> Nexus -> Offline** laat Eidos Nexus helemaal niet meer benaderen en slaat de dagelijkse releasecontrole op GitHub over.
 Updatecontroles, aanmelden, downloads en collecties zeggen dat, in plaats van te
 falen met een verbindingsfout. Het staat uit tenzij je het aanzet - een
 instellingenbestand dat door een oudere Eidos geschreven is heeft zo'n sleutel
@@ -774,6 +793,8 @@ PATH):
 Eidos opent op de instantie van dat spel - de laatst gebruikte, dus een draagbare
 instantie wordt net zo goed teruggevonden als de globale; klik op Run om het door
 de samengevoegde weergave te starten.
+
+Met **Start the game at once when a store opens Eidos** aan (Preferences, General, Running a game) slaat Eidos die klik over: het controleert Health en start het spel zonder zijn venster te tonen. Het venster opent zoals gewoonlijk wanneer Health een probleem meldt, wanneer de modlijst aandacht nodig heeft of wanneer een tool die vóór het spelen moet draaien een verouderde uitvoer heeft. Wil je het venster voor één start, zet dan `EIDOS_WINDOW=1` voor het commando: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Buiten Steam start Run het spel niet zelf via Proton of Wine. Het vraagt de
 winkel die de kopie bezit om het te starten, en de winkel start Eidos:

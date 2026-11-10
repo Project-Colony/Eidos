@@ -417,7 +417,10 @@ pub(crate) fn tool_btn<'a>(
 }
 
 /// A flat, menu/toolbar-style button (no chrome until hovered).
-pub(crate) fn flat_btn<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
+pub(crate) fn flat_btn<'a>(
+    label: impl iced::widget::text::IntoFragment<'a>,
+    msg: Message,
+) -> Element<'a, Message> {
     button(text(label).size(sz(13)))
         .padding(6)
         .on_press(msg)

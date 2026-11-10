@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f8b463b3dac51b3fef63df81c7c89fd12096d721 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=7f872c8fb702f4417931831cc14a48ffb9d9e30b -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -361,6 +361,12 @@ kendi profilini bulur.
 PGPatcher, profilde etkin hiçbir mod olmadığında ve çıktı klasörü etkin bir
 modun klasörü olduğunda, MO2 altında olduğu gibi bir hatayla durur.
 
+## Wine'ın kendi programları, oyunun önekinde
+
+Dosya menüsü, oyunun önekinde Wine'ın dört programını çalıştırır: winecfg, regedit, Wine dosya gezgini ve kaldırıcı. Diğer araçlar gibi, oyunun araçlarını çalıştıran Proton veya Wine sürümüyle, modlar bağlanmış olarak başlarlar ve pencere onları bekler. **Prefix drive_c**, önekin `C:` sürücüsünü dosya yöneticinizde açar. Önekte o program olana kadar satır gri kalır; bu, mağaza oyunu ilk kez başlattığında olur.
+
+Eidos kayıt defterine kendisi yalnızca bir değer yazar: `HKLM\Software\Bethesda Softworks\<game>` altındaki oyunun `installed path` değeri. Yanlışsa her araç çalıştırmasından önce düzeltir. regedit'te bu değerde yaptığınız değişiklik bir sonraki araç çalıştırmasında geri konur.
+
 ## Önekteki oyun yolu
 
 Windows araçları oyunlarını `HKLM\Software\Bethesda Softworks\<game>`
@@ -397,6 +403,14 @@ mağazadan oyunu başlatmasını ister; hiçbir mağazanın açmadığı bir pen
 Run'ın yaptığı gibi. Mağazadaki ayar eksikse komut hiçbir şey başlatmaz ve
 neyin ayarlanacağını yazdırır. Kısayol hiçbir ileti göstermez, bu yüzden okumak
 için aynı komutu bir terminalde çalıştırın.
+
+Bir profilin oyun için kendi kısayolu olabilir. Profile sağ tıklayıp
+**Desktop shortcut** seçeneğini seçin: kısayol
+`eidos tool <instance> run "<game>" --profile <name>` komutunu çalıştırır; bu
+komut, pencerede seçmekle aynı şekilde o profili etkin profil yapar ve ardından
+mağazadan oyunu başlatmasını ister. Mağazanın açtığı Eidos penceresi o profili
+gösterir. `--profile` her `eidos tool ... run` ile çalışır ve profili araç
+başlamadan önce seçer; `--print` ile hiçbir şey seçmez.
 
 ## Kendi başına bir Steam uygulaması olan araç
 
@@ -494,6 +508,16 @@ successfully" bildirir ve 1439 mesh'i oyunun asla bakmayacağı bir yere yazar.
 Eidos onları yakalar - kurulumunuza değil `Overwrite/Root/` içine inerler - ama
 oyunun bakış açısından, bedenlerinizin inşa edilmemiş olması dışında yanlış
 hiçbir şey yoktur.
+
+Eidos bunu sizin için denetler. Bir BodySlide veya Outfit Studio
+çalıştırmasından önce, kazanan `CalienteTools/BodySlide/Config.xml` içindeki
+`GameDataPath` veya `OutputDataPath` çalıştırma sırasında oyunun `Data`
+klasörüne çıkmıyorsa durum satırı uyarır, Health sekmesi de ayarlanacak değerle
+aynı kartı gösterir. Bir `S:` yolu, Eidos'un bir araç için `S:` sürücüsünü
+eşlediği gibi Steam kütüphanesi klasörü olarak okunur. Örneğe ait `mods/`
+klasörünün içindeki bir `OutputDataPath`, bir çıktı modu için olduğundan kabul
+edilir. Health, `Overwrite/Root/` bir `meshes` veya `textures` klasörü
+içerdiğinde de bir kart gösterir.
 
 Araç çıktısı Overwrite'a aittir. Bir çalıştırma saklamaya değer bir şey
 ürettiğinde, **Overwrite -> Create mod...** onu, başka herhangi biri gibi

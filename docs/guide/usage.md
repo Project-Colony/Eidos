@@ -16,6 +16,7 @@ eidos import skyrimse <mo2-profile>  # adopt an existing MO2 profile's order + p
 eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
+eidos shell skyrimse              # a shell in the merged view, writes land in Overwrite
 eidos check skyrimse              # Health checks without the window (--json for scripts)
 eidos sessions skyrimse           # the recorded game and tool runs, newest first
 eidos sessions skyrimse diff      # what changed since the last run that exited with code 0
@@ -42,8 +43,14 @@ open, or a game it does not detect.
 `eidos check <instance> --json` prints one JSON object instead. Its top-level
 fields are `eidos` (the version), `game`, `instance`, `system` (`proton`,
 `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`,
-`fusermount3`) and `findings`. Each finding is a `code`, a `level` (`problem` or
-`advice`) and its `args`; the Diagnostics tab shows the sentence for each code.
+`fusermount3`, `max_map_count`, `open_files_hard`) and `findings`.
+`max_map_count` and `open_files_hard` are numbers, or `null` when Eidos could
+not read them. Each finding is a `code`, a `level` (`problem` or `advice`) and
+its `args`; the Diagnostics tab shows the sentence for each code.
+
+### A shell in the merged view
+
+`eidos shell <instance>` starts your `$SHELL` (or `/bin/sh`) in the game's folder as the game would see it: every enabled mod mounted over `Data`, Root mods over the game root, and everything written there landing in the Overwrite. `eidos shell <instance> -- <command>` runs one command instead, for example `eidos shell skyrimse -- ls Data/meshes` or a native tool such as NifSkope. The run holds the instance lock like a game session, so the window cannot save changes until you exit, and it is recorded in `eidos sessions` under the name `shell`, never as a game launch. Ctrl+C on a command stops the run the way Stop does: Eidos ends the command, captures the session and unmounts. In the interactive shell Ctrl+C belongs to the shell, as usual; type `exit` to end the run.
 
 ### Instances: global and portable
 
@@ -462,9 +469,11 @@ come first, as in every Colony program, then Mod list, Nexus and About. Every
 change applies and saves at once; there is no Save button.
 
 - **General**: the game Eidos opens, the window size, the interface language,
-  the tools folder and how a game is run. The window speaks English and French;
-  **System** follows `LC_ALL`, `LC_MESSAGES` or `LANG`, and the change applies
-  at once. The `eidos` command line always answers in English.
+  the tools folder, how a game is run, and whether a desktop notification says
+  when a long job ends while the window is in the background. The window speaks
+  English and French; **System** follows `LC_ALL`, `LC_MESSAGES` or `LANG`, and
+  the change applies at once. The `eidos` command line always answers in
+  English.
 - **Appearance**: the theme (25 families, 57 palettes, Eidos's parchment by
   default), the accent colour, the text size, effects and a live preview.
 - **Accessibility**: high contrast, a dyslexia-friendly font, reduced motion and
@@ -472,6 +481,15 @@ change applies and saves at once; there is no Save button.
 
 These live in `~/.config/Colony/Eidos/preferences.json`. The theme an older
 Eidos kept in `settings.ini` is carried over the first time.
+
+**About -> Version** holds the release check, on by default. At start, at most
+once a day, Eidos asks GitHub for the latest release of `Project-Colony/Eidos`.
+When it is newer than the running copy, the menu bar shows `Eidos 1.24.0 is
+available: release notes` after Help, and the link opens that release's page
+with its changelog. Eidos never downloads or replaces itself. The check is
+skipped in offline mode. It is off for a copy installed under `/usr` by a
+package manager, which updates it; `/usr/local`, where `install.sh --system`
+puts Eidos, counts as your own install.
 
 ### Columns, sorting and grouping
 
@@ -626,6 +644,16 @@ same button unhides. "Remove N installed" deletes the archives of mods you have
 already installed, in two clicks, and only the ones **on screen**: the filter is
 how you said which ones you meant.
 
+**Preferences -> Nexus -> Install downloads when they finish** is off by
+default. Turned on, a Nexus download that finishes while the window is open
+installs without a visit to the Downloads tab. It is the usual install: a FOMOD opens its installer, and a name
+already in the mod list asks what to do. Archives that were in `downloads/`
+before the window opened or before the option was turned on are left alone, and
+so is a download whose install you cancelled. Members of a collection open in
+the collection pane, and the file a pending Update waits for, are installed by
+those flows only. While the game or another Eidos holds the instance, the
+install waits until it is free.
+
 ### Mod updates
 
 The update button at the right end of the toolbar compares each installed file
@@ -633,6 +661,13 @@ with the file that replaced it on Nexus. Authors mark a new upload as the
 successor of an older one, and Eidos follows that chain from the file id the
 mod's `meta.ini` records. When the chain names no successor, the mod page's
 version is compared instead.
+
+Track and Untrack in a mod's right-click menu add the mod to your tracked mods
+on Nexus or remove it, so the site's notifications follow what you track here.
+Each update check also reads your endorsements and tracked mods from Nexus (two
+requests) and sets every mod's Endorsed and Tracked flags to match, on the mod's
+own Nexus domain. When the two disagree, Nexus wins. If either list cannot be
+read, the check says so and leaves those flags as they were.
 
 The **Nexus files** tab of "Information..." lists the mod's files on Nexus,
 newest first, and marks the one installed here and the one that replaces it.
@@ -677,8 +712,8 @@ When you run Check for updates, Eidos also asks Nexus for the latest revision of
 
 ### Offline mode
 
-**Preferences -> Nexus -> Offline** stops Eidos contacting Nexus at all. Update
-checks, sign-in, downloads and collections say so instead of failing with a
+**Preferences -> Nexus -> Offline** stops Eidos contacting Nexus at all, and
+skips the daily release check on GitHub. Update checks, sign-in, downloads and collections say so instead of failing with a
 connection error. It is off unless you turn it on - a settings file written by an
 older Eidos has no such key, and reading a missing one as "on" would cut the
 network for everybody who upgrades.
@@ -734,6 +769,14 @@ binary's absolute path (Steam doesn't see `~/.cargo/bin` on PATH):
 Eidos opens on the game's instance - the one you last used, so a portable
 instance is found again just like the global one; click Run to launch it
 through the merged view.
+
+With **Start the game at once when a store opens Eidos** on (Preferences,
+General, Running a game), Eidos skips that click: it checks Health and starts
+the game without showing its window. The window opens as usual when Health
+lists a problem, when the mod list needs attention, or when a tool set to run
+before playing has an out-of-date output. To get the window for one launch, put
+`EIDOS_WINDOW=1` before the command:
+`EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Outside Steam, Run does not start the game through Proton or Wine itself. It
 asks the store that owns the copy to start it, and the store starts Eidos:

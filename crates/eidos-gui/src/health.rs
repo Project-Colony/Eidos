@@ -156,7 +156,7 @@ pub(crate) fn finding_card(f: &eidos::check::Finding) -> Diagnostic {
 /// copies its log.
 pub(crate) fn finding_actions(f: &eidos::check::Finding) -> Vec<(String, Message)> {
     match f.code {
-        "fullscreen_blocks_framegen" | "enb_linux_version" => {
+        "fullscreen_blocks_framegen" | "enb_linux_version" | "stestfile_present" => {
             vec![(t("diag_action_fix").to_string(), Message::HealthFix(f.code))]
         }
         "game_crashed" | "game_crashed_unattributed" => {
@@ -173,6 +173,15 @@ pub(crate) fn finding_actions(f: &eidos::check::Finding) -> Vec<(String, Message
                     Message::CopyCrashLog(log),
                 ),
             ]
+        }
+        "overwrite_root_data" => {
+            let Some(path) = f.arg("path") else {
+                return Vec::new();
+            };
+            vec![(
+                t("common_open_folder").to_string(),
+                Message::OpenFolder(PathBuf::from(path)),
+            )]
         }
         "extender_missing" | "extender_runtime_missing" => {
             let Some(page) = f.arg("page") else {
@@ -191,6 +200,25 @@ pub(crate) fn finding_actions(f: &eidos::check::Finding) -> Vec<(String, Message
         }
         _ => Vec::new(),
     }
+}
+
+/// The first `bodyslide_data_path` card title when `title` names a BodySlide or Outfit Studio tool.
+pub(crate) fn bodyslide_run_note(app: &crate::App, title: &str) -> Option<String> {
+    let tool = app
+        .tools
+        .iter()
+        .find(|t| t.title.eq_ignore_ascii_case(title))?;
+    if !eidos::check::bodyslide::is_bodyslide(&tool.exe) {
+        return None;
+    }
+    let game = crate::state::selected_game(app)?;
+    let inst = app.created.as_ref()?;
+    let facts =
+        eidos::check::bodyslide::bodyslide_facts(game, inst, &eidos::check::active_mods(inst));
+    eidos::check::bodyslide::bodyslide_findings(&facts)
+        .iter()
+        .find(|f| f.code == "bodyslide_data_path")
+        .map(|f| finding_card(f).title)
 }
 
 /// Whether Eidos can reach Nexus on the user's behalf. Not a card about the
@@ -443,21 +471,62 @@ mod tests {
     #[test]
     fn fixable_cards_carry_a_fix_button() {
         use eidos::check::{Finding, Level};
-        let a = finding_actions(&Finding {
-            code: "enb_linux_version",
-            level: Level::Advice,
-            args: vec![],
-        });
-        assert!(matches!(
-            a.as_slice(),
-            [(_, Message::HealthFix("enb_linux_version"))]
-        ));
+        for code in ["enb_linux_version", "stestfile_present"] {
+            let a = finding_actions(&Finding {
+                code,
+                level: Level::Advice,
+                args: vec![],
+            });
+            assert!(matches!(a.as_slice(), [(_, Message::HealthFix(c))] if *c == code));
+        }
         let none = finding_actions(&Finding {
             code: "nvapi_missing",
             level: Level::Advice,
             args: vec![],
         });
         assert!(none.is_empty());
+    }
+
+    #[test]
+    fn the_overwrite_root_card_opens_the_folder() {
+        use eidos::check::{Finding, Level};
+        let a = finding_actions(&Finding {
+            code: "overwrite_root_data",
+            level: Level::Advice,
+            args: vec![("path", "/i/overwrite/Root".into())],
+        });
+        assert!(
+            matches!(&a[..], [(_, Message::OpenFolder(p))] if p == Path::new("/i/overwrite/Root"))
+        );
+    }
+
+    #[test]
+    fn bodyslide_run_note_is_one_line_for_bodyslide_only() {
+        let (mut app, root) = crate::test_support::data_app(
+            &[(
+                "CalienteTools/BodySlide/Config.xml",
+                "<Config><GameDataPath>Z:\\nowhere\\</GameDataPath></Config>",
+            )],
+            &[],
+        );
+        // No dosdevices: Z: falls back to /.
+        app.games[0].compatdata = Some(root.join("compatdata"));
+        app.tools = vec![
+            eidos_instance::Tool {
+                title: "BodySlide".into(),
+                exe: "Data/CalienteTools/BodySlide/BodySlide x64.exe".into(),
+                ..Default::default()
+            },
+            eidos_instance::Tool {
+                title: "SSEEdit".into(),
+                exe: "SSEEdit.exe".into(),
+                ..Default::default()
+            },
+        ];
+        let note = bodyslide_run_note(&app, "BodySlide").expect("a note");
+        assert!(!note.contains('\n'), "{note}");
+        assert_eq!(bodyslide_run_note(&app, "SSEEdit"), None);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

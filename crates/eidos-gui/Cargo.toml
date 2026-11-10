@@ -67,6 +67,8 @@ image-decoder = { workspace = true, features = ["png", "jpeg", "bmp", "gif", "we
 # Pinned to a tag, as Colony and Xion pin it: a change upstream must not be able
 # to alter this window without a deliberate bump.
 colony-ui.workspace = true
+# Desktop notifications, already built through iced.
+zbus.workspace = true
 
 [dev-dependencies]
 iced_runtime.workspace = true

@@ -26,6 +26,8 @@ mod tools;
 mod window;
 mod wizard;
 
+pub(crate) use launch::{start_directly, wait_direct_run};
+
 /// Open `archive` on a worker thread, reporting 7-Zip's percentage as it goes.
 ///
 /// Everything here used to happen inline in `update()`. The work is identical;
@@ -1085,6 +1087,10 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
     match m {
         Message::PointerAt(_)
         | Message::WindowResized(_)
+        // The user switching to another window decides nothing here; as an
+        // action it would disarm a confirmation and be dropped behind an
+        // open installer.
+        | Message::WindowFocused(_)
         // Grabbing the divider resizes the window's furniture; it is not the
         // user deciding anything about the row a confirmation is armed on.
         | Message::SplitGrab
@@ -1116,6 +1122,8 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         | Message::PreviewReady(..)
         // A worker's answer arriving, not a click.
         | Message::Placed(..)
+        | Message::ModTracked(..)
+        | Message::EidosReleaseChecked(..)
         // Same for the answers of the nxm handler worker (read, register).
         | Message::NxmHandlerRead(..)
         | Message::NxmRegistered(..)
@@ -1296,6 +1304,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::ProfileCopyCommit
         | Message::ProfileDeleteConfirm(..)
         | Message::ProfileDeleteCommit(..)
+        | Message::ProfileDesktopShortcut(..)
         | Message::ShowBackupsDialog
         | Message::CloseBackupsDialog
         | Message::CreateBackup(..)
@@ -1308,6 +1317,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::CancelDisable
         | Message::SendToFirstConflict(..)
         | Message::SendToLastConflict(..)
+        | Message::MoveModBelow { .. }
         | Message::SendToPriorityStart(..)
         | Message::SendToPriorityChanged(..)
         | Message::SendToPriorityCommit
@@ -1339,7 +1349,6 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::ToggleFilterMatch
         | Message::ToggleFilterPane
         | Message::ClearFilters
-        | Message::ModTrack(..)
         | Message::ModIgnoreUpdate(..)
         | Message::CreateEmptyMod
         | Message::CreateEmptyModAt(..)
@@ -1568,15 +1577,22 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::SettingsToggleSection(..)
         | Message::ToggleRememberWindow(..)
         | Message::ToggleOffline(..)
+        | Message::ToggleAutoInstall(..)
+        | Message::ToggleReleaseCheck(..)
+        | Message::EidosReleaseChecked(..)
         | Message::PreferredServersChanged(..)
         | Message::DefaultGameChanged(..)
         | Message::ToggleLockGui(..)
+        | Message::ToggleStartDirectly(..)
+        | Message::ToggleNotifyWhenAway(..)
         | Message::ToolsDirChanged(..)
         | Message::BrowseToolsDir) => preferences::handle(app, m),
         m @ (Message::IdentifyDownload(..)
         | Message::IdentifiedDownload(..)
         | Message::ModEndorse(..)
         | Message::ModEndorsed(..)
+        | Message::ModTrack(..)
+        | Message::ModTracked(..)
         | Message::NexusFilesFetched { .. }
         | Message::NexusUpdate { .. }
         | Message::CheckUpdates
@@ -1695,6 +1711,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::SplitGrab
         | Message::AnimationTick
         | Message::WindowResized(..)
+        | Message::WindowFocused(..)
         | Message::CycleFocus
         | Message::SelectAllInFocus
         | Message::KeyNav(..)
@@ -1905,6 +1922,7 @@ pub(crate) fn open_instance(app: &mut App, inst: Instance) {
     // Another instance's LOOT verdicts must not decorate this one's plugins.
     app.loot_meta = None;
     app.endorsing = None;
+    app.tracking = None;
     app.collection = None;
     // Update checks are per instance; the old notices would open against this game.
     app.collection_notices.clear();

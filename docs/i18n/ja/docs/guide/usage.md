@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=934a486c32ef664673b79db2d9a5beb6917f5a30 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
 
 # Eidos の使い方
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # 既存の MO2 プロファイルの順序
 eidos sort skyrimse               # プラグインのロード順を LOOT で並べ替える
 eidos play skyrimse               # 何がマウントされるかを表示する
 eidos play skyrimse -- <command>  # MOD をゲームに重ねた状態で <command> を実行する
+eidos shell skyrimse              # 統合ビューでシェルを開く。書き込みは Overwrite に入る
 eidos check skyrimse              # ウィンドウなしで健全性チェック(スクリプト向けに --json)
 eidos sessions skyrimse           # 記録されたゲームとツールの実行を新しい順に表示
 eidos sessions skyrimse diff      # 終了コード 0 で終わった直近の実行から何が変わったかを表示
@@ -34,7 +35,11 @@ eidos unpack backup.eidos <folder>   # 向こうのマシンで元に戻す
 
 `eidos check <instance>` は、ウィンドウを開かずに、**Diagnostics** タブにあるプレフィックス、プラグイン、欠けたマスター、スクリプトエクステンダのチェックを実行します。SSH 越しや Game Mode でも動かせ、バグ報告にも貼れます。**Copy report** と同じシステム情報の行を出力し、続いて検出ごとに 1 行を出力します。ホームフォルダは `~`、ログイン名は `<user>` に置き換えて表示します。終了コードは、問題が見つからなければ 0(助言だけなら 0 のまま)、問題が 1 つ以上見つかれば 1、Eidos がチェックできなかったとき(引数の誤り、開けないインスタンス、検出できないゲーム)は 2 です。
 
-`eidos check <instance> --json` は代わりに JSON オブジェクトを 1 つ出力します。最上位のフィールドは `eidos`(バージョン)、`game`、`instance`、`system`(`proton`、`flatpak_steam`、`passthrough`、`session`、`distro`、`kernel`、`dev_fuse`、`fusermount3`)、`findings` です。各検出は `code`、`level`(`problem` または `advice`)、その `args` からなり、各コードの説明文は Diagnostics タブに表示されます。
+`eidos check <instance> --json` は代わりに JSON オブジェクトを 1 つ出力します。最上位のフィールドは `eidos`(バージョン)、`game`、`instance`、`system`(`proton`、`flatpak_steam`、`passthrough`、`session`、`distro`、`kernel`、`dev_fuse`、`fusermount3`、`max_map_count`、`open_files_hard`)、`findings` です。`max_map_count` と `open_files_hard` は数値で、Eidos が読み取れなかったときは `null` です。各検出は `code`、`level`(`problem` または `advice`)、その `args` からなり、各コードの説明文は Diagnostics タブに表示されます。
+
+### 統合ビューでのシェル
+
+`eidos shell <instance>` は、ゲームから見える状態のゲームフォルダで `$SHELL`(なければ `/bin/sh`)を起動します。有効な MOD はすべて `Data` に重ねられ、Root MOD はゲームのルートに重ねられ、そこへ書き込まれたものはすべて Overwrite に入ります。`eidos shell <instance> -- <command>` は代わりにコマンドを 1 つだけ実行します。たとえば `eidos shell skyrimse -- ls Data/meshes` や、NifSkope のようなネイティブツールです。この実行はゲームのセッションと同じくインスタンスのロックを保持するので、終了するまでウィンドウは変更を保存できず、`eidos sessions` には `shell` という名前で記録され、ゲームの起動としては記録されません。コマンド実行中の Ctrl+C は Stop と同じように実行を止めます。Eidos がコマンドを終了させ、セッションを回収し、アンマウントします。対話シェルでは Ctrl+C は通常どおりシェルのものです。実行を終えるには `exit` と入力します。
 
 ### インスタンス: グローバルとポータブル
 
@@ -429,7 +434,9 @@ Diagnostics のタブと、実行対象を選べる Run ボタン。
 保存されます。Save ボタンはありません。
 
 - **General**: Eidos が開くゲーム、ウィンドウの大きさ、インターフェースの言語、
-  ツールフォルダ、ゲームの実行方法。ウィンドウは英語とフランス語に対応しています。
+  ツールフォルダ、ゲームの実行方法、
+  ウィンドウが背面にある間に長い処理が終わったときデスクトップ通知で知らせるかどうか。
+  ウィンドウは英語とフランス語に対応しています。
   **System** は `LC_ALL`、`LC_MESSAGES`、`LANG` に従い、変更はその場で
   反映されます。`eidos` のコマンドラインは常に英語で応答します。
 - **Appearance**: テーマ(25 のファミリ、57 のパレット、既定は Eidos の羊皮紙)、
@@ -440,6 +447,8 @@ Diagnostics のタブと、実行対象を選べる Run ボタン。
 
 これらは `~/.config/Colony/Eidos/preferences.json` に保存されます。以前の Eidos が
 `settings.ini` に保存していたテーマは、初回に引き継がれます。
+
+**About -> Version** にはリリース確認があり、既定で有効です。起動時に、1 日 1 回まで、Eidos は GitHub に `Project-Colony/Eidos` の最新リリースを問い合わせます。実行中のコピーより新しければ、メニューバーの Help の後ろに `Eidos 1.24.0 is available: release notes` が表示され、そのリンクで変更履歴の載ったリリースページが開きます。Eidos が自分自身をダウンロードしたり置き換えたりすることはありません。オフラインモードでは確認を行いません。パッケージマネージャーが `/usr` 以下に入れたコピーでは無効で、更新はパッケージマネージャーが行います。`install.sh --system` が Eidos を置く `/usr/local` は、自分で入れたものとして扱います。
 
 ### 列、並べ替え、グループ化
 
@@ -590,6 +599,8 @@ Downloads タブは転送の待ち行列ではなく、書庫の**書棚**です
 削除します。消えるのは**画面に出ているもの**だけ。どれのことかは、絞り込みで
 言ったのですから。
 
+**Preferences -> Nexus -> Install downloads when they finish** は初期状態でオフです。オンにすると、ウィンドウを開いている間に終わった Nexus のダウンロードは、Downloads タブを開かなくてもインストールされます。通常のインストールと同じで、FOMOD ならインストーラーが開き、modリストにすでにある名前なら対応を尋ねられます。ウィンドウを開く前、またはオプションをオンにする前から `downloads/` にあったアーカイブには手を付けません。インストールを取り消したダウンロードも同じです。コレクションパネルで開いているコレクションのメンバーと、保留中のアップデートが待っているファイルは、それぞれの処理だけがインストールします。ゲームや別の Eidos がインスタンスを握っている間は、空くまでインストールを待ちます。
+
 ### MOD の更新
 
 ツールバー右端の更新ボタンは、インストール済みの
@@ -597,6 +608,13 @@ Downloads タブは転送の待ち行列ではなく、書庫の**書棚**です
 古いものの後継として印を付け、Eidos は MOD の `meta.ini` が記録しているファイル ID
 からその連鎖をたどります。連鎖が後継を示さないときは、代わりに MOD ページの
 バージョンを比べます。
+
+MOD の右クリックメニューにある Track と Untrack は、その MOD を Nexus の追跡中 MOD に
+加えたり外したりします。これでサイトの通知が、ここで追跡しているものと一致します。
+更新の確認のたびに、Eidos は Nexus からあなたの推薦 (endorsement) と追跡中 MOD も
+読み込み (リクエスト 2 回)、各 MOD の Endorsed と Tracked のフラグを、その MOD 自身の
+Nexus ドメインで合わせます。両者が食い違うときは Nexus が優先されます。どちらかの
+リストを読めなかったときは、確認がそのことを伝え、それらのフラグは元のままにします。
 
 「Information...」の **Nexus files** タブは、Nexus 上の MOD のファイルを新しい順に
 並べ、ここにインストールされているものと、それを置き換えるものに印を付けます。
@@ -641,8 +659,8 @@ MOD 一覧と突き合わせる代わりに名前を挙げて断ります。そ�
 
 ### オフラインモード
 
-**Preferences -> Nexus -> Offline** は Eidos が Nexus に接続すること自体をやめさせ
-ます。更新確認、サインイン、ダウンロード、コレクションは、接続エラーで失敗する
+**Preferences -> Nexus -> Offline** は Eidos が Nexus に接続すること自体をやめさせ、
+GitHub への 1 日 1 回のリリース確認も省きます。更新確認、サインイン、ダウンロード、コレクションは、接続エラーで失敗する
 代わりにそう言います。自分で入れない限り無効です - 古い Eidos が書いた設定
 ファイルにはこのキーがなく、無いものを「有効」と読めば、更新した人全員の
 ネットワークを切ってしまいます。
@@ -693,6 +711,8 @@ GUI からゲームを起動するには、そのゲームの Steam 起動オプ
 Eidos はそのゲームのインスタンスで開きます - 最後に使ったものなので、ポータブル
 インスタンスもグローバルと同じように見つかります。Run を押せば統合ビュー越しに
 起動します。
+
+**Start the game at once when a store opens Eidos** をオンにすると (Preferences、General、Running a game)、Eidos はこのクリックを省きます。Health を確認し、ウィンドウを表示せずにゲームを起動します。Health が問題を挙げたとき、MOD リストに対応が必要なとき、プレイ前に実行するよう設定したツールの出力が古いときは、いつもどおりウィンドウが開きます。1 回の起動だけウィンドウを出したい場合は、コマンドの前に `EIDOS_WINDOW=1` を付けます (`EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`)。
 
 Steam の外では、Run は Proton や Wine でゲームを自分で起動しません。そのコピーを持つストアに起動を頼み、ストアが Eidos を起動します。
 

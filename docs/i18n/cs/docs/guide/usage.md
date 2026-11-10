@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=934a486c32ef664673b79db2d9a5beb6917f5a30 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
 
 # Používání Eidosu
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # adopt an existing MO2 profile's order + p
 eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
+eidos shell skyrimse              # shell ve sloučeném pohledu, zápisy skončí v Overwrite
 eidos check skyrimse              # kontroly zdraví bez okna (--json pro skripty)
 eidos sessions skyrimse           # zaznamenaná spuštění hry a nástrojů, nejnovější první
 eidos sessions skyrimse diff      # co se změnilo od posledního spuštění, které skončilo kódem 0
@@ -34,7 +35,11 @@ doplňují; úplný seznam vypíše `eidos` bez argumentů.
 
 `eidos check <instance>` spustí kontroly prefixu, pluginů, chybějících masterů a script extenderu z karty **Diagnostics**, aniž by otevřel okno, takže mohou běžet přes SSH nebo v Game Mode a skončit v hlášení chyby. Vypíše stejné systémové řádky jako **Copy report** a pak jeden řádek na každé zjištění, s domovskou složkou zobrazenou jako `~` a přihlašovacím jménem jako `<user>`. Návratový kód je 0, když se nenašel žádný problém (samotné rady stále dávají 0), 1, když se našel aspoň jeden problém, a 2, když Eidos nemohl kontrolu provést: chybné argumenty, instance, kterou nedokáže otevřít, nebo hra, kterou nerozpozná.
 
-`eidos check <instance> --json` místo toho vypíše jeden objekt JSON. Jeho pole nejvyšší úrovně jsou `eidos` (verze), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`) a `findings`. Každé zjištění tvoří `code`, `level` (`problem` nebo `advice`) a jeho `args`; karta Diagnostics ukazuje větu ke každému kódu.
+`eidos check <instance> --json` místo toho vypíše jeden objekt JSON. Jeho pole nejvyšší úrovně jsou `eidos` (verze), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`, `max_map_count`, `open_files_hard`) a `findings`. `max_map_count` a `open_files_hard` jsou čísla, nebo `null`, když je Eidos nedokázal přečíst. Každé zjištění tvoří `code`, `level` (`problem` nebo `advice`) a jeho `args`; karta Diagnostics ukazuje větu ke každému kódu.
+
+### Shell ve sloučeném pohledu
+
+`eidos shell <instance>` spustí váš `$SHELL` (nebo `/bin/sh`) ve složce hry tak, jak by ji viděla hra: každý zapnutý mód připojený nad `Data`, módy Root nad kořenem hry a vše, co se tam zapíše, skončí v Overwrite. `eidos shell <instance> -- <command>` místo toho spustí jediný příkaz, například `eidos shell skyrimse -- ls Data/meshes` nebo nativní nástroj jako NifSkope. Běh drží zámek instance stejně jako herní relace, takže okno nemůže ukládat změny, dokud neskončíte, a v `eidos sessions` je zapsán pod názvem `shell`, nikdy jako spuštění hry. Ctrl+C u příkazu zastaví běh stejně jako Stop: Eidos příkaz ukončí, zachytí relaci a odpojí pohled. V interaktivním shellu zůstává Ctrl+C shellu, jako obvykle; běh ukončíte příkazem `exit`.
 
 ### Instance: globální a přenosné
 
@@ -452,7 +457,8 @@ potom Mod list, Nexus a About. Každá změna se okamžitě použije i uloží; 
 tlačítko Uložit není.
 
 - **General**: hra, kterou Eidos otevře, velikost okna, jazyk rozhraní, složka
-  s nástroji a způsob, jakým se hra spouští. Okno mluví anglicky a francouzsky;
+  s nástroji, způsob, jakým se hra spouští, a zda oznámení na ploše řekne, kdy
+  skončí dlouhá úloha, zatímco je okno v pozadí. Okno mluví anglicky a francouzsky;
   **System** se řídí podle `LC_ALL`, `LC_MESSAGES` nebo `LANG` a změna se
   projeví okamžitě. Příkazová řádka `eidos` odpovídá vždy anglicky.
 - **Appearance**: motiv (25 rodin, 57 palet, ve výchozím stavu pergamen
@@ -462,6 +468,8 @@ tlačítko Uložit není.
 
 Tyto předvolby žijí v `~/.config/Colony/Eidos/preferences.json`. Motiv, který
 starší Eidos držel v `settings.ini`, se napoprvé přenese.
+
+**About -> Version** obsahuje kontrolu vydání, ve výchozím stavu zapnutou. Při spuštění, nejvýše jednou denně, se Eidos zeptá GitHubu na poslední vydání `Project-Colony/Eidos`. Je-li novější než běžící kopie, panel nabídek ukáže za Help `Eidos 1.24.0 is available: release notes` a odkaz otevře stránku toho vydání s jeho seznamem změn. Eidos se nikdy sám nestahuje ani nenahrazuje. V režimu offline se kontrola vynechá. Je vypnutá u kopie, kterou do `/usr` nainstaloval správce balíčků, protože ten ji aktualizuje; `/usr/local`, kam Eidos dává `install.sh --system`, se počítá jako vaše vlastní instalace.
 
 ### Sloupce, řazení a seskupování
 
@@ -615,6 +623,8 @@ vrátí a totéž tlačítko skrytí zruší. „Remove N installed" smaže arch
 které jste už nainstalovali, na dvě kliknutí, a jen ty **na obrazovce**: filtrem
 jste řekli, které jste mysleli.
 
+**Preferences -> Nexus -> Install downloads when they finish** je ve výchozím stavu vypnuto. Po zapnutí se stažení z Nexusu, které skončí při otevřeném okně, nainstaluje samo, aniž byste museli na kartu Downloads. Je to obvyklá instalace: FOMOD otevře svůj instalátor a název, který už v seznamu modů je, se zeptá, co dělat. Archivy, které byly v `downloads/` před otevřením okna nebo před zapnutím volby, se nechají být, stejně jako stažení, jehož instalaci jste zrušili. Členy kolekce otevřené v panelu kolekcí a soubor, na který čeká čekající Update, instalují jen tyto postupy. Dokud hru nebo jiný Eidos drží instanci, instalace počká, až bude volná.
+
 ### Aktualizace módů
 
 Tlačítko aktualizace na pravém konci panelu nástrojů porovná každý nainstalovaný
@@ -622,6 +632,14 @@ soubor se souborem, který ho na Nexusu nahradil. Autoři označují nové nahr�
 jako nástupce staršího a Eidos jde po tomto řetězci od ID souboru, které
 zaznamenává `meta.ini` módu. Když řetězec žádného nástupce neuvádí, porovná se
 místo toho verze ze stránky módu.
+
+Track a Untrack v nabídce pravého tlačítka módu přidají mód do vašich
+sledovaných módů na Nexusu nebo ho z nich odeberou, takže upozornění z webu
+odpovídají tomu, co sledujete tady. Každá kontrola aktualizací také načte z
+Nexusu vaše doporučení a sledované módy (dva požadavky) a podle nich nastaví
+příznaky Endorsed a Tracked každého módu, a to na vlastní doméně Nexusu daného
+módu. Když se obě strany liší, platí Nexus. Pokud se některý ze seznamů nepodaří
+načíst, kontrola to oznámí a tyto příznaky ponechá, jak byly.
 
 Karta **Nexus files** v „Information..." vypíše soubory módu na Nexusu,
 nejnovější první, a označí ten, který je nainstalovaný tady, a ten, který ho
@@ -667,7 +685,7 @@ Když spustíte Zkontrolovat aktualizace, Eidos se také zeptá Nexusu na nejnov
 
 ### Režim offline
 
-**Preferences -> Nexus -> Offline** Eidosu zcela zabrání kontaktovat Nexus.
+**Preferences -> Nexus -> Offline** Eidosu zcela zabrání kontaktovat Nexus a vynechá denní kontrolu vydání na GitHubu.
 Kontroly aktualizací, přihlášení, stahování a kolekce to řeknou, místo aby
 selhaly chybou spojení. Je vypnutý, dokud jej nezapnete - soubor nastavení
 zapsaný starším Eidosem takový klíč nemá a číst chybějící jako „zapnuto" by
@@ -719,6 +737,8 @@ absolutní cestu k binárce (Steam nevidí `~/.cargo/bin` v PATH):
 Eidos se otevře na instanci té hry - té, kterou jste použili naposledy, takže
 přenosná instance se najde znovu stejně jako globální; kliknutím na Run ji
 spustíte skrz sloučený pohled.
+
+Se zapnutou volbou **Start the game at once when a store opens Eidos** (Preferences, General, Running a game) Eidos toto kliknutí přeskočí: zkontroluje Health a spustí hru, aniž by ukázal své okno. Okno se otevře jako obvykle, když Health hlásí problém, když seznam modů vyžaduje pozornost nebo když nástroj nastavený ke spuštění před hraním má zastaralý výstup. Chcete-li okno pro jedno spuštění, dejte před příkaz `EIDOS_WINDOW=1`: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Mimo Steam Run nespouští hru sám přes Proton nebo Wine. Požádá obchod, kterému
 kopie patří, aby ji spustil, a obchod spustí Eidos:

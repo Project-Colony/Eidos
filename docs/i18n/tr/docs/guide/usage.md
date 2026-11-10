@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=934a486c32ef664673b79db2d9a5beb6917f5a30 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
 
 # Eidos kullanımı
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # var olan bir MO2 profilinin sırasını +
 eidos sort skyrimse               # eklenti yükleme sırasını LOOT ile sırala
 eidos play skyrimse               # neyin bağlanacağını göster
 eidos play skyrimse -- <command>  # <command>'ı modlar oyunun üzerine bağlanmış halde çalıştır
+eidos shell skyrimse              # birleşik görünümde bir kabuk, yazılanlar Overwrite'a gider
 eidos check skyrimse              # pencere olmadan sağlık denetimleri (betikler için --json)
 eidos sessions skyrimse           # kaydedilmiş oyun ve araç çalıştırmaları, en yeni başta
 eidos sessions skyrimse diff      # çıkış kodu 0 ile biten son çalıştırmadan beri neyin değiştiği
@@ -34,7 +35,11 @@ takımı tamamlar; tam liste için `eidos`'u argümansız çalıştırın.
 
 `eidos check <instance>`, **Diagnostics** sekmesindeki prefix, eklenti, eksik master ve script extender denetimlerini pencereyi açmadan çalıştırır; böylece bunlar SSH üzerinden ya da Game Mode'da çalışabilir ve bir hata raporuna eklenebilir. **Copy report** ile aynı sistem satırlarını, ardından her bulgu için bir satır yazdırır; ev klasörünüz `~`, oturum adınız `<user>` olarak gösterilir. Çıkış kodu, hiçbir sorun bulunmadığında 0 (yalnızca öneriler yine 0 verir), en az bir sorun bulunduğunda 1, Eidos denetleyemediğinde 2'dir: yanlış argümanlar, açamadığı bir örnek ya da algılamadığı bir oyun.
 
-`eidos check <instance> --json` bunun yerine tek bir JSON nesnesi yazdırır. Üst düzey alanları `eidos` (sürüm), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`) ve `findings`'dir. Her bulgu bir `code`, bir `level` (`problem` ya da `advice`) ve kendi `args` alanından oluşur; Diagnostics sekmesi her kodun cümlesini gösterir.
+`eidos check <instance> --json` bunun yerine tek bir JSON nesnesi yazdırır. Üst düzey alanları `eidos` (sürüm), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`, `max_map_count`, `open_files_hard`) ve `findings`'dir. `max_map_count` ve `open_files_hard` birer sayıdır; Eidos bunları okuyamadığında `null` olur. Her bulgu bir `code`, bir `level` (`problem` ya da `advice`) ve kendi `args` alanından oluşur; Diagnostics sekmesi her kodun cümlesini gösterir.
+
+### Birleşik görünümde bir kabuk
+
+`eidos shell <instance>`, `$SHELL` kabuğunuzu (yoksa `/bin/sh`) oyunun göreceği haliyle oyun klasöründe başlatır: etkin her mod `Data` üzerine bağlanır, Root modları oyunun kök dizinine bağlanır ve oraya yazılan her şey Overwrite'a düşer. `eidos shell <instance> -- <command>` bunun yerine tek bir komut çalıştırır, örneğin `eidos shell skyrimse -- ls Data/meshes` ya da NifSkope gibi yerel bir araç. Çalıştırma, bir oyun oturumu gibi örnek kilidini tutar; bu yüzden siz çıkana kadar pencere değişiklik kaydedemez ve `eidos sessions` içinde `shell` adıyla görünür, hiçbir zaman oyun başlatması olarak değil. Bir komut sırasında Ctrl+C çalıştırmayı Stop gibi durdurur: Eidos komutu bitirir, oturumu yakalar ve bağlantıyı keser. Etkileşimli kabukta Ctrl+C her zamanki gibi kabuğa aittir; çalıştırmayı bitirmek için `exit` yazın.
 
 ### Örnekler: global ve taşınabilir
 
@@ -472,7 +477,8 @@ Mod list, Nexus ve About. Her değişiklik anında uygulanır ve kaydedilir; Sav
 düğmesi yoktur.
 
 - **General**: Eidos'un açtığı oyun, pencere boyutu, arayüz dili, araçlar
-  klasörü ve bir oyunun nasıl çalıştırıldığı. Pencere İngilizce ve Fransızca
+  klasörü, bir oyunun nasıl çalıştırıldığı ve pencere arka plandayken uzun bir
+  iş bittiğinde bir masaüstü bildiriminin bunu söyleyip söylemeyeceği. Pencere İngilizce ve Fransızca
   konuşur; **System** `LC_ALL`, `LC_MESSAGES` ya da `LANG` değerini izler ve
   değişiklik anında uygulanır. `eidos` komut satırı her zaman İngilizce yanıt
   verir.
@@ -483,6 +489,8 @@ düğmesi yoktur.
 
 Bunlar `~/.config/Colony/Eidos/preferences.json` içinde durur. Daha eski bir
 Eidos'un `settings.ini` içinde tuttuğu tema ilk seferde aktarılır.
+
+**About -> Version**, varsayılan olarak açık olan sürüm denetimini içerir. Eidos başlarken, günde en fazla bir kez, GitHub'a `Project-Colony/Eidos` deposunun en son sürümünü sorar. Bu sürüm çalışan kopyadan yeniyse menü çubuğunda Help'in ardından `Eidos 1.24.0 is available: release notes` görünür ve bağlantı o sürümün değişiklik günlüğünü içeren sayfasını açar. Eidos kendini asla indirmez ya da değiştirmez. Çevrimdışı kipte denetim atlanır. Bir paket yöneticisinin `/usr` altına kurduğu kopyada kapalıdır, çünkü onu paket yöneticisi günceller; `install.sh --system` komutunun Eidos'u koyduğu `/usr/local` sizin kendi kurulumunuz sayılır.
 
 ### Sütunlar, sıralama ve gruplama
 
@@ -643,6 +651,8 @@ getirir, aynı düğme gizlemeyi de kaldırır. "Remove N installed", zaten kurd
 modların arşivlerini iki tıkla siler, hem de yalnızca **ekranda olanları**:
 süzgeç, hangilerini kastettiğinizi söyleme biçiminizdir.
 
+**Preferences -> Nexus -> Install downloads when they finish** varsayılan olarak kapalıdır. Açıkken, pencere açıkken biten bir Nexus indirmesi Downloads sekmesine uğramadan kurulur. Bu olağan kurulumdur: FOMOD kendi kurucusunu açar, mod listesinde zaten bulunan bir ad ne yapılacağını sorar. Pencere açılmadan önce ya da seçenek açılmadan önce `downloads/` içinde duran arşivlere dokunulmaz, kurulumunu iptal ettiğiniz indirmeye de. Koleksiyon panelinde açık bir koleksiyonun üyelerini ve bekleyen bir Update'in beklediği dosyayı yalnızca o akışlar kurar. Oyun ya da başka bir Eidos örneği tutarken kurulum, örnek boşalana kadar bekler.
+
 ### Mod güncellemeleri
 
 Araç çubuğunun sağ ucundaki güncelleme düğmesi kurulu her dosyayı Nexus'ta onun
@@ -650,6 +660,14 @@ yerini alan dosyayla karşılaştırır. Yazarlar yeni bir yüklemeyi daha eskis
 ardılı olarak işaretler; Eidos bu zinciri, modun `meta.ini` dosyasının
 kaydettiği dosya kimliğinden başlayarak izler. Zincir hiçbir ardıl göstermiyorsa
 bunun yerine mod sayfasındaki sürüm karşılaştırılır.
+
+Bir modun sağ tık menüsündeki Track ve Untrack, modu Nexus'ta takip ettiğiniz
+modlara ekler ya da oradan çıkarır; böylece sitenin bildirimleri burada takip
+ettiklerinizle örtüşür. Her güncelleme denetimi ayrıca Nexus'tan onaylarınızı
+(endorsement) ve takip ettiğiniz modları okur (iki istek) ve her modun Endorsed
+ve Tracked işaretlerini, modun kendi Nexus alan adında, bunlara göre ayarlar.
+İkisi uyuşmadığında Nexus kazanır. Listelerden biri okunamazsa denetim bunu
+bildirir ve o işaretleri olduğu gibi bırakır.
 
 "Information..." içindeki **Nexus files** sekmesi modun Nexus'taki dosyalarını
 en yeniden başlayarak listeler; burada kurulu olanı ve onun yerini alanı
@@ -697,7 +715,7 @@ Güncellemeleri denetlediğinizde Eidos, Nexus'a bu örnekte kurulu her koleksiy
 ### Çevrimdışı kip
 
 **Preferences -> Nexus -> Offline**, Eidos'un Nexus'la hiç bağlantı kurmasını
-durdurur. Güncelleme denetimleri, oturum açma, indirmeler ve koleksiyonlar bir
+durdurur ve GitHub'daki günlük sürüm denetimini atlar. Güncelleme denetimleri, oturum açma, indirmeler ve koleksiyonlar bir
 bağlantı hatasıyla başarısız olmak yerine bunu söyler. Siz açmadıkça kapalıdır -
 daha eski bir Eidos'un yazdığı bir ayar dosyasında böyle bir anahtar yoktur ve
 eksik olanı "açık" diye okumak, yükseltme yapan herkesin ağını keserdi.
@@ -751,6 +769,8 @@ dosyanın mutlak yoluna ayarlayın (Steam, PATH'te `~/.cargo/bin`'i görmez):
 Eidos o oyunun örneğinde açılır - en son kullandığınızda, yani taşınabilir bir
 örnek de global olan gibi yeniden bulunur; birleşik görünüm üzerinden başlatmak
 için Run'a tıklayın.
+
+**Start the game at once when a store opens Eidos** açıkken (Preferences, General, Running a game) Eidos bu tıklamayı atlar: Health'i denetler ve oyunu penceresini göstermeden başlatır. Health bir sorun bildirdiğinde, mod listesi ilgi gerektirdiğinde ya da oynamadan önce çalışacak şekilde ayarlanmış bir aracın çıktısı eskidiğinde pencere her zamanki gibi açılır. Pencereyi tek bir başlatma için isterseniz komutun önüne `EIDOS_WINDOW=1` ekleyin: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Steam dışında Run oyunu kendisi Proton ya da Wine ile başlatmaz. Kopyanın sahibi
 olan mağazadan onu başlatmasını ister, mağaza da Eidos'u başlatır:

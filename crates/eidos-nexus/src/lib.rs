@@ -29,7 +29,7 @@
 //!   requires the [`ModGate`] that lookup mints, so the ordering is enforced by
 //!   the compiler rather than by convention.
 //! - **The request budget** is enforced BEFORE a request is sent, not after
-//!   Nexus refuses one: [`Nexus::get`] and `send_with_version` both start with a
+//!   Nexus refuses one: [`Nexus::get`] and `send_form` both start with a
 //!   pre-flight check, so an exhausted account stops the whole client rather
 //!   than each loop that remembered to look. See [`RATE_LIMITED`].
 
@@ -79,10 +79,13 @@ fn api_url(link: &str) -> Option<String> {
     (host == API_HOST).then(|| link.to_string())
 }
 
+mod account;
 pub mod collections;
 mod files;
 pub mod oauth;
+pub mod release;
 mod requirements;
+pub use account::{sync_account_flags, AccountFlags};
 pub use files::*;
 pub use requirements::{Requirement, Requirements};
 
@@ -1067,19 +1070,19 @@ impl Nexus {
         }
     }
 
-    /// Send a request with a `version` form field in the body, used by the
-    /// endorsement endpoints (MO2's endorseMod posts `version=<installed>`). The
-    /// reply body is ignored - only success/failure matters. Captures the X-RL-*
-    /// budget on success and on a Status error, exactly like [`get`].
-    fn send_with_version(
+    /// Send a request with `form` as its body, used by the endorsement endpoints
+    /// (MO2's endorseMod posts `version=<installed>`) and by Track (`mod_id`).
+    /// The reply body is ignored - only success/failure matters. Captures the
+    /// X-RL-* budget on success and on a Status error, exactly like [`get`].
+    fn send_form(
         &self,
         req: ureq::RequestBuilder<ureq::typestate::WithBody>,
-        version: &str,
+        form: &[(&str, &str)],
     ) -> Result<(), String> {
         if let Some(stop) = self.preflight(oauth::now_unix()) {
             return Err(stop);
         }
-        match self.with_headers(req).send_form([("version", version)]) {
+        match self.with_headers(req).send_form(form.iter().copied()) {
             Ok(resp) => {
                 self.capture_limits(&resp);
                 if resp.status().is_success() {
@@ -1099,7 +1102,10 @@ impl Nexus {
     /// the mod's installed version, falling back to `"1.0"` when it is unknown.
     pub fn endorse(&self, game: &str, mod_id: u64, version: &str) -> Result<(), String> {
         let url = format!("{API_BASE}/games/{game}/mods/{mod_id}/endorse");
-        self.send_with_version(self.agent.post(&url), endorse_version(version))
+        self.send_form(
+            self.agent.post(&url),
+            &[("version", endorse_version(version))],
+        )
     }
 
     /// Abstain from endorsing a mod: `POST games/{game}/mods/{id}/abstain`
@@ -1107,7 +1113,10 @@ impl Nexus {
     /// [`endorse`].
     pub fn abstain(&self, game: &str, mod_id: u64, version: &str) -> Result<(), String> {
         let url = format!("{API_BASE}/games/{game}/mods/{mod_id}/abstain");
-        self.send_with_version(self.agent.post(&url), endorse_version(version))
+        self.send_form(
+            self.agent.post(&url),
+            &[("version", endorse_version(version))],
+        )
     }
 
     /// Endorse when `endorse` is true, abstain when false - the toggling action the
@@ -1710,6 +1719,10 @@ pub struct UpdateCheckResult {
     pub unavailable: Vec<String>,
     /// Per-mod request failures; these mods were not successfully checked.
     pub failures: Vec<(String, String)>,
+    /// Why the account's endorsements or tracked mods were not read, when a
+    /// request failed for another reason than the budget. Those flags were
+    /// left as they were.
+    pub account_sync_error: Option<String>,
 }
 
 /// Run the shared CLI/GUI Nexus update check across every mod in `inst`.
@@ -1723,6 +1736,10 @@ pub struct UpdateCheckResult {
 /// instance). Each queried mod has `newestVersion` and `lastNexusUpdate` written
 /// back to its `meta.ini`; the GUI re-reads `update_available()` afterward to
 /// refresh its row markers. The loop stops on the first 429, returning what it had.
+///
+/// Before the loop, two account requests (`user/endorsements`,
+/// `user/tracked_mods`) set every mod's Endorsed and Tracked flags to the
+/// account's ([`sync_account_flags`]); a list that was not read changes nothing.
 ///
 /// This is blocking I/O (`ureq`); the GUI runs it through `smol::unblock`,
 /// exactly like the plugin-sort task, and never on iced's executor thread. The `Instance` is
@@ -1750,6 +1767,9 @@ pub fn check_updates(
         Default::default();
 
     let mut result = UpdateCheckResult::default();
+    let flags = account::read_account_flags(nexus, &mut result);
+    sync_account_flags(inst, game, &flags)
+        .map_err(|e| format!("Could not save Nexus endorsements and tracking: {e}"))?;
     'mods: for m in inst.modlist() {
         let meta = inst.mod_meta(&m.name);
         let Some(mod_id) = meta.mod_id() else {
@@ -3972,17 +3992,23 @@ mod update_metadata_integrity_tests {
                     .to_string()
             )]
         );
-        assert!(
-            !r.rate_limited,
-            "no domain list was needed, so none was asked for"
-        );
+        // The spent budget stopped the two account lists read before the loop:
+        // a budget state, not an account error. So `rate_limited` says nothing
+        // about the mods below; which of them were reached does.
+        assert!(r.rate_limited && r.account_sync_error.is_none());
 
         add(
             "Sse Mod",
             &format!("[General]\ngameName=SkyrimSE\nmodid=6\nlastNexusUpdate={now}\n"),
         );
+        add("Late Nehrim Mod", "[General]\ngameName=Nehrim\nmodid=7\n");
         let r = check_updates(&nexus, &inst, enderal).unwrap();
-        assert!(r.rate_limited, "the SkyrimSE mod needed its domain's list");
+        assert!(r.rate_limited);
+        assert_eq!(
+            r.failures.len(),
+            1,
+            "the SkyrimSE mod needed its domain's list, so the check stopped there"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }

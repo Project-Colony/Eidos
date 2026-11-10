@@ -281,6 +281,16 @@ pub struct Settings {
     pub lock_gui: bool,
     /// Remember the explicit collision-dialog choice to retain the old mod.
     pub retain_install_backup: bool,
+    /// Install a Nexus download as soon as it finishes while the window is
+    /// open. Off unless turned on.
+    pub auto_install_downloads: bool,
+    /// Ask GitHub at start, once a day at most, whether a newer Eidos is out.
+    /// On unless turned off.
+    pub release_check: bool,
+    /// Unix seconds of the last release request, 0 for never.
+    pub release_checked_at: u64,
+    /// The newest version GitHub reported, without the `v`.
+    pub release_latest: Option<String>,
     /// Multiplier on how fast the mod list scrolls when a drag rests on one of
     /// its edges. 1.0 is the tuned default; the range a user can pick from is
     /// the GUI's business, this only stores what they picked.
@@ -297,6 +307,12 @@ pub struct Settings {
     /// network, and the parts of the window that would have asked say why
     /// rather than failing with a connection error.
     pub offline: bool,
+    /// Start the game without showing the window when a store opened Eidos
+    /// with the game's command and Health lists no problem. Off by default.
+    pub start_game_directly: bool,
+    /// Send a desktop notification when a long job ends while the window is
+    /// in the background. Off by default.
+    pub notify_when_away: bool,
     /// Where the user keeps their modding tools, shared across instances.
     ///
     /// xEdit, DynDOLOD and their kind live nowhere in particular: in the game
@@ -328,10 +344,16 @@ impl Default for Settings {
             // MO2 defaults `lock_gui` to true, and an absent key means "on".
             lock_gui: true,
             retain_install_backup: false,
+            auto_install_downloads: false,
+            release_check: true,
+            release_checked_at: 0,
+            release_latest: None,
             drag_scroll_speed: 1.0,
             split: 0.6,
             remember_window: true,
             offline: false,
+            start_game_directly: false,
+            notify_when_away: false,
             tools_dir: None,
             mod_columns: None,
             preferred_servers: Vec::new(),
@@ -440,6 +462,14 @@ impl Settings {
                     s.offline =
                         matches!(v.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on")
                 }
+                "start_game_directly" => {
+                    s.start_game_directly =
+                        matches!(v.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on")
+                }
+                "notify_when_away" => {
+                    s.notify_when_away =
+                        matches!(v.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on")
+                }
                 // Comma-separated so one line holds an ordering, which is what
                 // this is - a list where position means something.
                 // An EMPTY value is meaningful here - every column off - which is
@@ -472,6 +502,18 @@ impl Settings {
                         "false" | "0" | "no" | "off"
                     )
                 }
+                "auto_install_downloads" => {
+                    s.auto_install_downloads =
+                        matches!(v.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on")
+                }
+                "release_check" => {
+                    s.release_check = !matches!(
+                        v.to_ascii_lowercase().as_str(),
+                        "false" | "0" | "no" | "off"
+                    )
+                }
+                "release_checked_at" => s.release_checked_at = v.parse().unwrap_or(0),
+                "release_latest" if !v.is_empty() => s.release_latest = Some(v.to_string()),
                 "retain_install_backup" => {
                     s.retain_install_backup = matches!(v, "true" | "1" | "yes" | "on")
                 }
@@ -505,6 +547,24 @@ impl Settings {
         ));
         if self.offline {
             out.push_str("offline=true\n");
+        }
+        if self.start_game_directly {
+            out.push_str("start_game_directly=true\n");
+        }
+        if self.notify_when_away {
+            out.push_str("notify_when_away=true\n");
+        }
+        if self.auto_install_downloads {
+            out.push_str("auto_install_downloads=true\n");
+        }
+        if !self.release_check {
+            out.push_str("release_check=false\n");
+        }
+        if self.release_checked_at != 0 {
+            out.push_str(&format!("release_checked_at={}\n", self.release_checked_at));
+        }
+        if let Some(v) = &self.release_latest {
+            out.push_str(&format!("release_latest={v}\n"));
         }
         if let Some(dir) = &self.tools_dir {
             out.push_str(&format!("tools_dir={dir}\n"));
@@ -761,6 +821,8 @@ mod tests {
         let s = Settings {
             path: None,
             offline: false,
+            start_game_directly: true,
+            notify_when_away: true,
             preferred_servers: Vec::new(),
             mod_columns: None,
             tools_dir: None,
@@ -768,12 +830,32 @@ mod tests {
             window_size: Some((1280, 720)),
             lock_gui: false,
             retain_install_backup: true,
+            auto_install_downloads: true,
+            release_check: false,
+            release_checked_at: 1_731_200_000,
+            release_latest: Some("1.24.0".into()),
             drag_scroll_speed: 1.0,
             split: 0.6,
             remember_window: false,
         };
         let parsed = Settings::parse(&s.to_ini());
         assert_eq!(parsed, s);
+    }
+
+    #[test]
+    fn start_game_directly_is_off_unless_written_on() {
+        assert!(!Settings::default().start_game_directly);
+        assert!(Settings::parse("start_game_directly=true\n").start_game_directly);
+        assert!(!Settings::parse("start_game_directly=maybe\n").start_game_directly);
+        assert!(!Settings::default().to_ini().contains("start_game_directly"));
+    }
+
+    #[test]
+    fn notify_when_away_is_off_unless_written_on() {
+        assert!(!Settings::default().notify_when_away);
+        assert!(Settings::parse("notify_when_away=true\n").notify_when_away);
+        assert!(!Settings::parse("notify_when_away=maybe\n").notify_when_away);
+        assert!(!Settings::default().to_ini().contains("notify_when_away"));
     }
 
     #[test]
@@ -888,6 +970,8 @@ mod tests {
         let s = Settings {
             path: None,
             offline: false,
+            start_game_directly: true,
+            notify_when_away: true,
             preferred_servers: Vec::new(),
             mod_columns: None,
             tools_dir: None,
@@ -895,6 +979,10 @@ mod tests {
             window_size: Some((1600, 900)),
             lock_gui: false,
             retain_install_backup: true,
+            auto_install_downloads: true,
+            release_check: false,
+            release_checked_at: 1_731_200_000,
+            release_latest: Some("1.24.0".into()),
             drag_scroll_speed: 1.0,
             split: 0.6,
             remember_window: false,
@@ -903,5 +991,30 @@ mod tests {
         let loaded = Settings::parse(&fs::read_to_string(&path).unwrap());
         assert_eq!(loaded, s);
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn the_release_check_is_on_by_default_and_round_trips() {
+        let s = Settings::parse("[eidos]\n");
+        assert!(s.release_check && s.release_checked_at == 0 && s.release_latest.is_none());
+        assert!(!Settings::parse("release_check=off\n").release_check);
+        let s = Settings {
+            release_check: false,
+            release_checked_at: 1_731_200_000,
+            release_latest: Some("1.24.0".into()),
+            ..Settings::default()
+        };
+        assert_eq!(Settings::parse(&s.to_ini()), s);
+    }
+
+    #[test]
+    fn auto_install_is_off_unless_turned_on_and_round_trips() {
+        assert!(!Settings::parse("[eidos]\n").auto_install_downloads);
+        assert!(Settings::parse("auto_install_downloads=true\n").auto_install_downloads);
+        let s = Settings {
+            auto_install_downloads: true,
+            ..Settings::default()
+        };
+        assert!(Settings::parse(&s.to_ini()).auto_install_downloads);
     }
 }

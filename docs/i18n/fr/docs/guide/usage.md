@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=934a486c32ef664673b79db2d9a5beb6917f5a30 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
 
 # Utiliser Eidos
 
@@ -19,6 +19,7 @@ eidos import skyrimse <mo2-profile>  # adopter l'ordre et l'état des plugins d'
 eidos sort skyrimse               # trier l'ordre de chargement des plugins avec LOOT
 eidos play skyrimse               # afficher ce qui serait monté
 eidos play skyrimse -- <command>  # exécuter <command> avec les mods montés sur le jeu
+eidos shell skyrimse              # un shell dans la vue fusionnée, les écritures vont dans Overwrite
 eidos check skyrimse              # contrôles de santé sans la fenêtre (--json pour les scripts)
 eidos sessions skyrimse           # les lancements du jeu et des outils enregistrés, du plus récent au plus ancien
 eidos sessions skyrimse diff      # ce qui a changé depuis le dernier lancement terminé avec le code 0
@@ -35,7 +36,11 @@ complètent l'ensemble ; lancez `eidos` sans argument pour la liste complète.
 
 `eidos check <instance>` exécute les contrôles du préfixe, des plugins, des masters manquants et du script extender de l'onglet **Diagnostics** sans ouvrir la fenêtre, pour qu'ils puissent tourner par SSH ou en Game Mode et aller dans un rapport de bug. Il affiche les mêmes lignes système que **Copier le rapport**, puis une ligne par constat, avec votre dossier personnel affiché comme `~` et votre nom d'utilisateur comme `<user>`. Le code de sortie vaut 0 quand aucun problème n'a été trouvé (des conseils seuls donnent toujours 0), 1 quand au moins un problème a été trouvé, et 2 quand Eidos n'a pas pu vérifier : arguments incorrects, instance qu'il ne peut pas ouvrir, ou jeu qu'il ne détecte pas.
 
-`eidos check <instance> --json` affiche à la place un seul objet JSON. Ses champs de premier niveau sont `eidos` (la version), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`) et `findings`. Chaque constat est un `code`, un `level` (`problem` ou `advice`) et ses `args` ; l'onglet Diagnostics affiche la phrase de chaque code.
+`eidos check <instance> --json` affiche à la place un seul objet JSON. Ses champs de premier niveau sont `eidos` (la version), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`, `max_map_count`, `open_files_hard`) et `findings`. `max_map_count` et `open_files_hard` sont des nombres, ou `null` quand Eidos n'a pas pu les lire. Chaque constat est un `code`, un `level` (`problem` ou `advice`) et ses `args` ; l'onglet Diagnostics affiche la phrase de chaque code.
+
+### Un shell dans la vue fusionnée
+
+`eidos shell <instance>` lance votre `$SHELL` (ou `/bin/sh`) dans le dossier du jeu tel que le jeu le verrait : chaque mod activé monté sur `Data`, les mods Root sur la racine du jeu, et tout ce qui y est écrit atterrit dans l'Overwrite. `eidos shell <instance> -- <command>` exécute une seule commande à la place, par exemple `eidos shell skyrimse -- ls Data/meshes` ou un outil natif comme NifSkope. L'exécution tient le verrou de l'instance comme une session de jeu : la fenêtre ne peut pas enregistrer de modifications avant votre sortie, et elle apparaît dans `eidos sessions` sous le nom `shell`, jamais comme un lancement du jeu. Ctrl+C sur une commande arrête l'exécution comme Stop : Eidos termine la commande, capture la session et démonte. Dans le shell interactif, Ctrl+C reste au shell, comme d'habitude ; tapez `exit` pour terminer l'exécution.
 
 ### Instances : globale et portable
 
@@ -508,7 +513,9 @@ Colony, puis Mod list, Nexus et About. Chaque changement s'applique et
 s'enregistre aussitôt ; il n'y a pas de bouton Save.
 
 - **General** : le jeu qu'Eidos ouvre, la taille de la fenêtre, la langue de
-  l'interface, le dossier d'outils et la façon de lancer un jeu. La fenêtre
+  l'interface, le dossier d'outils, la façon de lancer un jeu et si une notification
+  du bureau signale la fin d'une tâche longue quand la fenêtre est en
+  arrière-plan. La fenêtre
   parle anglais et français ; **System** suit `LC_ALL`, `LC_MESSAGES` ou
   `LANG`, et le changement s'applique aussitôt. La ligne de commande `eidos`
   répond toujours en anglais.
@@ -521,6 +528,8 @@ s'enregistre aussitôt ; il n'y a pas de bouton Save.
 
 Ces réglages vivent dans `~/.config/Colony/Eidos/preferences.json`. Le thème
 qu'un Eidos plus ancien gardait dans `settings.ini` est repris la première fois.
+
+**About -> Version** contient la vérification des versions, activée par défaut. Au démarrage, une fois par jour au plus, Eidos demande à GitHub la dernière version de `Project-Colony/Eidos`. Si elle est plus récente que la copie en cours d'exécution, la barre de menus affiche `Eidos 1.24.0 is available: release notes` après Help, et le lien ouvre la page de cette version avec son journal des modifications. Eidos ne se télécharge et ne se remplace jamais lui-même. La vérification est sautée en mode hors ligne. Elle est désactivée pour une copie installée sous `/usr` par un gestionnaire de paquets, qui la met à jour ; `/usr/local`, où `install.sh --system` place Eidos, compte comme votre propre installation.
 
 ### Colonnes, tri et regroupement
 
@@ -696,6 +705,8 @@ supprime les archives des mods que vous avez déjà installés, en deux clics, e
 seulement celles **à l'écran** : le filtre, c'est votre façon d'avoir dit
 lesquelles vous vouliez dire.
 
+**Preferences -> Nexus -> Install downloads when they finish** est désactivé par défaut. Une fois activé, un téléchargement Nexus qui se termine pendant que la fenêtre est ouverte s'installe sans passer par l'onglet Downloads. C'est l'installation habituelle : un FOMOD ouvre son installateur, et un nom déjà présent dans la liste des mods demande quoi faire. Les archives qui étaient dans `downloads/` avant l'ouverture de la fenêtre ou avant l'activation de l'option ne sont pas touchées, pas plus qu'un téléchargement dont vous avez annulé l'installation. Les membres d'une collection ouverte dans le volet des collections et le fichier qu'attend une mise à jour en cours ne sont installés que par ces parcours. Tant que le jeu ou un autre Eidos tient l'instance, l'installation attend qu'elle soit libre.
+
 ### Mises à jour des mods
 
 Le bouton de mise à jour, à l'extrémité droite de la barre d'outils, compare
@@ -704,6 +715,15 @@ marquent un nouvel envoi comme successeur d'un plus ancien, et Eidos suit cette
 chaîne depuis l'identifiant de fichier que note le `meta.ini` du mod. Quand la
 chaîne ne nomme aucun successeur, c'est la version de la page du mod qui est
 comparée.
+
+Track et Untrack, dans le menu du clic droit d'un mod, ajoutent le mod à vos
+mods suivis sur Nexus ou l'en retirent, pour que les notifications du site
+correspondent à ce que vous suivez ici. Chaque vérification des mises à jour lit
+aussi vos recommandations et vos mods suivis sur Nexus (deux requêtes) et règle
+les indicateurs Endorsed et Tracked de chaque mod en conséquence, sur le domaine
+Nexus propre au mod. En cas de désaccord, Nexus l'emporte. Si l'une des deux
+listes ne peut pas être lue, la vérification le signale et laisse ces
+indicateurs tels qu'ils étaient.
 
 L'onglet **Nexus files** de « Information... » liste les fichiers du mod sur
 Nexus, du plus récent au plus ancien, et marque celui installé ici et celui qui
@@ -753,7 +773,7 @@ Quand vous lancez la recherche de mises à jour, Eidos demande aussi à Nexus la
 
 ### Mode hors ligne
 
-**Preferences -> Nexus -> Offline** empêche complètement Eidos de contacter Nexus.
+**Preferences -> Nexus -> Offline** empêche complètement Eidos de contacter Nexus et saute la vérification quotidienne des versions sur GitHub.
 Les vérifications de mise à jour, la connexion, les téléchargements et les
 collections le disent au lieu d'échouer sur une erreur de connexion. C'est
 désactivé sauf si vous l'activez - un fichier de réglages écrit par un Eidos plus
@@ -810,6 +830,8 @@ le chemin absolu du binaire (Steam ne voit pas `~/.cargo/bin` dans le PATH) :
 Eidos s'ouvre sur l'instance de ce jeu - celle que vous avez utilisée en dernier,
 si bien qu'une instance portable est retrouvée tout comme la globale ; cliquez
 sur Run pour le lancer à travers la vue fusionnée.
+
+Avec **Start the game at once when a store opens Eidos** activé (Preferences, General, Running a game), Eidos se passe de ce clic : il vérifie Health et lance le jeu sans afficher sa fenêtre. La fenêtre s'ouvre comme d'habitude quand Health signale un problème, quand la liste des mods demande votre attention ou quand un outil réglé pour passer avant le jeu a une sortie périmée. Pour avoir la fenêtre le temps d'un lancement, placez `EIDOS_WINDOW=1` devant la commande : `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Hors de Steam, Run ne démarre pas le jeu lui-même avec Proton ou Wine. Il
 demande à la boutique qui possède la copie de le démarrer, et la boutique

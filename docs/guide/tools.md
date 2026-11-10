@@ -341,6 +341,12 @@ profile there.
 PGPatcher stops with an error when the profile has no enabled mod, and when
 its output folder is the folder of an enabled mod, as it does under MO2.
 
+## Wine's own programs in the game's prefix
+
+The File menu runs four of Wine's programs in the game's prefix: winecfg, regedit, the Wine file explorer and the uninstaller. They start like any tool, with the Proton or Wine build that runs the game's tools, with the mods mounted, and the window waits for them. **Prefix drive_c** opens the prefix's `C:` drive in your file manager. A row is greyed out until the prefix has that program, which happens the first time the store starts the game.
+
+Eidos writes one registry value itself, the game's `installed path` under `HKLM\Software\Bethesda Softworks\<game>`, before every tool run when it is wrong. A change made to it in regedit is put back at the next tool run.
+
 ## The game path in the prefix
 
 Windows tools find their game by reading
@@ -374,6 +380,14 @@ of them with Eidos 1.22 or earlier keeps working: like
 start the game, as Run does in a window no store opened. When the store's
 setting is missing, the command starts nothing and prints what to set. A
 shortcut shows no message, so run the same command in a terminal to read it.
+
+A profile can have its own shortcut for the game. Right-click the profile and
+choose **Desktop shortcut**: the entry runs
+`eidos tool <instance> run "<game>" --profile <name>`, which makes that profile
+the active one, as picking it in the window does, and then asks the store to
+start the game. The Eidos window the store opens shows that profile. `--profile`
+works with any `eidos tool ... run` and selects the profile before the tool
+starts; with `--print` it selects nothing.
 
 ## A tool that is its own Steam app
 
@@ -468,6 +482,15 @@ successfully" and writes 1439 meshes where the game will never look for them.
 Eidos catches them - they land in `Overwrite/Root/` rather than in your
 installation - but nothing is wrong from the game's point of view except that
 your bodies are not built.
+
+Eidos checks this for you. Before a BodySlide or Outfit Studio run, the status
+line warns when `GameDataPath` or `OutputDataPath` in the winning
+`CalienteTools/BodySlide/Config.xml` does not lead to the game's `Data` folder
+during the run, and the Health tab shows the same card with the value to set. An
+`S:` path is read the way Eidos maps `S:` for a tool, to the Steam library
+folder. An `OutputDataPath` inside the instance's `mods/` folder, for an output
+mod, is accepted. Health also shows a card when `Overwrite/Root/` holds a
+`meshes` or `textures` folder.
 
 Tool output belongs in the Overwrite. When a run produces something worth
 keeping, **Overwrite -> Create mod...** turns it into an ordinary mod that can be

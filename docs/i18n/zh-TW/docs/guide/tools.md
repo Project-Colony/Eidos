@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f8b463b3dac51b3fef63df81c7c89fd12096d721 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=7f872c8fb702f4417931831cc14a48ffb9d9e30b -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -284,6 +284,12 @@ Eidos 只在啟動某個東西時寫它自己的檔案，所以在兩次啟動�
 當設定檔中沒有任何已啟用的模組，或輸出資料夾就是某個已啟用模組的資料夾時，
 PGPatcher 會報錯並停止，和在 MO2 下一樣。
 
+## 遊戲前綴中的 Wine 內建程式
+
+「檔案」選單會在遊戲的前綴中執行 Wine 的四個程式：winecfg、regedit、Wine 檔案總管和解除安裝程式。它們和其他工具一樣啟動，使用執行遊戲工具的 Proton 或 Wine 版本，並掛載好模組，視窗會等它們結束。**Prefix drive_c** 會在檔案管理員中開啟前綴的 `C:` 磁碟。前綴裡還沒有某個程式時，對應的列顯示為灰色，商店第一次啟動遊戲後就會有。
+
+Eidos 自己只寫一個登錄值，即 `HKLM\Software\Bethesda Softworks\<game>` 下遊戲的 `installed path`，每次執行工具前如果不對就改正。你在 regedit 裡對它做的修改，會在下次執行工具時被改回來。
+
 ## 前綴裡的遊戲路徑
 
 Windows 工具是靠讀 `HKLM\Software\Bethesda Softworks\<game>` 的
@@ -314,6 +320,12 @@ Eidos 1.22 或更早版本替其中某一項建立的捷徑仍然能用:和在�
 `eidos tool <instance> run <title>` 一樣,它會請商店啟動遊戲,就像 Run 在不是
 由商店開啟的視窗裡做的那樣。商店的設定缺少時,這個指令什麼也不啟動,並印出要
 設定什麼。捷徑不會顯示任何訊息,所以要看它,就在終端機裡執行同一個指令。
+
+每個設定檔都可以有自己的遊戲捷徑。在設定檔上按右鍵並選擇 **Desktop shortcut**：
+這個項目會執行 `eidos tool <instance> run "<game>" --profile <name>`，它會像在視
+窗裡選取該設定檔那樣把它設為目前的設定檔，然後請商店啟動遊戲。商店開啟的 Eidos
+視窗顯示的就是這個設定檔。`--profile` 適用於任何 `eidos tool ... run`，會在工具
+啟動前選取設定檔；與 `--print` 一起使用時，它什麼也不選。
 
 ## 本身就是獨立 Steam 應用程式的工具
 
@@ -395,6 +407,8 @@ Eidos 把工具擺在對的位置,配上對的 DLL。工具接下來拿它的設
 批次建置會回報「All sets processed successfully」,然後把 1439 個 mesh 寫到
 遊戲永遠不會去找的地方。Eidos 會接住它們 - 它們落在 `Overwrite/Root/` 而不是
 你的安裝目錄裡 - 但從遊戲的角度看一切正常,只不過你的身體模型沒建出來。
+
+Eidos 會替你檢查這一點。在執行 BodySlide 或 Outfit Studio 之前，如果勝出的 `CalienteTools/BodySlide/Config.xml` 裡的 `GameDataPath` 或 `OutputDataPath` 在執行期間沒有通到遊戲的 `Data` 資料夾，狀態列會發出警告，Health 分頁也會顯示同一張卡片，並給出該設定的值。`S:` 路徑依照 Eidos 為工具對應 `S:` 的方式來讀，也就是 Steam 收藏庫資料夾。位於實例 `mods/` 資料夾內、用於輸出模組的 `OutputDataPath` 會被接受。當 `Overwrite/Root/` 裡有 `meshes` 或 `textures` 資料夾時，Health 也會顯示一張卡片。
 
 工具的輸出本來就該待在 Overwrite。當一次執行產生了值得留下的東西,
 **Overwrite -> Create mod...** 會把它變成一個普通模組,可以像其他模組一樣

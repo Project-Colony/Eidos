@@ -2,10 +2,13 @@
 //! renders a finding through `diag_<code>` / `diag_<code>_detail` strings; the
 //! CLI prints the code and its args.
 
+pub mod bodyslide;
 pub mod crash;
 pub mod extender;
 pub mod graphics;
 pub mod launch_option;
+pub mod load_order;
+pub mod system;
 
 use std::path::{Path, PathBuf};
 use std::process::exit;
@@ -76,6 +79,15 @@ pub const CODES: &[&str] = &[
     "registry_stale",
     "registry_missing",
     "gamedrive_foreign",
+    "stestfile_present",
+    "starfield_esp_active",
+    "blueprint_invalid",
+    "blueprint_unpaired",
+    "max_map_count_low",
+    "open_files_low",
+    "windows_filesystem",
+    "bodyslide_data_path",
+    "overwrite_root_data",
 ];
 
 /// The instance's enabled mods, highest priority first. Unmanaged rows (DLC,
@@ -97,15 +109,18 @@ pub fn host_findings(
     mods: &[(String, PathBuf)],
 ) -> Vec<Finding> {
     let overwrite = inst.overwrite_dir();
-    let mut out = eidos_gamefeatures::preflight::extender_facts(
-        game.def,
-        &game.data_path,
-        &game.install_path,
-        mods,
-        &overwrite,
-    )
-    .map(|f| extender::extender_findings(&f))
-    .unwrap_or_default();
+    let mut out = load_order::test_file_findings(game.def, &inst.active());
+    out.extend(
+        eidos_gamefeatures::preflight::extender_facts(
+            game.def,
+            &game.data_path,
+            &game.install_path,
+            mods,
+            &overwrite,
+        )
+        .map(|f| extender::extender_findings(&f))
+        .unwrap_or_default(),
+    );
     out.extend(extender::game_update_findings(
         game.def.name,
         inst.launch_record().last_good.as_ref(),
@@ -140,6 +155,10 @@ pub fn host_findings(
         )));
     }
     out.extend(crash::crash_findings(game, inst, mods));
+    out.extend(system::system_findings(&system::system_facts(game, inst)));
+    out.extend(bodyslide::bodyslide_findings(&bodyslide::bodyslide_facts(
+        game, inst, mods,
+    )));
     out
 }
 
@@ -270,6 +289,8 @@ pub struct ReportFacts {
     pub kernel: String,
     pub dev_fuse: bool,
     pub fusermount3: bool,
+    pub max_map_count: Option<u64>,
+    pub open_files_hard: Option<u64>,
 }
 
 /// Read the facts off the running host and the selected game.
@@ -313,6 +334,8 @@ pub fn report_facts(home: &Path, game: Option<&DetectedGame>, cap_missing: bool)
         kernel,
         dev_fuse: Path::new("/dev/fuse").exists(),
         fusermount3,
+        max_map_count: system::read_max_map_count(),
+        open_files_hard: system::read_open_files_hard(),
     }
 }
 
@@ -322,6 +345,10 @@ fn yes_no(b: bool) -> &'static str {
     } else {
         "no"
     }
+}
+
+fn or_unknown(n: Option<u64>) -> String {
+    n.map_or_else(|| "unknown".into(), |n| n.to_string())
 }
 
 fn passthrough_state(f: &ReportFacts) -> &'static str {
@@ -348,6 +375,8 @@ pub fn report_header(f: &ReportFacts) -> Vec<String> {
         format!("Session: {}", f.session),
         format!("Distro: {}", f.distro),
         format!("Kernel: {}", f.kernel),
+        format!("vm.max_map_count: {}", or_unknown(f.max_map_count)),
+        format!("Open files (hard limit): {}", or_unknown(f.open_files_hard)),
         format!(
             "/dev/fuse: {}",
             if f.dev_fuse { "present" } else { "missing" }
@@ -448,6 +477,9 @@ fn check_findings(
                 args: vec![("n", unverified.to_string())],
             });
         }
+        if game_id == "starfield" {
+            out.extend(load_order::starfield_findings(&list));
+        }
         out.extend(
             list.missing_masters()
                 .into_iter()
@@ -517,6 +549,8 @@ fn to_json(facts: &ReportFacts, instance: &Path, findings: &[Finding]) -> serde_
             "kernel": r(&facts.kernel),
             "dev_fuse": facts.dev_fuse,
             "fusermount3": facts.fusermount3,
+            "max_map_count": facts.max_map_count,
+            "open_files_hard": facts.open_files_hard,
         },
         "findings": findings,
     })
@@ -580,6 +614,8 @@ mod tests {
             kernel: "7.2.15-arch1-1".into(),
             dev_fuse: true,
             fusermount3: true,
+            max_map_count: Some(65530),
+            open_files_hard: None,
         }
     }
 
@@ -621,6 +657,8 @@ mod tests {
         assert_eq!(v["system"]["passthrough"], "off (default)");
         assert_eq!(v["system"]["flatpak_steam"], serde_json::Value::Null);
         assert_eq!(v["system"]["dev_fuse"], true);
+        assert_eq!(v["system"]["max_map_count"], 65530);
+        assert_eq!(v["system"]["open_files_hard"], serde_json::Value::Null);
         assert!(
             !text.contains(&home) && !text.contains(&home.replace('/', "\\\\")),
             "{text}"

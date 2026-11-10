@@ -69,6 +69,12 @@ fn store_started_in(keys: impl IntoIterator<Item = String>) -> bool {
 /// A game entry run from a plain shell (a desktop shortcut made with 1.22, say)
 /// goes to the store that owns the copy, as Run does in a window no store
 /// opened. Inside a store-started process it runs as before.
+/// The generator-receipt name of a run: only a tool, not the game and not a
+/// prefix program.
+fn receipt_name(title: &str, runs_game: bool, utility: bool) -> Option<&str> {
+    (!runs_game && !utility).then_some(title)
+}
+
 fn hands_off_to_store(runs_game: bool, store_started: bool) -> bool {
     runs_game && !store_started
 }
@@ -164,14 +170,24 @@ fn tool_executable(
     }
 }
 
-/// `run` flags (`args` starts at `run`): (print, output mod, extra args). Flags count only BEFORE the
-/// first `--`; everything after it is opaque tool args (a tool may take its own
-/// `--print` or `--output-mod`).
-fn run_flags(args: &[String]) -> Result<(bool, Option<String>, Vec<String>), String> {
+/// The flags of `run`, read by [`run_flags`].
+#[derive(Debug, PartialEq)]
+struct RunFlags {
+    print: bool,
+    output_mod: Option<String>,
+    profile: Option<String>,
+    extra: Vec<String>,
+}
+
+/// `run` flags (`args` starts at `run`). Flags count only BEFORE the first `--`;
+/// everything after it is opaque tool args (a tool may take its own `--print`,
+/// `--output-mod` or `--profile`).
+fn run_flags(args: &[String]) -> Result<RunFlags, String> {
     let sep = args.iter().position(|a| a == "--").unwrap_or(args.len());
     let extra = args.get(sep + 1..).unwrap_or_default().to_vec();
     let mut print = false;
     let mut output = None;
+    let mut profile = None;
     let mut it = args[..sep].iter().skip(2);
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -183,10 +199,29 @@ fn run_flags(args: &[String]) -> Result<(bool, Option<String>, Vec<String>), Str
                 }
                 output = Some(m.clone());
             }
+            "--profile" => {
+                let name = it.next().ok_or("--profile needs a profile name")?;
+                if !eidos_instance::is_mod_folder_name(name) {
+                    return Err(format!("'{name}' is not a valid profile name"));
+                }
+                profile = Some(name.clone());
+            }
             _ => {}
         }
     }
-    Ok((print, output, extra))
+    Ok(RunFlags {
+        print,
+        output_mod: output,
+        profile,
+        extra,
+    })
+}
+
+/// Make `name` the instance's active profile, as picking it in the window does,
+/// under the instance lock so a running game's profile is never switched.
+fn select_profile(inst: &Instance, name: &str) -> std::io::Result<()> {
+    let _lock = inst.try_lock("selecting a profile")?;
+    inst.set_active_profile(name)
 }
 
 /// `args` starts at `run`: the path of `run --exe <path>`, `None` for a run by title,
@@ -210,7 +245,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
              \x20 eidos tool <game-id> add <title> <exe> [args...]\n\
              \x20 eidos tool <game-id> rm <title>\n\
              \x20 eidos tool <game-id> import-mo2 [--write]\n\
-             \x20 eidos tool <game-id> run <title>|--exe <path> [--print] [--output-mod <mod>] [-- <extra args>...]"
+             \x20 eidos tool <game-id> run <title>|--exe <path> [--print] [--output-mod <mod>] [--profile <name>] [-- <extra args>...]"
         );
         exit(if asked_help { 0 } else { 2 });
     };
@@ -352,7 +387,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
             }
             let Some(title) = args.get(2) else {
                 eidos_log::info!(
-                    "usage: eidos tool {id} run <title>|--exe <path> [--print] [--output-mod <mod>] [-- <extra args>...]"
+                    "usage: eidos tool {id} run <title>|--exe <path> [--print] [--output-mod <mod>] [--profile <name>] [-- <extra args>...]"
                 );
                 exit(2);
             };
@@ -361,24 +396,40 @@ pub(crate) fn cmd_tool(args: &[String]) {
             } else {
                 &args[1..]
             };
-            let (print_only, output_flag, extra) = match run_flags(flag_args) {
+            let RunFlags {
+                print: print_only,
+                output_mod: output_flag,
+                profile,
+                extra,
+            } = match run_flags(flag_args) {
                 Ok(v) => v,
                 Err(e) => {
                     eidos_log::warn!("eidos tool: {e}");
                     exit(2);
                 }
             };
+            // Before the tool lookup: a tool inside a mod enabled only in that
+            // profile must resolve. `--print` changes nothing, so it selects nothing.
+            if let Some(name) = profile.as_deref().filter(|_| !print_only) {
+                if let Err(e) = select_profile(&inst, name) {
+                    eidos_log::warn!("eidos tool: cannot select profile '{name}': {e}");
+                    exit(1);
+                }
+            }
 
-            let tool = if let Some(Ok(path)) = by_exe {
+            let (tool, utility) = if let Some(Ok(path)) = by_exe {
                 // Never a registered tool nor a utility: the file is run as given.
-                eidos_instance::tool_for_exe(&path, game.def.known_tools)
+                (
+                    eidos_instance::tool_for_exe(&path, game.def.known_tools),
+                    false,
+                )
             } else {
                 // A user tool wins `merge_tools` over a default with the same title,
                 // so look there first: the defaults are detected by walking the game,
                 // the Root layers and the whole mods pool, wasted for a user tool.
                 let user = inst.tools();
                 let named = |t: &eidos_instance::Tool| t.title.eq_ignore_ascii_case(title);
-                let found = match user.iter().find(|t| named(t)) {
+                let tool = match user.iter().find(|t| named(t)) {
                     Some(tool) => Some(tool.clone()),
                     None => {
                         eidos_instance::merge_tools(user, default_tools_for(&game, Some(&inst)))
@@ -386,11 +437,18 @@ pub(crate) fn cmd_tool(args: &[String]) {
                             .find(|t| named(t))
                     }
                 };
-                let Some(tool) = found else {
+                // Wine's own programs in the game's prefix, when no tool has the title.
+                let listed = tool.is_some();
+                let tool = tool.or_else(|| {
+                    game.prefix()
+                        .and_then(|p| eidos_instance::prefix_tool(&p, title))
+                });
+                let utility = !listed && tool.is_some();
+                let Some(tool) = tool else {
                     eidos_log::info!("No tool named '{title}'. List them: eidos tool {id}");
                     exit(1);
                 };
-                tool
+                (tool, utility)
             };
             let title = &tool.title;
             let Some((source_exe, exe)) =
@@ -446,6 +504,8 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 match game_entry_handoff(handoff, game.def.name, source) {
                     Ok((argv, _)) if print_only => println!("{}", argv.join(" ")),
                     Ok((argv, line)) => {
+                        // The store opens the instance used last: make it this one.
+                        remember_use(&inst, &target.game_id);
                         if let Err(e) = std::process::Command::new(&argv[0])
                             .args(&argv[1..])
                             .spawn()
@@ -703,9 +763,11 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 prereqs: &prereqs,
                 output_mod: output_mod.as_deref(),
                 // A game start is session output, not generated output: no receipt.
-                tool_name: (!runs_game).then_some(title),
-                executable: (!runs_game).then_some(&source_exe),
+                tool_name: receipt_name(title, runs_game, utility),
+                executable: receipt_name(title, runs_game, utility).and(Some(&source_exe)),
+                utility: utility.then_some(title),
                 env: &tool.env,
+                interactive: false,
             };
             if print_only {
                 let env = crate::launch::run_env(&game, &inst, opts, env, false);
@@ -977,14 +1039,21 @@ mod root_tool_tests {
             exe_target(&args),
             Some(Ok(PathBuf::from("/m/FNIS/GenerateFNISforUsers.exe")))
         );
-        // Tuple form: QW2's `RunFlags` is not in this branch.
-        assert_eq!(run_flags(&args[1..]), Ok((true, None, v(&["-v"]))));
+        assert_eq!(
+            run_flags(&args[1..]),
+            Ok(RunFlags {
+                print: true,
+                output_mod: None,
+                profile: None,
+                extra: v(&["-v"]),
+            })
+        );
         assert!(matches!(exe_target(&v(&["run", "--exe"])), Some(Err(_))));
         assert_eq!(exe_target(&v(&["run", "FNIS"])), None);
     }
 
     #[test]
-    fn run_flags_read_print_and_output_mod_before_the_separator() {
+    fn run_flags_read_print_output_mod_and_profile_before_the_separator() {
         let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         assert_eq!(
             run_flags(&v(&[
@@ -992,19 +1061,60 @@ mod root_tool_tests {
                 "T",
                 "--output-mod",
                 "Cleaned plugins",
+                "--profile",
+                "Survival 2",
                 "--print",
                 "--",
-                "--output-mod",
+                "--profile",
                 "x"
             ])),
-            Ok((
-                true,
-                Some("Cleaned plugins".into()),
-                v(&["--output-mod", "x"])
-            ))
+            Ok(RunFlags {
+                print: true,
+                output_mod: Some("Cleaned plugins".into()),
+                profile: Some("Survival 2".into()),
+                extra: v(&["--profile", "x"]),
+            })
         );
         assert!(run_flags(&v(&["run", "T", "--output-mod"])).is_err());
         assert!(run_flags(&v(&["run", "T", "--output-mod", "a/b"])).is_err());
+        assert!(run_flags(&v(&["run", "T", "--profile"])).is_err());
+        assert!(run_flags(&v(&["run", "T", "--profile", "../x"])).is_err());
+    }
+
+    #[test]
+    fn select_profile_switches_only_this_instance() {
+        let root =
+            std::env::temp_dir().join(format!("eidos-select-profile-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let make = |name: &str| {
+            let inst = Instance::portable(root.join(name));
+            inst.create().unwrap();
+            inst.ensure_manifest("skyrimse", InstanceKind::Portable)
+                .unwrap();
+            for p in ["Default", "Survival"] {
+                inst.profile(p).create().unwrap();
+            }
+            inst
+        };
+        let (a, b) = (make("a"), make("b"));
+        select_profile(&b, "Survival").unwrap();
+        assert_eq!(b.active_profile(), "Survival");
+        assert_eq!(a.active_profile(), "Default");
+        assert!(select_profile(&b, "Ghost").is_err());
+        assert!(select_profile(&b, "../Default").is_err());
+        assert_eq!(
+            b.active_profile(),
+            "Survival",
+            "a refused name changes nothing"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_prefix_program_leaves_no_generator_receipt() {
+        assert_eq!(receipt_name("SSEEdit", false, false), Some("SSEEdit"));
+        assert_eq!(receipt_name("SKSE", true, false), None);
+        assert_eq!(receipt_name("regedit", false, true), None);
     }
 
     #[test]

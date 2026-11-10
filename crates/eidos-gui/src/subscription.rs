@@ -64,6 +64,17 @@ pub(crate) fn pointer(app: &App) -> iced::Point {
     last_pointer().unwrap_or(app.cursor)
 }
 
+/// Whether the downloads tick should run: the Downloads tab, an update or a
+/// collection walk waiting for a file, auto-install with an open instance, or a
+/// window in the background with notifications on.
+pub(crate) fn watches_downloads(app: &App) -> bool {
+    app.tab == Tab::Downloads
+        || app.pending_update.is_some()
+        || app.collection.as_ref().is_some_and(|c| c.walk.is_some())
+        || (app.prefs.auto_install_downloads && app.created.is_some())
+        || (app.prefs.notify_when_away && !app.focused && app.created.is_some())
+}
+
 /// Keyboard subscription: surface global shortcuts and keep the live modifier state
 /// in sync so a plain mod-row click can branch to Ctrl-toggle / Shift-extend.
 ///
@@ -128,6 +139,8 @@ pub(crate) fn subscription(app: &App) -> iced::Subscription<Message> {
         iced::Event::Window(iced::window::Event::Resized(size)) => {
             Some(Message::WindowResized(size))
         }
+        iced::Event::Window(iced::window::Event::Focused) => Some(Message::WindowFocused(true)),
+        iced::Event::Window(iced::window::Event::Unfocused) => Some(Message::WindowFocused(false)),
         // Files dragged in from a file manager. NOT AVAILABLE ON WAYLAND: winit
         // 0.30 implements XDND for X11 and has no `wl_data_device` at all, so
         // these never fire on a native Wayland session (they do under XWayland).
@@ -357,11 +370,9 @@ pub(crate) fn subscription(app: &App) -> iced::Subscription<Message> {
     // Faster while something is arriving, so a bar moves instead of jumping;
     // slower otherwise, because the idle case only has to notice that a download
     // has begun. An update waiting for its file, and a collection walk waiting
-    // for its next one, keep the tick running on every tab.
-    if app.tab == Tab::Downloads
-        || app.pending_update.is_some()
-        || app.collection.as_ref().is_some_and(|c| c.walk.is_some())
-    {
+    // for its next one, keep the tick running on every tab. So does a window
+    // in the background while the user wants a notification when they end.
+    if watches_downloads(app) {
         let arriving = app
             .downloads
             .iter()

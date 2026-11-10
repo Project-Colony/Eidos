@@ -173,6 +173,43 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 }
             }
         }
+        Message::ProfileDesktopShortcut(name) => {
+            app.menu_at = None;
+            app.profile_menu = None;
+            app.profile_rename = None;
+            app.profile_copy = None;
+            app.profile_delete_confirm = None;
+            let (Some(inst), Some(game)) = (app.created.as_ref(), selected_game(app)) else {
+                return Task::none();
+            };
+            // The game binary's entry first, else any entry that starts the game
+            // (the loader, the launcher): each one goes through the store.
+            let is_binary = |t: &&eidos_instance::Tool| {
+                t.exe
+                    .file_name()
+                    .and_then(|f| f.to_str())
+                    .is_some_and(|f| f.eq_ignore_ascii_case(game.def.game_binary))
+            };
+            let execs = game_executables(game);
+            let tool = app
+                .tools
+                .iter()
+                .find(is_binary)
+                .or_else(|| app.tools.iter().find(|t| execs.launches_the_game(&t.exe)));
+            let Some(tool) = tool else {
+                app.status = Some(tf(
+                    "status_profile_shortcut_no_game",
+                    &[("game", &game.def.name)],
+                ));
+                return Task::none();
+            };
+            match write_desktop_entry(inst, game.def.id, tool, Some(&name)) {
+                Ok(path) => {
+                    app.status = Some(tf("status_shortcut_written", &[("path", &path.display())]));
+                }
+                Err(e) => app.error = Some(tf("status_shortcut_failed", &[("error", &e)])),
+            }
+        }
         Message::ShowBackupsDialog => {
             app.menu_mod = None;
             match load_backups(app) {

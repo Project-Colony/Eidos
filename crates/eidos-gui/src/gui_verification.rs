@@ -105,7 +105,14 @@ impl core::widget::Operation for Positions {
     }
 }
 fn positions(element: Element<'_, Message>, renderer: &mut iced::Renderer) -> Positions {
-    let mut ui = UserInterface::build(element, SIZE, Cache::new(), renderer);
+    positions_in(element, renderer, SIZE)
+}
+fn positions_in(
+    element: Element<'_, Message>,
+    renderer: &mut iced::Renderer,
+    size: Size,
+) -> Positions {
+    let mut ui = UserInterface::build(element, size, Cache::new(), renderer);
     let mut out = Positions::default();
     ui.operate(renderer, &mut out);
     out
@@ -1394,4 +1401,144 @@ fn the_hidden_saves_notice_never_moves_the_save_rows() {
             .any(|(s, r)| s.ends_with("saves") && r.width > 0.0),
         "saves folder squeezed out: {labels:?}"
     );
+}
+
+/// The release link arrives from a worker after the window is up. It sits after
+/// Help, where nothing follows it, so no menu item or mod row moves.
+#[test]
+fn the_eidos_release_link_never_moves_the_menu_or_the_mod_rows() {
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    let mods_dir = app.created.as_ref().unwrap().mods_dir();
+    app.mods = ["Alpha", "Beta"]
+        .into_iter()
+        .map(|name| ModEntry {
+            name: name.into(),
+            enabled: true,
+            path: mods_dir.join(name),
+            unmanaged: false,
+        })
+        .collect();
+    let mut renderer = renderer();
+    let help = label(crate::view(&app), &mut renderer, t("menu_help"), 0);
+    let beta = label(crate::view(&app), &mut renderer, "Beta", 0);
+    app.eidos_release = Some("99.0.0".into());
+    let link = tf("menu_eidos_release", &[("version", &"99.0.0")]);
+    assert_eq!(
+        label(crate::view(&app), &mut renderer, t("menu_help"), 0),
+        help
+    );
+    assert_eq!(label(crate::view(&app), &mut renderer, "Beta", 0), beta);
+    let at = label(crate::view(&app), &mut renderer, &link, 0);
+    assert!(
+        at.x > help.x && (at.y - help.y).abs() < 1.0,
+        "the link sits after Help on the menu bar"
+    );
+    let (_, messages) = frame(
+        crate::view(&app),
+        &mut renderer,
+        Cache::new(),
+        &click(),
+        at,
+        Some("eidos-release"),
+    );
+    let want = eidos_nexus::release::notes_url("99.0.0");
+    assert!(
+        messages
+            .iter()
+            .any(|m| matches!(m, Message::OpenUrl(u) if *u == want)),
+        "{messages:?}"
+    );
+
+    // Largest text (Large x XLarge, 1.68) in an 800 px window: the link no
+    // longer fits after Help. It is cut at the edge; the bar keeps one line.
+    let mut big = crate::preferences::UiPreferences::default();
+    big.standard.font_size = colony_ui::typography::FontSize::Large;
+    big.standard.text_size_a11y = colony_ui::typography::TextSize::XLarge;
+    big.standard.apply();
+    let narrow = Size::new(800.0, 800.0);
+    let at = |app: &App, renderer: &mut iced::Renderer, name: &str| {
+        positions_in(crate::view(app), renderer, narrow)
+            .labels
+            .into_iter()
+            .find(|(s, _)| s == name)
+            .unwrap_or_else(|| panic!("Missing label {name}"))
+            .1
+    };
+    app.eidos_release = None;
+    let help = at(&app, &mut renderer, t("menu_help"));
+    let beta = at(&app, &mut renderer, "Beta");
+    app.eidos_release = Some("99.0.0".into());
+    assert_eq!(at(&app, &mut renderer, t("menu_help")), help);
+    assert_eq!(at(&app, &mut renderer, "Beta"), beta);
+    let link = at(&app, &mut renderer, &link);
+    assert!(
+        link.x + link.width >= narrow.width - 20.0 && link.height <= help.height + 1.0,
+        "the link runs to the window edge on one line: {link:?}, Help {help:?}"
+    );
+}
+
+/// The profile menu's Desktop shortcut row is drawn whether or not a Run list
+/// entry starts the game, so Delete below it never moves.
+#[test]
+fn the_profile_menu_keeps_the_shortcut_row_in_place() {
+    let _look = crate::test_support::look_lock();
+    let (mut app, root) = crate::test_support::list_app(&[]);
+    app.tools = vec![eidos_instance::Tool {
+        title: "Skyrim Special Edition".into(),
+        exe: "SkyrimSE.exe".into(),
+        ..Default::default()
+    }];
+    let mut renderer = renderer();
+    let menu = |app: &App| crate::modinfo::profile_menu_card(app, "Default");
+    let row = label(menu(&app), &mut renderer, t("exe_desktop_shortcut"), 0);
+    let delete = label(menu(&app), &mut renderer, t("common_delete"), 0);
+    app.tools.clear(); // no game entry: the row stays, the click explains
+    assert_eq!(
+        label(menu(&app), &mut renderer, t("exe_desktop_shortcut"), 0),
+        row
+    );
+    assert_eq!(
+        label(menu(&app), &mut renderer, t("common_delete"), 0),
+        delete
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn the_prefix_rows_keep_their_place_without_a_prefix() {
+    let _look = crate::test_support::look_lock();
+    let (mut with, root_with) = crate::test_support::list_app(&[]);
+    let (without, root_without) = crate::test_support::list_app(&[]);
+    let windows = root_with.join("compat/pfx/drive_c/windows");
+    fs::create_dir_all(windows.join("system32")).unwrap();
+    for f in [
+        "system32/winecfg.exe",
+        "system32/uninstaller.exe",
+        "regedit.exe",
+        "explorer.exe",
+    ] {
+        fs::write(windows.join(f), b"").unwrap();
+    }
+    with.games[0].compatdata = Some(root_with.join("compat"));
+    let mut renderer = renderer();
+    for key in [
+        "menu_prefix_drive_c",
+        "menu_prefix_winecfg",
+        "menu_prefix_regedit",
+        "menu_prefix_explorer",
+        "menu_prefix_uninstaller",
+        "menu_logs_folder",
+    ] {
+        let a = label(crate::view::file_menu_card(&with), &mut renderer, t(key), 0);
+        let b = label(
+            crate::view::file_menu_card(&without),
+            &mut renderer,
+            t(key),
+            0,
+        );
+        assert!((a.y - b.y).abs() < 0.5, "{key} moved: {a:?} against {b:?}");
+    }
+    let _ = fs::remove_dir_all(root_with);
+    let _ = fs::remove_dir_all(root_without);
 }

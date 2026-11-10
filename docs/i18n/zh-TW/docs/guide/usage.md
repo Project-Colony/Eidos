@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=934a486c32ef664673b79db2d9a5beb6917f5a30 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
 
 # 使用 Eidos
 
@@ -17,6 +17,7 @@ eidos import skyrimse <mo2-profile>  # adopt an existing MO2 profile's order + p
 eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
+eidos shell skyrimse              # 在合併檢視裡開一個 shell,寫入的內容進入 Overwrite
 eidos check skyrimse              # 不開視窗跑健康檢查(腳本用 --json)
 eidos sessions skyrimse           # 依由新到舊列出已記錄的遊戲與工具執行
 eidos sessions skyrimse diff      # 顯示自上次以結束碼 0 結束的執行以來的變化
@@ -33,7 +34,11 @@ eidos unpack backup.eidos <folder>   # put it back on the other machine
 
 `eidos check <instance>` 不開啟視窗就執行 **Diagnostics** 分頁裡的前綴、外掛、缺少的 master 與 script extender 檢查,因此可以透過 SSH 或在 Game Mode 下執行,結果也能放進錯誤回報。它先印出與 **Copy report** 相同的系統資訊行,再為每項發現印出一行,家目錄顯示為 `~`,登入名稱顯示為 `<user>`。沒有發現問題時結束碼為 0(只有建議仍為 0),至少發現一個問題時為 1,Eidos 無法檢查時為 2:參數錯誤、無法開啟的實例,或偵測不到的遊戲。
 
-`eidos check <instance> --json` 改為印出一個 JSON 物件。最上層欄位是 `eidos`(版本)、`game`、`instance`、`system`(`proton`、`flatpak_steam`、`passthrough`、`session`、`distro`、`kernel`、`dev_fuse`、`fusermount3`)與 `findings`。每項發現由 `code`、`level`(`problem` 或 `advice`)和它的 `args` 組成;Diagnostics 分頁會顯示每個代碼對應的句子。
+`eidos check <instance> --json` 改為印出一個 JSON 物件。最上層欄位是 `eidos`(版本)、`game`、`instance`、`system`(`proton`、`flatpak_steam`、`passthrough`、`session`、`distro`、`kernel`、`dev_fuse`、`fusermount3`、`max_map_count`、`open_files_hard`)與 `findings`。`max_map_count` 與 `open_files_hard` 是數字,Eidos 無法讀取時為 `null`。每項發現由 `code`、`level`(`problem` 或 `advice`)和它的 `args` 組成;Diagnostics 分頁會顯示每個代碼對應的句子。
+
+### 合併檢視中的 shell
+
+`eidos shell <instance>` 在遊戲所見的遊戲資料夾裡啟動你的 `$SHELL`(沒有就用 `/bin/sh`):每個已啟用的模組掛載在 `Data` 之上,Root 模組掛載在遊戲根目錄之上,寫到那裡的一切都進入 Overwrite。`eidos shell <instance> -- <command>` 則只執行一條指令,例如 `eidos shell skyrimse -- ls Data/meshes`,或 NifSkope 這類原生工具。這次執行像遊戲工作階段一樣持有實例鎖,所以在你結束之前視窗無法儲存變更,它在 `eidos sessions` 中以 `shell` 為名記錄,絕不算作一次遊戲啟動。對指令按 Ctrl+C 會像 Stop 一樣停止執行:Eidos 結束該指令、收集工作階段並卸載。在互動式 shell 中,Ctrl+C 照常屬於 shell;輸入 `exit` 結束執行。
 
 ### 實例:全域與可攜
 
@@ -364,8 +369,9 @@ Data / Plugins / Conflicts / Overwrite / Saves / Downloads / Diagnostics 分頁,
 返回。最前面是 General、Appearance 與 Accessibility,和每個 Colony 程式一樣,接著是
 Mod list、Nexus 與 About。每項變更都會立即套用並儲存;沒有儲存按鈕。
 
-- **General**:Eidos 開啟的遊戲、視窗大小、介面語言、工具資料夾,以及遊戲的執行
-  方式。視窗介面支援英文與法文;**System** 會依循 `LC_ALL`、`LC_MESSAGES` 或
+- **General**:Eidos 開啟的遊戲、視窗大小、介面語言、工具資料夾、遊戲的執行方式,
+  以及視窗在背景時是否以桌面通知告知長時間工作結束。
+  視窗介面支援英文與法文;**System** 會依循 `LC_ALL`、`LC_MESSAGES` 或
   `LANG`,變更立即生效。`eidos` 命令列一律以英文回應。
 - **Appearance**:主題(25 個系列、57 套配色,預設為 Eidos 的羊皮紙)、強調色、
   文字大小、效果,以及即時預覽。
@@ -374,6 +380,8 @@ Mod list、Nexus 與 About。每項變更都會立即套用並儲存;沒有儲�
 
 這些設定存放在 `~/.config/Colony/Eidos/preferences.json`。舊版 Eidos 存在
 `settings.ini` 裡的主題,會在第一次啟動時沿用過來。
+
+**About -> Version** 裡有版本檢查,預設開啟。啟動時,每天最多一次,Eidos 會向 GitHub 詢問 `Project-Colony/Eidos` 的最新版本。如果它比正在執行的這一份新,選單列會在 Help 後面顯示 `Eidos 1.24.0 is available: release notes`,點這個連結會開啟該版本的頁面與它的變更記錄。Eidos 從不自己下載或取代自己。離線模式下不做這項檢查。由套件管理員裝在 `/usr` 下的副本也不做檢查,因為由套件管理員負責更新;`install.sh --system` 放置 Eidos 的 `/usr/local` 算作你自己的安裝。
 
 ### 欄位、排序與分組
 
@@ -496,11 +504,19 @@ Downloads 分頁是一座壓縮檔**圖書館**,不是傳輸佇列。可以依�
 取消隱藏。「Remove N installed」會用兩次點擊刪掉你已經安裝過的模組的壓縮檔,而且
 只刪**畫面上**的那些:篩選就是你說明自己指的是哪些的方式。
 
+**Preferences -> Nexus -> Install downloads when they finish** 預設為關閉。開啟後，視窗開著時完成的 Nexus 下載會直接安裝，不必再到 Downloads 分頁。這是一般的安裝：FOMOD 會開啟它的安裝程式，模組清單裡已有的名稱會詢問如何處理。視窗開啟之前、或選項開啟之前就在 `downloads/` 裡的壓縮檔不會被動，你取消過安裝的下載也一樣。在合集面板中開啟的合集的成員，以及等待中的 Update 所等的檔案，只由各自的流程安裝。遊戲或另一個 Eidos 佔用實例時，安裝會等到它空閒。
+
 ### 模組更新
 
 工具列右端的更新按鈕會把每個已安裝的檔案,與 Nexus 上取代它的
 檔案相比較。作者會把一次新上傳標記為某個舊檔案的後繼,Eidos 從模組 `meta.ini` 記錄的
 檔案 ID 出發,沿著這條鏈往下找。鏈上沒有後繼時,改為比較模組頁面的版本。
+
+模組右鍵選單裡的 Track 和 Untrack 會把該模組加入或移出你在 Nexus 上的追蹤模組,
+這樣網站的通知就會與你在這裡追蹤的內容一致。每次檢查更新時,Eidos 也會從 Nexus 讀取你的
+推薦(endorsement)與追蹤模組(兩次請求),並依模組自己的 Nexus 網域,把每個模組的
+Endorsed 與 Tracked 標記設成一致。兩邊不一致時,以 Nexus 為準。任一清單讀取失敗時,
+檢查結果會說明這一點,並保留那些標記不變。
 
 「Information...」的 **Nexus files** 分頁列出該模組在 Nexus 上的檔案,最新的在前,
 並標出這裡安裝的那個與取代它的那個。後者那一列有一個 **Update** 按鈕。premium 帳號由
@@ -535,7 +551,7 @@ Eidos 自己下載檔案。免費帳號則開啟檔案頁面,在那裡 Mod Manag
 
 ### 離線模式
 
-**Preferences -> Nexus -> Offline** 會讓 Eidos 完全不去接觸 Nexus。更新檢查、登入、
+**Preferences -> Nexus -> Offline** 會讓 Eidos 完全不去接觸 Nexus,也會跳過每天一次的 GitHub 版本檢查。更新檢查、登入、
 下載與合集都會直說,而不是以連線錯誤失敗。除非你打開它,否則它是關的 - 舊版 Eidos
 寫出的設定檔沒有這個鍵,而把一個缺少的鍵讀成「開」,會切斷每一個升級者的網路。
 
@@ -578,6 +594,8 @@ PATH 上的 `~/.cargo/bin`):
 
 Eidos 會在該遊戲的實例上開啟 - 你上次用的那一個,所以可攜實例和全域實例一樣會被再
 找到;點 Run 就會穿過合併檢視啟動它。
+
+開啟 **Start the game at once when a store opens Eidos**(Preferences、General、Running a game)後,Eidos 會省掉這次點擊:它先檢查 Health,再不顯示視窗直接啟動遊戲。Health 列出問題、模組清單需要處理,或設為在遊戲前執行的工具輸出已過期時,視窗照常開啟。想在某一次啟動時看到視窗,就在命令前加上 `EIDOS_WINDOW=1`:`EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`。
 
 在 Steam 之外,Run 不會自己用 Proton 或 Wine 啟動遊戲。它請擁有這份副本的商店來啟動,再由商店啟動 Eidos:
 
