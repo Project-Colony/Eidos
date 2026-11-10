@@ -78,12 +78,14 @@ pub const CODES: &[&str] = &[
     "gamedrive_foreign",
 ];
 
-/// The instance's enabled mods, highest priority first.
+/// The instance's enabled mods, highest priority first. Unmanaged rows (DLC,
+/// Creation Club) are left out: their path is empty, so every probe under it
+/// would read the working directory.
 pub fn active_mods(inst: &Instance) -> Vec<(String, PathBuf)> {
     inst.modlist()
         .into_iter()
         .rev()
-        .filter(|m| m.is_active())
+        .filter(|m| m.is_active() && !m.is_unmanaged())
         .map(|m| (m.name, m.path))
         .collect()
 }
@@ -665,15 +667,31 @@ mod tests {
         std::fs::write(mod_dir.join("Needs.esp"), plugin_with_master("Missing.esm")).unwrap();
         std::fs::create_dir_all(mod_dir.join("SKSE/Plugins")).unwrap();
         std::fs::write(mod_dir.join("SKSE/Plugins/Crash.dll"), b"invalid PE").unwrap();
-        inst.save_modlist(&[eidos_instance::ModEntry {
-            name: "Needs".into(),
-            enabled: true,
-            path: mod_dir,
-            unmanaged: false,
-        }])
+        // A saved `*` row (DLC, Creation Club) comes back with an empty path.
+        inst.save_modlist(&[
+            eidos_instance::ModEntry {
+                name: "DLC: Dawnguard".into(),
+                enabled: true,
+                path: PathBuf::new(),
+                unmanaged: true,
+            },
+            eidos_instance::ModEntry {
+                name: "Needs".into(),
+                enabled: true,
+                path: mod_dir,
+                unmanaged: false,
+            },
+        ])
         .unwrap();
+        assert!(inst.modlist().iter().any(|m| m.is_unmanaged()));
+        assert!(active_mods(&inst).iter().all(|(n, _)| n == "Needs"));
 
         let f = check_findings(&tmp_home, &game, "skyrimse", &inst);
+        assert!(
+            f.iter()
+                .all(|f| f.args.iter().all(|(_, v)| !v.contains("Dawnguard"))),
+            "{f:?}"
+        );
 
         let missing = f
             .iter()
