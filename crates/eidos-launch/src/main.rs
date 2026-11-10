@@ -70,6 +70,7 @@ fn main() {
         cwd: None,
         root_layers: Vec::new(),
         root_base_bind: None,
+        root_base: None,
         root_overwrite: None,
     };
     match launch(spec) {

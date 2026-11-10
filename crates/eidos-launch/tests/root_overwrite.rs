@@ -92,6 +92,7 @@ print('mounted metadata loop',mode,':',round((time.monotonic_ns()-start)/1e6,3),
 "#.into(), game.display().to_string(), data.display().to_string(), data_stash.display().to_string(), root_stash.display().to_string(), mode.into(), root_mounted.to_string()],
             env: vec![], base_bind: (mode != "nested-absent").then(|| (data.clone(), data_stash.clone())),
             binds: vec![], cwd: Some(game.clone()), root_layers, root_overwrite: Some(root_upper.clone()), root_base_bind: Some((game.clone(), root_stash.clone())),
+            root_base: None,
         }).unwrap();
         assert!(status.success(), "{mode}");
         println!(
@@ -178,6 +179,7 @@ pathlib.Path(sys.argv[1]).write_text('ran')
             root_layers: vec![],
             root_overwrite: None,
             root_base_bind: None,
+            root_base: None,
         });
         if mode == "valid" {
             assert!(result.unwrap().success());
@@ -271,6 +273,7 @@ pathlib.Path(sys.argv[1]).write_text('ran')
             },
             root_overwrite: Some(root_upper.clone()),
             root_base_bind: Some((game.clone(), root_stash.clone())),
+            root_base: None,
         });
         if ["failure", "symlink", "duplicate", "escape"].contains(&mode) {
             assert!(result.is_err(), "{mode}");
@@ -380,6 +383,7 @@ else: raise AssertionError('shader projection was writable')
             root_layers: vec![],
             root_overwrite: None,
             root_base_bind: None,
+            root_base: None,
         })
         .unwrap();
         assert!(result.success());
@@ -448,6 +452,7 @@ assert (mods/'Chosen/ModInfo.xml').read_bytes()==b'high'
         root_layers: vec![],
         root_overwrite: None,
         root_base_bind: None,
+        root_base: None,
     })
     .unwrap();
     assert!(result.success());
@@ -464,9 +469,58 @@ assert (mods/'Chosen/ModInfo.xml').read_bytes()==b'high'
     detach(&stash);
 }
 
+fn game_copy_replaces_the_install(root: &Path) {
+    let fixture = root.join("game-copy");
+    let game = fixture.join("game");
+    let copy = fixture.join("instance/Stock Game");
+    put(&game, "Game.exe", b"store");
+    put(&game, "store-only.dll", b"new in the store");
+    put(&game, "Data/store-only.esm", b"new in the store");
+    put(&copy, "Game.exe", b"copy");
+    put(&copy, "Data/base.esm", b"frozen");
+    let overwrite = fixture.join("overwrite");
+    let (data_stash, root_stash) = (fixture.join("data-stash"), fixture.join("root-stash"));
+    fs::create_dir_all(&overwrite).unwrap();
+    let status = launch(LaunchSpec {
+        readonly_data_binds: vec![],
+        root_readonly_overwrite: None,
+        plugin_timestamps: None,
+        layers: vec![],
+        overwrite: overwrite.clone(),
+        mountpoint: game.join("Data"),
+        command: vec![
+            "/bin/sh".into(),
+            "-ec".into(),
+            "test \"$(cat Game.exe)\" = copy; test ! -e store-only.dll; \
+             test \"$(cat Data/base.esm)\" = frozen; test ! -e Data/store-only.esm; \
+             printf out > Data/written.txt"
+                .into(),
+        ],
+        env: vec![],
+        base_bind: Some((copy.join("Data"), data_stash.clone())),
+        binds: vec![],
+        cwd: Some(game.clone()),
+        root_layers: vec![],
+        root_overwrite: Some(overwrite.join("Root")),
+        root_base_bind: Some((game.clone(), root_stash.clone())),
+        root_base: Some(copy.clone()),
+    })
+    .expect("isolated synthetic launch");
+    assert!(
+        status.success(),
+        "the copy must be the only game files under both unions"
+    );
+    assert_eq!(fs::read(game.join("Game.exe")).unwrap(), b"store");
+    assert_eq!(fs::read(overwrite.join("written.txt")).unwrap(), b"out");
+    assert!(!copy.join("Data/written.txt").exists() && !game.join("Data/written.txt").exists());
+    detach(&data_stash);
+    detach(&root_stash);
+}
+
 fn main() {
     let root = std::env::temp_dir().join(format!("eidos-root-overwrite-{}", std::process::id()));
     fs::create_dir_all(&root).unwrap();
+    game_copy_replaces_the_install(&root);
     userdata_mods_leave_install_mods_visible(&root);
     composed_shader_sessions(&root);
     morrowind_root_saves(&root);
@@ -497,6 +551,7 @@ fn main() {
         root_layers: vec![],
         root_overwrite: Some(root_overwrite.clone()),
         root_base_bind: Some((game.clone(), root_stash.clone())),
+            root_base: None,
     }).expect("isolated synthetic launch");
     assert!(
         status.success(),
@@ -618,6 +673,7 @@ open('private-output.log','w').write(sys.argv[1])
             root_layers: vec![high_root.clone(), low_root.clone()],
             root_overwrite: Some(private.clone()),
             root_base_bind: Some((game.clone(), root_view.clone())),
+            root_base: None,
         })
         .unwrap();
         assert!(status.success());

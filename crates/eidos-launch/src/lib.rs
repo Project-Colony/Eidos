@@ -80,6 +80,11 @@ pub struct LaunchSpec {
     /// the bind captures the pristine game root so the daemon can still read it
     /// once the union covers that same path.
     pub root_base_bind: Option<(PathBuf, PathBuf)>,
+    /// A copy of the game root (a list's Stock Game, a frozen copy) that replaces the
+    /// install as the bottom layer of the root union. The union still mounts on
+    /// `root_base_bind.0`, which then contributes no file. Setting it always mounts the
+    /// root union.
+    pub root_base: Option<PathBuf>,
 }
 
 /// Set by the SIGTERM and SIGINT handler; read by [`launch`] and by the run's watcher.
@@ -734,9 +739,9 @@ fn log_index_build(which: &str, fs: &Eidos, started: std::time::Instant) {
 /// itself. Split out so its `?`s land back in [`launch`], which unmounts the
 /// profile binds no matter how this half exits.
 fn launch_mounted(spec: &LaunchSpec, layers: Vec<PathBuf>) -> std::io::Result<ExitStatus> {
-    // ROOT UNION FIRST, if a mod or Overwrite supplies root files. Order matters: this union
-    // covers the game install root, and the Data union below then mounts INSIDE
-    // it. Mounting Data first would leave it shadowed by the root mount.
+    // ROOT UNION FIRST, if a mod, Overwrite or a game copy supplies root files. Order
+    // matters: this union covers the game install root, and the Data union below then
+    // mounts INSIDE it. Mounting Data first would leave it shadowed by the root mount.
     //
     // `_root_session` is bound before `session` so that reverse drop order at the
     // end of this function unmounts Data before the root beneath it.
@@ -751,6 +756,7 @@ fn launch_mounted(spec: &LaunchSpec, layers: Vec<PathBuf>) -> std::io::Result<Ex
         std::fs::read_dir(shared)?;
     }
     let _root_session = if spec.root_layers.is_empty()
+        && spec.root_base.is_none()
         && !root_overwrite_present
         && spec.root_readonly_overwrite.is_none()
         && !spec.binds.iter().any(|(_, dst)| root_redirect(spec, dst))
@@ -764,7 +770,7 @@ fn launch_mounted(spec: &LaunchSpec, layers: Vec<PathBuf>) -> std::io::Result<Ex
             ));
         };
         std::fs::create_dir_all(root_stash)?;
-        bind_mount(root_src, root_stash)?;
+        bind_mount(spec.root_base.as_deref().unwrap_or(root_src), root_stash)?;
         let mut root_layers = spec.root_layers.clone();
         // Lowest priority: the pristine game files, read through the stash.
         root_layers.push(root_stash.clone());
@@ -1264,6 +1270,7 @@ mod tests {
             root_overwrite: None,
             root_readonly_overwrite: None,
             root_base_bind: None,
+            root_base: None,
         }
     }
 
