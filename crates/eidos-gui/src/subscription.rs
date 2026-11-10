@@ -64,12 +64,6 @@ pub(crate) fn pointer(app: &App) -> iced::Point {
     last_pointer().unwrap_or(app.cursor)
 }
 
-/// Keyboard subscription: surface global shortcuts and keep the live modifier state
-/// in sync so a plain mod-row click can branch to Ctrl-toggle / Shift-extend.
-///
-/// Shortcuts only fire on the main screen, and only when no modal / inline editor is
-/// stealing input, so they never clobber typing into a text field. Mirrors MO2's
-/// global accelerators: F5 (Refresh) and Ctrl+R (Run).
 /// Whether the downloads tick should run: the Downloads tab, an update or a
 /// collection walk waiting for a file, or auto-install with an open instance.
 pub(crate) fn watches_downloads(app: &App) -> bool {
@@ -79,6 +73,12 @@ pub(crate) fn watches_downloads(app: &App) -> bool {
         || (app.prefs.auto_install_downloads && app.created.is_some())
 }
 
+/// Keyboard subscription: surface global shortcuts and keep the live modifier state
+/// in sync so a plain mod-row click can branch to Ctrl-toggle / Shift-extend.
+///
+/// Shortcuts only fire on the main screen, and only when no modal / inline editor is
+/// stealing input, so they never clobber typing into a text field. Mirrors MO2's
+/// global accelerators: F5 (Refresh) and Ctrl+R (Run).
 pub(crate) fn subscription(app: &App) -> iced::Subscription<Message> {
     use iced::keyboard::{self, key::Named, Key};
 
