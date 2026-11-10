@@ -18,8 +18,8 @@ pub(crate) fn satisfied_prereqs_in(
 
 /// `eidos prereqs <game-id> [--install]`: show, or install, the runtime
 /// prerequisites the instance's tools declare. Tier-1 (bundled DirectX DLLs) copy
-/// with no network; Tier-2 (vcrun/dotnet) DOWNLOAD from Microsoft via winetricks and
-/// so run only on the explicit `--install`.
+/// with no network; Tier-2 (vcrun/dotnet) run installers in the prefix, which may
+/// DOWNLOAD from Microsoft, and so run only on the explicit `--install`.
 pub(crate) fn cmd_prereqs(args: &[String]) {
     let Some(id) = args.first() else {
         eidos_log::info!("usage: eidos prereqs <game-id> [--install]");
@@ -118,7 +118,7 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
                 .collect::<Vec<_>>()
                 .join(", ")
         };
-        println!("Tier 2 (winetricks, DOWNLOADS from Microsoft): {t2}");
+        println!("Tier 2 (installers: vcrun2022 and .NET 8 shipped with Eidos or DOWNLOADED from Microsoft, no winetricks; the others through winetricks, which DOWNLOADS from Microsoft): {t2}");
         if !tier3.is_empty() {
             let t3 = tier3
                 .iter()
@@ -129,7 +129,7 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
-            println!("Tier 3 (runtime, DOWNLOADS once, shared by every instance): {t3}");
+            println!("Tier 3 (runtime, shipped with Eidos or DOWNLOADED once, shared by every instance): {t3}");
         }
         if !unknown.is_empty() {
             println!(
@@ -245,20 +245,37 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
         run
     };
     warn_if_flatpak_proton(&run);
-    if !eidos_gamefeatures::cabextract_available() {
+    if !eidos_gamefeatures::cabextract_available()
+        && pending2
+            .iter()
+            .any(|v| eidos_gamefeatures::redists_for(v).is_empty())
+    {
         eidos_log::info!("warning: cabextract not on PATH - some winetricks verbs need it (e.g. `pacman -S cabextract`).");
     }
     println!(
-        "Installing {} via winetricks (downloads from Microsoft).",
+        "Installing {}: vcrun2022 and .NET 8 with Microsoft's installers (the copies shipped with Eidos, or a download from Microsoft), the others through winetricks (downloads from Microsoft).",
         pending2.join(", ")
     );
+    let reference = eidos_gamefeatures::crt::reference_windows(&run.proton);
     // One verb at a time, recording each success, so a later failure does not lose
     // the earlier installs (a single batched winetricks call would).
     let mut done = satisfied;
     let mut failed: Option<(String, String)> = None;
     for v in &pending2 {
         println!("  installing {v}...");
-        match eidos_gamefeatures::install_tier2_verb(&run.proton, prefix, &run.env, v) {
+        let result = if eidos_gamefeatures::redists_for(v).is_empty() {
+            eidos_gamefeatures::install_tier2_verb(&run.proton, prefix, &run.env, v)
+        } else {
+            eidos_gamefeatures::install_redist_verb(
+                v,
+                prefix,
+                reference.as_deref(),
+                |exe, args| run.run_in_prefix(exe, args),
+                &run.env,
+                |s| println!("  {v}: {s}"),
+            )
+        };
+        match result {
             Ok(()) => {
                 done.insert(v.clone());
                 if let Err(e) = eidos_gamefeatures::record_prereqs(&inst.root, prefix, &done) {
@@ -275,7 +292,7 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
     match failed {
         None => println!("Done."),
         Some((v, e)) => {
-            eidos_log::warn!("winetricks failed on '{v}': {e}");
+            eidos_log::warn!("could not install '{v}': {e}");
             eidos_log::info!(
                 "(earlier verbs were recorded; re-run `eidos prereqs {id} --install` to resume.)"
             );

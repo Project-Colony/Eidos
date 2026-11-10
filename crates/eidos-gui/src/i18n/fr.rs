@@ -1003,7 +1003,7 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("status_run_stopped", "{title} a été arrêté. Plugins et ordre de chargement actualisés."),
     ("status_loot_report_copied", "Rapport LOOT copié ({n} lignes)."),
     ("status_prefix_needed_for_prereqs", "Préparez le préfixe Wine de l'installation choisie avant d'y installer des prérequis."),
-    ("status_installing_prereqs", "Installation des prérequis des outils : les DLL intégrées sont copiées maintenant ; .NET et vcrun se téléchargent via winetricks. Progression et erreurs -> {log}"),
+    ("status_installing_prereqs", "Installation des prérequis des outils : les DLL intégrées sont copiées maintenant, Visual C++ et .NET 8 passent par les installateurs de Microsoft fournis avec Eidos (ou téléchargés chez Microsoft), les autres par winetricks. Progression et erreurs : {log}"),
     ("prereqs_run_title", "L'installateur des prérequis"),
     ("status_prereqs_wait_run", "{title} tourne encore. Fermez-le, puis cliquez de nouveau sur Préparer les outils."),
     ("status_prefs_save_failed", "Impossible d'enregistrer les préférences : {error}"),

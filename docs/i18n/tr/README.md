@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=24a826cf58aaf1ab0e91bef4d7acfb7ebb818ed3 -->
+<!-- eidos-i18n: source=README.md sha=65fb26275cd8e0b8dbf88b169fd66887cd7dd420 -->
 
 <div align="center">
 
@@ -354,7 +354,7 @@ bağlantıyı durdurur.
 | Nexus indirmeleri | gönderilir | İstediğiniz dosyalar, indirme bağlantısının belirttiği Nexus CDN sunucusundan; örneğin indirmeler klasörüne, her birinin yanında MO2 biçiminde bir `.meta` ile kaydedilir. |
 | `nxm://` bağlantıları | saklanır | `install.sh`'nin sizin için çalıştırdığı `eidos nxm --register`, `~/.local/share/applications/eidos-nxm.desktop` dosyasını yazar ve onu `xdg-mime` üzerinden `nxm://` işleyicisi yapar; böylece sitenin Mod Manager Download düğmesi bağlantısını Eidos'a verir. Arch paketi aynı girdiyi sistem genelinde kurar. |
 | LOOT ana listeleri | gönderilir | Bir oyunun ilk LOOT sıralamasında ve her güncelleme istediğinizde `raw.githubusercontent.com/loot/...`. Size ait hiçbir şey gönderilmez. [GitHub gizlilik bildirimi](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement) |
-| Araç çalışma zamanları | gönderilir | Yalnızca bir araç ön gereksinimi kurduğunuzda ya da bir mod buna ihtiyaç duyduğunda: `builds.dotnet.microsoft.com` adresinden, Eidos'a gömülü SHA-256 ile eşleşmedikçe reddedilen .NET çalışma zamanı ve oyunun Proton önekine kurduğunu (Visual C++ ve .NET yeniden dağıtılabilir paketleri) Microsoft'tan ve winetricks'in kullandığı diğer sunuculardan indiren `winetricks`. [Microsoft gizlilik bildirimi](https://www.microsoft.com/en-us/privacy/privacystatement) |
+| Araç çalışma zamanları | gönderilir | Yalnızca bir araç ön gereksinimi kurduğunuzda ya da bir mod buna ihtiyaç duyduğunda ve yalnızca sürüm paketinin getirmediği şeyler için (tek dosya `eidos-linux` ve kaynaktan derleme hiçbir şey getirmez): `builds.dotnet.microsoft.com` adresinden .NET 10 çalışma zamanı ve `download.visualstudio.microsoft.com` adresinden Visual C++ ve .NET 8 kurucuları, her biri Eidos'a gömülü SHA-256 ile eşleşmedikçe reddedilir; her zaman `builds.dotnet.microsoft.com` adresinden .NET 10 SDK; ve diğer ön gereksinimler (.NET Framework 4.8, XAudio) için, kurduğunu Microsoft'tan ve winetricks'in kullandığı diğer sunuculardan indiren `winetricks`. [Microsoft gizlilik bildirimi](https://www.microsoft.com/en-us/privacy/privacystatement) |
 | Oturum günlükleri | saklanır | `~/.local/share/Colony/Eidos/logs/`, 0600 kipinde: örnek başına on oturum, 30 gün sonra temizlenir. Ev klasörünüz `~`, kullanıcı adınız `<user>` olarak yazılır, böylece bir günlük bir hata kaydına olduğu gibi yapıştırılabilir. Siz göndermedikçe makinenizden asla çıkmazlar. |
 | Kısayollar | saklanır | `install.sh`, `eidos.desktop` dosyasını ve simgelerini `~/.local/share` altına yazar; oluşturduğunuz bir araç kısayolu `~/.local/share/applications` içine gider. |
 | Açtığınız bağlantılar | hiçbiri | Mod sayfaları ve diğer bağlantılar `xdg-open` üzerinden kendi tarayıcınızda açılır. |

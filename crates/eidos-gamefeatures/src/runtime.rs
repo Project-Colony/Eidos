@@ -1,25 +1,30 @@
-//! Self-contained runtimes a tool needs, fetched once and shared by every
+//! Self-contained runtimes a tool needs, unpacked once and shared by every
 //! instance.
 //!
 //! The third tier of prerequisite, and it exists because the first two cannot
-//! carry this. Tier 1 copies ONE bundled DLL into `system32`; tier 2 runs a
-//! winetricks verb. A modern .NET runtime is neither: 193 files that live in
-//! their own directory and are found through `DOTNET_ROOT`, never registered,
-//! never installed into the prefix at all.
+//! carry this. Tier 1 copies ONE bundled DLL into `system32`; tier 2 runs an
+//! installer in the prefix. A modern .NET runtime is neither: 193 files that
+//! live in their own directory and are found through `DOTNET_ROOT`, never
+//! registered, never installed into the prefix at all.
 //!
-//! # Why this is not bundled
+//! # Shipped with the release bundle
 //!
 //! DynDOLOD's `LODGenx64Win10.exe` needs .NET 10, and .NET is MIT-licensed, so
-//! shipping it would be legal. It is a question of size and of failure mode.
-//! Measured on a real generation run, LODGen touched 25 of the 193 files - 25.6
-//! MB of 78 - so a trimmed set looks tempting. But those 25 are the ones ONE
-//! worldspace happened to need; another code path pulls in `System.Private.Xml`
-//! or `System.Text.Json`, neither of which is among them. Ship a trimmed runtime
-//! missing one and the tool dies with a `FileNotFoundException` - the same silent
-//! nothing that made the original diagnosis cost a night. Trimming a runtime is
-//! something an application's own author does, knowing their own code.
+//! the release bundle ships the `dotnet10` runtime zip in its `runtimes/`
+//! folder and Eidos unpacks that copy when [`find_embedded`] finds one. It
+//! ships whole, because of the failure mode of the alternative. Measured on a
+//! real generation run, LODGen touched 25 of the 193 files - 25.6 MB of 78 - so
+//! a trimmed set looks tempting. But those 25 are the ones ONE worldspace
+//! happened to need; another code path pulls in `System.Private.Xml` or
+//! `System.Text.Json`, neither of which is among them. Ship a trimmed runtime
+//! missing one and the tool dies with a `FileNotFoundException` - the same
+//! silent nothing that made the original diagnosis cost a night. Trimming a
+//! runtime is something an application's own author does, knowing their own
+//! code.
 //!
-//! So: one download, cached, complete.
+//! So: the complete zip, shipped or else downloaded once, cached. The .NET 10
+//! SDK (`dotnetsdk10`, 300 MB, Synthesis only) is not shipped and stays a
+//! download.
 
 use std::fs;
 use std::io;
@@ -102,6 +107,35 @@ pub fn is_runtime_verb(verb: &str) -> bool {
 /// one copy.
 pub fn runtimes_dir() -> PathBuf {
     eidos_paths::runtimes_dir()
+}
+
+/// Where a file shipped with the release bundle can be, in the order they are
+/// tried: the data dir, where `install.sh` copies the bundle's `runtimes/` and
+/// where downloads land, then a `runtimes/` beside the running binary (an
+/// unpacked bundle run in place).
+// shortcut: eidos-linux carries no runtimes/ folder and downloads them; ship them beside it once Colony installs a folder
+pub(crate) fn embedded_dirs() -> Vec<PathBuf> {
+    let mut dirs = vec![eidos_paths::data_dir().join("runtimes")];
+    if let Some(bin) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf))
+    {
+        dirs.push(bin.join("runtimes"));
+    }
+    dirs
+}
+
+/// The first `dir/file` of `dirs` that is a regular file matching its pin. A
+/// file that does not match is skipped, never used.
+pub(crate) fn find_embedded(file: &str, sha256: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
+    dirs.iter()
+        .map(|d| d.join(file))
+        .find(|p| p.is_file() && sha256_file(p).is_ok_and(|got| got.eq_ignore_ascii_case(sha256)))
+}
+
+/// The name a pinned download is shipped under: the URL's last path segment.
+pub(crate) fn shipped_name(url: &str) -> &str {
+    url.rsplit('/').next().unwrap_or(url)
 }
 
 /// Where one runtime lives, version included so an Eidos that pins a newer one
@@ -240,19 +274,28 @@ fn install_into(
     let _ = fs::remove_dir_all(&staging);
     fs::create_dir_all(&staging)?;
 
-    progress(&format!("downloading {} {}", r.verb, r.version));
-    let archive = staging.join("runtime.zip");
-    download(r.url, &archive)?;
+    let archive = match find_embedded(shipped_name(r.url), r.sha256, &embedded_dirs()) {
+        Some(shipped) => {
+            progress("using the copy shipped with Eidos");
+            shipped
+        }
+        None => {
+            progress(&format!("downloading {} {}", r.verb, r.version));
+            let archive = staging.join("runtime.zip");
+            download(r.url, &archive)?;
 
-    progress("verifying");
-    let got = sha256_file(&archive)?;
-    if !got.eq_ignore_ascii_case(r.sha256) {
-        let _ = fs::remove_dir_all(&staging);
-        return Err(RuntimeError::Hash {
-            expected: r.sha256.to_string(),
-            got,
-        });
-    }
+            progress("verifying");
+            let got = sha256_file(&archive)?;
+            if !got.eq_ignore_ascii_case(r.sha256) {
+                let _ = fs::remove_dir_all(&staging);
+                return Err(RuntimeError::Hash {
+                    expected: r.sha256.to_string(),
+                    got,
+                });
+            }
+            archive
+        }
+    };
 
     progress("unpacking");
     let out = staging.join("tree");
@@ -289,7 +332,7 @@ fn install_into(
     Ok(true)
 }
 
-fn download(url: &str, dest: &Path) -> Result<(), RuntimeError> {
+pub(crate) fn download(url: &str, dest: &Path) -> Result<(), RuntimeError> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .user_agent(format!("Eidos/{}", env!("CARGO_PKG_VERSION")))
         .timeout_connect(Some(std::time::Duration::from_secs(20)))
@@ -310,7 +353,7 @@ fn download(url: &str, dest: &Path) -> Result<(), RuntimeError> {
     Ok(())
 }
 
-fn sha256_file(path: &Path) -> Result<String, RuntimeError> {
+pub(crate) fn sha256_file(path: &Path) -> Result<String, RuntimeError> {
     use std::io::Read;
     let mut hasher = Sha256::new();
     let mut f = fs::File::open(path)?;
@@ -457,6 +500,38 @@ mod tests {
             "another installer inspected the shared cache while it was locked"
         );
         assert!(!rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap());
+    }
+
+    #[test]
+    fn find_embedded_tries_the_data_dir_then_beside_the_binary_and_checks_the_hash() {
+        let root = std::env::temp_dir().join(format!("eidos-shipped-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let (data, beside) = (root.join("data"), root.join("beside"));
+        for d in [&data, &beside] {
+            fs::create_dir_all(d).unwrap();
+        }
+        let dirs = [data.clone(), beside.clone()];
+        let a = "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd"; // sha256("A")
+        assert_eq!(find_embedded("a.exe", a, &dirs), None);
+        fs::write(beside.join("a.exe"), b"A").unwrap();
+        assert_eq!(find_embedded("a.exe", a, &dirs), Some(beside.join("a.exe")));
+        fs::write(data.join("a.exe"), b"A").unwrap();
+        assert_eq!(
+            find_embedded("a.exe", a, &dirs),
+            Some(data.join("a.exe")),
+            "the data dir comes first"
+        );
+        fs::write(data.join("a.exe"), b"damaged").unwrap();
+        assert_eq!(
+            find_embedded("a.exe", a, &dirs),
+            Some(beside.join("a.exe")),
+            "a file that fails its pin is skipped"
+        );
+        assert_eq!(
+            shipped_name(runtime("dotnet10").unwrap().url),
+            "dotnet-runtime-10.0.10-win-x64.zip"
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

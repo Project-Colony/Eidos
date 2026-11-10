@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=24a826cf58aaf1ab0e91bef4d7acfb7ebb818ed3 -->
+<!-- eidos-i18n: source=README.md sha=65fb26275cd8e0b8dbf88b169fd66887cd7dd420 -->
 
 <div align="center">
 
@@ -334,7 +334,7 @@ Eidos はテレメトリも、利用状況の分析も、クラッシュレポ�
 | Nexus からのダウンロード | 送信 | 要求したファイルを、ダウンロードリンクが示す Nexus の CDN ホストから取得し、インスタンスのダウンロードフォルダに、それぞれの隣に MO2 形式の `.meta` を添えて保存します。 |
 | `nxm://` リンク | 保存 | `eidos nxm --register`(`install.sh` が代わりに実行します)が `~/.local/share/applications/eidos-nxm.desktop` を書き、`xdg-mime` でそれを `nxm://` のハンドラにします。これでサイトの Mod Manager Download ボタンがリンクを Eidos に渡します。Arch のパッケージは同じエントリをシステム全体にインストールします。 |
 | LOOT のマスターリスト | 送信 | `raw.githubusercontent.com/loot/...` から、そのゲームで初めて LOOT の並べ替えをするときと、更新を求めたときに。あなたのものは何も送られません。[GitHub のプライバシーステートメント](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement) |
-| ツールのランタイム | 送信 | ツールの前提条件をインストールするときか、MOD がそれを必要とするときだけ: `builds.dotnet.microsoft.com` からの .NET ランタイム(Eidos に組み込まれた SHA-256 と一致しなければ拒否されます)、そして `winetricks`。これはゲームの Proton プレフィックスにインストールするもの(Visual C++ と .NET の再頒布可能パッケージ)を、Microsoft や winetricks が使うほかのホストからダウンロードします。[Microsoft のプライバシーに関する声明](https://www.microsoft.com/en-us/privacy/privacystatement) |
+| ツールのランタイム | 送信 | ツールの前提条件をインストールするときか、MOD がそれを必要とするときだけ、それもリリースバンドルが同梱していなかったものだけ (単体の `eidos-linux` ファイルとソースからのビルドは何も同梱しません): `builds.dotnet.microsoft.com` からの .NET 10 ランタイムと、`download.visualstudio.microsoft.com` からの Visual C++ と .NET 8 のインストーラ(どれも Eidos に組み込まれた SHA-256 と一致しなければ拒否されます)、常に `builds.dotnet.microsoft.com` からの .NET 10 SDK、そしてほかの前提条件 (.NET Framework 4.8、XAudio) のための `winetricks`。これはインストールするものを、Microsoft や winetricks が使うほかのホストからダウンロードします。[Microsoft のプライバシーに関する声明](https://www.microsoft.com/en-us/privacy/privacystatement) |
 | セッションログ | 保存 | `~/.local/share/Colony/Eidos/logs/`、モード 0600。インスタンスごとに十セッション、30 日で掃除されます。ホームフォルダは `~`、ユーザー名は `<user>` と書かれるので、ログはそのまま issue に貼れます。あなたが送らない限り、マシンの外へ出ることはありません。 |
 | ショートカット | 保存 | `install.sh` が `eidos.desktop` とそのアイコンを `~/.local/share` の下に書きます。自分で作ったツールのショートカットは `~/.local/share/applications` に入ります。 |
 | 開いたリンク | どちらでもない | MOD のページなどのリンクは、`xdg-open` を通じてあなた自身のブラウザで開きます。 |
