@@ -54,12 +54,19 @@ pub(crate) fn capture(
         &inst.overwrite_dir(),
     )
     .runtime;
+    // A test run runs on the working copy `test-run/profile`: record the real profile.
+    let test = prof.name == eidos_instance::TEST_RUN_PROFILE;
+    let profile = test
+        .then(|| inst.test_run().map(|r| r.profile))
+        .flatten()
+        .unwrap_or_else(|| prof.name.clone());
     SessionRecord {
         started: now(),
         pid: std::process::id(),
         eidos: env!("CARGO_PKG_VERSION").into(),
-        profile: prof.name.clone(),
+        profile,
         tool: tool.map(Into::into),
+        test,
         game_version,
         mods,
         plugins,
@@ -126,13 +133,13 @@ pub(crate) fn recorded_exit(code: i32, stopped: bool) -> i32 {
 }
 
 /// A38 ruling: until crash detection lands, the last good run is the newest game
-/// run that exited with code 0.
+/// run that exited with code 0. A test run ran a working copy, so it is left out.
 pub(crate) fn default_target(
     records: &[(PathBuf, SessionRecord)],
 ) -> Option<&(PathBuf, SessionRecord)> {
     records
         .iter()
-        .filter(|(_, r)| r.tool.is_none() && r.exit == Some(0))
+        .filter(|(_, r)| r.tool.is_none() && !r.test && r.exit == Some(0))
         .max_by_key(|(_, r)| (r.started, r.pid))
 }
 
@@ -141,13 +148,15 @@ fn stem(path: &std::path::Path) -> String {
         .map_or_else(String::new, |s| s.to_string_lossy().into())
 }
 
-fn list_line(path: &std::path::Path, r: &SessionRecord) -> String {
+pub(crate) fn list_line(path: &std::path::Path, r: &SessionRecord) -> String {
     format!(
         "{}  {} UTC  {}  {}  exit {}",
         stem(path),
         eidos_instance::format_stamp(r.started),
         r.profile,
-        r.tool.as_deref().unwrap_or("game"),
+        r.tool
+            .as_deref()
+            .unwrap_or(if r.test { "test" } else { "game" }),
         r.exit.map_or("?".into(), |c| c.to_string())
     )
 }
