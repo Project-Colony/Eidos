@@ -8589,6 +8589,13 @@ fn a_broken_collection_order_gets_a_last_card_and_restore_puts_it_back() {
     assert!(last.title.contains("Cities"), "{}", last.title);
     let _ = update(&mut app, Message::RestoreCollectionOrder("abc123".into()));
     assert_eq!(names(&app.mods), ["A", "Mine", "B"]);
+    assert_eq!(
+        app.status,
+        Some(tf(
+            "status_collection_order_restored",
+            &[("n", &2), ("collection", &"Cities")]
+        ))
+    );
     let on_disk: Vec<String> = app
         .created
         .as_ref()
@@ -8601,6 +8608,16 @@ fn a_broken_collection_order_gets_a_last_card_and_restore_puts_it_back() {
     assert!(crate::modinfo::diagnostics(&app)
         .iter()
         .all(|d| !d.actions.iter().any(|(_, m)| restore(m))));
+    // A second press finds nothing to move and records no step, so one Undo
+    // still takes the list back.
+    let _ = update(&mut app, Message::RestoreCollectionOrder("abc123".into()));
+    assert_eq!(
+        app.status,
+        Some(tf(
+            "status_collection_order_unchanged",
+            &[("collection", &"Cities")]
+        ))
+    );
     let _ = update(&mut app, Message::Undo);
     assert_eq!(names(&app.mods), ["B", "Mine", "A"]);
     let _ = update(&mut app, Message::RestoreCollectionOrder("gone".into()));

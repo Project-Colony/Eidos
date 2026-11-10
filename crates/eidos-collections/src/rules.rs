@@ -10,6 +10,8 @@
 //! priority, the last entry wins. So a rule "A before B" puts A EARLIER in the
 //! list than B, and B wins the files they share.
 
+use std::collections::HashMap;
+
 use crate::manifest::{Collection, ModReference, Resolved, RuleType};
 
 /// One constraint over member indices: `earlier` sits before `later`, so `later`
@@ -177,63 +179,138 @@ fn order_ranked(count: usize, edges: &[Edge], rank: &[(usize, usize)]) -> Order 
     Order { sequence, cycles }
 }
 
-/// The before/after rules of `c` that `enabled` breaks, as (earlier folder,
-/// later folder), in edge order.
+/// A collection's before/after rules over the folders its members installed
+/// as, ready to check a mod list against or restore one.
 ///
-/// `folders` maps member index -> installed folder; `enabled` is the enabled
-/// folder names, lowest priority first. A rule is left out when no order can
-/// keep it (a cycle), when an end was never installed or is off in this
-/// profile, or when both ends share one folder.
+/// Two members can install into one folder (see [`merge`]), and a folder holds
+/// one place in the list, so the rules are ordered folder by folder: a rule
+/// between two members of one folder orders nothing, and rules that put one
+/// folder on both sides of another form a loop. A member that has no folder
+/// keeps a node of its own, so rules still chain through it.
+#[derive(Debug, Clone, Default)]
+pub struct FolderRules {
+    /// Node -> the folder it stands for, `None` for a member with no folder.
+    folders: Vec<Option<String>>,
+    edges: Vec<Edge>,
+    /// Nodes no order can place: in a loop of rules, or after one.
+    stuck: Vec<bool>,
+}
+
+impl FolderRules {
+    /// `folders` maps member index -> installed folder.
+    pub fn new(c: &Collection, folders: &[(usize, String)]) -> Self {
+        let by_member: HashMap<usize, &String> = folders.iter().map(|(m, f)| (*m, f)).collect();
+        let mut nodes: Vec<Option<String>> = Vec::new();
+        let mut by_folder: HashMap<&String, usize> = HashMap::new();
+        let node: Vec<usize> = (0..c.mods.len())
+            .map(|i| match by_member.get(&i) {
+                Some(f) => *by_folder.entry(f).or_insert_with(|| {
+                    nodes.push(Some((*f).clone()));
+                    nodes.len() - 1
+                }),
+                None => {
+                    nodes.push(None);
+                    nodes.len() - 1
+                }
+            })
+            .collect();
+        let mut edges: Vec<Edge> = edges(c)
+            .0
+            .iter()
+            .map(|e| Edge {
+                earlier: node[e.earlier],
+                later: node[e.later],
+            })
+            .filter(|e| e.earlier != e.later)
+            .collect();
+        edges.sort_unstable();
+        edges.dedup();
+        let mut stuck = vec![false; nodes.len()];
+        for n in order(nodes.len(), &edges).cycles {
+            stuck[n] = true;
+        }
+        FolderRules {
+            folders: nodes,
+            edges,
+            stuck,
+        }
+    }
+
+    /// The rules `enabled` breaks, as (earlier folder, later folder), in edge
+    /// order. `enabled` is the enabled folder names, lowest priority first. A
+    /// rule is left out when no order can keep it (a loop), or when an end has
+    /// no folder or is off in this profile. [`FolderRules::restore`] fixes
+    /// every pair this returns.
+    pub fn broken_pairs(&self, enabled: &[String]) -> Vec<(String, String)> {
+        let at: HashMap<&str, usize> = enabled
+            .iter()
+            .enumerate()
+            .rev()
+            .map(|(i, n)| (n.as_str(), i))
+            .collect();
+        let mut out = Vec::new();
+        for e in &self.edges {
+            if self.stuck[e.earlier] || self.stuck[e.later] {
+                continue;
+            }
+            let (Some(a), Some(b)) = (&self.folders[e.earlier], &self.folders[e.later]) else {
+                continue;
+            };
+            let (Some(ia), Some(ib)) = (at.get(a.as_str()), at.get(b.as_str())) else {
+                continue;
+            };
+            if ia > ib {
+                out.push((a.clone(), b.clone()));
+            }
+        }
+        out
+    }
+
+    /// `list` with the collection's folders re-sorted so every rule that can
+    /// hold does. They keep the order `list` gives them wherever the rules
+    /// allow, and every other entry stays where it is.
+    pub fn restore(&self, list: &[String]) -> Vec<String> {
+        let at: HashMap<&str, usize> = list
+            .iter()
+            .enumerate()
+            .rev()
+            .map(|(i, n)| (n.as_str(), i))
+            .collect();
+        let rank: Vec<(usize, usize)> = self
+            .folders
+            .iter()
+            .enumerate()
+            .map(|(k, f)| {
+                let pos = f.as_ref().and_then(|f| at.get(f.as_str()).copied());
+                (pos.unwrap_or(list.len() + k), k)
+            })
+            .collect();
+        let members: Vec<(usize, String)> = self
+            .folders
+            .iter()
+            .enumerate()
+            .filter_map(|(k, f)| Some((k, f.clone()?)))
+            .collect();
+        merge(
+            list,
+            &members,
+            &order_ranked(self.folders.len(), &self.edges, &rank).sequence,
+        )
+    }
+}
+
+/// [`FolderRules::broken_pairs`] of `c` installed as `folders`.
 pub fn broken_pairs(
     c: &Collection,
     folders: &[(usize, String)],
     enabled: &[String],
 ) -> Vec<(String, String)> {
-    let (edges, _) = edges(c);
-    let cycles = order(c.mods.len(), &edges).cycles;
-    let folder = |i: usize| folders.iter().find(|(m, _)| *m == i).map(|(_, f)| f);
-    let at = |f: &String| enabled.iter().position(|n| n == f);
-    let mut out: Vec<(String, String)> = Vec::new();
-    for e in &edges {
-        if cycles.contains(&e.earlier) || cycles.contains(&e.later) {
-            continue;
-        }
-        let (Some(a), Some(b)) = (folder(e.earlier), folder(e.later)) else {
-            continue;
-        };
-        if a == b {
-            continue;
-        }
-        let (Some(ia), Some(ib)) = (at(a), at(b)) else {
-            continue;
-        };
-        let pair = (a.clone(), b.clone());
-        if ia > ib && !out.contains(&pair) {
-            out.push(pair);
-        }
-    }
-    out
+    FolderRules::new(c, folders).broken_pairs(enabled)
 }
 
-/// `list` with the collection's members re-sorted so every before/after rule
-/// holds. Members keep the order `list` gives them wherever the rules allow,
-/// and every other entry stays where it is.
+/// [`FolderRules::restore`] of `c` installed as `folders`.
 pub fn restore_order(c: &Collection, folders: &[(usize, String)], list: &[String]) -> Vec<String> {
-    let (edges, _) = edges(c);
-    let rank: Vec<(usize, usize)> = (0..c.mods.len())
-        .map(|i| {
-            let pos = folders
-                .iter()
-                .find(|(m, _)| *m == i)
-                .and_then(|(_, f)| list.iter().position(|n| n == f));
-            (pos.unwrap_or(list.len() + i), i)
-        })
-        .collect();
-    merge(
-        list,
-        folders,
-        &order_ranked(c.mods.len(), &edges, &rank).sequence,
-    )
+    FolderRules::new(c, folders).restore(list)
 }
 
 /// Rewrite an existing mod list so the collection's members sit in `sequence`,
@@ -521,5 +598,42 @@ mod tests {
         );
         let good = s(&["C", "A", "B"]);
         assert_eq!(restore_order(&c, &folders, &good), good);
+    }
+
+    /// X1 and X2 are two files of one mod, installed into the one folder X.
+    fn shared(names: &[&str], rules: &[(&str, &str)]) -> (Collection, Vec<(usize, String)>) {
+        let (c, mut folders) = ruled(names, rules);
+        for (_, f) in &mut folders {
+            if f.starts_with('X') {
+                *f = "X".to_string();
+            }
+        }
+        (c, folders)
+    }
+
+    #[test]
+    fn rules_that_put_a_shared_folder_on_both_sides_of_a_mod_are_a_loop() {
+        // X has to sit both above and below A, so no list order keeps both
+        // rules: no card that Restore could never clear, and no move.
+        let (c, folders) = shared(&["X1", "A", "X2"], &[("X1", "A"), ("A", "X2")]);
+        for list in [s(&["X", "A"]), s(&["A", "X"])] {
+            assert!(broken_pairs(&c, &folders, &list).is_empty(), "{list:?}");
+            assert_eq!(restore_order(&c, &folders, &list), list);
+        }
+    }
+
+    #[test]
+    fn a_rule_on_the_second_file_of_a_shared_folder_is_restored() {
+        // X1 has no rule and comes first by rank; the folder still has to move
+        // below B for the rule on X2.
+        let (c, folders) = shared(&["X1", "X2", "B"], &[("B", "X2")]);
+        let list = s(&["X", "mine", "B"]);
+        assert_eq!(
+            broken_pairs(&c, &folders, &list),
+            [("B".to_string(), "X".to_string())]
+        );
+        let restored = restore_order(&c, &folders, &list);
+        assert_eq!(restored, s(&["B", "mine", "X"]));
+        assert!(broken_pairs(&c, &folders, &restored).is_empty());
     }
 }
