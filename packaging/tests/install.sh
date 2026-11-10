@@ -12,6 +12,8 @@ for command in sudo setcap; do
     printf '#!/bin/sh\n: > "$EIDOS_INSTALL_TEST_GUARD"\nexit 97\n' > "$root/tools/$command"
     chmod +x "$root/tools/$command"
 done
+mkdir -p "$root/source/runtimes"
+printf x > "$root/source/runtimes/VC_redist.x64.exe"
 script="$(cd "$(dirname "$0")/.." && pwd)/install.sh"
 EIDOS_INSTALL_TEST_GUARD="$root/privileged" PATH="$root/tools:$PATH" XDG_DATA_HOME="$root/data" XDG_BIN_HOME="$root/Eidos Tools" \
     bash "$script" --from "$root/source" > "$root/install.log"
@@ -21,6 +23,7 @@ test -x "$root/Eidos Tools/eidos-nif-preview"
 test -f "$root/data/licenses/eidos/LICENSE"
 test -f "$root/data/licenses/eidos/omod/UPSTREAM.md"
 test -f "$root/data/licenses/eidos/nifly/vendor/nifly/LICENSE"
+test -f "$root/data/Colony/Eidos/runtimes/VC_redist.x64.exe"
 test ! -e "$root/privileged"
 if [ "$(id -u)" != 0 ]; then
     grep -Fx "Exec=\"$root/Eidos Tools/eidos-gui\"" "$root/data/applications/eidos.desktop"

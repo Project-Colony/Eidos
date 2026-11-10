@@ -1,0 +1,8 @@
+Microsoft Visual C++ 2015-2022 Redistributable: license terms
+
+These terms cover VC_redist.x86.exe and VC_redist.x64.exe in runtimes/,
+Microsoft's installers as Microsoft publishes them. Source:
+https://visualstudio.microsoft.com/license-terms/vs2022-cruntime/
+
+TODO(owner): paste the license terms from that page below this line before
+the release.

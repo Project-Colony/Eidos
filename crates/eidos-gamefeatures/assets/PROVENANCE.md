@@ -40,22 +40,44 @@ Governed by the Microsoft Windows SDK / DirectX redistributable license. Confirm
 redistribution terms for these specific builds and their interaction with Eidos's
 GPL-3.0-or-later license before any public release that embeds these binaries.
 
+## Microsoft runtimes in the release bundle
+
+| Verb | Version | File | SHA-256 | Source | License |
+|------|---------|------|---------|--------|---------|
+| `vcrun2022` | 2015-2022, x86 | `VC_redist.x86.exe` | `0c09f2611660441084ce0df425c51c11e147e6447963c3690f97e0b25c55ed64` | `https://download.visualstudio.microsoft.com/download/pr/990c720a-46ce-4dc7-87b9-c2eb615d34b9/0C09F2611660441084CE0DF425C51C11E147E6447963C3690F97E0B25C55ED64/VC_redist.x86.exe` | Microsoft Visual C++ 2015-2022 Redistributable terms |
+| `vcrun2022` | 2015-2022, x64 | `VC_redist.x64.exe` | `cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b` | `https://download.visualstudio.microsoft.com/download/pr/990c720a-46ce-4dc7-87b9-c2eb615d34b9/CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe` | Microsoft Visual C++ 2015-2022 Redistributable terms |
+| `dotnet8`, `dotnetdesktop8` | 8.0.12, x64 | `windowsdesktop-runtime-8.0.12-win-x64.exe` | `cb51b559f343cb56e23cad2e5af8c4d1701e221a0a2a4116193a2a9375568814` | `https://download.visualstudio.microsoft.com/download/pr/f1e7ffc8-c278-4339-b460-517420724524/f36bb75b2e86a52338c4d3a90f8dac9b/windowsdesktop-runtime-8.0.12-win-x64.exe` | .NET 8.0.12 Desktop Runtime, MIT |
+| `dotnet10` | 10.0.10, x64 | `dotnet-runtime-10.0.10-win-x64.zip` | `79bb04da40ab098f0c2e4ef4652fe5bb98c27c7d5697389003b7be53d2c86f6a` | `https://builds.dotnet.microsoft.com/dotnet/Runtime/10.0.10/dotnet-runtime-10.0.10-win-x64.zip` | .NET 10.0.10 runtime, MIT |
+
+These files are not in git: the release job (`.github/workflows/release.yml`)
+downloads each file `packaging/runtimes.txt` lists, checks its SHA-256 and ships
+it under `runtimes/` in `eidos-linux-bundle.tar.gz`, with its license under
+`licenses/microsoft-runtimes/`. A source build and the single `eidos-linux` file
+ship none of them, so Eidos downloads them from the same URLs, after the same
+consent.
+
 ## Not bundled (intentionally)
 
-- `vcruntime140.dll` / `msvcp140.dll` (the VC++ 2015-2022 runtime) - SkyrimSE.exe and
-  many SKSE plugins dynamically import these, but unlike the d3dcompiler stub, Wine's
-  builtin CRT (shipped by every Proton) is functionally adequate and satisfies the
-  imports, so the game and plugins load without the genuine MS redist. A specific C++
-  tool that the builtin can't satisfy gets `vcrun2022` via the Tier-2 winetricks path.
-- The **.NET** runtimes/SDK (`dotnet8`, `dotnetdesktop8`, ...) - too large to bundle and
-  must run an in-prefix installer (CLR host + registry + GAC). Tools that need .NET
-  (FNIS) get it via the Tier-2 winetricks path, on explicit consent.
+- `vcruntime140.dll` / `msvcp140.dll` (the VC++ 2015-2022 runtime) - still not embedded
+  in the binaries. SkyrimSE.exe and many SKSE plugins dynamically import these, but
+  unlike the d3dcompiler stub, Wine's builtin CRT (shipped by every Proton) is
+  functionally adequate and satisfies the imports, so the game and plugins load without
+  the genuine MS redist. For a C++ tool that the builtin can't satisfy, the release
+  bundle ships Microsoft's installers for `vcrun2022` (table above), which Eidos runs in
+  the prefix on explicit consent.
+- The **.NET** runtimes/SDK (`dotnet8`, `dotnetdesktop8`, ...) - too large to embed in
+  the binaries and must run an in-prefix installer (CLR host + registry + GAC). The
+  release bundle ships the .NET 8 Desktop Runtime installer, which Eidos runs in the
+  prefix for `dotnet8` and `dotnetdesktop8`, on explicit consent. FNIS needs
+  `dotnet48`, which still goes through the Tier-2 winetricks path.
 
 ## What is NOT bundled, and why
 
-The .NET runtime DynDOLOD's LOD generator needs (`dotnet10`) is **downloaded**,
-not shipped here. .NET is MIT-licensed, so bundling it would be legal - the
-reasons are size and failure mode.
+The .NET runtime DynDOLOD's LOD generator needs (`dotnet10`) is not embedded in
+the binaries. The release bundle ships Microsoft's zip whole under `runtimes/`
+(table above) and Eidos unpacks that copy; without it, Eidos downloads the same
+zip. .NET is MIT-licensed, so embedding it would be legal - the reasons it stays
+out of the binaries are size, and the failure mode below is why it ships whole.
 
 It is 193 files, 78 MB unpacked, against 18 MB for everything in this directory.
 Measured on a real generation run, LODGen touched 25 of those files, 25.6 MB, so
@@ -69,7 +91,7 @@ Trimming a runtime is something an application's own author does, knowing their
 own code. See `crates/eidos-gamefeatures/src/runtime.rs`.
 
 The .NET 10 SDK that Synthesis needs to compile its patchers (`dotnetsdk10`) is
-downloaded the same way. Eidos pins version 10.0.403, the win-x64 zip at
+downloaded, and the release bundle does not ship it. Eidos pins version 10.0.403, the win-x64 zip at
 `https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.403/dotnet-sdk-10.0.403-win-x64.zip`:
 300745255 bytes, 5577 files, 808 MB unpacked, and it holds the
 `Microsoft.NETCore.App`, `Microsoft.AspNetCore.App` and

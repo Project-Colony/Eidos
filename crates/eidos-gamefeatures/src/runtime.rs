@@ -666,4 +666,37 @@ mod tests {
             "not ours to answer for"
         );
     }
+
+    #[test]
+    fn the_shipped_runtimes_match_the_manifest_and_provenance() {
+        const MANIFEST: &str = include_str!("../../../packaging/runtimes.txt");
+        const PROVENANCE: &str = include_str!("../assets/PROVENANCE.md");
+        let net10 = runtime("dotnet10").unwrap();
+        let mut want: Vec<(&str, &str, &str)> = crate::redists_for("vcrun2022")
+            .iter()
+            .chain(crate::redists_for("dotnet8"))
+            .map(|r| (r.file, r.sha256, r.url))
+            .collect();
+        want.push((shipped_name(net10.url), net10.sha256, net10.url));
+        let lines: Vec<Vec<&str>> = MANIFEST
+            .lines()
+            .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+            .map(|l| l.split_whitespace().collect())
+            .collect();
+        assert_eq!(lines.len(), want.len(), "{MANIFEST}");
+        for (file, sha, url) in want {
+            assert!(
+                lines.contains(&vec![file, sha, url]),
+                "{file} is not in packaging/runtimes.txt as pinned"
+            );
+            assert!(
+                PROVENANCE.contains(sha) && PROVENANCE.contains(url),
+                "PROVENANCE.md does not name {file}"
+            );
+        }
+        assert!(
+            !MANIFEST.contains("dotnet-sdk"),
+            "the .NET 10 SDK stays a download"
+        );
+    }
 }
