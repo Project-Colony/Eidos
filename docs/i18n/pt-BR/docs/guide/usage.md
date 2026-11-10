@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=b104d41bad9288dd17e4a760128ff6a3773563c8 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=8f2f3753bc2eba9abdae3089db4819478264fd4e -->
 
 # Usar o Eidos
 
@@ -19,6 +19,8 @@ eidos sort skyrimse               # ordenar a carga dos plugins com o LOOT
 eidos play skyrimse               # mostrar o que seria montado
 eidos play skyrimse -- <command>  # rodar <command> com os mods montados sobre o jogo
 eidos check skyrimse              # verificações de saúde sem a janela (--json para scripts)
+eidos sessions skyrimse           # as execuções registradas do jogo e das ferramentas, da mais recente para a mais antiga
+eidos sessions skyrimse diff      # o que mudou desde a última execução que terminou com código 0
 eidos collection skyrimse <link>  # instalar uma coleção do Nexus do jeito que o autor dela a montou
 eidos nexus update skyrimse --apply  # instalar os arquivos do Nexus que substituíram os seus
 eidos pack skyrimse backup.eidos  # a instância inteira num arquivo só, para levá-la a outro lugar
@@ -156,6 +158,10 @@ o início o nomeia no log da execução (o `logs/run-*.log` da instância para u
 início pela janela, o console do Steam para um início pelo Steam), uma vez a
 cada mudança desse conjunto de arquivos. Para jogá-lo, copie-o junto com o
 co-save dele para a pasta `saves/` do perfil.
+
+### O que mudou desde a última execução boa
+
+Cada execução por `eidos play` ou `eidos tool run`, iniciada pela janela, por um terminal ou pela Steam, grava um registro em `<instance>/logs/sessions/`: o perfil, cada mod ativado com sua versão e os ids de arquivo da Nexus, a ordem dos plugins, uma soma de verificação de cada INI do perfil, a versão do executável do jogo, a versão do Eidos, o código de saída e os saves criados pela execução. Os 50 mais recentes são mantidos, e `logs/` fica fora de uma instância empacotada. `eidos sessions <instance> diff` compara a última execução do jogo que terminou com código 0 com o estado atual; `diff <id>` escolhe outro registro da lista. O Eidos ainda não detecta travamentos aqui, e um jogo que travou no Proton ainda pode sair com código 0: se a execução escolhida for uma dessas, indique uma anterior com `diff <id>`.
 
 ### Nenhum passo privilegiado é preciso
 

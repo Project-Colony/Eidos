@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=b104d41bad9288dd17e4a760128ff6a3773563c8 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=8f2f3753bc2eba9abdae3089db4819478264fd4e -->
 
 # Používání Eidosu
 
@@ -19,6 +19,8 @@ eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
 eidos check skyrimse              # kontroly zdraví bez okna (--json pro skripty)
+eidos sessions skyrimse           # zaznamenaná spuštění hry a nástrojů, nejnovější první
+eidos sessions skyrimse diff      # co se změnilo od posledního spuštění, které skončilo kódem 0
 eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
 eidos nexus update skyrimse --apply  # install the Nexus files that replaced yours
 eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
@@ -148,6 +150,10 @@ skrytý, dokud jsou savy profilu připojené. Nic ho nemaže: spuštění ho jme
 v logu běhu (`logs/run-*.log` dané instance při spuštění z okna, konzole Steamu
 při spuštění ze Steamu), a to jednou pokaždé, když se ta sada souborů změní.
 Chcete-li ho hrát, zkopírujte jej i s jeho co-savem do složky `saves/` profilu.
+
+### Co se změnilo od posledního úspěšného spuštění
+
+Každé spuštění přes `eidos play` nebo `eidos tool run`, z okna, terminálu nebo Steamu, zapíše záznam do `<instance>/logs/sessions/`: profil, každý zapnutý mod s verzí a ID souborů z Nexusu, pořadí pluginů, kontrolní součet každého INI profilu, verzi spustitelného souboru hry, verzi Eidos, návratový kód a uložené hry, které spuštění vytvořilo. Uchovává se 50 nejnovějších a `logs/` se do zabalené instance nedostane. `eidos sessions <instance> diff` porovná poslední spuštění hry s kódem 0 se současným stavem; `diff <id>` vybere jiný záznam ze seznamu. Eidos tu zatím pády nepozná a hra, která spadla pod Protonem, může skončit kódem 0 i tak: pokud vybrané spuštění patří mezi ně, zadejte dřívější přes `diff <id>`.
 
 ### Žádný privilegovaný krok
 

@@ -111,3 +111,88 @@ pub(crate) fn finish(
         eidos_log::warn!("eidos: could not record how this run ended: {e}");
     }
 }
+
+/// A38 ruling: until crash detection lands, the last good run is the newest game
+/// run that exited with code 0.
+pub(crate) fn default_target(
+    records: &[(PathBuf, SessionRecord)],
+) -> Option<&(PathBuf, SessionRecord)> {
+    records
+        .iter()
+        .filter(|(_, r)| r.tool.is_none() && r.exit == Some(0))
+        .max_by_key(|(_, r)| (r.started, r.pid))
+}
+
+fn stem(path: &std::path::Path) -> String {
+    path.file_stem()
+        .map_or_else(String::new, |s| s.to_string_lossy().into())
+}
+
+fn list_line(path: &std::path::Path, r: &SessionRecord) -> String {
+    format!(
+        "{}  {} UTC  {}  {}  exit {}",
+        stem(path),
+        eidos_instance::format_stamp(r.started),
+        r.profile,
+        r.tool.as_deref().unwrap_or("game"),
+        r.exit.map_or("?".into(), |c| c.to_string())
+    )
+}
+
+pub(crate) fn cmd_sessions(args: &[String]) {
+    let (arg, picked) = match args {
+        [arg] => (arg, None),
+        [arg, d] if d == "diff" => (arg, Some(None)),
+        [arg, d, id] if d == "diff" => (arg, Some(Some(id.as_str()))),
+        _ => {
+            eidos_log::info!("usage: eidos sessions <instance> [diff [<id>]]");
+            std::process::exit(2);
+        }
+    };
+    let target = match crate::resolve::try_resolve(arg) {
+        Ok(t) => t,
+        Err(e) => {
+            eidos_log::info!("eidos: {e}");
+            std::process::exit(2);
+        }
+    };
+    let records = target.inst.sessions();
+    let Some(picked) = picked else {
+        if records.is_empty() {
+            eidos_log::info!("No runs are recorded yet.");
+        }
+        for (path, r) in &records {
+            println!("{}", list_line(path, r));
+        }
+        return;
+    };
+    let chosen = match picked {
+        Some(id) => records.iter().find(|(p, _)| stem(p) == id),
+        None => default_target(&records),
+    };
+    let Some((path, old)) = chosen else {
+        match picked {
+            Some(id) => {
+                eidos_log::info!("No recorded run is named {id}. Run `eidos sessions {arg}`.")
+            }
+            None => eidos_log::info!("No game run that exited with code 0 is recorded yet."),
+        }
+        std::process::exit(1);
+    };
+    let Some(game) = crate::games::find_instance_game(&target) else {
+        eidos_log::info!(
+            "Game '{}' is not detected. Run `eidos games`.",
+            target.game_id
+        );
+        std::process::exit(2);
+    };
+    let now = capture(&game, &target.inst, &target.inst.active(), None);
+    println!("Changes since {}", list_line(path, old));
+    let lines = old.diff(&now);
+    if lines.is_empty() {
+        println!("No differences.");
+    }
+    for l in lines {
+        println!("{l}");
+    }
+}

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=b104d41bad9288dd17e4a760128ff6a3773563c8 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=8f2f3753bc2eba9abdae3089db4819478264fd4e -->
 
 # Używanie Eidos
 
@@ -19,6 +19,8 @@ eidos sort skyrimse               # posortować kolejność wczytywania wtyczek 
 eidos play skyrimse               # pokazać, co zostałoby zamontowane
 eidos play skyrimse -- <command>  # uruchomić <command> z modami zamontowanymi nad grą
 eidos check skyrimse              # kontrole kondycji bez okna (--json dla skryptów)
+eidos sessions skyrimse           # zapisane uruchomienia gry i narzędzi, od najnowszego
+eidos sessions skyrimse diff      # co się zmieniło od ostatniego uruchomienia zakończonego kodem 0
 eidos collection skyrimse <link>  # zainstalować kolekcję Nexusa tak, jak zbudował ją jej autor
 eidos nexus update skyrimse --apply  # zainstalować pliki z Nexusa, które zastąpiły twoje
 eidos pack skyrimse backup.eidos  # cała instancja w jednym pliku, żeby przenieść ją gdzie indziej
@@ -157,6 +159,10 @@ wymienia go z nazwy w logu przebiegu (`logs/run-*.log` instancji przy
 uruchomieniu z okna, konsola Steama przy uruchomieniu ze Steama), jeden raz przy
 każdej zmianie tego zestawu plików. Żeby w niego zagrać, skopiuj go razem z
 towarzyszącym mu plikiem co-save do folderu `saves/` profilu.
+
+### Co się zmieniło od ostatniego udanego uruchomienia
+
+Każde uruchomienie przez `eidos play` lub `eidos tool run`, z okna, terminala albo Steama, zapisuje wpis w `<instance>/logs/sessions/`: profil, każdy włączony mod z wersją i identyfikatorami plików Nexusa, kolejność pluginów, sumę kontrolną każdego INI profilu, wersję pliku wykonywalnego gry, wersję Eidos, kod wyjścia i zapisy gry utworzone podczas uruchomienia. Zachowuje się 50 najnowszych, a `logs/` nie trafia do spakowanej instancji. `eidos sessions <instance> diff` porównuje ostatnie uruchomienie gry zakończone kodem 0 z bieżącym stanem; `diff <id>` wybiera inny wpis z listy. Eidos nie wykrywa tu jeszcze awarii, a gra, która padła pod Protonem, może mimo to zakończyć się kodem 0: jeśli wybrane uruchomienie do nich należy, podaj wcześniejsze przez `diff <id>`.
 
 ### Żaden krok z uprawnieniami nie jest potrzebny
 

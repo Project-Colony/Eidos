@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=b104d41bad9288dd17e4a760128ff6a3773563c8 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=8f2f3753bc2eba9abdae3089db4819478264fd4e -->
 
 # Usar Eidos
 
@@ -20,6 +20,8 @@ eidos sort skyrimse               # ordenar la carga de plugins con LOOT
 eidos play skyrimse               # mostrar qué se montaría
 eidos play skyrimse -- <command>  # ejecutar <command> con los mods montados sobre el juego
 eidos check skyrimse              # comprobaciones de salud sin la ventana (--json para scripts)
+eidos sessions skyrimse           # las ejecuciones registradas del juego y de herramientas, de la más reciente a la más antigua
+eidos sessions skyrimse diff      # qué cambió desde la última ejecución que terminó con código 0
 eidos collection skyrimse <link>  # instalar una colección de Nexus tal como la construyó su autor
 eidos nexus update skyrimse --apply  # instalar los archivos de Nexus que reemplazaron a los tuyos
 eidos pack skyrimse backup.eidos  # toda la instancia en un solo fichero, para llevarla a otro sitio
@@ -162,6 +164,10 @@ borra: el lanzamiento la nombra en el registro de la ejecución (el
 de Steam para un lanzamiento desde Steam), una vez cada vez que cambia ese
 conjunto de ficheros. Para jugarla, cópiala junto con su co-save a la carpeta
 `saves/` del perfil.
+
+### Qué cambió desde la última ejecución buena
+
+Cada ejecución con `eidos play` o `eidos tool run`, lanzada desde la ventana, una terminal o Steam, escribe un registro en `<instance>/logs/sessions/`: el perfil, cada mod activado con su versión y sus ids de archivo de Nexus, el orden de los plugins, una suma de comprobación de cada INI del perfil, la versión del ejecutable del juego, la versión de Eidos, el código de salida y las partidas guardadas que creó la ejecución. Se conservan los 50 más recientes, y `logs/` no entra en una instancia empaquetada. `eidos sessions <instance> diff` compara la última ejecución del juego que terminó con código 0 con el estado actual; `diff <id>` elige otro registro de la lista. Eidos aún no detecta cierres inesperados aquí, y un juego que falló bajo Proton puede terminar igualmente con código 0: si la ejecución elegida es una de esas, indique una anterior con `diff <id>`.
 
 ### No hace falta ningún paso privilegiado
 

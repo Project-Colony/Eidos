@@ -17,6 +17,8 @@ eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
 eidos check skyrimse              # Health checks without the window (--json for scripts)
+eidos sessions skyrimse           # the recorded game and tool runs, newest first
+eidos sessions skyrimse diff      # what changed since the last run that exited with code 0
 eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
 eidos nexus update skyrimse --apply  # install the Nexus files that replaced yours
 eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
@@ -157,6 +159,10 @@ hidden while the profile's saves are mounted. Nothing deletes it: the launch
 names it in the run's log (the instance's `logs/run-*.log` for a window launch,
 Steam's console for a Steam launch), once each time that set of files changes.
 To play it, copy it and its co-save into the profile's `saves/` folder.
+
+### What changed since the last good run
+
+Every run through `eidos play` or `eidos tool run`, started from the window, a terminal or Steam, writes a record to `<instance>/logs/sessions/`: the profile, each enabled mod with its version and Nexus file ids, the plugin order, a checksum of each profile INI, the game executable's version, the Eidos version, the exit code and the saves the run created. The 50 newest are kept, and `logs/` stays out of a packed instance. `eidos sessions <instance> diff` compares the newest game run that exited with code 0 against the current state; `diff <id>` picks another record from the list. Eidos does not detect crashes here yet, and a game that crashed under Proton can still exit with code 0: if the run it picks was one of those, name an earlier one with `diff <id>`.
 
 ### No privileged step required
 

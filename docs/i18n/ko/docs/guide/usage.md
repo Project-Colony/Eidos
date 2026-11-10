@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=b104d41bad9288dd17e4a760128ff6a3773563c8 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=8f2f3753bc2eba9abdae3089db4819478264fd4e -->
 
 # Eidos 사용하기
 
@@ -19,6 +19,8 @@ eidos sort skyrimse               # 플러그인 로드 순서를 LOOT로 정렬
 eidos play skyrimse               # 무엇이 마운트될지 보기
 eidos play skyrimse -- <command>  # 게임 위에 모드를 마운트한 채 <command> 실행
 eidos check skyrimse              # 창 없이 상태 검사 (스크립트용 --json)
+eidos sessions skyrimse           # 기록된 게임과 도구 실행을 최신순으로
+eidos sessions skyrimse diff      # 종료 코드 0으로 끝난 마지막 실행 이후 바뀐 내용
 eidos collection skyrimse <link>  # Nexus 컬렉션을 제작자가 만든 그대로 설치하기
 eidos nexus update skyrimse --apply  # 내 파일을 대체한 Nexus 파일을 설치하기
 eidos pack skyrimse backup.eidos  # 인스턴스 전체를 파일 하나로, 다른 곳으로 옮기려고
@@ -139,6 +141,10 @@ Steam Cloud 내려받기, Eidos 없이 한 실행 - 프로필의 세이브가 �
 실행 로그(창에서 실행했다면 인스턴스의 `logs/run-*.log`, Steam에서 실행했다면
 Steam의 콘솔)에 적는데, 그 파일 묶음이 바뀔 때마다 한 번씩입니다. 그것으로
 플레이하려면 그 세이브와 코세이브를 프로필의 `saves/` 폴더에 복사하세요.
+
+### 마지막 정상 실행 이후 바뀐 내용
+
+창, 터미널, Steam 어디서 시작했든 `eidos play`나 `eidos tool run`으로 실행하면 `<instance>/logs/sessions/`에 기록이 남습니다. 기록에는 프로필, 활성화된 각 모드의 버전과 Nexus 파일 ID, 플러그인 순서, 프로필 INI별 체크섬, 게임 실행 파일 버전, Eidos 버전, 종료 코드, 그 실행에서 만들어진 세이브가 들어갑니다. 최신 50개를 보관하며, `logs/`는 패킹한 인스턴스에 들어가지 않습니다. `eidos sessions <instance> diff`는 종료 코드 0으로 끝난 가장 최근 게임 실행을 현재 상태와 비교하고, `diff <id>`는 목록에서 다른 기록을 고릅니다. Eidos는 아직 여기서 크래시를 감지하지 못하며, Proton에서 크래시한 게임도 종료 코드 0으로 끝날 수 있습니다. 고른 실행이 그런 경우라면 `diff <id>`로 더 이전 기록을 지정하세요.
 
 ### 권한이 필요한 단계는 없습니다
 

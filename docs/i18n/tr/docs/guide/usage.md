@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=b104d41bad9288dd17e4a760128ff6a3773563c8 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=8f2f3753bc2eba9abdae3089db4819478264fd4e -->
 
 # Eidos kullanımı
 
@@ -19,6 +19,8 @@ eidos sort skyrimse               # eklenti yükleme sırasını LOOT ile sıral
 eidos play skyrimse               # neyin bağlanacağını göster
 eidos play skyrimse -- <command>  # <command>'ı modlar oyunun üzerine bağlanmış halde çalıştır
 eidos check skyrimse              # pencere olmadan sağlık denetimleri (betikler için --json)
+eidos sessions skyrimse           # kaydedilmiş oyun ve araç çalıştırmaları, en yeni başta
+eidos sessions skyrimse diff      # çıkış kodu 0 ile biten son çalıştırmadan beri neyin değiştiği
 eidos collection skyrimse <link>  # bir Nexus koleksiyonunu yazarının kurduğu gibi kur
 eidos nexus update skyrimse --apply  # sizinkilerin yerini alan Nexus dosyalarını kur
 eidos pack skyrimse backup.eidos  # bütün örnek tek bir dosyada, başka yere taşımak için
@@ -157,6 +159,10 @@ dosya kümesi her değiştiğinde bir kez, onu çalıştırmanın günlüğünde
 (pencereden bir başlatma için örneğin `logs/run-*.log` dosyası, Steam'den bir
 başlatma için Steam'in konsolu). Onu oynamak için kaydı ve ona eşlik eden
 co-save dosyasını profilin `saves/` klasörüne kopyalayın.
+
+### Son iyi çalıştırmadan beri neyin değiştiği
+
+`eidos play` veya `eidos tool run` ile yapılan her çalıştırma, pencereden, terminalden ya da Steam'den başlasın, `<instance>/logs/sessions/` altına bir kayıt yazar: profil, etkin her mod ile sürümü ve Nexus dosya kimlikleri, eklenti sırası, her profil INI dosyasının sağlama toplamı, oyun yürütülebilir dosyasının sürümü, Eidos sürümü, çıkış kodu ve çalıştırmanın oluşturduğu kayıtlar. En yeni 50 kayıt tutulur ve `logs/` paketlenen bir örneğe girmez. `eidos sessions <instance> diff`, çıkış kodu 0 ile biten en yeni oyun çalıştırmasını mevcut durumla karşılaştırır; `diff <id>` listeden başka bir kaydı seçer. Eidos burada henüz çökmeleri algılamaz ve Proton altında çöken bir oyun yine de 0 koduyla çıkabilir: seçilen çalıştırma böyleyse `diff <id>` ile daha eskisini belirtin.
 
 ### Ayrıcalıklı adım gerekmez
 

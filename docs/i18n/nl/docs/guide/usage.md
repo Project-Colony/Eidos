@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=b104d41bad9288dd17e4a760128ff6a3773563c8 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=8f2f3753bc2eba9abdae3089db4819478264fd4e -->
 
 # Eidos gebruiken
 
@@ -19,6 +19,8 @@ eidos sort skyrimse               # de laadvolgorde van de plugins met LOOT sort
 eidos play skyrimse               # tonen wat er gekoppeld zou worden
 eidos play skyrimse -- <command>  # <command> draaien met de mods over het spel gekoppeld
 eidos check skyrimse              # gezondheidscontroles zonder het venster (--json voor scripts)
+eidos sessions skyrimse           # de vastgelegde spel- en toolruns, nieuwste eerst
+eidos sessions skyrimse diff      # wat er veranderd is sinds de laatste run die met code 0 eindigde
 eidos collection skyrimse <link>  # een Nexus-collectie installeren zoals de auteur haar gebouwd heeft
 eidos nexus update skyrimse --apply  # de Nexus-bestanden installeren die de jouwe vervingen
 eidos pack skyrimse backup.eidos  # de hele instantie in één bestand, om ze elders heen te verhuizen
@@ -158,6 +160,10 @@ de start benoemt hem in het log van de run (de `logs/run-*.log` van de instantie
 bij een start vanuit het venster, de console van Steam bij een start via Steam),
 één keer telkens wanneer die verzameling bestanden verandert. Om hem te spelen,
 kopieer je hem en zijn co-save naar de map `saves/` van het profiel.
+
+### Wat er veranderd is sinds de laatste goede run
+
+Elke run via `eidos play` of `eidos tool run`, gestart vanuit het venster, een terminal of Steam, schrijft een record naar `<instance>/logs/sessions/`: het profiel, elke ingeschakelde mod met versie en Nexus-bestands-id's, de pluginvolgorde, een checksum van elke profiel-INI, de versie van het spelprogramma, de Eidos-versie, de exitcode en de saves die de run aanmaakte. De 50 nieuwste blijven bewaard, en `logs/` zit niet in een ingepakte instantie. `eidos sessions <instance> diff` vergelijkt de nieuwste spelrun met exitcode 0 met de huidige stand; `diff <id>` kiest een ander record uit de lijst. Eidos herkent hier nog geen crashes, en een spel dat onder Proton crashte kan toch met code 0 eindigen: hoort de gekozen run daarbij, noem dan met `diff <id>` een eerdere.
 
 ### Geen bevoorrechte stap nodig
 

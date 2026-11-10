@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=b104d41bad9288dd17e4a760128ff6a3773563c8 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=8f2f3753bc2eba9abdae3089db4819478264fd4e -->
 
 # Eidos verwenden
 
@@ -19,6 +19,8 @@ eidos sort skyrimse               # die Plugin-Ladereihenfolge mit LOOT sortiere
 eidos play skyrimse               # zeigen, was gemountet würde
 eidos play skyrimse -- <command>  # <command> mit den über das Spiel gemounteten Mods starten
 eidos check skyrimse              # Zustandsprüfungen ohne Fenster (--json für Skripte)
+eidos sessions skyrimse           # die aufgezeichneten Spiel- und Tool-Starts, neueste zuerst
+eidos sessions skyrimse diff      # was sich seit dem letzten Start mit Exit-Code 0 geändert hat
 eidos collection skyrimse <link>  # eine Nexus-Collection so installieren, wie ihr Autor sie gebaut hat
 eidos nexus update skyrimse --apply  # die Nexus-Dateien installieren, die Ihre ersetzt haben
 eidos pack skyrimse backup.eidos  # die ganze Instanz in einer Datei, um sie woandershin mitzunehmen
@@ -164,6 +166,10 @@ löscht ihn: der Start nennt ihn im Log des Laufs (`logs/run-*.log` der Instanz
 bei einem Start aus dem Fenster, die Konsole von Steam bei einem Steam-Start),
 jeweils einmal, wenn sich dieser Satz von Dateien ändert. Um ihn zu spielen,
 kopieren Sie ihn und seinen Co-Save in den `saves/`-Ordner des Profils.
+
+### Was sich seit dem letzten guten Start geändert hat
+
+Jeder Start über `eidos play` oder `eidos tool run`, ob aus dem Fenster, einem Terminal oder Steam, schreibt einen Eintrag nach `<instance>/logs/sessions/`: das Profil, jede aktive Mod mit Version und Nexus-Datei-IDs, die Plugin-Reihenfolge, eine Prüfsumme jeder Profil-INI, die Version der Spiel-Exe, die Eidos-Version, den Exit-Code und die Spielstände, die der Start angelegt hat. Die 50 neuesten bleiben erhalten, und `logs/` kommt nicht in eine gepackte Instanz. `eidos sessions <instance> diff` vergleicht den neuesten Spielstart mit Exit-Code 0 mit dem aktuellen Stand; `diff <id>` wählt einen anderen Eintrag aus der Liste. Eidos erkennt hier noch keine Abstürze, und ein unter Proton abgestürztes Spiel kann trotzdem mit Code 0 enden: Gehört der gewählte Start dazu, nennen Sie mit `diff <id>` einen früheren.
 
 ### Kein privilegierter Schritt nötig
 

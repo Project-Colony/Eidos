@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=b104d41bad9288dd17e4a760128ff6a3773563c8 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=8f2f3753bc2eba9abdae3089db4819478264fd4e -->
 
 # Eidos の使い方
 
@@ -19,6 +19,8 @@ eidos sort skyrimse               # プラグインのロード順を LOOT で�
 eidos play skyrimse               # 何がマウントされるかを表示する
 eidos play skyrimse -- <command>  # MOD をゲームに重ねた状態で <command> を実行する
 eidos check skyrimse              # ウィンドウなしで健全性チェック(スクリプト向けに --json)
+eidos sessions skyrimse           # 記録されたゲームとツールの実行を新しい順に表示
+eidos sessions skyrimse diff      # 終了コード 0 で終わった直近の実行から何が変わったかを表示
 eidos collection skyrimse <link>  # Nexus のコレクションを、作者が組んだとおりにインストールする
 eidos nexus update skyrimse --apply  # 手元のファイルを置き換えた Nexus のファイルをインストールする
 eidos pack skyrimse backup.eidos  # インスタンス丸ごとを一つのファイルに。よそへ移すために
@@ -133,6 +135,10 @@ INI エディタも同じく、開いた後に変わったファイルの上へ�
 `logs/run-*.log`、Steam からの起動なら Steam のコンソール)。挙げられるのは、
 そのファイルの組が変わるたびに一度だけです。それで遊ぶには、そのセーブと
 コセーブをプロファイルの `saves/` フォルダへコピーしてください。
+
+### 前回の正常な実行から何が変わったか
+
+`eidos play` または `eidos tool run` による実行は、ウィンドウ、ターミナル、Steam のどこから始めても、`<instance>/logs/sessions/` に記録を書き込みます。内容は、プロファイル、有効な各 mod とそのバージョンおよび Nexus のファイル ID、プラグインの順序、各プロファイル INI のチェックサム、ゲーム実行ファイルのバージョン、Eidos のバージョン、終了コード、その実行で作られたセーブです。新しい 50 件が残り、`logs/` はパックしたインスタンスに含まれません。`eidos sessions <instance> diff` は、終了コード 0 で終わった直近のゲーム実行を現在の状態と比べます。`diff <id>` で一覧から別の記録を選べます。Eidos はここではまだクラッシュを検出せず、Proton 上でクラッシュしたゲームも終了コード 0 で終わることがあります。選ばれた実行がそれに当たる場合は、`diff <id>` でより前の記録を指定してください。
 
 ### 特権の要る手順はない
 

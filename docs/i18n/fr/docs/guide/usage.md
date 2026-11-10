@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=b104d41bad9288dd17e4a760128ff6a3773563c8 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=8f2f3753bc2eba9abdae3089db4819478264fd4e -->
 
 # Utiliser Eidos
 
@@ -20,6 +20,8 @@ eidos sort skyrimse               # trier l'ordre de chargement des plugins avec
 eidos play skyrimse               # afficher ce qui serait monté
 eidos play skyrimse -- <command>  # exécuter <command> avec les mods montés sur le jeu
 eidos check skyrimse              # contrôles de santé sans la fenêtre (--json pour les scripts)
+eidos sessions skyrimse           # les lancements du jeu et des outils enregistrés, du plus récent au plus ancien
+eidos sessions skyrimse diff      # ce qui a changé depuis le dernier lancement terminé avec le code 0
 eidos collection skyrimse <link>  # installer une collection Nexus comme son auteur l'a construite
 eidos nexus update skyrimse --apply  # installer les fichiers Nexus qui ont remplacé les vôtres
 eidos pack skyrimse backup.eidos  # toute l'instance dans un seul fichier, pour la déplacer ailleurs
@@ -168,6 +170,10 @@ supprime : le lancement la nomme dans le log de l'exécution (le
 de Steam pour un lancement par Steam), une fois à chaque changement de cet
 ensemble de fichiers. Pour y jouer, copiez-la avec son co-save dans le dossier
 `saves/` du profil.
+
+### Ce qui a changé depuis le dernier bon lancement
+
+Chaque lancement par `eidos play` ou `eidos tool run`, depuis la fenêtre, un terminal ou Steam, écrit un enregistrement dans `<instance>/logs/sessions/` : le profil, chaque mod activé avec sa version et ses identifiants de fichier Nexus, l'ordre des plugins, une somme de contrôle de chaque INI du profil, la version de l'exécutable du jeu, la version d'Eidos, le code de sortie et les sauvegardes créées pendant le lancement. Les 50 plus récents sont conservés, et `logs/` n'entre pas dans une instance empaquetée. `eidos sessions <instance> diff` compare le dernier lancement du jeu terminé avec le code 0 à l'état actuel ; `diff <id>` choisit un autre enregistrement de la liste. Eidos ne détecte pas encore les plantages ici, et un jeu planté sous Proton peut quand même sortir avec le code 0 : si le lancement choisi en fait partie, indiquez-en un plus ancien avec `diff <id>`.
 
 ### Aucune étape privilégiée n'est nécessaire
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=b104d41bad9288dd17e4a760128ff6a3773563c8 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=8f2f3753bc2eba9abdae3089db4819478264fd4e -->
 
 # 使用 Eidos
 
@@ -18,6 +18,8 @@ eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
 eidos check skyrimse              # 不開視窗跑健康檢查(腳本用 --json)
+eidos sessions skyrimse           # 依由新到舊列出已記錄的遊戲與工具執行
+eidos sessions skyrimse diff      # 顯示自上次以結束碼 0 結束的執行以來的變化
 eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
 eidos nexus update skyrimse --apply  # install the Nexus files that replaced yours
 eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
@@ -116,6 +118,10 @@ Steam Cloud 下載、一次沒有透過 Eidos 的啟動 - 在設定檔的存檔�
 遮住。沒有任何東西會刪掉它:啟動時會在這次執行的日誌裡指名它(從視窗啟動是實例的
 `logs/run-*.log`,從 Steam 啟動則是 Steam 的主控台),那組檔案每變動一次就提一次。
 要玩它,就把它連同它的 co-save 一起複製到設定檔的 `saves/` 資料夾裡。
+
+### 自上次正常執行以來的變化
+
+無論從視窗、終端機還是 Steam 啟動，每次透過 `eidos play` 或 `eidos tool run` 的執行都會在 `<instance>/logs/sessions/` 寫入一筆記錄：設定檔、每個啟用的 mod 及其版本和 Nexus 檔案 ID、外掛順序、每個設定檔 INI 的檢查碼、遊戲執行檔的版本、Eidos 版本、結束碼，以及這次執行建立的存檔。保留最新的 50 筆，`logs/` 不會進入打包的執行個體。`eidos sessions <instance> diff` 會把最近一次以結束碼 0 結束的遊戲執行與目前狀態比較；`diff <id>` 從清單中選另一筆記錄。Eidos 目前不偵測當機，在 Proton 下當機的遊戲仍可能以結束碼 0 結束：若選中的執行屬於這種情況，請用 `diff <id>` 指定更早的一筆。
 
 ### 不需要任何特權步驟
 

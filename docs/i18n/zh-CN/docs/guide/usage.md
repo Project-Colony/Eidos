@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=b104d41bad9288dd17e4a760128ff6a3773563c8 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=8f2f3753bc2eba9abdae3089db4819478264fd4e -->
 
 # 使用 Eidos
 
@@ -18,6 +18,8 @@ eidos sort skyrimse               # 用 LOOT 排序插件加载顺序
 eidos play skyrimse               # 显示将会挂载什么
 eidos play skyrimse -- <command>  # 在模组盖住游戏的视图下运行 <command>
 eidos check skyrimse              # 不开窗口跑健康检查(脚本用 --json)
+eidos sessions skyrimse           # 按从新到旧列出已记录的游戏和工具运行
+eidos sessions skyrimse diff      # 显示自上次以退出码 0 结束的运行以来的变化
 eidos collection skyrimse <link>  # 按作者构建它的方式安装一个 Nexus 合集
 eidos nexus update skyrimse --apply  # 安装取代了你那些文件的 Nexus 文件
 eidos pack skyrimse backup.eidos  # 整个实例装进一个文件,好搬到别处去
@@ -113,6 +115,10 @@ Add separator、Remove,以及把 Overwrite 变成一个模组,都会在动 `mods
 时会在这次运行的日志里点出它的名字(从窗口启动是实例的 `logs/run-*.log`,从 Steam 启动
 则是 Steam 的控制台),每当这组文件发生变化就点一次。要玩它,把它连同它的 co-save 一起
 复制进配置档的 `saves/` 文件夹。
+
+### 自上次正常运行以来的变化
+
+无论从窗口、终端还是 Steam 启动，每次通过 `eidos play` 或 `eidos tool run` 的运行都会在 `<instance>/logs/sessions/` 写一条记录：配置文件、每个启用的 mod 及其版本和 Nexus 文件 ID、插件顺序、每个配置文件 INI 的校验和、游戏可执行文件的版本、Eidos 版本、退出码，以及这次运行创建的存档。保留最新的 50 条，`logs/` 不会进入打包的实例。`eidos sessions <instance> diff` 把最近一次以退出码 0 结束的游戏运行与当前状态比较；`diff <id>` 从列表中选另一条记录。Eidos 目前不检测崩溃，在 Proton 下崩溃的游戏仍可能以退出码 0 结束：如果选中的运行属于这种情况，请用 `diff <id>` 指定更早的一条。
 
 ### 不需要任何特权步骤
 

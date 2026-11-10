@@ -455,3 +455,25 @@ fn finish_records_the_signal_exit_and_only_the_saves_written_during_the_run() {
     );
     assert!(r.ended.is_some_and(|e| e >= r.started));
 }
+
+#[test]
+fn the_default_diff_target_is_the_newest_game_run_that_exited_zero() {
+    let r = |started, tool: Option<&str>, exit| {
+        (
+            PathBuf::from(format!("{started}")),
+            eidos_instance::SessionRecord {
+                started,
+                tool: tool.map(Into::into),
+                exit,
+                ..Default::default()
+            },
+        )
+    };
+    let records = [
+        r(4, None, Some(1)),
+        r(3, Some("SSEEdit"), Some(0)),
+        r(2, None, Some(0)),
+        r(1, None, Some(0)),
+    ];
+    assert_eq!(sessions::default_target(&records).unwrap().1.started, 2);
+}

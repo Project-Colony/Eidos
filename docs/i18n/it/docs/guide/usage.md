@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=b104d41bad9288dd17e4a760128ff6a3773563c8 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=8f2f3753bc2eba9abdae3089db4819478264fd4e -->
 
 # Usare Eidos
 
@@ -20,6 +20,8 @@ eidos sort skyrimse               # ordinare il caricamento dei plugin con LOOT
 eidos play skyrimse               # mostrare cosa verrebbe montato
 eidos play skyrimse -- <command>  # eseguire <command> con le mod montate sopra il gioco
 eidos check skyrimse              # controlli di salute senza la finestra (--json per gli script)
+eidos sessions skyrimse           # le esecuzioni registrate di gioco e strumenti, dalla più recente
+eidos sessions skyrimse diff      # cosa è cambiato dall'ultima esecuzione terminata con codice 0
 eidos collection skyrimse <link>  # installare una collezione di Nexus come l'ha costruita il suo autore
 eidos nexus update skyrimse --apply  # installare i file di Nexus che hanno sostituito i tuoi
 eidos pack skyrimse backup.eidos  # l'intera istanza in un solo file, per spostarla altrove
@@ -163,6 +165,10 @@ l'avvio lo nomina nel log dell'esecuzione (il `logs/run-*.log` dell'istanza per
 un avvio dalla finestra, la console di Steam per un avvio da Steam), una volta
 ogni volta che quell'insieme di file cambia. Per giocarlo, copialo insieme al
 suo co-save nella cartella `saves/` del profilo.
+
+### Cosa è cambiato dall'ultima esecuzione riuscita
+
+Ogni esecuzione tramite `eidos play` o `eidos tool run`, avviata dalla finestra, da un terminale o da Steam, scrive un record in `<instance>/logs/sessions/`: il profilo, ogni mod attiva con versione e id dei file Nexus, l'ordine dei plugin, un checksum di ogni INI del profilo, la versione dell'eseguibile del gioco, la versione di Eidos, il codice di uscita e i salvataggi creati dall'esecuzione. Si tengono i 50 più recenti, e `logs/` resta fuori da un'istanza impacchettata. `eidos sessions <instance> diff` confronta l'ultima esecuzione del gioco terminata con codice 0 con lo stato attuale; `diff <id>` sceglie un altro record dell'elenco. Eidos non rileva ancora i crash qui, e un gioco andato in crash sotto Proton può comunque uscire con codice 0: se l'esecuzione scelta è una di queste, indicane una precedente con `diff <id>`.
 
 ### Nessun passaggio privilegiato
 
