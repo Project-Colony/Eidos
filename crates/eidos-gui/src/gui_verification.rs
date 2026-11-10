@@ -1281,43 +1281,68 @@ fn exe_actions_keep_the_data_columns_aligned() {
 
 /// French has the longest action labels. A mod-owned exe row holds Reveal, Add
 /// tool, Run and Hide, a mod's file Reveal, View and Hide, a game file Reveal and
-/// View.
+/// View. Checked at every text size that rounds differently: the default, the
+/// smallest (Small x Small), Small, where `sz(10)` rounds 8.5 up to 9, and the
+/// largest (Large x XLarge).
 #[test]
 fn french_data_actions_fit_their_cell_on_one_line() {
     use colony_ui::i18n::Locale;
+    use colony_ui::typography::{FontSize, TextSize};
     let _look = crate::test_support::look_lock();
     let (app, _root) =
         crate::test_support::data_app(&[("notes.txt", "12345"), ("Tool.exe", "MZ345")], &[]);
     let mut renderer = renderer();
-    let panel = crate::i18n::with_locale(Locale::Fr, || crate::modinfo::data_panel(&app));
-    let drawn = positions(panel, &mut renderer).labels;
     let fr = |key| crate::i18n::t_in(Locale::Fr, key);
-    // The header's empty label after Modified spans the action column.
-    let at = drawn
-        .iter()
-        .position(|(s, _)| s == fr("col_modified"))
-        .unwrap_or_else(|| panic!("no header: {drawn:?}"));
-    let cell = drawn[at + 1].1;
-    let line = drawn
-        .iter()
-        .find(|(s, _)| s == "notes.txt")
-        .map(|(_, r)| r.height)
-        .unwrap();
-    for (key, rows) in [
-        ("preview_reveal", 3),
-        ("data_add_tool", 1),
-        ("data_run_exe", 1),
-        ("info_view", 2),
-        ("info_hide", 2),
+    for (font, text) in [
+        (FontSize::Default, TextSize::Default),
+        (FontSize::Small, TextSize::Small),
+        (FontSize::Small, TextSize::Default),
+        (FontSize::Large, TextSize::XLarge),
     ] {
-        let found: Vec<_> = drawn.iter().filter(|(s, _)| s == fr(key)).collect();
-        assert_eq!(found.len(), rows, "{key}: {drawn:?}");
-        for (s, r) in found {
-            assert!(
-                r.width > 0.0 && r.x >= cell.x && r.x + r.width <= cell.x + cell.width,
-                "{s} leaves the cell {cell:?}: {r:?}"
-            );
-            assert!(r.height <= line, "{s} wraps: {r:?}");
+        let mut look = crate::preferences::UiPreferences::default();
+        look.standard.font_size = font;
+        look.standard.text_size_a11y = text;
+        look.standard.apply();
+        let panel = crate::i18n::with_locale(Locale::Fr, || crate::modinfo::data_panel(&app));
+        let drawn = positions(panel, &mut renderer).labels;
+        // The header's empty label after Modified spans the action column.
+        let at = drawn
+            .iter()
+            .position(|(s, _)| s == fr("col_modified"))
+            .unwrap_or_else(|| panic!("no header: {drawn:?}"));
+        let cell = drawn[at + 1].1;
+        let line = drawn
+            .iter()
+            .find(|(s, _)| s == "notes.txt")
+            .map(|(_, r)| r.height)
+            .unwrap();
+        for (key, rows) in [
+            ("preview_reveal", 3),
+            ("data_add_tool", 1),
+            ("data_run_exe", 1),
+            ("info_view", 2),
+            ("info_hide", 2),
+        ] {
+            let found: Vec<_> = drawn.iter().filter(|(s, _)| s == fr(key)).collect();
+            assert_eq!(found.len(), rows, "{font:?} x {text:?} {key}: {drawn:?}");
+            // A label the cell cannot hold is clipped, not pushed out: compare it
+            // with the same text drawn on its own.
+            let alone = positions(
+                crate::theme::text(fr(key)).size(colony_ui::sz(10)).into(),
+                &mut renderer,
+            )
+            .labels[0]
+                .1
+                .width;
+            for (s, r) in found {
+                assert!(
+                    (r.width - alone).abs() < 0.5
+                        && r.x >= cell.x
+                        && r.x + r.width <= cell.x + cell.width,
+                    "{font:?} x {text:?}: {s} leaves the cell {cell:?}: {r:?}"
+                );
+                assert!(r.height <= line, "{font:?} x {text:?}: {s} wraps: {r:?}");
+            }
         }
     }
 }
