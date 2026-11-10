@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=b64d28c8573bb396699a2cd48c4a7a8f0b3c1d4e -->
 
 # Использование Eidos
 
@@ -34,7 +34,7 @@ eidos unpack backup.eidos <folder>   # вернуть её обратно на �
 
 `eidos check <instance>` выполняет проверки префикса, плагинов, отсутствующих мастер-файлов и расширителя скриптов из вкладки **Diagnostics**, не открывая окна, так что их можно запускать по SSH или в Game Mode и прикладывать к отчёту об ошибке. Команда выводит те же системные строки, что и **Copy report**, затем по строке на каждую находку; домашняя папка при этом показана как `~`, а имя пользователя как `<user>`. Код выхода равен 0, если проблем не найдено (одни советы всё равно дают 0), 1, если найдена хотя бы одна проблема, и 2, если Eidos не смог выполнить проверку: неверные аргументы, инстанция, которую он не может открыть, или игра, которую он не находит.
 
-`eidos check <instance> --json` вместо этого выводит один JSON-объект. Его поля верхнего уровня: `eidos` (версия), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`) и `findings`. Каждая находка состоит из `code`, `level` (`problem` или `advice`) и её `args`; вкладка Diagnostics показывает фразу для каждого кода.
+`eidos check <instance> --json` вместо этого выводит один JSON-объект. Его поля верхнего уровня: `eidos` (версия), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`, `max_map_count`, `open_files_hard`) и `findings`. `max_map_count` и `open_files_hard` содержат числа или `null`, если Eidos не смог их прочитать. Каждая находка состоит из `code`, `level` (`problem` или `advice`) и её `args`; вкладка Diagnostics показывает фразу для каждого кода.
 
 ### Инстанции: глобальные и портативные
 

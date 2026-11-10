@@ -224,6 +224,13 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                         actions: Vec::new(),
                     });
                 }
+                if selected_game(app).is_some_and(|g| g.def.id == "starfield") {
+                    out.extend(
+                        eidos::check::load_order::starfield_findings(list)
+                            .iter()
+                            .map(crate::health::finding_card),
+                    );
+                }
                 for p in list.plugins.iter().filter(|p| p.enabled) {
                     if let Some(meta) = app
                         .loot_meta
@@ -328,6 +335,9 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
             &names,
             premium,
         ));
+    }
+    if let (Some(list), Some(map)) = (plugins, app.conflicts.as_ref()) {
+        out.extend(patch_order_checks(list, map));
     }
 
     // ENB + Community Shaders both injecting into D3D11.
@@ -671,6 +681,15 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         }
         out.extend(orphan_archive_diagnostics(app, game.def.id));
         out.extend(script_extender_diagnostic(game));
+        if let (Some(se), Some(row), Some(map)) = (
+            game.def.script_extender.as_ref(),
+            eidos_gamefeatures::preflight::extender(game.def.id),
+            app.conflicts.as_ref(),
+        ) {
+            let label = row.plugins_dir.split('/').next().unwrap_or_default();
+            let in_game = game.install_path.join(se.loader).is_file();
+            out.extend(extender_script_checks(map, se.loader, label, in_game));
+        }
     }
 
     for (row, plugin) in stale_copies(app) {
@@ -689,6 +708,198 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
     }
 
     out
+}
+
+/// `shown` joined with ", ", then "and n more" when `total` is larger.
+pub(crate) fn file_list(shown: &[String], total: usize) -> String {
+    let mut s = shown.join(", ");
+    if total > shown.len() {
+        s.push_str(&tf("diag_and_n_more", &[("n", &(total - shown.len()))]));
+    }
+    s
+}
+
+/// Patches that sit below the mod they patch and so lose its copies of shared
+/// loose files. Only loose files: `map.files` does not hold archive members.
+pub(crate) fn patch_order_checks(
+    list: &PluginList,
+    map: &eidos_conflicts::ConflictMap,
+) -> Vec<Diagnostic> {
+    use eidos_conflicts::BASE_ORIGIN;
+    let origin: HashMap<&str, u32> = map
+        .names
+        .iter()
+        .filter(|(&o, _)| o != BASE_ORIGIN && o != u32::MAX)
+        .map(|(&o, n)| (n.as_str(), o))
+        .collect();
+    let by_name: HashMap<String, &eidos_plugins::Plugin> = list
+        .plugins
+        .iter()
+        .map(|p| (p.name.to_lowercase(), p))
+        .collect();
+    // (patch mod, master mod) -> (patch plugin, master plugin)
+    let mut pairs: std::collections::BTreeMap<(String, String), (&str, &str)> =
+        std::collections::BTreeMap::new();
+    for p in list.plugins.iter().filter(|p| p.enabled) {
+        let Some(&b) = origin.get(p.origin_mod.as_str()) else {
+            continue;
+        };
+        for m in &p.masters {
+            let Some(mp) = by_name.get(&m.to_lowercase()) else {
+                continue;
+            };
+            let Some(&a) = origin.get(mp.origin_mod.as_str()) else {
+                continue;
+            };
+            if a != b && map.mods.get(&a).is_some_and(|c| c.overwrites.contains(&b)) {
+                pairs
+                    .entry((p.origin_mod.clone(), mp.origin_mod.clone()))
+                    .or_insert((p.name.as_str(), mp.name.as_str()));
+            }
+        }
+    }
+    if pairs.is_empty() {
+        return Vec::new();
+    }
+    // Per pair: how many files, and the first 8 paths.
+    let mut found: Vec<(usize, Vec<String>)> = vec![(0, Vec::new()); pairs.len()];
+    let keys: Vec<(u32, u32)> = pairs
+        .keys()
+        .map(|(b, a)| (origin[b.as_str()], origin[a.as_str()]))
+        .collect();
+    for node in map.files.values().filter(|n| n.is_conflicted()) {
+        let providers: Vec<u32> = std::iter::once(node.winner)
+            .chain(node.alternatives.iter().copied())
+            .collect();
+        for (i, &(b, a)) in keys.iter().enumerate() {
+            let pos = |o: u32| providers.iter().position(|&x| x == o);
+            if let (Some(pa), Some(pb)) = (pos(a), pos(b)) {
+                if pa < pb {
+                    found[i].0 += 1;
+                    if found[i].1.len() < 8 {
+                        found[i].1.push(node.display_path.clone());
+                    }
+                }
+            }
+        }
+    }
+    pairs
+        .into_iter()
+        .zip(found)
+        .filter(|(_, (n, _))| *n > 0)
+        .map(
+            |(((patch, master), (plugin, master_plugin)), (n, shown))| Diagnostic {
+                level: DiagLevel::Advice,
+                title: tf(
+                    "diag_patch_loses",
+                    &[("patch", &patch), ("master", &master), ("n", &n)],
+                ),
+                detail: tf(
+                    "diag_patch_loses_detail",
+                    &[
+                        ("plugin", &plugin),
+                        ("patch", &patch),
+                        ("master_plugin", &master_plugin),
+                        ("master", &master),
+                        ("files", &file_list(&shown, n)),
+                    ],
+                ),
+                actions: vec![(
+                    tf(
+                        "diag_action_move_below",
+                        &[("mod", &patch), ("target", &master)],
+                    ),
+                    Message::MoveModBelow {
+                        folder: patch,
+                        below: master,
+                    },
+                )],
+            },
+        )
+        .collect()
+}
+
+/// Mods whose loose Papyrus scripts beat the script extender's own copies.
+/// `extender`: the label from `extender(id).plugins_dir` up to its first '/'.
+/// `loader_in_game`: `game.install_path.join(loader).is_file()`, from the caller.
+/// Loose `.pex` only: `map.files` does not hold archive members.
+pub(crate) fn extender_script_checks(
+    map: &eidos_conflicts::ConflictMap,
+    loader: &str,
+    extender: &str,
+    loader_in_game: bool,
+) -> Vec<Diagnostic> {
+    use eidos_conflicts::BASE_ORIGIN;
+    let e = match map.files.get(&format!("root/{}", loader.to_lowercase())) {
+        Some(n) => n.winner,
+        None if loader_in_game => BASE_ORIGIN,
+        None => return Vec::new(),
+    };
+    // winner name -> (winner origin, count, first 8 paths)
+    let mut found: std::collections::BTreeMap<String, (u32, usize, Vec<String>)> =
+        std::collections::BTreeMap::new();
+    let prefix = "scripts/".to_string();
+    for (key, node) in map.files.range(prefix.clone()..) {
+        if !key.starts_with(&prefix) {
+            break;
+        }
+        if !key.ends_with(".pex") || node.winner == e || !node.alternatives.contains(&e) {
+            continue;
+        }
+        let w = map.name(node.winner).to_string();
+        let f = found.entry(w).or_insert((node.winner, 0, Vec::new()));
+        f.1 += 1;
+        if f.2.len() < 8 {
+            f.2.push(node.display_path.clone());
+        }
+    }
+    let is_mod = |o: u32| o != BASE_ORIGIN && o != u32::MAX;
+    let e_name = map.name(e).to_string();
+    found
+        .into_iter()
+        .map(|(w, (w_origin, n, shown))| {
+            let files = file_list(&shown, n);
+            let detail = if e == BASE_ORIGIN {
+                tf(
+                    "diag_extender_scripts_game_detail",
+                    &[("mod", &w), ("extender", &extender), ("files", &files)],
+                )
+            } else {
+                tf(
+                    "diag_extender_scripts_detail",
+                    &[
+                        ("mod", &w),
+                        ("extender_mod", &e_name),
+                        ("extender", &extender),
+                        ("files", &files),
+                    ],
+                )
+            };
+            let actions = if is_mod(e) && is_mod(w_origin) {
+                vec![(
+                    tf(
+                        "diag_action_move_below",
+                        &[("mod", &e_name), ("target", &w)],
+                    ),
+                    Message::MoveModBelow {
+                        folder: e_name.clone(),
+                        below: w.clone(),
+                    },
+                )]
+            } else {
+                Vec::new()
+            };
+            Diagnostic {
+                level: DiagLevel::Advice,
+                title: tf(
+                    "diag_extender_scripts",
+                    &[("mod", &w), ("n", &n), ("extender", &extender)],
+                ),
+                detail,
+                actions,
+            }
+        })
+        .collect()
 }
 
 /// Lowercased letters and digits only, so `Far Harbor` and `FarHarbor.esm` meet.

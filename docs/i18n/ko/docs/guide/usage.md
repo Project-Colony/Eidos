@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=b64d28c8573bb396699a2cd48c4a7a8f0b3c1d4e -->
 
 # Eidos 사용하기
 
@@ -34,7 +34,7 @@ eidos unpack backup.eidos <folder>   # 다른 기계에서 되돌려 놓기
 
 `eidos check <instance>`는 창을 열지 않고 **Diagnostics** 탭의 프리픽스, 플러그인, 빠진 마스터, 스크립트 익스텐더 검사를 돌립니다. 그래서 SSH나 Game Mode에서도 돌릴 수 있고 버그 보고에 넣을 수 있습니다. **Copy report**와 같은 시스템 줄을 출력한 다음, 발견 사항마다 한 줄씩 출력합니다. 홈 폴더는 `~`로, 로그인 이름은 `<user>`로 표시됩니다. 종료 코드는 문제가 없으면 0(조언만 있어도 0), 문제가 하나라도 있으면 1, Eidos가 검사하지 못했으면 2입니다. 검사하지 못하는 경우는 잘못된 인수, 열 수 없는 인스턴스, 감지되지 않는 게임입니다.
 
-`eidos check <instance> --json`은 대신 JSON 객체 하나를 출력합니다. 최상위 필드는 `eidos`(버전), `game`, `instance`, `system`(`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`), `findings`입니다. 각 발견 사항은 `code`, `level`(`problem` 또는 `advice`), 그리고 그 `args`로 이루어지며, 각 코드의 문장은 Diagnostics 탭에 나옵니다.
+`eidos check <instance> --json`은 대신 JSON 객체 하나를 출력합니다. 최상위 필드는 `eidos`(버전), `game`, `instance`, `system`(`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`, `max_map_count`, `open_files_hard`), `findings`입니다. `max_map_count`와 `open_files_hard`는 숫자이며, Eidos가 읽지 못했을 때는 `null`입니다. 각 발견 사항은 `code`, `level`(`problem` 또는 `advice`), 그리고 그 `args`로 이루어지며, 각 코드의 문장은 Diagnostics 탭에 나옵니다.
 
 ### 인스턴스: 전역과 휴대용
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=b64d28c8573bb396699a2cd48c4a7a8f0b3c1d4e -->
 
 # Utiliser Eidos
 
@@ -35,7 +35,7 @@ complètent l'ensemble ; lancez `eidos` sans argument pour la liste complète.
 
 `eidos check <instance>` exécute les contrôles du préfixe, des plugins, des masters manquants et du script extender de l'onglet **Diagnostics** sans ouvrir la fenêtre, pour qu'ils puissent tourner par SSH ou en Game Mode et aller dans un rapport de bug. Il affiche les mêmes lignes système que **Copier le rapport**, puis une ligne par constat, avec votre dossier personnel affiché comme `~` et votre nom d'utilisateur comme `<user>`. Le code de sortie vaut 0 quand aucun problème n'a été trouvé (des conseils seuls donnent toujours 0), 1 quand au moins un problème a été trouvé, et 2 quand Eidos n'a pas pu vérifier : arguments incorrects, instance qu'il ne peut pas ouvrir, ou jeu qu'il ne détecte pas.
 
-`eidos check <instance> --json` affiche à la place un seul objet JSON. Ses champs de premier niveau sont `eidos` (la version), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`) et `findings`. Chaque constat est un `code`, un `level` (`problem` ou `advice`) et ses `args` ; l'onglet Diagnostics affiche la phrase de chaque code.
+`eidos check <instance> --json` affiche à la place un seul objet JSON. Ses champs de premier niveau sont `eidos` (la version), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`, `max_map_count`, `open_files_hard`) et `findings`. `max_map_count` et `open_files_hard` sont des nombres, ou `null` quand Eidos n'a pas pu les lire. Chaque constat est un `code`, un `level` (`problem` ou `advice`) et ses `args` ; l'onglet Diagnostics affiche la phrase de chaque code.
 
 ### Instances : globale et portable
 

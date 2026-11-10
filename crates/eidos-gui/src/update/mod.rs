@@ -1307,6 +1307,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::CancelDisable
         | Message::SendToFirstConflict(..)
         | Message::SendToLastConflict(..)
+        | Message::MoveModBelow { .. }
         | Message::SendToPriorityStart(..)
         | Message::SendToPriorityChanged(..)
         | Message::SendToPriorityCommit

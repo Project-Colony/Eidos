@@ -460,6 +460,15 @@ Eidos catches them - they land in `Overwrite/Root/` rather than in your
 installation - but nothing is wrong from the game's point of view except that
 your bodies are not built.
 
+Eidos checks this for you. Before a BodySlide or Outfit Studio run, the status
+line warns when `GameDataPath` or `OutputDataPath` in the winning
+`CalienteTools/BodySlide/Config.xml` does not lead to the game's `Data` folder
+during the run, and the Health tab shows the same card with the value to set. An
+`S:` path is read the way Eidos maps `S:` for a tool, to the Steam library
+folder. An `OutputDataPath` inside the instance's `mods/` folder, for an output
+mod, is accepted. Health also shows a card when `Overwrite/Root/` holds a
+`meshes` or `textures` folder.
+
 Tool output belongs in the Overwrite. When a run produces something worth
 keeping, **Overwrite -> Create mod...** turns it into an ordinary mod that can be
 ordered, disabled and removed like any other.

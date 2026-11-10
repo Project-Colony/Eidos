@@ -741,6 +741,12 @@ pub(crate) enum Message {
     SendToFirstConflict(usize),
     /// Move the selection just BELOW the last mod that currently overrides it.
     SendToLastConflict(usize),
+    /// Move the mod `folder` to just below `below` in the list (so it wins their
+    /// shared files). Names, not rows: a Health card can outlive a reorder.
+    MoveModBelow {
+        folder: String,
+        below: String,
+    },
     /// Open the inline numeric-priority editor for this row.
     SendToPriorityStart(usize),
     SendToPriorityChanged(String),

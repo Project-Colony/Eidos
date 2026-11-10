@@ -139,6 +139,21 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             settle_folds_after_move(app, at, targets.len(), &hidden);
             mods_changed(app);
         }
+        Message::MoveModBelow { folder, below } => {
+            let row = |n: &str| app.mods.iter().position(|m| m.name == n);
+            let (Some(from), Some(target)) = (row(&folder), row(&below)) else {
+                return Task::none();
+            };
+            if from > target {
+                return Task::none();
+            }
+            let hidden = hidden_by_folds(app);
+            let at = move_block(&mut app.mods, &[from], target + 1);
+            app.selected_mod = Some(at);
+            app.selected_mods.clear();
+            settle_folds_after_move(app, at, 1, &hidden);
+            mods_changed(app);
+        }
         Message::SendToPriorityStart(i) => {
             // The menu STAYS open, exactly as `RenameStart` keeps it: the editor
             // this arms is drawn by `send_to_targets`, inside the menu card, which
