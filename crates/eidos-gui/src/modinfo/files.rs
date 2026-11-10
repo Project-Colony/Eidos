@@ -15,7 +15,9 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
     // Column widths declared once so the header and the rows cannot drift apart.
     const C_SIZE: f32 = 72.0;
     const C_DATE: f32 = 96.0;
-    const C_ACTION: f32 = 200.0;
+    // Fits Reveal, Add tool, Run and Hide in French, the longest locale, at
+    // 6 px a character (the monospace UI font at size 10).
+    const C_ACTION: f32 = 232.0;
 
     let controls = Row::new()
         .spacing(6)

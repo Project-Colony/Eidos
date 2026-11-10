@@ -1272,6 +1272,49 @@ fn exe_actions_keep_the_data_columns_aligned() {
     );
 }
 
+/// French has the longest action labels. A mod-owned exe row holds Reveal, Add
+/// tool, Run and Hide, a mod's file Reveal, View and Hide, a game file Reveal and
+/// View.
+#[test]
+fn french_data_actions_fit_their_cell_on_one_line() {
+    use colony_ui::i18n::Locale;
+    let _look = crate::test_support::look_lock();
+    let (app, _root) =
+        crate::test_support::data_app(&[("notes.txt", "12345"), ("Tool.exe", "MZ345")], &[]);
+    let mut renderer = renderer();
+    let panel = crate::i18n::with_locale(Locale::Fr, || crate::modinfo::data_panel(&app));
+    let drawn = positions(panel, &mut renderer).labels;
+    let fr = |key| crate::i18n::t_in(Locale::Fr, key);
+    // The header's empty label after Modified spans the action column.
+    let at = drawn
+        .iter()
+        .position(|(s, _)| s == fr("col_modified"))
+        .unwrap_or_else(|| panic!("no header: {drawn:?}"));
+    let cell = drawn[at + 1].1;
+    let line = drawn
+        .iter()
+        .find(|(s, _)| s == "notes.txt")
+        .map(|(_, r)| r.height)
+        .unwrap();
+    for (key, rows) in [
+        ("preview_reveal", 3),
+        ("data_add_tool", 1),
+        ("data_run_exe", 1),
+        ("info_view", 2),
+        ("info_hide", 2),
+    ] {
+        let found: Vec<_> = drawn.iter().filter(|(s, _)| s == fr(key)).collect();
+        assert_eq!(found.len(), rows, "{key}: {drawn:?}");
+        for (s, r) in found {
+            assert!(
+                r.width > 0.0 && r.x >= cell.x && r.x + r.width <= cell.x + cell.width,
+                "{s} leaves the cell {cell:?}: {r:?}"
+            );
+            assert!(r.height <= line, "{s} wraps: {r:?}");
+        }
+    }
+}
+
 #[test]
 fn an_ini_restore_point_never_moves_the_other_columns() {
     let _look = crate::test_support::look_lock();
