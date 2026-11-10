@@ -132,13 +132,16 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             return task;
         }
         Message::TestCancelRequest => {
-            app.status = app
-                .created
-                .as_ref()
-                .map(|inst| match inst.cancel_test_request() {
-                    Ok(()) => t("status_test_cancelled").to_string(),
-                    Err(e) => e.to_string(),
-                });
+            if let Some(inst) = app.created.as_ref() {
+                match inst.cancel_test_request() {
+                    // Closed: the choices layout is taller than the waiting one.
+                    Ok(()) => {
+                        app.status = Some(t("status_test_cancelled").to_string());
+                        app.test_dialog = None;
+                    }
+                    Err(e) => app.status = Some(e.to_string()),
+                }
+            }
             load_test_state(app, false);
         }
         Message::ReviewChoose(g, keep) => {

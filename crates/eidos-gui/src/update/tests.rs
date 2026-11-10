@@ -8481,11 +8481,16 @@ fn test_start_writes_the_request_then_runs_like_run() {
         Some(eidos_instance::TestState::Requested),
         "the press reads the state the dialog shows"
     );
+    assert!(app.test_dialog.is_some());
     let _ = update_inner(&mut app, Message::TestCancelRequest);
     assert!(app.created.as_ref().unwrap().test_run().is_none());
     assert!(
         app.test_state.is_none(),
         "cancel refreshes what the dialog shows"
+    );
+    assert!(
+        app.test_dialog.is_none(),
+        "closed: the taller choices layout never replaces the waiting one under the pointer"
     );
     assert_eq!(app.status.as_deref(), Some(t("status_test_cancelled")));
     let _ = fs::remove_dir_all(root);
