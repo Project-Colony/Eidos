@@ -3817,6 +3817,10 @@ fn track_without_a_nexus_session_sends_nothing_and_keeps_the_flag() {
     )
     .unwrap();
     refresh_meta_cache(&mut app);
+    assert!(
+        !eidos_nexus::Nexus::have_credentials(),
+        "run with the scratch XDG env: with a Nexus session this test would track mod 42 on the real account"
+    );
     let _ = update_inner(&mut app, Message::ModTrack(0));
     assert_eq!(app.status.as_deref(), Some(t("status_connect_nexus_first")));
     assert!(app.tracking.is_none());
