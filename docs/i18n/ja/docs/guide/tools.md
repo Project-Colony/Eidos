@@ -7,7 +7,7 @@ Eidos 越しに実行したツールは、ゲームの Wine プレフィック�
 ゲームが読むものをそのまま読み(有効な MOD すべてを、優先順位どおりに)、書き出した
 ものは Overwrite に着地し、そこでひと押しすれば本物の MOD になります。
 `runner=native` のツールは Proton なしで動きます。
-[下記](None#環境変数とproton-を使わないツール)を参照してください。
+[下記](#環境変数とproton-を使わないツール)を参照してください。
 
 ## Eidos が自分で見つけるもの
 
@@ -16,7 +16,7 @@ Fallout 4 なら `FO4Edit.exe`、Skyrim SE なら `SSEEdit.exe`、初代なら
 `TES5Edit.exe`、といった具合です。それぞれに QuickAutoClean のエントリが付き、
 LOOT が警告する dirty edit をクリーニングします。`PGPatcher.exe` は、Morrowind
 を除くすべての Bethesda ゲームで同じように見つかり、これがないと動作できない引数
-とともに登録されます([下記](None#pgpatcher-に---ignore-mo2vfscheck-が要る理由)を参照)。
+とともに登録されます([下記](#pgpatcher-に---ignore-mo2vfscheck-が要る理由)を参照)。
 Eidos は、ファイル名で次の場所を探します:
 
 - `Overwrite/Root/`、インスタンスが動かすゲームフォルダ(ストアのインストール、
@@ -28,10 +28,10 @@ Eidos は、ファイル名で次の場所を探します:
 よく使われるジェネレーターも同じ方法で見つかります。それぞれ対応するゲームでのみ
 対象になります。対象は Pandora、Nemesis、FNIS、BodySlide、DynDOLOD、TexGen、
 xLODGen、Synthesis です。BethINI Pie(`Bethini.exe`)も、PGPatcher と同じゲームで
-同じように見つかります。[BethINI Pie](None#bethini-pie) を参照してください。Stardew
+同じように見つかります。[BethINI Pie](#bethini-pie) を参照してください。Stardew
 Valley では、SMAPI(`StardewModdingAPI.exe`)が同じ方法で見つかります。これはその
 ゲームのスクリプトエクステンダのローダーでもあるので、
-[ツールに手を伸ばす](None#ツールに手を伸ばす-隠す固定するデスクトップショートカット)で説明する
+[ツールに手を伸ばす](#ツールに手を伸ばす-隠す固定するデスクトップショートカット)で説明する
 とおり、ストア経由でゲームを起動します。
 
 一覧はゲームごとなので、Skyrim のインスタンスに Fallout のエディタが出ることは
@@ -83,7 +83,7 @@ Notify the desktop when a long job ends(Preferences, General, Running a game)を
 
 スクリプトエクステンダ、ゲーム本体、ランチャーは自動で検出されます。登録が
 要るのは追加のツールだけです。ゲームのコピーから動くインスタンスでは、それらは
-コピーの中で検出されます。[ゲームのコピー上のツール](None#ゲームのコピー上のツール)を参照して
+コピーの中で検出されます。[ゲームのコピー上のツール](#ゲームのコピー上のツール)を参照して
 ください。
 
 ### どこにあろうと、実体のファイルを指す
@@ -119,11 +119,11 @@ eidos tool /path/to/list import-mo2           # 追加される内容を表示
 eidos tool /path/to/list import-mo2 --write   # 追加する
 ```
 
-ウィンドウでは、Executables ダイアログに Import from ModOrganizer.ini があり、項目ごとにチェックを外せます。Add selected はチェックした項目を一覧に入れ、Save を押すまで何も保存されません。数えられるのは、Eidos が書いたものではない `ModOrganizer.ini` だけです。Eidos が書くものについては [PGPatcher と PGLite](None#mod-organizer-2-モードの-pgpatcher-と-pglite) を参照してください。
+ウィンドウでは、Executables ダイアログに Import from ModOrganizer.ini があり、項目ごとにチェックを外せます。Add selected はチェックした項目を一覧に入れ、Save を押すまで何も保存されません。数えられるのは、Eidos が書いたものではない `ModOrganizer.ini` だけです。Eidos が書くものについては [PGPatcher と PGLite](#mod-organizer-2-モードの-pgpatcher-と-pglite) を参照してください。
 
 `Z:` のパスは Linux のパスで、そのまま使われます。別のドライブ文字のパスは、リストのフォルダ名を含んでいればそのフォルダの下に移されます(`D:\Lists\MyList\tools\SSEEdit.exe` は `<list>/tools/SSEEdit.exe` になります)。実行ファイル、作業ディレクトリ、引数のすべてが対象です。スクリプトエクステンダのローダー、ランチャー、ゲーム本体は単なる名前になり、組み込みの項目と同じく、Eidos がビューを重ねるゲームフォルダから実行されます。MO2 の `hide` は Hide from picker に、`steamAppID` は Steam AppID になります。それ以外を指す項目(Windows のシステムプログラム、リスト外のツール)は理由付きでスキップとして表示され、`tools.ini` に既にあるタイトルは置き換えられません。
 
-取り込まれた項目は MO2 のタイトルと引数を保ち、Eidos はタイトルから何も補いません。前提条件も、追加の引数も、取り込み先の MOD もありません。それらは Executables ダイアログで設定してください。Windows で作られたリストの PGPatcher の項目には、たいてい `--ignore-mo2vfscheck` がありません。足してください([下記](None#pgpatcher-に---ignore-mo2vfscheck-が要る理由)を参照)。
+取り込まれた項目は MO2 のタイトルと引数を保ち、Eidos はタイトルから何も補いません。前提条件も、追加の引数も、取り込み先の MOD もありません。それらは Executables ダイアログで設定してください。Windows で作られたリストの PGPatcher の項目には、たいてい `--ignore-mo2vfscheck` がありません。足してください([下記](#pgpatcher-に---ignore-mo2vfscheck-が要る理由)を参照)。
 
 リストの `Stock Game` フォルダを指す取り込み済みのパスは、インスタンスがそのコピーから動くときにだけ、実行時にストアのインストールへ移されます。次の節を参照してください。
 
@@ -215,8 +215,8 @@ Executables ダイアログの `Prereqs` 欄は編集できます。タイトル
 タイトルは引数も同じように決めます。誰にも推測できない引数を必要とする
 唯一のツールのためです。`pgpatcher`(または旧名の `parallaxgen`)を含む
 タイトルには `--ignore-mo2vfscheck` が与えられます。理由と、それが任意では
-ない理由は[下記](None#pgpatcher-に---ignore-mo2vfscheck-が要る理由)にあります。取り込み先の
-MOD もタイトルから決まります([上記](None#ツールの出力を専用の-mod-へ送る)を参照)。
+ない理由は[下記](#pgpatcher-に---ignore-mo2vfscheck-が要る理由)にあります。取り込み先の
+MOD もタイトルから決まります([上記](#ツールの出力を専用の-mod-へ送る)を参照)。
 
 ### 前提条件は三種類
 
@@ -459,7 +459,7 @@ Windows のツールは `HKLM\Software\Bethesda Softworks\<game>` の
 それを保っている場合は除きます。キーが指すのはストアのインストールで、ゲームの
 コピーから動くインスタンスでも同じです。統合ビューがそこにマウントされているから
 です。`dotnetsdk10` を宣言したツールでは、同じインポートが NuGet の署名用ルート証明書
-も追加します([上記](None#前提条件は三種類)を参照)。`runner=native` のツールは
+も追加します([上記](#前提条件は三種類)を参照)。`runner=native` のツールは
 この手順を飛ばします。プレフィックスがまだない、または別のプログラムが保持している
 ときも、ツールは実行され、Eidos は、ゲームを一度起動すべきストア、または閉じるべき
 プログラムを挙げた警告を出します。キーがストアのインストール以外のフォルダを指して
@@ -593,7 +593,7 @@ Heroic の設定がありません。
 `eidos tool <instance> run <title> --print` は、最終的なコマンドと、実行が継承した
 環境の上に設定する変数すべてを、これらの行も含めて表示します。ゲームを起動する項目
 では、代わりにストアのコマンドを表示します
-([ツールに手を伸ばす](None#ツールに手を伸ばす-隠す固定するデスクトップショートカット)を参照)。
+([ツールに手を伸ばす](#ツールに手を伸ばす-隠す固定するデスクトップショートカット)を参照)。
 
 ## BethINI Pie
 

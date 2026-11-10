@@ -48,7 +48,7 @@ eidos nxm --register    # the site's Mod Manager Download button now reaches Eid
 `eidos-nif-preview` が必要で、これを含むのはリリースバンドル、Arch パッケージ、
 ソースからのビルドだけです。ない場合はプレビューがその旨を表示し、ほかには何の
 影響もありません。`eidos-linux` は、バンドルが同梱する Microsoft のランタイム
-([下記](None#バンドルに入っている-microsoft-のランタイム))も持っていません。ツールが必要と
+([下記](#バンドルに入っている-microsoft-のランタイム))も持っていません。ツールが必要と
 するときは、前提条件のインストールを始めた時点で Eidos が Microsoft から
 ダウンロードします。Steam は、下のとおりファイルそのものに向けてください。
 
