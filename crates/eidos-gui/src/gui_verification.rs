@@ -1141,6 +1141,32 @@ fn the_nexus_page_buttons_keep_their_places_in_english_and_french() {
     app.info_tab = InfoTab::NexusPage;
     let mut renderer = renderer();
     for locale in [Locale::En, Locale::Fr] {
+        // A slot clips its label, so the label drawn there never reports more
+        // than the slot: measure it alone and add the button's 6 px padding.
+        for (keys, width) in [
+            (
+                &["nexus_page_endorse", "nexus_page_abstain"][..],
+                PAGE_ENDORSE_W,
+            ),
+            (&["nexus_page_track", "nexus_page_untrack"], PAGE_TRACK_W),
+            (&["nexus_page_refresh"], PAGE_REFRESH_W),
+        ] {
+            for key in keys {
+                let alone = positions(
+                    crate::theme::text(crate::i18n::t_in(locale, key))
+                        .size(colony_ui::sz(12))
+                        .into(),
+                    &mut renderer,
+                )
+                .labels[0]
+                    .1
+                    .width;
+                assert!(
+                    alone + 12.0 <= crate::theme::scaled(width),
+                    "{locale:?} {key}: {alone} px"
+                );
+            }
+        }
         let mut slots = Vec::new();
         for flags in ["endorsed=0\ntracked=0\n", "endorsed=1\ntracked=1\n"] {
             fs::write(&meta, format!("[General]\nmodid=3863\n{flags}")).unwrap();
@@ -1155,17 +1181,6 @@ fn the_nexus_page_buttons_keep_their_places_in_english_and_french() {
                 .or_else(|| at("nexus_page_untrack"))
                 .unwrap();
             let refresh = at("nexus_page_refresh").unwrap();
-            let endorse = at("nexus_page_endorse")
-                .or_else(|| at("nexus_page_abstain"))
-                .unwrap();
-            assert!(
-                endorse.width <= crate::theme::scaled(PAGE_ENDORSE_W),
-                "{locale:?} endorse {endorse:?}"
-            );
-            assert!(
-                track.width <= crate::theme::scaled(PAGE_TRACK_W),
-                "{locale:?} track {track:?}"
-            );
             slots.push((track.x, refresh.x));
         }
         assert_eq!(
@@ -1175,7 +1190,8 @@ fn the_nexus_page_buttons_keep_their_places_in_english_and_french() {
     }
 }
 
-/// Seven tabs, Nexus page last, fit the 660 px card in English and French.
+/// Seven tabs, Nexus page last, fit the 660 px card in English and French,
+/// each at the width of its label drawn alone.
 #[test]
 fn every_mod_info_tab_fits_the_card_in_english_and_french() {
     use colony_ui::i18n::Locale;
@@ -1188,12 +1204,35 @@ fn every_mod_info_tab_fits_the_card_in_english_and_french() {
         let labels = crate::i18n::with_locale(locale, || {
             positions(crate::modinfo::mod_info_dialog(&app, 0), &mut renderer).labels
         });
-        let last = labels
-            .iter()
-            .find(|(t, _)| t == crate::i18n::t_in(locale, "info_tab_nexus_page"))
-            .unwrap()
-            .1;
-        assert!(last.x + last.width <= 660.0 - 16.0, "{locale:?}: {last:?}");
+        for key in [
+            "info_tab_general",
+            "info_tab_conflicts",
+            "info_tab_filetree",
+            "info_tab_ini_tweaks",
+            "info_tab_notes",
+            "info_tab_nexus_files",
+            "info_tab_nexus_page",
+        ] {
+            let s = crate::i18n::t_in(locale, key);
+            let tab = labels
+                .iter()
+                .find(|(t, _)| t == s)
+                .unwrap_or_else(|| panic!("{locale:?}: no {key} tab in {labels:?}"))
+                .1;
+            // The row squeezes a tab that does not fit, and its label wraps
+            // or is cut inside the card: it is then narrower than alone.
+            let alone = positions(
+                crate::theme::text(s).size(colony_ui::sz(12)).into(),
+                &mut renderer,
+            )
+            .labels[0]
+                .1
+                .width;
+            assert!(
+                (tab.width - alone).abs() < 0.5 && tab.x + tab.width <= 660.0 - 16.0,
+                "{locale:?} {key}: {tab:?}, {alone} px alone"
+            );
+        }
     }
 }
 
