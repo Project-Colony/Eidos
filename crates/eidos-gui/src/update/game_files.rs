@@ -19,7 +19,7 @@ pub(super) fn handle(app: &mut App, action: GameFilesAction) -> Task<Message> {
         GameFilesAction::Use(folder) => {
             match eidos::stock_game::set_base(&game, &inst, Some(&folder)) {
                 Ok(()) => {
-                    switched(app);
+                    switched(app, game.def.id);
                     tf("status_game_files_use_copy", &[("folder", &folder)])
                 }
                 Err(e) => failed(&e),
@@ -43,7 +43,7 @@ pub(super) fn handle(app: &mut App, action: GameFilesAction) -> Task<Message> {
             } else {
                 match eidos::stock_game::set_base(&game, &inst, None) {
                     Ok(()) => {
-                        switched(app);
+                        switched(app, game.def.id);
                         tf("status_game_files_use_store", &[("folder", &folder)])
                     }
                     Err(e) => failed(&e),
@@ -59,7 +59,10 @@ pub(super) fn handle(app: &mut App, action: GameFilesAction) -> Task<Message> {
 
 /// After a switch: the card, the Data stack, the plugins and the conflicts all
 /// read the game files, so each is rebuilt from the new ones.
-fn switched(app: &mut App) {
+fn switched(app: &mut App, game_id: &str) {
+    // The game layer keeps its name whichever root it reads, so its cached
+    // walk would outlive the switch.
+    drop_files_cache(app, Some(&format!("[{game_id}]")));
     reload_mods(app);
     mod_views_changed(app);
     app.diag_dirty = true;

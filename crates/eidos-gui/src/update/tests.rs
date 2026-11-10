@@ -8512,11 +8512,13 @@ fn base_game(app: &App) -> Option<String> {
         .base_game
 }
 
-/// A list instance holding `Stock Game/SkyrimSE.exe`, its game installed in a temp dir.
+/// A list instance holding `Stock Game/SkyrimSE.exe` and `Stock Game/Data/copy only.esp`,
+/// its game installed in a temp dir.
 fn stock_game_app() -> (App, PathBuf) {
     let (mut app, root) = list_app(&["Keep"]);
-    fs::create_dir_all(root.join("Stock Game")).unwrap();
+    fs::create_dir_all(root.join("Stock Game/Data")).unwrap();
     fs::write(root.join("Stock Game/SkyrimSE.exe"), b"x").unwrap();
+    fs::write(root.join("Stock Game/Data/copy only.esp"), b"x").unwrap();
     let install = root.join("game");
     fs::create_dir_all(install.join("Data")).unwrap();
     app.games[0].data_path = install.join("Data");
@@ -8527,11 +8529,25 @@ fn stock_game_app() -> (App, PathBuf) {
 #[test]
 fn use_takes_one_press_and_return_to_the_store_takes_two() {
     let (mut app, inst_root) = stock_game_app();
+    // Whether the conflict map's game layer holds the file only the copy has.
+    let copy_file_is_base = |app: &App| {
+        let map = app.conflicts.as_ref().expect("a conflict map");
+        map.files
+            .get("copy only.esp")
+            .is_some_and(|n| n.winner == eidos_conflicts::BASE_ORIGIN)
+    };
+    // The store install's Data walk is cached, as after any earlier view.
+    app.conflicts = compute_conflicts(&app);
+    assert!(!copy_file_is_base(&app));
     let _ = update_inner(
         &mut app,
         Message::GameFiles(GameFilesAction::Use("Stock Game".into())),
     );
     assert_eq!(base_game(&app).as_deref(), Some("Stock Game"));
+    assert!(
+        copy_file_is_base(&app),
+        "the conflicts read the copy's Data"
+    );
     assert_eq!(
         app.status.as_deref(),
         Some(tf("status_game_files_use_copy", &[("folder", &"Stock Game")]).as_str())
@@ -8550,6 +8566,10 @@ fn use_takes_one_press_and_return_to_the_store_takes_two() {
     );
     let _ = update_inner(&mut app, Message::GameFiles(GameFilesAction::Store));
     assert_eq!(base_game(&app), None);
+    assert!(
+        !copy_file_is_base(&app),
+        "the conflicts read the store Data again"
+    );
     assert_eq!(
         app.status.as_deref(),
         Some(tf("status_game_files_use_store", &[("folder", &"Stock Game")]).as_str())
