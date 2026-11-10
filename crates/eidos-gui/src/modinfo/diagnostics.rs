@@ -922,6 +922,10 @@ pub(crate) fn stale_copies(app: &App) -> Vec<(usize, String)> {
             continue;
         };
         for src in sources {
+            // Hidden, deleted or moved copies are no longer live: nothing to warn about.
+            if !m.path.join(&src.name).exists() {
+                continue;
+            }
             let now = app.mods[..row]
                 .iter()
                 .rev()

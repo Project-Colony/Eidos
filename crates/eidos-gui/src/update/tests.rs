@@ -6674,6 +6674,10 @@ mod cleaning {
         assert!(
             matches!(&card.actions[0].1, Message::ToggleFileHidden(1, rel) if rel == "Dirty.esp")
         );
+        crate::view::set_hidden(&root.join("mods/Cleaned plugins/Dirty.esp"), true).unwrap();
+        invalidate_meta(&mut app, "Cleaned plugins");
+        refresh_meta_cache(&mut app);
+        assert!(stale_copies(&app).is_empty());
     }
 
     #[test]
