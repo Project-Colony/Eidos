@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f7ac3d9d2dac9f4ad012ebffdc62272cb0bdb7f4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -340,6 +340,15 @@ Executables:
 Skrývání a připínání se týkají toho, jak se k nástroji *dostanete*, ne toho, co
 spouští, takže platí i pro výchozí nástroje dané hry, nejen pro vaše vlastní
 položky.
+
+Loader script extenderu, launcher a binárka hry tlačítko Desktop shortcut
+nemají. Spouštějí hru a hra se vždy spouští přes svůj obchod, což už dělá
+zástupce samotného obchodu. Zástupce, který jste pro některý z nich vytvořili
+v Eidosu 1.22 nebo starším, funguje dál: stejně jako
+`eidos tool <instance> run <title>` zadané v terminálu požádá obchod, aby hru
+spustil, tak jako Run v okně, které neotevřel žádný obchod. Když nastavení
+v obchodě chybí, příkaz nic nespustí a vypíše, co nastavit. Zástupce žádnou
+zprávu neukáže, proto si ji přečtěte spuštěním stejného příkazu v terminálu.
 
 ## Nástroj, který je vlastní aplikací na Steamu
 

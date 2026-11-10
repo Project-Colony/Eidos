@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f7ac3d9d2dac9f4ad012ebffdc62272cb0bdb7f4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
 
 # Strumenti: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -356,6 +356,16 @@ nessuno legge. Nella finestra Executables:
 Nascondere e fissare riguardano il modo in cui uno strumento viene *raggiunto*
 più che ciò che esegue, quindi valgono tanto per i valori predefiniti per gioco
 quanto per le tue voci.
+
+Il loader dello script extender, il lanciatore e l'eseguibile del gioco non
+hanno il pulsante Desktop shortcut. Avviano il gioco, e il gioco si avvia sempre
+tramite il suo store, cosa che fa già il collegamento dello store stesso. Un
+collegamento creato per uno di loro con Eidos 1.22 o precedente continua a
+funzionare: come `eidos tool <instance> run <title>` digitato in un terminale,
+chiede allo store di avviare il gioco, come fa Run in una finestra che nessuno
+store ha aperto. Quando manca l'impostazione dello store, il comando non avvia
+nulla e stampa cosa impostare. Un collegamento non mostra alcun messaggio,
+quindi esegui lo stesso comando in un terminale per leggerlo.
 
 ## Uno strumento che è un'app Steam a sé
 

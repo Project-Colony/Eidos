@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f7ac3d9d2dac9f4ad012ebffdc62272cb0bdb7f4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
 
 # Herramientas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -362,6 +362,16 @@ nadie lee. En el diálogo de Executables:
 Ocultar y fijar tienen que ver con cómo se *llega* a una herramienta y no con lo
 que ejecuta, así que se aplican a los valores por defecto de cada juego igual que
 a tus propias entradas.
+
+El loader del script extender, el lanzador y el binario del juego no tienen
+botón Desktop shortcut. Inician el juego, y el juego siempre se inicia a través
+de su tienda, cosa que ya hace el acceso directo de la propia tienda. Un acceso
+directo creado para uno de ellos con Eidos 1.22 o anterior sigue funcionando:
+igual que `eidos tool <instance> run <title>` escrito en una terminal, pide a la
+tienda que inicie el juego, como hace Run en una ventana que no abrió ninguna
+tienda. Cuando falta el ajuste de la tienda, la orden no inicia nada y muestra
+qué poner. Un acceso directo no muestra ningún mensaje, así que ejecuta la misma
+orden en una terminal para leerlo.
 
 ## Una herramienta que es su propia aplicación de Steam
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f7ac3d9d2dac9f4ad012ebffdc62272cb0bdb7f4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -295,6 +295,13 @@ Windows 工具靠读 `HKLM\Software\Bethesda Softworks\<game>` 的
 
 隐藏和置顶关乎一个工具*怎么被够到*,而不是它运行什么,所以它们对每款游戏的
 默认项和你自己的条目一样适用。
+
+script extender 的 loader、启动器和游戏本体没有 Desktop shortcut 按钮。它们会
+启动游戏,而游戏总是通过它的商店启动,这件事商店自己的快捷方式已经在做。用
+Eidos 1.22 或更早版本给其中某一项建的快捷方式仍然能用:和在终端里输入的
+`eidos tool <instance> run <title>` 一样,它会请商店启动游戏,就像 Run 在不是
+由商店打开的窗口里做的那样。商店的设置缺失时,这条命令什么也不启动,并打印要
+设置什么。快捷方式不显示任何消息,所以要看它,就在终端里运行同一条命令。
 
 ## 自成一个 Steam 应用的工具
 

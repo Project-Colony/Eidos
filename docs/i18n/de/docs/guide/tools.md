@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f7ac3d9d2dac9f4ad012ebffdc62272cb0bdb7f4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -364,6 +364,16 @@ kommen, ist ein Auswahlmenü, das niemand liest. Im Executables-Dialog:
 Verstecken und Anheften betreffen, wie ein Tool *erreicht* wird, nicht was es
 startet, sie gelten also für die Voreinstellungen pro Spiel ebenso wie für Ihre
 eigenen Einträge.
+
+Der Loader des Script Extenders, der Launcher und die Spielbinärdatei haben
+keine Schaltfläche Desktop shortcut. Sie starten das Spiel, und das Spiel
+startet immer über seinen Store, was die Verknüpfung des Stores schon erledigt.
+Eine Verknüpfung, die Sie für einen davon mit Eidos 1.22 oder älter angelegt
+haben, funktioniert weiter: Wie `eidos tool <instance> run <title>` in einem
+Terminal bittet sie den Store, das Spiel zu starten, so wie Run in einem
+Fenster, das kein Store geöffnet hat. Fehlt die Einstellung im Store, startet
+der Befehl nichts und gibt aus, was zu setzen ist. Eine Verknüpfung zeigt keine
+Meldung; führen Sie denselben Befehl in einem Terminal aus, um sie zu lesen.
 
 ## Ein Tool, das eine eigene Steam-App ist
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f7ac3d9d2dac9f4ad012ebffdc62272cb0bdb7f4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -356,6 +356,16 @@ een keuzelijst die niemand leest. In het Executables-venster:
 Verbergen en vastzetten gaan over hoe een tool *bereikt* wordt en niet over wat
 hij draait, dus ze gelden voor de standaardinstellingen per spel net zo goed als
 voor je eigen invoeren.
+
+De loader van de script extender, de launcher en het binaire bestand van het
+spel hebben geen knop Desktop shortcut. Ze starten het spel, en het spel start
+altijd via zijn winkel, wat de snelkoppeling van de winkel zelf al doet. Een
+snelkoppeling die je voor een ervan met Eidos 1.22 of ouder hebt gemaakt, blijft
+werken: net als `eidos tool <instance> run <title>` getypt in een terminal
+vraagt ze de winkel het spel te starten, zoals Run doet in een venster dat geen
+winkel heeft geopend. Ontbreekt de instelling in de winkel, dan start de
+opdracht niets en toont ze wat je moet instellen. Een snelkoppeling toont geen
+melding, dus draai dezelfde opdracht in een terminal om die te lezen.
 
 ## Een tool die zijn eigen Steam-app is
 

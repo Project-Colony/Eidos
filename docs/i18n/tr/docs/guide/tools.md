@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f7ac3d9d2dac9f4ad012ebffdc62272cb0bdb7f4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -355,6 +355,16 @@ Executables iletişim kutusunda:
 Gizleme ve sabitleme, bir aracın ne çalıştırdığıyla değil ona nasıl *ulaşıldığıyla*
 ilgilidir, dolayısıyla kendi girdilerinize olduğu gibi oyun başına
 öntanımlılara da uygulanır.
+
+Script extender'ın loader'ı, başlatıcı ve oyun ikili dosyasında Desktop
+shortcut düğmesi yoktur. Bunlar oyunu başlatır ve oyun her zaman kendi mağazası
+üzerinden başlar; bunu mağazanın kendi kısayolu zaten yapar. Eidos 1.22 veya
+daha eski bir sürümle bunlardan biri için oluşturduğunuz kısayol çalışmaya
+devam eder: bir terminale yazılan `eidos tool <instance> run <title>` gibi,
+mağazadan oyunu başlatmasını ister; hiçbir mağazanın açmadığı bir pencerede
+Run'ın yaptığı gibi. Mağazadaki ayar eksikse komut hiçbir şey başlatmaz ve
+neyin ayarlanacağını yazdırır. Kısayol hiçbir ileti göstermez, bu yüzden okumak
+için aynı komutu bir terminalde çalıştırın.
 
 ## Kendi başına bir Steam uygulaması olan araç
 

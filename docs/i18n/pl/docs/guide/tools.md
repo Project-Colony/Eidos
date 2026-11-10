@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f7ac3d9d2dac9f4ad012ebffdc62272cb0bdb7f4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
 
 # Narzędzia: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -351,6 +351,15 @@ czyta. W oknie Executables:
 Ukrywanie i przypinanie dotyczą tego, jak się do narzędzia *dociera*, a nie tego,
 co ono uruchamia, więc stosują się do domyślnych wpisów gry tak samo jak do
 twoich własnych.
+
+Loader script extendera, launcher i plik wykonywalny gry nie mają przycisku
+Desktop shortcut. Uruchamiają grę, a gra zawsze startuje przez swój sklep, co
+robi już skrót samego sklepu. Skrót utworzony dla któregoś z nich w Eidos 1.22
+lub starszym dalej działa: podobnie jak `eidos tool <instance> run <title>`
+wpisane w terminalu prosi sklep o uruchomienie gry, tak samo jak Run w oknie,
+którego nie otworzył żaden sklep. Gdy brakuje ustawienia w sklepie, polecenie
+niczego nie uruchamia i wypisuje, co ustawić. Skrót nie pokazuje żadnego
+komunikatu, więc uruchom to samo polecenie w terminalu, żeby go przeczytać.
 
 ## Narzędzie, które jest własną aplikacją Steam
 

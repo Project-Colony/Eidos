@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f7ac3d9d2dac9f4ad012ebffdc62272cb0bdb7f4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
 
 # Ferramentas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -355,6 +355,15 @@ lê. No diálogo de Executables:
 Esconder e fixar dizem respeito a como se *chega* a uma ferramenta, e não ao que
 ela executa, então valem tanto para os padrões por jogo quanto para as suas
 próprias entradas.
+
+O loader do script extender, o lançador e o binário do jogo não têm o botão
+Desktop shortcut. Eles iniciam o jogo, e o jogo sempre inicia pela loja, o que o
+atalho da própria loja já faz. Um atalho criado para um deles com o Eidos 1.22
+ou anterior continua funcionando: como `eidos tool <instance> run <title>`
+digitado num terminal, ele pede à loja que inicie o jogo, como o Run faz numa
+janela que nenhuma loja abriu. Quando a configuração da loja está faltando, o
+comando não inicia nada e mostra o que definir. Um atalho não mostra mensagem
+nenhuma, então rode o mesmo comando num terminal para lê-la.
 
 ## Uma ferramenta que é um app Steam à parte
 

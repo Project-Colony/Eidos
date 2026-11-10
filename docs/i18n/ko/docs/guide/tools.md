@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f7ac3d9d2dac9f4ad012ebffdc62272cb0bdb7f4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
 
 # 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -328,6 +328,15 @@ Steam은 그것을 결코 실행하지 않습니다. 그것 없이는 xEdit, Wry
 
 숨기기와 고정은 도구가 무엇을 실행하는지가 아니라 어떻게 *닿는지*에 관한 것이라,
 여러분 자신의 항목뿐 아니라 게임별 기본값에도 적용됩니다.
+
+스크립트 익스텐더의 로더, 런처, 게임 바이너리에는 Desktop shortcut 버튼이
+없습니다. 이들은 게임을 시작하고, 게임은 언제나 자기 스토어를 거쳐 시작되는데,
+그 일은 스토어 자체의 바로가기가 이미 합니다. Eidos 1.22 이하에서 이 중 하나에
+만든 바로가기는 계속 동작합니다. 터미널에 입력한
+`eidos tool <instance> run <title>`처럼 스토어에 게임 시작을 요청하며, 스토어가
+열지 않은 창에서 Run이 하는 것과 같습니다. 스토어 설정이 없으면 명령은 아무것도
+시작하지 않고 무엇을 설정할지 출력합니다. 바로가기는 메시지를 보여주지
+않으므로, 같은 명령을 터미널에서 실행해 읽으세요.
 
 ## 자기가 곧 Steam 앱인 도구
 

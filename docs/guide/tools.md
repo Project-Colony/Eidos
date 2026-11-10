@@ -336,6 +336,15 @@ entries to reach the second is a picker nobody reads. In the Executables dialog:
 Hiding and pinning are about how a tool is *reached* rather than what it runs,
 so they apply to the per-game defaults as well as to your own entries.
 
+The script extender's loader, the launcher and the game binary have no
+Desktop shortcut button. They start the game, which always starts through its
+store, and the store's own shortcut already does that. A shortcut made for one
+of them with Eidos 1.22 or earlier keeps working: like
+`eidos tool <instance> run <title>` typed in a terminal, it asks the store to
+start the game, as Run does in a window no store opened. When the store's
+setting is missing, the command starts nothing and prints what to set. A
+shortcut shows no message, so run the same command in a terminal to read it.
+
 ## A tool that is its own Steam app
 
 The Creation Kit is a separate Steam application and wants its own AppID; a few

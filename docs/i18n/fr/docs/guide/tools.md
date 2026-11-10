@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f7ac3d9d2dac9f4ad012ebffdc62272cb0bdb7f4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
 
 # Outils : xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -364,6 +364,16 @@ un sélecteur que personne ne lit. Dans la boîte de dialogue Executables :
 Masquer et épingler concernent la façon dont un outil est *atteint* plutôt que ce
 qu'il exécute, ils s'appliquent donc aux défauts par jeu comme à vos propres
 entrées.
+
+Le loader du script extender, le launcher et le binaire du jeu n'ont pas de
+bouton Desktop shortcut. Ils démarrent le jeu, qui démarre toujours par sa
+boutique, et le raccourci de la boutique fait déjà cela. Un raccourci créé pour
+l'un d'eux avec Eidos 1.22 ou antérieur fonctionne toujours : comme
+`eidos tool <instance> run <title>` tapé dans un terminal, il demande à la
+boutique de démarrer le jeu, comme Run dans une fenêtre qu'aucune boutique n'a
+ouverte. Quand le réglage de la boutique manque, la commande ne démarre rien et
+affiche quoi régler. Un raccourci n'affiche aucun message : lancez la même
+commande dans un terminal pour le lire.
 
 ## Un outil qui est sa propre application Steam
 

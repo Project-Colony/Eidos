@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f7ac3d9d2dac9f4ad012ebffdc62272cb0bdb7f4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -293,6 +293,13 @@ Proton 底下從來不跑那個安裝程式。沒有它,xEdit、Wrye Bash 與 Dy
 
 隱藏與置頂關乎的是一個工具*怎麼被找到*,而不是它執行什麼,所以它們對每款遊戲
 的預設項目和你自己的項目一樣有效。
+
+script extender 的 loader、啟動器與遊戲主程式沒有 Desktop shortcut 按鈕。它們
+會啟動遊戲,而遊戲一律透過它的商店啟動,這件事商店本身的捷徑已經在做。用
+Eidos 1.22 或更早版本替其中某一項建立的捷徑仍然能用:和在終端機裡輸入的
+`eidos tool <instance> run <title>` 一樣,它會請商店啟動遊戲,就像 Run 在不是
+由商店開啟的視窗裡做的那樣。商店的設定缺少時,這個指令什麼也不啟動,並印出要
+設定什麼。捷徑不會顯示任何訊息,所以要看它,就在終端機裡執行同一個指令。
 
 ## 本身就是獨立 Steam 應用程式的工具
 

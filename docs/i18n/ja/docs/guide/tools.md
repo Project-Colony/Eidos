@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f7ac3d9d2dac9f4ad012ebffdc62272cb0bdb7f4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
 
 # ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -326,6 +326,16 @@ Windows のツールは `HKLM\Software\Bethesda Softworks\<game>` の
 
 隠すことと固定することは、何を実行するかではなくツールへの*辿り着き方*の話
 なので、自分で作った項目だけでなくゲームごとの既定にも効きます。
+
+スクリプトエクステンダのローダー、ランチャー、ゲーム本体には Desktop shortcut
+ボタンがありません。これらはゲームを起動し、ゲームは常にそのストア経由で起動
+するので、それはストア自身のショートカットがすでにやっています。Eidos 1.22
+以前でこのいずれかに作ったショートカットは今も動きます。ターミナルで打った
+`eidos tool <instance> run <title>` と同じく、ストアにゲームの起動を頼みます。
+ストアが開いたのではないウィンドウで Run がするのと同じです。ストアの設定が
+ない場合、このコマンドは何も起動せず、何を設定するかを表示します。
+ショートカットはメッセージを出さないので、同じコマンドをターミナルで実行して
+読んでください。
 
 ## それ自体が Steam のアプリであるツール
 
