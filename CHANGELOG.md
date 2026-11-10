@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.24.0](https://github.com/Project-Colony/Eidos/compare/v1.23.0...v1.24.0) (2026-11-10)
+
+
+### Features
+
+* **collections:** browse Nexus collections, check and restore an installed collection's order, report what an update changed, and show a mod's Nexus page ([#140](https://github.com/Project-Colony/Eidos/issues/140)) ([a285c48](https://github.com/Project-Colony/Eidos/commit/a285c48a08aa9a8a4d8ef7d340d78f3e35411497))
+* **health:** flag sTestFile, Starfield blueprint, patch order, extender script, Linux limit and BodySlide path problems ([#133](https://github.com/Project-Colony/Eidos/issues/133)) ([91c2f6e](https://github.com/Project-Colony/Eidos/commit/91c2f6e720ec7555aa2efd5f2ee64f9ddab693e2))
+* **instance:** run an instance from a Wabbajack Stock Game or a frozen copy of the game version ([#141](https://github.com/Project-Colony/Eidos/issues/141)) ([c5f6e87](https://github.com/Project-Colony/Eidos/commit/c5f6e87f585f24c72b15eafde69372f02e16708c))
+* **launch:** per-profile shortcuts through the store, direct start, eidos shell, prefix tools and desktop notifications ([#135](https://github.com/Project-Colony/Eidos/issues/135)) ([38ad34e](https://github.com/Project-Colony/Eidos/commit/38ad34ec8a9e8ab320e7dcbd9648b2f96701016c))
+* **launch:** test runs that keep or throw away what the game wrote, and a bisect search that finds the mod behind a problem ([#138](https://github.com/Project-Colony/Eidos/issues/138)) ([74fa787](https://github.com/Project-Colony/Eidos/commit/74fa787bba1e2ddc4db96b1bfffcfdea719d109f))
+* **mods:** richer mod filters, plugin details, tool recipes, Data tab exe actions, BethINI restore points and saves from other devices ([#137](https://github.com/Project-Colony/Eidos/issues/137)) ([2aac89c](https://github.com/Project-Colony/Eidos/commit/2aac89c98ba9a5e40868c4dd19069bacd70effd9))
+* **nexus:** track and endorse on Nexus, install finished downloads on their own, and say when a newer Eidos is out ([#136](https://github.com/Project-Colony/Eidos/issues/136)) ([bd5da64](https://github.com/Project-Colony/Eidos/commit/bd5da64fa989cab002d8d0e28b79de0c2dd33853))
+* **prereqs:** ship vcrun2022 and .NET runtimes with Eidos, start profiles from the game's defaults, per-profile launch wrappers, and smaller binaries ([#139](https://github.com/Project-Colony/Eidos/issues/139)) ([f6bd7c9](https://github.com/Project-Colony/Eidos/commit/f6bd7c959027a0caab390838de7776472b785aa0))
+
 ## [1.23.0](https://github.com/Project-Colony/Eidos/compare/v1.22.0...v1.23.0) (2026-11-10)
 
 
