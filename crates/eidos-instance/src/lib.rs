@@ -36,6 +36,7 @@ mod provenance;
 mod registry;
 mod sessions;
 pub mod settings;
+mod test_run;
 mod tools;
 pub use categories::{
     format_categories, parse_all, parse_primary, Category, CategoryFactory, NexusCategory,
@@ -57,6 +58,7 @@ pub use provenance::{
 pub use registry::{registry_path, InstanceRef, Registry};
 pub use sessions::{SessionMod, SessionRecord, KEEP_SESSIONS};
 pub use settings::Settings;
+pub use test_run::*;
 pub use tools::{
     default_args, default_output_mod, default_prereqs, default_tools, default_tools_in,
     default_tools_in_view, edits_inis, is_mod_folder_name, merge_tools, prefix_tool, read_tools,

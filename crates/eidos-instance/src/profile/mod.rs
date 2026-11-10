@@ -45,8 +45,12 @@ pub struct SaveEntry {
 }
 
 impl Profile {
-    /// `<instance>/profiles/<name>/`.
+    /// `<instance>/profiles/<name>/`, or `<instance>/test-run/profile/` for a
+    /// test run's working copy.
     pub fn dir(&self) -> PathBuf {
+        if self.name == crate::TEST_RUN_PROFILE {
+            return self.instance_root.join(crate::TEST_RUN_PROFILE);
+        }
         self.instance_root.join("profiles").join(&self.name)
     }
 
