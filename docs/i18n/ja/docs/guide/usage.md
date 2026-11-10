@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2fc2de79cc1c8628cdf438d2dc4c70be136d9e38 -->
 
 # Eidos の使い方
 
@@ -577,6 +577,13 @@ Downloads タブは転送の待ち行列ではなく、書庫の**書棚**です
 古いものの後継として印を付け、Eidos は MOD の `meta.ini` が記録しているファイル ID
 からその連鎖をたどります。連鎖が後継を示さないときは、代わりに MOD ページの
 バージョンを比べます。
+
+MOD の右クリックメニューにある Track と Untrack は、その MOD を Nexus の追跡中 MOD に
+加えたり外したりします。これでサイトの通知が、ここで追跡しているものと一致します。
+更新の確認のたびに、Eidos は Nexus からあなたの推薦 (endorsement) と追跡中 MOD も
+読み込み (リクエスト 2 回)、各 MOD の Endorsed と Tracked のフラグを、その MOD 自身の
+Nexus ドメインで合わせます。両者が食い違うときは Nexus が優先されます。どちらかの
+リストを読めなかったときは、確認がそのことを伝え、それらのフラグは元のままにします。
 
 「Information...」の **Nexus files** タブは、Nexus 上の MOD のファイルを新しい順に
 並べ、ここにインストールされているものと、それを置き換えるものに印を付けます。

@@ -487,6 +487,8 @@ pub(crate) struct App {
     // ---- Endorse / update in-flight + counts ----
     /// The mod index whose Nexus endorse is in flight (greys the toolbar button).
     pub(crate) endorsing: Option<usize>,
+    /// The mod index whose Nexus track request is in flight (one at a time).
+    pub(crate) tracking: Option<usize>,
     /// Nexus file lists asked for this session, by `(domain, mod id)`.
     pub(crate) nexus_files: HashMap<(String, u64), Result<eidos_nexus::ModFiles, String>>,
     pub(crate) nexus_files_loading: Option<(String, u64)>,

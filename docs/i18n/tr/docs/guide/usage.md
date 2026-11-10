@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2fc2de79cc1c8628cdf438d2dc4c70be136d9e38 -->
 
 # Eidos kullanımı
 
@@ -630,6 +630,14 @@ yerini alan dosyayla karşılaştırır. Yazarlar yeni bir yüklemeyi daha eskis
 ardılı olarak işaretler; Eidos bu zinciri, modun `meta.ini` dosyasının
 kaydettiği dosya kimliğinden başlayarak izler. Zincir hiçbir ardıl göstermiyorsa
 bunun yerine mod sayfasındaki sürüm karşılaştırılır.
+
+Bir modun sağ tık menüsündeki Track ve Untrack, modu Nexus'ta takip ettiğiniz
+modlara ekler ya da oradan çıkarır; böylece sitenin bildirimleri burada takip
+ettiklerinizle örtüşür. Her güncelleme denetimi ayrıca Nexus'tan onaylarınızı
+(endorsement) ve takip ettiğiniz modları okur (iki istek) ve her modun Endorsed
+ve Tracked işaretlerini, modun kendi Nexus alan adında, bunlara göre ayarlar.
+İkisi uyuşmadığında Nexus kazanır. Listelerden biri okunamazsa denetim bunu
+bildirir ve o işaretleri olduğu gibi bırakır.
 
 "Information..." içindeki **Nexus files** sekmesi modun Nexus'taki dosyalarını
 en yeniden başlayarak listeler; burada kurulu olanı ve onun yerini alanı

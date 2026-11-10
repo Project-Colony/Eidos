@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2fc2de79cc1c8628cdf438d2dc4c70be136d9e38 -->
 
 # 使用 Eidos
 
@@ -469,6 +469,12 @@ Downloads 标签页是一个压缩包**库**,不是传输队列。按名称过�
 工具栏右端的更新按钮会把每个已安装的文件与 Nexus 上取代它的
 文件相比较。作者会把一次新上传标记为某个旧文件的后继,Eidos 从模组 `meta.ini` 记录的
 文件 ID 出发沿这条链往下找。链上没有后继时,改为比较模组页面的版本。
+
+模组右键菜单里的 Track 和 Untrack 会把该模组加入或移出你在 Nexus 上的跟踪模组,
+这样网站的通知就与你在这里跟踪的内容一致。每次检查更新时,Eidos 还会从 Nexus 读取你的
+推荐(endorsement)和跟踪模组(两次请求),并按模组自己的 Nexus 域名,把每个模组的
+Endorsed 和 Tracked 标记设成一致。两边不一致时,以 Nexus 为准。任一列表读取失败时,
+检查结果会说明这一点,并保持那些标记不变。
 
 "Information..." 的 **Nexus files** 标签页列出该模组在 Nexus 上的文件,最新的在前,
 并标出这里安装的那个和取代它的那个。后者那一行有一个 **Update** 按钮。premium 账户由

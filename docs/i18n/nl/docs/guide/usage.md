@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2fc2de79cc1c8628cdf438d2dc4c70be136d9e38 -->
 
 # Eidos gebruiken
 
@@ -649,6 +649,14 @@ bestand met het bestand dat het op Nexus verving. Auteurs markeren een nieuwe
 upload als opvolger van een oudere, en Eidos volgt die keten vanaf het
 bestands-id dat de `meta.ini` van de mod vastlegt. Noemt de keten geen opvolger,
 dan wordt in plaats daarvan de versie van de modpagina vergeleken.
+
+Track en Untrack in het rechtermuismenu van een mod voegen de mod toe aan je
+gevolgde mods op Nexus of halen hem eruit, zodat de meldingen van de site
+overeenkomen met wat je hier volgt. Elke updatecontrole leest ook je
+endorsements en gevolgde mods van Nexus (twee verzoeken) en zet de vlaggen
+Endorsed en Tracked van elke mod daarnaar, op het eigen Nexus-domein van de mod.
+Verschillen die twee, dan wint Nexus. Kan een van beide lijsten niet worden
+gelezen, dan meldt de controle dat en blijven die vlaggen zoals ze waren.
 
 Het tabblad **Nexus files** van "Information..." toont de bestanden van de mod
 op Nexus, nieuwste eerst, en markeert het bestand dat hier geïnstalleerd is en

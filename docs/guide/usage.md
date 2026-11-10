@@ -615,6 +615,13 @@ successor of an older one, and Eidos follows that chain from the file id the
 mod's `meta.ini` records. When the chain names no successor, the mod page's
 version is compared instead.
 
+Track and Untrack in a mod's right-click menu add the mod to your tracked mods
+on Nexus or remove it, so the site's notifications follow what you track here.
+Each update check also reads your endorsements and tracked mods from Nexus (two
+requests) and sets every mod's Endorsed and Tracked flags to match, on the mod's
+own Nexus domain. When the two disagree, Nexus wins. If either list cannot be
+read, the check says so and leaves those flags as they were.
+
 The **Nexus files** tab of "Information..." lists the mod's files on Nexus,
 newest first, and marks the one installed here and the one that replaces it.
 That second row has an **Update** button. With a premium account Eidos downloads

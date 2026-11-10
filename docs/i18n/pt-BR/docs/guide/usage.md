@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2fc2de79cc1c8628cdf438d2dc4c70be136d9e38 -->
 
 # Usar o Eidos
 
@@ -636,6 +636,14 @@ arquivo instalado com o arquivo que o substituiu no Nexus. Os autores marcam um
 novo envio como sucessor de um mais antigo, e o Eidos segue essa cadeia a partir
 do id de arquivo que o `meta.ini` do mod registra. Quando a cadeia não aponta
 nenhum sucessor, a versão da página do mod é comparada no lugar.
+
+Track e Untrack, no menu de clique direito de um mod, adicionam o mod aos seus
+mods acompanhados no Nexus ou o removem deles, para que as notificações do site
+batam com o que você acompanha aqui. Cada verificação de atualizações também lê
+do Nexus seus endossos e seus mods acompanhados (duas requisições) e ajusta as
+marcas Endorsed e Tracked de cada mod para combinar, no próprio domínio Nexus do
+mod. Quando os dois discordam, vale o Nexus. Se alguma das listas não puder ser
+lida, a verificação avisa e deixa essas marcas como estavam.
 
 A aba **Nexus files** de "Information..." lista os arquivos do mod no Nexus, do
 mais novo ao mais antigo, e marca o instalado aqui e o que o substitui. Essa

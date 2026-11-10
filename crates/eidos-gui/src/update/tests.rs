@@ -1512,13 +1512,15 @@ fn metadata_actions_preserve_unreadable_content_and_invalidate_ini_views() {
     let inst = app.created.clone().unwrap();
     let path = inst.meta_path("Personal");
     fs::write(&path, [0xff, 0xfe, 0xfd]).unwrap();
-    let _ = update_inner(&mut app, Message::ModTrack(0));
+    let _ = update_inner(
+        &mut app,
+        Message::ModTracked(root.clone(), "Personal".into(), 42, Ok(true)),
+    );
     assert_eq!(fs::read(&path).unwrap(), [0xff, 0xfe, 0xfd]);
-    assert!(app
-        .status
-        .as_deref()
-        .unwrap_or_default()
-        .contains("Could not save"));
+    assert_eq!(
+        app.status.as_deref(),
+        Some(t("status_track_meta_unreadable"))
+    );
     fs::write(&path, "[General]\nmodid=42\n").unwrap();
     let epoch = app.archive_epoch.get();
     let _ = update_inner(&mut app, Message::ToggleIniTweak(0, "Skyrim.ini".into()));
@@ -3789,6 +3791,7 @@ fn an_update_check_records_what_is_left_of_the_budget() {
         daily_remaining: Some(2100),
         unavailable: Vec::new(),
         failures: Vec::new(),
+        account_sync_error: None,
     };
     let _ = update_inner(
         &mut app,
@@ -3802,6 +3805,81 @@ fn an_update_check_records_what_is_left_of_the_budget() {
     assert_eq!(app.nexus_hourly_left, Some(1388));
     assert_eq!(app.nexus_daily_left, Some(2100));
     assert!(nexus_budget_suffix(&app).contains("1388"));
+}
+
+#[test]
+fn track_without_a_nexus_session_sends_nothing_and_keeps_the_flag() {
+    let (mut app, root) = list_app(&["Personal"]);
+    let inst = app.created.clone().unwrap();
+    fs::write(
+        inst.meta_path("Personal"),
+        "[General]\nmodid=42\ntracked=0\n",
+    )
+    .unwrap();
+    refresh_meta_cache(&mut app);
+    let _ = update_inner(&mut app, Message::ModTrack(0));
+    assert_eq!(app.status.as_deref(), Some(t("status_connect_nexus_first")));
+    assert!(app.tracking.is_none());
+    assert!(!inst.mod_meta("Personal").tracked());
+    // One request at a time: a click while one is in flight does nothing.
+    app.tracking = Some(0);
+    app.status = None;
+    let _ = update_inner(&mut app, Message::ModTrack(0));
+    assert!(app.status.is_none());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_track_reply_is_saved_only_for_the_same_mod_in_the_open_instance() {
+    let (mut app, root) = list_app(&["Personal"]);
+    let inst = app.created.clone().unwrap();
+    fs::write(
+        inst.meta_path("Personal"),
+        "[General]\nmodid=42\ntracked=0\n",
+    )
+    .unwrap();
+    let reply = |root: PathBuf, id, r| Message::ModTracked(root, "Personal".into(), id, r);
+    let _ = update_inner(&mut app, reply(root.join("other-instance"), 42, Ok(true)));
+    let _ = update_inner(&mut app, reply(root.clone(), 99, Ok(true)));
+    assert!(!inst.mod_meta("Personal").tracked());
+    app.tracking = Some(0);
+    let _ = update_inner(&mut app, reply(root.clone(), 42, Err("HTTP 503".into())));
+    assert_eq!(
+        app.status,
+        Some(tf("status_track_failed", &[("error", &"HTTP 503")]))
+    );
+    assert!(app.tracking.is_none());
+    assert!(!inst.mod_meta("Personal").tracked());
+    let _ = update_inner(&mut app, reply(root.clone(), 42, Ok(true)));
+    assert!(inst.mod_meta("Personal").tracked());
+    assert_eq!(
+        app.status,
+        Some(tf("status_tracking", &[("name", &"Personal")]))
+    );
+    // A worker's answer: it must not disarm a confirmation, and it must get
+    // through while an installer is open, or `tracking` would stay set for good.
+    assert!(is_ambient(&app, &reply(root.clone(), 42, Ok(false))));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn an_update_check_says_when_the_account_lists_were_not_read() {
+    let mut app = nav_app(&[]);
+    let result = eidos_nexus::UpdateCheckResult {
+        checked: 1,
+        account_sync_error: Some("HTTP 503".into()),
+        ..Default::default()
+    };
+    let _ = update_inner(
+        &mut app,
+        Message::UpdatesChecked {
+            root: PathBuf::from("/nowhere"),
+            connected: true,
+            result: Ok(result),
+        },
+    );
+    let status = app.status.as_deref().unwrap();
+    assert!(status.contains(&tf("status_flags_not_synced", &[("error", &"HTTP 503")])));
 }
 
 #[test]

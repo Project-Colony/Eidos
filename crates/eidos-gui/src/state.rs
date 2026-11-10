@@ -432,6 +432,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         addons_open: false,
         addon_findings: Vec::new(),
         endorsing: None,
+        tracking: None,
         nexus_files: HashMap::new(),
         nexus_files_loading: None,
         endorsed_count: 0,

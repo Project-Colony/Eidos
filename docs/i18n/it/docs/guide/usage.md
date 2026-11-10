@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2fc2de79cc1c8628cdf438d2dc4c70be136d9e38 -->
 
 # Usare Eidos
 
@@ -667,6 +667,14 @@ autori segnano un nuovo caricamento come successore di uno più vecchio, ed Eido
 segue questa catena a partire dall'id del file che il `meta.ini` della mod
 registra. Quando la catena non nomina alcun successore, si confronta invece la
 versione della pagina della mod.
+
+Track e Untrack, nel menu del tasto destro di una mod, aggiungono la mod alle
+mod che segui su Nexus o la tolgono, così le notifiche del sito corrispondono a
+ciò che segui qui. Ogni controllo degli aggiornamenti legge anche da Nexus le
+tue approvazioni e le mod che segui (due richieste) e imposta di conseguenza i
+flag Endorsed e Tracked di ogni mod, sul dominio Nexus proprio della mod. Quando
+i due non concordano, vale Nexus. Se una delle due liste non si può leggere, il
+controllo lo segnala e lascia quei flag com'erano.
 
 La scheda **Nexus files** di "Information..." elenca i file della mod su Nexus,
 dal più recente, e segna quello installato qui e quello che lo sostituisce.

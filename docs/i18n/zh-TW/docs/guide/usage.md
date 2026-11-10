@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2fc2de79cc1c8628cdf438d2dc4c70be136d9e38 -->
 
 # 使用 Eidos
 
@@ -484,6 +484,12 @@ Downloads 分頁是一座壓縮檔**圖書館**,不是傳輸佇列。可以依�
 工具列右端的更新按鈕會把每個已安裝的檔案,與 Nexus 上取代它的
 檔案相比較。作者會把一次新上傳標記為某個舊檔案的後繼,Eidos 從模組 `meta.ini` 記錄的
 檔案 ID 出發,沿著這條鏈往下找。鏈上沒有後繼時,改為比較模組頁面的版本。
+
+模組右鍵選單裡的 Track 和 Untrack 會把該模組加入或移出你在 Nexus 上的追蹤模組,
+這樣網站的通知就會與你在這裡追蹤的內容一致。每次檢查更新時,Eidos 也會從 Nexus 讀取你的
+推薦(endorsement)與追蹤模組(兩次請求),並依模組自己的 Nexus 網域,把每個模組的
+Endorsed 與 Tracked 標記設成一致。兩邊不一致時,以 Nexus 為準。任一清單讀取失敗時,
+檢查結果會說明這一點,並保留那些標記不變。
 
 「Information...」的 **Nexus files** 分頁列出該模組在 Nexus 上的檔案,最新的在前,
 並標出這裡安裝的那個與取代它的那個。後者那一列有一個 **Update** 按鈕。premium 帳號由

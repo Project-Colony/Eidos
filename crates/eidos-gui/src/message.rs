@@ -449,8 +449,11 @@ pub(crate) enum Message {
     /// list can shift while the network call is in flight, and writing the result
     /// into whatever mod now sits at the old index would corrupt its meta.ini.
     ModEndorsed(PathBuf, String, u64, Result<bool, String>),
-    /// Toggle the mod's local "Track" flag (MO2's Track; no network).
+    /// Track or untrack the mod on Nexus (MO2's Track), then store the flag.
     ModTrack(usize),
+    /// Track round-trip done: the new tracked state, or an error. Carries the
+    /// mod's FOLDER NAME (not an index), for the reason given at `ModEndorsed`.
+    ModTracked(PathBuf, String, u64, Result<bool, String>),
     /// Toggle the mod's "Ignore update" flag (MO2's Ignore update; no network).
     ModIgnoreUpdate(usize),
     // ---- mod creation (MO2 Create empty mod / Install from folder) ----

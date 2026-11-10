@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2fc2de79cc1c8628cdf438d2dc4c70be136d9e38 -->
 
 # Eidos 사용하기
 
@@ -566,6 +566,13 @@ Downloads 탭은 전송 대기열이 아니라 압축 파일 **서고**입니다
 그것을 대체한 파일과 비교합니다. 제작자는 새 업로드를 이전 파일의 후속 파일로 표시하고,
 Eidos는 모드의 `meta.ini`에 기록된 파일 ID에서 시작해 그 사슬을 따라갑니다. 사슬이
 후속 파일을 가리키지 않으면 대신 모드 페이지의 버전을 비교합니다.
+
+모드 오른쪽 클릭 메뉴의 Track과 Untrack은 그 모드를 Nexus의 추적 중인 모드에 추가하거나
+거기서 제거하므로, 사이트 알림이 여기서 추적하는 것과 맞춰집니다. 업데이트를 확인할 때마다
+Nexus에서 추천(endorsement) 목록과 추적 중인 모드 목록도 읽어(요청 2회) 각 모드의 Endorsed와
+Tracked 플래그를 그 모드 자신의 Nexus 도메인 기준으로 맞춥니다. 둘이 다르면 Nexus가
+우선합니다. 어느 한 목록이라도 읽지 못하면 확인 결과가 그렇다고 알리고 해당 플래그는
+그대로 둡니다.
 
 "Information..."의 **Nexus files** 탭은 Nexus에 있는 모드의 파일을 최신순으로 나열하고,
 여기에 설치된 파일과 그것을 대체하는 파일을 표시합니다. 그 두 번째 행에는 **Update**

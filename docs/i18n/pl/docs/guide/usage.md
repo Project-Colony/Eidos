@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2fc2de79cc1c8628cdf438d2dc4c70be136d9e38 -->
 
 # Używanie Eidos
 
@@ -634,6 +634,14 @@ zainstalowany plik z plikiem, który zastąpił go na Nexusie. Autorzy oznaczaj�
 nowy upload jako następcę starszego, a Eidos idzie tym łańcuchem od
 identyfikatora pliku zapisanego w `meta.ini` moda. Gdy łańcuch nie wskazuje
 żadnego następcy, porównywana jest zamiast tego wersja ze strony moda.
+
+Track i Untrack w menu prawego przycisku moda dodają moda do twoich śledzonych
+modów na Nexusie albo go z nich usuwają, więc powiadomienia ze strony zgadzają
+się z tym, co śledzisz tutaj. Każde sprawdzenie aktualizacji odczytuje też z
+Nexusa twoje polecenia (endorsements) i śledzone mody (dwa zapytania) i ustawia
+według nich flagi Endorsed i Tracked każdego moda, w jego własnej domenie
+Nexusa. Gdy obie strony się różnią, wygrywa Nexus. Jeśli którejś z list nie da
+się odczytać, sprawdzenie to zgłasza i zostawia te flagi bez zmian.
 
 Karta **Nexus files** w „Information..." wypisuje pliki moda na Nexusie, od
 najnowszego, i oznacza ten zainstalowany tutaj oraz ten, który go zastępuje. Ten

@@ -1116,6 +1116,7 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         | Message::PreviewReady(..)
         // A worker's answer arriving, not a click.
         | Message::Placed(..)
+        | Message::ModTracked(..)
         // Same for the answers of the nxm handler worker (read, register).
         | Message::NxmHandlerRead(..)
         | Message::NxmRegistered(..)
@@ -1337,7 +1338,6 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::CycleFilter(..)
         | Message::ToggleFilterPane
         | Message::ClearFilters
-        | Message::ModTrack(..)
         | Message::ModIgnoreUpdate(..)
         | Message::CreateEmptyMod
         | Message::CreateEmptyModAt(..)
@@ -1570,6 +1570,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::IdentifiedDownload(..)
         | Message::ModEndorse(..)
         | Message::ModEndorsed(..)
+        | Message::ModTrack(..)
+        | Message::ModTracked(..)
         | Message::NexusFilesFetched { .. }
         | Message::NexusUpdate { .. }
         | Message::CheckUpdates
@@ -1897,6 +1899,7 @@ pub(crate) fn open_instance(app: &mut App, inst: Instance) {
     // Another instance's LOOT verdicts must not decorate this one's plugins.
     app.loot_meta = None;
     app.endorsing = None;
+    app.tracking = None;
     app.collection = None;
     // Update checks are per instance; the old notices would open against this game.
     app.collection_notices.clear();

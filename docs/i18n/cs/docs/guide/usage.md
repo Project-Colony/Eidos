@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2fc2de79cc1c8628cdf438d2dc4c70be136d9e38 -->
 
 # Používání Eidosu
 
@@ -603,6 +603,14 @@ soubor se souborem, který ho na Nexusu nahradil. Autoři označují nové nahr�
 jako nástupce staršího a Eidos jde po tomto řetězci od ID souboru, které
 zaznamenává `meta.ini` módu. Když řetězec žádného nástupce neuvádí, porovná se
 místo toho verze ze stránky módu.
+
+Track a Untrack v nabídce pravého tlačítka módu přidají mód do vašich
+sledovaných módů na Nexusu nebo ho z nich odeberou, takže upozornění z webu
+odpovídají tomu, co sledujete tady. Každá kontrola aktualizací také načte z
+Nexusu vaše doporučení a sledované módy (dva požadavky) a podle nich nastaví
+příznaky Endorsed a Tracked každého módu, a to na vlastní doméně Nexusu daného
+módu. Když se obě strany liší, platí Nexus. Pokud se některý ze seznamů nepodaří
+načíst, kontrola to oznámí a tyto příznaky ponechá, jak byly.
 
 Karta **Nexus files** v „Information..." vypíše soubory módu na Nexusu,
 nejnovější první, a označí ten, který je nainstalovaný tady, a ten, který ho
