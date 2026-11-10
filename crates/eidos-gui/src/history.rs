@@ -50,9 +50,12 @@ pub(crate) struct History {
 
 impl History {
     /// The list was just read from disk: nothing before this can be undone.
+    /// The plugins baseline stays: `app.plugins` can outlive a mod reload, and a
+    /// stale baseline is refused by the `plugins_seen` fingerprint on write.
     pub(crate) fn reset(&mut self, mods: ModsState) {
         *self = Self {
             mods: Some(mods),
+            plugins: self.plugins.take(),
             ..Self::default()
         };
     }
@@ -151,6 +154,16 @@ mod tests {
         h.saved_plugins((vec![("a.esp".into(), false)], Default::default()));
         h.saved_mods(vec![("A".into(), false)]);
         assert!(matches!(h.undo(), Some(Step::Mods(_))));
+        assert!(matches!(h.undo(), Some(Step::Plugins((p, _))) if p[0].1));
+    }
+
+    #[test]
+    fn reset_keeps_the_plugins_baseline_so_the_next_edit_is_undoable() {
+        let mut h = History::default();
+        h.reset(vec![("A".into(), true)]);
+        h.seen_plugins((vec![("a.esp".into(), true)], Default::default()));
+        h.reset(vec![("A".into(), true)]);
+        h.saved_plugins((vec![("a.esp".into(), false)], Default::default()));
         assert!(matches!(h.undo(), Some(Step::Plugins((p, _))) if p[0].1));
     }
 
