@@ -570,15 +570,16 @@ pub(super) fn install_destination_ready(
         if let Some(stage) = stage {
             // The old folder is only whole until publication moves it away.
             if dest.exists() {
-                let mut report = compare_trees(&dest, &target, game_id);
-                report.old_version = old_version;
-                report.new_version = ModMeta::read(&target.join("meta.ini"))
-                    .version()
-                    .unwrap_or_default();
-                report.when = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map_or(0, |d| d.as_secs());
-                changes = Some(report);
+                changes = compare_update(&dest, &target, game_id).map(|mut report| {
+                    report.old_version = old_version;
+                    report.new_version = ModMeta::read(&target.join("meta.ini"))
+                        .version()
+                        .unwrap_or_default();
+                    report.when = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |d| d.as_secs());
+                    report
+                });
             }
             backup = publish_install_with(stage, &target, &dest, retain, |from, to| {
                 fs::rename(from, to)
@@ -828,6 +829,51 @@ mod publication_tests {
             eidos_instance::load_update_report(&inst.root, "Old"),
             None,
             "a fresh install drops the stale report"
+        );
+    }
+
+    #[test]
+    fn a_collection_reservation_is_a_first_install_and_keeps_no_report() {
+        let temp = std::env::temp_dir().join(format!(
+            "eidos-update-report-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        fs::create_dir(&temp).unwrap();
+        let _cleanup = ExtractedTree::owned(temp.clone());
+        let inst = eidos_instance::Instance::portable(temp);
+        inst.create().unwrap();
+        // What the collection driver's reserve_folder leaves: a meta.ini with the owner.
+        let reserved = inst.mods_dir().join("Member");
+        fs::create_dir(&reserved).unwrap();
+        let mut meta = ModMeta::default();
+        meta.set_collection_owner("collection:test");
+        meta.write(&reserved.join("meta.ini")).unwrap();
+        eidos_instance::save_update_report(
+            &inst.root,
+            "Member",
+            &eidos_instance::UpdateReport {
+                added: vec!["stale.txt".into()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let r = install_destination(
+            Path::new("Member.7z"),
+            &inst.mods_dir(),
+            "Member",
+            "skyrimse",
+            OverwritePolicy::ReplaceOwned("collection:test".into()),
+            |t: &Path, _| {
+                fs::write(t.join("Member.esp"), b"x")?;
+                Ok((String::new(), false, Vec::new()))
+            },
+        )
+        .unwrap();
+        assert!(r.changes.is_none());
+        assert_eq!(
+            eidos_instance::load_update_report(&inst.root, "Member"),
+            None
         );
     }
 

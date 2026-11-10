@@ -99,7 +99,24 @@ fn only_in<V>(
 
 /// The old mod folder against the new one. `when` and the versions stay empty.
 pub fn compare_trees(old: &Path, new: &Path, game_id: &str) -> UpdateReport {
-    let (old_files, new_files) = (walk(old), walk(new));
+    compare_walked(walk(old), old, new, game_id)
+}
+
+/// [`compare_trees`] for a Replace, or `None` when the old folder holds only the
+/// manager's own files (a collection's reservation, a new empty mod): that is a
+/// first install, not an update.
+pub(crate) fn compare_update(old: &Path, new: &Path, game_id: &str) -> Option<UpdateReport> {
+    let old_files = walk(old);
+    (!old_files.is_empty()).then(|| compare_walked(old_files, old, new, game_id))
+}
+
+fn compare_walked(
+    old_files: BTreeMap<String, (String, u64)>,
+    old: &Path,
+    new: &Path,
+    game_id: &str,
+) -> UpdateReport {
+    let new_files = walk(new);
     let mut report = UpdateReport {
         added: only_in(&new_files, &old_files, |(n, _)| n),
         removed: only_in(&old_files, &new_files, |(n, _)| n),
