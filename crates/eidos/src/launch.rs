@@ -305,6 +305,10 @@ pub(crate) fn run_through_view(
             }
         }
     };
+    // From here a SIGTERM (the window's Stop) ends the run, not this process: a stop
+    // during prepare lets it finish and `launch` then starts nothing, and either way
+    // the post-run captures below still run.
+    eidos_launch::install_stop_handler();
     if let Err(error) = crate::games::validate_selected_game(
         inst,
         game_id,

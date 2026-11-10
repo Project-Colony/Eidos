@@ -12,6 +12,8 @@ use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 use eidos_fuse::Eidos;
 pub use eidos_fuse::{read_plugin_mtimes, recover_plugin_mtimes, PluginTimestamps};
@@ -78,6 +80,112 @@ pub struct LaunchSpec {
     /// the bind captures the pristine game root so the daemon can still read it
     /// once the union covers that same path.
     pub root_base_bind: Option<(PathBuf, PathBuf)>,
+}
+
+/// Set by the SIGTERM handler; read by [`launch`] and by the run's watcher.
+static STOP: AtomicBool = AtomicBool::new(false);
+
+/// How long the run's processes get between SIGTERM and SIGKILL.
+const STOP_GRACE: Duration = Duration::from_secs(10);
+
+extern "C" fn on_sigterm(_: libc::c_int) {
+    // An atomic store is all a signal handler may safely do here.
+    STOP.store(true, Ordering::SeqCst);
+}
+
+/// Turn SIGTERM into a stop request for the run instead of an instant death.
+///
+/// Once it arrives, [`launch`] refuses to start anything, and a command already
+/// running has its whole process tree ended (SIGTERM, then SIGKILL after a grace
+/// period), so the caller's post-run captures still run and the union is
+/// unmounted only after every process of the run is gone.
+pub fn install_stop_handler() {
+    // SAFETY: a zeroed sigaction with an empty mask and a handler that only
+    // stores to an atomic.
+    unsafe {
+        let mut action: libc::sigaction = std::mem::zeroed();
+        action.sa_sigaction = on_sigterm as extern "C" fn(libc::c_int) as libc::sighandler_t;
+        action.sa_flags = libc::SA_RESTART;
+        libc::sigemptyset(&mut action.sa_mask);
+        libc::sigaction(libc::SIGTERM, &action, std::ptr::null_mut());
+    }
+}
+
+/// `(state, ppid)` from a `/proc/<pid>/stat` line. The fields are read after the
+/// LAST `)`, because the command name between the parentheses may hold spaces
+/// and parentheses of its own.
+fn stat_state_ppid(stat: &str) -> Option<(char, libc::pid_t)> {
+    let mut fields = stat.get(stat.rfind(')')? + 1..)?.split_whitespace();
+    let state = fields.next()?.chars().next()?;
+    Some((state, fields.next()?.parse().ok()?))
+}
+
+/// Whether `pid` exists and is not a zombie.
+fn alive(pid: libc::pid_t) -> bool {
+    std::fs::read_to_string(format!("/proc/{pid}/stat"))
+        .ok()
+        .and_then(|stat| stat_state_ppid(&stat))
+        .is_some_and(|(state, _)| state != 'Z')
+}
+
+/// Every live process below `root` (zombies and `root` itself excluded), from one
+/// scan of `/proc`.
+fn descendants(root: libc::pid_t) -> Vec<libc::pid_t> {
+    let Ok(dir) = std::fs::read_dir("/proc") else {
+        return Vec::new();
+    };
+    let parents: std::collections::HashMap<libc::pid_t, libc::pid_t> = dir
+        .flatten()
+        .filter_map(|entry| {
+            let pid = entry.file_name().to_str()?.parse().ok()?;
+            let stat = std::fs::read_to_string(entry.path().join("stat")).ok()?;
+            let (state, ppid) = stat_state_ppid(&stat)?;
+            (state != 'Z').then_some((pid, ppid))
+        })
+        .collect();
+    let below_root = |mut pid| {
+        // Bounded: a pid reused while /proc was being read could close a loop.
+        for _ in 0..parents.len() {
+            match parents.get(&pid) {
+                Some(&ppid) if ppid == root => return true,
+                Some(&ppid) => pid = ppid,
+                None => return false,
+            }
+        }
+        false
+    };
+    parents
+        .keys()
+        .copied()
+        .filter(|&pid| pid != root && below_root(pid))
+        .collect()
+}
+
+/// End every process below `root`: SIGTERM first, then SIGKILL for whatever is
+/// still alive after `grace`. Each pid signalled is kept, so a process reparented
+/// away from `root` meanwhile is still killed.
+// shortcut: pids, not pidfds, so a pid reused during the grace period could be
+// killed; upgrade to pidfd_open if a stop ever hits an unrelated process.
+fn terminate_descendants(root: libc::pid_t, grace: Duration) {
+    let mut seen = descendants(root);
+    for &pid in &seen {
+        // SAFETY: kill has no memory-safety preconditions.
+        unsafe { libc::kill(pid, libc::SIGTERM) };
+    }
+    let deadline = Instant::now() + grace;
+    while Instant::now() < deadline && seen.iter().any(|&pid| alive(pid)) {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    // Children forked after the first walk never got the SIGTERM.
+    for pid in descendants(root) {
+        if !seen.contains(&pid) {
+            seen.push(pid);
+        }
+    }
+    for pid in seen.into_iter().filter(|&pid| alive(pid)) {
+        // SAFETY: kill has no memory-safety preconditions.
+        unsafe { libc::kill(pid, libc::SIGKILL) };
+    }
 }
 
 fn check(rc: i32) -> std::io::Result<()> {
@@ -451,6 +559,12 @@ pub fn namespace_block_reason_from_system(e: &std::io::Error) -> Option<String> 
 /// Enter a private user + mount namespace, mount the union, run the command
 /// through it, then unmount on exit. Returns the command's exit status.
 pub fn launch(mut spec: LaunchSpec) -> std::io::Result<ExitStatus> {
+    if STOP.load(Ordering::SeqCst) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Interrupted,
+            "stopped before the program started",
+        ));
+    }
     // SAFETY: getuid/getgid always succeed.
     let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
 
@@ -700,13 +814,30 @@ fn launch_mounted(spec: &LaunchSpec, layers: Vec<PathBuf>) -> std::io::Result<Ex
             }
         }
     }
-    let status = cmd.status();
+    // A stop request ends the whole tree while this thread keeps waiting, so the
+    // union stays mounted until the last process of the run is gone.
+    let done = AtomicBool::new(false);
+    let status = std::thread::scope(|scope| {
+        scope.spawn(|| {
+            while !done.load(Ordering::SeqCst) {
+                if STOP.load(Ordering::SeqCst) {
+                    // SAFETY: getpid always succeeds.
+                    terminate_descendants(unsafe { libc::getpid() }, STOP_GRACE);
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        });
+        let status = cmd.status();
 
-    // Wait for any reparented descendants to finish before unmounting, so a process
-    // that outlived its direct parent doesn't get ENOTCONN on the union mid-run (and
-    // the caller's capture_inis runs only once the real workload is gone). The direct
-    // child has already been reaped by `Command::status`.
-    reap_descendants();
+        // Wait for any reparented descendants to finish before unmounting, so a process
+        // that outlived its direct parent doesn't get ENOTCONN on the union mid-run (and
+        // the caller's capture_inis runs only once the real workload is gone). The direct
+        // child has already been reaped by `Command::status`.
+        reap_descendants();
+        done.store(true, Ordering::SeqCst);
+        status
+    });
 
     let cleanup = projections.cleanup();
     let root_cleanup = root_binds.cleanup();
@@ -1026,5 +1157,68 @@ mod tests {
             wine_dll_overrides(&["d3dcompiler_47".into(), "dxgi".into()], Some("mscoree=d")),
             "mscoree=d;d3dcompiler_47,dxgi=n,b"
         );
+    }
+
+    #[test]
+    fn stat_parsing_survives_a_command_name_with_parens_and_spaces() {
+        assert_eq!(
+            stat_state_ppid("1234 (Skyrim (x) .exe) S 77 1234 1 0"),
+            Some(('S', 77))
+        );
+        assert_eq!(stat_state_ppid("garbage"), None);
+    }
+
+    #[test]
+    fn terminate_descendants_ends_a_tree_and_kills_what_ignores_sigterm() {
+        // sh stays the root; one child obeys SIGTERM, one subshell ignores it. The
+        // trailing `:` keeps bash from exec'ing the subshell into its sleep, so the
+        // subshell's sleep is a grandchild of the root.
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "sleep 60 & (trap '' TERM; sleep 60; :) & wait"])
+            .spawn()
+            .unwrap();
+        let root = child.id() as libc::pid_t;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while descendants(root).len() < 3 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the tree never formed"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let started = std::time::Instant::now();
+        terminate_descendants(root, std::time::Duration::from_millis(500));
+        child.wait().unwrap();
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        assert!(descendants(root).is_empty());
+    }
+
+    /// A spec that would run `/bin/true` over temp dirs, if `launch` got that far.
+    fn spec_with_temp_paths() -> LaunchSpec {
+        let base = std::env::temp_dir().join(format!("eidos-stop-{}", std::process::id()));
+        LaunchSpec {
+            readonly_data_binds: Vec::new(),
+            plugin_timestamps: None,
+            layers: Vec::new(),
+            overwrite: base.join("overwrite"),
+            mountpoint: base.join("Data"),
+            command: vec!["/bin/true".to_string()],
+            env: Vec::new(),
+            base_bind: None,
+            binds: Vec::new(),
+            cwd: None,
+            root_layers: Vec::new(),
+            root_overwrite: None,
+            root_readonly_overwrite: None,
+            root_base_bind: None,
+        }
+    }
+
+    #[test]
+    fn a_stop_before_launch_starts_nothing() {
+        STOP.store(true, Ordering::SeqCst);
+        let err = launch(spec_with_temp_paths()).unwrap_err();
+        STOP.store(false, Ordering::SeqCst);
+        assert_eq!(err.kind(), std::io::ErrorKind::Interrupted);
     }
 }
