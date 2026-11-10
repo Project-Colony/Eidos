@@ -6654,6 +6654,26 @@ fn ctrl_z_undoes_a_mod_toggle_and_ctrl_shift_z_redoes_it() {
 }
 
 #[test]
+fn undo_drops_a_drag_whose_rows_it_moves() {
+    // The drop would move whichever row the step put at the drag's `from`.
+    let (mut app, _root) = history_app(&["A", "B"]);
+    let _ = update(&mut app, Message::ToggleMod(0));
+    app.drag_state = Some(DragState {
+        from: 0,
+        gap: 2,
+        aimed: true,
+    });
+    let _ = update(&mut app, Message::Undo);
+    assert!(app.mods[0].enabled && app.drag_state.is_none());
+    let (mut app, _root, i) = plugin_history_app();
+    let _ = update(&mut app, Message::TogglePlugin(i));
+    let _ = update(&mut app, Message::PluginDragStart(i));
+    assert!(app.plugin_drag.is_some());
+    let _ = update(&mut app, Message::Undo);
+    assert!(app.plugin_drag.is_none());
+}
+
+#[test]
 fn undo_refuses_after_mods_were_added_removed_or_renamed() {
     let (mut app, root) = history_app(&["A"]);
     let _ = update(&mut app, Message::ToggleMod(0));

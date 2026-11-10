@@ -1827,8 +1827,9 @@ fn apply_mods_step(app: &mut App, state: crate::history::ModsState, undo: bool) 
             Some(ModEntry { enabled, ..entry })
         })
         .collect();
-    // Rows may have moved under the selected indices.
+    // Rows may have moved under the selected indices, and under a drag's `from`.
     put_mod_selection(app, HeldSelection::default());
+    app.drag_state = None;
     // A refused save already said so, and its reload cleared the history.
     if mods_changed(app) {
         let key = if undo {
@@ -1886,6 +1887,8 @@ fn apply_plugins_step(app: &mut App, state: crate::history::PluginsState, undo: 
         .collect();
     list.locked = locked;
     list.refresh(&spec);
+    // The rows a drag holds by index may have moved.
+    app.plugin_drag = None;
     let key = if undo {
         "status_undone_plugins"
     } else {
