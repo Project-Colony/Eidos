@@ -161,6 +161,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             mod_id,
             file_id,
         } => {
+            // One update waits at a time: a second one would silently drop the
+            // install the first promised.
+            if let Some(p) = app.pending_update.as_ref().filter(|p| p.folder != folder) {
+                app.status = Some(tf("status_update_still_waiting", &[("folder", &p.folder)]));
+                return Task::none();
+            }
             let Some(inst) = app.created.as_ref() else {
                 return Task::none();
             };

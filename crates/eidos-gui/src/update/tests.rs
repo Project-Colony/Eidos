@@ -6036,6 +6036,38 @@ fn update_is_refused_for_a_folder_that_merges_several_nexus_files() {
 }
 
 #[test]
+fn a_second_update_waits_for_the_pending_one() {
+    let (mut app, root) = collection_app_with(&[("A", 41, ""), ("B", 42, "")], &[], &[]);
+    // No account: a check that let the click through stops before a spawn.
+    app.nexus_account = None;
+    app.pending_update = Some(PendingUpdate {
+        folder: "A".into(),
+        mod_id: 41,
+        file_id: 501,
+    });
+    let update = |folder: &str| Message::NexusUpdate {
+        folder: folder.into(),
+        domain: "skyrimspecialedition".into(),
+        mod_id: 42,
+        file_id: 103,
+    };
+    let _ = update_inner(&mut app, update("B"));
+    let pending = app
+        .pending_update
+        .as_ref()
+        .map(|p| (p.folder.as_str(), p.file_id));
+    assert_eq!(pending, Some(("A", 501)), "A's update is kept");
+    assert_eq!(
+        app.status,
+        Some(tf("status_update_still_waiting", &[("folder", &"A")]))
+    );
+    // The waiting folder itself may ask again.
+    let _ = update_inner(&mut app, update("A"));
+    assert_eq!(app.status.as_deref(), Some(t("status_connect_nexus_first")));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn a_finished_update_download_opens_the_install_for_that_folder() {
     let (mut app, root) = collection_app_with(&[("Mod", 42, "")], &[], &[]);
     app.pending_update = Some(PendingUpdate {
