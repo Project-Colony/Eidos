@@ -1094,7 +1094,7 @@ checksum = "edf234dd1594d6dd434a8fb8cada51ddbbc593e40e4a01556a0b31c62da2775b"
 
 [[package]]
 name = "eidos"
-version = "1.22.0"
+version = "1.23.0"
 dependencies = [
  "crc32fast",
  "eidos-addons",
@@ -1119,7 +1119,7 @@ dependencies = [
 
 [[package]]
 name = "eidos-addons"
-version = "1.22.0"
+version = "1.23.0"
 dependencies = [
  "eidos-paths",
  "rustix 1.1.6",
@@ -1131,7 +1131,7 @@ dependencies = [
 
 [[package]]
 name = "eidos-collections"
-version = "1.22.0"
+version = "1.23.0"
 dependencies = [
  "bzip2",
  "crc32fast",
@@ -1152,7 +1152,7 @@ dependencies = [
 
 [[package]]
 name = "eidos-conflicts"
-version = "1.22.0"
+version = "1.23.0"
 dependencies = [
  "ddsfile",
  "encoding_rs 0.8.44",
@@ -1164,21 +1164,21 @@ dependencies = [
 
 [[package]]
 name = "eidos-core"
-version = "1.22.0"
+version = "1.23.0"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "eidos-fomod"
-version = "1.22.0"
+version = "1.23.0"
 dependencies = [
  "roxmltree 0.21.2",
 ]
 
 [[package]]
 name = "eidos-fuse"
-version = "1.22.0"
+version = "1.23.0"
 dependencies = [
  "eidos-core",
  "fuser",
@@ -1188,7 +1188,7 @@ dependencies = [
 
 [[package]]
 name = "eidos-gamedef"
-version = "1.22.0"
+version = "1.23.0"
 dependencies = [
  "eidos-paths",
  "serde",
@@ -1197,7 +1197,7 @@ dependencies = [
 
 [[package]]
 name = "eidos-gamefeatures"
-version = "1.22.0"
+version = "1.23.0"
 dependencies = [
  "base64",
  "eidos-conflicts",
@@ -1216,7 +1216,7 @@ dependencies = [
 
 [[package]]
 name = "eidos-games"
-version = "1.22.0"
+version = "1.23.0"
 dependencies = [
  "eidos-gamedef",
  "eidos-plugins",
@@ -1226,7 +1226,7 @@ dependencies = [
 
 [[package]]
 name = "eidos-gui"
-version = "1.22.0"
+version = "1.23.0"
 dependencies = [
  "bcdec_rs",
  "colony-ui",
@@ -1263,11 +1263,11 @@ dependencies = [
 
 [[package]]
 name = "eidos-ini"
-version = "1.22.0"
+version = "1.23.0"
 
 [[package]]
 name = "eidos-install"
-version = "1.22.0"
+version = "1.23.0"
 dependencies = [
  "crc32fast",
  "eidos-addons",
@@ -1289,7 +1289,7 @@ dependencies = [
 
 [[package]]
 name = "eidos-instance"
-version = "1.22.0"
+version = "1.23.0"
 dependencies = [
  "eidos-core",
  "eidos-ini",
@@ -1303,7 +1303,7 @@ dependencies = [
 
 [[package]]
 name = "eidos-launch"
-version = "1.22.0"
+version = "1.23.0"
 dependencies = [
  "eidos-fuse",
  "eidos-gamefeatures",
@@ -1312,7 +1312,7 @@ dependencies = [
 
 [[package]]
 name = "eidos-log"
-version = "1.22.0"
+version = "1.23.0"
 dependencies = [
  "eidos-paths",
  "libc",
@@ -1320,7 +1320,7 @@ dependencies = [
 
 [[package]]
 name = "eidos-loot"
-version = "1.22.0"
+version = "1.23.0"
 dependencies = [
  "eidos-paths",
  "eidos-plugins",
@@ -1330,7 +1330,7 @@ dependencies = [
 
 [[package]]
 name = "eidos-nexus"
-version = "1.22.0"
+version = "1.23.0"
 dependencies = [
  "base64",
  "eidos-gamedef",
@@ -1346,7 +1346,7 @@ dependencies = [
 
 [[package]]
 name = "eidos-paths"
-version = "1.22.0"
+version = "1.23.0"
 dependencies = [
  "colony-ui",
  "dirs 7.0.0",
@@ -1354,7 +1354,7 @@ dependencies = [
 
 [[package]]
 name = "eidos-plugins"
-version = "1.22.0"
+version = "1.23.0"
 dependencies = [
  "eidos-gamedef",
  "eidos-ini",
@@ -1365,11 +1365,11 @@ dependencies = [
 
 [[package]]
 name = "eidos-sevenzip"
-version = "1.22.0"
+version = "1.23.0"
 
 [[package]]
 name = "eidos-transfer"
-version = "1.22.0"
+version = "1.23.0"
 dependencies = [
  "eidos-ini",
  "eidos-instance",
