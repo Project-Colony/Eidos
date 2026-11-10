@@ -1174,10 +1174,11 @@ pub(crate) fn modlist_with_unmanaged(
     };
     // The order the engine imposes on its own content: the primary masters, then
     // whatever the `.ccc` lists. Anything else falls in after, alphabetically.
+    let files = inst.game_files(&game.install_path, &game.data_path);
     let mut engine_order: Vec<String> = spec.primary_plugins.clone();
-    engine_order.extend(eidos_plugins::implicit_plugins(&game.install_path));
+    engine_order.extend(eidos_plugins::implicit_plugins(&files.root));
     let managed: Vec<ModEntry> = listed.iter().filter(|m| !m.unmanaged).cloned().collect();
-    let real = inst.unmanaged_mods(&game.data_path, &engine_order, &managed);
+    let real = inst.unmanaged_mods(&files.data, &engine_order, &managed);
 
     // What the game actually ships, by name, so a listed row can be matched to it
     // and given the path this layer alone knows.

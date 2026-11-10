@@ -126,6 +126,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             let id = id.to_string();
             let install = game.install_path.clone();
+            let game_root = game_files(app).map_or_else(|| install.clone(), |f| f.root);
             // The PROFILE is the load-order authority; the prefix copy is a
             // shadow that can be stale. Fall back to the prefix only before the
             // profile owns a state (pre-first-launch).
@@ -202,7 +203,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     // for, pointing at the real file, and nothing else.
                     let bridge_dir = cache.join("case-bridge");
                     let mut mod_dirs = mod_dirs;
-                    match eidos_loot::add_case_bridge(&ml, &mut mod_dirs, &install, &bridge_dir) {
+                    match eidos_loot::add_case_bridge(&ml, &mut mod_dirs, &game_root, &bridge_dir) {
                         Ok(bridged) if !bridged.is_empty() => {
                             eprintln!(
                                 "eidos: LOOT case bridge: {} path(s) spelled differently on disk ({})",
@@ -218,7 +219,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     // built from a different picture than the sort.
                     let view = eidos_loot::GameView {
                         game_id: &id,
-                        game_path: &install,
+                        game_path: &game_root,
                         local_path: &local_dir,
                         plugins: &plugins,
                         mod_dirs: &mod_dirs,

@@ -1166,6 +1166,44 @@ fn a_plugin_gets_the_ini_the_merged_data_holds_for_it() {
     assert!(list.plugins.iter().all(|p| p.ini.is_none()));
 }
 
+#[test]
+fn the_plugins_conflicts_and_data_tabs_read_the_game_copy() {
+    let (mut app, root) = data_app(&[], &[]);
+    app.games[0].install_path = root.join("game");
+    fs::write(root.join("game/Data/StoreOnly.esp"), b"TES4").unwrap();
+    let copy = root.join("Stock Game/Data");
+    fs::create_dir_all(&copy).unwrap();
+    fs::write(copy.join("Skyrim.esm"), b"vanilla").unwrap();
+    fs::write(copy.join("CopyOnly.esp"), b"TES4").unwrap();
+    app.created
+        .as_ref()
+        .unwrap()
+        .edit_manifest(|m| m.base_game = Some("Stock Game".into()))
+        .unwrap();
+    let plugins: Vec<_> = compute_plugins(&app)
+        .unwrap()
+        .plugins
+        .into_iter()
+        .map(|p| p.name)
+        .collect();
+    assert!(plugins.contains(&"CopyOnly.esp".to_string()), "{plugins:?}");
+    assert!(
+        !plugins.contains(&"StoreOnly.esp".to_string()),
+        "{plugins:?}"
+    );
+    assert_eq!(conflict_layers(&app).unwrap().last().unwrap().root, copy);
+    let rows: Vec<_> = crate::view::merged_listing(&app, "")
+        .into_iter()
+        .map(|r| (r.name, r.source))
+        .collect();
+    assert!(
+        rows.contains(&("CopyOnly.esp".into(), "[skyrimse]".into())),
+        "{rows:?}"
+    );
+    assert!(!rows.iter().any(|(n, _)| n == "StoreOnly.esp"), "{rows:?}");
+    let _ = fs::remove_dir_all(root);
+}
+
 /// Layers highest priority first, as `conflict_layers` hands them over. Rows: Patch = 1, Master = 2.
 fn map_of(layers: &[(u32, &str, &[&str])]) -> eidos_conflicts::ConflictMap {
     let parts: Vec<_> = layers

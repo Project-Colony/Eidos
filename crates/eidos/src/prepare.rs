@@ -148,7 +148,8 @@ pub(crate) fn prepare_plugins(
 
     // The shared merged view preserves profile order, enabled state and pins,
     // and removes plugins hidden by the launcher's whiteouts.
-    let list = inst.plugin_list_for_profile(&game.data_path, id, Some(&state_dir), prof)?;
+    let files = crate::stock_game::game_files(game, inst);
+    let list = inst.plugin_list_for_profile(&files.data, id, Some(&state_dir), prof)?;
 
     for message in plugin_diagnostic_messages(&list, &spec) {
         eidos_log::warn!("eidos play: {message}");
@@ -250,7 +251,12 @@ pub(crate) fn recover_timestamp_order(
         ));
     }
     let mut list = inst
-        .plugin_list_for_profile(&game.data_path, id, None, prof)
+        .plugin_list_for_profile(
+            &crate::stock_game::game_files(game, inst).data,
+            id,
+            None,
+            prof,
+        )
         .ok_or_else(|| std::io::Error::other("No plugin list for timestamp capture"))?;
     if !times.is_empty() && list.plugins.is_empty() {
         return Err(std::io::Error::other(
@@ -275,7 +281,12 @@ pub(crate) fn prepare_plugin_timestamps(
         return Ok(None);
     }
     let list = inst
-        .plugin_list_for_profile(&game.data_path, id, None, prof)
+        .plugin_list_for_profile(
+            &crate::stock_game::game_files(game, inst).data,
+            id,
+            None,
+            prof,
+        )
         .ok_or_else(|| std::io::Error::other("No plugin list for timestamp projection"))?;
     Ok(Some(eidos_launch::PluginTimestamps {
         times: list.virtual_mtimes(&spec)?,
@@ -750,6 +761,45 @@ mod rescue_tests {
         }
         header.extend(body);
         fs::write(path, header).unwrap();
+    }
+
+    #[test]
+    fn a_plugin_only_in_the_store_install_is_not_listed_with_a_copy() {
+        let root = std::env::temp_dir().join(format!("eidos-copy-plugins-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        // Not a Steam copy, so host_findings reads no Steam file under the real HOME.
+        let game = DetectedGame {
+            def: eidos_games::GameDef::for_id("skyrimse").unwrap(),
+            source: eidos_games::GameSource::External {
+                store: eidos_games::Store::Gog,
+                app_id: "synthetic".into(),
+                prefix: Some(root.join("prefix")),
+                heroic: true,
+                runner: None,
+            },
+            install_path: root.join("game"),
+            data_path: root.join("game/Data"),
+            compatdata: None,
+            steam_name: String::new(),
+        };
+        fs::create_dir_all(root.join("prefix")).unwrap();
+        fs::create_dir_all(&game.data_path).unwrap();
+        engine_plugin(&game.data_path.join("StoreOnly.esp"), false);
+        let inst = Instance::portable(root.join("i"));
+        inst.create().unwrap();
+        inst.ensure_manifest("skyrimse", eidos_instance::InstanceKind::Portable)
+            .unwrap();
+        fs::create_dir_all(inst.root.join("Stock Game/Data")).unwrap();
+        fs::write(inst.root.join("Stock Game/SkyrimSE.exe"), b"game").unwrap();
+        engine_plugin(&inst.root.join("Stock Game/Data/CopyOnly.esp"), false);
+        inst.edit_manifest(|m| m.base_game = Some("Stock Game".into()))
+            .unwrap();
+        prepare_plugins("skyrimse", &game, &inst, &inst.active());
+        let txt =
+            fs::read_to_string(inst.active().plugins_state_dir().join("plugins.txt")).unwrap();
+        assert!(txt.contains("CopyOnly.esp"), "{txt}");
+        assert!(!txt.contains("StoreOnly.esp"), "{txt}");
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

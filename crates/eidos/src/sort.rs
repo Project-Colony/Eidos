@@ -57,7 +57,8 @@ pub(crate) fn cmd_sort(args: &[String]) {
     let state_dir = prof.plugins_state_dir();
 
     // Share launch discovery, including whiteouts, profile state and pins.
-    let Some(mut list) = inst.plugin_list_for_profile(&game.data_path, id, Some(&state_dir), &prof)
+    let files = crate::stock_game::game_files(&game, &inst);
+    let Some(mut list) = inst.plugin_list_for_profile(&files.data, id, Some(&state_dir), &prof)
     else {
         eidos_log::warn!("Plugin load order is unavailable for '{id}'.");
         exit(1);
@@ -101,7 +102,7 @@ pub(crate) fn cmd_sort(args: &[String]) {
     if let Err(e) = eidos_loot::add_case_bridge(
         &masterlist,
         &mut mod_dirs,
-        &game.install_path,
+        &files.root,
         &cache.join("case-bridge"),
     ) {
         eidos_log::warn!("Could not build the LOOT case bridge: {e}");
@@ -109,7 +110,7 @@ pub(crate) fn cmd_sort(args: &[String]) {
 
     let view = eidos_loot::GameView {
         game_id: id,
-        game_path: &game.install_path,
+        game_path: &files.root,
         // The PROFILE dir: it is the load-order authority now; the prefix copy is
         // a shadow that can be stale.
         local_path: &state_dir,

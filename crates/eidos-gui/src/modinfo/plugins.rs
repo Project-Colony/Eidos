@@ -9,7 +9,8 @@ use super::*;
 pub(crate) fn compute_plugins(app: &App) -> Option<PluginList> {
     let game = selected_game(app)?;
     let spec = game.plugin_spec()?;
-    let mut sources: Vec<(String, PathBuf)> = vec![(String::new(), game.data_path.clone())];
+    let data = game_files(app).map_or_else(|| game.data_path.clone(), |f| f.data);
+    let mut sources: Vec<(String, PathBuf)> = vec![(String::new(), data)];
     // app.mods is MO2 display order (lowest priority first) = the ascending order
     // plugin discovery wants, so feed it through as-is. Unmanaged rows (DLC and
     // Creation Club) are not layers: their `path` is one `.esm` FILE inside Data,
