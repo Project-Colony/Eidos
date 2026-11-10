@@ -323,7 +323,8 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
     // and the next click toggled the row above. The scrim cancels it.
     if let Some(card) = disable_confirm_dialog(app) {
         let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
-            .on_press(Message::CancelDisable);
+            .on_press(Message::CancelDisable)
+            .on_right_press(Message::CancelDisable);
         let card = container(mouse_area(card).on_press(Message::Noop)).center(Length::Fill);
         layers = layers.push(scrim).push(card);
     }
@@ -332,7 +333,8 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
     if let Some(i) = app.info_mod {
         if i < app.mods.len() {
             let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
-                .on_press(Message::CloseInfo);
+                .on_press(Message::CloseInfo)
+                .on_right_press(Message::CloseInfo);
             let dialog = container(mod_info_dialog(app, i)).center(Length::Fill);
             layers = layers.push(scrim).push(dialog);
         }
