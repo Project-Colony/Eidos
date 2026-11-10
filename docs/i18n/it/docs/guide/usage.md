@@ -40,7 +40,7 @@ completano l'insieme; esegui `eidos` senza argomenti per l'elenco completo.
 
 ### Una shell nella vista unita
 
-`eidos shell <instance>` avvia la tua `$SHELL` (o `/bin/sh`) nella cartella del gioco come la vedrebbe il gioco: ogni mod attiva montata sopra `Data`, le mod Root sopra la radice del gioco, e tutto ciò che vi viene scritto finisce nell'Overwrite. `eidos shell <instance> -- <command>` esegue invece un solo comando, per esempio `eidos shell skyrimse -- ls Data/meshes` o uno strumento nativo come NifSkope. L'esecuzione tiene il blocco dell'istanza come una sessione di gioco, quindi la finestra non può salvare modifiche finché non esci, e compare in `eidos sessions` con il nome `shell`, mai come avvio del gioco. Ctrl+C su un comando ferma l'esecuzione come Stop: Eidos termina il comando, cattura la sessione e smonta la vista.
+`eidos shell <instance>` avvia la tua `$SHELL` (o `/bin/sh`) nella cartella del gioco come la vedrebbe il gioco: ogni mod attiva montata sopra `Data`, le mod Root sopra la radice del gioco, e tutto ciò che vi viene scritto finisce nell'Overwrite. `eidos shell <instance> -- <command>` esegue invece un solo comando, per esempio `eidos shell skyrimse -- ls Data/meshes` o uno strumento nativo come NifSkope. L'esecuzione tiene il blocco dell'istanza come una sessione di gioco, quindi la finestra non può salvare modifiche finché non esci, e compare in `eidos sessions` con il nome `shell`, mai come avvio del gioco. Ctrl+C su un comando ferma l'esecuzione come Stop: Eidos termina il comando, cattura la sessione e smonta la vista. Nella shell interattiva Ctrl+C resta alla shell, come al solito; digita `exit` per terminare l'esecuzione.
 
 ### Istanze: globali e portatili
 

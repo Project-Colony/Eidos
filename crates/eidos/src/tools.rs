@@ -720,6 +720,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 executable: (!runs_game).then_some(&source_exe),
                 utility: None,
                 env: &tool.env,
+                interactive: false,
             };
             if print_only {
                 let env = crate::launch::run_env(&game, &inst, opts, env, false);

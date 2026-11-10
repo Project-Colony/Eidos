@@ -39,7 +39,7 @@ takımı tamamlar; tam liste için `eidos`'u argümansız çalıştırın.
 
 ### Birleşik görünümde bir kabuk
 
-`eidos shell <instance>`, `$SHELL` kabuğunuzu (yoksa `/bin/sh`) oyunun göreceği haliyle oyun klasöründe başlatır: etkin her mod `Data` üzerine bağlanır, Root modları oyunun kök dizinine bağlanır ve oraya yazılan her şey Overwrite'a düşer. `eidos shell <instance> -- <command>` bunun yerine tek bir komut çalıştırır, örneğin `eidos shell skyrimse -- ls Data/meshes` ya da NifSkope gibi yerel bir araç. Çalıştırma, bir oyun oturumu gibi örnek kilidini tutar; bu yüzden siz çıkana kadar pencere değişiklik kaydedemez ve `eidos sessions` içinde `shell` adıyla görünür, hiçbir zaman oyun başlatması olarak değil. Bir komut sırasında Ctrl+C çalıştırmayı Stop gibi durdurur: Eidos komutu bitirir, oturumu yakalar ve bağlantıyı keser.
+`eidos shell <instance>`, `$SHELL` kabuğunuzu (yoksa `/bin/sh`) oyunun göreceği haliyle oyun klasöründe başlatır: etkin her mod `Data` üzerine bağlanır, Root modları oyunun kök dizinine bağlanır ve oraya yazılan her şey Overwrite'a düşer. `eidos shell <instance> -- <command>` bunun yerine tek bir komut çalıştırır, örneğin `eidos shell skyrimse -- ls Data/meshes` ya da NifSkope gibi yerel bir araç. Çalıştırma, bir oyun oturumu gibi örnek kilidini tutar; bu yüzden siz çıkana kadar pencere değişiklik kaydedemez ve `eidos sessions` içinde `shell` adıyla görünür, hiçbir zaman oyun başlatması olarak değil. Bir komut sırasında Ctrl+C çalıştırmayı Stop gibi durdurur: Eidos komutu bitirir, oturumu yakalar ve bağlantıyı keser. Etkileşimli kabukta Ctrl+C her zamanki gibi kabuğa aittir; çalıştırmayı bitirmek için `exit` yazın.
 
 ### Örnekler: global ve taşınabilir
 

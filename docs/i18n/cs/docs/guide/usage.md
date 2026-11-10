@@ -39,7 +39,7 @@ doplňují; úplný seznam vypíše `eidos` bez argumentů.
 
 ### Shell ve sloučeném pohledu
 
-`eidos shell <instance>` spustí váš `$SHELL` (nebo `/bin/sh`) ve složce hry tak, jak by ji viděla hra: každý zapnutý mód připojený nad `Data`, módy Root nad kořenem hry a vše, co se tam zapíše, skončí v Overwrite. `eidos shell <instance> -- <command>` místo toho spustí jediný příkaz, například `eidos shell skyrimse -- ls Data/meshes` nebo nativní nástroj jako NifSkope. Běh drží zámek instance stejně jako herní relace, takže okno nemůže ukládat změny, dokud neskončíte, a v `eidos sessions` je zapsán pod názvem `shell`, nikdy jako spuštění hry. Ctrl+C u příkazu zastaví běh stejně jako Stop: Eidos příkaz ukončí, zachytí relaci a odpojí pohled.
+`eidos shell <instance>` spustí váš `$SHELL` (nebo `/bin/sh`) ve složce hry tak, jak by ji viděla hra: každý zapnutý mód připojený nad `Data`, módy Root nad kořenem hry a vše, co se tam zapíše, skončí v Overwrite. `eidos shell <instance> -- <command>` místo toho spustí jediný příkaz, například `eidos shell skyrimse -- ls Data/meshes` nebo nativní nástroj jako NifSkope. Běh drží zámek instance stejně jako herní relace, takže okno nemůže ukládat změny, dokud neskončíte, a v `eidos sessions` je zapsán pod názvem `shell`, nikdy jako spuštění hry. Ctrl+C u příkazu zastaví běh stejně jako Stop: Eidos příkaz ukončí, zachytí relaci a odpojí pohled. V interaktivním shellu zůstává Ctrl+C shellu, jako obvykle; běh ukončíte příkazem `exit`.
 
 ### Instance: globální a přenosné
 

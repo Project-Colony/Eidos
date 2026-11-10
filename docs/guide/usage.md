@@ -48,7 +48,7 @@ fields are `eidos` (the version), `game`, `instance`, `system` (`proton`,
 
 ### A shell in the merged view
 
-`eidos shell <instance>` starts your `$SHELL` (or `/bin/sh`) in the game's folder as the game would see it: every enabled mod mounted over `Data`, Root mods over the game root, and everything written there landing in the Overwrite. `eidos shell <instance> -- <command>` runs one command instead, for example `eidos shell skyrimse -- ls Data/meshes` or a native tool such as NifSkope. The run holds the instance lock like a game session, so the window cannot save changes until you exit, and it is recorded in `eidos sessions` under the name `shell`, never as a game launch. Ctrl+C on a command stops the run the way Stop does: Eidos ends the command, captures the session and unmounts.
+`eidos shell <instance>` starts your `$SHELL` (or `/bin/sh`) in the game's folder as the game would see it: every enabled mod mounted over `Data`, Root mods over the game root, and everything written there landing in the Overwrite. `eidos shell <instance> -- <command>` runs one command instead, for example `eidos shell skyrimse -- ls Data/meshes` or a native tool such as NifSkope. The run holds the instance lock like a game session, so the window cannot save changes until you exit, and it is recorded in `eidos sessions` under the name `shell`, never as a game launch. Ctrl+C on a command stops the run the way Stop does: Eidos ends the command, captures the session and unmounts. In the interactive shell Ctrl+C belongs to the shell, as usual; type `exit` to end the run.
 
 ### Instances: global and portable
 

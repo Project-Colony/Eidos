@@ -39,7 +39,7 @@ dopełniają zestaw; uruchom `eidos` bez argumentów, by zobaczyć pełną list�
 
 ### Powłoka w scalonym widoku
 
-`eidos shell <instance>` uruchamia twoją `$SHELL` (lub `/bin/sh`) w folderze gry takim, jaki zobaczyłaby gra: każdy włączony mod zamontowany nad `Data`, mody Root nad katalogiem głównym gry, a wszystko, co tam zapisano, ląduje w Overwrite. `eidos shell <instance> -- <command>` uruchamia zamiast tego jedno polecenie, na przykład `eidos shell skyrimse -- ls Data/meshes` albo natywne narzędzie takie jak NifSkope. Przebieg trzyma blokadę instancji jak sesja gry, więc okno nie może zapisywać zmian, dopóki nie wyjdziesz, a w `eidos sessions` jest zapisany pod nazwą `shell`, nigdy jako uruchomienie gry. Ctrl+C przy poleceniu zatrzymuje przebieg tak jak Stop: Eidos kończy polecenie, przechwytuje sesję i odmontowuje widok.
+`eidos shell <instance>` uruchamia twoją `$SHELL` (lub `/bin/sh`) w folderze gry takim, jaki zobaczyłaby gra: każdy włączony mod zamontowany nad `Data`, mody Root nad katalogiem głównym gry, a wszystko, co tam zapisano, ląduje w Overwrite. `eidos shell <instance> -- <command>` uruchamia zamiast tego jedno polecenie, na przykład `eidos shell skyrimse -- ls Data/meshes` albo natywne narzędzie takie jak NifSkope. Przebieg trzyma blokadę instancji jak sesja gry, więc okno nie może zapisywać zmian, dopóki nie wyjdziesz, a w `eidos sessions` jest zapisany pod nazwą `shell`, nigdy jako uruchomienie gry. Ctrl+C przy poleceniu zatrzymuje przebieg tak jak Stop: Eidos kończy polecenie, przechwytuje sesję i odmontowuje widok. W interaktywnej powłoce Ctrl+C należy do powłoki, jak zwykle; wpisz `exit`, aby zakończyć przebieg.
 
 ### Instancje: globalne i przenośne
 

@@ -39,7 +39,7 @@ eidos unpack backup.eidos <folder>   # 向こうのマシンで元に戻す
 
 ### 統合ビューでのシェル
 
-`eidos shell <instance>` は、ゲームから見える状態のゲームフォルダで `$SHELL`(なければ `/bin/sh`)を起動します。有効な MOD はすべて `Data` に重ねられ、Root MOD はゲームのルートに重ねられ、そこへ書き込まれたものはすべて Overwrite に入ります。`eidos shell <instance> -- <command>` は代わりにコマンドを 1 つだけ実行します。たとえば `eidos shell skyrimse -- ls Data/meshes` や、NifSkope のようなネイティブツールです。この実行はゲームのセッションと同じくインスタンスのロックを保持するので、終了するまでウィンドウは変更を保存できず、`eidos sessions` には `shell` という名前で記録され、ゲームの起動としては記録されません。コマンド実行中の Ctrl+C は Stop と同じように実行を止めます。Eidos がコマンドを終了させ、セッションを回収し、アンマウントします。
+`eidos shell <instance>` は、ゲームから見える状態のゲームフォルダで `$SHELL`(なければ `/bin/sh`)を起動します。有効な MOD はすべて `Data` に重ねられ、Root MOD はゲームのルートに重ねられ、そこへ書き込まれたものはすべて Overwrite に入ります。`eidos shell <instance> -- <command>` は代わりにコマンドを 1 つだけ実行します。たとえば `eidos shell skyrimse -- ls Data/meshes` や、NifSkope のようなネイティブツールです。この実行はゲームのセッションと同じくインスタンスのロックを保持するので、終了するまでウィンドウは変更を保存できず、`eidos sessions` には `shell` という名前で記録され、ゲームの起動としては記録されません。コマンド実行中の Ctrl+C は Stop と同じように実行を止めます。Eidos がコマンドを終了させ、セッションを回収し、アンマウントします。対話シェルでは Ctrl+C は通常どおりシェルのものです。実行を終えるには `exit` と入力します。
 
 ### インスタンス: グローバルとポータブル
 

@@ -131,6 +131,7 @@ pub(crate) fn cmd_shell(args: &[String]) {
     let Some(command) = shell_command(&args[1..], std::env::var("SHELL").ok()) else {
         usage()
     };
+    let interactive = matches!(args[1..], [] | [_]) && args[1..].iter().all(|a| a == "--");
     let (game_id, game, inst) = open_for_run(id);
     println!(
         "eidos shell: {} sees this view; writes land in {}. Exit the shell to unmount.",
@@ -146,6 +147,7 @@ pub(crate) fn cmd_shell(args: &[String]) {
         Some(game.install_path.clone()),
         ToolOpts {
             utility: Some("shell"),
+            interactive,
             ..Default::default()
         },
     );
@@ -330,6 +332,14 @@ pub(crate) struct ToolOpts<'a> {
     pub utility: Option<&'a str>,
     /// The tool's own `env=` lines, applied last by [`run_env`] so they win.
     pub env: &'a [(String, String)],
+    /// The run is a shell the owner types into (`eidos shell` without `--`).
+    pub interactive: bool,
+}
+
+/// Whether Ctrl+C ends the run. It does for a one-shot command and a game; in an
+/// interactive shell it belongs to the shell, which uses it to cancel a line.
+pub(crate) fn interrupt_stops_run(opts: &ToolOpts) -> bool {
+    !opts.interactive
 }
 
 pub(crate) fn run_through_view(
@@ -372,6 +382,9 @@ pub(crate) fn run_through_view(
     // during prepare lets it finish and `launch` then starts nothing, and either way
     // the post-run captures below still run.
     eidos_launch::install_stop_handler();
+    if !interrupt_stops_run(&opts) {
+        eidos_launch::ignore_interrupt();
+    }
     if let Err(error) = crate::games::validate_selected_game(
         inst,
         game_id,
@@ -1080,6 +1093,16 @@ fn steam_cloud_save_target(game: &DetectedGame, destination: &Path) -> bool {
 
 #[cfg(test)]
 mod extender_tests {
+    #[test]
+    fn ctrl_c_ends_a_run_except_in_an_interactive_shell() {
+        use super::{interrupt_stops_run, ToolOpts};
+        assert!(interrupt_stops_run(&ToolOpts::default()));
+        assert!(!interrupt_stops_run(&ToolOpts {
+            interactive: true,
+            ..Default::default()
+        }));
+    }
+
     use super::*;
 
     #[test]

@@ -38,7 +38,7 @@ eidos unpack backup.eidos <folder>   # put it back on the other machine
 
 ### 合併檢視中的 shell
 
-`eidos shell <instance>` 在遊戲所見的遊戲資料夾裡啟動你的 `$SHELL`(沒有就用 `/bin/sh`):每個已啟用的模組掛載在 `Data` 之上,Root 模組掛載在遊戲根目錄之上,寫到那裡的一切都進入 Overwrite。`eidos shell <instance> -- <command>` 則只執行一條指令,例如 `eidos shell skyrimse -- ls Data/meshes`,或 NifSkope 這類原生工具。這次執行像遊戲工作階段一樣持有實例鎖,所以在你結束之前視窗無法儲存變更,它在 `eidos sessions` 中以 `shell` 為名記錄,絕不算作一次遊戲啟動。對指令按 Ctrl+C 會像 Stop 一樣停止執行:Eidos 結束該指令、收集工作階段並卸載。
+`eidos shell <instance>` 在遊戲所見的遊戲資料夾裡啟動你的 `$SHELL`(沒有就用 `/bin/sh`):每個已啟用的模組掛載在 `Data` 之上,Root 模組掛載在遊戲根目錄之上,寫到那裡的一切都進入 Overwrite。`eidos shell <instance> -- <command>` 則只執行一條指令,例如 `eidos shell skyrimse -- ls Data/meshes`,或 NifSkope 這類原生工具。這次執行像遊戲工作階段一樣持有實例鎖,所以在你結束之前視窗無法儲存變更,它在 `eidos sessions` 中以 `shell` 為名記錄,絕不算作一次遊戲啟動。對指令按 Ctrl+C 會像 Stop 一樣停止執行:Eidos 結束該指令、收集工作階段並卸載。在互動式 shell 中,Ctrl+C 照常屬於 shell;輸入 `exit` 結束執行。
 
 ### 實例:全域與可攜
 

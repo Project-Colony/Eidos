@@ -39,7 +39,7 @@ eidos unpack backup.eidos <folder>   # 다른 기계에서 되돌려 놓기
 
 ### 병합된 뷰의 셸
 
-`eidos shell <instance>`는 게임이 보는 모습 그대로의 게임 폴더에서 `$SHELL`(없으면 `/bin/sh`)을 시작합니다. 활성화된 모든 모드가 `Data` 위에 마운트되고, Root 모드는 게임 루트 위에 마운트되며, 거기에 쓰이는 모든 것은 Overwrite에 들어갑니다. `eidos shell <instance> -- <command>`는 대신 명령 하나만 실행합니다. 예를 들어 `eidos shell skyrimse -- ls Data/meshes`나 NifSkope 같은 네이티브 도구입니다. 이 실행은 게임 세션처럼 인스턴스 잠금을 유지하므로 종료할 때까지 창이 변경을 저장할 수 없고, `eidos sessions`에는 `shell`이라는 이름으로 기록되며 게임 실행으로는 기록되지 않습니다. 명령 실행 중 Ctrl+C는 Stop과 같은 방식으로 실행을 멈춥니다. Eidos가 명령을 끝내고, 세션을 수집하고, 마운트를 해제합니다.
+`eidos shell <instance>`는 게임이 보는 모습 그대로의 게임 폴더에서 `$SHELL`(없으면 `/bin/sh`)을 시작합니다. 활성화된 모든 모드가 `Data` 위에 마운트되고, Root 모드는 게임 루트 위에 마운트되며, 거기에 쓰이는 모든 것은 Overwrite에 들어갑니다. `eidos shell <instance> -- <command>`는 대신 명령 하나만 실행합니다. 예를 들어 `eidos shell skyrimse -- ls Data/meshes`나 NifSkope 같은 네이티브 도구입니다. 이 실행은 게임 세션처럼 인스턴스 잠금을 유지하므로 종료할 때까지 창이 변경을 저장할 수 없고, `eidos sessions`에는 `shell`이라는 이름으로 기록되며 게임 실행으로는 기록되지 않습니다. 명령 실행 중 Ctrl+C는 Stop과 같은 방식으로 실행을 멈춥니다. Eidos가 명령을 끝내고, 세션을 수집하고, 마운트를 해제합니다. 대화형 셸에서 Ctrl+C는 평소처럼 셸의 것입니다. 실행을 끝내려면 `exit`를 입력합니다.
 
 ### 인스턴스: 전역과 휴대용
 

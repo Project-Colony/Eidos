@@ -106,7 +106,8 @@ pub fn stop_requested() -> bool {
 /// period), so the caller's post-run captures still run and the union is
 /// unmounted only after every process of the run is gone. Ctrl+C in a terminal
 /// ends the run like the window's Stop; an exec'd child gets the default
-/// disposition back, so programs inside the run still stop on Ctrl+C.
+/// disposition back, so programs inside the run still stop on Ctrl+C. An interactive
+/// shell run calls [`ignore_interrupt`] afterwards, so Ctrl+C stays with the shell.
 pub fn install_stop_handler() {
     // SAFETY: a zeroed sigaction with an empty mask and a handler that only
     // stores to an atomic.
@@ -117,6 +118,17 @@ pub fn install_stop_handler() {
         libc::sigemptyset(&mut action.sa_mask);
         libc::sigaction(libc::SIGTERM, &action, std::ptr::null_mut());
         libc::sigaction(libc::SIGINT, &action, std::ptr::null_mut());
+    }
+}
+
+/// Leave Ctrl+C to the program in front of the terminal. For an interactive shell
+/// run: the terminal sends SIGINT to the whole foreground group, and an interactive
+/// shell uses it to cancel a line, so it must not end the run. Call after
+/// [`install_stop_handler`]; SIGTERM still stops the run.
+pub fn ignore_interrupt() {
+    // SAFETY: setting a disposition to SIG_IGN touches no memory.
+    unsafe {
+        libc::signal(libc::SIGINT, libc::SIG_IGN);
     }
 }
 
