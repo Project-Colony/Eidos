@@ -38,17 +38,21 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
             mods_changed(app);
         }
-        Message::ConfirmDisable => {
+        Message::ConfirmDisable | Message::ConfirmDisableWithDependents => {
             let Some(confirm) = app.disable_confirm.take() else {
                 return Task::none();
             };
-            for &i in &confirm.targets {
+            let mut rows = confirm.targets;
+            if matches!(message, Message::ConfirmDisableWithDependents) {
+                rows.extend(confirm.dependents);
+            }
+            for &i in &rows {
                 if let Some(m) = app.mods.get_mut(i) {
                     m.enabled = false;
                 }
             }
             if mods_changed(app) {
-                app.status = Some(tf("status_disabled_n", &[("n", &confirm.targets.len())]));
+                app.status = Some(tf("status_disabled_n", &[("n", &rows.len())]));
             }
         }
         Message::CancelDisable => app.disable_confirm = None,
@@ -1778,10 +1782,34 @@ pub(crate) fn arm_disable(
         .filter(|&i| app.mods.get(i).is_some_and(|m| m.is_active()))
         .collect();
     let plugins = plugins_saves_use(app, &active, saves);
-    if plugins.is_empty() {
+    // `app.plugins` is a cache that is usually cold; compute it as diagnostics does.
+    let computed;
+    let list = match app.plugins.as_ref() {
+        Some(list) => Some(list),
+        None => {
+            computed = compute_plugins(app);
+            computed.as_ref()
+        }
+    };
+    let dependents: Vec<usize> = list.map_or_else(Vec::new, |list| {
+        let names: Vec<&str> = active.iter().map(|&i| app.mods[i].name.as_str()).collect();
+        let needing = eidos_plugins::dependents_of(&list.mod_requirements(), &names);
+        (0..app.mods.len())
+            .filter(|i| !targets.contains(i))
+            .filter(|&i| {
+                let m = &app.mods[i];
+                m.enabled && needing.iter().any(|n| n.eq_ignore_ascii_case(&m.name))
+            })
+            .collect()
+    });
+    if plugins.is_empty() && dependents.is_empty() {
         return false;
     }
     app.menu_mod = None;
-    app.disable_confirm = Some(DisableConfirm { targets, plugins });
+    app.disable_confirm = Some(DisableConfirm {
+        targets,
+        plugins,
+        dependents,
+    });
     true
 }

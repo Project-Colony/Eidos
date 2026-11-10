@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=86e13b3660fb15dec7a47ddb654d1532c8ab9ae3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=89e0315937ba7d0824bfd151b34a2cb715f41e50 -->
 
 # Utiliser Eidos
 
@@ -567,7 +567,7 @@ La vérification de la disposition est délibérément généreuse : une arbores
 avertissement erroné sur une liste de cinq cents lignes est pire qu'un
 avertissement manquant.
 
-### Désactiver un mod que vos sauvegardes utilisent
+### Désactiver un mod que vos sauvegardes ou d'autres mods utilisent
 
 Avant de désactiver ou de supprimer un mod, Eidos lit les listes de plugins des
 trois sauvegardes les plus récentes du profil. Quand l'une d'elles utilise un
@@ -576,6 +576,8 @@ plugin de ce mod, une barre au-dessus de la liste nomme les plugins et attend
 noms à son message demandant de cliquer encore. Seules les sauvegardes de Skyrim
 et de Fallout 4 sont lues ; pour les autres jeux, le mod est désactivé sans
 question.
+
+L'onglet General de « Information » d'un mod liste les mods dont il a besoin et les mods qui ont besoin de lui, lus dans les masters des plugins activés. Désactiver un mod dont d'autres ont besoin affiche la même barre avec « Disable them too », qui désactive aussi chaque mod qui en a besoin et les mods qui ont besoin de ceux-là, ou « Keep them enabled ».
 
 ### Sauvegarder un mod avant d'y toucher
 

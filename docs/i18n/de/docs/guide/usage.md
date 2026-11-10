@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=86e13b3660fb15dec7a47ddb654d1532c8ab9ae3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=89e0315937ba7d0824bfd151b34a2cb715f41e50 -->
 
 # Eidos verwenden
 
@@ -566,7 +566,7 @@ Die Layout-Prüfung ist bewusst großzügig: ein `Root/`-Baum zählt, ein unlesb
 Ordner zählt, ein leerer zählt. Eine falsche Warnung in einer Liste mit
 fünfhundert Zeilen ist schlimmer als eine fehlende.
 
-### Eine Mod deaktivieren, die Ihre Spielstände nutzen
+### Eine Mod deaktivieren, die Ihre Spielstände oder andere Mods brauchen
 
 Bevor eine Mod deaktiviert oder entfernt wird, liest Eidos die Pluginlisten der
 drei neuesten Spielstände des Profils. Nutzt einer davon ein Plugin aus dieser
@@ -574,6 +574,8 @@ Mod, nennt eine Leiste über der Liste die Plugins und wartet auf "Disable anywa
 oder "Cancel" (Esc bricht ebenfalls ab). Remove fügt dieselben Namen seiner
 Meldung zum erneuten Klicken hinzu. Gelesen werden nur Spielstände von Skyrim und
 Fallout 4; andere Spiele deaktivieren ohne Rückfrage.
+
+Der Reiter General unter Information einer Mod listet die Mods auf, die sie braucht, und die Mods, die sie brauchen, gelesen aus den Masters der aktiven Plugins. Wer eine Mod deaktiviert, die andere brauchen, sieht dieselbe Leiste mit "Disable them too", was auch jede Mod deaktiviert, die sie braucht, und die Mods, die diese brauchen, oder mit "Keep them enabled".
 
 ### Eine Mod sichern, bevor Sie sie anfassen
 

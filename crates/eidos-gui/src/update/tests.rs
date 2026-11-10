@@ -6360,6 +6360,53 @@ mod saves_use {
         fs::remove_dir_all(root).unwrap();
     }
 
+    fn chain_app() -> (App, PathBuf) {
+        let (mut app, root) = list_app(&["Fw", "UsesFw", "UsesA"]);
+        let mut a = plugin_row("A.esp", "UsesFw");
+        a.masters = vec!["Fw.esm".into()];
+        let mut b = plugin_row("B.esp", "UsesA");
+        b.masters = vec!["A.esp".into()];
+        app.plugins = Some(PluginList {
+            plugins: vec![plugin_row("Fw.esm", "Fw"), a, b],
+            ..Default::default()
+        });
+        (app, root)
+    }
+
+    #[test]
+    fn disable_them_too_disables_the_whole_chain() {
+        let (mut app, _root) = chain_app();
+        assert!(arm_disable(&mut app, vec![0], &[]));
+        assert_eq!(app.disable_confirm.as_ref().unwrap().dependents, [1, 2]);
+        let _ = update(&mut app, Message::ConfirmDisableWithDependents);
+        assert!(app.mods.iter().all(|m| !m.enabled));
+    }
+
+    #[test]
+    fn keep_them_enabled_disables_only_the_target() {
+        let (mut app, _root) = chain_app();
+        assert!(arm_disable(&mut app, vec![0], &[]));
+        let _ = update(&mut app, Message::ConfirmDisable);
+        assert!(!app.mods[0].enabled && app.mods[1].enabled && app.mods[2].enabled);
+    }
+
+    #[test]
+    fn a_master_from_the_overwrite_or_the_game_asks_nothing() {
+        let (mut app, _root) = list_app(&["UsesBoth"]);
+        let mut a = plugin_row("A.esp", "UsesBoth");
+        a.masters = vec!["Gen.esm".into(), "Skyrim.esm".into()];
+        app.plugins = Some(PluginList {
+            plugins: vec![
+                plugin_row("Skyrim.esm", ""),
+                plugin_row("Gen.esm", "overwrite"),
+                a,
+            ],
+            ..Default::default()
+        });
+        assert!(!arm_disable(&mut app, vec![0], &[]));
+        assert!(app.disable_confirm.is_none());
+    }
+
     #[test]
     fn the_saves_warning_names_five_plugins_then_counts() {
         let names: Vec<String> = (1..=7).map(|n| format!("P{n}.esp")).collect();

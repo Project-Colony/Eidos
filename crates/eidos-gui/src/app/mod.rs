@@ -96,11 +96,13 @@ pub(crate) enum Pane {
 }
 
 /// A disable waiting for the user: the newest saves use `plugins`, which the
-/// `targets` mods (indices into `app.mods`) provide.
+/// `targets` mods (indices into `app.mods`) provide, and enabled `dependents`
+/// (rows outside `targets`) list plugins of the targets as masters.
 #[derive(Debug, Clone)]
 pub(crate) struct DisableConfirm {
     pub(crate) targets: Vec<usize>,
     pub(crate) plugins: Vec<String>,
+    pub(crate) dependents: Vec<usize>,
 }
 
 /// An installed collection with a newer revision on Nexus.

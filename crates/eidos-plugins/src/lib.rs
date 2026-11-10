@@ -1348,6 +1348,32 @@ pub struct ModRequirement {
     pub master: String,
 }
 
+/// The mods that need one of `mods`, directly or through another dependent,
+/// case-insensitive, without `mods` themselves, each once, in first-reached
+/// order.
+pub fn dependents_of(reqs: &[ModRequirement], mods: &[&str]) -> Vec<String> {
+    let mut seen: Vec<String> = mods.iter().map(|m| m.to_ascii_lowercase()).collect();
+    let mut out = Vec::new();
+    let mut next = 0;
+    let mut frontier: Vec<String> = seen.clone();
+    while next < frontier.len() {
+        let needed = frontier[next].clone();
+        next += 1;
+        for r in reqs
+            .iter()
+            .filter(|r| r.required.to_ascii_lowercase() == needed)
+        {
+            let key = r.dependent.to_ascii_lowercase();
+            if !seen.contains(&key) {
+                seen.push(key.clone());
+                frontier.push(key);
+                out.push(r.dependent.clone());
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1804,6 +1830,25 @@ mod tests {
                 master: "B.esm".into(),
             }]
         );
+    }
+
+    #[test]
+    fn dependents_follow_chains_and_stop_on_cycles() {
+        let r = |d: &str, q: &str| ModRequirement {
+            dependent: d.into(),
+            plugin: format!("{d}.esp"),
+            required: q.into(),
+            master: format!("{q}.esm"),
+        };
+        let reqs = [
+            r("UsesFw", "Fw"),
+            r("UsesA", "UsesFw"),
+            r("PatchX", "PatchY"),
+            r("PatchY", "PatchX"),
+        ];
+        assert_eq!(dependents_of(&reqs, &["fw"]), ["UsesFw", "UsesA"]);
+        assert_eq!(dependents_of(&reqs, &["PatchX"]), ["PatchY"]);
+        assert!(dependents_of(&reqs, &["UsesA"]).is_empty());
     }
 
     #[test]

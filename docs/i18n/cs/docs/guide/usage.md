@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=86e13b3660fb15dec7a47ddb654d1532c8ab9ae3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=89e0315937ba7d0824bfd151b34a2cb715f41e50 -->
 
 # Používání Eidosu
 
@@ -501,13 +501,15 @@ Kontrola rozvržení je záměrně velkorysá: strom `Root/` se počítá, neči
 složka se počítá, prázdná se počítá. Chybné varování na seznamu o pěti stech
 řádcích je horší než chybějící.
 
-### Vypnutí módu, který vaše uložené hry používají
+### Vypnutí módu, který vaše uložené hry nebo jiné módy potřebují
 
 Než se mód vypne nebo odebere, Eidos přečte seznamy pluginů tří nejnovějších
 uložených her profilu. Když některá z nich používá plugin z tohoto módu, lišta nad
 seznamem tyto pluginy vyjmenuje a čeká na „Disable anyway" nebo „Cancel" (Esc
 také ruší). Remove přidá stejné názvy do své zprávy s výzvou kliknout znovu. Čtou
 se jen uložené hry Skyrimu a Falloutu 4; u ostatních her se mód vypne bez ptaní.
+
+Karta General v Information u módu uvádí módy, které potřebuje, a módy, které potřebují jeho, a to podle masterů zapnutých pluginů. Vypnutí módu, který jiné potřebují, ukáže stejnou lištu s tlačítky „Disable them too", které vypne i každý mód, jenž ho potřebuje, i módy, které potřebují ty, nebo „Keep them enabled".
 
 ### Záloha módu, než na něj sáhnete
 

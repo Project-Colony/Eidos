@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=86e13b3660fb15dec7a47ddb654d1532c8ab9ae3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=89e0315937ba7d0824bfd151b34a2cb715f41e50 -->
 
 # Usar Eidos
 
@@ -545,7 +545,7 @@ La comprobación de la disposición es deliberadamente generosa: un árbol `Root
 cuenta, una carpeta ilegible cuenta, una vacía cuenta. Un aviso equivocado en una
 lista de quinientas filas es peor que uno ausente.
 
-### Desactivar un mod que usan tus partidas guardadas
+### Desactivar un mod que usan tus partidas guardadas u otros mods
 
 Antes de desactivar o quitar un mod, Eidos lee las listas de plugins de las tres
 partidas guardadas más recientes del perfil. Si una de ellas usa un plugin de ese
@@ -553,6 +553,8 @@ mod, una barra sobre la lista nombra los plugins y espera a «Disable anyway» o
 «Cancel» (Esc también cancela). Remove añade los mismos nombres a su mensaje de
 volver a hacer clic. Solo se leen partidas de Skyrim y Fallout 4; en los demás
 juegos el mod se desactiva sin preguntar.
+
+La pestaña General de Information de un mod lista los mods que necesita y los mods que lo necesitan, leídos de los masters de los plugins activos. Al desactivar un mod que otros necesitan aparece la misma barra con «Disable them too», que también desactiva cada mod que lo necesita y los mods que necesitan a esos, o «Keep them enabled».
 
 ### Hacer copia de un mod antes de tocarlo
 
