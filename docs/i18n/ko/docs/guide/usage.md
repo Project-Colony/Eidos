@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=a4937f3b4963b22e6dbdebf4234835a12acea5c2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6d01387ac79ccda9b47b128850123be98d1d2db3 -->
 
 # Eidos 사용하기
 
@@ -536,6 +536,8 @@ ESP/ESM/ESL 로드 순서입니다(켜고 끄기, 손으로 순서 바꾸기, �
 지루한 쪽 절반이니까요.
 
 플러그인 위에 마우스를 올리면 출처, 작성자, 헤더 및 폼 버전, 설명의 처음 300자, 마스터, 그리고 LOOT 정렬 후에는 LOOT의 메시지가 표시됩니다. Skyrim, Skyrim SE, Skyrim VR, Enderal SE에서는 게임이 불러온 플러그인과 같은 이름의 INI도 읽습니다. INI 열은 해당 플러그인에 표시를 하고, 클릭하면 그 파일을 읽기 전용으로 엽니다.
+
+Data 탭의 `.exe` 행에는 Add tool과 Run이 있습니다. Add tool은 그 파일이 채워진 Executables 편집기를 엽니다(Save를 누르기 전에는 아무것도 저장되지 않습니다). Run은 등록된 도구처럼 병합된 뷰를 통해 파일을 한 번만 실행합니다.
 
 "Information..."은 모드별 대화 상자를 엽니다: 일반, 충돌, 파일 트리, INI 조정,
 메모. 파일 트리에서(그리고 Data 트리에서) 어떤 파일이든 **숨길** 수 있습니다 -

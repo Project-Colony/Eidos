@@ -7777,3 +7777,24 @@ fn typing_a_generator_title_seeds_its_capture_mod_only_while_empty() {
     let _ = update_inner(&mut app, Message::ToolTitleChanged("Nemesis 2".into()));
     assert_eq!(app.executables.as_ref().unwrap().output_mod, "Mine");
 }
+
+#[test]
+fn add_tool_from_data_opens_the_editor_prefilled_and_writes_nothing() {
+    let (mut app, root) = list_app(&["FNIS"]);
+    let exe = root.join("mods/FNIS/tools/GenerateFNIS_for_Users/GenerateFNISforUsers.exe");
+    let _ = update_inner(&mut app, Message::DataAddTool(exe.clone()));
+    let st = app.executables.as_ref().expect("the editor is open");
+    let i = st.selected.unwrap();
+    assert_eq!(i, st.user_len - 1, "a user entry, ahead of the defaults");
+    assert_eq!(
+        (st.title.as_str(), st.exe.as_str(), st.output_mod.as_str()),
+        ("FNIS", exe.to_str().unwrap(), "FNIS Output")
+    );
+    assert!(!app
+        .created
+        .as_ref()
+        .unwrap()
+        .root
+        .join("tools.ini")
+        .exists());
+}

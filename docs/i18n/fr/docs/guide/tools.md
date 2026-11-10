@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=aee189cad83fedb3105dc28dc6b9a5972f05cabb -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=93d6bf3a31d486148b77351bb6ee42e4b62ac19e -->
 
 # Outils : xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -74,6 +74,7 @@ eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse                       # lister ce qui est enregistré
 eidos tool skyrimse run BodySlide         # le lancer à travers la vue fusionnée
 eidos tool skyrimse run BodySlide --print # afficher la commande sans l'exécuter
+eidos tool skyrimse run --exe "<path>/GenerateFNISforUsers.exe"   # lancer un exe une fois, sans l'enregistrer
 eidos tool skyrimse run "SSEEdit QuickAutoClean" --output-mod "Cleaned plugins" -- -qac -autoexit -autoload Dawnguard.esm
 ```
 

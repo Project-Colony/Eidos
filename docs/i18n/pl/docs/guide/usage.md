@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=a4937f3b4963b22e6dbdebf4234835a12acea5c2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6d01387ac79ccda9b47b128850123be98d1d2db3 -->
 
 # Używanie Eidos
 
@@ -600,6 +600,8 @@ wtyczek z twoją bieżącą, wraz z przyciskiem włączającym mody, których po
 bo nazwanie ich i zostawienie cię z tym to ta nudna połowa.
 
 Po najechaniu na wtyczkę widać, skąd pochodzi, jej autora, wersję nagłówka i formularza, pierwsze 300 znaków opisu, jej mastery oraz, po sortowaniu LOOT, komunikaty LOOT. W Skyrimie, Skyrimie SE, Skyrimie VR i Enderalu SE gra czyta też plik INI nazwany jak załadowana wtyczka; kolumna INI oznacza takie wtyczki, a kliknięcie otwiera ten plik tylko do odczytu.
+
+Wiersz `.exe` w zakładce Data ma przyciski Add tool, który otwiera edytor Executables z już wypełnionym plikiem (nic nie jest zapisywane do czasu kliknięcia Save), oraz Run, który uruchamia plik jednorazowo przez połączony widok, jak zarejestrowane narzędzie.
 
 „Information..." otwiera okno dla pojedynczego moda: ogólne, konflikty, drzewo
 plików, poprawki INI, notatki. Z drzewa plików (i z drzewa Data) każdy plik można

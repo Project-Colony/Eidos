@@ -583,6 +583,8 @@ and leaving you to it is the boring half.
 
 Hovering a plugin shows where it comes from, its author, its header and form version, the first 300 characters of its description, its masters and, after a LOOT sort, LOOT's messages. On Skyrim, Skyrim SE, Skyrim VR and Enderal SE the game also reads an INI named after a loaded plugin; the INI column marks those plugins, and a click opens that file read-only.
 
+An `.exe` row in Data has Add tool, which opens the Executables editor with that file filled in (nothing is saved until you press Save), and Run, which runs it once through the merged view like a registered tool.
+
 "Information..." opens a per-mod dialog: general, conflicts, filetree, INI
 tweaks, notes. From the filetree (and from the Data tree) any file can be
 **hidden** - renamed to `<name>.mohidden`, which drops it out of the virtual view

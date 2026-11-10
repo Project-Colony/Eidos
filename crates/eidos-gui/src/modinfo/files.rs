@@ -15,7 +15,7 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
     // Column widths declared once so the header and the rows cannot drift apart.
     const C_SIZE: f32 = 72.0;
     const C_DATE: f32 = 96.0;
-    const C_ACTION: f32 = 116.0;
+    const C_ACTION: f32 = 200.0;
 
     let controls = Row::new()
         .spacing(6)
@@ -141,7 +141,22 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
                 .on_press(Message::DataReveal(r.row.real.clone()))
                 .style(button::secondary),
         );
-        if !r.row.is_dir {
+        let is_exe = !r.row.is_dir && r.row.name.to_ascii_lowercase().ends_with(".exe");
+        if is_exe {
+            action = action
+                .push(
+                    button(text(t("data_add_tool")).size(sz(10)))
+                        .padding([1, 5])
+                        .on_press(Message::DataAddTool(r.row.real.clone()))
+                        .style(button::secondary),
+                )
+                .push(
+                    button(text(t("data_run_exe")).size(sz(10)))
+                        .padding([1, 5])
+                        .on_press(Message::DataRunExe(r.row.real.clone()))
+                        .style(button::secondary),
+                );
+        } else if !r.row.is_dir {
             action = action.push(
                 button(text(t("info_view")).size(sz(10)))
                     .padding([1, 5])

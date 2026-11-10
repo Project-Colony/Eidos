@@ -47,6 +47,10 @@ pub(crate) enum Message {
     Run,
     /// Run the tool with this title as configured now; the picker is unchanged.
     RunTool(String),
+    /// Data tab: open the Executables editor with this `.exe` filled in; nothing is saved.
+    DataAddTool(PathBuf),
+    /// Data tab: run this `.exe` once through the merged view, without registering it.
+    DataRunExe(PathBuf),
     Refresh,
     OpenFolder(PathBuf),
     ClearOverwrite,

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=a4937f3b4963b22e6dbdebf4234835a12acea5c2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6d01387ac79ccda9b47b128850123be98d1d2db3 -->
 
 # Eidos gebruiken
 
@@ -613,6 +613,8 @@ mods inschakelt die ze nodig heeft, want ze benoemen en het verder aan jou laten
 is de saaie helft.
 
 Als u over een plugin beweegt, ziet u waar die vandaan komt, de auteur, de header- en formulierversie, de eerste 300 tekens van de beschrijving, de masters en, na een LOOT-sortering, de berichten van LOOT. Bij Skyrim, Skyrim SE, Skyrim VR en Enderal SE leest het spel ook een INI die naar een geladen plugin is genoemd; de kolom INI markeert die plugins en een klik opent dat bestand alleen-lezen.
+
+Een `.exe`-rij in Data heeft Add tool, dat de Executables-editor opent met dat bestand al ingevuld (er wordt niets opgeslagen tot je op Save drukt), en Run, dat het bestand één keer start via de samengevoegde weergave, zoals een geregistreerde tool.
 
 "Information..." opent een dialoog per mod: algemeen, conflicten, bestandsboom,
 INI-tweaks, notities. Vanuit de bestandsboom (en vanuit de Data-boom) kan elk

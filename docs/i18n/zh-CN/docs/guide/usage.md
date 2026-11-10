@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=a4937f3b4963b22e6dbdebf4234835a12acea5c2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6d01387ac79ccda9b47b128850123be98d1d2db3 -->
 
 # 使用 Eidos
 
@@ -446,6 +446,8 @@ Filters 按钮为每个条件列出一行:已启用、有冲突、有更新、�
 念出来、剩下的留给你自己弄,那是无聊的那一半。
 
 将鼠标悬停在插件上,会显示它的来源、作者、头部版本和表单版本、说明的前 300 个字符、它的主文件,以及在 LOOT 排序之后 LOOT 的消息。 在 Skyrim、Skyrim SE、Skyrim VR 和 Enderal SE 上,游戏还会读取与已加载插件同名的 INI;INI 列会标出这些插件,点击即以只读方式打开该文件。
+
+Data 选项卡中的 `.exe` 行有 Add tool 和 Run 两个按钮。Add tool 会打开 Executables 编辑器并填入该文件(按下 Save 之前不会保存任何内容);Run 会像已注册的工具一样,通过合并视图把它运行一次。
 
 "Information..." 打开一个按模组的对话框:general、conflicts、filetree、INI tweaks、
 notes。从 filetree(以及从 Data 树)里,任何文件都可以被**隐藏** - 重命名为

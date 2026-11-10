@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=a4937f3b4963b22e6dbdebf4234835a12acea5c2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6d01387ac79ccda9b47b128850123be98d1d2db3 -->
 
 # Usar o Eidos
 
@@ -601,6 +601,8 @@ nele com a sua lista atual, com um botão que ativa os mods de que ele precisa,
 porque nomeá-los e deixar o resto com você é a metade chata.
 
 Ao passar o mouse sobre um plugin, aparecem sua origem, o autor, a versão do cabeçalho e do formulário, os primeiros 300 caracteres da descrição, seus masters e, após uma ordenação com o LOOT, as mensagens do LOOT. No Skyrim, Skyrim SE, Skyrim VR e Enderal SE o jogo também lê um INI com o nome de um plugin carregado; a coluna INI marca esses plugins e um clique abre o arquivo somente para leitura.
+
+Uma linha `.exe` em Data tem Add tool, que abre o editor Executables com esse arquivo já preenchido (nada é salvo até você apertar Save), e Run, que o executa uma vez pela visão mesclada, como uma ferramenta registrada.
 
 "Information..." abre um diálogo por mod: geral, conflitos, árvore de arquivos,
 INI tweaks, notas. A partir da árvore de arquivos (e da árvore Data) qualquer

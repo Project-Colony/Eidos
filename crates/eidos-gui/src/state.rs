@@ -865,6 +865,24 @@ pub(crate) fn tool_command(
     cmd
 }
 
+/// Run one executable once, by path, as `eidos tool <id> run --exe <path>`.
+pub(crate) fn exe_tool_command(
+    inst_arg: &str,
+    exe: &Path,
+    store_started: bool,
+) -> std::process::Command {
+    let mut cmd = eidos_command();
+    cmd.arg("tool")
+        .arg(inst_arg)
+        .arg("run")
+        .arg("--exe")
+        .arg(exe);
+    if store_started {
+        cmd.env(eidos::STORE_STARTED_VAR, "1");
+    }
+    cmd
+}
+
 /// The mod QuickAutoClean's copies are captured into. The source plugins are
 /// never written.
 pub(crate) const CLEANED_MOD: &str = "Cleaned plugins";
@@ -5003,6 +5021,30 @@ mod tests {
 #[cfg(test)]
 mod cli_lookup_tests {
     use super::*;
+
+    #[test]
+    fn run_once_hands_the_exe_path_to_the_cli() {
+        let cmd = exe_tool_command(
+            "skyrimse",
+            Path::new("/m/FNIS/GenerateFNISforUsers.exe"),
+            false,
+        );
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            args[args.len() - 5..],
+            [
+                "tool",
+                "skyrimse",
+                "run",
+                "--exe",
+                "/m/FNIS/GenerateFNISforUsers.exe"
+            ]
+        );
+        assert!(cmd.get_envs().all(|(k, _)| k != eidos::STORE_STARTED_VAR));
+    }
 
     /// A Colony install is one file with no `eidos` beside it: every child the
     /// window starts must then carry the marker, or that file would open a

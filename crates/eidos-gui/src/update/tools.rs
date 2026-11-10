@@ -379,6 +379,23 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 state.load_buffers();
             }
         }
+        Message::DataAddTool(exe) => {
+            app.menu_mod = None;
+            let Some(game) = selected_game(app) else {
+                return Task::none();
+            };
+            let tool = eidos_instance::tool_for_exe(&exe, game.def.known_tools);
+            match open_executables_dialog(app) {
+                Some(mut state) => {
+                    state.merged.insert(state.user_len, tool);
+                    state.selected = Some(state.user_len);
+                    state.user_len += 1;
+                    state.load_buffers();
+                    app.executables = Some(state);
+                }
+                None => app.status = Some(t("status_open_instance_first").to_string()),
+            }
+        }
         Message::AddExecutableTool => {
             if let Some(state) = &mut app.executables {
                 state.commit_buffers();

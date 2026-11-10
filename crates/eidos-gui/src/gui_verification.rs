@@ -1251,3 +1251,23 @@ fn a_plugin_ini_marker_never_moves_the_plugin_rows() {
         "the header and Alpha's marker"
     );
 }
+
+#[test]
+fn exe_actions_keep_the_data_columns_aligned() {
+    let _look = crate::test_support::look_lock();
+    let (app, _root) =
+        crate::test_support::data_app(&[("notes.txt", "12345"), ("Tool.exe", "MZ345")], &[]);
+    let mut renderer = renderer();
+    let drawn = positions(crate::modinfo::data_panel(&app), &mut renderer).labels;
+    assert!(drawn.iter().any(|(s, _)| s == t("data_add_tool")));
+    let sizes: Vec<_> = drawn
+        .iter()
+        .filter(|(s, _)| *s == crate::modinfo::format_size(5))
+        .map(|(_, r)| r.center().x)
+        .collect();
+    assert_eq!(sizes.len(), 2);
+    assert_eq!(
+        sizes[0], sizes[1],
+        "the Size column does not move on an exe row"
+    );
+}

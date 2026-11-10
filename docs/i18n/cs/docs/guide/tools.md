@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=aee189cad83fedb3105dc28dc6b9a5972f05cabb -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=93d6bf3a31d486148b77351bb6ee42e4b62ac19e -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -66,6 +66,7 @@ eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse                       # vypsat, co je zaregistrováno
 eidos tool skyrimse run BodySlide         # spustit ho skrz sloučený pohled
 eidos tool skyrimse run BodySlide --print # ukázat příkaz bez spuštění
+eidos tool skyrimse run --exe "<path>/GenerateFNISforUsers.exe"   # spustí exe jednou, bez registrace
 eidos tool skyrimse run "SSEEdit QuickAutoClean" --output-mod "Cleaned plugins" -- -qac -autoexit -autoload Dawnguard.esm
 ```
 

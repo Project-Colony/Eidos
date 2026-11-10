@@ -114,6 +114,29 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.tool_choice = previous;
             return task;
         }
+        Message::DataRunExe(exe) => {
+            app.play_prompt = None;
+            if let Some(r) = &app.running {
+                app.status = Some(tf("status_still_running", &[("title", &r.title)]));
+            } else if let Some(why) = app
+                .created
+                .as_ref()
+                .and_then(|i| i.modlist_checked().1.reason().map(str::to_string))
+            {
+                reload_mods(app);
+                mod_views_changed(app);
+                app.status = Some(tf("status_launch_blocked_modlist", &[("reason", &why)]));
+            } else if let Some(arg) = instance_arg(app) {
+                let stem = exe
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let cmd = exe_tool_command(&arg, &exe, !app.launch_command.is_empty());
+                start_run(app, stem, cmd);
+            } else {
+                app.status = Some(t("status_create_or_open_instance").to_string());
+            }
+        }
         Message::Run => {
             if app.running.is_some() {
                 // Already waiting on a launched application (MO2 won't launch a

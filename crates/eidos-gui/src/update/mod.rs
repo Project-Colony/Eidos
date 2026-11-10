@@ -1440,6 +1440,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         m @ (Message::ToolPicked(..)
         | Message::Run
         | Message::RunTool(..)
+        | Message::DataRunExe(..)
         | Message::PlayAnyway
         | Message::ClosePlayPrompt
         | Message::PollRunning
@@ -1527,6 +1528,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::CloseExecutablesDialog
         | Message::SelectExecutableTool(..)
         | Message::AddExecutableTool
+        | Message::DataAddTool(..)
         | Message::DeleteExecutableTool
         | Message::MoveExecutableUp
         | Message::MoveExecutableDown

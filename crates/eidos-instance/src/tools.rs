@@ -419,6 +419,19 @@ fn seeded_tool(title: String, exe: PathBuf) -> Tool {
     }
 }
 
+/// A tool for one executable picked by path: titled by the `known` recipe row
+/// whose exe matches the file name (ASCII case-insensitive), else by the file stem.
+pub fn tool_for_exe(exe: &Path, known: &[(&str, &str)]) -> Tool {
+    let name = exe.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+    let title = known
+        .iter()
+        .find(|(e, _)| e.eq_ignore_ascii_case(name))
+        .map(|(_, t)| (*t).to_string())
+        .or_else(|| exe.file_stem().map(|s| s.to_string_lossy().into_owned()))
+        .unwrap_or_default();
+    seeded_tool(title, exe.to_path_buf())
+}
+
 fn push_tool(v: &mut Vec<Tool>, title: String, exe: &str) {
     v.push(seeded_tool(title, PathBuf::from(exe)));
 }
@@ -621,6 +634,23 @@ pub fn default_prereqs(title: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn an_exe_becomes_a_tool_named_by_its_recipe_or_its_stem() {
+        let known: &[(&str, &str)] = &[("GenerateFNISforUsers.exe", "FNIS")];
+        let t = tool_for_exe(
+            Path::new("/m/FNIS/tools/GenerateFNIS_for_Users/generatefnisforusers.EXE"),
+            known,
+        );
+        assert_eq!(
+            (t.title.as_str(), t.output_mod.as_deref()),
+            ("FNIS", Some("FNIS Output"))
+        );
+        assert_eq!(t.prereqs, ["dotnet48"]);
+        let t = tool_for_exe(Path::new("/m/X/Some Patcher.exe"), known);
+        assert_eq!((t.title.as_str(), t.output_mod), ("Some Patcher", None));
+        assert_eq!(t.exe, Path::new("/m/X/Some Patcher.exe"));
+    }
+
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 

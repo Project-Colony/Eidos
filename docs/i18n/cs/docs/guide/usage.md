@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=a4937f3b4963b22e6dbdebf4234835a12acea5c2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6d01387ac79ccda9b47b128850123be98d1d2db3 -->
 
 # Používání Eidosu
 
@@ -570,6 +570,8 @@ zapne módy, jež sav potřebuje, protože pojmenovat je a nechat to na vás je 
 nudná polovina.
 
 Když najedete na plugin, zobrazí se, odkud pochází, jeho autor, verze hlavičky a formuláře, prvních 300 znaků popisu, jeho master soubory a po řazení LOOT také zprávy z LOOT. Na Skyrimu, Skyrimu SE, Skyrimu VR a Enderalu SE hra čte také INI pojmenovaný podle načteného pluginu; sloupec INI tyto pluginy označuje a kliknutí otevře soubor jen pro čtení.
+
+Řádek `.exe` na kartě Data má tlačítko Add tool, které otevře editor Executables s vyplněným souborem (nic se neuloží, dokud nestisknete Save), a tlačítko Run, které soubor jednou spustí ve sloučeném pohledu jako registrovaný nástroj.
 
 „Information..." otevře dialog konkrétního módu: obecné, konflikty, strom
 souborů, úpravy INI, poznámky. Ze stromu souborů (a ze stromu Data) lze
