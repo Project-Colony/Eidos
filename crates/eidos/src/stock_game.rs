@@ -486,6 +486,12 @@ fn refuse_freeze(game: &DetectedGame, inst: &Instance) -> Result<(), String> {
     Ok(())
 }
 
+/// `why` a freeze stopped before it copied anything, in the words the window
+/// lifts from the run log into its status (`refusal_line`).
+fn refused(why: String) -> String {
+    format!("refusing to freeze: {why}")
+}
+
 /// The sentence for a plan that does not [`FreezePlan::fits`].
 fn no_space(plan: &FreezePlan) -> String {
     format!(
@@ -500,31 +506,31 @@ fn no_space(plan: &FreezePlan) -> String {
 /// from it. The copy goes to [`unfinished_path`] first and is renamed once it
 /// is complete and Steam's build id did not change meanwhile; a stop, a failure
 /// or a build change leaves only that unfinished folder and the manifest as it
-/// was. Each refusal is a sentence, with nothing written.
+/// was. Each refusal starts with "refusing to freeze", with nothing copied.
 pub fn freeze(
     game: &DetectedGame,
     inst: &Instance,
     stop: &dyn Fn() -> bool,
 ) -> Result<FreezePlan, String> {
-    refuse_freeze(game, inst)?;
+    refuse_freeze(game, inst).map_err(refused)?;
     let _lock = inst
         .try_lock("copying the game files")
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| refused(e.to_string()))?;
     let install = &game.install_path;
     let plan = freeze_plan(install, inst)
-        .map_err(|e| format!("Could not measure {}: {e}", install.display()))?;
+        .map_err(|e| refused(format!("Could not measure {}: {e}", install.display())))?;
     if !plan.fits() {
-        return Err(no_space(&plan));
+        return Err(refused(no_space(&plan)));
     }
     // A central instance gets its manifest on first launch. Without one the
     // finished copy would read as a list's own folder, which delete leaves.
     inst.ensure_manifest(game.def.id, InstanceKind::Global)
-        .map_err(|e| format!("Could not write the instance manifest: {e}"))?;
+        .map_err(|e| refused(format!("Could not write the instance manifest: {e}")))?;
     if inst.read_manifest().is_none() {
-        return Err(format!(
+        return Err(refused(format!(
             "{} cannot be read, so the copy could not be recorded; fix it, then freeze again",
             inst.manifest_path().display()
-        ));
+        )));
     }
     let tmp = unfinished_path(inst);
     let unfinished = |why: String| {
@@ -573,12 +579,13 @@ pub fn freeze(
 }
 
 /// Delete the copy a freeze made and any unfinished one, never anything else
-/// (a list's own game copy stays). Refused while the frozen copy runs. The
-/// paths removed.
+/// (a list's own game copy stays). Refused while the frozen copy runs, with
+/// "refusing to delete" in front for the window's `refusal_line`. The paths
+/// removed.
 pub fn delete_copy(inst: &Instance) -> Result<Vec<PathBuf>, String> {
     let _lock = inst
         .try_lock("deleting the game copy")
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("refusing to delete: {e}"))?;
     let (base, frozen) = inst
         .read_manifest()
         // Only freeze writes the key, always as FROZEN_COPY; a hand-edited
@@ -587,8 +594,8 @@ pub fn delete_copy(inst: &Instance) -> Result<Vec<PathBuf>, String> {
         .unwrap_or_default();
     if let Some(f) = frozen.as_ref().filter(|f| base.as_ref() == Some(*f)) {
         return Err(format!(
-            "The instance runs the frozen copy '{f}'; return to the store version first \
-             with `eidos stock-game {} store`.",
+            "refusing to delete: the instance runs the frozen copy '{f}'; return to the \
+             store version first with `eidos stock-game {} store`.",
             shell_word(&inst.root.to_string_lossy())
         ));
     }
@@ -721,13 +728,13 @@ fn freeze_command(game: &DetectedGame, inst: &Instance, yes: bool) {
     }
     // The same refusals as with --yes, so the plan is never one that cannot run.
     if let Err(reason) = refuse_freeze(game, inst) {
-        refuse(reason);
+        refuse(refused(reason));
     }
     let plan = freeze_plan(&game.install_path, inst).unwrap_or_else(|e| {
-        refuse(format!(
+        refuse(refused(format!(
             "Could not measure {}: {e}",
             game.install_path.display()
-        ))
+        )))
     });
     let size = eidos_transfer::human_bytes(plan.bytes);
     let room = match plan.free {
@@ -748,7 +755,7 @@ fn freeze_command(game: &DetectedGame, inst: &Instance, yes: bool) {
         ),
     }
     if !plan.fits() {
-        refuse(no_space(&plan));
+        refuse(refused(no_space(&plan)));
     }
     println!("Run again with --yes to copy.");
 }
@@ -1156,9 +1163,11 @@ mod tests {
         let t = temp("freeze-busy");
         let (game, inst, lib) = steam_freeze(&t);
         write_acf(&lib, "1", "1026");
-        assert!(freeze(&game, &inst, &|| false)
-            .unwrap_err()
-            .contains("StateFlags 1026"));
+        let err = freeze(&game, &inst, &|| false).unwrap_err();
+        assert!(
+            err.starts_with("refusing to freeze: ") && err.contains("StateFlags 1026"),
+            "{err}"
+        );
         assert!(!inst.root.join("Stock Game").exists() && !unfinished_path(&inst).exists());
         // 6 = installed and an update queued: Steam is not writing, the copy runs.
         write_acf(&lib, "1", "6");
@@ -1187,7 +1196,7 @@ mod tests {
         let (game, inst, _) = steam_freeze(&t);
         let err = freeze(&game, &inst, &|| true).unwrap_err();
         assert!(
-            err.contains("stopped") && err.contains("delete --yes"),
+            err.contains("stopped") && err.contains("delete --yes") && !err.contains("refusing"),
             "{err}"
         );
         assert!(unfinished_path(&inst).is_dir() && !inst.root.join("Stock Game").exists());
@@ -1240,7 +1249,11 @@ mod tests {
         let (game, inst, _) = steam_freeze(&t);
         freeze(&game, &inst, &|| false).unwrap();
         fs::create_dir_all(inst.root.join("Game Root")).unwrap(); // a list's folder
-        assert!(delete_copy(&inst).unwrap_err().contains("store version"));
+        let err = delete_copy(&inst).unwrap_err();
+        assert!(
+            err.starts_with("refusing to delete: ") && err.contains("store version"),
+            "{err}"
+        );
         set_base(&game, &inst, None).unwrap();
         fs::create_dir_all(unfinished_path(&inst)).unwrap();
         assert_eq!(

@@ -6468,6 +6468,12 @@ fn the_refusal_line_is_eidos_s_own_and_only_its_first_line() {
             .as_deref(),
         Some("eidos prereqs: refusing to install: /x is in use by eidos play")
     );
+    // `eidos stock-game` says its refusals at INFO.
+    assert_eq!(
+        refusal_line("INFO  eidos: refusing to freeze: Steam reports the game as busy\n")
+            .as_deref(),
+        Some("eidos: refusing to freeze: Steam reports the game as busy")
+    );
 }
 
 #[test]
