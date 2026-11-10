@@ -298,10 +298,12 @@ pub(crate) fn prepare_plugin_timestamps(
 
 /// Seed the profile's INIs from the prefix (the game folder in root mode), then,
 /// when the main INI is still missing and the game is not in root mode, from the
-/// game folder's `<name>_Default.ini`. The prefix and the game folder are only read.
+/// game files' `<name>_Default.ini` (a game copy's when the instance runs one).
+/// The prefix and the game folder are only read.
 pub(crate) fn seed_profile_inis(
     id: &str,
     game: &DetectedGame,
+    inst: &Instance,
     prof: &eidos_instance::Profile,
 ) -> std::io::Result<()> {
     let Some(spec) = game.plugin_spec() else {
@@ -323,7 +325,8 @@ pub(crate) fn seed_profile_inis(
     };
     prof.seed_inis(&source, ini_files)?;
     if !root_mode {
-        if let Some(from) = prof.seed_default_ini(&game.install_path, ini_files[0])? {
+        let files = crate::stock_game::game_files(game, inst);
+        if let Some(from) = prof.seed_default_ini(&files.root, ini_files[0])? {
             eprintln!(
                 "eidos play: profile '{}' and the prefix had no {}; copied {} from the game folder",
                 prof.name,
@@ -366,7 +369,7 @@ pub(crate) fn prepare_inis(
     } else {
         source.clone()
     };
-    seed_profile_inis(id, game, prof)?;
+    seed_profile_inis(id, game, inst, prof)?;
     if root_mode {
         std::fs::create_dir_all(&docs)?;
         // A prior launcher may have atomically replaced or removed a case variant.
@@ -762,7 +765,7 @@ mod rescue_tests {
         .unwrap();
         let fresh = inst.profile("Fresh");
         fs::create_dir_all(fresh.dir()).unwrap();
-        seed_profile_inis("skyrimse", &game, &fresh).unwrap();
+        seed_profile_inis("skyrimse", &game, &inst, &fresh).unwrap();
         assert_eq!(
             fs::read_to_string(fresh.ini_path("Skyrim.ini")).unwrap(),
             "[General]\nsLanguage=ENGLISH\n"
@@ -779,7 +782,7 @@ mod rescue_tests {
         fs::write(docs.join("Skyrim.ini"), "[General]\nsLanguage=FRENCH\n").unwrap();
         let adopted = inst.profile("Adopted");
         fs::create_dir_all(adopted.dir()).unwrap();
-        seed_profile_inis("skyrimse", &game, &adopted).unwrap();
+        seed_profile_inis("skyrimse", &game, &inst, &adopted).unwrap();
         assert_eq!(
             fs::read_to_string(adopted.ini_path("Skyrim.ini")).unwrap(),
             "[General]\nsLanguage=FRENCH\n"
@@ -787,6 +790,27 @@ mod rescue_tests {
         assert!(
             !game.install_path.join("Skyrim.ini").exists(),
             "the game folder is never written"
+        );
+        // With a game copy and no default in the store install, the copy's default
+        // seeds a fresh profile.
+        fs::remove_file(game.install_path.join("Skyrim_Default.ini")).unwrap();
+        fs::remove_file(docs.join("Skyrim.ini")).unwrap();
+        fs::create_dir_all(inst.root.join("Stock Game/Data")).unwrap();
+        fs::write(
+            inst.root.join("Stock Game/Skyrim_Default.ini"),
+            "[General]\nsLanguage=GERMAN\n",
+        )
+        .unwrap();
+        inst.ensure_manifest("skyrimse", eidos_instance::InstanceKind::Portable)
+            .unwrap();
+        inst.edit_manifest(|m| m.base_game = Some("Stock Game".into()))
+            .unwrap();
+        let copied = inst.profile("Copied");
+        fs::create_dir_all(copied.dir()).unwrap();
+        seed_profile_inis("skyrimse", &game, &inst, &copied).unwrap();
+        assert_eq!(
+            fs::read_to_string(copied.ini_path("Skyrim.ini")).unwrap(),
+            "[General]\nsLanguage=GERMAN\n"
         );
         fs::remove_dir_all(root).unwrap();
     }
