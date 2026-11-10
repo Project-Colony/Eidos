@@ -883,3 +883,71 @@ fn the_plugin_filter_keeps_full_list_indices_and_holds_the_drag() {
         "{messages:?}"
     );
 }
+
+/// The Nexus files tab of the 660 px mod info card: every file keeps its Open
+/// button, the successor its Update button, each whole on one line and inside
+/// the card. Fixed columns used to take 560 px before the buttons, which iced
+/// then squeezed or cut off.
+#[test]
+fn nexus_file_buttons_fit_inside_the_mod_info_card() {
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    let folder = app.created.as_ref().unwrap().mods_dir().join("Sky UI");
+    fs::create_dir_all(&folder).unwrap();
+    fs::write(
+        folder.join("meta.ini"),
+        "[General]\nmodid=3863\nversion=5.1\n[installedFiles]\n1\\modid=3863\n1\\fileid=101\nsize=1\n",
+    )
+    .unwrap();
+    app.mods = vec![ModEntry {
+        name: "Sky UI".into(),
+        enabled: true,
+        path: folder,
+        unmanaged: false,
+    }];
+    let file = |file_id, category_id, name: &str, version: &str| eidos_nexus::NexusFile {
+        file_id,
+        name: name.into(),
+        file_name: format!("{name}.7z"),
+        version: version.into(),
+        category_id,
+        size_in_bytes: 123_456_789,
+        uploaded_timestamp: 1_760_000_000 + file_id,
+    };
+    let name = "SkyUI main file with a long descriptive name";
+    app.nexus_files.insert(
+        ("oblivion".into(), 3863),
+        Ok(eidos_nexus::ModFiles {
+            files: vec![file(101, 4, name, "5.1"), file(102, 1, name, "5.2")],
+            updates: vec![(101, 102)],
+        }),
+    );
+    app.info_mod = Some(0);
+    app.info_tab = InfoTab::NexusFiles;
+    let mut renderer = renderer();
+    frame(
+        crate::view(&app),
+        &mut renderer,
+        Cache::new(),
+        &[],
+        Point::ORIGIN,
+        Some("nexus-files-tab"),
+    );
+    // The card alone, laid out from the left edge: 660 px wide, 16 px padding.
+    let labels = positions(crate::modinfo::mod_info_dialog(&app, 0), &mut renderer).labels;
+    let line = labels
+        .iter()
+        .find(|(s, _)| s == t("nexus_file_installed"))
+        .map(|(_, b)| b.height)
+        .unwrap();
+    let buttons: Vec<Rectangle> = labels
+        .iter()
+        .filter(|(s, _)| s == t("nexus_file_open") || s == t("nexus_file_update"))
+        .map(|(_, b)| *b)
+        .collect();
+    assert_eq!(buttons.len(), 3, "two Open and one Update: {labels:?}");
+    for b in buttons {
+        assert!(b.x + b.width <= 660.0 - 16.0, "past the card: {b:?}");
+        assert!(b.height < line * 1.5, "wrapped: {b:?}");
+    }
+}
