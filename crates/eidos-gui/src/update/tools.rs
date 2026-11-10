@@ -191,6 +191,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 "enb_linux_version" => {
                     eidos::check::graphics::fix_enb_linux_version(game, inst, &mods)
                 }
+                "stestfile_present" => {
+                    let Some(name) = eidos::check::load_order::test_file_ini(game.def) else {
+                        return Task::none();
+                    };
+                    let ini = inst.active().ini_path(name);
+                    eidos::check::load_order::fix_test_files(&ini).map(|()| ini)
+                }
                 _ => return Task::none(),
             };
             app.status = Some(match done {

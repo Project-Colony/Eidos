@@ -6,6 +6,7 @@ pub mod crash;
 pub mod extender;
 pub mod graphics;
 pub mod launch_option;
+pub mod load_order;
 
 use std::path::{Path, PathBuf};
 use std::process::exit;
@@ -76,6 +77,7 @@ pub const CODES: &[&str] = &[
     "registry_stale",
     "registry_missing",
     "gamedrive_foreign",
+    "stestfile_present",
 ];
 
 /// The instance's enabled mods, highest priority first. Unmanaged rows (DLC,
@@ -97,15 +99,18 @@ pub fn host_findings(
     mods: &[(String, PathBuf)],
 ) -> Vec<Finding> {
     let overwrite = inst.overwrite_dir();
-    let mut out = eidos_gamefeatures::preflight::extender_facts(
-        game.def,
-        &game.data_path,
-        &game.install_path,
-        mods,
-        &overwrite,
-    )
-    .map(|f| extender::extender_findings(&f))
-    .unwrap_or_default();
+    let mut out = load_order::test_file_findings(game.def, &inst.active());
+    out.extend(
+        eidos_gamefeatures::preflight::extender_facts(
+            game.def,
+            &game.data_path,
+            &game.install_path,
+            mods,
+            &overwrite,
+        )
+        .map(|f| extender::extender_findings(&f))
+        .unwrap_or_default(),
+    );
     out.extend(extender::game_update_findings(
         game.def.name,
         inst.launch_record().last_good.as_ref(),

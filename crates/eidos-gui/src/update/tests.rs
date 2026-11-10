@@ -5991,6 +5991,30 @@ fn health_fix_is_refused_while_a_game_runs() {
     let _ = fs::remove_dir_all(root);
 }
 
+#[test]
+fn the_test_file_fix_edits_the_profile_copy() {
+    let (mut app, root) = list_app(&["Keep"]);
+    app.games[0].def = eidos_games::GameDef::for_id("fallout4").unwrap();
+    let ini = app
+        .created
+        .as_ref()
+        .unwrap()
+        .active()
+        .ini_path("Fallout4Custom.ini");
+    fs::create_dir_all(ini.parent().unwrap()).unwrap();
+    fs::write(&ini, "[General]\nsTestFile1=T.esp\nsLanguage=en\n").unwrap();
+    let _ = update_inner(&mut app, Message::HealthFix("stestfile_present"));
+    assert_eq!(
+        fs::read_to_string(&ini).unwrap(),
+        "[General]\nsLanguage=en\n"
+    );
+    assert_eq!(
+        app.status.as_deref(),
+        Some(tf("status_fix_applied", &[("path", &ini.display())]).as_str())
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
 /// Wait for the tracked run's child to exit, then let the poll finish it.
 fn finish_tracked_run(app: &mut App) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);

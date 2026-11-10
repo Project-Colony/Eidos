@@ -1067,6 +1067,8 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("diag_fullscreen_blocks_framegen_detail", "{ini} sets bFull Screen=1, and SSE Display Tweaks does not force borderless. Community Shaders frame generation does not run in exclusive fullscreen. Fix sets bFull Screen=0 and bBorderless=1 in this profile's copy."),
     ("diag_enb_linux_version", "enblocal.ini lacks LinuxVersion=true"),
     ("diag_enb_linux_version_detail", "The enblocal.ini from {mod} has no LinuxVersion=true in [GLOBAL]. Jackify sets this line for every ENB it installs under Proton. Fix writes a copy with the line into Overwrite/Root, so {mod} stays unchanged."),
+    ("diag_stestfile_present", "sTestFile lines make the game ignore plugins.txt"),
+    ("diag_stestfile_present_detail", "This profile's {ini} has {lines} in [General]. While any sTestFile line is set, the game loads those plugins and ignores plugins.txt, so the load order Eidos writes has no effect. Fix removes the sTestFile lines from this profile's copy and keeps the previous file as {ini}.pre-fix."),
     ("diag_action_fix", "Fix"),
     ("status_fix_applied", "Fixed: {path}"),
     ("status_fix_failed", "Could not apply the fix: {error}"),

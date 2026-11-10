@@ -156,7 +156,7 @@ pub(crate) fn finding_card(f: &eidos::check::Finding) -> Diagnostic {
 /// copies its log.
 pub(crate) fn finding_actions(f: &eidos::check::Finding) -> Vec<(String, Message)> {
     match f.code {
-        "fullscreen_blocks_framegen" | "enb_linux_version" => {
+        "fullscreen_blocks_framegen" | "enb_linux_version" | "stestfile_present" => {
             vec![(t("diag_action_fix").to_string(), Message::HealthFix(f.code))]
         }
         "game_crashed" | "game_crashed_unattributed" => {
@@ -443,15 +443,14 @@ mod tests {
     #[test]
     fn fixable_cards_carry_a_fix_button() {
         use eidos::check::{Finding, Level};
-        let a = finding_actions(&Finding {
-            code: "enb_linux_version",
-            level: Level::Advice,
-            args: vec![],
-        });
-        assert!(matches!(
-            a.as_slice(),
-            [(_, Message::HealthFix("enb_linux_version"))]
-        ));
+        for code in ["enb_linux_version", "stestfile_present"] {
+            let a = finding_actions(&Finding {
+                code,
+                level: Level::Advice,
+                args: vec![],
+            });
+            assert!(matches!(a.as_slice(), [(_, Message::HealthFix(c))] if *c == code));
+        }
         let none = finding_actions(&Finding {
             code: "nvapi_missing",
             level: Level::Advice,

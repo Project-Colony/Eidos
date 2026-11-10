@@ -1067,6 +1067,8 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("diag_fullscreen_blocks_framegen_detail", "{ini} définit bFull Screen=1, et SSE Display Tweaks ne force pas le mode sans bordure. La génération d'images de Community Shaders ne fonctionne pas en plein écran exclusif. Corriger règle bFull Screen=0 et bBorderless=1 dans la copie de ce profil."),
     ("diag_enb_linux_version", "enblocal.ini n'a pas LinuxVersion=true"),
     ("diag_enb_linux_version_detail", "Le enblocal.ini de {mod} n'a pas LinuxVersion=true dans [GLOBAL]. Jackify écrit cette ligne pour chaque ENB qu'il installe sous Proton. Corriger écrit une copie avec la ligne dans Overwrite/Root ; {mod} reste inchangé."),
+    ("diag_stestfile_present", "Des lignes sTestFile font ignorer plugins.txt au jeu"),
+    ("diag_stestfile_present_detail", "Le fichier {ini} de ce profil contient {lines} dans [General]. Tant qu'une ligne sTestFile est définie, le jeu charge ces plugins et ignore plugins.txt : l'ordre de chargement écrit par Eidos reste sans effet. Corriger retire les lignes sTestFile de la copie de ce profil et garde l'ancien fichier sous {ini}.pre-fix."),
     ("diag_action_fix", "Corriger"),
     ("status_fix_applied", "Corrigé : {path}"),
     ("status_fix_failed", "Impossible d'appliquer la correction : {error}"),
