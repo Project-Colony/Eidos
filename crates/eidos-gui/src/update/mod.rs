@@ -22,11 +22,12 @@ mod plugins;
 mod preferences;
 mod profiles;
 mod saves;
+mod test_run;
 mod tools;
 mod window;
 mod wizard;
 
-pub(crate) use launch::{start_directly, wait_direct_run};
+pub(crate) use launch::{picks_the_game, start_directly, wait_direct_run};
 
 /// Open `archive` on a worker thread, reporting 7-Zip's percentage as it goes.
 ///
@@ -1462,6 +1463,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::ChangeGame
         | Message::OpenNexusGame
         | Message::SetupPrereqs) => launch::handle(app, m),
+        m @ (Message::OpenTestRun
+        | Message::TestChoose(..)
+        | Message::TestStart
+        | Message::TestCancelRequest
+        | Message::CloseTestDialog) => test_run::handle(app, m),
         m @ (Message::OverwriteToModStart
         | Message::ToolOutputModChanged(..)
         | Message::OverwriteToModName(..)

@@ -239,6 +239,8 @@ pub(crate) struct App {
     /// Run is waiting on "Run first / Play anyway": a flagged generator's output
     /// is out of date.
     pub(crate) play_prompt: Option<PlayPrompt>,
+    /// The open Test run dialog and the choice it shows.
+    pub(crate) test_dialog: Option<TestChoice>,
     /// Drift states the user chose to play with, for this window only:
     /// `(receipt id, hash of the inputs)`. Never saved.
     pub(crate) play_anyway: Vec<(String, u64)>,

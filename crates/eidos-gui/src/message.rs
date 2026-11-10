@@ -156,6 +156,13 @@ pub(crate) enum Message {
     /// Play although a flagged generator's output is out of date; close the prompt.
     PlayAnyway,
     ClosePlayPrompt,
+    /// The Test run dialog: open it, pick which mods, ask for the run (then Run),
+    /// drop the waiting request, close it.
+    OpenTestRun,
+    TestChoose(TestChoice),
+    TestStart,
+    TestCancelRequest,
+    CloseTestDialog,
     ExecTogglePinned,
     ExecMakeShortcut,
     /// Executables dialog: list the entries of a foreign `ModOrganizer.ini`,

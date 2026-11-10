@@ -8453,3 +8453,88 @@ fn move_mod_below_acts_by_name_and_ignores_a_stale_card() {
     assert_eq!(names(&app.mods), ["Other", "Master", "Patch"]);
     let _ = fs::remove_dir_all(root);
 }
+
+#[test]
+fn test_start_writes_the_request_then_runs_like_run() {
+    let (mut app, root) = list_app(&["Keep"]);
+    let _ = update_inner(&mut app, Message::OpenTestRun);
+    let _ = update_inner(&mut app, Message::TestChoose(TestChoice::Vanilla));
+    let _ = update_inner(&mut app, Message::TestStart);
+    let run = app.created.as_ref().unwrap().test_run().unwrap();
+    assert_eq!(
+        (run.game.as_str(), run.mods.clone(), run.started),
+        ("skyrimse", Some(vec![]), None)
+    );
+    assert!(
+        app.running.is_none(),
+        "no launch command and no prefix: Run only sets its hint"
+    );
+    assert!(app
+        .status
+        .as_deref()
+        .unwrap()
+        .starts_with(t("status_test_prefix")));
+    assert!(app.test_dialog.is_none());
+    let _ = update_inner(&mut app, Message::OpenTestRun);
+    let _ = update_inner(&mut app, Message::TestCancelRequest);
+    assert!(app.created.as_ref().unwrap().test_run().is_none());
+    assert_eq!(app.status.as_deref(), Some(t("status_test_cancelled")));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn only_selected_needs_a_selection_and_adds_masters() {
+    let (mut app, root) = list_app(&["Base", "Patch"]);
+    let mut patch = plugin_row("Patch.esp", "Patch");
+    patch.masters = vec!["Base.esm".into()];
+    app.plugins = Some(PluginList {
+        plugins: vec![plugin_row("Base.esm", "Base"), patch],
+        ..Default::default()
+    });
+    assert_eq!(test_mods(&app, TestChoice::Selected), Some(vec![]));
+    app.selected_mods = [1].into_iter().collect();
+    assert_eq!(
+        test_mods(&app, TestChoice::Selected),
+        Some(vec!["Base".into(), "Patch".into()])
+    );
+    assert_eq!(test_mods(&app, TestChoice::Profile), None);
+    assert_eq!(test_mods(&app, TestChoice::Vanilla), Some(vec![]));
+    let _ = fs::remove_dir_all(root);
+}
+
+/// A TES4 record holding `subrecords`, each `(type, data)`.
+fn tes4_with(subrecords: &[(&[u8; 4], &[u8])]) -> Vec<u8> {
+    let mut body = Vec::new();
+    for (kind, data) in subrecords {
+        body.extend_from_slice(*kind);
+        body.extend_from_slice(&(data.len() as u16).to_le_bytes());
+        body.extend_from_slice(data);
+    }
+    let mut b = tes4_header(0);
+    b[4..8].copy_from_slice(&(body.len() as u32).to_le_bytes());
+    b.extend(body);
+    b
+}
+
+#[test]
+fn masters_are_found_when_the_plugins_tab_was_never_opened() {
+    let (mut app, root) = list_app(&["Base", "Patch"]);
+    fs::write(root.join("mods/Base/Base.esm"), tes4_header(0x1)).unwrap();
+    fs::write(
+        root.join("mods/Patch/Patch.esp"),
+        tes4_with(&[
+            (b"HEDR", &[0u8; 12]),
+            (b"MAST", b"Base.esm\0"),
+            (b"DATA", &[0u8; 8]),
+        ]),
+    )
+    .unwrap();
+    app.tab = Tab::Diagnostics;
+    assert!(app.plugins.is_none());
+    app.selected_mods = [1].into_iter().collect();
+    assert_eq!(
+        test_mods(&app, TestChoice::Selected),
+        Some(vec!["Base".into(), "Patch".into()])
+    );
+    let _ = fs::remove_dir_all(root);
+}

@@ -56,6 +56,7 @@ mod preferences;
 mod startup;
 mod state;
 mod subscription;
+mod test_run;
 #[cfg(test)]
 mod test_support;
 mod theme;
@@ -76,6 +77,7 @@ use modinfo::*;
 use preferences::*;
 use state::*;
 use subscription::subscription;
+use test_run::*;
 use theme::text;
 use update::*;
 use view::*;

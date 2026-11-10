@@ -1567,3 +1567,93 @@ fn the_prefix_rows_keep_their_place_without_a_prefix() {
     let _ = fs::remove_dir_all(root_with);
     let _ = fs::remove_dir_all(root_without);
 }
+
+/// The Test run button sits between the spacer and Run with a label that never
+/// changes, so neither a tool pick (which disables it) nor a waiting request
+/// moves Run.
+#[test]
+fn the_run_button_does_not_move_with_the_test_run_slot() {
+    let _look = crate::test_support::look_lock();
+    let (mut app, root) = crate::test_support::list_app(&["Keep"]);
+    let mut renderer = renderer();
+    let at = |app: &App, r: &mut iced::Renderer| label(crate::view(app), r, t("main_run"), 0);
+    let plain = at(&app, &mut renderer);
+    app.tool_choice = Some("Some tool".into());
+    assert_eq!(
+        at(&app, &mut renderer),
+        plain,
+        "a tool pick disabled the slot and moved Run"
+    );
+    app.tool_choice = None;
+    app.created
+        .as_ref()
+        .unwrap()
+        .request_test_run(&eidos_instance::TestRun {
+            profile: "Default".into(),
+            game: "skyrimse".into(),
+            requested: 1,
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(
+        at(&app, &mut renderer),
+        plain,
+        "a waiting request moved Run"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// The choices, a selection and the Steam Cloud note never change the dialog's
+/// height: the note has a fixed slot that stays empty without it.
+#[test]
+fn the_test_dialog_keeps_one_height_across_choices_and_the_cloud_note() {
+    let _look = crate::test_support::look_lock();
+    let (mut app, root) = crate::test_support::list_app(&["Keep"]);
+    let mut renderer = renderer();
+    let mut below = |app: &App, choice: TestChoice| {
+        let col = Column::new()
+            .push(test_dialog(app, choice))
+            .push(text("below the dialog"));
+        label(col.into(), &mut renderer, "below the dialog", 0).y
+    };
+    let base = below(&app, TestChoice::Profile);
+    for choice in [TestChoice::Vanilla, TestChoice::Selected] {
+        assert_eq!(below(&app, choice), base, "{choice:?} changed the height");
+    }
+    // Enables "only selected", whose label carries {n}.
+    app.selected_mods = [0].into_iter().collect();
+    assert_eq!(
+        below(&app, TestChoice::Selected),
+        base,
+        "a selection changed the height"
+    );
+    // A Steam copy with a saves path: the cloud note shows.
+    app.games[0].compatdata = Some(root.join("compat"));
+    assert_eq!(
+        below(&app, TestChoice::Profile),
+        base,
+        "the cloud note changed the height"
+    );
+    // Panics when the note is missing from the slot.
+    let _ = label(
+        test_dialog(&app, TestChoice::Profile),
+        &mut renderer,
+        t("test_cloud_note"),
+        0,
+    );
+    // The French note, the longer one, fits the slot at the dialog's inner
+    // width (its 560 px cap less 2 x 20 px padding).
+    let fr = crate::i18n::t_in(colony_ui::i18n::Locale::Fr, "test_cloud_note");
+    let note = positions(
+        container(text(fr).size(sz(11))).width(520.0).into(),
+        &mut renderer,
+    )
+    .labels[0]
+        .1
+        .height;
+    assert!(
+        note <= crate::theme::scaled(30.0),
+        "the French note is {note} px tall"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}

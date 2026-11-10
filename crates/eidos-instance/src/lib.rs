@@ -24,6 +24,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+mod bisect;
 mod categories;
 mod export;
 mod launch_record;
@@ -38,6 +39,7 @@ mod sessions;
 pub mod settings;
 mod test_run;
 mod tools;
+pub use bisect::*;
 pub use categories::{
     format_categories, parse_all, parse_primary, Category, CategoryFactory, NexusCategory,
 };
