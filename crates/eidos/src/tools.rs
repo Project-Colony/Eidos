@@ -45,6 +45,27 @@ pub(crate) fn game_executables(game: &DetectedGame) -> eidos_instance::GameExecu
     }
 }
 
+/// True when `exe` is the script-extender loader, the vanilla launcher or the
+/// game binary, by file name and ignoring ASCII case.
+pub(crate) fn launches_the_game(execs: eidos_instance::GameExecutables<'_>, exe: &Path) -> bool {
+    let Some(name) = exe.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    [execs.script_extender, execs.launcher, execs.binary]
+        .into_iter()
+        .flatten()
+        .any(|g| g.eq_ignore_ascii_case(name))
+}
+
+/// A game entry run from a plain shell is refused: the game starts through the
+/// store that owns the copy. Inside a store-started process it runs as before.
+fn game_entry_refusal(runs_game: bool, store_started: bool) -> Option<&'static str> {
+    (runs_game && !store_started).then_some(
+        "eidos tool: this entry starts the game, which always starts through its store - \
+         use `eidos play` or launch the game from Steam/Heroic.",
+    )
+}
+
 /// `eidos tool <game-id> [list | add <title> <exe> [args...] | rm <title> |
 /// run <title> [--print] [-- extra...]]` - manage and run tools (xEdit, FNIS,
 /// BodySlide) through the merged view, inside the game's Proton prefix.
@@ -299,6 +320,15 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 }
                 exe.clone()
             });
+            let runs_game = launches_the_game(game_executables(&game), &tool.exe);
+            // shortcut: only Steam's variables mark a store-started process, add Heroic's when known.
+            let store_started = ["SteamGameId", "SteamAppId"]
+                .iter()
+                .any(|k| std::env::var_os(k).is_some());
+            if let Some(msg) = game_entry_refusal(runs_game, store_started) {
+                eidos_log::info!("{msg}");
+                exit(1);
+            }
             // `runner=native` runs the executable itself: no Proton, no Steam
             // prefix, and none of the Proton-only steps below.
             let native = tool.runner == eidos_instance::Runner::Native;
@@ -532,8 +562,9 @@ pub(crate) fn cmd_tool(args: &[String]) {
             let opts = crate::launch::ToolOpts {
                 prereqs: &prereqs,
                 output_mod: output_mod.as_deref(),
-                tool_name: Some(title),
-                executable: Some(&source_exe),
+                // A game start is session output, not generated output: no receipt.
+                tool_name: (!runs_game).then_some(title),
+                executable: (!runs_game).then_some(&source_exe),
                 env: &tool.env,
             };
             if print_only {
@@ -790,6 +821,30 @@ fn apply_tool_env_facts(
 #[cfg(test)]
 mod root_tool_tests {
     use super::*;
+
+    #[test]
+    fn the_game_and_its_loader_are_not_generators() {
+        let execs = eidos_instance::GameExecutables {
+            game_name: "Skyrim Special Edition",
+            launcher: Some("SkyrimSELauncher.exe"),
+            binary: Some("SkyrimSE.exe"),
+            script_extender: Some("skse64_loader.exe"),
+            known_tools: &[],
+        };
+        assert!(launches_the_game(execs, Path::new("skse64_loader.exe")));
+        assert!(launches_the_game(execs, Path::new("/g/SKSE64_LOADER.EXE")));
+        assert!(launches_the_game(execs, Path::new("SkyrimSE.exe")));
+        assert!(launches_the_game(execs, Path::new("SkyrimSELauncher.exe")));
+        assert!(!launches_the_game(execs, Path::new("/t/SSEEdit.exe")));
+        assert!(!launches_the_game(execs, Path::new("/t/SkyrimSE.exe.bak")));
+    }
+
+    #[test]
+    fn a_game_entry_from_a_plain_shell_is_refused() {
+        assert!(game_entry_refusal(true, false).is_some());
+        assert!(game_entry_refusal(true, true).is_none());
+        assert!(game_entry_refusal(false, false).is_none());
+    }
 
     #[test]
     fn data_tools_resolve_the_winning_source_before_fingerprinting() {

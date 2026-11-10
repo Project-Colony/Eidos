@@ -116,6 +116,7 @@ not a detector for semantic conflicts between plugin records or scripts.
 Launching a configured tool, from the CLI or window, records the tool name,
 command, executable size/mtime fingerprint when available, active profile,
 enabled mod order and versions, exact Nexus source IDs, and plugin order/state.
+A tool entry that starts the game itself (its script-extender loader, launcher or binary) records no receipt: what the game writes is session output, not generated output.
 A pending receipt is saved before launch. An interrupted run remains explicitly
 unverified after restart; later files are never attributed to it automatically.
 
