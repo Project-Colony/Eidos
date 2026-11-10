@@ -413,9 +413,20 @@ fn copy_file(src: &Path, dst: &Path, meta: &fs::Metadata, reflink: bool) -> io::
     file.set_permissions(meta.permissions())
 }
 
-/// The refusals a freeze checks before it locks anything: a copy in the way,
-/// a game that keeps its plugin list in the game folder, Steam writing the game.
+/// The refusals a freeze checks before it locks anything: an instance inside
+/// the game folder, a copy in the way, a game that keeps its plugin list in the
+/// game folder, Steam writing the game.
 fn refuse_freeze(game: &DetectedGame, inst: &Instance) -> Result<(), String> {
+    // The copy would go under the store install and walk into itself as it grows.
+    if Instance::root_inside_game(&inst.root, &game.install_path) {
+        return Err(format!(
+            "{} is inside the game's own folder ({}), so the copy would be written into \
+             the store install. Move the instance folder out (a sibling of the game folder \
+             works), then freeze again.",
+            inst.root.display(),
+            game.install_path.display()
+        ));
+    }
     let f = facts(game, inst);
     let i = shell_word(&inst.root.to_string_lossy());
     if let Some(folder) = &f.list_folder {
@@ -1195,6 +1206,28 @@ mod tests {
             .unwrap_err()
             .contains("'Game Root'"));
         assert!(!inst.root.join("Stock Game").exists() && !unfinished_path(&inst).exists());
+        let _ = fs::remove_dir_all(t);
+    }
+
+    #[test]
+    fn freeze_refuses_an_instance_inside_the_game_folder() {
+        let t = temp("freeze-inside");
+        let install = t.join("game");
+        game_tree(&install);
+        let game = game("skyrimse", install.clone());
+        let inst = Instance::portable(install.join("Eidos"));
+        fs::create_dir_all(&inst.root).unwrap();
+        inst.ensure_manifest("skyrimse", InstanceKind::Portable)
+            .unwrap();
+        // Checked first: without the refusal, freeze would copy the install into itself.
+        assert!(refuse_freeze(&game, &inst)
+            .unwrap_err()
+            .contains("inside the game's own folder"));
+        assert!(freeze(&game, &inst, &|| false)
+            .unwrap_err()
+            .contains("inside the game's own folder"));
+        assert!(!unfinished_path(&inst).exists() && !inst.root.join("Stock Game").exists());
+        assert_eq!(inst.read_manifest().unwrap().base_game, None);
         let _ = fs::remove_dir_all(t);
     }
 
