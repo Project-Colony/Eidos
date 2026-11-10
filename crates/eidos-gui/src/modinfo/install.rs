@@ -11,7 +11,7 @@ pub(crate) fn current_fomod_context(app: &App) -> eidos_fomod::Context {
     let fallback = game.plugin_state_dir();
     eidos_install::fomod_context_for_instance(
         inst,
-        &game.data_path,
+        &inst.game_files(&game.install_path, &game.data_path).data,
         game.def.id,
         fallback.as_deref(),
     )

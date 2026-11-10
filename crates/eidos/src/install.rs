@@ -149,11 +149,12 @@ fn installer_context(
     if let (Some(prefix), Some(spec)) = (game.prefix(), game.plugin_spec()) {
         controls.push(eidos_plugins::documents_my_games_dir(&prefix, &spec));
     }
+    let files = crate::stock_game::game_files(game, inst);
     let context = eidos_install::custom::context_for_instance(
         inst,
         game.def.id,
-        &game.install_path,
-        &game.data_path,
+        &files.root,
+        &files.data,
         game.prefix().as_deref(),
         &controls,
         &std::sync::atomic::AtomicBool::new(false),
@@ -401,13 +402,14 @@ pub(crate) fn cmd_install(args: &[String]) {
             }
             Opened::Omod(session) if session.script.is_some() => {
                 drop(lock);
+                let files = crate::stock_game::game_files(&game, &inst);
                 let game = scripted::ScriptedGame {
                     game_id: target.game_id.clone(),
-                    install_path: game.install_path.clone(),
-                    data_path: game.data_path.clone(),
+                    install_path: files.root.clone(),
+                    data_path: files.data,
                     prefix: game.prefix(),
                     observed_versions: eidos_gamefeatures::preflight::inspect_pe(
-                        &game.install_path.join("Oblivion.exe"),
+                        &files.root.join("Oblivion.exe"),
                     )
                     .ok()
                     .and_then(|pe| pe.file_version)
@@ -507,7 +509,7 @@ pub(crate) fn cmd_install(args: &[String]) {
                     Opened::Fomod(session) => {
                         let fomod = eidos_install::fomod_context_for_instance(
                             &inst,
-                            &game.data_path,
+                            &crate::stock_game::game_files(&game, &inst).data,
                             &target.game_id,
                             fallback.as_deref(),
                         );

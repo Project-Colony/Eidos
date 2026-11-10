@@ -96,11 +96,12 @@ fn spawn_open(
             }
             let context = if receipt.is_some() || eidos_install::custom::may_handle(&addons, &g, &a)
             {
+                let files = inst.game_files(&game.install_path, &game.data_path);
                 eidos_install::custom::context_for_instance(
                     &inst,
                     &g,
-                    &game.install_path,
-                    &game.data_path,
+                    &files.root,
+                    &files.data,
                     game.prefix().as_deref(),
                     &crate::installers::control_dirs(&game),
                     &cancel,
@@ -378,7 +379,7 @@ fn collection_runtime_on_worker(
     let read = eidos_collections::read(&manifest)?;
     Ok(eidos_collections::recipe::runtime_check(
         &read.collection,
-        game,
+        &collection_game(inst, game),
     ))
 }
 
@@ -400,6 +401,12 @@ pub(crate) fn collection_target_for(
         profile: instance.active_profile(),
         installation: game.selection_id(),
     })
+}
+
+/// The game as the collection driver reads it: from the instance's game copy
+/// when it has one. The driver never mounts or launches the game.
+fn collection_game(inst: &Instance, game: &DetectedGame) -> DetectedGame {
+    eidos::stock_game::files_view(game, &inst.game_files(&game.install_path, &game.data_path))
 }
 
 /// Install a Nexus collection on a worker thread.
@@ -498,6 +505,7 @@ fn collection_on_worker(
 
     state.validate_revision(&rev.slug, rev.revision_number, &rev.game_domain)?;
 
+    let game = &collection_game(inst, game);
     let total = c.mods.len().max(1);
     let mut say = |_line: String| {};
     let mut hooks = eidos_collections::driver::RealHooks {

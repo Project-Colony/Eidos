@@ -85,11 +85,12 @@ pub(crate) fn control_dirs(game: &eidos_games::DetectedGame) -> Vec<PathBuf> {
         )
         .collect()
 }
-fn game_context(game: &eidos_games::DetectedGame) -> scripted::ScriptedGame {
+fn game_context(game: &eidos_games::DetectedGame, inst: &Instance) -> scripted::ScriptedGame {
+    let files = inst.game_files(&game.install_path, &game.data_path);
     let mut observed_versions = std::collections::BTreeMap::new();
     if game.def.id == "oblivion" {
         if let Ok(info) =
-            eidos_gamefeatures::preflight::inspect_pe(&game.install_path.join("Oblivion.exe"))
+            eidos_gamefeatures::preflight::inspect_pe(&files.root.join("Oblivion.exe"))
         {
             if let Some(version) = info.file_version {
                 observed_versions.insert("Oblivion".into(), version.to_string());
@@ -98,8 +99,8 @@ fn game_context(game: &eidos_games::DetectedGame) -> scripted::ScriptedGame {
     }
     scripted::ScriptedGame {
         game_id: game.def.id.into(),
-        install_path: game.install_path.clone(),
-        data_path: game.data_path.clone(),
+        install_path: files.root,
+        data_path: files.data,
         prefix: game.prefix(),
         observed_versions,
     }
@@ -179,7 +180,7 @@ fn evaluate(
             if ctx.is_none() {
                 *ctx = Some(Box::new(scripted::ScriptedContext::capture(
                     inst,
-                    &game_context(game),
+                    &game_context(game, inst),
                     cancel,
                 )?));
             }
@@ -245,11 +246,12 @@ fn work(app: &mut App, install: bool) -> Task<Message> {
                     return Err(invalid(t("installer_target_changed")));
                 }
                 let context = if matches!(session, Session::Custom { .. }) {
+                    let files = inst.game_files(&game.install_path, &game.data_path);
                     custom::context_for_instance(
                         &inst,
                         game.def.id,
-                        &game.install_path,
-                        &game.data_path,
+                        &files.root,
+                        &files.data,
                         game.prefix().as_deref(),
                         &control_dirs(&game),
                         &cancel,
@@ -1353,7 +1355,7 @@ with zipfile.ZipFile(sys.argv[1],'w') as z:
         .unwrap();
         let ctx = scripted::ScriptedContext::capture(
             &inst,
-            &game_context(&app.games[0]),
+            &game_context(&app.games[0], &inst),
             &AtomicBool::new(false),
         )
         .unwrap();

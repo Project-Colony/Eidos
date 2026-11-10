@@ -189,6 +189,8 @@ pub(crate) fn cmd_collection(args: &[String]) {
         }
     };
 
+    // The driver reads the game's files and never mounts or launches it.
+    let game = crate::stock_game::files_view(&game, &crate::stock_game::game_files(&game, &inst));
     let mut say = |line: String| println!("  {line}");
     let mut hooks = driver::RealHooks {
         nexus: &nexus,

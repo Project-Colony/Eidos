@@ -304,10 +304,11 @@ pub(crate) fn archive_ini_texts(
     let mut paths = Vec::new();
     if let Some(base) = eidos_gamefeatures::ini_file_for(game.def.id) {
         let stem = base.trim_end_matches(".ini");
+        let root = inst.game_files(&game.install_path, &game.data_path).root;
         for p in [
-            game.install_path.join(format!("{stem}_Default.ini")),
-            game.install_path.join(format!("{stem}_default.ini")),
-            game.install_path.join(base),
+            root.join(format!("{stem}_Default.ini")),
+            root.join(format!("{stem}_default.ini")),
+            root.join(base),
         ] {
             if p.is_file() && !paths.contains(&p) {
                 paths.push(p)

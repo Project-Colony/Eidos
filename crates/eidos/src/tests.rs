@@ -102,6 +102,51 @@ fn a_wrapper_dll_in_the_copy_root_is_forced_native_and_the_store_root_is_not_sca
     assert!(copy.1.contains("d3d11=n,b"), "{}", copy.1);
 }
 
+#[test]
+fn a_loader_only_in_the_copy_is_a_default_tool_that_runs_at_the_install_path() {
+    let t = Tmp::new("copy-loader");
+    let inst = eidos_instance::Instance::portable(t.0.join("instance"));
+    inst.create().unwrap();
+    inst.ensure_manifest("skyrimse", eidos_instance::InstanceKind::Portable)
+        .unwrap();
+    t.touch("instance/Stock Game/skse64_loader.exe");
+    t.touch("instance/Stock Game/SkyrimSE.exe");
+    inst.edit_manifest(|m| m.base_game = Some("Stock Game".into()))
+        .unwrap();
+    fs::create_dir_all(t.0.join("game")).unwrap();
+    let game = eidos_games::DetectedGame {
+        def: eidos_games::GameDef::for_id("skyrimse").unwrap(),
+        source: Default::default(),
+        install_path: t.0.join("game"),
+        data_path: t.0.join("game/Data"),
+        compatdata: None,
+        steam_name: String::new(),
+    };
+    let tools = default_tools_for(&game, Some(&inst));
+    assert!(tools
+        .iter()
+        .any(|t| t.exe == Path::new("skse64_loader.exe")));
+    let files = stock_game::game_files(&game, &inst);
+    let (source, command) = tool_executable(
+        &inst,
+        &game.install_path,
+        &files,
+        Path::new("skse64_loader.exe"),
+    )
+    .unwrap();
+    assert_eq!(
+        (source, command),
+        (
+            inst.root.join("Stock Game/skse64_loader.exe"),
+            game.install_path.join("skse64_loader.exe")
+        )
+    );
+    // An entry imported from the list's MO2 names the copy by its full path.
+    let imported = inst.root.join("Stock Game/skse64_loader.exe");
+    let moved = tool_executable(&inst, &game.install_path, &files, &imported).unwrap();
+    assert_eq!(moved.1, game.install_path.join("skse64_loader.exe"));
+}
+
 /// The Steam Cloud sync must be idempotent (fs::copy stamps the destination
 /// with a NEWER mtime, so the second run finds nothing to do), must rescue a
 /// prefix save the profile never saw before overwriting its fixed name, and

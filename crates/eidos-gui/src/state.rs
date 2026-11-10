@@ -727,7 +727,7 @@ pub(crate) fn load_tools(app: &mut App) {
             inst.tools(),
             eidos_instance::default_tools_in_view(
                 game_executables(g),
-                &g.install_path,
+                &inst.game_files(&g.install_path, &g.data_path).root,
                 &app.created
                     .as_ref()
                     .map(|i| i.root_layers())
@@ -842,7 +842,7 @@ pub(crate) fn open_executables_dialog(app: &App) -> Option<ExecutablesDialogStat
         .unwrap_or_default();
     let defaults = eidos_instance::default_tools_in_view(
         game_executables(game),
-        &game.install_path,
+        &inst.game_files(&game.install_path, &game.data_path).root,
         &roots,
         &eidos_instance::tool_search_roots(None, None),
         Some(&inst.root_overwrite_dir()),
@@ -3073,10 +3073,14 @@ pub(crate) fn addon_context(app: &App) -> eidos_addons::Context {
         values.insert("profile_dir".to_string(), prof.dir().display().to_string());
     }
     if let Some(g) = selected_game(app) {
+        let (root, data) = game_files(app).map_or_else(
+            || (g.install_path.clone(), g.data_path.clone()),
+            |f| (f.root, f.data),
+        );
         values.insert("game".to_string(), g.def.id.to_string());
         values.insert("game_name".to_string(), g.def.name.to_string());
-        values.insert("install".to_string(), g.install_path.display().to_string());
-        values.insert("data".to_string(), g.data_path.display().to_string());
+        values.insert("install".to_string(), root.display().to_string());
+        values.insert("data".to_string(), data.display().to_string());
     }
     eidos_addons::Context { values }
 }

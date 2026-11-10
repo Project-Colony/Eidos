@@ -14,6 +14,41 @@ pub fn game_files(game: &DetectedGame, inst: &Instance) -> GameFiles {
     inst.game_files(&game.install_path, &game.data_path)
 }
 
+/// `game` with its install and Data paths moved to `files`, for library code
+/// that reads the game's files and never mounts or launches it (the collection
+/// driver, `recipe::runtime_check`). Its `plugin_state_dir()` stays right
+/// because a root-mode game never runs from a copy.
+pub fn files_view(game: &DetectedGame, files: &GameFiles) -> DetectedGame {
+    DetectedGame {
+        install_path: files.root.clone(),
+        data_path: files.data.clone(),
+        ..game.clone()
+    }
+}
+
+/// `value` moved from the game copy at `copy` onto the store `install`, where
+/// the merged view is during a run: a Unix path that starts with `copy`, or a
+/// Wine path from its first `Z:` or `z:` (`-D:"Z:\i\Stock Game\Data"`), kept
+/// in its own form and separator. None when it does not point into the copy.
+pub fn onto_install(value: &str, copy: &Path, install: &Path) -> Option<String> {
+    let (copy, install) = (copy.to_str()?, install.to_str()?);
+    let moved = |path: &str, sep: char| {
+        let rest = path.strip_prefix(&copy.replace('/', &sep.to_string()))?;
+        (rest.is_empty() || rest.starts_with([sep, '"']))
+            .then(|| format!("{}{rest}", install.replace('/', &sep.to_string())))
+    };
+    moved(value, '/').or_else(|| {
+        let at = (0..value.len())
+            .find(|&i| matches!(value.as_bytes()[i..], [b'Z' | b'z', b':', b'\\' | b'/', ..]))?;
+        let sep = char::from(value.as_bytes()[at + 2]);
+        Some(format!(
+            "{}{}",
+            &value[..at + 2],
+            moved(&value[at + 2..], sep)?
+        ))
+    })
+}
+
 /// Whether the game folder `root` can be swapped for a copy: false for a game
 /// that keeps its plugin list in the game folder (Morrowind, Oblivion with
 /// `bUseMyGamesDirectory=0`), where the launch binds profile state over it.
@@ -125,6 +160,25 @@ mod tests {
         fs::write(copy.join("BIN64/crimsondesert.exe"), b"x").unwrap();
         assert!(has_game_binary(&game, &copy));
         let _ = fs::remove_dir_all(t);
+    }
+
+    #[test]
+    fn copy_paths_move_onto_the_install_in_both_spellings() {
+        let (c, i) = (Path::new("/i/Stock Game"), Path::new("/g/Skyrim"));
+        assert_eq!(
+            onto_install("/i/Stock Game/SKSE/x.exe", c, i).as_deref(),
+            Some("/g/Skyrim/SKSE/x.exe")
+        );
+        assert_eq!(
+            onto_install("-D:\"Z:\\i\\Stock Game\\Data\"", c, i).as_deref(),
+            Some("-D:\"Z:\\g\\Skyrim\\Data\"")
+        );
+        assert_eq!(
+            onto_install("z:/i/Stock Game/Data", c, i).as_deref(),
+            Some("z:/g/Skyrim/Data")
+        );
+        assert_eq!(onto_install("/i/Stock Games/x", c, i), None);
+        assert_eq!(onto_install("-IKnowWhatImDoing", c, i), None);
     }
 
     #[test]
