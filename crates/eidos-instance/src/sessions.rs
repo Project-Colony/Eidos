@@ -12,7 +12,9 @@ use crate::{write_atomic, Instance};
 pub const KEEP_SESSIONS: usize = 50;
 
 /// What one run started with, and how it ended.
+/// `serde(default)`: a field added later must not drop every older record.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SessionRecord {
     /// Unix seconds.
     pub started: u64,
@@ -35,6 +37,7 @@ pub struct SessionRecord {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SessionMod {
     pub name: String,
     pub version: Option<String>,
@@ -242,6 +245,13 @@ mod tests {
             ]
         );
         assert!(now.diff(&now).is_empty());
+    }
+
+    #[test]
+    fn a_record_written_before_a_field_existed_still_reads() {
+        let r: SessionRecord =
+            serde_json::from_str(r#"{"started":5,"pid":1,"mods":[{"name":"A"}]}"#).unwrap();
+        assert_eq!((r.started, r.mods[0].name.as_str()), (5, "A"));
     }
 
     fn inst(tag: &str) -> (Instance, std::path::PathBuf) {
