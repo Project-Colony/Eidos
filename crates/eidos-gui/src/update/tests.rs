@@ -1303,41 +1303,6 @@ fn collection_app(mods: &[(&str, u64)], downloads: &[u64]) -> (App, PathBuf) {
     (app, root)
 }
 
-/// A revision with three members. Built by hand rather than parsed: the
-/// PARSE is already tested against a captured real payload in eidos-nexus,
-/// and what these tests exercise is the local join, which only needs ids.
-fn captured_revision() -> eidos_nexus::collections::CollectionRevision {
-    use eidos_nexus::collections::{CollectionMod, CollectionRevision};
-    let member = |name: &str, mod_id: u64, file_id: u64| CollectionMod {
-        name: name.to_string(),
-        mod_id,
-        file_id,
-        domain: "skyrimspecialedition".to_string(),
-        version: "2.1".to_string(),
-        file_title: format!("{name}.7z"),
-        size_in_bytes: 1024,
-        optional: false,
-    };
-    CollectionRevision {
-        slug: "rqhcxy".to_string(),
-        revision_number: 1,
-        name: "The Great Cities Collection".to_string(),
-        summary: String::new(),
-        author: "HookerHeels".to_string(),
-        game_domain: "skyrimspecialedition".to_string(),
-        download_link: "/v2/collections/335/revisions/467/download_link".to_string(),
-        mod_count: 3,
-        total_size: 3072,
-        instructions: String::new(),
-        mods: vec![
-            member("Karthwasten", 37471, 232153),
-            member("Mixwater Mill", 37414, 232146),
-            member("Shors Stone", 36462, 234034),
-        ],
-        hidden: None,
-    }
-}
-
 #[test]
 fn a_collection_member_is_matched_against_what_the_instance_already_has() {
     let rev = captured_revision();

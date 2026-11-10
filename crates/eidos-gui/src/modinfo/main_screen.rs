@@ -533,7 +533,7 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
             .on_press(Message::CloseCollection);
         let free = app.nexus_account.as_ref().is_some_and(|a| !a.is_premium);
-        let dialog = container(collection_dialog(state, free)).center(Length::Fill);
+        let dialog = collection_overlay(state, free);
         layers = layers.push(scrim).push(dialog);
     }
 

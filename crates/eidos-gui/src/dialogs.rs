@@ -2571,6 +2571,18 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState, free: bool) -> Elem
         .into()
 }
 
+/// The collection card where both overlay sites draw it. Hung from a fixed top
+/// rather than centered: Browse, an empty Link pane and a loaded revision differ
+/// in height by hundreds of pixels, and a centered card would move its header
+/// and pane buttons under the pointer at each switch.
+pub(crate) fn collection_overlay<'a>(state: &CollectionState, free: bool) -> Element<'a, Message> {
+    container(collection_dialog(state, free))
+        .center_x(Length::Fill)
+        .align_top(Length::Fill)
+        .padding(iced::padding::top(40))
+        .into()
+}
+
 /// Roughly what share of an instance a `-mx` level leaves.
 ///
 /// Measured for level 1 - 43.0% of 1199 MB of real Skyrim `.dds`/`.nif` on a

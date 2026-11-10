@@ -1605,3 +1605,29 @@ fn the_browse_results_keep_one_height_while_loading_failing_and_listing() {
     }));
     assert_eq!(y(&state), loading, "twenty tiles and a hidden count");
 }
+
+/// Browse and Link differ in height by hundreds of pixels, and a revision adds
+/// more. The overlay hangs the card from a fixed top, so the pane buttons stay
+/// under the pointer when either is pressed and when a revision arrives.
+#[test]
+fn the_collection_pane_buttons_stay_put_across_panes_and_a_loaded_revision() {
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    let mut y = |s: &CollectionState| {
+        label(
+            collection_overlay(s, false),
+            &mut renderer,
+            t("collection_pane_link"),
+            0,
+        )
+        .y
+    };
+    let browse = y(&CollectionState {
+        pane: CollectionPane::Browse,
+        ..Default::default()
+    });
+    let mut link = CollectionState::default();
+    assert_eq!(y(&link), browse, "empty Link pane");
+    link.revision = Some(crate::test_support::captured_revision());
+    assert_eq!(y(&link), browse, "Link pane with a revision");
+}
