@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=e3d48ba93d1f21f1e692c797825e0485efc14a00 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2a7a2fa88e71d2513c7d51f4a9d5c89812ad2b26 -->
 
 # Ferramentas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -34,6 +34,29 @@ regra de tudo que vem abaixo.
 Se uma ferramenta está em outro lugar, ou você quer argumentos diferentes,
 adicione à mão - uma entrada sua com o mesmo título sobrepõe qualquer coisa
 achada automaticamente.
+
+## Limpar um plugin que o LOOT marca como sujo
+
+Depois de uma ordenação do LOOT, a aba Diagnostics lista os plugins que o LOOT
+marca como sujos (dirty), nos jogos que têm ao mesmo tempo um xEdit e dados de
+limpeza do LOOT (Skyrim LE, SE e VR, Enderal SE, Fallout 3, New Vegas, Fallout 4
+e 4 VR, Oblivion, Starfield). Quando o Eidos acha o xEdit, registrado em
+Executables ou em qualquer lugar da instância onde ele procura ferramentas, o
+cartão tem Clean all e cada plugin sujo tem Clean with QuickAutoClean no menu da
+sua linha; senão, o cartão diz para você adicionar o xEdit em Executables. O
+Eidos não baixa o xEdit. Ele roda o modo QuickAutoClean do xEdit em um plugin
+por vez, através da visão combinada, com `-qac -autoexit -autoload`. O xEdit
+salva o plugin limpo por cima do que carregou, o que na visão combinada é um
+arquivo novo no Overwrite; o Eidos o move para um mod chamado `Cleaned plugins`,
+criado ativado no fim da lista, onde ganha todos os conflitos. O plugin no seu
+próprio mod, ou na pasta Data do jogo, nunca é escrito. Para desfazer uma
+limpeza, desative `Cleaned plugins` ou esconda um arquivo dentro dele.
+
+Os backups, o cache e o log do xEdit vão para `<instance>/logs/qac-<time>/`,
+fora da visão combinada, e a linha de status mostra os números desse log. O
+Eidos apaga essa pasta depois de uma limpeza que deu certo e a mantém depois de
+uma que falhou. O Eidos registra em `Cleaned plugins/meta.ini` o tamanho e a
+data do plugin de onde cada cópia saiu.
 
 ## Adicionar uma
 

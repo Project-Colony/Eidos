@@ -471,10 +471,15 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         match inst.generated_outputs() {
             Ok(outputs) => {
                 for (owner, output) in outputs {
+                    // A cleaned copy's inputs are its one source plugin, not the
+                    // whole list this receipt records, and rerunning the tool
+                    // without its `-qac` arguments would clean nothing.
                     if owner.as_ref().is_some_and(|owner| {
-                        !app.mods
-                            .iter()
-                            .any(|m| m.is_active() && m.name.eq_ignore_ascii_case(owner))
+                        owner.eq_ignore_ascii_case(CLEANED_MOD)
+                            || !app
+                                .mods
+                                .iter()
+                                .any(|m| m.is_active() && m.name.eq_ignore_ascii_case(owner))
                     }) {
                         continue;
                     }
@@ -1061,42 +1066,169 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
         .push(text(t("diag_tab")).size(sz(13)))
         .push(text(summary).size(sz(12)))
         .push(tool_btn(t("diag_copy_report"), Message::CopyHealthReport));
+    // Built from App state at each view, so its slot follows a clean as it runs.
+    if let Some(card) = dirty_card(app) {
+        col = col.push(dirty_plugins_card(&card));
+    }
     for d in checks {
-        let (tag, color) = match d.level {
-            DiagLevel::Problem => (t("diag_tag_problem"), pal().error),
-            DiagLevel::Advice => (t("diag_tag_advice"), pal().warning),
-            DiagLevel::Ok => (t("diag_tag_ok"), pal().success),
-        };
-        let mut card = Column::new()
-            .spacing(2)
-            .push(
-                Row::new()
-                    .spacing(6)
-                    .align_y(iced::Alignment::Center)
-                    .push(
-                        text(tag)
-                            .size(sz(9))
-                            .color(color)
-                            .width(Length::Fixed(scaled(58.0))),
-                    )
-                    .push(text(d.title).size(sz(12)).width(Length::Fill)),
-            )
-            .push(text(d.detail).size(sz(10)).color(text_muted()));
-        if !d.actions.is_empty() {
-            let mut row = Row::new().spacing(6);
-            for (label, msg) in d.actions {
-                row = row.push(tool_btn(label, msg));
-            }
-            card = card.push(row);
-        }
-        col = col.push(
-            container(card)
-                .padding([4, 6])
-                .width(Length::Fill)
-                .style(card_style),
-        );
+        let foot = (!d.actions.is_empty()).then(|| {
+            d.actions
+                .into_iter()
+                .fold(Row::new().spacing(6), |row, (label, msg)| {
+                    row.push(tool_btn(label, msg))
+                })
+                .into()
+        });
+        col = col.push(diag_card(d.level, d.title, d.detail, foot));
     }
     scrollable(col).height(Length::Fill).into()
+}
+
+/// One Health card: the level tag, the title, the detail, and what goes under it.
+fn diag_card<'a>(
+    level: DiagLevel,
+    title: String,
+    detail: String,
+    foot: Option<Element<'a, Message>>,
+) -> Element<'a, Message> {
+    let (tag, color) = match level {
+        DiagLevel::Problem => (t("diag_tag_problem"), pal().error),
+        DiagLevel::Advice => (t("diag_tag_advice"), pal().warning),
+        DiagLevel::Ok => (t("diag_tag_ok"), pal().success),
+    };
+    let card = Column::new()
+        .spacing(2)
+        .push(
+            Row::new()
+                .spacing(6)
+                .align_y(iced::Alignment::Center)
+                .push(
+                    text(tag)
+                        .size(sz(9))
+                        .color(color)
+                        .width(Length::Fixed(scaled(58.0))),
+                )
+                .push(text(title).size(sz(12)).width(Length::Fill)),
+        )
+        .push(text(detail).size(sz(10)).color(text_muted()))
+        .extend(foot);
+    container(card)
+        .padding([4, 6])
+        .width(Length::Fill)
+        .style(card_style)
+        .into()
+}
+
+/// Whether the game has both an xEdit with a QuickAutoClean twin and LOOT
+/// dirty data, the games the dirty-plugin card is for.
+pub(crate) fn has_dirty_card(def: &eidos_games::GameDef) -> bool {
+    def.known_tools
+        .iter()
+        .any(|(exe, _)| exe.to_ascii_lowercase().ends_with("quickautoclean.exe"))
+}
+
+/// What the dirty-plugin card's one slot holds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum DirtySlot {
+    /// "Clean all n": Eidos found an xEdit.
+    Clean(usize),
+    /// No xEdit found: the line saying to add one in Executables.
+    AddXedit,
+    /// A clean runs or waits: the plugin and how many more are queued.
+    Cleaning { plugin: String, left: usize },
+}
+
+/// The enabled plugins LOOT flags as dirty, in load order, and the card's slot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DirtyCard {
+    pub(crate) names: Vec<String>,
+    pub(crate) slot: DirtySlot,
+}
+
+/// The dirty-plugin card for the open setup, from App state only (no IO), so
+/// the view can call it. `None` for a game without one, before a LOOT sort,
+/// or when no enabled plugin is flagged.
+pub(crate) fn dirty_card(app: &App) -> Option<DirtyCard> {
+    if !selected_game(app).is_some_and(|g| has_dirty_card(g.def)) {
+        return None;
+    }
+    let meta = app.loot_meta.as_ref()?;
+    let names: Vec<String> = app
+        .plugins
+        .as_ref()?
+        .plugins
+        .iter()
+        .filter(|p| p.enabled)
+        .filter(|p| {
+            meta.get(&p.name.to_ascii_lowercase())
+                .is_some_and(|b| b.needs_cleaning())
+        })
+        .map(|p| p.name.clone())
+        .collect();
+    if names.is_empty() {
+        return None;
+    }
+    let slot = match (&app.cleaning, app.clean_queue.front()) {
+        (Some(c), _) => DirtySlot::Cleaning {
+            plugin: c.plugin.clone(),
+            left: app.clean_queue.len(),
+        },
+        // Queued behind another run: the next one, and the rest after it.
+        (None, Some(next)) => DirtySlot::Cleaning {
+            plugin: next.clone(),
+            left: app.clean_queue.len() - 1,
+        },
+        (None, None) if qac_tool(app).is_some() => DirtySlot::Clean(names.len()),
+        (None, None) => DirtySlot::AddXedit,
+    };
+    Some(DirtyCard { names, slot })
+}
+
+/// The laid-out height of one `tool_btn` at scale 1, the dirty card's slot.
+pub(crate) const DIRTY_SLOT_H: f32 = 28.0;
+
+/// The dirty-plugin card. Its slot always exists at one fixed height and holds
+/// the button, the add-xEdit line or the cleaning status, so nothing below it
+/// moves under the pointer when a clean starts or ends (the #120 pattern).
+pub(crate) fn dirty_plugins_card<'a>(card: &DirtyCard) -> Element<'a, Message> {
+    let mut list = card
+        .names
+        .iter()
+        .take(8)
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(", ");
+    if card.names.len() > 8 {
+        list.push_str(&tf("diag_and_n_more", &[("n", &(card.names.len() - 8))]));
+    }
+    let line = |s: String| -> Element<'a, Message> {
+        text(s)
+            .size(sz(10))
+            .wrapping(iced::widget::text::Wrapping::None)
+            .into()
+    };
+    let slot = match &card.slot {
+        DirtySlot::Clean(n) => tool_btn(
+            tf("diag_clean_all", &[("n", n)]),
+            Message::CleanPlugins(card.names.clone()),
+        ),
+        DirtySlot::AddXedit => line(t("diag_dirty_plugins_add_xedit").into()),
+        DirtySlot::Cleaning { plugin, left } => line(tf(
+            "diag_dirty_plugins_cleaning",
+            &[("plugin", plugin), ("left", left)],
+        )),
+    };
+    diag_card(
+        DiagLevel::Advice,
+        tf("diag_dirty_plugins", &[("n", &card.names.len())]),
+        tf("diag_dirty_plugins_detail", &[("list", &list)]),
+        Some(
+            container(slot)
+                .height(Length::Fixed(scaled(DIRTY_SLOT_H)))
+                .clip(true)
+                .into(),
+        ),
+    )
 }
 
 /// Whether this process is talking Wayland rather than X11.

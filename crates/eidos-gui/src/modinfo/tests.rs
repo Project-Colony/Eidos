@@ -758,6 +758,48 @@ fn preflight_diagnostics_preserve_interrupted_runs_and_warn_when_inputs_change()
 }
 
 #[test]
+fn a_cleaned_copy_raises_no_generic_stale_output_card() {
+    let (mut app, root) = data_app(&[("meshes/test.nif", "mesh")], &[]);
+    let inst = app.created.clone().unwrap();
+    let plugins = compute_plugins(&app)
+        .unwrap()
+        .plugins
+        .into_iter()
+        .map(|p| (p.name, p.enabled))
+        .collect::<Vec<_>>();
+    let run = inst
+        .begin_tool_run(
+            "SSEEdit QuickAutoClean",
+            None,
+            &["SSEEditQuickAutoClean.exe".into()],
+            &plugins,
+        )
+        .unwrap();
+    fs::write(inst.overwrite_dir().join("Dirty.esp"), b"cleaned").unwrap();
+    let before = run.before.clone();
+    inst.finish_tool_run(run).unwrap();
+    // What `eidos tool run --output-mod` does once the tool exits.
+    assert_eq!(
+        inst.capture_overwrite_into_mod(CLEANED_MOD, &before)
+            .unwrap(),
+        1
+    );
+    app.mods.push(ModEntry {
+        name: CLEANED_MOD.into(),
+        enabled: true,
+        path: inst.mods_dir().join(CLEANED_MOD),
+        unmanaged: false,
+    });
+    let mut meta = inst.mod_meta("AAA");
+    meta.set_installed_files(&[(12, 34)]);
+    meta.write(&inst.meta_path("AAA")).unwrap();
+    assert!(!diagnostics(&app)
+        .iter()
+        .any(|d| d.title == t("diag_generated_inputs_changed")));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn contested_paths_are_scanned_once_per_map_and_mod() {
     let app = app_for_game("skyrimse");
     let layer = |origin, name: &str, files: Vec<String>| {

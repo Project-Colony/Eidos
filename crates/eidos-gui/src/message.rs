@@ -323,6 +323,9 @@ pub(crate) enum Message {
     PluginsSendBottom,
     /// Activate or deactivate every plugin the engine does not own.
     PluginsSetAll(bool),
+    /// Clean these plugins with xEdit's QuickAutoClean, one run at a time,
+    /// into the `Cleaned plugins` mod.
+    CleanPlugins(Vec<String>),
     /// Ask Nexus what this archive is, by its MD5 (MO2's Query Metadata).
     IdentifyDownload(String),
     /// The lookup came back: `Ok` carries the name it identified.

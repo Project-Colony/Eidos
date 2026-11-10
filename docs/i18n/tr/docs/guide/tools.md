@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=e3d48ba93d1f21f1e692c797825e0485efc14a00 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2a7a2fa88e71d2513c7d51f4a9d5c89812ad2b26 -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -32,6 +32,30 @@ göre.
 Bir araç başka bir yerdeyse ya da farklı argümanlar istiyorsanız, elle ekleyin -
 aynı başlığa sahip bir kullanıcı girdisi, otomatik bulunan her şeyi geçersiz
 kılar.
+
+## LOOT'un kirli olarak işaretlediği bir eklentiyi temizlemek
+
+Bir LOOT sıralamasından sonra Diagnostics sekmesi, LOOT'un kirli (dirty) olarak
+işaretlediği eklentileri listeler. Bu, hem bir xEdit'i hem de LOOT temizlik
+verisi olan oyunlar içindir (Skyrim LE, SE ve VR, Enderal SE, Fallout 3, New
+Vegas, Fallout 4 ve 4 VR, Oblivion, Starfield). Eidos xEdit'i bulduğunda
+(Executables'a kayıtlı ya da örnekte araç aradığı herhangi bir yerde), kartta
+Clean all bulunur ve her kirli eklentinin satır menüsünde Clean with
+QuickAutoClean yer alır; bulamazsa kart, xEdit'i Executables'a eklemenizi
+söyler. Eidos xEdit'i indirmez. xEdit'in QuickAutoClean modunu birleşik görünüm
+üzerinden, `-qac -autoexit -autoload` ile, her seferinde tek bir eklenti
+üzerinde çalıştırır. xEdit temizlenmiş eklentiyi yüklediğinin üzerine kaydeder;
+birleşik görünümde bu, Overwrite'ta yeni bir dosyadır. Eidos bu dosyayı `Cleaned
+plugins` adlı bir moda taşır; bu mod etkin olarak listenin en altında
+oluşturulur ve orada her çakışmayı kazanır. Kendi modundaki ya da oyunun Data
+klasöründeki eklentiye asla yazılmaz. Bir temizliği geri almak için `Cleaned
+plugins` modunu devre dışı bırakın ya da içindeki bir dosyayı gizleyin.
+
+xEdit'in yedekleri, önbelleği ve günlüğü birleşik görünümün dışında,
+`<instance>/logs/qac-<time>/` içine gider ve durum satırı o günlükteki sayıları
+bildirir. Eidos bu klasörü başarılı bir temizlikten sonra siler, başarısız bir
+temizlikten sonra tutar. Eidos her kopyanın yapıldığı eklentinin boyutunu ve
+tarihini `Cleaned plugins/meta.ini` içine kaydeder.
 
 ## Bir araç eklemek
 

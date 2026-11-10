@@ -485,6 +485,8 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         profile_copy: None,
         profile_delete_confirm: None,
         running: None,
+        clean_queue: Default::default(),
+        cleaning: None,
         cap_missing: !eidos_launch::binary_has_cap_sys_admin(&find_eidos_binary().0),
         files_cache: std::cell::RefCell::new(HashMap::new()),
         view_generation: std::cell::Cell::new(0),
@@ -814,6 +816,175 @@ pub(crate) fn tool_command(inst_arg: &str, title: &str) -> std::process::Command
     let mut cmd = eidos_command();
     cmd.arg("tool").arg(inst_arg).arg("run").arg(title);
     cmd
+}
+
+/// The mod QuickAutoClean's copies are captured into. The source plugins are
+/// never written.
+pub(crate) const CLEANED_MOD: &str = "Cleaned plugins";
+
+/// The xEdit Eidos found for the selected game (registered or found in the
+/// instance): its QuickAutoClean twin first, else the editor, which `-qac`
+/// puts in the same mode. `None` for a game with no xEdit.
+pub(crate) fn qac_tool(app: &App) -> Option<&Tool> {
+    let twin = selected_game(app)?
+        .def
+        .known_tools
+        .iter()
+        .map(|(exe, _)| *exe)
+        .find(|exe| exe.to_ascii_lowercase().ends_with("quickautoclean.exe"))?;
+    let editor = format!("{}.exe", &twin[..twin.len() - "QuickAutoClean.exe".len()]);
+    // A path typed in tools.ini may use either separator.
+    let named = |want: &str| {
+        app.tools.iter().find(|t| {
+            t.exe
+                .to_string_lossy()
+                .rsplit(['/', '\\'])
+                .next()
+                .is_some_and(|n| n.eq_ignore_ascii_case(want))
+        })
+    };
+    named(twin).or_else(|| named(&editor))
+}
+
+/// The plugin at this row of the plugin list when its row menu offers Clean:
+/// LOOT flags it dirty and Eidos found an xEdit.
+pub(crate) fn plugin_clean_target(app: &App, row: usize) -> Option<String> {
+    let p = app.plugins.as_ref()?.plugins.get(row)?;
+    let dirty = app
+        .loot_meta
+        .as_ref()?
+        .get(&p.name.to_ascii_lowercase())
+        .is_some_and(|b| b.needs_cleaning());
+    (dirty && qac_tool(app).is_some()).then(|| p.name.clone())
+}
+
+/// `eidos tool <instance> run <xEdit> --output-mod "Cleaned plugins" -- -qac ...`
+/// for one plugin, xEdit's backups, cache and log under `scratch`.
+pub(crate) fn clean_command(
+    app: &App,
+    plugin: &str,
+    scratch: &Path,
+) -> Option<std::process::Command> {
+    let qac = qac_tool(app)?;
+    let mut cmd = tool_command(&instance_arg(app)?, &qac.title);
+    cmd.arg("--output-mod")
+        .arg(CLEANED_MOD)
+        .arg("--")
+        .args(eidos_gamefeatures::qac_args(plugin, scratch));
+    Some(cmd)
+}
+
+/// Start QuickAutoClean on the next queued plugin, as a tracked run.
+pub(crate) fn start_next_clean(app: &mut App) {
+    let Some(plugin) = app.clean_queue.pop_front() else {
+        return;
+    };
+    // A reclean of a copy keeps the source its first clean recorded.
+    let list = app.plugins.clone().or_else(|| compute_plugins(app));
+    let source = list
+        .as_ref()
+        .and_then(|l| {
+            l.plugins
+                .iter()
+                .find(|p| p.name.eq_ignore_ascii_case(&plugin))
+        })
+        .filter(|p| !p.origin_mod.eq_ignore_ascii_case(CLEANED_MOD))
+        .and_then(|p| eidos_instance::PluginSource::of(&p.name, &p.path));
+    let stamp = std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    // Under logs/, outside the merged view and left out of packs.
+    let Some(scratch) = app
+        .created
+        .as_ref()
+        .map(|i| i.root.join("logs").join(format!("qac-{stamp}")))
+    else {
+        app.clean_queue.clear();
+        return;
+    };
+    if let Err(e) = std::fs::create_dir_all(&scratch) {
+        app.clean_queue.clear();
+        app.status = Some(tf("status_launch_failed", &[("error", &e)]));
+        return;
+    }
+    let Some((title, cmd)) = qac_tool(app)
+        .map(|t| t.title.clone())
+        .zip(clean_command(app, &plugin, &scratch))
+    else {
+        let _ = std::fs::remove_dir_all(&scratch);
+        app.clean_queue.clear();
+        app.status = Some(t("status_no_qac").into());
+        return;
+    };
+    start_run(app, title, cmd);
+    if app.running.is_none() {
+        // The spawn failed and start_run said why.
+        let _ = std::fs::remove_dir_all(&scratch);
+        app.clean_queue.clear();
+        return;
+    }
+    app.cleaning = Some(Cleaning {
+        plugin,
+        scratch,
+        source,
+    });
+}
+
+/// Report a finished clean from xEdit's log and record the copy's source.
+/// `false` when the clean did not do its job, so the queue stops.
+pub(crate) fn finish_clean(app: &mut App, done: Cleaning) -> bool {
+    let run_log = app
+        .running
+        .as_ref()
+        .and_then(|r| r.log.clone())
+        .or_else(|| app.created.as_ref().map(|i| i.root.join("logs")))
+        .unwrap_or_else(|| PathBuf::from("logs/"));
+    let log = std::fs::read_to_string(done.scratch.join(eidos_gamefeatures::QAC_LOG))
+        .ok()
+        .and_then(|text| eidos_gamefeatures::parse_qac_log(&text));
+    let Some(log) = log else {
+        app.status = Some(tf(
+            "status_clean_failed",
+            &[("plugin", &done.plugin), ("log", &run_log.display())],
+        ));
+        return false;
+    };
+    if !log.saved {
+        app.status = Some(tf("status_clean_nothing", &[("plugin", &done.plugin)]));
+        let _ = std::fs::remove_dir_all(&done.scratch);
+        return true;
+    }
+    let Some(inst) = app
+        .created
+        .clone()
+        .filter(|i| i.mods_dir().join(CLEANED_MOD).join(&done.plugin).is_file())
+    else {
+        // xEdit saved, but the capture did not move the copy (the run log says why).
+        app.status = Some(tf(
+            "status_clean_not_captured",
+            &[("plugin", &done.plugin), ("log", &run_log.display())],
+        ));
+        return false;
+    };
+    if let Some(source) = done.source {
+        // Best effort: the copy is in place either way.
+        if let Err(e) = edit_mod_meta(&inst, CLEANED_MOD, |m| m.set_plugin_source(source)) {
+            eidos_log::warn!("Could not record the source of {}: {e}", done.plugin);
+        }
+    }
+    invalidate_meta(app, CLEANED_MOD);
+    refresh_meta_cache(app);
+    app.status = Some(tf(
+        "status_cleaned",
+        &[
+            ("plugin", &done.plugin),
+            ("itm", &log.removed),
+            ("udr", &log.undeleted),
+        ],
+    ));
+    let _ = std::fs::remove_dir_all(&done.scratch);
+    true
 }
 
 /// Install the tools' runtime prerequisites into the prefix (`eidos prereqs <id>
@@ -1393,6 +1564,24 @@ pub(crate) fn finish_run(app: &mut App) {
     } else {
         tf("status_exited", &[("title", &run.title)])
     });
+    if let Some(done) = app.cleaning.take() {
+        // Back for the call only: `finish_clean` names this run's log.
+        app.running = Some(run);
+        let go_on = finish_clean(app, done);
+        app.running = None;
+        if !go_on {
+            app.clean_queue.clear();
+        }
+    }
+    if !app.clean_queue.is_empty() {
+        // The last clean's counts stay in front of the next run's status.
+        let said = app.status.take();
+        start_next_clean(app);
+        app.status = match (said, app.status.take()) {
+            (Some(a), Some(b)) => Some(format!("{a} {b}")),
+            (a, b) => b.or(a),
+        };
+    }
 }
 
 /// The first line in a run log where the `eidos` CLI refused to go on, without

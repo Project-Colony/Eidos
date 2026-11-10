@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=e3d48ba93d1f21f1e692c797825e0485efc14a00 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2a7a2fa88e71d2513c7d51f4a9d5c89812ad2b26 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -32,6 +32,31 @@ dezelfde regel als alles hieronder.
 Staat een tool ergens anders, of wil je andere argumenten, voeg hem dan met de
 hand toe - een eigen invoer met dezelfde titel overschrijft alles wat automatisch
 gevonden is.
+
+## Een plugin opschonen die LOOT als vuil markeert
+
+Na een LOOT-sortering toont het tabblad Diagnostics de plugins die LOOT als vuil
+(dirty) markeert, voor de spellen die zowel een xEdit als
+LOOT-opschoningsgegevens hebben (Skyrim LE, SE en VR, Enderal SE, Fallout 3, New
+Vegas, Fallout 4 en 4 VR, Oblivion, Starfield). Als Eidos xEdit vindt,
+geregistreerd in Executables of ergens waar het in de instantie naar tools
+zoekt, heeft de kaart Clean all en heeft elke vuile plugin Clean with
+QuickAutoClean in het menu van zijn rij; anders zegt de kaart dat je xEdit in
+Executables moet toevoegen. Eidos downloadt xEdit niet. Het draait de
+QuickAutoClean-modus van xEdit op één plugin tegelijk, via de samengevoegde
+weergave, met `-qac -autoexit -autoload`. xEdit slaat de opgeschoonde plugin op
+over de plugin die het laadde, en in de samengevoegde weergave is dat een nieuw
+bestand in de Overwrite; Eidos verplaatst het naar een mod met de naam `Cleaned
+plugins`, die ingeschakeld onderaan de lijst wordt aangemaakt, waar hij elk
+conflict wint. Naar de plugin in zijn eigen mod, of in de Data-map van het spel,
+wordt nooit geschreven. Schakel `Cleaned plugins` uit, of verberg er één bestand
+in, om een opschoning ongedaan te maken.
+
+De back-ups, cache en log van xEdit gaan naar `<instance>/logs/qac-<time>/`,
+buiten de samengevoegde weergave, en de statusregel meldt de aantallen uit die
+log. Eidos verwijdert die map na een geslaagde opschoning en houdt hem na een
+mislukte. Eidos legt de grootte en datum van de plugin waaruit elke kopie
+gemaakt is vast in `Cleaned plugins/meta.ini`.
 
 ## Er een toevoegen
 

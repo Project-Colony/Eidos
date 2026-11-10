@@ -883,3 +883,64 @@ fn the_plugin_filter_keeps_full_list_indices_and_holds_the_drag() {
         "{messages:?}"
     );
 }
+
+/// The #120 pattern: the dirty-plugin card's one slot holds the Clean button,
+/// the add-xEdit line or the cleaning status, so a label below the card never
+/// moves when a clean starts or ends under the pointer.
+#[test]
+fn the_dirty_plugin_card_keeps_one_height_with_xedit_without_it_and_while_cleaning() {
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    let names = vec!["Dirty.esp".to_string(), "Other.esp".to_string()];
+    let mut below = |slot: DirtySlot| {
+        let card = DirtyCard {
+            names: names.clone(),
+            slot,
+        };
+        let col = Column::new()
+            .push(dirty_plugins_card(&card))
+            .push(text("below the card"));
+        label(col.into(), &mut renderer, "below the card", 0).y
+    };
+    let with_xedit = below(DirtySlot::Clean(2));
+    assert_eq!(
+        below(DirtySlot::AddXedit),
+        with_xedit,
+        "the add-xEdit line changed the card height"
+    );
+    let long = "A plugin name long enough to wrap onto a second line if the slot let it grow.esp"
+        .to_string();
+    assert_eq!(
+        below(DirtySlot::Cleaning {
+            plugin: long,
+            left: 1
+        }),
+        with_xedit,
+        "the cleaning status changed the card height"
+    );
+    // The slot is one tool_btn tall: the button is neither clipped nor padded out.
+    let button = label(
+        Column::new()
+            .push(crate::widgets::tool_btn(
+                "Clean all 2",
+                Message::CleanPlugins(names.clone()),
+            ))
+            .push(text("below the button"))
+            .into(),
+        &mut renderer,
+        "below the button",
+        0,
+    )
+    .y - label(
+        Column::new().push(text("below the button")).into(),
+        &mut renderer,
+        "below the button",
+        0,
+    )
+    .y;
+    assert!(
+        (button - crate::theme::scaled(DIRTY_SLOT_H)).abs() < 1.0,
+        "tool_btn is {button} px, the slot {} px",
+        crate::theme::scaled(DIRTY_SLOT_H)
+    );
+}

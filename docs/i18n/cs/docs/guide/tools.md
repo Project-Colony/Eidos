@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=e3d48ba93d1f21f1e692c797825e0485efc14a00 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2a7a2fa88e71d2513c7d51f4a9d5c89812ad2b26 -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -31,6 +31,29 @@ pravidla jako všechno níže.
 
 Pokud je nástroj někde jinde nebo chcete jiné argumenty, přidejte ho ručně -
 uživatelská položka se stejným názvem přebije cokoli nalezeného automaticky.
+
+## Čištění pluginu, který LOOT označí jako špinavý
+
+Po seřazení LOOTem vypíše záložka Diagnostics pluginy, které LOOT označí jako
+špinavé (dirty), u her, které mají xEdit i data LOOTu pro čištění (Skyrim LE, SE
+a VR, Enderal SE, Fallout 3, New Vegas, Fallout 4 a 4 VR, Oblivion, Starfield).
+Když Eidos najde xEdit, zaregistrovaný v Executables nebo kdekoli, kde v
+instanci hledá nástroje, má karta tlačítko Clean all a každý špinavý plugin má v
+nabídce svého řádku Clean with QuickAutoClean; jinak karta říká, že máte přidat
+xEdit v Executables. Eidos xEdit nestahuje. Spouští režim QuickAutoClean
+nástroje xEdit vždy na jeden plugin, skrz sloučený pohled, s `-qac -autoexit
+-autoload`. xEdit uloží vyčištěný plugin přes ten, který načetl, což je ve
+sloučeném pohledu nový soubor v Overwrite; Eidos ho přesune do módu jménem
+`Cleaned plugins`, který se vytvoří zapnutý na konci seznamu, kde vyhrává každý
+konflikt. Do pluginu v jeho vlastním módu ani ve složce Data hry se nikdy
+nezapisuje. Vyčištění vrátíte tak, že vypnete `Cleaned plugins`, nebo v něm
+skryjete jeden soubor.
+
+Zálohy, cache a log nástroje xEdit jdou do `<instance>/logs/qac-<time>/`, mimo
+sloučený pohled, a stavový řádek hlásí počty z tohoto logu. Po úspěšném
+vyčištění Eidos tuto složku smaže, po neúspěšném ji ponechá. Velikost a datum
+pluginu, ze kterého každá kopie vznikla, Eidos zapisuje do `Cleaned
+plugins/meta.ini`.
 
 ## Přidání nástroje
 

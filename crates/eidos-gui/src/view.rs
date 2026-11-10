@@ -1976,6 +1976,12 @@ pub(crate) fn plugin_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> 
                 col.push(container(text(t("plugin_menu_from_game")).size(sz(11))).padding([4, 8]));
         }
     }
+    if let Some(name) = plugin_clean_target(app, i) {
+        col = col.push(menu_item(
+            t("plugin_menu_clean"),
+            Message::CleanPlugins(vec![name]),
+        ));
+    }
 
     col = col
         .push(menu_sep())

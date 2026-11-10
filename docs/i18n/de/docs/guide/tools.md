@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=e3d48ba93d1f21f1e692c797825e0485efc14a00 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2a7a2fa88e71d2513c7d51f4a9d5c89812ad2b26 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -33,6 +33,31 @@ derselben Regel wie alles Weitere unten.
 Liegt ein Tool woanders, oder wollen Sie andere Argumente, tragen Sie es von
 Hand ein - ein eigener Eintrag mit demselben Titel überschreibt alles
 automatisch Gefundene.
+
+## Ein Plugin bereinigen, das LOOT als verschmutzt meldet
+
+Nach einer LOOT-Sortierung listet der Tab Diagnostics die Plugins auf, die LOOT
+als verschmutzt (dirty) meldet, für die Spiele, die sowohl ein xEdit als auch
+LOOT-Bereinigungsdaten haben (Skyrim LE, SE und VR, Enderal SE, Fallout 3, New
+Vegas, Fallout 4 und 4 VR, Oblivion, Starfield). Findet Eidos xEdit, eingetragen
+unter Executables oder an einer der Stellen der Instanz, an denen es nach Tools
+sucht, hat die Karte Clean all, und jedes verschmutzte Plugin hat Clean with
+QuickAutoClean im Menü seiner Zeile; andernfalls sagt die Karte, dass Sie xEdit
+unter Executables hinzufügen sollen. Eidos lädt xEdit nicht herunter. Es startet
+den QuickAutoClean-Modus von xEdit für jeweils ein Plugin, über den
+zusammengeführten Blick, mit `-qac -autoexit -autoload`. xEdit speichert das
+bereinigte Plugin über das geladene, was im zusammengeführten Blick eine neue
+Datei im Overwrite ist; Eidos verschiebt sie in einen Mod namens `Cleaned
+plugins`, der aktiviert am Ende der Liste angelegt wird, wo er jeden Konflikt
+gewinnt. Das Plugin in seinem eigenen Mod oder im Data-Ordner des Spiels wird
+nie geschrieben. Deaktivieren Sie `Cleaned plugins` oder blenden Sie eine Datei
+darin aus, um eine Bereinigung rückgängig zu machen.
+
+Backups, Cache und Log von xEdit landen in `<instance>/logs/qac-<time>/`,
+außerhalb des zusammengeführten Blicks, und die Statuszeile meldet die Zahlen
+aus diesem Log. Eidos löscht diesen Ordner nach einer gelungenen Bereinigung und
+behält ihn nach einer fehlgeschlagenen. Eidos vermerkt Größe und Datum des
+Plugins, aus dem jede Kopie entstand, in `Cleaned plugins/meta.ini`.
 
 ## Eines hinzufügen
 

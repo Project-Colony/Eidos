@@ -1385,6 +1385,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::PluginSendToPriorityChanged(..)
         | Message::PluginSendToPriorityCommit
         | Message::PluginsSetAll(..)
+        | Message::CleanPlugins(..)
         | Message::SelectPlugin(..)
         | Message::SelectPluginToggle(..)
         | Message::SelectPluginExtend(..)

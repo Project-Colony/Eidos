@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=e3d48ba93d1f21f1e692c797825e0485efc14a00 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2a7a2fa88e71d2513c7d51f4a9d5c89812ad2b26 -->
 
 # Strumenti: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -31,6 +31,29 @@ derivano dal nome, secondo la stessa regola di tutto ciò che segue.
 Se uno strumento sta altrove, o vuoi argomenti diversi, aggiungilo a mano - una
 voce utente con lo stesso titolo prevale su qualunque cosa trovata
 automaticamente.
+
+## Pulire un plugin che LOOT segnala come sporco
+
+Dopo un ordinamento LOOT, la scheda Diagnostics elenca i plugin che LOOT segnala
+come sporchi, per i giochi che hanno sia un xEdit sia i dati di pulizia di LOOT
+(Skyrim LE, SE e VR, Enderal SE, Fallout 3, New Vegas, Fallout 4 e 4 VR,
+Oblivion, Starfield). Quando Eidos trova xEdit, registrato in Executables o in
+qualunque punto dell'istanza in cui cerca gli strumenti, il riquadro ha Clean
+all e ogni plugin sporco ha Clean with QuickAutoClean nel menu della sua riga;
+altrimenti il riquadro dice di aggiungere xEdit in Executables. Eidos non
+scarica xEdit. Esegue la modalità QuickAutoClean di xEdit su un plugin alla
+volta, attraverso la vista unita, con `-qac -autoexit -autoload`. xEdit salva il
+plugin pulito sopra quello che ha caricato, e nella vista unita questo è un file
+nuovo nell'Overwrite; Eidos lo sposta in una mod chiamata `Cleaned plugins`,
+creata attiva in fondo alla lista, dove vince ogni conflitto. Il plugin nella
+sua mod, o nella cartella Data del gioco, non viene mai scritto. Per annullare
+una pulizia, disattiva `Cleaned plugins` o nascondi un suo file.
+
+I backup, la cache e il log di xEdit finiscono in `<instance>/logs/qac-<time>/`,
+fuori dalla vista unita, e la riga di stato riporta i numeri di quel log. Eidos
+cancella quella cartella dopo una pulizia riuscita e la tiene dopo una fallita.
+Eidos annota in `Cleaned plugins/meta.ini` la dimensione e la data del plugin da
+cui è stata fatta ogni copia.
 
 ## Aggiungerne uno
 

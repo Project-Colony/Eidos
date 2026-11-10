@@ -6582,3 +6582,259 @@ fn a_plugin_undo_after_the_plugin_set_changed_is_refused() {
         .iter()
         .all(|p| p.name != "A.esp"));
 }
+
+mod cleaning {
+    use super::*;
+    use eidos_gamefeatures::QAC_LOG;
+    use eidos_instance::{ModMeta, PluginSource};
+
+    fn qac() -> Tool {
+        Tool {
+            title: "SSEEdit QuickAutoClean".into(),
+            exe: "/t/SSEEditQuickAutoClean.exe".into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn cleaning_without_quickautoclean_says_where_to_add_it() {
+        let mut app = nav_app(&[]);
+        let _ = update(&mut app, Message::CleanPlugins(vec!["Dirty.esp".into()]));
+        assert_eq!(app.status.as_deref(), Some(t("status_no_qac")));
+        assert!(app.clean_queue.is_empty() && app.cleaning.is_none());
+    }
+
+    #[test]
+    fn the_clean_command_runs_quickautoclean_into_cleaned_plugins() {
+        let (mut app, _root) = list_app(&[]);
+        app.tools = vec![qac()];
+        let cmd = clean_command(&app, "Dirty Plugin.esp", Path::new("/s")).unwrap();
+        let args: Vec<_> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let at = args.iter().position(|a| a == "tool").unwrap();
+        assert_eq!(
+            &args[at + 2..at + 7],
+            [
+                "run",
+                "SSEEdit QuickAutoClean",
+                "--output-mod",
+                "Cleaned plugins",
+                "--"
+            ]
+        );
+        assert_eq!(args.last().unwrap(), "Dirty Plugin.esp");
+    }
+
+    #[test]
+    fn a_finished_clean_reports_counts_and_records_its_source() {
+        let (mut app, root) = list_app(&["Base", "Cleaned plugins"]);
+        fs::write(root.join("mods/Base/Dirty.esp"), b"source").unwrap();
+        fs::write(root.join("mods/Cleaned plugins/Dirty.esp"), b"clean").unwrap();
+        let scratch = root.join("logs/qac-1");
+        fs::create_dir_all(&scratch).unwrap();
+        // Task 67's LOG lives in eidos-gamefeatures' test module, out of reach: the same counts, inline
+        fs::write(scratch.join(QAC_LOG), "[00:03] Done: Removing \"Identical to Master\" records, Processed Records: 4210, Removed Records: 4, Elapsed Time: 00:01\n[00:03] Done: Undeleting and Disabling References, Processed Records: 4207, Undeleted Records: 2, Elapsed Time: 00:00\n[00:04] Saving: Dirty.esp\n").unwrap();
+        let source = PluginSource::of("Dirty.esp", &root.join("mods/Base/Dirty.esp"));
+        assert!(finish_clean(
+            &mut app,
+            Cleaning {
+                plugin: "Dirty.esp".into(),
+                scratch: scratch.clone(),
+                source: source.clone()
+            }
+        ));
+        let status = app.status.clone().unwrap();
+        assert!(status.contains('4') && status.contains('2'), "{status}");
+        let meta = ModMeta::read(&root.join("mods/Cleaned plugins/meta.ini"));
+        assert_eq!(meta.plugin_sources(), [source.unwrap()]);
+        assert!(!scratch.exists());
+    }
+
+    #[test]
+    fn a_clean_that_left_no_log_stops_the_queue() {
+        let (mut app, root) = list_app(&[]);
+        app.clean_queue = ["Next.esp".to_string()].into();
+        assert!(!finish_clean(
+            &mut app,
+            Cleaning {
+                plugin: "Dirty.esp".into(),
+                scratch: root.join("logs/qac-2"),
+                source: None
+            }
+        ));
+        assert!(app.status.as_deref().unwrap().contains("Dirty.esp"));
+    }
+
+    #[test]
+    fn a_failed_clean_names_its_run_log_and_ends_the_queue_when_the_run_exits() {
+        let (mut app, root) = list_app(&[]);
+        app.tools = vec![qac()];
+        start_run(
+            &mut app,
+            "SSEEdit QuickAutoClean".into(),
+            std::process::Command::new("/bin/true"),
+        );
+        let run_log = app.running.as_ref().unwrap().log.clone().unwrap();
+        app.cleaning = Some(Cleaning {
+            plugin: "Dirty.esp".into(),
+            scratch: root.join("logs/qac-4"),
+            source: None,
+        });
+        app.clean_queue = ["Next.esp".to_string()].into();
+        super::finish_tracked_run(&mut app);
+        assert!(app.cleaning.is_none() && app.clean_queue.is_empty());
+        let status = app.status.clone().unwrap();
+        assert!(
+            status.contains("Dirty.esp") && status.contains(&run_log.display().to_string()),
+            "{status}"
+        );
+    }
+
+    #[test]
+    fn a_saved_clean_whose_copy_never_reached_the_mod_stops_the_queue() {
+        let (mut app, root) = list_app(&[]);
+        let scratch = root.join("logs/qac-3");
+        fs::create_dir_all(&scratch).unwrap();
+        fs::write(scratch.join(QAC_LOG), "[00:03] Done: Removing \"Identical to Master\" records, Processed Records: 9, Removed Records: 1, Elapsed Time: 00:01\n[00:04] Saving: Dirty.esp\n").unwrap();
+        assert!(!finish_clean(
+            &mut app,
+            Cleaning {
+                plugin: "Dirty.esp".into(),
+                scratch: scratch.clone(),
+                source: None
+            }
+        ));
+        let status = app.status.clone().unwrap();
+        assert!(
+            status.contains("Dirty.esp") && status.contains("logs"),
+            "{status}"
+        );
+        assert!(scratch.exists(), "the xEdit log stays for the user");
+    }
+
+    #[test]
+    fn the_dirty_card_shows_with_or_without_xedit_and_says_which() {
+        let (mut app, root) = list_app(&["Base"]);
+        fs::write(root.join("mods/Base/Dirty.esp"), tes4_header(0)).unwrap();
+        app.plugins = compute_plugins(&app);
+        for p in &mut app.plugins.as_mut().unwrap().plugins {
+            p.enabled = true;
+        }
+        app.loot_meta = Some(HashMap::from([(
+            "dirty.esp".to_string(),
+            eidos_loot::PluginMetadataBundle {
+                dirty_info: vec![eidos_loot::LootDirtyInfo {
+                    crc: 1,
+                    cleaning_utility: "SSEEdit".into(),
+                    itm_count: 3,
+                    deleted_reference_count: 0,
+                    deleted_navmesh_count: 0,
+                }],
+                ..Default::default()
+            },
+        )]));
+        app.tools.clear();
+        assert_eq!(dirty_card(&app).map(|c| c.slot), Some(DirtySlot::AddXedit));
+        app.tools = vec![qac()];
+        assert_eq!(
+            dirty_card(&app),
+            Some(DirtyCard {
+                names: vec!["Dirty.esp".into()],
+                slot: DirtySlot::Clean(1)
+            })
+        );
+        app.tools = vec![Tool {
+            title: "SSEEdit".into(),
+            exe: "/t/SSEEdit.exe".into(),
+            ..Default::default()
+        }];
+        assert_eq!(
+            dirty_card(&app).map(|c| c.slot),
+            Some(DirtySlot::Clean(1)),
+            "the editor counts as xEdit"
+        );
+        app.clean_queue = ["Dirty.esp".to_string()].into();
+        assert!(matches!(
+            dirty_card(&app).map(|c| c.slot),
+            Some(DirtySlot::Cleaning { .. })
+        ));
+        app.clean_queue.clear();
+        app.plugins.as_mut().unwrap().plugins[0].enabled = false;
+        assert_eq!(dirty_card(&app), None, "a disabled plugin is not listed");
+        app.plugins.as_mut().unwrap().plugins[0].enabled = true;
+        app.loot_meta = None;
+        assert_eq!(dirty_card(&app), None);
+    }
+
+    #[test]
+    fn only_games_with_an_xedit_and_loot_dirty_data_get_the_dirty_card() {
+        let mut with: Vec<&str> = eidos_games::catalog()
+            .iter()
+            .filter(|d| has_dirty_card(d))
+            .map(|d| d.id)
+            .collect();
+        with.sort();
+        assert_eq!(
+            with,
+            [
+                "enderalse",
+                "fallout3",
+                "fallout4",
+                "fallout4vr",
+                "falloutnv",
+                "oblivion",
+                "skyrim",
+                "skyrimse",
+                "skyrimvr",
+                "starfield"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_dirty_plugin_row_offers_clean_only_with_xedit() {
+        let (mut app, root) = list_app(&["Base"]);
+        fs::write(root.join("mods/Base/Dirty.esp"), tes4_header(0)).unwrap();
+        app.plugins = compute_plugins(&app);
+        app.loot_meta = Some(HashMap::from([(
+            "dirty.esp".to_string(),
+            eidos_loot::PluginMetadataBundle {
+                dirty_info: vec![eidos_loot::LootDirtyInfo {
+                    crc: 1,
+                    cleaning_utility: "SSEEdit".into(),
+                    itm_count: 3,
+                    deleted_reference_count: 0,
+                    deleted_navmesh_count: 0,
+                }],
+                ..Default::default()
+            },
+        )]));
+        assert_eq!(plugin_clean_target(&app, 0), None);
+        app.tools = vec![qac()];
+        assert_eq!(plugin_clean_target(&app, 0).as_deref(), Some("Dirty.esp"));
+        app.loot_meta = None;
+        assert_eq!(plugin_clean_target(&app, 0), None);
+    }
+
+    #[test]
+    fn clean_requests_queue_behind_a_running_program_without_duplicates() {
+        let (mut app, _root) = list_app(&[]);
+        app.tools = vec![qac()];
+        start_run(
+            &mut app,
+            "Game".into(),
+            std::process::Command::new("/bin/true"),
+        );
+        assert!(app.running.is_some());
+        let _ = update(
+            &mut app,
+            Message::CleanPlugins(vec!["A.esp".into(), "B.esp".into()]),
+        );
+        let _ = update(&mut app, Message::CleanPlugins(vec!["a.esp".into()]));
+        assert_eq!(app.clean_queue, ["A.esp", "B.esp"]);
+        assert!(app.cleaning.is_none());
+        assert!(app.status.as_deref().unwrap().contains("Game"));
+    }
+}

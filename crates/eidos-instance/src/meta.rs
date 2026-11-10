@@ -19,6 +19,35 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
+/// The plugin a generated copy (a cleaned or light-flagged plugin) was made
+/// from: its name, size and modification time, so a later stat can tell
+/// whether the source changed since.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginSource {
+    pub name: String,
+    pub size: u64,
+    /// Whole seconds since the Unix epoch.
+    pub mtime: u64,
+}
+
+impl PluginSource {
+    /// `path` as it is now, recorded under `name`. `None` when it cannot be stat'd.
+    pub fn of(name: &str, path: &Path) -> Option<PluginSource> {
+        let meta = fs::metadata(path).ok()?;
+        let mtime = meta
+            .modified()
+            .ok()?
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_secs();
+        Some(PluginSource {
+            name: name.to_string(),
+            size: meta.len(),
+            mtime,
+        })
+    }
+}
+
 /// MO2-compatible per-mod metadata. Read non-destructively; write preserves every
 /// untouched key, later section, and the original line endings.
 #[derive(Debug, Clone, Default)]
@@ -100,36 +129,56 @@ impl ModMeta {
     /// Exact Nexus (mod id, file id) pairs in MO2's one-based QSettings array.
     /// Incomplete or zero-valued entries are not source identities.
     pub fn installed_files(&self) -> Vec<(u64, u64)> {
-        let mut entries = std::collections::BTreeMap::<usize, (u64, u64)>::new();
-        let fields = section_entries(&self.tail, "installedFiles");
-        let size = fields
+        array_rows(&self.tail, "installedFiles")
             .iter()
-            .find(|(key, _)| key.eq_ignore_ascii_case("size"))
-            .and_then(|(_, value)| unquote(value).parse::<usize>().ok())
-            .unwrap_or(0);
-        for (key, value) in fields {
-            let Some((index, field)) = key.split_once('\\') else {
-                continue;
-            };
-            let (Ok(index), Ok(value)) = (index.parse::<usize>(), unquote(value).parse::<u64>())
-            else {
-                continue;
-            };
-            if index == 0 || index > size {
-                continue;
-            }
-            let pair = entries.entry(index).or_default();
-            if field.eq_ignore_ascii_case("modid") {
-                pair.0 = value;
-            }
-            if field.eq_ignore_ascii_case("fileid") {
-                pair.1 = value;
-            }
-        }
-        entries
-            .into_values()
+            .map(|row| {
+                let id = |key| row_u64(row, key).unwrap_or(0);
+                (id("modid"), id("fileid"))
+            })
             .filter(|(m, f)| *m > 0 && *f > 0)
             .collect()
+    }
+
+    /// The plugins a generated copy in this mod was made from, in record order.
+    pub fn plugin_sources(&self) -> Vec<PluginSource> {
+        array_rows(&self.tail, "pluginSources")
+            .iter()
+            .filter_map(|row| {
+                Some(PluginSource {
+                    name: row_field(row, "name")
+                        .map(qt_value)
+                        .filter(|n| !n.is_empty())?,
+                    size: row_u64(row, "size")?,
+                    mtime: row_u64(row, "mtime")?,
+                })
+            })
+            .collect()
+    }
+
+    /// Record the source of one copy, replacing the entry with the same name
+    /// (ASCII case-insensitive) in place.
+    pub fn set_plugin_source(&mut self, source: PluginSource) {
+        let before = self.plugin_sources();
+        let mut all = before.clone();
+        match all
+            .iter_mut()
+            .find(|s| s.name.eq_ignore_ascii_case(&source.name))
+        {
+            Some(s) => *s = source,
+            None => all.push(source),
+        }
+        if all == before {
+            return;
+        }
+        let mut body = Vec::new();
+        for (n, s) in all.iter().enumerate() {
+            body.push(format!("{}\\name={}", n + 1, qt_quote(&s.name)));
+            body.push(format!("{}\\size={}", n + 1, s.size));
+            body.push(format!("{}\\mtime={}", n + 1, s.mtime));
+        }
+        body.push(format!("size={}", all.len()));
+        self.replace_section("pluginSources", &body);
+        self.dirty = true;
     }
 
     /// An explicit empty array is authoritative; only an absent array permits legacy fallback.
@@ -784,6 +833,40 @@ fn section_span(text: &str, name: &str) -> Option<(usize, usize)> {
         pos += seg.len();
     }
     start.map(|s| (s, text.len()))
+}
+
+/// The rows of a QSettings array section (`1\key=`, `2\key=`, `size=`) in index
+/// order, each as its `(field, raw value)` pairs. Indices past `size` are ignored.
+fn array_rows<'a>(text: &'a str, name: &str) -> Vec<Vec<(&'a str, &'a str)>> {
+    let fields = section_entries(text, name);
+    let size = fields
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case("size"))
+        .and_then(|(_, value)| unquote(value).parse::<usize>().ok())
+        .unwrap_or(0);
+    let mut rows = std::collections::BTreeMap::<usize, Vec<(&str, &str)>>::new();
+    for (key, value) in fields {
+        let Some((index, field)) = key.split_once('\\') else {
+            continue;
+        };
+        match index.parse::<usize>() {
+            Ok(i) if (1..=size).contains(&i) => rows.entry(i).or_default().push((field, value)),
+            _ => {}
+        }
+    }
+    rows.into_values().collect()
+}
+
+/// One field of an array row, raw.
+fn row_field<'a>(row: &[(&str, &'a str)], key: &str) -> Option<&'a str> {
+    row.iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(key))
+        .map(|(_, v)| *v)
+}
+
+/// A numeric field of an array row.
+fn row_u64(row: &[(&str, &str)], key: &str) -> Option<u64> {
+    row_field(row, key).and_then(|v| unquote(v).parse().ok())
 }
 
 /// The `key=value` lines of a named section, in file order.
@@ -1502,6 +1585,57 @@ mod tests {
         m.write(&p).unwrap();
         assert_eq!(ModMeta::read(&p).last_nexus_update(), Some(1_700_000_000));
         let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn plugin_sources_round_trip_and_replace_by_name() {
+        let p = tmp_ini("[General]\nmodid=0\n");
+        let mut m = ModMeta::read(&p);
+        m.set_plugin_source(PluginSource {
+            name: "Dirty.esp".into(),
+            size: 10,
+            mtime: 1,
+        });
+        m.set_plugin_source(PluginSource {
+            name: "Other, Patch.esp".into(),
+            size: 5,
+            mtime: 2,
+        });
+        m.set_plugin_source(PluginSource {
+            name: "DIRTY.esp".into(),
+            size: 11,
+            mtime: 3,
+        });
+        m.write(&p).unwrap();
+        let back = ModMeta::read(&p);
+        assert_eq!(
+            back.plugin_sources(),
+            [
+                PluginSource {
+                    name: "DIRTY.esp".into(),
+                    size: 11,
+                    mtime: 3
+                },
+                PluginSource {
+                    name: "Other, Patch.esp".into(),
+                    size: 5,
+                    mtime: 2
+                },
+            ]
+        );
+        assert!(fs::read_to_string(&p)
+            .unwrap()
+            .contains("[pluginSources]\n1\\name=\"DIRTY.esp\"\n1\\size=11\n1\\mtime=3\n"));
+        let src = tmp_ini("plugin bytes");
+        let of = PluginSource::of("Dirty.esp", &src).unwrap();
+        assert_eq!((of.name.as_str(), of.size), ("Dirty.esp", 12));
+        assert!(of.mtime > 0);
+        assert_eq!(
+            PluginSource::of("Gone.esp", &p.with_extension("gone")),
+            None
+        );
+        let _ = fs::remove_file(&p);
+        let _ = fs::remove_file(&src);
     }
 
     #[test]

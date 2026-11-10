@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=e3d48ba93d1f21f1e692c797825e0485efc14a00 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=2a7a2fa88e71d2513c7d51f4a9d5c89812ad2b26 -->
 
 # Herramientas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -35,6 +35,30 @@ runtimes salen de su nombre, por la misma regla que todo lo que viene abajo.
 Si una herramienta está en otro sitio, o quieres argumentos distintos, añádela a
 mano - una entrada de usuario con el mismo título anula cualquier cosa encontrada
 automáticamente.
+
+## Limpiar un plugin que LOOT marca como sucio
+
+Tras una ordenación de LOOT, la pestaña Diagnostics lista los plugins que LOOT
+marca como sucios, en los juegos que tienen a la vez un xEdit y datos de
+limpieza de LOOT (Skyrim LE, SE y VR, Enderal SE, Fallout 3, New Vegas, Fallout
+4 y 4 VR, Oblivion, Starfield). Cuando Eidos encuentra xEdit, registrado en
+Executables o en cualquier sitio de la instancia donde busca herramientas, la
+tarjeta tiene Clean all y cada plugin sucio tiene Clean with QuickAutoClean en
+el menú de su fila; si no, la tarjeta te indica que añadas xEdit en Executables.
+Eidos no descarga xEdit. Ejecuta el modo QuickAutoClean de xEdit sobre un plugin
+cada vez, a través de la vista combinada, con `-qac -autoexit -autoload`. xEdit
+guarda el plugin limpio encima del que cargó, lo que en la vista combinada es un
+archivo nuevo en el Overwrite; Eidos lo mueve a un mod llamado `Cleaned
+plugins`, que se crea activado al final de la lista, donde gana todos los
+conflictos. El plugin en su propio mod, o en la carpeta Data del juego, nunca se
+escribe. Para deshacer una limpieza, desactiva `Cleaned plugins` u oculta un
+archivo dentro de él.
+
+Las copias de seguridad, la caché y el registro de xEdit van a
+`<instance>/logs/qac-<time>/`, fuera de la vista combinada, y la línea de estado
+muestra las cifras de ese registro. Eidos borra esa carpeta tras una limpieza
+que salió bien y la conserva tras una que falló. Eidos anota en `Cleaned
+plugins/meta.ini` el tamaño y la fecha del plugin del que salió cada copia.
 
 ## Añadir una
 

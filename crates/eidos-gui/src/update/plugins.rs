@@ -875,6 +875,32 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
             commit_plugin_order(app, &spec);
         }
+        Message::CleanPlugins(names) => {
+            app.menu_plugin = None;
+            if qac_tool(app).is_none() {
+                app.status = Some(t("status_no_qac").into());
+                return Task::none();
+            }
+            for name in names {
+                let busy = app
+                    .clean_queue
+                    .iter()
+                    .chain(app.cleaning.as_ref().map(|c| &c.plugin))
+                    .any(|q| q.eq_ignore_ascii_case(&name));
+                if !busy {
+                    app.clean_queue.push_back(name);
+                }
+            }
+            match app.running.as_ref().map(|r| r.title.clone()) {
+                None => start_next_clean(app),
+                Some(title) => {
+                    app.status = Some(tf(
+                        "status_clean_queued",
+                        &[("n", &app.clean_queue.len()), ("title", &title)],
+                    ))
+                }
+            }
+        }
         Message::TogglePluginLock(i) => {
             let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
                 return Task::none();

@@ -105,6 +105,16 @@ pub(crate) struct DisableConfirm {
     pub(crate) dependents: Vec<usize>,
 }
 
+/// A QuickAutoClean run in progress: the plugin, xEdit's scratch folder under
+/// `<instance>/logs/`, and the source file it cleans when it was stat'd (`None`
+/// on a reclean of a copy, which keeps the source already recorded).
+#[derive(Debug, Clone)]
+pub(crate) struct Cleaning {
+    pub(crate) plugin: String,
+    pub(crate) scratch: PathBuf,
+    pub(crate) source: Option<eidos_instance::PluginSource>,
+}
+
 /// An installed collection with a newer revision on Nexus.
 #[derive(Debug, Clone)]
 pub(crate) struct CollectionNotice {
@@ -657,6 +667,10 @@ pub(crate) struct App {
     /// is set, the window is blocked behind the lock overlay until it exits (or the
     /// user clicks Unlock). `None` = nothing running / not locked.
     pub(crate) running: Option<RunningState>,
+    /// Plugins waiting for QuickAutoClean, one run at a time.
+    pub(crate) clean_queue: std::collections::VecDeque<String>,
+    /// The clean the tracked run is doing, if it is one.
+    pub(crate) cleaning: Option<Cleaning>,
     /// The `eidos` binary lacks CAP_SYS_ADMIN (setcap wiped by a rebuild), so FUSE
     /// passthrough cannot engage even if asked for. Harmless by itself - the
     /// capability is optional and passthrough is off by default - so this only
