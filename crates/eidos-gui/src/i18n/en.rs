@@ -1145,6 +1145,8 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("diag_game_files_not_a_copy_detail", "This instance runs the game from '{folder}', which does not hold {binary}, so it is not a copy of the game. Launches are refused."),
     ("diag_game_files_root_mode", "{game} cannot run from a copy yet"),
     ("diag_game_files_root_mode_detail", "{game} keeps its plugin list in the game folder, which Eidos does not support with a game copy yet. Launches are refused until you return to the store version."),
+    ("diag_mo2_ini_game_path", "ModOrganizer.ini points tools at another game folder"),
+    ("diag_mo2_ini_game_path_detail", "{path} was not written by Eidos, and its gamePath is {found}. Tools in Mod Organizer 2 mode, such as PGPatcher, read the game from there, while this instance runs {want}. Change gamePath in that file, or remove the file so Eidos writes its own."),
     ("diag_action_fix", "Fix"),
     ("status_fix_applied", "Fixed: {path}"),
     ("status_fix_failed", "Could not apply the fix: {error}"),

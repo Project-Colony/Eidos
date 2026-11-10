@@ -319,6 +319,16 @@ fn mo2_path(value: &str, root: &Path) -> Option<PathBuf> {
     rebase(path, root).or(Some(linux))
 }
 
+/// A Wine `Z:` path, written with `\` or `/`, as the Linux path it names.
+/// Any other drive maps to no Linux path without guessing, so it gives None.
+pub fn wine_path_to_unix(value: &str) -> Option<PathBuf> {
+    let value = value.replace('\\', "/");
+    let path = drive_path(&value)?;
+    value[..1]
+        .eq_ignore_ascii_case("z")
+        .then(|| PathBuf::from(path))
+}
+
 /// What follows `X:` in a value that starts with a drive letter and a `/`.
 fn drive_path(value: &str) -> Option<&str> {
     let b = value.as_bytes();
@@ -703,6 +713,17 @@ size=5
             "gamePath=@ByteArray(Z:\\\\mnt\\\\Jeux\\\\SteamLibrary\\\\steamapps\\\\common\\\\Skyrim Special Edition)\n"
         ));
         assert!(text.contains("mod_directory=Z:\\\\mnt\\\\Jeux\\\\Eidos-Skyrim\\\\mods\n"));
+    }
+
+    #[test]
+    fn only_z_drive_paths_map_to_linux_paths() {
+        assert_eq!(
+            wine_path_to_unix("Z:\\home\\a b\\Stock Game"),
+            Some(PathBuf::from("/home/a b/Stock Game"))
+        );
+        assert_eq!(wine_path_to_unix("z:/x/y"), Some(PathBuf::from("/x/y")));
+        assert_eq!(wine_path_to_unix("C:\\Games\\Skyrim"), None);
+        assert_eq!(wine_path_to_unix(""), None);
     }
 
     #[test]

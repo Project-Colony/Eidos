@@ -1145,6 +1145,8 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("diag_game_files_not_a_copy_detail", "Cette instance fait tourner le jeu depuis « {folder} », qui ne contient pas {binary} : ce n'est pas une copie du jeu. Les lancements sont refusés."),
     ("diag_game_files_root_mode", "{game} ne peut pas encore tourner depuis une copie"),
     ("diag_game_files_root_mode_detail", "{game} garde sa liste de plugins dans le dossier du jeu, ce qu'Eidos ne gère pas encore avec une copie du jeu. Les lancements sont refusés jusqu'au retour à la version de la boutique."),
+    ("diag_mo2_ini_game_path", "ModOrganizer.ini indique un autre dossier de jeu aux outils"),
+    ("diag_mo2_ini_game_path_detail", "{path} n'a pas été écrit par Eidos, et son gamePath vaut {found}. Les outils en mode Mod Organizer 2, comme PGPatcher, y lisent le jeu, alors que cette instance utilise {want}. Modifiez gamePath dans ce fichier, ou supprimez le fichier pour qu'Eidos écrive le sien."),
     ("diag_action_fix", "Corriger"),
     ("status_fix_applied", "Corrigé : {path}"),
     ("status_fix_failed", "Impossible d'appliquer la correction : {error}"),

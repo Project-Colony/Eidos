@@ -92,6 +92,7 @@ pub const CODES: &[&str] = &[
     "game_files_missing",
     "game_files_not_a_copy",
     "game_files_root_mode",
+    "mo2_ini_game_path",
 ];
 
 /// The instance's enabled mods, highest priority first. Unmanaged rows (DLC,
@@ -165,6 +166,14 @@ pub fn host_findings(
         game, inst, mods,
     )));
     out.extend(game_files::findings(game, inst, &files));
+    if let (Some(ini), Some(found)) = (inst.foreign_mo2_ini(), inst.foreign_mo2_game_path()) {
+        out.extend(game_files::mo2_game_path_finding(
+            &ini,
+            &found,
+            &files.root,
+            &game.install_path,
+        ));
+    }
     out
 }
 

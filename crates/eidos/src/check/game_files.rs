@@ -1,7 +1,10 @@
 //! A game copy the instance runs from that cannot run: launches are refused.
+//! Also a list's `ModOrganizer.ini` whose `gamePath` names another game folder.
+
+use std::path::Path;
 
 use eidos_games::DetectedGame;
-use eidos_instance::{GameFiles, Instance};
+use eidos_instance::{wine_path_to_unix, GameFiles, Instance};
 
 use super::{Finding, Level};
 use crate::stock_game::{has_game_binary, supported};
@@ -42,6 +45,33 @@ pub fn findings(game: &DetectedGame, inst: &Instance, files: &GameFiles) -> Vec<
         level: Level::Problem,
         args,
     }]
+}
+
+/// Advice when the list's own `ModOrganizer.ini` at `ini` has a `gamePath`
+/// (`found`) that is neither the game folder the instance runs (`files_root`)
+/// nor the store `install`: tools in Mod Organizer 2 mode read the game there.
+pub fn mo2_game_path_finding(
+    ini: &Path,
+    found: &str,
+    files_root: &Path,
+    install: &Path,
+) -> Option<Finding> {
+    let real = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    if wine_path_to_unix(found)
+        .map(|p| real(&p))
+        .is_some_and(|p| p == real(files_root) || p == real(install))
+    {
+        return None;
+    }
+    Some(Finding {
+        code: "mo2_ini_game_path",
+        level: Level::Advice,
+        args: vec![
+            ("path", ini.display().to_string()),
+            ("found", found.to_owned()),
+            ("want", files_root.display().to_string()),
+        ],
+    })
 }
 
 /// The CLI's English line for a launch refused by `f`.
@@ -143,6 +173,23 @@ mod tests {
         fs::write(inst.root.join("Stock Game/SkyrimSE.exe"), b"x").unwrap();
         assert!(of(&game, &inst).is_empty());
         fs::remove_dir_all(t).unwrap();
+    }
+
+    #[test]
+    fn a_list_game_path_is_quiet_on_the_copy_or_the_install_and_reported_elsewhere() {
+        let (ini, copy, install) = (
+            Path::new("/i/ModOrganizer.ini"),
+            Path::new("/i/Stock Game"),
+            Path::new("/g"),
+        );
+        assert!(mo2_game_path_finding(ini, "Z:\\i\\Stock Game", copy, install).is_none());
+        assert!(mo2_game_path_finding(ini, "Z:\\g", copy, install).is_none());
+        let f = mo2_game_path_finding(ini, "C:\\Modlists\\X\\Stock Game", copy, install).unwrap();
+        assert_eq!(
+            (f.code, f.arg("want")),
+            ("mo2_ini_game_path", Some("/i/Stock Game"))
+        );
+        assert!(mo2_game_path_finding(ini, "Z:\\elsewhere", copy, install).is_some());
     }
 
     #[test]

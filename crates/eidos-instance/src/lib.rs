@@ -46,7 +46,7 @@ pub use game_files::{is_copy_folder_name, GameFiles};
 pub use launch_record::{GameBuild, LaunchRecord};
 pub use manifest::Manifest;
 pub use meta::{same_version, ModMeta, PluginSource};
-pub use mo2_ini::{mo2_executables, Mo2Executable, Mo2Ini, Mo2Skip};
+pub use mo2_ini::{mo2_executables, wine_path_to_unix, Mo2Executable, Mo2Ini, Mo2Skip};
 pub use mod_backup::{backup_mod, reserve_mod_backup};
 pub use profile::{
     cosave_siblings, format_stamp, instance_sync_keys, is_save_data, is_save_listing,
