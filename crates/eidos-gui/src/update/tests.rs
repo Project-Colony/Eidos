@@ -1916,6 +1916,43 @@ fn a_browse_answer_for_another_query_sort_or_instance_is_dropped() {
 }
 
 #[test]
+fn only_a_failed_nexus_answer_says_nexus_did_not_send_the_list() {
+    use eidos_nexus::collections::CollectionSort;
+    let (mut app, root) = collection_app(&[], &[]);
+    let error = |app: &App| {
+        app.collection
+            .as_ref()
+            .unwrap()
+            .browse
+            .result
+            .as_ref()
+            .unwrap()
+            .clone()
+            .unwrap_err()
+    };
+    // No account in the scratch env: nothing was sent, so nothing failed.
+    let _ = update_inner(&mut app, Message::ShowCollection(String::new()));
+    assert_eq!(error(&app), t("status_connect_nexus_first_short"));
+    let _ = update_inner(
+        &mut app,
+        Message::CollectionBrowseFetched {
+            instance: root.clone(),
+            query: String::new(),
+            sort: CollectionSort::Downloads,
+            result: Err("Nexus answered 500".into()),
+        },
+    );
+    assert_eq!(
+        error(&app),
+        tf(
+            "collection_browse_failed",
+            &[("error", &"Nexus answered 500")]
+        )
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn typing_a_query_releases_a_search_in_flight() {
     let mut app = nav_app(&[]);
     let _ = update_inner(&mut app, Message::ShowCollection(String::new()));

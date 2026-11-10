@@ -2199,7 +2199,7 @@ fn collection_browse<'a>(b: &CollectionBrowse) -> Column<'a, Message> {
     let mut footer = String::new();
     let list = match &b.result {
         _ if b.loading => line(t("collection_browse_loading").to_string()),
-        Some(Err(e)) => text(tf("collection_browse_failed", &[("error", e)]))
+        Some(Err(e)) => text(e.clone())
             .size(sz(12))
             .color(conflict_loses_fg())
             .into(),

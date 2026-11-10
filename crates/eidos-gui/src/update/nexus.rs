@@ -867,7 +867,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             }
             c.browse.loading = false;
-            c.browse.result = Some(result);
+            // Only a request that went out can say what Nexus did; the local
+            // guards in CollectionBrowseSearch keep their own words.
+            c.browse.result =
+                Some(result.map_err(|e| tf("collection_browse_failed", &[("error", &e)])));
         }
         Message::CollectionBrowsePick(i) => {
             let domain = selected_game(app).map(|g| g.def.nexus_game);

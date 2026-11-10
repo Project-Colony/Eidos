@@ -47,6 +47,8 @@ pub(crate) struct CollectionBrowse {
     pub(crate) sort: eidos_nexus::collections::CollectionSort,
     /// True while the one GraphQL request is in flight.
     pub(crate) loading: bool,
+    /// An error is the line drawn as it is: a local guard, or Nexus's failure
+    /// already worded as `collection_browse_failed`.
     pub(crate) result: Option<Result<eidos_nexus::collections::CollectionSearch, String>>,
 }
 

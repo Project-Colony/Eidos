@@ -1787,6 +1787,21 @@ fn the_browse_results_keep_one_height_while_loading_failing_and_listing() {
     assert_eq!(y(&state), loading, "twenty tiles and a hidden count");
 }
 
+/// A Browse error is drawn in the words the handler gave it, so a missing
+/// account never reads as an answer Nexus failed to send.
+#[test]
+fn a_browse_guard_is_drawn_in_its_own_words() {
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    let mut state = CollectionState {
+        pane: CollectionPane::Browse,
+        ..Default::default()
+    };
+    let guard = t("status_connect_nexus_first_short");
+    state.browse.result = Some(Err(guard.into()));
+    let _ = label(collection_dialog(&state, false), &mut renderer, guard, 0);
+}
+
 /// Browse and Link differ in height by hundreds of pixels, and a revision adds
 /// more. The overlay hangs the card from a fixed top, so the pane buttons stay
 /// under the pointer when either is pressed and when a revision arrives.
