@@ -1548,7 +1548,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::NexusFilesFetched { .. }
         | Message::NexusUpdate { .. }
         | Message::CheckUpdates
-        | Message::UpdatesChecked(..)
+        | Message::UpdatesChecked { .. }
         | Message::RequirementsRefreshed(..)
         | Message::CollectionRevisionsChecked(..)
         | Message::IgnoreRequirement { .. }

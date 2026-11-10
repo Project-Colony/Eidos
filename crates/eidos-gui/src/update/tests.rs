@@ -3790,7 +3790,14 @@ fn an_update_check_records_what_is_left_of_the_budget() {
         unavailable: Vec::new(),
         failures: Vec::new(),
     };
-    let _ = update_inner(&mut app, Message::UpdatesChecked(Ok(result)));
+    let _ = update_inner(
+        &mut app,
+        Message::UpdatesChecked {
+            root: PathBuf::from("/nowhere"),
+            connected: true,
+            result: Ok(result),
+        },
+    );
     // It arrived in the result and used to be dropped on the floor.
     assert_eq!(app.nexus_hourly_left, Some(1388));
     assert_eq!(app.nexus_daily_left, Some(2100));
@@ -3806,7 +3813,14 @@ fn an_update_check_reports_failed_requests_as_incomplete() {
         failures: vec![("Example Mod".into(), "HTTP 503".into())],
         ..Default::default()
     };
-    let _ = update_inner(&mut app, Message::UpdatesChecked(Ok(result)));
+    let _ = update_inner(
+        &mut app,
+        Message::UpdatesChecked {
+            root: PathBuf::from("/nowhere"),
+            connected: true,
+            result: Ok(result),
+        },
+    );
     let status = app.status.as_deref().unwrap();
     assert!(status.contains("1 mod(s) could not be checked"));
     assert!(status.contains("0 update(s) found"));
@@ -4566,39 +4580,65 @@ fn a_failed_update_check_still_recounts_updates() {
     )
     .unwrap();
     app.update_in_progress = true;
-    let _ = update_inner(&mut app, Message::UpdatesChecked(Err("lock held".into())));
+    let next = update_inner(
+        &mut app,
+        Message::UpdatesChecked {
+            root: root.clone(),
+            connected: true,
+            result: Err("lock held".into()),
+        },
+    );
     assert_eq!(
         app.updated_count, 1,
         "the mod rewritten before the failure counts"
     );
+    assert_eq!(next.units(), 0, "no Nexus id, so no requirements refresh");
+    assert!(!app.update_in_progress);
     let _ = fs::remove_dir_all(&root);
 }
 
 /// The requirements refresh and the update check both write meta.ini under the
 /// instance lock, which a second thread of this process is refused. So the
 /// refresh starts only once the check answered, failed or not, and Check for
-/// updates stays off until the refresh answered too.
+/// updates stays off until the refresh answered too. Starting it signs in to
+/// Nexus for real, so these tests ask the decision and never send a check
+/// answer for an instance that has a Nexus id.
 #[test]
 fn the_requirements_refresh_runs_after_the_update_check_never_beside_it() {
-    let root = temp_portable("skyrimse");
-    let mut app = app_for_game("skyrimse");
-    let inst = Instance::portable(root.clone());
-    inst.create().unwrap();
-    app.created = Some(inst);
-    app.screen = Screen::Main;
-    for checked in [Ok(Default::default()), Err("HTTP 503".to_string())] {
+    let (mut app, root) = collection_app(&[("Mod", 42)], &[]);
+    let target = |app: &App, root: &Path, connected: bool| {
+        nexus::requirements_refresh_target(app, root, connected).map(|(i, d)| (i.root, d.id))
+    };
+    assert_eq!(
+        target(&app, &root, true),
+        Some((root.clone(), "skyrimse")),
+        "the checked instance, still open, with a Nexus mod"
+    );
+    assert_eq!(
+        target(&app, &root, false),
+        None,
+        "a check that could not sign in is not followed by a second sign-in"
+    );
+    assert_eq!(
+        target(&app, Path::new("/elsewhere"), true),
+        None,
+        "another instance was opened while the check ran"
+    );
+
+    for error in [None, Some("HTTP 502")] {
         app.update_in_progress = true;
-        let next = update_inner(&mut app, Message::UpdatesChecked(checked));
-        assert_eq!(next.units(), 1, "the refresh starts after the check");
-        assert!(app.update_in_progress, "no second check meanwhile");
+        app.status = Some("Update check: 1 mod(s) checked.".into());
+        let result = error.map_or(Ok(0), |e| Err(e.to_string()));
         let _ = update_inner(
             &mut app,
-            Message::RequirementsRefreshed(root.clone(), Err("HTTP 502".into())),
+            Message::RequirementsRefreshed(root.clone(), result),
         );
         assert!(!app.update_in_progress);
         let status = app.status.clone().unwrap();
-        assert!(
-            status.starts_with("Update check") && status.contains("HTTP 502"),
+        assert!(status.starts_with("Update check"), "{status}");
+        assert_eq!(
+            status.contains("HTTP 502"),
+            error.is_some(),
             "the refresh error follows the check's summary: {status}"
         );
     }
@@ -4609,6 +4649,44 @@ fn the_requirements_refresh_runs_after_the_update_check_never_beside_it() {
         Message::RequirementsRefreshed(PathBuf::from("/elsewhere"), Ok(0)),
     );
     assert!(!app.update_in_progress);
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// Nothing to look up, nothing started: the update check's answer for an
+/// instance whose mods have no Nexus id frees the button at once.
+#[test]
+fn an_instance_without_nexus_ids_starts_no_requirements_refresh() {
+    let root = temp_portable("skyrimse");
+    let mut app = app_for_game("skyrimse");
+    let inst = Instance::portable(root.clone());
+    inst.create().unwrap();
+    fs::create_dir_all(inst.mods_dir().join("Local")).unwrap();
+    fs::write(
+        inst.mods_dir().join("Local").join("meta.ini"),
+        "[General]\nversion=1.0\n",
+    )
+    .unwrap();
+    app.created = Some(inst);
+    app.mods = mods(&["Local"]);
+    app.screen = Screen::Main;
+    crate::state::refresh_meta_cache(&mut app);
+    assert_eq!(
+        nexus::requirements_refresh_target(&app, &root, true).map(|(i, _)| i.root),
+        None
+    );
+    for result in [Ok(Default::default()), Err("HTTP 503".to_string())] {
+        app.update_in_progress = true;
+        let next = update_inner(
+            &mut app,
+            Message::UpdatesChecked {
+                root: root.clone(),
+                connected: true,
+                result,
+            },
+        );
+        assert_eq!(next.units(), 0, "no refresh started");
+        assert!(!app.update_in_progress, "Check for updates is back on");
+    }
     let _ = fs::remove_dir_all(&root);
 }
 

@@ -456,8 +456,14 @@ pub(crate) enum Message {
     // ---- Mod update check (MO2 "Check for updates") ----
     /// Run a Nexus update check across the instance's mods (toolbar + Tools menu).
     CheckUpdates,
-    /// The update check finished: the summary, or an error.
-    UpdatesChecked(Result<eidos_nexus::UpdateCheckResult, String>),
+    /// The update check finished for the instance at `root`: the summary, or an
+    /// error. `connected` is false when the error came from signing in to Nexus
+    /// (offline, expired session), before any mod was checked.
+    UpdatesChecked {
+        root: PathBuf,
+        connected: bool,
+        result: Result<eidos_nexus::UpdateCheckResult, String>,
+    },
     /// The requirements refresh that rides on an update check finished for the
     /// instance at this root: how many mods it looked up, or the error.
     RequirementsRefreshed(PathBuf, Result<usize, String>),
