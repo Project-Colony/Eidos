@@ -43,7 +43,12 @@ pub fn parse_launch_env(text: &str) -> (LaunchEnv, Vec<usize>) {
             .filter(|w| !w.is_empty())
             // `NAME=value cmd` would run `NAME=value` as the program and put the value in the report.
             .filter(|w| {
-                let first = w.split_whitespace().next().unwrap_or("");
+                // Quotes and backslashes dropped, as the shell-style split that runs the line drops them.
+                let first = w
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .replace(['"', '\'', '\\'], "");
                 !first
                     .split_once('=')
                     .is_some_and(|(name, _)| is_env_name(name))
@@ -72,7 +77,7 @@ mod tests {
 
     #[test]
     fn launch_env_reads_env_and_wrapper_lines_and_names_the_ones_it_ignores() {
-        let text = "# comment\nenv=PROTON_ENABLE_NVAPI=1\nenv=1BAD=x\n\nwrapper=gamemoderun\nenv=NOVALUE\nwrapper=\nfoo=bar\n; note\nenv=DXVK_HUD=fps\nwrapper=gamescope -W 1280 -H 800 -f -- %command%\nwrapper=PROTON_ENABLE_NVAPI=1 gamemoderun %command%\n";
+        let text = "# comment\nenv=PROTON_ENABLE_NVAPI=1\nenv=1BAD=x\n\nwrapper=gamemoderun\nenv=NOVALUE\nwrapper=\nfoo=bar\n; note\nenv=DXVK_HUD=fps\nwrapper=gamescope -W 1280 -H 800 -f -- %command%\nwrapper=PROTON_ENABLE_NVAPI=1 gamemoderun %command%\nwrapper=\"TOKEN=abc\" gamemoderun\n";
         let (l, ignored) = parse_launch_env(text);
         assert_eq!(
             l.env,
@@ -85,7 +90,7 @@ mod tests {
             l.wrappers,
             ["gamemoderun", "gamescope -W 1280 -H 800 -f -- %command%"]
         );
-        assert_eq!(ignored, [3, 6, 7, 8, 12]);
+        assert_eq!(ignored, [3, 6, 7, 8, 12, 13]);
     }
 
     #[test]
