@@ -159,6 +159,8 @@ fn root_rules(inst: &Instance, opt: &Options) -> Vec<(String, Why)> {
         (MANIFEST_NAME.to_string(), Why::Regenerated),
         // A test run waiting for its review: a packed instance never carries one.
         (leaf(&inst.test_run_dir()), Why::InFlight),
+        // A bisect search between steps, tied to this machine's test runs.
+        (leaf(&inst.bisect_path()), Why::InFlight),
     ];
     if !opt.downloads {
         rules.push((leaf(&inst.downloads_dir()), Why::ByRequest));
@@ -528,7 +530,13 @@ mod tests {
             fs::create_dir_all(root.join(d)).unwrap();
             fs::write(root.join(d).join("f"), b"x").unwrap();
         }
-        for f in [".eidos.lock", "prereqs.done", "prereqs.log", MANIFEST_NAME] {
+        for f in [
+            ".eidos.lock",
+            "prereqs.done",
+            "bisect.json",
+            "prereqs.log",
+            MANIFEST_NAME,
+        ] {
             fs::write(root.join(f), b"x").unwrap();
         }
         let p = plan(&inst, &Options::default());
@@ -540,6 +548,7 @@ mod tests {
             "test-run",
             ".eidos.lock",
             "prereqs.done",
+            "bisect.json",
             "prereqs.log",
             MANIFEST_NAME,
         ] {

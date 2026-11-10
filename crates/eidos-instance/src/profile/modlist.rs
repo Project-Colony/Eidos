@@ -327,6 +327,29 @@ impl Profile {
             .collect()
     }
 
+    /// The highest-priority active mod whose `Root/` folder holds a file named
+    /// `name` (case-insensitive), such as the script extender's loader.
+    pub fn mod_with_root_file(&self, name: &str) -> Option<String> {
+        self.modlist()
+            .into_iter()
+            .rev()
+            .filter(|m| m.is_active())
+            .find(|m| {
+                crate::find_root_dir(&m.path)
+                    .and_then(|root| fs::read_dir(root).ok())
+                    .is_some_and(|mut entries| {
+                        entries.any(|e| {
+                            e.is_ok_and(|e| {
+                                e.file_name()
+                                    .to_str()
+                                    .is_some_and(|n| n.eq_ignore_ascii_case(name))
+                            })
+                        })
+                    })
+            })
+            .map(|m| m.name)
+    }
+
     /// Persist this profile's mod list (`+Name` enabled, `-Name` disabled).
     ///
     /// Written atomically (MO2's `SafeWriteFile`/`QSaveFile`): the content goes to
