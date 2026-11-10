@@ -28,6 +28,7 @@ mod window;
 mod wizard;
 
 pub(crate) use launch::{picks_the_game, start_directly, wait_direct_run};
+pub(crate) use test_run::load_test_state;
 
 /// Open `archive` on a worker thread, reporting 7-Zip's percentage as it goes.
 ///
@@ -1208,6 +1209,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         if !matches!(message, Message::StopRun) {
             app.confirm_stop = false;
         }
+        if !matches!(message, Message::ReviewApply) {
+            if let Some(r) = app.test_review.as_mut().filter(|r| r.armed) {
+                r.armed = false;
+                r.line = None;
+            }
+        }
         if !matches!(message, Message::RebuildPrefix) {
             app.confirm_rebuild_prefix = false;
         }
@@ -1467,7 +1474,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::TestChoose(..)
         | Message::TestStart
         | Message::TestCancelRequest
-        | Message::CloseTestDialog) => test_run::handle(app, m),
+        | Message::CloseTestDialog
+        | Message::ReviewChoose(..)
+        | Message::ReviewApply
+        | Message::ReviewLater) => test_run::handle(app, m),
         m @ (Message::OverwriteToModStart
         | Message::ToolOutputModChanged(..)
         | Message::OverwriteToModName(..)
@@ -1978,6 +1988,11 @@ pub(crate) fn open_instance(app: &mut App, inst: Instance) {
     // exist in this game at all.
     app.data_expanded.clear();
     recompute_counts(app);
+    // The other instance's test run is not this one's; this one's may have
+    // ended, or died, since the window last looked.
+    app.test_dialog = None;
+    app.test_review = None;
+    load_test_state(app, true);
 }
 
 /// Read one of a profile's INIs into a fresh editor state.

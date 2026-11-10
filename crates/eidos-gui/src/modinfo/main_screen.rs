@@ -646,6 +646,16 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         layers = layers.push(scrim).push(dialog);
     }
 
+    // A click outside is Decide later: it changes nothing on disk.
+    if let Some(review) = &app.test_review {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::ReviewLater)
+            .on_right_press(Message::ReviewLater);
+        let dialog = container(mouse_area(review_dialog(review)).on_press(Message::Noop))
+            .center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
+    }
+
     // The run lock (MO2's "lock GUI while the application runs"): a full-window
     // overlay that blocks everything beneath it until the game exits or the user
     // clicks Unlock. Added last so it sits on top of every other layer. A tracked

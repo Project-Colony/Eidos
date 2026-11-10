@@ -8547,3 +8547,214 @@ fn masters_are_found_when_the_plugins_tab_was_never_opened() {
     );
     let _ = fs::remove_dir_all(root);
 }
+
+/// A test run of profile `Default` that ended with code 0, having written one
+/// save and one Data file.
+fn ended_test_app() -> (App, PathBuf) {
+    let (app, root) = list_app(&["Keep"]);
+    let inst = app.created.clone().unwrap();
+    inst.request_test_run(&eidos_instance::TestRun {
+        profile: "Default".into(),
+        game: "skyrimse".into(),
+        requested: 1,
+        ..Default::default()
+    })
+    .unwrap();
+    inst.begin_test_run(&inst.profile("Default"), "skyrimse", &[], None, false, 2)
+        .unwrap()
+        .unwrap();
+    let saves = inst.test_run_profile().saves_dir();
+    fs::create_dir_all(&saves).unwrap();
+    fs::write(saves.join("new.ess"), "new").unwrap();
+    fs::write(inst.test_data_upper().join("out.txt"), "out").unwrap();
+    inst.end_test_run(Some(0), 3).unwrap();
+    (app, root)
+}
+
+#[test]
+fn a_finished_test_run_opens_the_review_and_apply_needs_every_group_decided() {
+    use eidos_instance::TestGroup;
+    let (mut app, root) = ended_test_app();
+    load_test_state(&mut app, true);
+    assert_eq!(app.test_review.as_ref().unwrap().writes.saves, ["new.ess"]);
+    let _ = update_inner(&mut app, Message::ReviewApply);
+    assert_eq!(
+        app.test_review.as_ref().unwrap().line.as_deref(),
+        Some(t("review_choose_all"))
+    );
+    let _ = update_inner(&mut app, Message::ReviewChoose(TestGroup::Saves, true));
+    let _ = update_inner(&mut app, Message::ReviewChoose(TestGroup::Output, true));
+    let _ = update_inner(&mut app, Message::ReviewApply);
+    assert!(
+        app.test_review.is_none(),
+        "keeping everything deletes nothing, one press"
+    );
+    assert_eq!(app.status.as_deref(), Some(t("status_test_closed")));
+    let inst = app.created.as_ref().unwrap();
+    assert!(inst
+        .profile("Default")
+        .saves_dir()
+        .join("new.ess")
+        .is_file());
+    assert!(inst.overwrite_dir().join("out.txt").is_file() && inst.test_run().is_none());
+    assert!(
+        app.test_state.is_none(),
+        "closing refreshes the cached state"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn throwing_away_takes_two_presses_and_any_other_action_disarms() {
+    use eidos_instance::TestGroup;
+    let (mut app, root) = ended_test_app();
+    load_test_state(&mut app, true);
+    let _ = update_inner(&mut app, Message::ReviewChoose(TestGroup::Saves, false));
+    let _ = update_inner(&mut app, Message::ReviewChoose(TestGroup::Output, true));
+    let _ = update_inner(&mut app, Message::ReviewApply);
+    let review = app.test_review.as_ref().unwrap();
+    assert!(review.armed);
+    assert_eq!(
+        review.line.as_deref(),
+        Some(tf("review_armed_line", &[("n", &1)]).as_str())
+    );
+    let _ = update_inner(&mut app, Message::SelectTab(Tab::Data));
+    assert!(!app.test_review.as_ref().unwrap().armed);
+    let _ = update_inner(&mut app, Message::ReviewApply);
+    let _ = update_inner(&mut app, Message::ReviewApply);
+    assert!(app.test_review.is_none());
+    assert!(!app
+        .created
+        .as_ref()
+        .unwrap()
+        .profile("Default")
+        .saves_dir()
+        .join("new.ess")
+        .exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn decide_later_closes_the_review_and_the_test_run_button_reopens_it() {
+    let (mut app, root) = ended_test_app();
+    load_test_state(&mut app, true);
+    let _ = update_inner(&mut app, Message::ReviewLater);
+    assert!(app.test_review.is_none());
+    assert!(app.created.as_ref().unwrap().test_run().is_some());
+    let _ = update_inner(&mut app, Message::OpenTestRun);
+    assert!(app.test_review.is_some() && app.test_dialog.is_none());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_test_run_that_wrote_nothing_closes_on_one_press() {
+    let (mut app, root) = list_app(&["Keep"]);
+    let inst = app.created.clone().unwrap();
+    inst.request_test_run(&eidos_instance::TestRun {
+        profile: "Default".into(),
+        game: "skyrimse".into(),
+        requested: 1,
+        ..Default::default()
+    })
+    .unwrap();
+    inst.begin_test_run(&inst.profile("Default"), "skyrimse", &[], None, false, 2)
+        .unwrap();
+    inst.end_test_run(Some(0), 3).unwrap();
+    load_test_state(&mut app, true);
+    let _ = update_inner(&mut app, Message::ReviewApply);
+    assert!(app.test_review.is_none() && inst.test_run().is_none());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn an_unfinished_test_run_opens_the_review_on_open() {
+    let (mut app, root) = ended_test_app();
+    // The manifest without `ended`, as a killed `eidos play` leaves it.
+    let inst = app.created.clone().unwrap();
+    let mut run = inst.test_run().unwrap();
+    run.ended = None;
+    run.exit = None;
+    fs::write(
+        inst.test_run_dir().join("test-run.json"),
+        serde_json::to_vec(&run).unwrap(),
+    )
+    .unwrap();
+    open_instance(&mut app, inst);
+    let review = app.test_review.as_ref().unwrap();
+    assert_eq!((review.run.exit, review.run.ended.is_some()), (None, true));
+    assert_eq!(review.writes.saves, ["new.ess"]);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn the_test_run_button_sees_a_run_that_ended_in_another_window() {
+    let (mut app, root) = list_app(&["Keep"]);
+    let inst = app.created.clone().unwrap();
+    inst.request_test_run(&eidos_instance::TestRun {
+        profile: "Default".into(),
+        game: "skyrimse".into(),
+        requested: 1,
+        ..Default::default()
+    })
+    .unwrap();
+    load_test_state(&mut app, false);
+    assert_eq!(
+        app.test_state.as_ref().unwrap().1,
+        eidos_instance::TestState::Requested
+    );
+    // The window Steam opened ran it: this window's cache was not told.
+    inst.begin_test_run(&inst.profile("Default"), "skyrimse", &[], None, false, 2)
+        .unwrap();
+    inst.end_test_run(Some(0), 3).unwrap();
+    let _ = update_inner(&mut app, Message::OpenTestRun);
+    assert!(app.test_review.is_some() && app.test_dialog.is_none());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn the_end_of_the_test_run_opens_the_review_and_a_stop_still_says_stopped() {
+    // (stopped, the test run began during this run)
+    for (stop, during) in [(false, true), (true, true), (false, false)] {
+        let (mut app, root) = list_app(&["Keep"]);
+        let inst = app.created.clone().unwrap();
+        inst.request_test_run(&eidos_instance::TestRun {
+            profile: "Default".into(),
+            game: "skyrimse".into(),
+            requested: 1,
+            ..Default::default()
+        })
+        .unwrap();
+        let mut cmd = std::process::Command::new("sleep");
+        cmd.arg(if stop { "30" } else { "0" });
+        start_run(&mut app, "Game".into(), cmd);
+        let run = app.running.as_mut().unwrap();
+        run.game = true;
+        let begun = if during { run.started } else { 1 };
+        inst.begin_test_run(
+            &inst.profile("Default"),
+            "skyrimse",
+            &[],
+            None,
+            false,
+            begun,
+        )
+        .unwrap();
+        inst.end_test_run(Some(0), begun).unwrap();
+        if stop {
+            let _ = update_inner(&mut app, Message::StopRun);
+            let _ = update_inner(&mut app, Message::StopRun);
+        }
+        finish_tracked_run(&mut app);
+        let said = app.status.clone().unwrap();
+        match (stop, during) {
+            (true, _) => assert_eq!(said, tf("status_run_stopped", &[("title", &"Game")])),
+            (false, true) => assert_eq!(said, t("status_test_ended")),
+            (false, false) => assert_ne!(said, t("status_test_ended"), "a normal run ended"),
+        }
+        assert!(
+            app.test_review.is_some(),
+            "{stop} {during}: the review opens"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+}

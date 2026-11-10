@@ -334,7 +334,9 @@ pub(crate) fn subscription(app: &App) -> iced::Subscription<Message> {
         && app.place_job.is_none()
         // A selection changed behind the Test run dialog would change what
         // "only the selected mods" starts, and Ctrl+R would start a normal run.
+        // Behind the review, Ctrl+R would start one over the files it lists.
         && app.test_dialog.is_none()
+        && app.test_review.is_none()
     {
         subs.push(shortcuts);
     }

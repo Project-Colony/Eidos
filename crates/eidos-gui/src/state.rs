@@ -318,6 +318,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         play_prompt: None,
         test_dialog: None,
         test_state: None,
+        test_review: None,
         play_anyway: Vec::new(),
         confirm_rebuild_prefix: false,
         overwrite_to_mod: None,
@@ -1647,6 +1648,15 @@ pub(crate) fn start_run_with_log(
 pub(crate) fn finish_run(app: &mut App) {
     let run = app.running.take();
     reload_mods(app);
+    // Before the status below, which a Stop decides: the review (or the bisect
+    // panel) opens whatever the run's end.
+    load_test_state(app, true);
+    // The test run began during this run, so this run was it.
+    let test_ran = run.as_ref().is_some_and(|r| {
+        r.game
+            && matches!(&app.test_state, Some((test, eidos_instance::TestState::Ended))
+                if test.started.is_some_and(|s| s >= r.started))
+    });
     if app.created.is_some() {
         // A game run under `eidos play` writes only into the Overwrite: the mods
         // are read-only lowers of the union, and game-root writes land in
@@ -1744,12 +1754,17 @@ pub(crate) fn finish_run(app: &mut App) {
     } else {
         tf("status_exited", &[("title", &run.title)])
     });
+    // Stopped wins; otherwise the review names the code and the crash log.
+    if test_ran && !run.stopped {
+        app.status = Some(t("status_test_ended").to_string());
+    }
     // A crash can still exit 0 under Proton; the crash log is the better answer.
     // Only when this run recorded its start: one that failed or was refused
     // before that would name the previous session's log. A stopped run is no
     // crash news, even if the stop made the game write a log.
     if run.game
         && !run.stopped
+        && !test_ran
         && app
             .created
             .as_ref()

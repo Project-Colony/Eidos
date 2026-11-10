@@ -1657,3 +1657,67 @@ fn the_test_dialog_keeps_one_height_across_choices_and_the_cloud_note() {
     );
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// Files, notes, the crash line, an unfinished run's header and the armed line
+/// never change the review's height: each has a fixed slot.
+#[test]
+fn the_review_keeps_one_height() {
+    use eidos_instance::TestRunWrites;
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    let run = eidos_instance::TestRun {
+        exit: Some(0),
+        ..Default::default()
+    };
+    let mut below = |review: &TestReview| {
+        let col = Column::new()
+            .push(review_dialog(review))
+            .push(text("below the review"));
+        label(col.into(), &mut renderer, "below the review", 0).y
+    };
+    let empty = TestReview::new(TestRunWrites::default(), run.clone(), None);
+    let base = below(&empty);
+    let many = TestRunWrites {
+        saves: (0..300).map(|i| format!("Save{i}.ess")).collect(),
+        saves_replacing: 3,
+        saves_deleted: 2,
+        plugins: vec!["plugins.txt".into()],
+        plugins_offered: true,
+        output: vec!["Data/x".into()],
+        output_deleted: 4,
+        logs: vec!["SKSE/a.log".into()],
+        ..Default::default()
+    };
+    let mut full = TestReview::new(
+        many,
+        eidos_instance::TestRun {
+            exit: None,
+            mods: Some(vec![]),
+            cloud: true,
+            ..run.clone()
+        },
+        Some("/very/long/path/to/a/crash/log/that/would/wrap/crash-2026-11-10-12-00-00.log".into()),
+    );
+    assert_eq!(
+        below(&full),
+        base,
+        "files, notes and the crash line changed the height"
+    );
+    full.armed = true;
+    full.line = Some(tf("review_armed_line", &[("n", &300)]));
+    assert_eq!(below(&full), base, "the armed line changed the height");
+    // The French header of an unfinished run, the longest, fits its slot at the
+    // dialog's inner width (its 560 px cap less 2 x 20 px padding).
+    let fr = crate::i18n::t_in(colony_ui::i18n::Locale::Fr, "review_interrupted");
+    let header = positions(
+        container(text(fr).size(sz(12))).width(520.0).into(),
+        &mut renderer,
+    )
+    .labels[0]
+        .1
+        .height;
+    assert!(
+        header <= crate::theme::scaled(REVIEW_HEADER_H),
+        "the French header is {header} px tall"
+    );
+}

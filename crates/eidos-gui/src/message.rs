@@ -163,6 +163,11 @@ pub(crate) enum Message {
     TestStart,
     TestCancelRequest,
     CloseTestDialog,
+    /// The test run review: keep or throw away a group, apply, or close it
+    /// and decide later.
+    ReviewChoose(eidos_instance::TestGroup, bool),
+    ReviewApply,
+    ReviewLater,
     ExecTogglePinned,
     ExecMakeShortcut,
     /// Executables dialog: list the entries of a foreign `ModOrganizer.ini`,
