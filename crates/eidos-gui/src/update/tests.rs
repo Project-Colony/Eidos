@@ -8620,6 +8620,17 @@ fn a_broken_collection_order_gets_a_last_card_and_restore_puts_it_back() {
     );
     let _ = update(&mut app, Message::Undo);
     assert_eq!(names(&app.mods), ["B", "Mine", "A"]);
+    // The rules are kept between refreshes, and read again once the recipe goes.
+    assert!(crate::modinfo::diagnostics(&app)
+        .iter()
+        .any(|d| d.actions.iter().any(|(_, m)| restore(m))));
+    fs::remove_file(
+        eidos_collections::state::revision_dir(&root, "abc123", 1).join("collection.json"),
+    )
+    .unwrap();
+    assert!(crate::modinfo::diagnostics(&app)
+        .iter()
+        .all(|d| !d.actions.iter().any(|(_, m)| restore(m))));
     let _ = update(&mut app, Message::RestoreCollectionOrder("gone".into()));
     assert_eq!(
         app.status,

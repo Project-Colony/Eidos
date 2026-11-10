@@ -182,6 +182,12 @@ pub(crate) struct PlayPrompt {
     pub(crate) key: (String, u64),
 }
 
+/// `orders_stamp` of the instance, and the rules read at that stamp.
+pub(crate) type CollectionOrdersCache = (
+    Vec<(PathBuf, Option<std::time::SystemTime>)>,
+    std::rc::Rc<Vec<eidos::check::collections::CollectionOrder>>,
+);
+
 pub(crate) struct App {
     pub(crate) installer: Option<installers::Wizard>,
     pub(crate) mod_picker: u64,
@@ -765,6 +771,12 @@ pub(crate) struct App {
     /// `view_generation`: the archive worker swaps the map without bumping it.
     pub(crate) contested_cache:
         std::cell::RefCell<Option<(u64, u32, std::rc::Rc<crate::modinfo::Contested>)>>,
+    /// The open instance's collection rules, keyed by `orders_stamp`.
+    ///
+    /// The Diagnostics refresh after every toggle and drag checks them, and
+    /// reading and resolving the recipe of a 2000-mod collection took 4.3 s in
+    /// a debug build: they are read again only when a file they come from changes.
+    pub(crate) collection_orders: std::cell::RefCell<Option<CollectionOrdersCache>>,
     /// The union the Data tab reads, built once per view generation.
     ///
     /// The SAME `LayerStack` the mount serves from, rather than a hand-rolled

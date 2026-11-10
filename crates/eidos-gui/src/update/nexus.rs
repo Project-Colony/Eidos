@@ -890,36 +890,24 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             return update(app, Message::CollectionFetch);
         }
         Message::RestoreCollectionOrder(slug) => {
-            let Some(root) = app.created.as_ref().map(|i| i.root.clone()) else {
+            if app.created.is_none() {
                 return Task::none();
-            };
-            let found = eidos_collections::state::installed(&root)
-                .into_iter()
-                .find(|st| st.slug == slug)
-                .and_then(|st| {
-                    let c =
-                        eidos_collections::driver::cached_collection(&root, &st.slug, st.revision)?;
-                    Some((c, st))
-                });
-            let Some((c, st)) = found else {
+            }
+            let orders = crate::modinfo::collection_orders(app);
+            let Some(order) = orders.iter().find(|o| o.slug == slug) else {
                 app.status = Some(tf(
                     "status_collection_order_unreadable",
                     &[("collection", &slug)],
                 ));
                 return Task::none();
             };
-            let collection = if c.info.name.is_empty() {
-                slug
-            } else {
-                c.info.name.clone()
-            };
+            let collection = &order.name;
             let names: Vec<String> = app.mods.iter().map(|m| m.name.clone()).collect();
-            let folders = eidos_collections::install::installed_folders(&c, &st);
-            let new = eidos_collections::rules::restore_order(&c, &folders, &names);
+            let new = order.rules.restore(&names);
             if new == names {
                 app.status = Some(tf(
                     "status_collection_order_unchanged",
-                    &[("collection", &collection)],
+                    &[("collection", collection)],
                 ));
                 return Task::none();
             }

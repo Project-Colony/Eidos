@@ -1,37 +1,86 @@
 //! A57: an installed collection's before/after rules that the mod list no longer keeps.
 
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use eidos_collections::{driver, install, rules, state};
 
 use super::{Finding, Level};
 
-/// One `collection_order_broken` finding per installed collection whose cached
-/// recipe has rules the enabled mods break. `mods` is highest priority first,
-/// as [`super::active_mods`] gives it. A collection without its cached recipe is
-/// not checked.
-pub fn collection_order_findings(root: &Path, mods: &[(String, PathBuf)]) -> Vec<Finding> {
+/// One installed collection's before/after rules, read from its cached recipe.
+#[derive(Debug, Clone)]
+pub struct CollectionOrder {
+    pub slug: String,
+    /// The recipe's `info.name`, the slug when empty.
+    pub name: String,
+    pub rules: rules::FolderRules,
+}
+
+/// The rules of every installed collection whose cached recipe is still there.
+///
+/// This parses and resolves each recipe, which for a collection of 2000 mods
+/// takes far longer than a frame: a window keeps the answer until
+/// [`orders_stamp`] changes.
+pub fn collection_orders(root: &Path) -> Vec<CollectionOrder> {
+    state::installed(root)
+        .into_iter()
+        .filter_map(|st| {
+            let c = driver::cached_collection(root, &st.slug, st.revision)?;
+            let rules = rules::FolderRules::new(&c, &install::installed_folders(&c, &st));
+            let name = if c.info.name.is_empty() {
+                st.slug.clone()
+            } else {
+                c.info.name
+            };
+            Some(CollectionOrder {
+                slug: st.slug,
+                name,
+                rules,
+            })
+        })
+        .collect()
+}
+
+/// The modification time of every file [`collection_orders`] reads: each
+/// revision's state file, its recipe and the recipe's completion marker.
+pub fn orders_stamp(root: &Path) -> Vec<(PathBuf, Option<SystemTime>)> {
+    let dir = root.join("collections");
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some(stem) = name.strip_suffix(".state.json") else {
+            continue;
+        };
+        for path in [
+            entry.path(),
+            dir.join(stem).join("collection.json"),
+            dir.join(format!("{stem}.payload-complete")),
+        ] {
+            let modified = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
+            out.push((path, modified));
+        }
+    }
+    out.sort();
+    out
+}
+
+/// One `collection_order_broken` finding per collection in `orders` whose
+/// rules the enabled mods break. `mods` is highest priority first, as
+/// [`super::active_mods`] gives it.
+pub fn order_findings(orders: &[CollectionOrder], mods: &[(String, PathBuf)]) -> Vec<Finding> {
     let enabled: Vec<String> = mods.iter().rev().map(|(n, _)| n.clone()).collect();
     let mut out = Vec::new();
-    for st in state::installed(root) {
-        let Some(c) = driver::cached_collection(root, &st.slug, st.revision) else {
-            continue;
-        };
-        let pairs = rules::broken_pairs(&c, &install::installed_folders(&c, &st), &enabled);
+    for o in orders {
+        let pairs = o.rules.broken_pairs(&enabled);
         let Some((earlier, later)) = pairs.first().cloned() else {
             continue;
-        };
-        let name = if c.info.name.is_empty() {
-            st.slug.clone()
-        } else {
-            c.info.name.clone()
         };
         out.push(Finding {
             code: "collection_order_broken",
             level: Level::Advice,
             args: vec![
-                ("collection", name),
-                ("slug", st.slug),
+                ("collection", o.name.clone()),
+                ("slug", o.slug.clone()),
                 ("n", pairs.len().to_string()),
                 ("earlier", earlier),
                 ("later", later),
@@ -39,6 +88,12 @@ pub fn collection_order_findings(root: &Path, mods: &[(String, PathBuf)]) -> Vec
         });
     }
     out
+}
+
+/// [`order_findings`] over [`collection_orders`]. A collection without its
+/// cached recipe is not checked.
+pub fn collection_order_findings(root: &Path, mods: &[(String, PathBuf)]) -> Vec<Finding> {
+    order_findings(&collection_orders(root), mods)
 }
 
 #[cfg(test)]
@@ -121,6 +176,9 @@ mod tests {
         ] {
             assert_eq!(f[0].arg(k), Some(v), "{k}");
         }
+        let stamp = orders_stamp(&root);
+        assert_eq!(stamp.len(), 3, "{stamp:?}");
+        assert!(stamp.iter().all(|(_, t)| t.is_some()), "{stamp:?}");
         std::fs::remove_file(
             eidos_collections::state::revision_dir(&root, "abc123", 1).join("collection.json"),
         )
@@ -129,6 +187,7 @@ mod tests {
             collection_order_findings(&root, &mods(&["A", "B"])).is_empty(),
             "no recipe, no check"
         );
+        assert_ne!(orders_stamp(&root), stamp, "a window reads the rules again");
         let _ = std::fs::remove_dir_all(root);
     }
 }
