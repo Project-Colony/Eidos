@@ -123,10 +123,11 @@ pub(crate) fn finish(
     }
 }
 
-/// A stopped run is never an exit-0 session, so it cannot become the last good
-/// run: Steam's wrapper chain may turn the SIGTERM into exit 0.
+/// A stopped run always records 143, so it cannot become the last good run and
+/// pre-fills no bisect answer: Steam's wrapper chain may turn the SIGTERM into
+/// exit 0 or 1, and a wrapper that handles SIGTERM itself may return any code.
 pub(crate) fn recorded_exit(code: i32, stopped: bool) -> i32 {
-    if stopped && code == 0 {
+    if stopped {
         128 + 15 // SIGTERM, as `exit_code` maps a signal exit
     } else {
         code

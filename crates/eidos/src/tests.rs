@@ -598,6 +598,11 @@ fn a_test_run_record_names_the_real_profile_and_is_never_the_diff_target() {
 fn a_stopped_run_is_never_recorded_as_exit_zero() {
     assert_eq!(sessions::recorded_exit(0, true), 143);
     assert_eq!(sessions::recorded_exit(143, true), 143);
-    assert_eq!(sessions::recorded_exit(1, true), 1);
+    assert_eq!(
+        sessions::recorded_exit(1, true),
+        143,
+        "a stop through Steam's reaper"
+    );
     assert_eq!(sessions::recorded_exit(0, false), 0);
+    assert_eq!(sessions::recorded_exit(1, false), 1);
 }
