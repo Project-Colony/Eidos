@@ -1170,6 +1170,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         if !matches!(message, Message::StopRun) {
             app.confirm_stop = false;
         }
+        if !matches!(message, Message::RebuildPrefix) {
+            app.confirm_rebuild_prefix = false;
+        }
         if !matches!(
             message,
             Message::DeleteSave(_) | Message::ConfirmDeleteSave(_)
@@ -1403,6 +1406,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::PollRunning
         | Message::ForceUnlock
         | Message::StopRun
+        | Message::RebuildPrefix
         | Message::CloseLootReport
         | Message::CopyLootReport
         | Message::ChangeGame

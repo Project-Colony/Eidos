@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=8f0ea64ea39bdda653b7726249aa2b3377b772dc -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=c9bb5a3ae78695b89ce4595223a2d2ff1902345e -->
 
 # Probleemoplossing en diagnostiek
 
@@ -123,6 +123,38 @@ kinderenkaart bespaart op `readdir`.
 
 `EIDOS_NO_INDEX=1` dwingt de doorloop af, voor wanneer het verschil tussen de
 twee antwoorden juist datgene is wat je aan het debuggen bent.
+
+## Een spel of tool dat niet afsluit
+
+Terwijl een spel of tool draait, wordt de Run-knop **Stop**, en de
+vergrendelkaart heeft ook een Stop-knop. Druk er twee keer op. De tweede druk
+beëindigt elk programma dat de run startte: eerst SIGTERM, daarna na 10 seconden
+SIGKILL voor wat er nog over is. Wat het spel niet had opgeslagen, gaat
+verloren. Eidos doet daarna wat het na elke afsluiting doet: INI- en
+pluginwijzigingen gaan terug naar het profiel, de uitvoer van tools wordt
+vastgelegd en de mods worden ontkoppeld. **Unlock** is iets anders: het geeft
+het venster terug en laat het programma draaien. Vanuit een terminal doet
+`kill <pid>` op het `eidos`-proces (de pid staat op de vergrendelkaart)
+hetzelfde als Stop.
+
+## Welke Proton het spel draait, en een kapotte prefix
+
+Het tabblad Diagnostics heeft een **Proton**-kaart: de versie die Eidos en Steam
+voor het spel gebruiken, de eigen instelling van Steam en de versie die de
+prefix het laatst draaide. Als een nieuwere Proton dan de gekozen versie de
+prefix het laatst heeft ingericht, wordt de kaart een advies, want een oudere
+Proton op een nieuwere prefix kan de Wine-bestanden ervan terugzetten of niet
+starten. Kies in Steam een versie die minstens even nieuw is, onder
+Eigenschappen, Compatibiliteit van het spel.
+
+**Rebuild prefix** op die kaart is voor een prefix die niet meer werkt. Druk er
+twee keer op. Eidos verwijdert niets: het hernoemt
+`steamapps/compatdata/<appid>` naar `<appid>.eidos-backup-<date>-<time>` in
+dezelfde map, en Steam maakt een nieuwe prefix aan de volgende keer dat je het
+spel vanuit Steam start. Het weigert zolang een spel, een tool of een ander
+Wine-programma de prefix gebruikt. Saves en instellingen die alleen in de oude
+prefix staan, blijven in de hernoemde map: kopieer terug wat je nodig hebt, en
+verwijder die map zelf als je hem niet meer wilt.
 
 ## Bekende problemen
 

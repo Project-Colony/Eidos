@@ -192,6 +192,8 @@ pub(crate) struct App {
     pub(crate) confirm_clear: bool,
     /// Two-click guard for Stop, which ends the tracked run.
     pub(crate) confirm_stop: bool,
+    /// Two-click guard for Rebuild prefix, which renames the game's prefix aside.
+    pub(crate) confirm_rebuild_prefix: bool,
     /// The in-progress "create mod from Overwrite" name, if that prompt is open.
     pub(crate) overwrite_to_mod: Option<String>,
     /// An open "send to priority" editor: `(row, typed text)`.

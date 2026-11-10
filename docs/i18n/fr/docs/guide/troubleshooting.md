@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=8f0ea64ea39bdda653b7726249aa2b3377b772dc -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=c9bb5a3ae78695b89ce4595223a2d2ff1902345e -->
 
 # Dépannage et diagnostics
 
@@ -125,6 +125,38 @@ ce que la carte des enfants fusionnés économise sur `readdir`.
 
 `EIDOS_NO_INDEX=1` force le parcours, pour quand la différence entre les deux
 réponses est précisément ce qu'on débogue.
+
+## Un jeu ou un outil qui ne se ferme pas
+
+Pendant qu'un jeu ou un outil tourne, le bouton Lancer devient **Arrêter**, et
+la carte de verrouillage a elle aussi un bouton Arrêter. Appuyez dessus deux
+fois. Le second appui ferme tous les programmes que le lancement a démarrés :
+SIGTERM d'abord, puis SIGKILL au bout de 10 secondes pour ce qui reste. Ce que
+le jeu n'avait pas sauvegardé est perdu. Eidos fait ensuite ce qu'il fait après
+toute fermeture : les changements d'INI et de plugins retournent dans le profil,
+la sortie des outils est enregistrée et les mods sont démontés.
+**Déverrouiller** est différent : il rend la fenêtre et laisse le programme
+tourner. Depuis un terminal, `kill <pid>` sur le processus `eidos` (le pid est
+sur la carte de verrouillage) fait la même chose qu'Arrêter.
+
+## Quel Proton lance le jeu, et un préfixe cassé
+
+L'onglet Diagnostics a une carte **Proton** : la version qu'Eidos et Steam
+utilisent pour le jeu, le réglage propre à Steam, et la version qui a lancé le
+préfixe en dernier. Quand un Proton plus récent que celui choisi a préparé le
+préfixe en dernier, la carte devient un conseil, car un Proton plus ancien sur
+un préfixe plus récent peut réinitialiser ses fichiers Wine ou ne pas démarrer.
+Choisissez une version au moins aussi récente dans Steam, sous Propriétés du
+jeu, Compatibilité.
+
+**Reconstruire le préfixe**, sur cette carte, sert pour un préfixe qui ne
+fonctionne plus. Appuyez dessus deux fois. Eidos ne supprime rien : il renomme
+`steamapps/compatdata/<appid>` en `<appid>.eidos-backup-<date>-<time>` dans le
+même dossier, et Steam crée un nouveau préfixe au prochain lancement du jeu
+depuis Steam. Il refuse tant qu'un jeu, un outil ou n'importe quel programme
+Wine utilise le préfixe. Les sauvegardes et réglages gardés seulement dans
+l'ancien préfixe restent dans le dossier renommé : recopiez ce dont vous avez
+besoin, et supprimez ce dossier vous-même quand vous n'en voulez plus.
 
 ## Problèmes connus
 

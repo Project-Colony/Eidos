@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=8f0ea64ea39bdda653b7726249aa2b3377b772dc -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=c9bb5a3ae78695b89ce4595223a2d2ff1902345e -->
 
 # Fehlersuche und Diagnose
 
@@ -122,6 +122,39 @@ zusammengeführten Kinder bei `readdir` einspart.
 
 `EIDOS_NO_INDEX=1` erzwingt den Durchlauf, für den Fall, dass gerade der Unterschied
 zwischen beiden Antworten das Untersuchte ist.
+
+## Ein Spiel oder Tool, das sich nicht beendet
+
+Während ein Spiel oder Tool läuft, wird der Run-Knopf zu **Stop**, und die
+Sperrkarte hat ebenfalls einen Stop-Knopf. Drücken Sie ihn zweimal. Der zweite
+Druck beendet jedes Programm, das der Start gestartet hat: zuerst SIGTERM, dann
+nach 10 Sekunden SIGKILL für alles, was noch übrig ist. Was das Spiel nicht
+gespeichert hatte, geht verloren. Danach tut Eidos, was es nach jedem Beenden
+tut: INI- und Plugin-Änderungen gehen zurück ins Profil, die Ausgabe der Tools
+wird erfasst, und die Mods werden ausgehängt. **Unlock** ist etwas anderes: Es
+gibt das Fenster frei und lässt das Programm weiterlaufen. In einem Terminal
+bewirkt `kill <pid>` auf den `eidos`-Prozess (die PID steht auf der Sperrkarte)
+dasselbe wie Stop.
+
+## Welches Proton das Spiel ausführt, und ein defektes Präfix
+
+Der Diagnostics-Reiter hat eine **Proton**-Karte: die Version, die Eidos und
+Steam für das Spiel verwenden, Steams eigene Einstellung und die Version, die
+das Präfix zuletzt ausgeführt hat. Wenn ein neueres Proton als das ausgewählte
+das Präfix zuletzt eingerichtet hat, wird die Karte zu einem Hinweis, denn ein
+älteres Proton auf einem neueren Präfix kann dessen Wine-Dateien zurücksetzen
+oder gar nicht starten. Wählen Sie in Steam unter Eigenschaften, Kompatibilität
+des Spiels eine mindestens ebenso neue Version.
+
+**Rebuild prefix** auf dieser Karte ist für ein Präfix, das nicht mehr
+funktioniert. Drücken Sie es zweimal. Eidos löscht nichts: Es benennt
+`steamapps/compatdata/<appid>` im selben Ordner in
+`<appid>.eidos-backup-<date>-<time>` um, und Steam legt ein neues Präfix an,
+wenn Sie das Spiel das nächste Mal aus Steam starten. Solange ein Spiel, ein
+Tool oder irgendein Wine-Programm das Präfix benutzt, verweigert es das.
+Spielstände und Einstellungen, die nur im alten Präfix liegen, bleiben im
+umbenannten Ordner: Kopieren Sie zurück, was Sie brauchen, und löschen Sie
+diesen Ordner selbst, wenn Sie ihn nicht mehr wollen.
 
 ## Bekannte Probleme
 

@@ -6055,3 +6055,62 @@ fn any_other_action_disarms_stop_and_a_prereqs_run_cannot_be_stopped() {
     finish_tracked_run(&mut app);
     let _ = fs::remove_dir_all(root);
 }
+
+fn prefix_app() -> (App, PathBuf, PathBuf) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static N: AtomicUsize = AtomicUsize::new(0);
+    let mut app = app_for_game("skyrimse");
+    let t = std::env::temp_dir().join(format!(
+        "eidos-rebuild-{}-{}",
+        std::process::id(),
+        N.fetch_add(1, Ordering::Relaxed)
+    ));
+    let _ = fs::remove_dir_all(&t);
+    let compat = t.join("compatdata/489830");
+    fs::create_dir_all(compat.join("pfx")).unwrap();
+    app.games[0].compatdata = Some(compat.clone());
+    (app, t, compat)
+}
+
+#[test]
+fn rebuild_prefix_takes_two_presses_and_keeps_the_old_prefix() {
+    let (mut app, t, compat) = prefix_app();
+    let _ = update_inner(&mut app, Message::RebuildPrefix);
+    assert!(compat.is_dir() && app.confirm_rebuild_prefix);
+    let _ = update_inner(&mut app, Message::RebuildPrefix);
+    assert!(!compat.exists());
+    let backups: Vec<String> = fs::read_dir(t.join("compatdata"))
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with("489830.eidos-backup-"))
+        .collect();
+    assert_eq!(backups.len(), 1);
+    assert!(app.status.as_deref().unwrap().contains(&backups[0]));
+    assert!(app.diag_dirty && !app.confirm_rebuild_prefix);
+    let _ = fs::remove_dir_all(t);
+}
+
+#[test]
+fn rebuild_prefix_waits_for_a_tracked_run() {
+    let (mut app, t, compat) = prefix_app();
+    start_run(
+        &mut app,
+        "Game".into(),
+        std::process::Command::new("/bin/true"),
+    );
+    let _ = update_inner(&mut app, Message::RebuildPrefix);
+    let _ = update_inner(&mut app, Message::RebuildPrefix);
+    assert!(compat.is_dir() && !app.confirm_rebuild_prefix);
+    assert_eq!(
+        app.status.as_deref(),
+        Some(tf("status_rebuild_prefix_wait_run", &[("title", &"Game")]).as_str())
+    );
+    app.running.take();
+    let _ = fs::remove_dir_all(t);
+}
+
+#[test]
+fn backup_stamp_is_utc_and_sortable() {
+    assert_eq!(launch::backup_stamp(1_793_448_000), "20261031-120000");
+}

@@ -653,6 +653,9 @@ pub(crate) enum Message {
     /// Stop: the first press arms it, the second sends the `eidos` child SIGTERM,
     /// which ends its programs and still captures the session.
     StopRun,
+    /// Rebuild prefix on the Proton card: the first press arms it, the second
+    /// renames the game's `compatdata/<appid>` aside so Steam makes a new one.
+    RebuildPrefix,
     /// Dismiss the transient status-bar message (the small x next to it).
     ClearStatus,
     // ---- MO2's targeted "Send to" actions (the day-to-day way load orders get

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=8f0ea64ea39bdda653b7726249aa2b3377b772dc -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=c9bb5a3ae78695b89ce4595223a2d2ff1902345e -->
 
 # Rozwiązywanie problemów i diagnostyka
 
@@ -119,6 +119,36 @@ scalonych dzieci oszczędza przy `readdir`.
 
 `EIDOS_NO_INDEX=1` wymusza przechodzenie - na wypadek, gdy to właśnie różnica między
 dwiema odpowiedziami jest przedmiotem debugowania.
+
+## Gra lub narzędzie, które się nie zamyka
+
+Gdy gra lub narzędzie działa, przycisk Run zmienia się w **Stop**, a karta
+blokady też ma przycisk Stop. Naciśnij go dwa razy. Drugie naciśnięcie kończy
+każdy program uruchomiony przez to uruchomienie: najpierw SIGTERM, a po 10
+sekundach SIGKILL dla tego, co zostało. To, czego gra nie zapisała, przepada.
+Potem Eidos robi to samo co po każdym wyjściu: zmiany w INI i wtyczkach wracają
+do profilu, wyjście narzędzi zostaje zapisane, a mody są odmontowywane.
+**Unlock** to co innego: oddaje okno i zostawia program uruchomiony. W terminalu
+`kill <pid>` na procesie `eidos` (pid jest na karcie blokady) działa tak samo
+jak Stop.
+
+## Który Proton uruchamia grę, i zepsuty prefiks
+
+Karta Diagnostics ma kartę **Proton**: wersję, której Eidos i Steam używają dla
+gry, własne ustawienie Steam i wersję, która ostatnio uruchomiła prefiks. Gdy
+prefiks ostatnio przygotował nowszy Proton niż wybrany, karta staje się poradą,
+bo starszy Proton na nowszym prefiksie może zresetować jego pliki Wine albo się
+nie uruchomić. Wybierz w Steam wersję co najmniej tak samo nową, we
+Właściwościach gry, w Zgodności.
+
+**Rebuild prefix** na tej karcie służy do prefiksu, który już nie działa.
+Naciśnij go dwa razy. Eidos niczego nie usuwa: zmienia nazwę
+`steamapps/compatdata/<appid>` na `<appid>.eidos-backup-<date>-<time>` w tym
+samym folderze, a Steam tworzy nowy prefiks przy następnym uruchomieniu gry ze
+Steam. Odmawia, dopóki gra, narzędzie albo dowolny program Wine używa prefiksu.
+Zapisy i ustawienia trzymane tylko w starym prefiksie zostają w folderze o
+zmienionej nazwie: skopiuj z powrotem to, czego potrzebujesz, i sam usuń ten
+folder, gdy nie będzie ci już potrzebny.
 
 ## Znane problemy
 

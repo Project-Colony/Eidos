@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=8f0ea64ea39bdda653b7726249aa2b3377b772dc -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=c9bb5a3ae78695b89ce4595223a2d2ff1902345e -->
 
 # 疑難排解與診斷
 
@@ -104,6 +104,16 @@ cargo run --release -p eidos-core --example listing_cost -- <mods-dir> <overwrit
 的答案。`listing_cost` 衡量合併子項對照表在 `readdir` 上省下了什麼。
 
 `EIDOS_NO_INDEX=1` 會強制走訪,用在兩種答案之間的差異正是你要除錯的對象時。
+
+## 無法關閉的遊戲或工具
+
+遊戲或工具執行時，執行按鈕 Run 會變成 **Stop**，鎖定卡片上也有一個 Stop 按鈕。按兩次。第二次按下會結束這次執行啟動的所有程式：先送 SIGTERM，10 秒後對剩下的送 SIGKILL。遊戲沒有儲存的內容會遺失。之後 Eidos 做的事與任何結束之後相同：INI 和外掛的變更回到設定檔，工具的輸出被記錄，模組被卸載。**Unlock** 不一樣：它把視窗交還給你，程式繼續執行。在終端機裡對 `eidos` 行程執行 `kill <pid>`（pid 顯示在鎖定卡片上）與 Stop 效果相同。
+
+## 遊戲由哪個 Proton 執行，以及損壞的前綴
+
+Diagnostics 分頁有一張 **Proton** 卡片：Eidos 和 Steam 為該遊戲使用的版本、Steam 自己的設定，以及最後執行該前綴的版本。如果最後準備前綴的 Proton 比所選的更新，卡片會變成建議，因為在較新的前綴上用較舊的 Proton 可能會重設其中的 Wine 檔案，或者無法啟動。請在 Steam 中遊戲的內容、相容性裡選擇一個至少同樣新的版本。
+
+該卡片上的 **Rebuild prefix** 用於已經無法使用的前綴。按兩次。Eidos 不刪除任何東西：它在同一資料夾裡把 `steamapps/compatdata/<appid>` 重新命名為 `<appid>.eidos-backup-<date>-<time>`，下次你從 Steam 啟動遊戲時，Steam 會建立一個新前綴。只要有遊戲、工具或任何 Wine 程式在使用該前綴，它就會拒絕。只存在舊前綴裡的存檔和設定會留在重新命名後的資料夾中：把需要的複製回來，不再需要時請自己刪除那個資料夾。
 
 ## 已知問題
 

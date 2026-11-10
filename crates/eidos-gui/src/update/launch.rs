@@ -168,6 +168,40 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(tf("status_stop_armed", &[("title", &title)]));
             }
         }
+        Message::RebuildPrefix => {
+            // Two presses, like Stop. A tracked run is refused before
+            // `prefix_busy` is asked: its Wine processes may not exist yet.
+            let Some(compat) = selected_game(app).and_then(|g| g.compatdata.clone()) else {
+                return Task::none();
+            };
+            if let Some(r) = &app.running {
+                app.status = Some(tf("status_rebuild_prefix_wait_run", &[("title", &r.title)]));
+                return Task::none();
+            }
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs() as i64);
+            let stamp = backup_stamp(now);
+            if app.confirm_rebuild_prefix {
+                app.confirm_rebuild_prefix = false;
+                app.status = Some(
+                    match eidos_gamefeatures::move_prefix_aside(&compat, &stamp) {
+                        Ok(to) => {
+                            app.diag_dirty = true;
+                            tf("status_rebuild_prefix_done", &[("to", &to.display())])
+                        }
+                        Err(e) => tf("status_rebuild_prefix_failed", &[("error", &e)]),
+                    },
+                );
+            } else {
+                app.confirm_rebuild_prefix = true;
+                let to = format!("{}.eidos-backup-{stamp}", compat.display());
+                app.status = Some(tf(
+                    "status_rebuild_prefix_confirm",
+                    &[("from", &compat.display()), ("to", &to)],
+                ));
+            }
+        }
         Message::CloseLootReport => {
             app.loot_report = None;
         }
@@ -247,4 +281,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         _ => unreachable!("routed by update_inner"),
     }
     Task::none()
+}
+
+/// `YYYYMMDD-HHMMSS` in UTC: the suffix of a prefix backup, which sorts by date.
+pub(super) fn backup_stamp(unix_secs: i64) -> String {
+    let (y, mo, d, h, mi, s) = eidos_log::civil_from_unix(unix_secs);
+    format!("{y:04}{mo:02}{d:02}-{h:02}{mi:02}{s:02}")
 }

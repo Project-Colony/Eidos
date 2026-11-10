@@ -241,6 +241,8 @@ pub(crate) struct ProtonFacts {
     pub(crate) prefix_version: Option<String>,
     /// The build that last ran in the prefix (`config_info`).
     pub(crate) last_run: Option<String>,
+    /// The compatdata folder exists, so Rebuild prefix has something to move.
+    pub(crate) prefix_present: bool,
 }
 
 /// `None` when the game has no compatdata folder.
@@ -260,6 +262,7 @@ pub(crate) fn proton_facts(game: &DetectedGame, home: &Path) -> Option<ProtonFac
             .and_then(|r| eidos_games::build_prefix_version(&r.proton)),
         prefix_version: eidos_games::prefix_version(cd),
         last_run: eidos_games::config_info_name(cd),
+        prefix_present: cd.is_dir(),
     })
 }
 
@@ -278,7 +281,7 @@ pub(crate) fn proton_checks(f: &ProtonFacts) -> Vec<Diagnostic> {
         });
     }
     let none = t("diag_proton_none");
-    let card = match &f.build {
+    let mut card = match &f.build {
         None => Diagnostic {
             level: DiagLevel::Advice,
             title: t("diag_proton_unresolved").to_string(),
@@ -313,6 +316,12 @@ pub(crate) fn proton_checks(f: &ProtonFacts) -> Vec<Diagnostic> {
             },
         },
     };
+    if f.prefix_present {
+        card.actions = vec![(
+            t("diag_action_rebuild_prefix").to_string(),
+            Message::RebuildPrefix,
+        )];
+    }
     out.push(card);
     out
 }
@@ -345,7 +354,25 @@ mod tests {
             build_version: build_version.map(Into::into),
             prefix_version: prefix_version.map(Into::into),
             last_run: build.map(Into::into),
+            prefix_present: false,
         }
+    }
+
+    #[test]
+    fn the_proton_card_offers_rebuild_only_when_a_prefix_exists() {
+        let with = proton_checks(&ProtonFacts {
+            prefix_present: true,
+            ..proton(Some("GE-Proton10-34"), None, None)
+        });
+        assert!(matches!(
+            with[0].actions.as_slice(),
+            [(_, Message::RebuildPrefix)]
+        ));
+        assert!(
+            proton_checks(&proton(Some("GE-Proton10-34"), None, None))[0]
+                .actions
+                .is_empty()
+        );
     }
 
     #[test]

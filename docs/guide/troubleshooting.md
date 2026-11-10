@@ -118,6 +118,34 @@ merged-children map saves on `readdir`.
 `EIDOS_NO_INDEX=1` forces the walk, for when the difference between the two
 answers is the thing being debugged.
 
+## A game or tool that will not close
+
+While a game or tool runs, the Run button becomes **Stop**, and the lock card
+has a Stop button too. Press it twice. The second press ends every program the
+run started: SIGTERM first, then SIGKILL after 10 seconds for whatever is left.
+Anything the game had not saved is lost. Eidos then does what it does after any
+exit: INI and plugin changes go back into the profile, tool output is recorded,
+and the mods are unmounted. **Unlock** is different: it gives the window back
+and leaves the program running. From a terminal, `kill <pid>` on the `eidos`
+process (the pid is on the lock card) does the same as Stop.
+
+## Which Proton runs the game, and a broken prefix
+
+The Diagnostics tab has a **Proton** card: the build Eidos and Steam use for the
+game, Steam's own setting, and the build that last ran the prefix. When a newer
+Proton than the selected one last set up the prefix, the card becomes advice,
+because an older Proton on a newer prefix can reset its Wine files or fail to
+start. Pick a build at least as new under the game's Properties, Compatibility
+in Steam.
+
+**Rebuild prefix** on that card is for a prefix that no longer works. Press it
+twice. Eidos deletes nothing: it renames `steamapps/compatdata/<appid>` to
+`<appid>.eidos-backup-<date>-<time>` in the same folder, and Steam creates a new
+prefix the next time you start the game from Steam. It refuses while a game, a
+tool or any Wine program uses the prefix. Saves and settings kept only in the
+old prefix stay in the renamed folder: copy back what you need, and delete that
+folder yourself when you no longer want it.
+
 ## Known issues
 
 ### DLSS or frame generation silently does nothing
