@@ -1771,7 +1771,13 @@ pub(crate) fn arm_disable(
     targets: Vec<usize>,
     saves: &[(PathBuf, eidos_gamefeatures::SaveInfo)],
 ) -> bool {
-    let plugins = plugins_saves_use(app, &targets, saves);
+    // A batch disable over a mixed selection must not name mods already off.
+    let active: Vec<usize> = targets
+        .iter()
+        .copied()
+        .filter(|&i| app.mods.get(i).is_some_and(|m| m.is_active()))
+        .collect();
+    let plugins = plugins_saves_use(app, &active, saves);
     if plugins.is_empty() {
         return false;
     }

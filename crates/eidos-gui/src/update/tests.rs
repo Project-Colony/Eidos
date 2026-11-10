@@ -6323,8 +6323,12 @@ mod saves_use {
         let saves = save_with(&["Skyrim.esm", "FOO.ESP"], &["Bar.esp"]);
         assert_eq!(plugins_saves_use(&app, &[0, 1], &saves), ["Foo.esp"]);
         assert!(plugins_saves_use(&app, &[0], &save_with(&["Skyrim.esm"], &[])).is_empty());
-        app.mods[0].enabled = false; // the game already runs without a disabled mod
-        assert!(plugins_saves_use(&app, &[0, 1], &saves).is_empty());
+        app.mods[0].enabled = false;
+        // Removing a disabled mod still deletes the only copy of its plugin...
+        assert_eq!(plugins_saves_use(&app, &[0, 1], &saves), ["Foo.esp"]);
+        // ...but disabling it again has nothing to warn about.
+        assert!(!arm_disable(&mut app, vec![0], &saves));
+        assert!(app.disable_confirm.is_none());
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -6361,7 +6365,9 @@ mod saves_use {
         let names: Vec<String> = (1..=7).map(|n| format!("P{n}.esp")).collect();
         let w = saves_warning(&names);
         assert!(
-            w.contains("P5.esp") && !w.contains("P6.esp") && w.contains('2'),
+            w.contains("P5.esp")
+                && !w.contains("P6.esp")
+                && w.contains(&tf("diag_and_n_more", &[("n", &2)])),
             "{w}"
         );
     }

@@ -358,13 +358,10 @@ pub(crate) fn plugins_saves_use(
             .iter()
             .any(|(_, s)| s.all_plugins().any(|p| p.eq_ignore_ascii_case(name)))
     };
-    // A disabled mod is skipped: the game already runs without its plugins.
+    // Disabled targets count too: removing one deletes the only copy of a
+    // plugin the saves still list. arm_disable leaves them out itself.
     let mut out: Vec<String> = Vec::new();
-    for m in targets
-        .iter()
-        .filter_map(|&i| app.mods.get(i))
-        .filter(|m| m.is_active())
-    {
+    for m in targets.iter().filter_map(|&i| app.mods.get(i)) {
         for name in fs::read_dir(&m.path)
             .into_iter()
             .flatten()
