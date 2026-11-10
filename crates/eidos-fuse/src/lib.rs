@@ -261,6 +261,13 @@ impl Eidos {
         Self::new_with_unindexed_subtree(layers, overwrite, None)
     }
 
+    /// Serve the Data union without each mod's manager files and `Root/`.
+    /// See [`eidos_core::LayerStack::hiding_mod_metadata`].
+    pub fn hiding_mod_metadata(mut self) -> Self {
+        self.stack = self.stack.hiding_mod_metadata();
+        self
+    }
+
     /// Leave a subtree unindexed when another mount will cover it. Reads still
     /// fall back to the layers, including before that covering mount is ready.
     pub fn new_with_unindexed_subtree(

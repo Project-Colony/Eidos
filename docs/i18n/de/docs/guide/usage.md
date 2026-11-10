@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=de47f41eb02c9b2ffdb6721f7d440a7738413bf0 -->
 
 # Eidos verwenden
 
@@ -584,6 +584,11 @@ sodass Whiteouts und versteckte Dateien beachtet werden und der Reiter dem, was
 das Spiel sehen wird, nicht widersprechen kann. Filtern Sie ihn nach Namen,
 grenzen Sie ihn auf umstrittene Dateien ein, klären Sie mit den Spalten Size und
 Modified, was wo liegt, und zeigen Sie jede Zeile per Reveal im Dateimanager.
+Die `meta.ini`, `readme.txt`, `fomod/` und `Root/` auf der obersten Ebene einer
+Mod fehlen in Data, in diesem Reiter wie im Mount: die ersten drei sind für den
+Mod-Manager, und `Root/` kommt stattdessen in den Spielordner. Eine Datei, die
+das Spiel oder ein Werkzeug unter einem dieser Namen schreibt, landet im
+Overwrite und bleibt sichtbar.
 **Plugins** ist die ESP/ESM/ESL-Ladereihenfolge (umschalten, von Hand umsortieren
 oder mit LOOT sortieren und den Bericht danach lesen, dessen Ratschlag-Links sich
 im Browser öffnen). **Conflicts** erklärt die Gewinner und Verlierer je Datei.

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=de47f41eb02c9b2ffdb6721f7d440a7738413bf0 -->
 
 # Eidos 사용하기
 
@@ -484,7 +484,11 @@ as valid"가 어느 쪽이든 잠재웁니다. MO2 자신의 `validated=` 키를
 디렉터리 읽기 한 번입니다. 마운트가 서비스하는 것과 같은 레이어 스택이
 답하므로 화이트아웃과 숨긴 파일이 존중되고, 이 탭이 게임이 보게 될 것과 어긋날 수
 없습니다. 이름으로 거르고, 다투는 파일만으로 좁히고, Size와 Modified 열로 무엇이
-어디 있는지 가려내고, 아무 행이나 파일 관리자에서 Reveal 하세요. **Plugins**는
+어디 있는지 가려내고, 아무 행이나 파일 관리자에서 Reveal 하세요. 모드 최상위의
+`meta.ini`, `readme.txt`, `fomod/`, `Root/`는 이
+탭에서도 마운트에서도 Data에 들어가지 않습니다. 앞의 셋은 모드 관리자용이고,
+`Root/`는 대신 게임 폴더로 갑니다. 게임이나 도구가 이 이름들 중 하나로 쓴
+파일은 Overwrite에 들어가고 계속 보입니다. **Plugins**는
 ESP/ESM/ESL 로드 순서입니다(켜고 끄기, 손으로 순서 바꾸기, 또는 LOOT로 정렬한 뒤
 정렬 후 보고서 읽기 - 그 안의 조언 링크는 브라우저에서 열립니다).
 **Conflicts**는 파일별 승자와 패자를 설명합니다. **Overwrite**는 게임이 쓴 것을

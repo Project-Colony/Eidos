@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=de47f41eb02c9b2ffdb6721f7d440a7738413bf0 -->
 
 # Eidos gebruiken
 
@@ -555,7 +555,12 @@ beantwoord door DEZELFDE lagenstapel waaruit de koppeling bedient, dus whiteouts
 en verborgen bestanden worden gerespecteerd en het tabblad kan niet in
 tegenspraak zijn met wat het spel zal zien. Filter op naam, versmal tot alleen
 betwiste bestanden, zoek met de kolommen Size en Modified uit wat waar staat, en
-toon elke rij met Reveal in een bestandsbeheerder. **Plugins** is de
+toon elke rij met Reveal in een bestandsbeheerder. De `meta.ini`, `readme.txt`,
+`fomod/` en `Root/` in de bovenste map van een mod blijven buiten Data, in dit
+tabblad en in de koppeling: de eerste drie zijn voor de modbeheerder, en `Root/`
+gaat naar de spelmap. Een bestand dat het spel of een hulpprogramma onder een
+van die namen schrijft, komt in de Overwrite terecht en blijft zichtbaar.
+**Plugins** is de
 ESP/ESM/ESL-laadvolgorde (omschakelen, met de hand herordenen, of sorteren met
 LOOT en het verslag na de sortering lezen, waarvan de adviezenlinks in je browser
 openen). **Conflicts** legt de winnaars en verliezers per bestand uit.

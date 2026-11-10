@@ -51,6 +51,16 @@ pub fn is_hidden_name(name: &str) -> bool {
     name.len() > suffix.len() && name[name.len() - suffix.len()..].eq_ignore_ascii_case(suffix)
 }
 
+/// Whether a Data path is one of a mod's own manager files or its `Root/`
+/// folder: a top-level `meta.ini` or `readme.txt`, or anything under a
+/// top-level `fomod` or `Root`, ASCII case folded. MO2 leaves these out of the
+/// game's view, and `Root/` goes to the game folder instead.
+pub fn is_mod_metadata(vpath: &str) -> bool {
+    let (first, tail) = vpath.split_once(['/', '\\']).unwrap_or((vpath, ""));
+    let is = |name: &str| first.eq_ignore_ascii_case(name);
+    is("fomod") || is("root") || tail.is_empty() && (is("meta.ini") || is("readme.txt"))
+}
+
 /// Whether `name` holds a non-ASCII letter that has a case mapping, such as `é`
 /// or `Ω`. Eidos folds ASCII case only, so a directory holding such a name must
 /// not tell Wine it folds case: Wine would then skip the scan that finds
@@ -117,6 +127,11 @@ pub struct LayerStack {
     /// cloned stack describes the SAME mount, so a mutation noted through one
     /// clone must dirty the index every clone reads. See [`OwIndex`].
     ow: std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<OwIndex>>>>,
+    /// Leave [`is_mod_metadata`] paths of the lower layers out of this view,
+    /// for the Data union only. The Overwrite still serves them. The guards sit
+    /// before the `readonly_overwrite` branch because the Data union never has
+    /// a shared read-only Overwrite: only the root union does.
+    hide_mod_metadata: bool,
 }
 
 /// How big the lower index is, for the line the launcher logs after a build.
@@ -573,7 +588,20 @@ impl LayerStack {
             index_off,
             readonly_overwrite,
             ow: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            hide_mod_metadata: false,
         }
+    }
+
+    /// Leave each mod's `meta.ini`, `readme.txt`, `fomod/` and `Root/` out of
+    /// the lower layers, as the Data union and its tab want. See
+    /// [`is_mod_metadata`].
+    pub fn hiding_mod_metadata(mut self) -> Self {
+        self.hide_mod_metadata = true;
+        self
+    }
+
+    fn lower_hidden(&self, vpath: &str) -> bool {
+        self.hide_mod_metadata && is_mod_metadata(vpath)
     }
 
     /// Size of the lower index, or `None` when this stack walks the layers.
@@ -1018,6 +1046,9 @@ impl LayerStack {
                 self.ow_dirty();
                 return self.resolve_read_walk(vpath);
             }
+            if self.lower_hidden(vpath) {
+                return None;
+            }
             // The overwrite provably has nothing at this path: go straight to
             // the layers, skipping the walk that used to cost every resolve its
             // probes and scans.
@@ -1079,6 +1110,9 @@ impl LayerStack {
             .fetch_add(self.resolve.scans.load(Relaxed).wrapping_sub(s0), Relaxed);
         if let Some(p) = ow {
             return Some(p);
+        }
+        if self.lower_hidden(vpath) {
+            return None;
         }
         // Ask the layers BEFORE asking what the overwrite hides.
         //
@@ -1147,6 +1181,9 @@ impl LayerStack {
     /// mapping only the layers' children, reads as a negative. Answering `None`
     /// there would make `open_for_write("")` skip the heal below.
     fn read_lower(&self, vpath: &str) -> Option<PathBuf> {
+        if self.lower_hidden(vpath) {
+            return None;
+        }
         if let Some(shared) = &self.readonly_overwrite {
             return shared.resolve_read(vpath);
         }
@@ -1681,7 +1718,11 @@ impl LayerStack {
         // layer it is opaque (a whiteout on it, or an opaque marker inside it): its
         // lower-layer contents stay hidden.
         // `lower_path_visible`, on the snapshot above.
-        if opaque || under_hidden(vpath) || hidden.unwrap_or_else(|| self.overwrite_hides(vpath)) {
+        if opaque
+            || under_hidden(vpath)
+            || self.lower_hidden(vpath)
+            || hidden.unwrap_or_else(|| self.overwrite_hides(vpath))
+        {
             return out;
         }
 
@@ -1764,6 +1805,11 @@ impl LayerStack {
         // ASCII-lowercase sort orders names that mix letters with `_ { } ~` (all
         // between `Z` and `a` in ASCII) differently, which the indexer can notice.
         // Same fix CIOPFS / ntfs-emu apply so non-NTFS filesystems work with Wine.
+        if self.hide_mod_metadata && folded.is_empty() {
+            out.retain(|(name, real, _)| {
+                real.starts_with(&self.overwrite) || !is_mod_metadata(name)
+            });
+        }
         out.sort_by_cached_key(|(name, _, _)| ntfs_order_key(name));
         out
     }
@@ -3046,6 +3092,90 @@ mod tests {
 
         let stack = LayerStack::new(vec![b, a, game], over);
         assert_eq!(read(&stack.resolve_read("textures.dat").unwrap()), "mod b");
+    }
+
+    /// One mod layer holding its manager files, its `Root/` and a plugin, over
+    /// a game layer.
+    fn mod_metadata_fixture(t: &TempTree) -> (Vec<PathBuf>, PathBuf) {
+        let (game, a, over) = (t.sub("game"), t.sub("a"), t.sub("over"));
+        put(&a, "meta.ini", "[General]");
+        put(&a, "readme.txt", "read me");
+        put(&a, "fomod/ModuleConfig.xml", "<config/>");
+        put(&a, "Root/skse64_loader.exe", "loader");
+        put(&a, "a.esp", "plugin");
+        put(&game, "Skyrim.esm", "vanilla");
+        (vec![a, game], over)
+    }
+
+    #[test]
+    fn mod_metadata_names_are_top_level_only() {
+        for (p, want) in [
+            ("meta.ini", true),
+            ("META.INI", true),
+            ("readme.txt", true),
+            ("fomod", true),
+            ("fomod/ModuleConfig.xml", true),
+            ("Root", true),
+            ("root/skse64_loader.exe", true),
+            ("textures/meta.ini", false),
+            ("docs/readme.txt", false),
+            ("Rootx", false),
+            ("a.esp", false),
+            ("", false),
+        ] {
+            assert_eq!(is_mod_metadata(p), want, "{p}");
+        }
+    }
+
+    #[test]
+    fn a_mods_manager_files_and_root_folder_stay_out_of_the_data_view() {
+        let t = TempTree::new();
+        let (layers, over) = mod_metadata_fixture(&t);
+        for stack in [
+            LayerStack::new(layers.clone(), over.clone()).hiding_mod_metadata(),
+            LayerStack::new_unindexed(layers.clone(), over.clone()).hiding_mod_metadata(),
+        ] {
+            let mut names: Vec<_> = stack.list_dir("").into_iter().map(|(n, _)| n).collect();
+            names.sort();
+            assert_eq!(names, ["Skyrim.esm", "a.esp"]);
+            assert!(stack.resolve_read("meta.ini").is_none());
+            assert!(stack.resolve_read("ROOT/skse64_loader.exe").is_none());
+            assert!(stack.list_dir("Root").is_empty());
+            assert!(!stack.needs_copy_up("readme.txt"));
+        }
+        // Opt-in: a plain stack (root union, conflicts, preflight) still sees them.
+        assert!(LayerStack::new(layers, over)
+            .list_dir("")
+            .iter()
+            .any(|(n, _)| n == "meta.ini"));
+    }
+
+    #[test]
+    fn a_file_written_under_a_manager_name_reads_back_from_the_overwrite() {
+        let t = TempTree::new();
+        let (layers, over) = mod_metadata_fixture(&t);
+        let stack = LayerStack::new(layers, over.clone()).hiding_mod_metadata();
+        let real = stack.open_for_write("readme.txt").unwrap();
+        fs::write(&real, b"tool output").unwrap();
+        assert_eq!(
+            stack.resolve_read("readme.txt"),
+            Some(over.join("readme.txt"))
+        );
+        assert!(stack.list_dir("").iter().any(|(n, _)| n == "readme.txt"));
+        // Controller ruling A69: the Overwrite's own Root/ stays visible in Data.
+        // Created through the mount's create door, which keeps the Overwrite
+        // index current; a raw write here would only test a stale index.
+        let (real, _) = stack.create_truncated("Root/enblocal.ini").unwrap();
+        fs::write(&real, b"x").unwrap();
+        assert_eq!(
+            stack.resolve_read("Root/enblocal.ini"),
+            Some(over.join("Root/enblocal.ini"))
+        );
+        assert!(stack.list_dir("").iter().any(|(n, _)| n == "Root"));
+        assert!(stack
+            .list_dir("Root")
+            .iter()
+            .any(|(n, _)| n == "enblocal.ini"));
     }
 
     #[test]

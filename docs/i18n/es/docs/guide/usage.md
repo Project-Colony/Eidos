@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=de47f41eb02c9b2ffdb6721f7d440a7738413bf0 -->
 
 # Usar Eidos
 
@@ -561,7 +561,12 @@ pila de capas desde la que sirve el montaje, así que se respetan los whiteouts 
 los archivos ocultos y la pestaña no puede contradecir lo que verá el juego.
 Fíltralo por nombre, acótalo sólo a los archivos en disputa, aclara qué está dónde
 con las columnas Size y Modified, y usa Reveal en cualquier fila para abrirla en
-un gestor de archivos. **Plugins** es el orden de carga de ESP/ESM/ESL (activar,
+un gestor de archivos. El `meta.ini`, el `readme.txt`, `fomod/` y `Root/` de la
+raíz de un mod quedan fuera de Data, en esta pestaña y en el montaje: los tres
+primeros son para el gestor de mods, y `Root/` va a la carpeta del juego. Un
+archivo que el juego o una herramienta escribe con uno de esos nombres va a
+parar al Overwrite y sigue visible.
+**Plugins** es el orden de carga de ESP/ESM/ESL (activar,
 reordenar a mano, u ordenar con LOOT y leer el informe posterior, cuyos enlaces de
 consejo se abren en tu navegador). **Conflicts** explica los ganadores y
 perdedores archivo por archivo. **Overwrite** convierte lo que el juego escribió

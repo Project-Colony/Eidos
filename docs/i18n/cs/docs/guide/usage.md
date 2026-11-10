@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=de47f41eb02c9b2ffdb6721f7d440a7738413bf0 -->
 
 # Používání Eidosu
 
@@ -516,7 +516,11 @@ místo rekurzivní procházky každého zapnutého módu. Odpovídá na něj TÝ
 vrstev, ze kterého se obsluhuje připojení, takže whiteouty a skryté soubory jsou
 respektovány a záložka se nemůže rozejít s tím, co uvidí hra. Filtrujte podle
 názvu, zužte jen na sporné soubory, roztřiďte, co kde je, sloupci Size a
-Modified, a kterýkoli řádek ukažte pomocí Reveal ve správci souborů. **Plugins**
+Modified, a kterýkoli řádek ukažte pomocí Reveal ve správci souborů. `meta.ini`,
+`readme.txt`, `fomod/` a `Root/` v kořeni módu zůstávají mimo Data, v této
+záložce i v připojení: první tři patří správci módů a `Root/` jde místo toho do
+složky hry. Soubor, který hra nebo nástroj zapíše pod některým z těchto jmen,
+skončí v Overwrite a zůstane viditelný. **Plugins**
 je pořadí načítání ESP/ESM/ESL (přepínání, ruční přeuspořádání, nebo řazení
 LOOTem a čtení zprávy po seřazení, jejíž odkazy na rady se otevírají ve vašem
 prohlížeči). **Conflicts** vysvětluje vítěze a poražené u jednotlivých souborů.

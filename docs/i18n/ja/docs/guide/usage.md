@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=de47f41eb02c9b2ffdb6721f7d440a7738413bf0 -->
 
 # Eidos の使い方
 
@@ -494,7 +494,8 @@ MOD はそのまま展開されます - 行のメニューの「Mark as valid」
 レイヤースタックなので、whiteout や隠しファイルも尊重され、このタブがゲームの
 見るものと食い違うことはありません。名前で絞り込み、争っているファイルだけに
 絞り、Size と Modified の列で何がどこにあるかを片付け、どの行でもファイル
-マネージャで Reveal できます。**Plugins** は ESP/ESM/ESL のロード順です
+マネージャで Reveal できます。
+MOD の最上位にある `meta.ini`、`readme.txt`、`fomod/`、`Root/` は、このタブでもマウントでも Data に含まれません。最初の三つは MOD マネージャ用で、`Root/` は代わりにゲームフォルダへ入ります。ゲームやツールがこれらの名前で書いたファイルは Overwrite に入り、表示されたままです。**Plugins** は ESP/ESM/ESL のロード順です
 (切り替え、手での並べ替え、あるいは LOOT での並べ替えと、その後のレポートの
 閲覧。レポートの助言のリンクはブラウザで開きます)。**Conflicts** はファイル
 ごとの勝ち負けを説明します。**Overwrite** はゲームが書いたものを一手で本物の

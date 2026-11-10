@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=de47f41eb02c9b2ffdb6721f7d440a7738413bf0 -->
 
 # Eidos kullanımı
 
@@ -539,7 +539,11 @@ düğüme sahip katman başına bir dizin okuması eder. Bağlamanın hizmet ett
 katman yığını tarafından yanıtlanır, yani whiteout'lar ve gizli dosyalar gözetilir
 ve sekme, oyunun göreceğiyle çelişemez. Ada göre süzün, yalnızca çekişmeli
 dosyalara daraltın, Size ve Modified sütunlarıyla neyin nerede olduğunu ayıklayın
-ve herhangi bir satırı Reveal ile bir dosya yöneticisinde gösterin. **Plugins**,
+ve herhangi bir satırı Reveal ile bir dosya yöneticisinde gösterin. Bir modun en
+üst düzeydeki `meta.ini`, `readme.txt`, `fomod/` ve `Root/` öğeleri Data'ya
+girmez, ne bu sekmede ne de bağlamada: ilk üçü mod yöneticisi içindir, `Root/`
+ise oyun klasörüne gider. Oyunun ya da bir aracın bu adlardan biriyle yazdığı
+dosya Overwrite'a düşer ve görünür kalır. **Plugins**,
 ESP/ESM/ESL yükleme sırasıdır (açıp kapatın, elle yeniden sıralayın ya da LOOT
 ile sıralayıp sıralama sonrası raporu okuyun; oradaki öneri bağlantıları
 tarayıcınızda açılır). **Conflicts**, dosya başına kazananları ve kaybedenleri

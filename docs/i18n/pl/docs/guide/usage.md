@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=de47f41eb02c9b2ffdb6721f7d440a7738413bf0 -->
 
 # Używanie Eidos
 
@@ -545,7 +545,11 @@ warstw, z którego serwuje montowanie, więc whiteouty i pliki ukryte są
 respektowane, a zakładka nie może być niezgodna z tym, co zobaczy gra. Filtruj
 po nazwie, zawęź do samych plików spornych, rozeznaj, co jest gdzie, po kolumnach
 Size i Modified, i pokaż dowolny wiersz w menedżerze plików przez Reveal.
-**Plugins** to kolejność wczytywania ESP/ESM/ESL (przełączanie, ręczne
+Pliki `meta.ini` i `readme.txt` oraz katalogi `fomod/` i `Root/` z najwyższego
+poziomu moda nie trafiają do Data, ani w tej zakładce, ani w montowaniu: trzy
+pierwsze są dla menedżera modów, a `Root/` idzie do katalogu gry. Plik, który
+gra lub narzędzie zapisze pod jedną z tych nazw, ląduje w Overwrite i pozostaje
+widoczny. **Plugins** to kolejność wczytywania ESP/ESM/ESL (przełączanie, ręczne
 przestawianie albo sortowanie LOOT-em i lektura raportu po sortowaniu, którego
 odnośniki z poradami otwierają się w twojej przeglądarce). **Conflicts**
 wyjaśnia wygranych i przegranych plik po pliku. **Overwrite** zamienia to, co

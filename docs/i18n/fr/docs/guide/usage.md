@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=de47f41eb02c9b2ffdb6721f7d440a7738413bf0 -->
 
 # Utiliser Eidos
 
@@ -584,7 +584,12 @@ la MÊME pile de couches que celle depuis laquelle le montage sert, donc les
 whiteouts et les fichiers masqués sont respectés et l'onglet ne peut pas
 contredire ce que le jeu verra. Filtrez par nom, restreignez aux seuls fichiers
 disputés, démêlez ce qui est où avec les colonnes Size et Modified, et faites
-Reveal sur n'importe quelle ligne dans un gestionnaire de fichiers. **Plugins**,
+Reveal sur n'importe quelle ligne dans un gestionnaire de fichiers. Les
+`meta.ini`, `readme.txt`, `fomod/` et `Root/` placés à la racine d'un mod
+restent hors de Data, dans cet onglet comme dans le montage : les trois premiers
+servent au gestionnaire de mods, et `Root/` va dans le dossier du jeu. Un
+fichier que le jeu ou un outil écrit sous l'un de ces noms arrive dans
+l'Overwrite et reste visible. **Plugins**,
 c'est l'ordre de chargement des ESP/ESM/ESL (activer, réordonner à la main, ou
 trier avec LOOT et lire le rapport d'après-tri, dont les liens de conseils
 s'ouvrent dans votre navigateur). **Conflicts** explique les gagnants et les

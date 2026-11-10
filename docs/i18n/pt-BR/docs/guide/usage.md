@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=de47f41eb02c9b2ffdb6721f7d440a7738413bf0 -->
 
 # Usar o Eidos
 
@@ -545,6 +545,10 @@ pilha de camadas de onde a montagem serve, então whiteouts e arquivos ocultos
 são respeitados e a aba não pode discordar do que o jogo verá. Filtre por nome,
 restrinja só aos arquivos disputados, descubra o que está onde com as colunas
 Size e Modified, e abra qualquer linha num gerenciador de arquivos com Reveal.
+O `meta.ini`, o `readme.txt`, `fomod/` e `Root/` na raiz de um mod ficam fora de
+Data, nesta aba e na montagem: os três primeiros são para o gerenciador de mods,
+e `Root/` vai para a pasta do jogo. Um arquivo que o jogo ou uma ferramenta
+grava com um desses nomes vai para o Overwrite e continua visível.
 **Plugins** é a ordem de carga dos ESP/ESM/ESL (ligar e desligar, reordenar à
 mão, ou ordenar com o LOOT e ler o relatório pós-ordenação, cujos links de
 conselho abrem no seu navegador). **Conflicts** explica os vencedores e os

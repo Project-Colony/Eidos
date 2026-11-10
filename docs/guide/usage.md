@@ -510,7 +510,11 @@ recursive walk of every enabled mod. It is answered by the SAME layer stack the
 mount serves from, so whiteouts and hidden files are respected and the tab
 cannot disagree with what the game will see. Filter it by name, narrow it to
 contested files only, sort out what is where with the Size and Modified columns,
-and Reveal any row in a file manager. **Plugins** is the
+and Reveal any row in a file manager. A mod's top-level `meta.ini`,
+`readme.txt`, `fomod/` and `Root/` are left out of Data, in this tab and in the
+mount: the first three are for the mod manager, and `Root/` goes to the game
+folder instead. A file the game or a tool writes under one of those names lands
+in the Overwrite and stays visible. **Plugins** is the
 ESP/ESM/ESL load order (toggle, reorder by hand, or sort with LOOT and read the
 post-sort report, whose advice links open in your browser). **Conflicts**
 explains the per-file winners and losers. **Overwrite** turns what the game wrote

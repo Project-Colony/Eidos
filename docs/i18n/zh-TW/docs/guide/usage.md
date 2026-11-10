@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=de47f41eb02c9b2ffdb6721f7d440a7738413bf0 -->
 
 # 使用 Eidos
 
@@ -416,7 +416,8 @@ Ctrl+F 把游標放進篩選框。按下一個字母會跳到下一個以它開�
 擁有它的層各讀一次目錄,而不是遞迴走過每一個啟用的模組。回答它的是掛載本身服務所
 用的「同一套」層堆疊,所以 whiteout 與隱藏檔案都被遵守,這個分頁不可能和遊戲將會
 看到的東西說法不一。可以依名稱篩選、縮小到只看有爭議的檔案、用 Size 與 Modified
-欄位理清什麼在哪裡,還能把任一列在檔案管理器裡 Reveal 出來。**Plugins** 是
+欄位理清什麼在哪裡,還能把任一列在檔案管理器裡 Reveal 出來。
+模組最上層的 `meta.ini`、`readme.txt`、`fomod/` 與 `Root/` 不會進入 Data,這個分頁和掛載裡都一樣:前三個是給模組管理器用的,`Root/` 則改放到遊戲資料夾。遊戲或工具以這些名稱寫入的檔案會落在 Overwrite,並保持可見。**Plugins** 是
 ESP/ESM/ESL 的載入順序(切換、手動重新排序,或用 LOOT 排序並閱讀排序後的報告,
 報告裡的建議連結會在你的瀏覽器開啟)。**Conflicts** 說明每個檔案的贏家與輸家。
 **Overwrite** 一步就把遊戲寫出來的東西變成真正的模組。**Saves** 解析每份存檔的

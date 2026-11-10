@@ -653,7 +653,7 @@ fn launch_mounted(spec: &LaunchSpec, layers: Vec<PathBuf>) -> std::io::Result<Ex
 
     std::fs::create_dir_all(&spec.mountpoint)?;
     let started = std::time::Instant::now();
-    let mut filesystem = Eidos::new(layers, spec.overwrite.clone());
+    let mut filesystem = Eidos::new(layers, spec.overwrite.clone()).hiding_mod_metadata();
     log_index_build("data", &filesystem, started);
     if let Some(projection) = &spec.plugin_timestamps {
         if projection.state_path.starts_with(&spec.mountpoint)

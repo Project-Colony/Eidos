@@ -349,11 +349,14 @@ pub(crate) fn data_stack(
     // mods, separators and unmanaged rows - exactly what the mount is handed.
     let mut layers = inst.load_order();
     layers.push(game.data_path.clone());
-    let stack = std::rc::Rc::new(if want_index {
-        eidos_core::LayerStack::new(layers, inst.overwrite_dir())
-    } else {
-        eidos_core::LayerStack::new_unindexed(layers, inst.overwrite_dir())
-    });
+    let stack = std::rc::Rc::new(
+        if want_index {
+            eidos_core::LayerStack::new(layers, inst.overwrite_dir())
+        } else {
+            eidos_core::LayerStack::new_unindexed(layers, inst.overwrite_dir())
+        }
+        .hiding_mod_metadata(),
+    );
 
     // Where each real path came from, so a winner can be named.
     let mut sources = DataSources::new();
@@ -2861,6 +2864,25 @@ mod tests {
             !names.contains(&"Skyrim.esm".to_string()),
             "a whited-out file is NOT in the merged view: {names:?}"
         );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_data_tab_leaves_out_a_mods_manager_files() {
+        let (app, root) = data_app(
+            &[
+                ("meta.ini", "x"),
+                ("readme.txt", "x"),
+                ("Root/skse64_loader.exe", "x"),
+                ("mod.esp", "x"),
+            ],
+            &[],
+        );
+        let names: Vec<_> = merged_listing(&app, "")
+            .into_iter()
+            .map(|r| r.name)
+            .collect();
+        assert_eq!(names, ["mod.esp", "Skyrim.esm"]);
         let _ = fs::remove_dir_all(&root);
     }
 

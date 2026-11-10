@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=de47f41eb02c9b2ffdb6721f7d440a7738413bf0 -->
 
 # 使用 Eidos
 
@@ -402,7 +402,8 @@ Ctrl+F 把光标放进过滤框。敲一个字母跳到下一个以它开头的�
 的图层各读一次目录,而不是递归遍历每一个启用的模组。回答它的是挂载所依据的同一套图层
 栈,所以 whiteout 与隐藏文件都被遵守,这个标签页不可能和游戏将会看到的东西相左。按
 名称过滤它,收窄到只看有争议的文件,用 Size 与 Modified 两列理清什么在哪里,任意一行
-都可以在文件管理器里 Reveal。**Plugins** 是 ESP/ESM/ESL 的加载顺序(勾选、手工重排,
+都可以在文件管理器里 Reveal。
+模组顶层的 `meta.ini`、`readme.txt`、`fomod/` 和 `Root/` 不进入 Data,这个标签页和挂载里都一样:前三个是给模组管理器用的,`Root/` 则改去游戏文件夹。游戏或工具以这些名字写下的文件会落进 Overwrite,并保持可见。**Plugins** 是 ESP/ESM/ESL 的加载顺序(勾选、手工重排,
 或者用 LOOT 排序并阅读排序后的报告,报告里的建议链接会在你的浏览器中打开)。
 **Conflicts** 解释每个文件的赢家与输家。**Overwrite** 一步把游戏写出来的东西变成一个
 真正的模组。**Saves** 解析每个存档的头部 - 角色、等级、地点、游戏时长 - 并把烘进存档
