@@ -1194,8 +1194,23 @@ fn receipt_failures_preserve_completed_namespace_and_retry_order() {
             .into_raw_fd();
         assert_eq!(unsafe { libc::close(rw) }, -1);
     }
-    fs::remove_file(t.0.join("profile")).unwrap();
-    fs::rename(t.0.join("saved-profile"), t.0.join("profile")).unwrap();
+    // Swap the profile back in one step. The kernel sends RELEASE for the
+    // handles closed above in the background, and its save retry would recreate
+    // an absent profile/ and fill it, so a remove-then-rename restore races it.
+    let c = |p: &Path| std::ffi::CString::new(p.as_os_str().as_bytes()).unwrap();
+    let (saved, profile) = (c(&t.0.join("saved-profile")), c(&t.0.join("profile")));
+    // SAFETY: renameat2(2) with valid C strings and AT_FDCWD.
+    let swapped = unsafe {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            saved.as_ptr(),
+            libc::AT_FDCWD,
+            profile.as_ptr(),
+            libc::RENAME_EXCHANGE,
+        )
+    };
+    assert_eq!(swapped, 0, "{}", std::io::Error::last_os_error());
+    fs::remove_file(t.0.join("saved-profile")).unwrap();
     fs::File::open(mnt.join("Created.esp"))
         .unwrap()
         .sync_all()
