@@ -1255,6 +1255,7 @@ Executable fingerprint: {fingerprint}"),
     ("plugin_tip_after_masters", "This plugin must load after all of them."),
     ("plugin_tip_more_loot", "... {n} more LOOT message(s) - see the sort report"),
     ("plugin_tip_dirty", "LOOT: needs cleaning with {util} ({itm} ITM, {refs} deleted reference(s))"),
+    ("plugin_tip_light_candidate", "LOOT: can be flagged as light (every new record is in the light range)"),
     // ---- Saves, Data and Overwrite tabs ----
     ("panel_no_instance", "No instance open."),
     ("saves_heading", "Save"),

@@ -1255,6 +1255,7 @@ Empreinte de l'exécutable : {fingerprint}"),
     ("plugin_tip_after_masters", "Ce plugin doit se charger après eux tous."),
     ("plugin_tip_more_loot", "... {n} autre(s) message(s) LOOT : voir le rapport de tri"),
     ("plugin_tip_dirty", "LOOT : à nettoyer avec {util} ({itm} ITM, {refs} référence(s) supprimée(s))"),
+    ("plugin_tip_light_candidate", "LOOT : peut être marqué léger (tous les nouveaux enregistrements sont dans la plage légère)"),
     // ---- Saves, Data and Overwrite tabs ----
     ("panel_no_instance", "Aucune instance ouverte."),
     ("saves_heading", "Sauvegarde"),

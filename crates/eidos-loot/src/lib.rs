@@ -562,6 +562,8 @@ pub struct PluginMetadataBundle {
     pub crc: Option<u32>,
     /// Whole-record scale checks: None means unverified (or not applicable).
     pub record_validity: Option<bool>,
+    /// A full plugin whose new records all fit the light range: it could be flagged light.
+    pub light_candidate: bool,
 }
 
 impl PluginMetadataBundle {
@@ -572,6 +574,7 @@ impl PluginMetadataBundle {
             && self.dirty_info.is_empty()
             && self.crc.is_none()
             && self.record_validity.is_none()
+            && !self.light_candidate
     }
 
     /// Whether LOOT flagged this plugin as dirty (needs cleaning).
@@ -659,6 +662,7 @@ fn bundle_from_metadata(metadata: &PluginMetadata, crc: Option<u32>) -> PluginMe
         dirty_info: metadata.dirty_info().iter().map(convert_dirty).collect(),
         crc,
         record_validity: None,
+        light_candidate: false,
     }
 }
 
@@ -908,6 +912,11 @@ pub fn report(
         };
         let (validity, findings) = record_validity(&plugin);
         bundle.record_validity = validity;
+        bundle.light_candidate = eidos_plugins::GameSpec::for_id(view.game_id)
+            .is_some_and(|g| g.esplugin_id.supports_light_plugins())
+            && !plugin.is_light_plugin()
+            && !plugin.is_medium_plugin()
+            && matches!(plugin.is_valid_as_light_plugin(), Ok(true));
         bundle.messages.extend(findings.clone());
         messages.extend(findings);
         if !bundle.is_empty() {
@@ -1026,6 +1035,50 @@ mod tests {
             let checked = super::report(&view, &enabled).unwrap();
             assert_eq!(checked.plugin_meta["test.esp"].record_validity, Some(true));
             assert_eq!(checked.error_count(), 0);
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_full_plugin_whose_records_fit_the_light_range_is_a_candidate() {
+        for (id, form, want) in [
+            ("skyrimse", 0x800, true),
+            ("skyrimse", 0x1000, false),
+            ("fallout3", 0x800, false),
+        ] {
+            let root = std::env::temp_dir().join(format!(
+                "eidos-loot-candidate-{}-{id}-{form:x}",
+                std::process::id()
+            ));
+            fs::create_dir_all(root.join("Data")).unwrap();
+            fs::create_dir_all(root.join("local")).unwrap();
+            let plugin = root.join("Data/Test.esp");
+            fs::write(&plugin, record_fixture(0, form, 1.7)).unwrap();
+            let masterlist = root.join("masterlist.yaml");
+            let prelude = root.join("prelude.yaml");
+            fs::write(&masterlist, "plugins: []\n").unwrap();
+            fs::write(&prelude, "plugins: []\n").unwrap();
+            let plugins = vec![("Test.esp".into(), plugin)];
+            let local = root.join("local");
+            let view = GameView {
+                game_id: id,
+                plugins: &plugins,
+                game_path: &root,
+                local_path: &local,
+                mod_dirs: &[],
+                masterlist: &masterlist,
+                prelude: &prelude,
+                userlist: None,
+            };
+            let enabled = std::collections::HashSet::from(["test.esp".into()]);
+            let got = report(&view, &enabled).unwrap();
+            assert_eq!(
+                got.plugin_meta
+                    .get("test.esp")
+                    .is_some_and(|b| b.light_candidate),
+                want,
+                "{id} {form:#x}"
+            );
             fs::remove_dir_all(root).unwrap();
         }
     }

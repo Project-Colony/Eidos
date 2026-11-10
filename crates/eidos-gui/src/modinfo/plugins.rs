@@ -583,6 +583,10 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
                     ],
                 ));
             }
+            if b.light_candidate {
+                tip.push('\n');
+                tip.push_str(t("plugin_tip_light_candidate"));
+            }
             if !b.bash_tags.is_empty() {
                 tip.push_str(&format!("\nBash Tags: {}", b.bash_tags.join(", ")));
             }
