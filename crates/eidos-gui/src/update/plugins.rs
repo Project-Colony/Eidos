@@ -901,6 +901,83 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 }
             }
         }
+        Message::FlagPluginLight(i) => {
+            app.menu_plugin = None;
+            let Some(p) = app.plugins.as_ref().and_then(|l| l.plugins.get(i)).cloned() else {
+                return Task::none();
+            };
+            let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
+                return Task::none();
+            };
+            // A save that loads it as full keeps its records at full-plugin ids.
+            if let Some(save) = full_in_saves(&p.name, &newest_profile_saves(app)) {
+                let save = save
+                    .file_name()
+                    .unwrap_or(save.as_os_str())
+                    .to_string_lossy();
+                app.status = Some(tf(
+                    "status_flag_light_refused_save",
+                    &[("save", &save), ("plugin", &p.name)],
+                ));
+                return Task::none();
+            }
+            // Under the lock and known current before the folder exists, as ModRemove.
+            let Some(inst) = app.created.clone() else {
+                return Task::none();
+            };
+            let _lock = match inst.try_lock("the Eidos window") {
+                Ok(l) => l,
+                Err(e) => {
+                    app.status = Some(tf("status_cannot_create_now", &[("error", &e)]));
+                    return Task::none();
+                }
+            };
+            if refuse_stale_modlist(app) {
+                return Task::none();
+            }
+            let failed = |e: &dyn std::fmt::Display| {
+                tf(
+                    "status_flag_light_failed",
+                    &[("plugin", &p.name), ("error", &e)],
+                )
+            };
+            let mod_name = format!("{} (light)", p.name);
+            let entry = match inst.create_empty_mod(&mod_name) {
+                Ok(entry) => entry,
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    app.status = Some(tf(
+                        "status_flag_light_exists",
+                        &[("mod", &mod_name), ("plugin", &p.name)],
+                    ));
+                    return Task::none();
+                }
+                Err(e) => {
+                    app.status = Some(failed(&e));
+                    return Task::none();
+                }
+            };
+            if let Err(e) =
+                eidos_plugins::write_light_copy(&p.path, &entry.path.join(&p.name), &spec)
+            {
+                let _ = fs::remove_dir_all(&entry.path);
+                app.status = Some(failed(&e));
+                return Task::none();
+            }
+            if let Some(source) = eidos_instance::PluginSource::of(&p.name, &p.path) {
+                // Best effort: the copy is in place either way.
+                if let Err(e) = edit_mod_meta(&inst, &entry.name, |m| m.set_plugin_source(source)) {
+                    eidos_log::warn!("Could not record the source of {}: {e}", p.name);
+                }
+            }
+            // The last row: the highest priority, so the copy wins over its source.
+            app.mods.push(entry);
+            if mods_changed(app) {
+                app.status = Some(tf(
+                    "status_flagged_light",
+                    &[("plugin", &p.name), ("mod", &mod_name)],
+                ));
+            }
+        }
         Message::TogglePluginLock(i) => {
             let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
                 return Task::none();

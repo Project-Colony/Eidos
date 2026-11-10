@@ -334,6 +334,18 @@ pub(crate) fn newest_profile_saves(app: &App) -> Vec<(PathBuf, eidos_gamefeature
     eidos_gamefeatures::newest_saves(inst.savegames().into_iter().map(|s| s.path), 3)
 }
 
+/// The first of `saves` that loads `plugin` as a full plugin (its full table,
+/// not the light one), matched ASCII case-insensitively.
+pub(crate) fn full_in_saves<'a>(
+    plugin: &str,
+    saves: &'a [(PathBuf, eidos_gamefeatures::SaveInfo)],
+) -> Option<&'a Path> {
+    saves
+        .iter()
+        .find(|(_, s)| s.plugins.iter().any(|p| p.eq_ignore_ascii_case(plugin)))
+        .map(|(path, _)| path.as_path())
+}
+
 /// The plugins of the `targets` mods that one of `saves` uses: each enabled
 /// mod's top-level plugin files, minus those another mod currently wins,
 /// matched ASCII case-insensitively. File spelling, sorted, deduplicated.

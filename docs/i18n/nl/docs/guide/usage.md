@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=dae685f644442ee57909a3c2b80543d39adc4c42 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1574126d8bbe4e781425adacb21a701cb3c92dd7 -->
 
 # Eidos gebruiken
 
@@ -581,7 +581,7 @@ van die namen schrijft, komt in de Overwrite terecht en blijft zichtbaar.
 **Plugins** is de
 ESP/ESM/ESL-laadvolgorde (omschakelen, met de hand herordenen, of sorteren met
 LOOT en het verslag na de sortering lezen, waarvan de adviezenlinks in je browser
-openen). De kop telt de ingeschakelde plugins per indexruimte tegen de limiet van het spel, bijvoorbeeld `full 231/254, light 512/4096`, en wordt oranje zodra er een vol is. **Conflicts** legt de winnaars en verliezers per bestand uit.
+openen). De kop telt de ingeschakelde plugins per indexruimte tegen de limiet van het spel, bijvoorbeeld `full 231/254, light 512/4096`, en wordt oranje zodra er een vol is. Na een LOOT-sortering laat een volledige plugin waarvan alle nieuwe records in het light-bereik passen dat bij aanwijzen zien, en het menu van zijn rij bevat Flag as light. Eidos schrijft een kopie met de light-vlag in een nieuwe mod met de naam `<plugin> (light)`, onderaan de modlijst (de hoogste prioriteit), en laat het origineel ongemoeid, dus die mod uitzetten maakt het ongedaan. Eidos weigert als een van de drie nieuwste saves van het profiel de plugin als volledige plugin laadt. LOOT controleert alleen recordbereiken: bekijk een plugin die cellen of worldspaces toevoegt in xEdit voordat je hem markeert. **Conflicts** legt de winnaars en verliezers per bestand uit.
 **Overwrite** maakt in één stap een echte mod van wat het spel geschreven heeft.
 **Saves** ontleedt de kop van elke save - personage, niveau, locatie, speeltijd -
 en vergelijkt de erin gebakken pluginlijst met je huidige, met een knop die de

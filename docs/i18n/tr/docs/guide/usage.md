@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=dae685f644442ee57909a3c2b80543d39adc4c42 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1574126d8bbe4e781425adacb21a701cb3c92dd7 -->
 
 # Eidos kullanımı
 
@@ -564,7 +564,7 @@ ise oyun klasörüne gider. Oyunun ya da bir aracın bu adlardan biriyle yazdı�
 dosya Overwrite'a düşer ve görünür kalır. **Plugins**,
 ESP/ESM/ESL yükleme sırasıdır (açıp kapatın, elle yeniden sıralayın ya da LOOT
 ile sıralayıp sıralama sonrası raporu okuyun; oradaki öneri bağlantıları
-tarayıcınızda açılır). Başlığı, etkin eklentileri her dizin alanında oyunun sınırına karşı sayar, örneğin `full 231/254, light 512/4096`, ve biri dolunca turuncuya döner. **Conflicts**, dosya başına kazananları ve kaybedenleri
+tarayıcınızda açılır). Başlığı, etkin eklentileri her dizin alanında oyunun sınırına karşı sayar, örneğin `full 231/254, light 512/4096`, ve biri dolunca turuncuya döner. Bir LOOT sıralamasından sonra, yeni kayıtlarının hepsi light aralığına sığan tam bir eklenti bunu fareyle üzerine gelince söyler ve satır menüsünde Flag as light bulunur. Eidos, light bayrağı açık bir kopyayı `<plugin> (light)` adlı yeni bir moda yazar, bu modu mod listesinin en altına (en yüksek öncelik) koyar ve özgün dosyaya dokunmaz; o modu kapatmak işlemi geri alır. Profilin en yeni üç kaydından biri eklentiyi tam eklenti olarak yüklüyorsa Eidos reddeder. LOOT yalnızca kayıt aralıklarını denetler: hücre ya da worldspace ekleyen bir eklentiyi işaretlemeden önce xEdit'te inceleyin. **Conflicts**, dosya başına kazananları ve kaybedenleri
 açıklar. **Overwrite**, oyunun yazdığını tek adımda gerçek bir moda dönüştürür.
 **Saves**, her kaydın başlığını ayrıştırır - karakter, seviye, konum, oynanma
 süresi - ve içine gömülü eklenti listesini geçerli listenizle karşılaştırır;

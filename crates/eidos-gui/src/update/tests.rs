@@ -6538,6 +6538,104 @@ fn tes4_header(flags: u32) -> Vec<u8> {
     b
 }
 
+#[test]
+fn flag_as_light_writes_a_new_mod_above_the_source() {
+    let (mut app, root) = list_app(&["Base"]);
+    let original = tes4_header(0x1);
+    fs::write(root.join("mods/Base/Patch.esp"), &original).unwrap();
+    let mut row = plugin_row("Patch.esp", "Base");
+    row.path = root.join("mods/Base/Patch.esp");
+    app.plugins = Some(PluginList {
+        plugins: vec![row],
+        ..Default::default()
+    });
+    let _ = update(&mut app, Message::FlagPluginLight(0));
+    let out = fs::read(root.join("mods/Patch.esp (light)/Patch.esp")).unwrap();
+    assert_eq!(
+        u32::from_le_bytes(out[8..12].try_into().unwrap()),
+        0x1 | 0x200
+    );
+    assert_eq!(app.mods.last().unwrap().name, "Patch.esp (light)");
+    assert!(app.mods.last().unwrap().enabled);
+    assert_eq!(
+        fs::read(root.join("mods/Base/Patch.esp")).unwrap(),
+        original
+    );
+    let meta = eidos_instance::ModMeta::read(&root.join("mods/Patch.esp (light)/meta.ini"));
+    assert_eq!(meta.plugin_sources()[0].name, "Patch.esp");
+    // On disk at the bottom of the list, the row that wins.
+    let listed = Instance::portable(root.clone()).modlist();
+    assert!(listed
+        .last()
+        .is_some_and(|m| m.name == "Patch.esp (light)" && m.enabled));
+
+    // A second flag finds the folder and leaves it alone.
+    let mut row = plugin_row("Patch.esp", "Base");
+    row.path = root.join("mods/Base/Patch.esp");
+    app.plugins = Some(PluginList {
+        plugins: vec![row],
+        ..Default::default()
+    });
+    let mods = app.mods.len();
+    let _ = update(&mut app, Message::FlagPluginLight(0));
+    assert_eq!(app.mods.len(), mods);
+    assert_eq!(
+        app.status.as_deref(),
+        Some(
+            tf(
+                "status_flag_light_exists",
+                &[("mod", &"Patch.esp (light)"), ("plugin", &"Patch.esp")]
+            )
+            .as_str()
+        )
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_failed_light_copy_leaves_no_mod_behind() {
+    let (mut app, root) = list_app(&["Base"]);
+    fs::write(root.join("mods/Base/Patch.esp"), b"not a plugin").unwrap();
+    let mut row = plugin_row("Patch.esp", "Base");
+    row.path = root.join("mods/Base/Patch.esp");
+    app.plugins = Some(PluginList {
+        plugins: vec![row],
+        ..Default::default()
+    });
+    let _ = update(&mut app, Message::FlagPluginLight(0));
+    assert!(!root.join("mods/Patch.esp (light)").exists());
+    assert_eq!(app.mods.len(), 1);
+    assert!(app
+        .status
+        .as_deref()
+        .is_some_and(|s| s.contains("Patch.esp")));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_save_that_loads_the_plugin_as_full_is_named() {
+    use eidos_gamefeatures::SaveInfo;
+    let saves = vec![(
+        PathBuf::from("Save9.ess"),
+        SaveInfo {
+            plugins: vec!["PATCH.esp".into()],
+            ..Default::default()
+        },
+    )];
+    assert_eq!(
+        full_in_saves("Patch.esp", &saves),
+        Some(Path::new("Save9.ess"))
+    );
+    let light = vec![(
+        PathBuf::from("Save9.ess"),
+        SaveInfo {
+            light_plugins: vec!["Patch.esp".into()],
+            ..Default::default()
+        },
+    )];
+    assert_eq!(full_in_saves("Patch.esp", &light), None);
+}
+
 fn plugin_history_app() -> (App, PathBuf, usize) {
     let (mut app, root) = history_app(&["A"]);
     fs::write(root.join("mods/A/A.esp"), tes4_header(0)).unwrap();

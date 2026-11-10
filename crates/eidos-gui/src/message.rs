@@ -326,6 +326,9 @@ pub(crate) enum Message {
     /// Clean these plugins with xEdit's QuickAutoClean, one run at a time,
     /// into the `Cleaned plugins` mod.
     CleanPlugins(Vec<String>),
+    /// Write a light-flagged copy of the plugin at this row into a new
+    /// `<plugin> (light)` mod at the highest priority.
+    FlagPluginLight(usize),
     /// Ask Nexus what this archive is, by its MD5 (MO2's Query Metadata).
     IdentifyDownload(String),
     /// The lookup came back: `Ok` carries the name it identified.

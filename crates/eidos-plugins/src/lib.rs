@@ -1253,6 +1253,45 @@ fn parse_header(path: &Path, game_id: GameId) -> Result<Header, String> {
     })
 }
 
+/// Copy the plugin at `src` to `dest` with the game's light flag set in its TES4
+/// record flags (`0x100` on Starfield, `0x200` elsewhere). `src` is only read.
+/// Fails, and leaves no `dest`, when `src` is not a TES4 plugin or the copy does
+/// not read back as light for this game.
+pub fn write_light_copy(src: &Path, dest: &Path, spec: &GameSpec) -> std::io::Result<()> {
+    use std::io::{Error, Read, Write};
+    let mut input = std::fs::File::open(src)?;
+    let mut head = [0u8; 12];
+    if input.read_exact(&mut head).is_err() || &head[..4] != b"TES4" {
+        return Err(Error::other(format!(
+            "{} is not a TES4 plugin",
+            src.display()
+        )));
+    }
+    let flag: u32 = if spec.esplugin_id == GameId::Starfield {
+        0x100
+    } else {
+        0x200
+    };
+    let flags = u32::from_le_bytes([head[8], head[9], head[10], head[11]]) | flag;
+    head[8..12].copy_from_slice(&flags.to_le_bytes());
+    // Never over an existing file: only a file this call created is removed below.
+    let mut out = std::fs::File::create_new(dest)?;
+    let written = out
+        .write_all(&head)
+        .and_then(|()| std::io::copy(&mut input, &mut out))
+        .and_then(|_| out.flush());
+    drop(out);
+    let checked = written.and_then(|()| match parse_header(dest, spec.esplugin_id) {
+        Ok(h) if h.is_light => Ok(()),
+        Ok(_) => Err(Error::other("the copy does not read as a light plugin")),
+        Err(e) => Err(Error::other(e)),
+    });
+    if checked.is_err() {
+        let _ = std::fs::remove_file(dest);
+    }
+    checked
+}
+
 /// Stable topological order: respect `base` (the tier ordering) as the tiebreak,
 /// but never place a plugin before one of its present masters. O(n^2), fine for
 /// realistic plugin counts. A dependency cycle (should not occur) falls back to
@@ -1592,6 +1631,52 @@ mod tests {
         let header = parse_header(&path, GameId::Starfield).unwrap();
         assert!(header.is_light && !header.is_update);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn write_light_copy_sets_the_games_light_flag_on_a_copy() {
+        use std::fs;
+        let dir = std::env::temp_dir().join(format!("eidos-light-copy-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let (src, dest, other) = (
+            dir.join("Patch.esp"),
+            dir.join("out.esp"),
+            dir.join("x.esp"),
+        );
+        // The 24-byte TES4 header, master-flagged, form version 44, no subrecords.
+        let mut original = vec![0u8; 24];
+        original[..4].copy_from_slice(b"TES4");
+        original[8..12].copy_from_slice(&0x1u32.to_le_bytes());
+        original[20..22].copy_from_slice(&44u16.to_le_bytes());
+        original.extend_from_slice(b"GRUP rest of the file");
+        for (id, flag) in [("skyrimse", 0x200u32), ("starfield", 0x100)] {
+            fs::write(&src, &original).unwrap();
+            let spec = GameSpec::for_id(id).unwrap();
+            write_light_copy(&src, &dest, &spec).unwrap();
+            assert!(parse_header(&dest, spec.esplugin_id).unwrap().is_light);
+            let out = fs::read(&dest).unwrap();
+            assert_eq!(
+                u32::from_le_bytes(out[8..12].try_into().unwrap()),
+                0x1 | flag
+            );
+            assert_eq!(out[12..], original[12..], "only the flags change");
+            assert_eq!(
+                fs::read(&src).unwrap(),
+                original,
+                "the source is never written"
+            );
+            // An existing file is refused and kept.
+            assert!(write_light_copy(&src, &dest, &spec).is_err());
+            assert_eq!(fs::read(&dest).unwrap(), out);
+            fs::remove_file(&dest).unwrap();
+        }
+        fs::write(&src, b"nope").unwrap();
+        assert!(write_light_copy(&src, &other, &se()).is_err() && !other.exists());
+        // A game without light plugins: the copy would not read as light.
+        fs::write(&src, &original).unwrap();
+        let oblivion = GameSpec::for_id("oblivion").unwrap();
+        assert!(write_light_copy(&src, &other, &oblivion).is_err() && !other.exists());
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

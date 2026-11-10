@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=dae685f644442ee57909a3c2b80543d39adc4c42 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1574126d8bbe4e781425adacb21a701cb3c92dd7 -->
 
 # Utiliser Eidos
 
@@ -612,7 +612,7 @@ fichier que le jeu ou un outil écrit sous l'un de ces noms arrive dans
 l'Overwrite et reste visible. **Plugins**,
 c'est l'ordre de chargement des ESP/ESM/ESL (activer, réordonner à la main, ou
 trier avec LOOT et lire le rapport d'après-tri, dont les liens de conseils
-s'ouvrent dans votre navigateur). Son en-tête compte les plugins actifs de chaque espace d'index face à la limite du jeu, par exemple `full 231/254, light 512/4096`, et devient orange quand l'un est plein. **Conflicts** explique les gagnants et les
+s'ouvrent dans votre navigateur). Son en-tête compte les plugins actifs de chaque espace d'index face à la limite du jeu, par exemple `full 231/254, light 512/4096`, et devient orange quand l'un est plein. Après un tri LOOT, un plugin complet dont tous les nouveaux enregistrements tiennent dans la plage légère l'indique au survol, et le menu de sa ligne contient Flag as light. Eidos écrit une copie portant le drapeau léger dans un nouveau mod nommé `<plugin> (light)`, en bas de la liste des mods (la priorité la plus haute), et laisse l'original intact : désactiver ce mod annule l'opération. Eidos refuse quand l'une des trois sauvegardes les plus récentes du profil charge le plugin comme plugin complet. LOOT ne vérifie que les plages d'enregistrements : avant de marquer un plugin qui ajoute des cellules ou des worldspaces, examinez-le dans xEdit. **Conflicts** explique les gagnants et les
 perdants fichier par fichier. **Overwrite** transforme ce que le jeu a écrit en
 un vrai mod en une seule étape. **Saves** analyse l'en-tête de chaque sauvegarde
 - personnage, niveau, lieu, temps de jeu - et compare la liste de plugins qui y

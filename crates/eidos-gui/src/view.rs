@@ -1982,6 +1982,17 @@ pub(crate) fn plugin_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> 
             Message::CleanPlugins(vec![name]),
         ));
     }
+    let light_candidate = app
+        .loot_meta
+        .as_ref()
+        .and_then(|m| m.get(&p.name.to_ascii_lowercase()))
+        .is_some_and(|b| b.light_candidate);
+    if light_candidate {
+        col = col.push(menu_item(
+            t("plugin_menu_flag_light"),
+            Message::FlagPluginLight(i),
+        ));
+    }
 
     col = col
         .push(menu_sep())
