@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=2fc2de79cc1c8628cdf438d2dc4c70be136d9e38 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=9edf3d6b69ec44472fa3178d3a034b7c70924776 -->
 
 # 使用 Eidos
 
@@ -463,6 +463,8 @@ Downloads 标签页是一个压缩包**库**,不是传输队列。按名称过�
 烧掉它。"Show hidden" 把它们带回来,同一个按钮也取消隐藏。"Remove N installed" 两下
 点击删除你已经安装过的模组的压缩包,而且只删**屏幕上**的那些:过滤就是你表明你指的是
 哪些的方式。
+
+**Preferences -> Nexus -> Install downloads when they finish** 默认关闭。开启后，窗口打开期间结束的 Nexus 下载会直接安装，不必再去 Downloads 标签页。这是常规安装：FOMOD 会打开它的安装器，模组列表里已有的名称会询问怎么处理。窗口打开之前、或选项开启之前就在 `downloads/` 里的压缩包不会被动，你取消过安装的下载也一样。在合集面板中打开的合集的成员，以及等待中的 Update 所等的文件，只由各自的流程安装。游戏或另一个 Eidos 占用实例时，安装会等到它空闲。
 
 ### 模组更新
 

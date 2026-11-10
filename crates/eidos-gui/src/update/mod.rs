@@ -1561,6 +1561,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::SettingsToggleSection(..)
         | Message::ToggleRememberWindow(..)
         | Message::ToggleOffline(..)
+        | Message::ToggleAutoInstall(..)
         | Message::PreferredServersChanged(..)
         | Message::DefaultGameChanged(..)
         | Message::ToggleLockGui(..)

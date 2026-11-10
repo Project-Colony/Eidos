@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=2fc2de79cc1c8628cdf438d2dc4c70be136d9e38 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=9edf3d6b69ec44472fa3178d3a034b7c70924776 -->
 
 # Používání Eidosu
 
@@ -595,6 +595,8 @@ odstraní jen řádek, takže odložit knihu neznamená spálit ji. „Show hidd
 vrátí a totéž tlačítko skrytí zruší. „Remove N installed" smaže archivy módů,
 které jste už nainstalovali, na dvě kliknutí, a jen ty **na obrazovce**: filtrem
 jste řekli, které jste mysleli.
+
+**Preferences -> Nexus -> Install downloads when they finish** je ve výchozím stavu vypnuto. Po zapnutí se stažení z Nexusu, které skončí při otevřeném okně, nainstaluje samo, aniž byste museli na kartu Downloads. Je to obvyklá instalace: FOMOD otevře svůj instalátor a název, který už v seznamu modů je, se zeptá, co dělat. Archivy, které byly v `downloads/` před otevřením okna nebo před zapnutím volby, se nechají být, stejně jako stažení, jehož instalaci jste zrušili. Členy kolekce otevřené v panelu kolekcí a soubor, na který čeká čekající Update, instalují jen tyto postupy. Dokud hru nebo jiný Eidos drží instanci, instalace počká, až bude volná.
 
 ### Aktualizace módů
 

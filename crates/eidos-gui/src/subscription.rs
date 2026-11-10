@@ -70,6 +70,15 @@ pub(crate) fn pointer(app: &App) -> iced::Point {
 /// Shortcuts only fire on the main screen, and only when no modal / inline editor is
 /// stealing input, so they never clobber typing into a text field. Mirrors MO2's
 /// global accelerators: F5 (Refresh) and Ctrl+R (Run).
+/// Whether the downloads tick should run: the Downloads tab, an update or a
+/// collection walk waiting for a file, or auto-install with an open instance.
+pub(crate) fn watches_downloads(app: &App) -> bool {
+    app.tab == Tab::Downloads
+        || app.pending_update.is_some()
+        || app.collection.as_ref().is_some_and(|c| c.walk.is_some())
+        || (app.prefs.auto_install_downloads && app.created.is_some())
+}
+
 pub(crate) fn subscription(app: &App) -> iced::Subscription<Message> {
     use iced::keyboard::{self, key::Named, Key};
 
@@ -358,10 +367,7 @@ pub(crate) fn subscription(app: &App) -> iced::Subscription<Message> {
     // slower otherwise, because the idle case only has to notice that a download
     // has begun. An update waiting for its file, and a collection walk waiting
     // for its next one, keep the tick running on every tab.
-    if app.tab == Tab::Downloads
-        || app.pending_update.is_some()
-        || app.collection.as_ref().is_some_and(|c| c.walk.is_some())
-    {
+    if watches_downloads(app) {
         let arriving = app
             .downloads
             .iter()

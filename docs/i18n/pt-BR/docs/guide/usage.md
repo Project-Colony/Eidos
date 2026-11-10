@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=2fc2de79cc1c8628cdf438d2dc4c70be136d9e38 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=9edf3d6b69ec44472fa3178d3a034b7c70924776 -->
 
 # Usar o Eidos
 
@@ -628,6 +628,8 @@ arquivo e só tira a linha, porque guardar um livro não é queimá-lo. "Show
 hidden" traz todos de volta, e o mesmo botão desoculta. "Remove N installed"
 apaga os arquivos dos mods que você já instalou, em dois cliques, e só os que
 estão **na tela**: o filtro é como você disse quais eram.
+
+**Preferences -> Nexus -> Install downloads when they finish** vem desativado por padrão. Ativada, uma baixa da Nexus que termina com a janela aberta é instalada sem passar pela aba Downloads. É a instalação de sempre: um FOMOD abre seu instalador, e um nome que já está na lista de mods pergunta o que fazer. Os arquivos que estavam em `downloads/` antes de a janela abrir ou antes de a opção ser ativada ficam como estão, assim como uma baixa cuja instalação você cancelou. Os membros de uma coleção aberta no painel de coleções e o arquivo que uma atualização pendente espera só são instalados por esses fluxos. Enquanto o jogo ou outro Eidos segura a instância, a instalação espera até ela ficar livre.
 
 ### Atualizações de mods
 

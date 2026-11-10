@@ -281,6 +281,9 @@ pub struct Settings {
     pub lock_gui: bool,
     /// Remember the explicit collision-dialog choice to retain the old mod.
     pub retain_install_backup: bool,
+    /// Install a Nexus download as soon as it finishes while the window is
+    /// open. Off unless turned on.
+    pub auto_install_downloads: bool,
     /// Multiplier on how fast the mod list scrolls when a drag rests on one of
     /// its edges. 1.0 is the tuned default; the range a user can pick from is
     /// the GUI's business, this only stores what they picked.
@@ -328,6 +331,7 @@ impl Default for Settings {
             // MO2 defaults `lock_gui` to true, and an absent key means "on".
             lock_gui: true,
             retain_install_backup: false,
+            auto_install_downloads: false,
             drag_scroll_speed: 1.0,
             split: 0.6,
             remember_window: true,
@@ -472,6 +476,10 @@ impl Settings {
                         "false" | "0" | "no" | "off"
                     )
                 }
+                "auto_install_downloads" => {
+                    s.auto_install_downloads =
+                        matches!(v.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on")
+                }
                 "retain_install_backup" => {
                     s.retain_install_backup = matches!(v, "true" | "1" | "yes" | "on")
                 }
@@ -505,6 +513,9 @@ impl Settings {
         ));
         if self.offline {
             out.push_str("offline=true\n");
+        }
+        if self.auto_install_downloads {
+            out.push_str("auto_install_downloads=true\n");
         }
         if let Some(dir) = &self.tools_dir {
             out.push_str(&format!("tools_dir={dir}\n"));
@@ -768,6 +779,7 @@ mod tests {
             window_size: Some((1280, 720)),
             lock_gui: false,
             retain_install_backup: true,
+            auto_install_downloads: true,
             drag_scroll_speed: 1.0,
             split: 0.6,
             remember_window: false,
@@ -895,6 +907,7 @@ mod tests {
             window_size: Some((1600, 900)),
             lock_gui: false,
             retain_install_backup: true,
+            auto_install_downloads: true,
             drag_scroll_speed: 1.0,
             split: 0.6,
             remember_window: false,
@@ -903,5 +916,16 @@ mod tests {
         let loaded = Settings::parse(&fs::read_to_string(&path).unwrap());
         assert_eq!(loaded, s);
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn auto_install_is_off_unless_turned_on_and_round_trips() {
+        assert!(!Settings::parse("[eidos]\n").auto_install_downloads);
+        assert!(Settings::parse("auto_install_downloads=true\n").auto_install_downloads);
+        let s = Settings {
+            auto_install_downloads: true,
+            ..Settings::default()
+        };
+        assert!(Settings::parse(&s.to_ini()).auto_install_downloads);
     }
 }

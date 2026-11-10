@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=2fc2de79cc1c8628cdf438d2dc4c70be136d9e38 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=9edf3d6b69ec44472fa3178d3a034b7c70924776 -->
 
 # Usar Eidos
 
@@ -646,6 +646,8 @@ conserva el fichero y sólo quita la fila, así que guardar un libro no es quema
 installed» borra los archivos de los mods que ya has instalado, en dos clics, y
 sólo los que están **en pantalla**: el filtro es tu forma de decir a cuáles te
 referías.
+
+**Preferences -> Nexus -> Install downloads when they finish** está desactivado por defecto. Con la opción activada, una descarga de Nexus que termina con la ventana abierta se instala sin pasar por la pestaña Downloads. Es la instalación de siempre: un FOMOD abre su instalador, y un nombre que ya está en la lista de mods pregunta qué hacer. Los archivos que estaban en `downloads/` antes de abrir la ventana o antes de activar la opción no se tocan, ni tampoco una descarga cuya instalación cancelaste. Los miembros de una colección abierta en el panel de colecciones y el archivo que espera una actualización pendiente solo los instalan esos flujos. Mientras el juego u otro Eidos tenga la instancia, la instalación espera a que quede libre.
 
 ### Actualizaciones de mods
 

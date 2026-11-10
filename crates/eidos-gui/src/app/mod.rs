@@ -579,6 +579,11 @@ pub(crate) struct App {
     pub(crate) resuming: Option<(String, std::process::Child, PathBuf)>,
     /// The update whose new file is awaited in `downloads/`.
     pub(crate) pending_update: Option<PendingUpdate>,
+    /// Auto-install only touches archives written at or after this moment: the
+    /// window's start, or the instant the option was turned on.
+    pub(crate) auto_install_since: std::time::SystemTime,
+    /// Downloads already opened, or left to another flow, this session.
+    pub(crate) auto_install_tried: std::collections::HashSet<String>,
     /// The folder an update is being installed over, so its collision prompt
     /// ticks the backup box (see `backup_default`).
     pub(crate) update_target: Option<String>,

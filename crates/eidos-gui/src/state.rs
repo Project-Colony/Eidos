@@ -462,6 +462,8 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         downloads: Vec::new(),
         resuming: None,
         pending_update: None,
+        auto_install_since: std::time::SystemTime::now(),
+        auto_install_tried: std::collections::HashSet::new(),
         update_target: None,
         confirm_delete_download: None,
         identifying_download: None,

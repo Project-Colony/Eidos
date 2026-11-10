@@ -322,6 +322,8 @@ pub(crate) enum Message {
     ToggleRememberWindow(bool),
     /// MO2's offline mode: cut every Nexus request.
     ToggleOffline(bool),
+    /// Install a Nexus download as soon as it finishes.
+    ToggleAutoInstall(bool),
     /// Editing the preferred-CDN list. Saved as it is typed.
     PreferredServersChanged(String),
     OpenPluginMenu(usize),

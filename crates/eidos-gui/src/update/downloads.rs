@@ -118,12 +118,20 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                                     | DownloadState::Paused
                             )
                     })
-                    .map(|r| r.path.clone())
+                    .map(|r| (r.name.clone(), r.path.clone()))
             });
-            if let Some(path) = arrived.filter(|_| !install_busy(app)) {
+            if let Some((name, path)) = arrived.filter(|_| !install_busy(app)) {
+                app.auto_install_tried.insert(name);
                 let folder = app.pending_update.take().expect("matched above").folder;
                 app.update_target = Some(folder.clone());
                 return Task::batch([walk, open_mod_archive(app, path, folder, false)]);
+            }
+            if let Some(path) = auto_install_next(app) {
+                let name = eidos_install::mod_name_for(&path);
+                app.status = Some(tf("status_auto_installing", &[("name", &name)]));
+                // Not through `ModPicked`: that would consume a position the
+                // user aimed from the menu (`install_gap`).
+                return Task::batch([walk, open_mod_archive(app, path, name, false)]);
             }
             return walk;
         }
@@ -349,4 +357,48 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         _ => unreachable!("routed by update_inner"),
     }
     Task::none()
+}
+
+/// The next finished download to install on its own, if the option is on and
+/// nothing stands in the way. Archives that belong to a collection are marked
+/// tried and left to it; a busy installer or a held instance lock waits.
+fn auto_install_next(app: &mut App) -> Option<PathBuf> {
+    if !app.prefs.auto_install_downloads {
+        return None;
+    }
+    let inst = app.created.as_ref()?;
+    let pending = app.pending_update.as_ref().map(|p| (p.mod_id, p.file_id));
+    let mut ready: Vec<&DownloadRow> = app
+        .downloads
+        .iter()
+        .filter(|r| {
+            r.state == DownloadState::Ready
+                && r.mod_id.is_some()
+                && !r.hidden
+                && r.modified >= app.auto_install_since
+                && !app.auto_install_tried.contains(&r.name)
+                && pending != r.mod_id.zip(r.file_id)
+        })
+        .collect();
+    if app.collection.is_some() {
+        let names: Vec<String> = ready.iter().map(|r| r.name.clone()).collect();
+        app.auto_install_tried.extend(names);
+        return None;
+    }
+    if install_busy(app)
+        || app.drag_state.is_some()
+        || app.plugin_drag.is_some()
+        || app.download_drag.is_some()
+    {
+        return None;
+    }
+    // The lock guard is dropped at once; this only asks whether the instance is free.
+    if inst.try_lock("checking for an automatic install").is_err() {
+        return None;
+    }
+    // shortcut: reads the listed rows, so a Downloads filter hiding the new archive holds it until cleared; scan with find_download if that bites.
+    ready.sort_by_key(|r| r.modified);
+    let (name, path) = ready.first().map(|r| (r.name.clone(), r.path.clone()))?;
+    app.auto_install_tried.insert(name);
+    Some(path)
 }

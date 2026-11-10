@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=2fc2de79cc1c8628cdf438d2dc4c70be136d9e38 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=9edf3d6b69ec44472fa3178d3a034b7c70924776 -->
 
 # 使用 Eidos
 
@@ -478,6 +478,8 @@ Downloads 分頁是一座壓縮檔**圖書館**,不是傳輸佇列。可以依�
 所以把一本書收起來不等於把它燒掉。「Show hidden」會把它們帶回來,同一個按鈕也負責
 取消隱藏。「Remove N installed」會用兩次點擊刪掉你已經安裝過的模組的壓縮檔,而且
 只刪**畫面上**的那些:篩選就是你說明自己指的是哪些的方式。
+
+**Preferences -> Nexus -> Install downloads when they finish** 預設為關閉。開啟後，視窗開著時完成的 Nexus 下載會直接安裝，不必再到 Downloads 分頁。這是一般的安裝：FOMOD 會開啟它的安裝程式，模組清單裡已有的名稱會詢問如何處理。視窗開啟之前、或選項開啟之前就在 `downloads/` 裡的壓縮檔不會被動，你取消過安裝的下載也一樣。在合集面板中開啟的合集的成員，以及等待中的 Update 所等的檔案，只由各自的流程安裝。遊戲或另一個 Eidos 佔用實例時，安裝會等到它空閒。
 
 ### 模組更新
 

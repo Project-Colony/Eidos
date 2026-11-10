@@ -297,3 +297,14 @@ fn no_test_can_write_the_developers_own_preferences() {
     assert!(app.prefs.path().is_none());
     assert_eq!(app.ui_prefs, crate::preferences::UiPreferences::default());
 }
+
+#[test]
+fn turning_auto_install_on_starts_from_now() {
+    let mut app = app_for_game("skyrimse");
+    let before = std::time::SystemTime::now();
+    let _ = update_inner(&mut app, Message::ToggleAutoInstall(true));
+    assert!(app.prefs.auto_install_downloads);
+    assert!(app.auto_install_since >= before);
+    let _ = update_inner(&mut app, Message::ToggleAutoInstall(false));
+    assert!(!app.prefs.auto_install_downloads);
+}

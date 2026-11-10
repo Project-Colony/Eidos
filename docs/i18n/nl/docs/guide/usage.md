@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=2fc2de79cc1c8628cdf438d2dc4c70be136d9e38 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=9edf3d6b69ec44472fa3178d3a034b7c70924776 -->
 
 # Eidos gebruiken
 
@@ -641,6 +641,8 @@ verbranden. "Show hidden" haalt ze terug, en dezelfde knop maakt ze weer
 zichtbaar. "Remove N installed" verwijdert de archieven van mods die je al
 geïnstalleerd hebt, in twee klikken, en alleen die **op het scherm**: met het
 filter heb je gezegd welke je bedoelde.
+
+**Preferences -> Nexus -> Install downloads when they finish** staat standaard uit. Staat de optie aan, dan wordt een Nexus-download die klaar is terwijl het venster open is geïnstalleerd zonder omweg via het tabblad Downloads. Het is de gewone installatie: een FOMOD opent zijn installatieprogramma en een naam die al in de modlijst staat vraagt wat er moet gebeuren. Archieven die al in `downloads/` stonden voordat het venster openging of voordat de optie aanging, blijven met rust, net als een download waarvan u de installatie hebt geannuleerd. Leden van een collectie die in het collectiepaneel openstaat en het bestand waarop een lopende Update wacht, worden alleen door die stromen geïnstalleerd. Zolang het spel of een andere Eidos de instantie vasthoudt, wacht de installatie tot ze vrij is.
 
 ### Mod-updates
 

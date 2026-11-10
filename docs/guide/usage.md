@@ -607,6 +607,16 @@ same button unhides. "Remove N installed" deletes the archives of mods you have
 already installed, in two clicks, and only the ones **on screen**: the filter is
 how you said which ones you meant.
 
+**Preferences -> Nexus -> Install downloads when they finish** is off by
+default. Turned on, a Nexus download that finishes while the window is open
+installs without a visit to the Downloads tab. It is the usual install: a FOMOD opens its installer, and a name
+already in the mod list asks what to do. Archives that were in `downloads/`
+before the window opened or before the option was turned on are left alone, and
+so is a download whose install you cancelled. Members of a collection open in
+the collection pane, and the file a pending Update waits for, are installed by
+those flows only. While the game or another Eidos holds the instance, the
+install waits until it is free.
+
 ### Mod updates
 
 The update button at the right end of the toolbar compares each installed file

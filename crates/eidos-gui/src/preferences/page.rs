@@ -443,6 +443,13 @@ impl Sections<'_> {
                     t("settings_preferred_servers_desc"),
                     servers,
                 ),
+                functional_toggle(
+                    typo,
+                    t("settings_auto_install"),
+                    t("settings_auto_install_desc"),
+                    app.prefs.auto_install_downloads,
+                    Message::ToggleAutoInstall(!app.prefs.auto_install_downloads),
+                ),
             ],
         )
     }

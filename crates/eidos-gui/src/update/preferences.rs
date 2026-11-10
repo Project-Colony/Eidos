@@ -128,6 +128,15 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // means Eidos will not check, and coming back online means it can.
             app.nexus_error = on.then(|| t("nexus_offline").to_string());
         }
+        Message::ToggleAutoInstall(on) => {
+            app.prefs.auto_install_downloads = on;
+            if on {
+                app.auto_install_since = std::time::SystemTime::now();
+            }
+            if let Err(e) = app.prefs.save() {
+                app.status = Some(tf("status_prefs_save_failed", &[("error", &e)]));
+            }
+        }
         Message::PreferredServersChanged(t) => {
             app.typing = true;
             // Stored as typed, so there is nothing to save by hand. The field

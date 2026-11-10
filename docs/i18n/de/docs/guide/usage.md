@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=2fc2de79cc1c8628cdf438d2dc4c70be136d9e38 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=9edf3d6b69ec44472fa3178d3a034b7c70924776 -->
 
 # Eidos verwenden
 
@@ -673,6 +673,8 @@ zurück, und derselbe Knopf hebt das Verbergen wieder auf. "Remove N installed"
 löscht in zwei Klicks die Archive der Mods, die Sie bereits installiert haben,
 und nur die **auf dem Bildschirm**: der Filter ist Ihre Art zu sagen, welche Sie
 meinten.
+
+**Preferences -> Nexus -> Install downloads when they finish** ist standardmäßig aus. Ist die Option an, wird ein Nexus-Download, der bei geöffnetem Fenster fertig wird, ohne Umweg über den Tab Downloads installiert. Es ist die übliche Installation: Ein FOMOD öffnet seinen Installer, und ein Name, der schon in der Modliste steht, fragt nach. Archive, die vor dem Öffnen des Fensters oder vor dem Einschalten der Option in `downloads/` lagen, bleiben unberührt, ebenso ein Download, dessen Installation Sie abgebrochen haben. Mitglieder einer Collection, die im Collection-Bereich offen ist, und die Datei, auf die ein wartendes Update wartet, installieren nur diese Abläufe. Solange das Spiel oder ein anderes Eidos die Instanz hält, wartet die Installation, bis sie frei ist.
 
 ### Mod-Updates
 

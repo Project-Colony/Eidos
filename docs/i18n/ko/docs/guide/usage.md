@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=2fc2de79cc1c8628cdf438d2dc4c70be136d9e38 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=9edf3d6b69ec44472fa3178d3a034b7c70924776 -->
 
 # Eidos 사용하기
 
@@ -559,6 +559,8 @@ Downloads 탭은 전송 대기열이 아니라 압축 파일 **서고**입니다
 다시 숨김을 풉니다. "Remove N installed"는 이미 설치한 모드의 압축 파일을 두 번의
 클릭으로 지우는데, **화면에 보이는** 것만 지웁니다: 필터가 곧 여러분이 어느 것을
 뜻했는지 말한 방식입니다.
+
+**Preferences -> Nexus -> Install downloads when they finish** 는 기본값이 꺼짐입니다. 켜면 창이 열려 있는 동안 끝난 Nexus 다운로드가 Downloads 탭을 거치지 않고 설치됩니다. 설치 방식은 평소와 같아서, FOMOD는 설치 창을 열고 모드 목록에 이미 있는 이름이면 어떻게 할지 묻습니다. 창을 열기 전이나 옵션을 켜기 전부터 `downloads/`에 있던 아카이브는 건드리지 않으며, 설치를 취소한 다운로드도 마찬가지입니다. 컬렉션 패널에 열려 있는 컬렉션의 구성원과 대기 중인 업데이트가 기다리는 파일은 해당 흐름만 설치합니다. 게임이나 다른 Eidos가 인스턴스를 잡고 있는 동안에는 풀릴 때까지 설치를 기다립니다.
 
 ### 모드 업데이트
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=2fc2de79cc1c8628cdf438d2dc4c70be136d9e38 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=9edf3d6b69ec44472fa3178d3a034b7c70924776 -->
 
 # Eidos kullanımı
 
@@ -622,6 +622,8 @@ yani bir kitabı kaldırıp koymak onu yakmak değildir. "Show hidden" onları g
 getirir, aynı düğme gizlemeyi de kaldırır. "Remove N installed", zaten kurduğunuz
 modların arşivlerini iki tıkla siler, hem de yalnızca **ekranda olanları**:
 süzgeç, hangilerini kastettiğinizi söyleme biçiminizdir.
+
+**Preferences -> Nexus -> Install downloads when they finish** varsayılan olarak kapalıdır. Açıkken, pencere açıkken biten bir Nexus indirmesi Downloads sekmesine uğramadan kurulur. Bu olağan kurulumdur: FOMOD kendi kurucusunu açar, mod listesinde zaten bulunan bir ad ne yapılacağını sorar. Pencere açılmadan önce ya da seçenek açılmadan önce `downloads/` içinde duran arşivlere dokunulmaz, kurulumunu iptal ettiğiniz indirmeye de. Koleksiyon panelinde açık bir koleksiyonun üyelerini ve bekleyen bir Update'in beklediği dosyayı yalnızca o akışlar kurar. Oyun ya da başka bir Eidos örneği tutarken kurulum, örnek boşalana kadar bekler.
 
 ### Mod güncellemeleri
 

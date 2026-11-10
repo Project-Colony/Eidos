@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=2fc2de79cc1c8628cdf438d2dc4c70be136d9e38 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=9edf3d6b69ec44472fa3178d3a034b7c70924776 -->
 
 # Używanie Eidos
 
@@ -626,6 +626,8 @@ jedynie wiersz, bo odłożenie książki to nie spalenie jej. „Show hidden" pr
 je, a ten sam przycisk odkrywa. „Remove N installed" usuwa archiwa modów, które
 już zainstalowałeś, w dwóch kliknięciach, i tylko te **na ekranie**: filtrem
 powiedziałeś, o które ci chodziło.
+
+**Preferences -> Nexus -> Install downloads when they finish** jest domyślnie wyłączone. Po włączeniu pobranie z Nexusa, które kończy się przy otwartym oknie, instaluje się samo, bez wizyty na karcie Downloads. To zwykła instalacja: FOMOD otwiera swój instalator, a nazwa, która już jest na liście modów, pyta, co zrobić. Archiwa, które leżały w `downloads/` przed otwarciem okna lub przed włączeniem opcji, zostają nietknięte, tak samo jak pobranie, którego instalację anulowano. Członków kolekcji otwartej w panelu kolekcji i plik, na który czeka oczekująca aktualizacja, instalują tylko te procesy. Dopóki gra lub inny Eidos trzyma instancję, instalacja czeka, aż będzie wolna.
 
 ### Aktualizacje modów
 
