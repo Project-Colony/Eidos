@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=de47f41eb02c9b2ffdb6721f7d440a7738413bf0 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=86e13b3660fb15dec7a47ddb654d1532c8ab9ae3 -->
 
 # Eidos verwenden
 
@@ -565,6 +565,15 @@ in einem Manager gebürgt haben, im anderen still ankommt.
 Die Layout-Prüfung ist bewusst großzügig: ein `Root/`-Baum zählt, ein unlesbarer
 Ordner zählt, ein leerer zählt. Eine falsche Warnung in einer Liste mit
 fünfhundert Zeilen ist schlimmer als eine fehlende.
+
+### Eine Mod deaktivieren, die Ihre Spielstände nutzen
+
+Bevor eine Mod deaktiviert oder entfernt wird, liest Eidos die Pluginlisten der
+drei neuesten Spielstände des Profils. Nutzt einer davon ein Plugin aus dieser
+Mod, nennt eine Leiste über der Liste die Plugins und wartet auf "Disable anyway"
+oder "Cancel" (Esc bricht ebenfalls ab). Remove fügt dieselben Namen seiner
+Meldung zum erneuten Klicken hinzu. Gelesen werden nur Spielstände von Skyrim und
+Fallout 4; andere Spiele deaktivieren ohne Rückfrage.
 
 ### Eine Mod sichern, bevor Sie sie anfassen
 

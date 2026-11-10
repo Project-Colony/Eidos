@@ -574,6 +574,10 @@ pub(crate) enum Message {
     BatchRemoveMods,
     /// Second click: actually remove every selected mod from disk.
     ConfirmBatchRemove,
+    /// Disable the mods held back because the newest saves use their plugins.
+    ConfirmDisable,
+    /// Keep the mods held back by the saves warning enabled.
+    CancelDisable,
     /// Drop from every profile's list the mods whose folders were deleted
     /// outside Eidos (the Diagnostics card's one-click answer to a suspect list).
     ForgetMissingMods,

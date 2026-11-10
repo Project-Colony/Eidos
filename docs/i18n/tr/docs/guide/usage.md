@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=de47f41eb02c9b2ffdb6721f7d440a7738413bf0 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=86e13b3660fb15dec7a47ddb654d1532c8ab9ae3 -->
 
 # Eidos kullanımı
 
@@ -522,6 +522,15 @@ böylece bir yöneticide kefil olduğunuz bir mod diğerine sessiz gelir.
 Yerleşim denetimi bilerek cömerttir: bir `Root/` ağacı sayılır, okunamayan bir
 klasör sayılır, boş olan sayılır. Beş yüz satırlık bir listede yanlış bir uyarı,
 eksik olandan kötüdür.
+
+### Kayıtlarınızın kullandığı bir modu kapatmak
+
+Bir mod kapatılmadan ya da kaldırılmadan önce Eidos, profilin en yeni üç
+kaydının eklenti listelerini okur. Bunlardan biri o moddan bir eklenti
+kullanıyorsa, listenin üstündeki bir çubuk eklentilerin adını verir ve
+"Disable anyway" ya da "Cancel" bekler (Esc de iptal eder). Remove, yeniden
+tıklamayı isteyen iletisine aynı adları ekler. Yalnızca Skyrim ve Fallout 4
+kayıtları okunur; diğer oyunlarda mod sormadan kapatılır.
 
 ### Bir moda dokunmadan önce onu yedeklemek
 

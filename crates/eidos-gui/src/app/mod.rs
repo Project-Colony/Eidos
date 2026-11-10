@@ -95,6 +95,14 @@ pub(crate) enum Pane {
     Plugins,
 }
 
+/// A disable waiting for the user: the newest saves use `plugins`, which the
+/// `targets` mods (indices into `app.mods`) provide.
+#[derive(Debug, Clone)]
+pub(crate) struct DisableConfirm {
+    pub(crate) targets: Vec<usize>,
+    pub(crate) plugins: Vec<String>,
+}
+
 /// An installed collection with a newer revision on Nexus.
 #[derive(Debug, Clone)]
 pub(crate) struct CollectionNotice {
@@ -240,6 +248,8 @@ pub(crate) struct App {
     pub(crate) meta_cache: HashMap<String, RowMeta>,
     /// Two-click guard for the destructive per-mod "Remove" action.
     pub(crate) confirm_remove: Option<usize>,
+    /// A disable held back because the newest saves use the mods' plugins.
+    pub(crate) disable_confirm: Option<DisableConfirm>,
     /// The mod whose info dialog is open (None = closed), its active tab, and the
     /// note text being edited.
     pub(crate) info_mod: Option<usize>,

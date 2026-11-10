@@ -1294,6 +1294,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::CreateBackup(..)
         | Message::RestoreBackup(..)) => profiles::handle(app, m),
         m @ (Message::ToggleMod(..)
+        | Message::ConfirmDisable
+        | Message::CancelDisable
         | Message::SendToFirstConflict(..)
         | Message::SendToLastConflict(..)
         | Message::SendToPriorityStart(..)

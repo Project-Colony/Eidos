@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=de47f41eb02c9b2ffdb6721f7d440a7738413bf0 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=86e13b3660fb15dec7a47ddb654d1532c8ab9ae3 -->
 
 # Utiliser Eidos
 
@@ -566,6 +566,16 @@ La vérification de la disposition est délibérément généreuse : une arbores
 `Root/` compte, un dossier illisible compte, un dossier vide compte. Un
 avertissement erroné sur une liste de cinq cents lignes est pire qu'un
 avertissement manquant.
+
+### Désactiver un mod que vos sauvegardes utilisent
+
+Avant de désactiver ou de supprimer un mod, Eidos lit les listes de plugins des
+trois sauvegardes les plus récentes du profil. Quand l'une d'elles utilise un
+plugin de ce mod, une barre au-dessus de la liste nomme les plugins et attend
+« Disable anyway » ou « Cancel » (Échap annule aussi). Remove ajoute les mêmes
+noms à son message demandant de cliquer encore. Seules les sauvegardes de Skyrim
+et de Fallout 4 sont lues ; pour les autres jeux, le mod est désactivé sans
+question.
 
 ### Sauvegarder un mod avant d'y toucher
 

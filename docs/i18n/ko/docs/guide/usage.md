@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=de47f41eb02c9b2ffdb6721f7d440a7738413bf0 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=86e13b3660fb15dec7a47ddb654d1532c8ab9ae3 -->
 
 # Eidos 사용하기
 
@@ -469,6 +469,14 @@ as valid"가 어느 쪽이든 잠재웁니다. MO2 자신의 `validated=` 키를
 배치 검사는 일부러 너그럽습니다: `Root/` 트리도 인정하고, 읽을 수 없는 폴더도
 인정하고, 빈 폴더도 인정합니다. 오백 행짜리 목록에서 잘못된 경고는 빠진 경고보다
 나쁩니다.
+
+### 세이브가 쓰는 모드를 끌 때
+
+모드를 끄거나 제거하기 전에 Eidos는 프로필의 가장 최근 세이브 세 개의 플러그인
+목록을 읽습니다. 그중 하나가 그 모드의 플러그인을 쓰면, 목록 위의 막대가
+플러그인 이름을 보여 주고 "Disable anyway" 또는 "Cancel"을 기다립니다(Esc로도
+취소됩니다). Remove는 다시 클릭하라는 메시지에 같은 이름을 덧붙입니다. Skyrim과
+Fallout 4 세이브만 읽으며, 다른 게임에서는 묻지 않고 끕니다.
 
 ### 손대기 전에 모드 백업하기
 

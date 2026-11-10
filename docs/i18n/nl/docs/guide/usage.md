@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=de47f41eb02c9b2ffdb6721f7d440a7738413bf0 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=86e13b3660fb15dec7a47ddb654d1532c8ab9ae3 -->
 
 # Eidos gebruiken
 
@@ -537,6 +537,15 @@ ene manager ingestaan hebt stil aankomt in de andere.
 De indelingscontrole is bewust ruimhartig: een `Root/`-boom telt, een onleesbare
 map telt, een lege telt. Een verkeerde waarschuwing in een lijst van vijfhonderd
 rijen is erger dan een ontbrekende.
+
+### Een mod uitzetten die je saves gebruiken
+
+Voordat een mod wordt uitgezet of verwijderd, leest Eidos de pluginlijsten van de
+drie nieuwste saves van het profiel. Gebruikt een ervan een plugin uit die mod,
+dan noemt een balk boven de lijst de plugins en wacht op "Disable anyway" of
+"Cancel" (Esc annuleert ook). Remove zet dezelfde namen in zijn melding om
+nogmaals te klikken. Alleen saves van Skyrim en Fallout 4 worden gelezen; andere
+games zetten de mod uit zonder te vragen.
 
 ### Een mod back-uppen voor je eraan komt
 

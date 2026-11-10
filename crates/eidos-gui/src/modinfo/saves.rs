@@ -325,6 +325,93 @@ pub(crate) fn load_saves(app: &mut App) {
     clear_save_selection(app);
 }
 
+/// The active profile's three newest saves Eidos can read, newest first. Empty
+/// without an instance or for a game whose saves Eidos does not parse.
+pub(crate) fn newest_profile_saves(app: &App) -> Vec<(PathBuf, eidos_gamefeatures::SaveInfo)> {
+    let Some(inst) = &app.created else {
+        return Vec::new();
+    };
+    eidos_gamefeatures::newest_saves(inst.savegames().into_iter().map(|s| s.path), 3)
+}
+
+/// The plugins of the `targets` mods that one of `saves` uses: each enabled
+/// mod's top-level plugin files, minus those another mod currently wins,
+/// matched ASCII case-insensitively. File spelling, sorted, deduplicated.
+pub(crate) fn plugins_saves_use(
+    app: &App,
+    targets: &[usize],
+    saves: &[(PathBuf, eidos_gamefeatures::SaveInfo)],
+) -> Vec<String> {
+    if saves.is_empty() {
+        return Vec::new();
+    }
+    let computed;
+    let list = match app.plugins.as_ref() {
+        Some(list) => Some(list),
+        None => {
+            computed = compute_plugins(app);
+            computed.as_ref()
+        }
+    };
+    let used = |name: &str| {
+        saves
+            .iter()
+            .any(|(_, s)| s.all_plugins().any(|p| p.eq_ignore_ascii_case(name)))
+    };
+    // A disabled mod is skipped: the game already runs without its plugins.
+    let mut out: Vec<String> = Vec::new();
+    for m in targets
+        .iter()
+        .filter_map(|&i| app.mods.get(i))
+        .filter(|m| m.is_active())
+    {
+        for name in fs::read_dir(&m.path)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|e| e.file_name().into_string().ok())
+        {
+            let another_wins = list.is_some_and(|l| {
+                l.plugins
+                    .iter()
+                    .any(|p| p.name.eq_ignore_ascii_case(&name) && p.origin_mod != m.name)
+            });
+            if eidos_plugins::is_plugin(&name) && !another_wins && used(&name) {
+                out.push(name);
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// The warning naming the plugins a disable or remove would take from the
+/// newest saves: five names, then a count of the rest.
+pub(crate) fn saves_warning(plugins: &[String]) -> String {
+    let mut names = plugins
+        .iter()
+        .take(5)
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(", ");
+    if plugins.len() > 5 {
+        names.push_str(&tf("diag_and_n_more", &[("n", &(plugins.len() - 5))]));
+    }
+    tf("warn_saves_use", &[("plugins", &names)])
+}
+
+/// [`saves_warning`] and a space, to lead a Remove's click-again message, or
+/// nothing when the newest saves use none of the `targets` plugins.
+pub(crate) fn remove_warning(app: &App, targets: &[usize]) -> String {
+    let plugins = plugins_saves_use(app, targets, &newest_profile_saves(app));
+    if plugins.is_empty() {
+        String::new()
+    } else {
+        saves_warning(&plugins) + " "
+    }
+}
+
 /// A cheap picture of the saves directory: how many entries, and the newest
 /// mtime among them.
 ///

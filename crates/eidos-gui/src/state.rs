@@ -327,6 +327,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         rename: None,
         meta_cache: HashMap::new(),
         confirm_remove: None,
+        disable_confirm: None,
         info_mod: None,
         info_provenance: String::new(),
         info_tab: InfoTab::General,
@@ -2315,7 +2316,9 @@ pub(crate) fn key_nav(app: &mut App, nav: Nav) -> Task<Message> {
                     }
                     let name = app.mods[i].display_name().to_string();
                     app.confirm_remove = Some(i);
-                    app.status = Some(tf("status_press_delete_again", &[("name", &name)]));
+                    let warning = remove_warning(app, &[i]);
+                    app.status =
+                        Some(warning + &tf("status_press_delete_again", &[("name", &name)]));
                     Task::none()
                 }
                 _ => Task::none(),
@@ -2885,6 +2888,7 @@ pub(crate) fn put_mod_selection(app: &mut App, held: HeldSelection) {
     app.sel_anchor = held.anchor.as_ref().and_then(at);
     app.selected_mods = held.set.iter().filter_map(at).collect();
     app.confirm_remove = None;
+    app.disable_confirm = None;
 }
 
 /// Persist the mod list and invalidate everything derived from it (plugin order,
@@ -2892,6 +2896,8 @@ pub(crate) fn put_mod_selection(app: &mut App, held: HeldSelection) {
 /// landed: a caller that reports success sets its status only then, or it
 /// replaces the refusal this put there with news of an edit that was reverted.
 pub(crate) fn mods_changed(app: &mut App) -> bool {
+    // Indices may have moved; a held disable could now name other rows.
+    app.disable_confirm = None;
     let refused = save_mods(app);
     if let Some(err) = &refused {
         app.status = Some(err.clone());

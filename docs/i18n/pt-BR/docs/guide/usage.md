@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=de47f41eb02c9b2ffdb6721f7d440a7738413bf0 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=86e13b3660fb15dec7a47ddb654d1532c8ab9ae3 -->
 
 # Usar o Eidos
 
@@ -527,6 +527,15 @@ chega calado no outro.
 A verificação de layout é generosa de propósito: uma árvore `Root/` conta, uma
 pasta ilegível conta, uma vazia conta. Um aviso errado numa lista de quinhentas
 linhas é pior do que um aviso ausente.
+
+### Desativar um mod que seus saves usam
+
+Antes de um mod ser desativado ou removido, o Eidos lê as listas de plugins dos
+três saves mais recentes do perfil. Quando um deles usa um plugin desse mod, uma
+barra acima da lista nomeia os plugins e espera por "Disable anyway" ou "Cancel"
+(Esc também cancela). Remove acrescenta os mesmos nomes à sua mensagem de clicar
+de novo. Só os saves de Skyrim e Fallout 4 são lidos; nos outros jogos o mod é
+desativado sem perguntar.
 
 ### Fazer backup de um mod antes de mexer nele
 

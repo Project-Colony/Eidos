@@ -6294,3 +6294,75 @@ fn an_update_over_its_folder_asks_with_the_backup_ticked() {
     assert_eq!(app.update_target, None);
     fs::remove_dir_all(root).unwrap();
 }
+
+mod saves_use {
+    use super::super::mod_list::arm_disable;
+    use super::*;
+    use eidos_gamefeatures::SaveInfo;
+
+    fn save_with(full: &[&str], light: &[&str]) -> Vec<(PathBuf, SaveInfo)> {
+        vec![(
+            PathBuf::from("Save1.ess"),
+            SaveInfo {
+                plugins: full.iter().map(|s| s.to_string()).collect(),
+                light_plugins: light.iter().map(|s| s.to_string()).collect(),
+                ..Default::default()
+            },
+        )]
+    }
+
+    #[test]
+    fn plugins_saves_use_matches_case_insensitively_and_skips_other_winners() {
+        let (mut app, root) = list_app(&["Foo", "Bar"]);
+        fs::write(root.join("mods/Foo/Foo.esp"), b"x").unwrap();
+        fs::write(root.join("mods/Bar/Bar.esp"), b"x").unwrap();
+        app.plugins = Some(PluginList {
+            plugins: vec![plugin_row("Foo.esp", "Foo"), plugin_row("Bar.esp", "Other")],
+            ..Default::default()
+        });
+        let saves = save_with(&["Skyrim.esm", "FOO.ESP"], &["Bar.esp"]);
+        assert_eq!(plugins_saves_use(&app, &[0, 1], &saves), ["Foo.esp"]);
+        assert!(plugins_saves_use(&app, &[0], &save_with(&["Skyrim.esm"], &[])).is_empty());
+        app.mods[0].enabled = false; // the game already runs without a disabled mod
+        assert!(plugins_saves_use(&app, &[0, 1], &saves).is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn disabling_a_mod_the_newest_saves_use_waits_for_a_choice() {
+        let (mut app, root) = list_app(&["Foo"]);
+        fs::write(root.join("mods/Foo/Foo.esp"), b"x").unwrap();
+        app.plugins = Some(PluginList {
+            plugins: vec![plugin_row("Foo.esp", "Foo")],
+            ..Default::default()
+        });
+        let uses_foo = || save_with(&["Foo.esp"], &[]);
+        assert!(arm_disable(&mut app, vec![0], &uses_foo()));
+        assert!(app.mods[0].enabled, "nothing toggles until the user picks");
+        assert_eq!(app.disable_confirm.as_ref().unwrap().plugins, ["Foo.esp"]);
+        let _ = update(&mut app, Message::CancelDisable);
+        assert!(app.disable_confirm.is_none() && app.mods[0].enabled);
+        assert!(arm_disable(&mut app, vec![0], &uses_foo()));
+        let _ = update(&mut app, Message::ClearSelection); // Escape cancels too
+        assert!(app.disable_confirm.is_none() && app.mods[0].enabled);
+        assert!(arm_disable(&mut app, vec![0], &uses_foo()));
+        let _ = update(&mut app, Message::ConfirmDisable);
+        assert!(app.disable_confirm.is_none() && !app.mods[0].enabled);
+        assert!(!arm_disable(
+            &mut app,
+            vec![0],
+            &save_with(&["Other.esp"], &[])
+        ));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn the_saves_warning_names_five_plugins_then_counts() {
+        let names: Vec<String> = (1..=7).map(|n| format!("P{n}.esp")).collect();
+        let w = saves_warning(&names);
+        assert!(
+            w.contains("P5.esp") && !w.contains("P6.esp") && w.contains('2'),
+            "{w}"
+        );
+    }
+}

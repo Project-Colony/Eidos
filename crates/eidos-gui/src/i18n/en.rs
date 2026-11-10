@@ -579,6 +579,8 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("status_disabled_n_on_screen", "Disabled {n} mod(s) - only the {shown} on screen, of {total}."),
     ("status_select_mods_first", "Select one or more mods first."),
     ("status_click_remove_again_n", "Click Remove again to permanently delete {n} mod(s) from disk."),
+    ("warn_saves_use", "Your newest saves use {plugins}. A save loaded without a plugin it uses loses what that plugin added to it."),
+    ("disable_anyway", "Disable anyway"),
     ("status_cannot_remove_mods_now", "Cannot remove mods now: {error}."),
     ("status_removed_n", "Removed {n} mod(s)."),
     ("status_removed_n_failed", "Removed {n} mod(s); {failed} could not be deleted."),

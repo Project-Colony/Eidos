@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=de47f41eb02c9b2ffdb6721f7d440a7738413bf0 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=86e13b3660fb15dec7a47ddb654d1532c8ab9ae3 -->
 
 # Usare Eidos
 
@@ -554,6 +554,15 @@ silenziosa nell'altro.
 Il controllo della disposizione è deliberatamente generoso: un albero `Root/`
 conta, una cartella illeggibile conta, una vuota conta. Un avviso sbagliato su
 un elenco di cinquecento righe è peggio di uno mancante.
+
+### Disattivare una mod che i tuoi salvataggi usano
+
+Prima di disattivare o rimuovere una mod, Eidos legge gli elenchi dei plugin dei
+tre salvataggi più recenti del profilo. Se uno di essi usa un plugin di quella
+mod, una barra sopra l'elenco nomina i plugin e aspetta "Disable anyway" o
+"Cancel" (anche Esc annulla). Remove aggiunge gli stessi nomi al suo messaggio
+che chiede di cliccare di nuovo. Vengono letti solo i salvataggi di Skyrim e
+Fallout 4; per gli altri giochi la mod si disattiva senza chiedere.
 
 ### Fare una copia di una mod prima di toccarla
 

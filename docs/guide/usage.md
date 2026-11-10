@@ -495,6 +495,14 @@ The layout check is deliberately generous: a `Root/` tree counts, an unreadable
 folder counts, an empty one counts. A wrong warning on a five-hundred-row list
 is worse than a missing one.
 
+### Disabling a mod your saves use
+
+Before a mod is disabled or removed, Eidos reads the plugin lists of the
+profile's three newest saves. When one of them uses a plugin from that mod, a
+bar above the list names the plugins and waits for Disable anyway or Cancel
+(Escape cancels too). Remove adds the same names to its click-again message.
+Only Skyrim and Fallout 4 saves are read; other games disable without asking.
+
 ### Backing a mod up before you touch it
 
 "Back up this mod" copies its folder aside as `<name>_backup` (then `_backup2`,

@@ -27,11 +27,31 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             {
                 return Task::none();
             }
+            if app.mods.get(i).is_some_and(|m| m.enabled) {
+                let saves = newest_profile_saves(app);
+                if arm_disable(app, vec![i], &saves) {
+                    return Task::none();
+                }
+            }
             if let Some(m) = app.mods.get_mut(i) {
                 m.enabled = !m.enabled;
             }
             mods_changed(app);
         }
+        Message::ConfirmDisable => {
+            let Some(confirm) = app.disable_confirm.take() else {
+                return Task::none();
+            };
+            for &i in &confirm.targets {
+                if let Some(m) = app.mods.get_mut(i) {
+                    m.enabled = false;
+                }
+            }
+            if mods_changed(app) {
+                app.status = Some(tf("status_disabled_n", &[("n", &confirm.targets.len())]));
+            }
+        }
+        Message::CancelDisable => app.disable_confirm = None,
         Message::SendToFirstConflict(i) | Message::SendToLastConflict(i) => {
             let first = matches!(message, Message::SendToFirstConflict(_));
             app.menu_mod = None;
@@ -281,6 +301,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
             app.typing = false;
             app.confirm_remove = None;
+            app.disable_confirm = None;
             app.selected_mods.clear();
             app.selected_plugins.clear();
             app.drag_state = None;
@@ -465,7 +486,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             } else {
                 app.confirm_remove = Some(i);
                 if let Some(m) = app.mods.get(i) {
-                    app.status = Some(tf("status_click_remove_again", &[("name", &m.name)]));
+                    let again = tf("status_click_remove_again", &[("name", &m.name)]);
+                    app.status = Some(remove_warning(app, &[i]) + &again);
                 }
             }
         }
@@ -1105,6 +1127,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 .iter()
                 .any(|&i| app.mods.get(i).is_some_and(|m| m.enabled));
             let new_state = !any_on;
+            if !new_state {
+                let saves = newest_profile_saves(app);
+                if arm_disable(app, targets.clone(), &saves) {
+                    return Task::none();
+                }
+            }
             for &i in &targets {
                 if let Some(m) = app.mods.get_mut(i) {
                     m.enabled = new_state;
@@ -1123,13 +1151,15 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::BatchRemoveMods => {
-            let n = real_selection(app).len();
+            let targets = real_selection(app);
+            let n = targets.len();
             if n == 0 {
                 app.status = Some(t("status_select_mods_first").to_string());
                 return Task::none();
             }
             app.confirm_batch_remove = true;
-            app.status = Some(tf("status_click_remove_again_n", &[("n", &n)]));
+            let again = tf("status_click_remove_again_n", &[("n", &n)]);
+            app.status = Some(remove_warning(app, &targets) + &again);
         }
         Message::ConfirmBatchRemove => {
             app.confirm_batch_remove = false;
@@ -1731,4 +1761,21 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         _ => unreachable!("routed by update_inner"),
     }
     Task::none()
+}
+
+/// Hold back a disable of `targets` when the newest `saves` use their plugins:
+/// arms `app.disable_confirm` and toggles nothing. False when there is nothing
+/// to warn about, and the caller disables as before.
+pub(crate) fn arm_disable(
+    app: &mut App,
+    targets: Vec<usize>,
+    saves: &[(PathBuf, eidos_gamefeatures::SaveInfo)],
+) -> bool {
+    let plugins = plugins_saves_use(app, &targets, saves);
+    if plugins.is_empty() {
+        return false;
+    }
+    app.menu_mod = None;
+    app.disable_confirm = Some(DisableConfirm { targets, plugins });
+    true
 }

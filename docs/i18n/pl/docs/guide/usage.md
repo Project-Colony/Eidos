@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=de47f41eb02c9b2ffdb6721f7d440a7738413bf0 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=86e13b3660fb15dec7a47ddb654d1532c8ab9ae3 -->
 
 # Używanie Eidos
 
@@ -527,6 +527,15 @@ poręczyłeś w jednym menedżerze, przychodzi cichy w drugim.
 Sprawdzenie układu jest celowo hojne: drzewo `Root/` się liczy, nieczytelny
 folder się liczy, pusty się liczy. Błędne ostrzeżenie na liście pięciuset wierszy
 jest gorsze niż brakujące.
+
+### Wyłączanie moda, którego używają twoje zapisy
+
+Zanim mod zostanie wyłączony lub usunięty, Eidos czyta listy pluginów trzech
+najnowszych zapisów profilu. Gdy któryś z nich używa pluginu z tego moda, pasek
+nad listą wymienia te pluginy i czeka na „Disable anyway" albo „Cancel" (Esc też
+anuluje). Remove dopisuje te same nazwy do swojego komunikatu o ponownym
+kliknięciu. Czytane są tylko zapisy Skyrima i Fallouta 4; w innych grach mod
+wyłącza się bez pytania.
 
 ### Kopia moda, zanim go dotkniesz
 

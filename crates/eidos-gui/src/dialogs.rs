@@ -805,6 +805,38 @@ pub(crate) fn loot_severity_label(kind: eidos_loot::MessageType) -> &'static str
     }
 }
 
+/// The bar a disable waits behind while the newest saves use the mods'
+/// plugins, styled like [`cap_warning_banner`]. None when nothing is held.
+pub(crate) fn disable_confirm_banner<'a>(app: &App) -> Option<Element<'a, Message>> {
+    let confirm = app.disable_confirm.as_ref()?;
+    let row = Row::new()
+        .spacing(10)
+        .align_y(iced::Alignment::Center)
+        .push(
+            text(saves_warning(&confirm.plugins))
+                .size(sz(11))
+                .width(Length::Fill),
+        )
+        .push(flat_btn(t("disable_anyway"), Message::ConfirmDisable))
+        .push(flat_btn(t("common_cancel"), Message::CancelDisable));
+    Some(
+        container(row)
+            .width(Length::Fill)
+            .padding([4, 8])
+            .style(|_| container::Style {
+                background: Some(Background::Color(pal().warning_bg)),
+                border: Border {
+                    color: pal().warning,
+                    width: 1.0,
+                    radius: 4.0.into(),
+                },
+                text_color: Some(pal().warning),
+                ..Default::default()
+            })
+            .into(),
+    )
+}
+
 /// The Categories dialog (MO2's Change Categories, plus its category editor).
 ///
 /// Two modes in one card because they are one job: assigning a category the

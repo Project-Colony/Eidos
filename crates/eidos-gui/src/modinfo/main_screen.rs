@@ -297,6 +297,9 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
     if app.cap_missing && passthrough_requested() {
         base = base.push(cap_warning_banner());
     }
+    if let Some(banner) = disable_confirm_banner(app) {
+        base = base.push(banner);
+    }
     base = base.push(body);
     if app.ui_statusbar_visible {
         base = base.push(status_bar(app));

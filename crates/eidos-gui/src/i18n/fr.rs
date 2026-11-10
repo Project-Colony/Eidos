@@ -579,6 +579,8 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("status_disabled_n_on_screen", "{n} mod(s) désactivé(s) : seulement les {shown} à l'écran, sur {total}."),
     ("status_select_mods_first", "Sélectionnez d'abord un ou plusieurs mods."),
     ("status_click_remove_again_n", "Cliquez encore sur Supprimer pour effacer définitivement {n} mod(s) du disque."),
+    ("warn_saves_use", "Vos sauvegardes les plus récentes utilisent {plugins}. Une sauvegarde chargée sans un plugin qu'elle utilise perd ce que ce plugin lui avait ajouté."),
+    ("disable_anyway", "Désactiver quand même"),
     ("status_cannot_remove_mods_now", "Impossible de supprimer des mods pour l'instant : {error}."),
     ("status_removed_n", "{n} mod(s) supprimé(s)."),
     ("status_removed_n_failed", "{n} mod(s) supprimé(s) ; {failed} n'ont pas pu être effacés."),

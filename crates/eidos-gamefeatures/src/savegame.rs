@@ -74,7 +74,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::io::{self, Read, Seek, SeekFrom};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// The 13-byte file id every Skyrim (LE and SE) save opens with.
 const MAGIC: &[u8; 13] = b"TESV_SAVEGAME";
@@ -302,7 +302,15 @@ pub fn parse_save(path: &Path) -> Result<SaveInfo, SaveParseError> {
     let file_len = file.metadata()?.len();
 
     let mut head = Vec::new();
-    file.by_ref().take(HEADER_WINDOW).read_to_end(&mut head)?;
+    // The magic first: a save of a game this cannot parse then costs a short
+    // read, not a whole window (`newest_saves` may try every save of one).
+    let magic_window = MAGIC.len().max(FO4_MAGIC.len()) as u64;
+    file.by_ref().take(magic_window).read_to_end(&mut head)?;
+    if head.starts_with(MAGIC.as_slice()) || head.starts_with(FO4_MAGIC.as_slice()) {
+        file.by_ref()
+            .take(HEADER_WINDOW - magic_window)
+            .read_to_end(&mut head)?;
+    }
     let mut cur = Cur::new(&head);
 
     // The magic decides the engine AND how many bytes it occupied, so it is
@@ -407,6 +415,20 @@ pub fn parse_save(path: &Path) -> Result<SaveInfo, SaveParseError> {
     let payload = decode_prefix(&block, info.compression, DECOMPRESS_CAP)?;
     read_plugin_table(&payload, &mut info)?;
     Ok(info)
+}
+
+/// The first `n` of `saves` that [`parse_save`] reads, in input order. A file
+/// that is not a save (a co-save, a game Eidos cannot parse) is skipped and
+/// not counted, so a caller passing newest-first paths gets the newest saves.
+pub fn newest_saves(
+    saves: impl IntoIterator<Item = PathBuf>,
+    n: usize,
+) -> Vec<(PathBuf, SaveInfo)> {
+    saves
+        .into_iter()
+        .filter_map(|p| parse_save(&p).ok().map(|info| (p, info)))
+        .take(n)
+        .collect()
 }
 
 /// Read the front of the block that holds the plugin table: the raw payload, or the
@@ -1851,6 +1873,21 @@ mod tests {
         assert_eq!(missing[0].providers, ["Big Mod"]);
         assert_eq!(missing[1].providers, ["Big Mod"]);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn newest_saves_skips_files_that_are_not_saves_and_stops_at_n() {
+        let dir = tmp_dir();
+        let junk = dir.join("junk.skse");
+        fs::write(&junk, b"not a save").unwrap();
+        let [s1, s2, s3, s4] = [0; 4].map(|_| Build::new().write());
+        let got = newest_saves([junk, s1.clone(), s2.clone(), s3.clone(), s4], 3);
+        assert_eq!(
+            got.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>(),
+            [s1, s2, s3]
+        );
+        assert!(got[0].1.all_plugins().any(|p| p == "MyMod.esp"));
+        let _ = fs::remove_dir_all(&dir);
     }
 }
 
