@@ -1443,6 +1443,23 @@ impl Nexus {
         collections::from_payload(&v, &c.slug, self.adult)
     }
 
+    /// Search a game's published collections (Nexus GraphQL v2), one page.
+    /// Outside the v1 budget, like [`Self::collection_revision`].
+    pub fn search_collections(
+        &self,
+        domain: &str,
+        query: &str,
+        sort: collections::CollectionSort,
+    ) -> Result<collections::CollectionSearch, String> {
+        let Credential::Bearer(token) = &self.credential;
+        let view_adult = self.adult == AdultPolicy::Allowed;
+        let v = oauth::graphql(
+            Some(token),
+            &collections::search_body(domain, query, sort, view_adult),
+        )?;
+        collections::search_from_payload(&v, self.adult)
+    }
+
     /// What the Nexus pages of `ids` (all on `domain`) require, 50 mods per
     /// request (Nexus GraphQL v2). Outside the v1 budget, like
     /// [`Self::collection_revision`]. The query needs no token; the session's is
