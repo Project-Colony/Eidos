@@ -1289,3 +1289,75 @@ fn patch_order_cards_come_in_name_order() {
         );
     }
 }
+
+#[test]
+fn a_mod_that_replaces_extender_scripts_is_named_with_its_files() {
+    let map = map_of(&[
+        (2, "Old Mod", &["Scripts/Actor.pex", "Scripts/Quest.pex"]),
+        (
+            1,
+            "SKSE",
+            &[
+                "Root/skse64_loader.exe",
+                "Scripts/Actor.pex",
+                "Scripts/Form.pex",
+            ],
+        ),
+        (0, "[skyrimse]", &[]),
+    ]);
+    let d = extender_script_checks(&map, "skse64_loader.exe", "SKSE", false);
+    assert_eq!(d.len(), 1);
+    assert_eq!(
+        d[0].title,
+        tf(
+            "diag_extender_scripts",
+            &[("mod", &"Old Mod"), ("n", &1), ("extender", &"SKSE")]
+        )
+    );
+    assert!(d[0].detail.contains("Scripts/Actor.pex") && !d[0].detail.contains("Quest.pex"));
+    assert!(
+        matches!(&d[0].actions[..], [(_, Message::MoveModBelow { folder, below })] if folder == "SKSE" && below == "Old Mod")
+    );
+}
+#[test]
+fn a_hand_copied_extender_is_checked_against_the_game_data() {
+    let map = map_of(&[
+        (1, "Old Mod", &["Scripts/Actor.pex"]),
+        (0, "[skyrimse]", &["Scripts/Actor.pex"]),
+    ]);
+    let d = extender_script_checks(&map, "skse64_loader.exe", "SKSE", true);
+    assert_eq!(d.len(), 1);
+    assert!(d[0].actions.is_empty());
+    assert!(d[0].detail.starts_with(&tf(
+        "diag_extender_scripts_game_detail",
+        &[
+            ("mod", &"Old Mod"),
+            ("extender", &"SKSE"),
+            ("files", &"Scripts/Actor.pex")
+        ]
+    )));
+    assert!(extender_script_checks(&map, "skse64_loader.exe", "SKSE", false).is_empty());
+}
+#[test]
+fn sources_and_the_extenders_own_winning_scripts_say_nothing() {
+    let map = map_of(&[
+        (2, "SKSE", &["Root/skse64_loader.exe", "Scripts/Actor.pex"]),
+        (1, "Old Mod", &["Scripts/Actor.pex"]),
+        (0, "[skyrimse]", &[]),
+    ]);
+    assert!(extender_script_checks(&map, "skse64_loader.exe", "SKSE", false).is_empty());
+    let map = map_of(&[
+        (2, "Old Mod", &["Scripts/Source/Actor.psc"]),
+        (
+            1,
+            "SKSE",
+            &[
+                "Root/skse64_loader.exe",
+                "Scripts/Actor.pex",
+                "Scripts/Source/Actor.psc",
+            ],
+        ),
+        (0, "[skyrimse]", &[]),
+    ]);
+    assert!(extender_script_checks(&map, "skse64_loader.exe", "SKSE", false).is_empty());
+}

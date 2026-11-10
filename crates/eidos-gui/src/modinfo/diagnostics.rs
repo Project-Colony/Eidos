@@ -681,6 +681,15 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         }
         out.extend(orphan_archive_diagnostics(app, game.def.id));
         out.extend(script_extender_diagnostic(game));
+        if let (Some(se), Some(row), Some(map)) = (
+            game.def.script_extender.as_ref(),
+            eidos_gamefeatures::preflight::extender(game.def.id),
+            app.conflicts.as_ref(),
+        ) {
+            let label = row.plugins_dir.split('/').next().unwrap_or_default();
+            let in_game = game.install_path.join(se.loader).is_file();
+            out.extend(extender_script_checks(map, se.loader, label, in_game));
+        }
     }
 
     for (row, plugin) in stale_copies(app) {
@@ -807,6 +816,89 @@ pub(crate) fn patch_order_checks(
                 )],
             },
         )
+        .collect()
+}
+
+/// Mods whose loose Papyrus scripts beat the script extender's own copies.
+/// `extender`: the label from `extender(id).plugins_dir` up to its first '/'.
+/// `loader_in_game`: `game.install_path.join(loader).is_file()`, from the caller.
+/// Loose `.pex` only: `map.files` does not hold archive members.
+pub(crate) fn extender_script_checks(
+    map: &eidos_conflicts::ConflictMap,
+    loader: &str,
+    extender: &str,
+    loader_in_game: bool,
+) -> Vec<Diagnostic> {
+    use eidos_conflicts::BASE_ORIGIN;
+    let e = match map.files.get(&format!("root/{}", loader.to_lowercase())) {
+        Some(n) => n.winner,
+        None if loader_in_game => BASE_ORIGIN,
+        None => return Vec::new(),
+    };
+    // winner name -> (winner origin, count, first 8 paths)
+    let mut found: std::collections::BTreeMap<String, (u32, usize, Vec<String>)> =
+        std::collections::BTreeMap::new();
+    let prefix = "scripts/".to_string();
+    for (key, node) in map.files.range(prefix.clone()..) {
+        if !key.starts_with(&prefix) {
+            break;
+        }
+        if !key.ends_with(".pex") || node.winner == e || !node.alternatives.contains(&e) {
+            continue;
+        }
+        let w = map.name(node.winner).to_string();
+        let f = found.entry(w).or_insert((node.winner, 0, Vec::new()));
+        f.1 += 1;
+        if f.2.len() < 8 {
+            f.2.push(node.display_path.clone());
+        }
+    }
+    let is_mod = |o: u32| o != BASE_ORIGIN && o != u32::MAX;
+    let e_name = map.name(e).to_string();
+    found
+        .into_iter()
+        .map(|(w, (w_origin, n, shown))| {
+            let files = file_list(&shown, n);
+            let detail = if e == BASE_ORIGIN {
+                tf(
+                    "diag_extender_scripts_game_detail",
+                    &[("mod", &w), ("extender", &extender), ("files", &files)],
+                )
+            } else {
+                tf(
+                    "diag_extender_scripts_detail",
+                    &[
+                        ("mod", &w),
+                        ("extender_mod", &e_name),
+                        ("extender", &extender),
+                        ("files", &files),
+                    ],
+                )
+            };
+            let actions = if is_mod(e) && is_mod(w_origin) {
+                vec![(
+                    tf(
+                        "diag_action_move_below",
+                        &[("mod", &e_name), ("target", &w)],
+                    ),
+                    Message::MoveModBelow {
+                        folder: e_name.clone(),
+                        below: w.clone(),
+                    },
+                )]
+            } else {
+                Vec::new()
+            };
+            Diagnostic {
+                level: DiagLevel::Advice,
+                title: tf(
+                    "diag_extender_scripts",
+                    &[("mod", &w), ("n", &n), ("extender", &extender)],
+                ),
+                detail,
+                actions,
+            }
+        })
         .collect()
 }
 
