@@ -24,6 +24,7 @@ pub mod nxm_handler;
 mod prepare;
 mod prereqs;
 mod resolve;
+mod sessions;
 mod sort;
 #[cfg(test)]
 mod tests;

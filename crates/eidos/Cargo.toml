@@ -12,6 +12,8 @@ name = "eidos"
 path = "src/main.rs"
 
 [dependencies]
+# CRC32 of each profile INI in a run's session record.
+crc32fast.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 eidos-addons = { path = "../eidos-addons" }

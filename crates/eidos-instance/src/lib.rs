@@ -34,6 +34,7 @@ mod mod_backup;
 mod profile;
 mod provenance;
 mod registry;
+mod sessions;
 pub mod settings;
 mod tools;
 pub use categories::{
@@ -53,6 +54,7 @@ pub use provenance::{
     GeneratedInput, GeneratedOutput, GeneratedReceipt, GeneratedRun, ToolExecutable,
 };
 pub use registry::{registry_path, InstanceRef, Registry};
+pub use sessions::{SessionMod, SessionRecord, KEEP_SESSIONS};
 pub use settings::Settings;
 pub use tools::{
     default_args, default_prereqs, default_tools, default_tools_in, default_tools_in_view,
