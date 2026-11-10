@@ -1606,8 +1606,14 @@ fn the_prefix_rows_keep_their_place_without_a_prefix() {
     let _ = fs::remove_dir_all(root_without);
 }
 
+/// The note under the INI editor sits in one slot, so the Save row stays put
+/// on the Prefs tab, on the launch-env tab and on a fresh profile's main INI
+/// (`ini_missing_main`, the longest note), in English and in French, at every
+/// text size. The slot also holds each of those notes whole.
 #[test]
 fn the_ini_editor_keeps_its_save_row_in_place_on_the_launch_env_tab() {
+    use colony_ui::i18n::Locale;
+    use colony_ui::typography::{FontSize, TextSize};
     let _look = crate::test_support::look_lock();
     let mut renderer = renderer();
     let app = crate::test_support::app_for_game("skyrimse");
@@ -1626,14 +1632,57 @@ fn the_ini_editor_keeps_its_save_row_in_place_on_the_launch_env_tab() {
         unreadable: false,
         on_disk: 0,
     };
-    let ini = state("SkyrimPrefs.ini", false);
-    let env = state("launch-env.ini", true);
-    let save_y = |s: &IniEditorState, r: &mut iced::Renderer| {
-        label(crate::dialogs::ini_editor_dialog(&app, s), r, "Save", 0).y
-    };
-    assert_eq!(
-        save_y(&env, &mut renderer),
-        save_y(&ini, &mut renderer),
-        "the launch-env note moved the Save row"
-    );
+    let states = [
+        (state("SkyrimPrefs.ini", false), "ini_note"),
+        (state("launch-env.ini", true), "launch_env_note"),
+        (state("Skyrim.ini", true), "ini_missing_main"),
+    ];
+    for font in FontSize::ALL {
+        for size in TextSize::ALL {
+            let mut look = crate::preferences::UiPreferences::default();
+            look.standard.font_size = font;
+            look.standard.text_size_a11y = size;
+            look.standard.apply();
+            for locale in [Locale::En, Locale::Fr] {
+                let save = crate::i18n::t_in(locale, "common_save");
+                let mut save_ys = Vec::new();
+                for (s, key) in &states {
+                    let (dialog, note) = crate::i18n::with_locale(locale, || {
+                        (
+                            crate::dialogs::ini_editor_dialog(&app, s),
+                            crate::i18n::tf(key, &[("file", &s.current)]),
+                        )
+                    });
+                    let drawn = positions(dialog, &mut renderer).labels;
+                    let find = |name: &str| {
+                        drawn
+                            .iter()
+                            .find(|(t, _)| t == name)
+                            .unwrap_or_else(|| panic!("no {name}: {drawn:?}"))
+                            .1
+                    };
+                    save_ys.push(find(save).y);
+                    // The same text alone, as wide as the card less its padding.
+                    let whole = positions(
+                        container(text(note.clone()).size(sz(10)))
+                            .width(Length::Fixed(760.0 - 2.0 * 18.0))
+                            .into(),
+                        &mut renderer,
+                    )
+                    .labels[0]
+                        .1
+                        .height;
+                    assert_eq!(
+                        find(&note).height,
+                        whole,
+                        "{font:?}/{size:?} {locale:?}: the slot cuts {key}"
+                    );
+                }
+                assert!(
+                    save_ys.iter().all(|y| *y == save_ys[0]),
+                    "{font:?}/{size:?} {locale:?}: a note moved the Save row: {save_ys:?}"
+                );
+            }
+        }
+    }
 }

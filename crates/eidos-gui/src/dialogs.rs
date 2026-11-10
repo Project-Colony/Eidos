@@ -1440,7 +1440,16 @@ pub(crate) fn ini_editor_dialog<'a>(app: &App, state: &'a IniEditorState) -> Ele
         .push(header)
         .push(tabs)
         .push(editor)
-        .push(text(note).size(sz(10)))
+        // One height for every note, so picking another tab never moves the
+        // Save row: two lines of sz(10) (iced's 1.3 line height) at scale 1,
+        // more as the text grows, since the card's width does not.
+        .push(
+            container(text(note).size(sz(10)))
+                .height(Length::Fixed(
+                    (2.0 * colony_ui::font_scale()).ceil() * 1.3 * sz(10),
+                ))
+                .clip(true),
+        )
         .push(actions);
 
     container(card)
