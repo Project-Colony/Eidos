@@ -149,10 +149,11 @@ pub(crate) fn bisect_universe(app: &App) -> (Vec<String>, Vec<eidos_plugins::Plu
     (mods, plugin_rows(app))
 }
 
-/// The mods a new search keeps on in every step: the selection in display
-/// order, then the mod that ships the script extender's loader. Not for a view.
+/// The mods a new search keeps on in every step: the switched-on selection in
+/// display order, then the mod that ships the script extender's loader. Not
+/// for a view.
 pub(crate) fn bisect_pinned(app: &App) -> Vec<String> {
-    let mut picked = real_selection(app);
+    let mut picked = active_selection(app);
     picked.sort_unstable();
     let mut pinned: Vec<String> = picked
         .into_iter()

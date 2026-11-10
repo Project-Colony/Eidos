@@ -26,6 +26,15 @@ pub(crate) fn plugin_rows(app: &App) -> Vec<eidos_plugins::Plugin> {
         .unwrap_or_default()
 }
 
+/// The selected rows a test run or a search can use: switched-on mods only, as
+/// both choose among the enabled ones.
+pub(crate) fn active_selection(app: &App) -> Vec<usize> {
+    real_selection(app)
+        .into_iter()
+        .filter(|&i| app.mods[i].is_active())
+        .collect()
+}
+
 /// `TestRun.mods` for a choice: None runs the profile's own set.
 pub(crate) fn test_mods(app: &App, choice: TestChoice) -> Option<Vec<String>> {
     let name = |i: usize| app.mods[i].name.clone();
@@ -57,7 +66,7 @@ pub(crate) fn test_dialog<'a>(app: &App, choice: TestChoice) -> Element<'a, Mess
             ),
         Some((_, TestState::Running)) => card.push(line(t("test_in_progress").to_string())),
         _ => {
-            let n = real_selection(app).len();
+            let n = active_selection(app).len();
             let pick = |label: String, this: TestChoice, enabled: bool| {
                 button(text(label).size(sz(13)))
                     .width(Length::Fill)

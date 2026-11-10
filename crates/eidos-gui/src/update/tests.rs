@@ -8492,6 +8492,27 @@ fn test_start_writes_the_request_then_runs_like_run() {
 }
 
 #[test]
+fn a_switched_off_selection_is_neither_tested_nor_pinned() {
+    let (mut app, root) = list_app(&["A", "B", "C"]);
+    app.mods[1].enabled = false;
+    app.selected_mods = [1].into_iter().collect();
+    assert!(
+        active_selection(&app).is_empty(),
+        "Only the selected mods counts none"
+    );
+    assert_eq!(test_mods(&app, TestChoice::Selected), Some(vec![]));
+    assert!(bisect_pinned(&app).is_empty());
+    // The focused row alone, the mod just switched off as the suspect.
+    app.selected_mods.clear();
+    app.selected_mod = Some(1);
+    assert!(bisect_pinned(&app).is_empty());
+    app.selected_mods = [0, 1].into_iter().collect();
+    assert_eq!(active_selection(&app), [0]);
+    assert_eq!(bisect_pinned(&app), ["A"]);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn only_selected_needs_a_selection_and_adds_masters() {
     let (mut app, root) = list_app(&["Base", "Patch"]);
     let mut patch = plugin_row("Patch.esp", "Patch");
