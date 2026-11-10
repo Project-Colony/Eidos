@@ -26,6 +26,7 @@ use std::time::SystemTime;
 
 mod categories;
 mod export;
+mod game_files;
 mod launch_record;
 mod manifest;
 mod meta;
@@ -41,6 +42,7 @@ pub use categories::{
     format_categories, parse_all, parse_primary, Category, CategoryFactory, NexusCategory,
 };
 pub use export::{csv_quote, fmt_mtime, mod_list_csv, Column, ExportScope};
+pub use game_files::{is_copy_folder_name, GameFiles};
 pub use launch_record::{GameBuild, LaunchRecord};
 pub use manifest::Manifest;
 pub use meta::{same_version, ModMeta, PluginSource};
@@ -545,6 +547,26 @@ impl Instance {
     /// Read the instance manifest, if present.
     pub fn read_manifest(&self) -> Option<Manifest> {
         Manifest::read(&self.manifest_path())
+    }
+
+    /// Change the existing manifest and write it back (`NotFound` when there is
+    /// none). The caller holds the instance lock.
+    pub fn edit_manifest(&self, f: impl FnOnce(&mut Manifest)) -> std::io::Result<()> {
+        let mut manifest = Manifest::read_checked(&self.manifest_path())?.ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "the instance manifest is missing",
+            )
+        })?;
+        f(&mut manifest);
+        manifest.write(&self.manifest_path())
+    }
+
+    /// The game files this instance reads: its game copy when the manifest names
+    /// one, else the store install (`install`, `data`).
+    pub fn game_files(&self, install: &Path, data: &Path) -> GameFiles {
+        let copy = self.read_manifest().and_then(|m| m.base_game);
+        GameFiles::new(install, data, &self.root, copy.as_deref())
     }
 
     /// Write the instance manifest if it is missing (so we don't churn one that
@@ -1236,14 +1258,7 @@ impl Instance {
                 "select an existing profile with a safe name",
             ));
         }
-        let mut manifest = Manifest::read_checked(&self.manifest_path())?.ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "the instance manifest is missing",
-            )
-        })?;
-        manifest.selected_profile = Some(name.to_string());
-        manifest.write(&self.manifest_path())
+        self.edit_manifest(|m| m.selected_profile = Some(name.to_string()))
     }
 
     /// The active [`Profile`].
@@ -1935,6 +1950,32 @@ mod tests {
             Some("GAME ROOT")
         );
         assert_eq!(Instance::stock_game_folder(&inst.root.join("nope")), None);
+    }
+
+    #[test]
+    fn instance_game_files_follow_the_manifest() {
+        let inst = tmp_instance();
+        inst.ensure_manifest("skyrimse", InstanceKind::Portable)
+            .unwrap();
+        inst.edit_manifest(|m| m.base_game = Some("Game Root".into()))
+            .unwrap();
+        let f = inst.game_files(Path::new("/g"), Path::new("/g/Data"));
+        assert_eq!(
+            (f.root, f.copy.as_deref()),
+            (inst.root.join("Game Root"), Some("Game Root"))
+        );
+        let bare = tmp_instance();
+        assert_eq!(
+            bare.game_files(Path::new("/g"), Path::new("/g/Data")).copy,
+            None
+        );
+        assert_eq!(
+            bare.edit_manifest(|m| m.base_game = None)
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::NotFound
+        );
+        assert!(!bare.manifest_path().exists());
     }
 
     #[test]
