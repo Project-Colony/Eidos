@@ -455,13 +455,20 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                     .collect::<Vec<_>>()
             })
             .or_else(|| (!game_has_plugins(app)).then(Vec::new));
-        match inst.generated_outputs() {
+        // Known plugins: only drifted outputs come back. Unknown: every output
+        // in the game's view, each reported as unverified.
+        let outputs = match active_plugins.as_ref() {
+            Some(plugins) => stale_outputs(app, inst, plugins),
+            None => inst.generated_outputs().map(|all| {
+                all.into_iter()
+                    .filter(|(owner, _)| output_owner_is_active(app, owner.as_deref()))
+                    .collect()
+            }),
+        };
+        match outputs {
             Ok(outputs) => {
                 for (owner, output) in outputs {
-                    if !output_owner_is_active(app, owner.as_deref()) {
-                        continue;
-                    }
-                    let Some(active_plugins) = active_plugins.as_ref() else {
+                    if active_plugins.is_none() {
                         out.push(Diagnostic {
                             level: DiagLevel::Advice,
                             title: t("diag_generated_inputs_unverified").into(),
@@ -475,8 +482,8 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                             actions: Vec::new(),
                         });
                         continue;
-                    };
-                    if inst.generated_input_drift(&output.receipt, active_plugins) {
+                    }
+                    {
                         out.push(Diagnostic {
                             level: DiagLevel::Advice,
                             title: t("diag_generated_inputs_changed").into(),
@@ -887,13 +894,13 @@ pub(crate) fn stale_outputs(
     app: &App,
     inst: &Instance,
     plugins: &[(String, bool)],
-) -> Vec<(Option<String>, eidos_instance::GeneratedOutput)> {
-    inst.generated_outputs()
-        .unwrap_or_default()
+) -> std::io::Result<Vec<(Option<String>, eidos_instance::GeneratedOutput)>> {
+    Ok(inst
+        .generated_outputs()?
         .into_iter()
         .filter(|(owner, _)| output_owner_is_active(app, owner.as_deref()))
         .filter(|(_, output)| inst.generated_input_drift(&output.receipt, plugins))
-        .collect()
+        .collect())
 }
 
 /// The first flagged generator whose output is out of date and not yet waved
@@ -923,6 +930,7 @@ pub(crate) fn play_prompt_for(app: &App) -> Option<PlayPrompt> {
     };
     let state = inst.generated_input_state(&plugins);
     stale_outputs(app, inst, &plugins)
+        .unwrap_or_default()
         .into_iter()
         .find_map(|(_, output)| {
             let tool = app.tools.iter().find(|t| {
