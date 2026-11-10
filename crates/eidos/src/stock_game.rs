@@ -171,6 +171,12 @@ pub fn set_base(game: &DetectedGame, inst: &Instance, folder: Option<&str>) -> R
                 inst.root.display()
             ));
         }
+        // A freeze still copying, or one that stopped halfway: a partial Data folder.
+        if folder.ends_with(".eidos-tmp") {
+            return Err(format!(
+                "'{folder}' is an unfinished copy and cannot run; delete it or freeze again"
+            ));
+        }
         if !has_game_binary(game, &copy) {
             return Err(format!(
                 "{} has no {}, so the game cannot run from it",
@@ -403,6 +409,11 @@ mod tests {
             .contains("SkyrimSE.exe"));
         assert!(set_base(&game, &inst, Some("../x")).is_err());
         assert!(set_base(&game, &inst, Some("Missing")).is_err());
+        fs::create_dir_all(unfinished_path(&inst)).unwrap();
+        fs::write(unfinished_path(&inst).join("SkyrimSE.exe"), b"x").unwrap();
+        assert!(set_base(&game, &inst, Some("Stock Game.eidos-tmp"))
+            .unwrap_err()
+            .contains("unfinished"));
         assert_eq!(inst.read_manifest().unwrap().base_game, None);
         set_base(&game, &inst, Some("Game Root")).unwrap();
         assert_eq!(
