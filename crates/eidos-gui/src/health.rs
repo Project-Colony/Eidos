@@ -116,18 +116,37 @@ pub(crate) fn prefix_checks(f: &PrefixFacts) -> Vec<Diagnostic> {
 /// Render one `eidos::check` finding through its `diag_<code>` strings.
 pub(crate) fn finding_card(f: &eidos::check::Finding) -> Diagnostic {
     debug_assert!(eidos::check::CODES.contains(&f.code), "{}", f.code);
+    // A check leaves out what it could not read; the card says so in the
+    // user's language.
+    let unread: &[(&str, &str)] = match f.code {
+        "game_crashed" | "game_crashed_unattributed" => &[
+            ("logger", "diag_crash_logger_unknown"),
+            ("exception", "diag_crash_no_exception"),
+        ],
+        _ => &[],
+    };
+    let fills: Vec<(&str, &str)> = unread
+        .iter()
+        .filter(|(k, _)| f.arg(k).is_none())
+        .map(|(k, key)| (*k, t(key)))
+        .collect();
     let args: Vec<(&str, &dyn std::fmt::Display)> = f
         .args
         .iter()
         .map(|(k, v)| (*k, v as &dyn std::fmt::Display))
+        .chain(fills.iter().map(|(k, v)| (*k, v as &dyn std::fmt::Display)))
         .collect();
+    let detail = match (f.code, f.arg("runtime")) {
+        ("extender_missing", None) => "diag_extender_missing_any_version_detail".to_string(),
+        _ => format!("diag_{}_detail", f.code),
+    };
     Diagnostic {
         level: match f.level {
             eidos::check::Level::Problem => DiagLevel::Problem,
             eidos::check::Level::Advice => DiagLevel::Advice,
         },
         title: tf(&format!("diag_{}", f.code), &args),
-        detail: tf(&format!("diag_{}_detail", f.code), &args),
+        detail: tf(&detail, &args),
         actions: finding_actions(f),
     }
 }
@@ -298,6 +317,51 @@ mod tests {
         let d = finding_card(&f);
         assert_eq!(d.level, DiagLevel::Problem);
         assert!(d.detail.contains("skse64_1_6_1179.dll"), "{}", d.detail);
+        assert_eq!(d.detail.matches("1.6.1179.0").count(), 2, "{}", d.detail);
+    }
+
+    #[test]
+    fn a_crash_log_without_a_logger_or_exception_line_reads_as_a_sentence() {
+        for code in ["game_crashed", "game_crashed_unattributed"] {
+            let f = eidos::check::Finding {
+                code,
+                level: eidos::check::Level::Problem,
+                args: vec![
+                    ("log", "/tmp/crash-x.log".into()),
+                    ("culprits", "x.dll (Mod)".into()),
+                ],
+            };
+            let d = finding_card(&f);
+            assert!(
+                d.detail.starts_with(&format!(
+                    "{} wrote /tmp/crash-x.log. {}.",
+                    t("diag_crash_logger_unknown"),
+                    t("diag_crash_no_exception")
+                )),
+                "{}",
+                d.detail
+            );
+            assert!(!d.detail.contains('{'), "{}", d.detail);
+        }
+    }
+
+    #[test]
+    fn an_extender_card_names_a_game_version_only_when_it_was_read() {
+        let mut f = eidos::check::Finding {
+            code: "extender_missing",
+            level: eidos::check::Level::Problem,
+            args: vec![
+                ("loader", "nvse_loader.exe".into()),
+                ("dir", "NVSE/Plugins".into()),
+                ("n", "3".into()),
+                ("page", "https://xnvse.example/".into()),
+            ],
+        };
+        let d = finding_card(&f);
+        assert!(!d.detail.contains("{runtime}") && !d.detail.contains("unknown"));
+        assert!(d.detail.contains("https://xnvse.example/"), "{}", d.detail);
+        f.args.push(("runtime", "1.6.1170.0".into()));
+        assert!(finding_card(&f).detail.contains("game version 1.6.1170.0"));
     }
 
     #[test]

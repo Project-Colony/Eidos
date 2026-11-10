@@ -13,8 +13,9 @@ use std::time::SystemTime;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CrashLog {
     pub path: PathBuf,
-    /// "Crash Logger", "Buffout 4", "NetScriptFramework", "Trainwreck" or "unknown".
-    pub logger: &'static str,
+    /// "Crash Logger", "Buffout 4", "NetScriptFramework" or "Trainwreck"; None when
+    /// the log names none of them.
+    pub logger: Option<&'static str>,
     /// The first line starting "Unhandled exception" or "Unhandled native exception", trimmed.
     pub exception: Option<String>,
     /// DLL names from the probable call stack, in order, deduplicated case-insensitively.
@@ -95,15 +96,15 @@ pub fn parse_crash_log(path: &Path, text: &str) -> CrashLog {
         .map(|n| n.to_string_lossy().to_ascii_lowercase())
         .unwrap_or_default();
     let logger = if text.contains("CrashLogger") || text.contains("Crash Logger") {
-        "Crash Logger"
+        Some("Crash Logger")
     } else if text.contains("Buffout 4") {
-        "Buffout 4"
+        Some("Buffout 4")
     } else if text.contains("NetScriptFramework") || file_name.starts_with("crash_") {
-        "NetScriptFramework"
+        Some("NetScriptFramework")
     } else if text.contains("Trainwreck") {
-        "Trainwreck"
+        Some("Trainwreck")
     } else {
-        "unknown"
+        None
     };
     let exception = text
         .lines()
@@ -244,7 +245,7 @@ Registers\n{\n}\n";
     #[test]
     fn crash_logger_names_dlls_and_plugins_from_the_crash_sections() {
         let log = parse_crash_log(Path::new("crash-2026-11-09-21-30-00.log"), CRASH_LOGGER);
-        assert_eq!(log.logger, "Crash Logger");
+        assert_eq!(log.logger, Some("Crash Logger"));
         assert!(log
             .exception
             .as_deref()
@@ -266,15 +267,21 @@ Registers\n{\n}\n";
         let log = parse_crash_log(Path::new("crash-x.log"), BUFFOUT);
         assert_eq!(
             (log.logger, log.modules.as_slice()),
-            ("Buffout 4", ["f4ee.dll".to_string()].as_slice())
+            (Some("Buffout 4"), ["f4ee.dll".to_string()].as_slice())
         );
         assert_eq!(log.plugins, ["Fallout4.esm", "Armorsmith Extended.esp"]);
     }
 
     #[test]
+    fn a_log_without_a_known_logger_or_exception_line_says_so() {
+        let log = parse_crash_log(Path::new("crash-x.log"), "PROBABLE CALL STACK:\n");
+        assert_eq!((log.logger, log.exception), (None, None));
+    }
+
+    #[test]
     fn netscriptframework_crash_txt_is_recognised() {
         let log = parse_crash_log(Path::new("Crash_2026_11_9_21-30-00.txt"), NSF);
-        assert_eq!(log.logger, "NetScriptFramework");
+        assert_eq!(log.logger, Some("NetScriptFramework"));
         assert_eq!(
             log.exception.as_deref(),
             Some("Unhandled native exception occurred at 0x7FF6A1B2C3D4 (SkyrimSE.exe+0123456) on thread 1234!")

@@ -10,20 +10,20 @@ use super::{Finding, Level};
 
 pub fn extender_findings(f: &ExtenderFacts) -> Vec<Finding> {
     let mut out = Vec::new();
-    let runtime = f
-        .runtime
-        .map_or_else(|| "unknown".into(), |v| v.to_string());
     if !f.loader_found && f.plugin_dlls > 0 {
+        let mut args = vec![
+            ("loader", f.loader.to_string()),
+            ("dir", f.plugins_dir.to_string()),
+            ("n", f.plugin_dlls.to_string()),
+            ("page", f.page.to_string()),
+        ];
+        // No runtime for the 32-bit games (Skyrim LE, Fallout 3, New Vegas,
+        // Oblivion) or an unreadable executable; the card then names no version.
+        args.extend(f.runtime.map(|v| ("runtime", v.to_string())));
         out.push(Finding {
             code: "extender_missing",
             level: Level::Problem,
-            args: vec![
-                ("loader", f.loader.to_string()),
-                ("dir", f.plugins_dir.to_string()),
-                ("n", f.plugin_dlls.to_string()),
-                ("page", f.page.to_string()),
-                ("runtime", runtime),
-            ],
+            args,
         });
     }
     if let (true, Some(dll), Some(runtime)) = (f.loader_found, &f.runtime_dll, f.runtime) {
@@ -204,6 +204,15 @@ mod tests {
         assert_eq!(f[0].code, "extender_missing");
         assert_eq!(f[0].arg("n"), Some("2"));
         assert_eq!(f[0].arg("loader"), Some("skse64_loader.exe"));
+        assert_eq!(f[0].arg("runtime"), Some("1.6.1179.0"));
+        let unread = extender_findings(&ExtenderFacts {
+            loader_found: false,
+            plugin_dlls: 2,
+            runtime: None,
+            ..facts()
+        });
+        assert_eq!(unread[0].code, "extender_missing");
+        assert_eq!(unread[0].arg("runtime"), None);
     }
 
     #[test]

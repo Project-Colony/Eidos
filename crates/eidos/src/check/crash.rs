@@ -11,6 +11,8 @@ use eidos_instance::Instance;
 use super::{Finding, Level};
 
 /// The newest crash log written at or after `started` (seconds since the epoch).
+// shortcut: logs are bounded only by the launch start, shared Documents across
+// instances can misattribute; add an end bound when multi-instance users report it
 fn crash_log_since(game: &DetectedGame, overwrite: &Path, started: u64) -> Option<PathBuf> {
     let docs = eidos_plugins::documents_my_games_dir(&game.prefix()?, &game.plugin_spec()?);
     newest_crash_log(
@@ -68,15 +70,15 @@ pub fn crash_findings(
         .map(|(name, origin)| format!("{name} ({origin})"))
         .collect();
 
-    let mut args = vec![
-        ("logger", log.logger.to_string()),
-        ("log", path.display().to_string()),
-        (
-            "exception",
-            log.exception
-                .unwrap_or_else(|| "no exception line".to_string()),
-        ),
-    ];
+    // A logger or exception line the log does not have is left out; the GUI
+    // says so in the user's language.
+    let mut args: Vec<(&str, String)> = log
+        .logger
+        .map(|l| ("logger", l.to_string()))
+        .into_iter()
+        .collect();
+    args.push(("log", path.display().to_string()));
+    args.extend(log.exception.map(|e| ("exception", e)));
     let code = if culprits.is_empty() {
         "game_crashed_unattributed"
     } else {
@@ -214,6 +216,15 @@ MODULES:\n\tSkyrimSE.exe 0x7FF6A0000000\n"
         let f = crash_findings(&fx.game, &fx.inst, &fx.mods);
         assert_eq!(f[0].code, "game_crashed_unattributed");
         assert_eq!(f[0].arg("culprits"), None);
+    }
+
+    #[test]
+    fn what_the_log_does_not_say_is_left_out() {
+        let fx = fixture("bare");
+        write_log(&fx, "PROBABLE CALL STACK:\n\t[0] MyPlugin.dll+0012345\n");
+        let f = crash_findings(&fx.game, &fx.inst, &fx.mods);
+        assert_eq!(f[0].code, "game_crashed");
+        assert_eq!((f[0].arg("logger"), f[0].arg("exception")), (None, None));
     }
 
     #[test]
