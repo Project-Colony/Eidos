@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1bc10e692425e8168c40b0f3938e2264b6fa29d4 -->
 
 # Usar Eidos
 
@@ -641,7 +641,11 @@ principal haría perder los demás. Actualízalos a mano.
 cuenta premium, descarga cada archivo nuevo y lo instala sobre su carpeta con
 `--replace --backup`. Con una cuenta gratuita imprime en cambio `OPEN <url>`
 para cada página de archivo. Las carpetas que fusionan varios archivos se omiten
-con el motivo, y la orden termina con 1 si alguna actualización falló.
+con el motivo. Un mod FOMOD sin respuestas guardadas, como uno instalado antes
+de que Eidos las conservara, no se reinstala con los valores predeterminados del
+instalador: esa actualización falla con un mensaje que pide actualizar el mod
+una vez desde la ventana, que guarda las respuestas. La orden termina con 1 si
+alguna actualización falló.
 
 ### Colecciones de Nexus
 

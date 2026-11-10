@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1bc10e692425e8168c40b0f3938e2264b6fa29d4 -->
 
 # Používání Eidosu
 
@@ -591,7 +591,10 @@ by ostatní ztratilo. Aktualizujte je ručně.
 účtem stáhne každý nový soubor a nainstaluje ho přes jeho složku s
 `--replace --backup`. S bezplatným účtem místo toho vypíše `OPEN <url>` pro
 každou stránku souboru. Složky, které slučují několik souborů, přeskočí i s
-důvodem, a příkaz skončí kódem 1, pokud některá aktualizace selhala.
+důvodem. FOMOD mod bez uložených odpovědí, například nainstalovaný dřív, než je
+Eidos začal ukládat, se znovu neinstaluje s výchozími volbami instalátoru:
+taková aktualizace selže se zprávou, abyste mod jednou aktualizovali z okna,
+které odpovědi uloží. Příkaz skončí kódem 1, pokud některá aktualizace selhala.
 
 ### Kolekce z Nexusu
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1bc10e692425e8168c40b0f3938e2264b6fa29d4 -->
 
 # Usare Eidos
 
@@ -653,7 +653,11 @@ farebbe perdere gli altri. Aggiornali a mano.
 account premium scarica ogni nuovo file e lo installa sulla sua cartella con
 `--replace --backup`. Con un account gratuito stampa invece `OPEN <url>` per
 ogni pagina di file. Le cartelle che uniscono più file vengono saltate con il
-motivo, e il comando esce con 1 se un aggiornamento è fallito.
+motivo. Una mod FOMOD senza risposte salvate, per esempio installata prima che
+Eidos le conservasse, non viene reinstallata con i valori predefiniti
+dell'installer: quell'aggiornamento fallisce con un messaggio che chiede di
+aggiornare la mod una volta dalla finestra, che salva le risposte. Il comando
+esce con 1 se un aggiornamento è fallito.
 
 ### Collezioni di Nexus
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1bc10e692425e8168c40b0f3938e2264b6fa29d4 -->
 
 # Eidos kullanımı
 
@@ -615,8 +615,11 @@ karıştırılmış bir ana dosya, reddedilir: onu yeni ana dosyayla değiştirm
 `eidos nexus update skyrimse --apply` aynı denetimi yapar, ardından premium bir
 hesapta her yeni dosyayı indirip `--replace --backup` ile klasörünün üzerine
 kurar. Ücretsiz bir hesapta bunun yerine her dosya sayfası için `OPEN <url>`
-yazdırır. Birkaç dosyayı birleştiren klasörler gerekçesiyle atlanır ve bir
-güncelleme başarısız olduysa komut 1 ile çıkar.
+yazdırır. Birkaç dosyayı birleştiren klasörler gerekçesiyle atlanır. Kayıtlı
+cevabı olmayan bir FOMOD modu, örneğin Eidos cevapları saklamaya başlamadan önce
+kurulmuş olan, yükleyicinin varsayılanlarıyla yeniden kurulmaz: o güncelleme,
+modu bir kez pencereden güncellemenizi isteyen bir mesajla başarısız olur;
+pencere cevapları kaydeder. Bir güncelleme başarısız olduysa komut 1 ile çıkar.
 
 ### Nexus koleksiyonları
 
