@@ -1,39 +1,68 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=62294f58f6a6524b75b1424aace480fccaa6de22 -->
 
 # Community Shaders, DLSS en frame generation
 
 Community Shaders 1.4+ levert eigen upscaling mee (DLSS 4 / FSR 3.1 / XeSS, via het
 aparte pakket "Upscaling - Community Shaders") en FSR 3.1-frame generation. Dat
 alles werkt onder Linux via Eidos - CS en zijn pakketten installeren als gewone mods
-en de samenvoeging serveert hun DLL's als al het andere - maar drie dingen zijn
-**niet** vanuit het spel te ontdekken, en elk ervan zorgt dat de functie
-stilzwijgend niets doet. Deze pagina is die lijst, op een echte opstelling met
-schade en schande geleerd.
+en de samenvoeging serveert hun DLL's als elk ander bestand - maar drie instellingen
+zijn niet vanuit het spel te zien, en elk ervan zorgt dat de functie niets doet
+zonder een fout te melden: de NVAPI-variabele, exclusief volledig scherm en het
+Reflex-FPS-plafond.
 
-Het tabblad Status controleert er drie van voor u: de NVAPI-variabele, wanneer er een NVIDIA-stuurprogramma en het Upscaling-pakket aanwezig zijn en de Proton-build van het spel NVAPI standaard uit laat (GE-Proton11-9 en Proton 11.0 zetten het aan), exclusief volledig scherm in de `SkyrimPrefs.ini` van het profiel, en de ENB-regel hieronder. Bij de laatste twee zit een knop Herstellen, en de kaart Weergave in Diagnostics stelt een randloos venster met een grootte in.
+Het tabblad Diagnostics controleert de eerste twee, en de ENB-regel verderop, voor
+een spel met een Wine-prefix (de Proton-prefix van Steam, of die welke Heroic heeft
+ingericht). Het Reflex-plafond wordt niet gecontroleerd. Draait de instantie het
+spel vanuit een kopie zoals `Stock Game`, dan lezen de controles de bestanden van
+de kopie, niet van de winkelinstallatie. `eidos check <instance>` drukt dezelfde
+kaarten af in een terminal, zonder de Fix-knoppen.
+
+- De NVAPI-kaart verschijnt bij een Steam-kopie van Skyrim SE of Enderal SE wanneer
+  een NVIDIA-stuurprogramma geladen is (`/proc/driver/nvidia/version` bestaat), de
+  samengevoegde `Data` iets in `Shaders/Upscaling` heeft, de Proton-build van het
+  spel NVAPI standaard uit laat, en noch Steams opstartoptie, noch de eigen
+  omgeving van Eidos, noch de `launch-env.ini` van het profiel
+  `PROTON_ENABLE_NVAPI=1` instelt.
+- De kaart voor exclusief volledig scherm verschijnt alleen met het Upscaling-pakket
+  geïnstalleerd, wanneer de `SkyrimPrefs.ini` van het profiel `bFull Screen=1` heeft
+  en `SKSE/Plugins/SSEDisplayTweaks.ini` niet zowel `Fullscreen=false` als
+  `Borderless=true` instelt. De Fix-knop schrijft `bFull Screen=0` en
+  `bBorderless=1` in de `SkyrimPrefs.ini` van het profiel. De controle leest ook voor
+  Enderal SE de `SkyrimPrefs.ini`, terwijl een Enderal SE-profiel `EnderalPrefs.ini`
+  bevat, dus gebruik bij Enderal SE de Display-kaart hieronder.
+- De ENB-kaart verschijnt bij elk spel waarvan de winnende `enblocal.ini` in de
+  rootweergave geen `LinuxVersion=true` in `[GLOBAL]` heeft. Ook die heeft een
+  Fix-knop.
 
 ## De opstartoptie die DLSS nodig heeft
 
 ```
-PROTON_ENABLE_NVAPI=1 eidos-gui %command%
+PROTON_ENABLE_NVAPI=1 ~/.local/bin/eidos-gui %command%
 ```
 
-Proton schakelt zijn NVIDIA-NVAPI-laag (dxvk-nvapi) uit tenzij het spel op Valves
-toelatingslijst staat, en Skyrim staat er niet op. Zonder haar kan CS DLSS niet
-initialiseren en valt het terug op FSR-upscaling - stilletjes, zonder dat iets op
-het scherm zegt waarom. De variabele zetten kost niets op niet-NVIDIA-machines, dus
-de veilige opstartoptie is simpelweg de regel hierboven. Frame generation zelf is
-FSR 3.1 en heeft geen NVAPI nodig; alleen de DLSS-upscaler wel.
+Gebruik het absolute pad van je eigen `eidos-gui` of `eidos-linux`, zoals in
+[install.md](install.md). De kaart geeft de regel die je moet instellen: de huidige
+opstartoptie van het spel met `PROTON_ENABLE_NVAPI=1` ervoor, of, als er geen is, de
+regel opgebouwd uit het pad van het draaiende Eidos.
 
-Om hem voor één profiel in te stellen, zet je `env=PROTON_ENABLE_NVAPI=1` in de `launch-env.ini` van dat profiel (View -> INI editor, laatste tabblad). De Health-kaart telt die regel ook mee.
+Zonder de NVIDIA-NVAPI-laag (dxvk-nvapi) kan CS DLSS niet initialiseren en valt het
+terug op FSR-upscaling, zonder dat iets op het scherm zegt waarom. Of een
+Proton-build de laag zelf aanzet staat in zijn `proton`-script, en Eidos leest daar
+de regel `use_nvapi`. Een uitschakelschakelaar (`disablenvapi`) betekent standaard
+aan: GE-Proton11-9 en Proton 11.0 leveren die vorm (gecontroleerd op 2026-11-09).
+Een inschakelschakelaar (`enablenvapi`) betekent uit, en alleen die build heeft de
+variabele nodig. De variabele zetten kost niets op niet-NVIDIA-machines. Frame
+generation zelf is FSR 3.1 en heeft geen NVAPI nodig; alleen de DLSS-upscaler wel.
+
+Om hem voor één profiel in te stellen, zet je `env=PROTON_ENABLE_NVAPI=1` in de
+`launch-env.ini` van dat profiel (View -> INI editor, laatste tabblad).
 
 ## Frame generation vereist een randloos venster
 
 De frame generation van CS draait op een D3D12-presentatieproxy en weigert
-exclusief volledig scherm ronduit. `bFull Screen=1` in `SkyrimPrefs.ini` betekent
-dat ze nooit aangrijpt - geen fout, geen bericht, alleen de basisbeeldsnelheid. De
-robuuste oplossing is SSE Display Tweaks, dat de modus op engineniveau afdwingt wat
-de INI's ook zeggen:
+exclusief volledig scherm ronduit. Met `bFull Screen=1` in `SkyrimPrefs.ini` grijpt
+ze nooit aan: geen fout, geen bericht, en het spel blijft op zijn basisbeeldsnelheid.
+SSE Display Tweaks stelt de modus op engineniveau in, wat de INI's ook zeggen:
 
 ```ini
 [Render]
@@ -41,16 +70,29 @@ Fullscreen=false
 Borderless=true
 ```
 
-Het venster ziet er identiek uit (randloos op de eigen resolutie); alleen wat de
-engine gelooft verandert - en wat de engine gelooft is wat CS controleert.
+Het venster ziet er identiek uit (randloos op de eigen resolutie). Alleen de modus
+die de engine meldt verandert, en die modus is wat CS controleert.
+
+De kaart Display in Diagnostics stelt de grootte en de modus in één keer in, voor
+Skyrim SE, Enderal SE en Fallout 4. Ze toont de grootte van het grootste
+aangesloten scherm. Met Borderless window geselecteerd schrijft Apply `iSize W`,
+`iSize H`, `bFull Screen=0` en `bBorderless=1` in de `SkyrimPrefs.ini` van het
+profiel (`EnderalPrefs.ini` voor Enderal SE, `Fallout4Prefs.ini` voor Fallout 4).
+Stelt SSE Display Tweaks het venster in, dan schrijft Apply ook `Resolution`,
+`Fullscreen=false` en `Borderless=true` in een kopie van zijn INI in de Overwrite
+(`SKSE/Plugins/SSEDisplayTweaks.ini`), en het eigen bestand van de mod blijft zoals
+het is. Staat **Start the game at once when a store opens Eidos** aan (Preferences,
+General, Running a game), dan opent het venster toch wanneer het profiel nog geen
+venstergrootte heeft en SSE Display Tweaks het venster niet instelt, zodat de grootte
+voor de eerste start ingesteld kan worden.
 
 Nog twee activeringsvoorwaarden, met hetzelfde stille falen:
 
-- **Verversingssnelheid van 120 Hz of hoger**, of zet `frameGenerationForceEnable`
-  in de upscaling-instellingen van CS. Frame generation verdubbelt de gepresenteerde
-  snelheid, dus CS weigert haar scherp te stellen op schermen die het resultaat niet
-  kunnen tonen.
-- **Het Upscaling-pakket geïnstalleerd** (zijn `Data/Shaders/Upscaling/`-boom bevat
+- Het scherm ververst op 120 Hz of hoger, of `frameGenerationForceEnable` is
+  ingesteld in de upscaling-instellingen van CS. Frame generation verdubbelt de
+  gepresenteerde snelheid, dus CS weigert haar scherp te stellen op schermen die het
+  resultaat niet kunnen tonen.
+- Het Upscaling-pakket is geïnstalleerd (zijn `Data/Shaders/Upscaling/`-boom bevat
   de Streamline- en FidelityFX-DLL's). CS zonder dat toont de menu-items en kan
   niets inschakelen.
 
@@ -62,8 +104,7 @@ onze stond op 79 uit een oude afstelronde - zit stroomafwaarts van frame generat
 en knipt precies de beelden weg die zij maakt: basis 60 verdubbeld naar 120,
 teruggeknipt naar 79, leest als "frame generation doet niets". Op een 144 Hz-scherm
 ligt het gebruikelijke Reflex-plafond rond 138. Controleer het telkens wanneer
-gegenereerde uitvoer lijkt te ontbreken; het is de tweede stille moordenaar na
-exclusief volledig scherm.
+gegenereerde beelden lijken te ontbreken.
 
 ## Bekende wisselwerking: zwart scherm met SSE Display Tweaks
 
@@ -81,24 +122,24 @@ Community Shaders kan parallax, complex material en PBR weergeven, maar alleen
 waar een mesh daarvoor is ingericht. Vroeger betekende dat: voorgepatchte meshes
 installeren en daarna een mod om het effect weer uit te zetten waar de textures
 ontbraken. De dekking bleef beperkt tot de meshes die je toevallig had, en er
-ging CPU-tijd op aan het terugdraaien van een beslissing die nooit genomen had
-mogen worden.
+ging CPU-tijd op aan het terugdraaien van een keuze die bij de installatie was
+gemaakt.
 
 [PGPatcher](https://www.nexusmods.com/skyrimspecialedition/mods/120946) draait
 het om. Jij installeert welke textures je wilt, van elk shader-type, en het
 herschrijft meshes en plugins zodat elk oppervlak de juiste gebruikt - inclusief
-de alternate-texture-records in plugins, die de oude methode niet dekte. Het is
-het verschil tussen een texture-pakket dat te zien is en een dat alleen laadt,
-en het telt het zwaarst bij een gemengde opstelling, wat elke echte laadvolgorde
-is.
+de alternate-texture-records in plugins, die de oude methode niet dekte. Zonder
+PGPatcher laadt een texture die een shader nodig heeft die haar mesh niet aanvraagt
+wel, maar wordt ze niet weergegeven zoals bedoeld, en dat gebeurt het vaakst bij een
+opstelling die texture-typen mengt.
 
 Twee dingen om te weten voor je het onder Linux draait:
 
-- het heeft het argument **`--ignore-mo2vfscheck`** nodig, anders stopt het
+- het heeft het argument `--ignore-mo2vfscheck` nodig, anders stopt het
   meteen met een klacht over MO2. Eidos levert het mee - zie
   [Gereedschap](tools.md#waarom-pgpatcher---ignore-mo2vfscheck-nodig-heeft) voor wat de vlag is en waarom de controle
   hier faalt;
-- het bewerkt meshes, dus het draait **na** alle texture-mods en **voor**
+- het bewerkt meshes, dus het draait na alle texture-mods en voor
   DynDOLOD, dat de uiteindelijke meshes moet zien. Verander je later je
   textures, dan draaien ze allebei opnieuw, in die volgorde.
 
@@ -111,22 +152,32 @@ opnieuw schrijft en Eidos verwacht dat de ingeschakelde mods niet veranderen
 zolang de weergave gemount is. Schakel hem daarna in met een hoge prioriteit:
 hij hoort te winnen.
 
-Gebruik geen mod uit **Capture output into** als Output location. Eidos
-verplaatst na elke draai de eigen `cfg/` en `log/` van PGPatcher naar die mod,
+Geef het item van PGPatcher geen mod bij **Capture output into** om die mod daarna
+als Output location te gebruiken. Eidos verplaatst na elke draai de eigen `cfg/` en `log/` van PGPatcher naar die mod,
 en PGPatcher stopt dan met "Output directory has non-PGPatcher related files".
 
 ## ENB onder Proton: LinuxVersion
 
-Jackify schrijft `LinuxVersion=true` in de sectie `[GLOBAL]` van `enblocal.ini` voor elke ENB die het onder Proton installeert. De eigen documentatie van ENB beschrijft deze sleutel niet. Het tabblad Status meldt een `enblocal.ini` zonder die regel, en de knop Herstellen schrijft een kopie van de winnende `enblocal.ini` met de regel erin naar `overwrite/Root/`, zodat de ENB-mod zijn eigen bestand houdt.
+Jackify schrijft `LinuxVersion=true` in de sectie `[GLOBAL]` van `enblocal.ini` voor
+elke ENB die het onder Proton installeert. De eigen documentatie van ENB beschrijft
+deze sleutel niet. Een Health-kaart in het tabblad Diagnostics meldt een
+`enblocal.ini` zonder die regel, en de Fix-knop schrijft een kopie van de winnende
+`enblocal.ini` met de regel erin naar `overwrite/Root/`, zodat de ENB-mod zijn eigen
+bestand houdt.
+
+Een andere kaart zegt wanneer er een ENB in de spelmap staat (een `enblocal.ini`, een
+`enbseries.ini` of een map `enbseries/`) terwijl een ingeschakelde mod Community
+Shaders levert (`SKSE/Plugins/CommunityShaders.dll`). De twee kunnen samen draaien.
+Ziet het beeld er verkeerd uit, zet dan een van beide uit in zijn INI.
 
 ## De getallen achteraf lezen
 
 Gegenereerde beelden bestaan alleen aan de presentatiekant: de engine simuleert nog
 steeds op de basissnelheid, Havok tikt nog steeds op de basissnelheid, en alles wat
 *engine*-beelden telt (de tellers van CS incluis) blijft ~60 melden terwijl het
-scherm ~120 toont. Dat is correct gedrag, geen kapotte teller - en het is de reden
-dat frame generation veilig is voor de fysica waar het verhogen van de eigen
-beeldsnelheid van de engine dat niet is. `DXVK_HUD=fps` in de opstartopties toont
+scherm ~120 toont. De teller klopt, en dit is de reden dat frame generation veilig is
+voor de fysica waar het verhogen van de eigen beeldsnelheid van de engine dat niet
+is. `DXVK_HUD=fps` in de opstartopties toont
 een teller als je er een op het scherm wilt.
 
 Eén regel: interpolatie op stuurprogrammaniveau (NVIDIA Smooth Motion,

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/extensions.md sha=1d33d938321e5dbf200cd9b7a38c1e5f412fb116 -->
+<!-- eidos-i18n: source=docs/guide/extensions.md sha=4504002e1349638a04b741f27e8e360c22ad9831 -->
 
 # Extensions
 
@@ -6,8 +6,22 @@ Une extension ajoute une entrée à Eidos sans faire partie d'Eidos. C'est un
 manifeste TOML nommant un programme, plus, tout au plus, ce programme.
 
 Les manifestes vivent dans `~/.config/Colony/Eidos/addons/`, un `.toml` par
-extension. Ouvrez le dossier depuis **View -> Extensions -> Open folder**, puis
-appuyez sur **Reload** - pas de redémarrage.
+extension. Ouvrez le dossier depuis View -> Extensions -> Open folder, puis
+appuyez sur Reload - pas de redémarrage.
+
+`id`, `kind` et `exec` sont obligatoires ; `name` vaut l'identifiant par défaut.
+`exec` nomme le programme. Un nom sans `/` est cherché dans le `PATH`. Quand le
+programme manque, Eidos ignore l'extension, et sa ligne dans View -> Extensions
+dit pourquoi (`<exec> is not on PATH` ou `<exec> is not there`). `games` limite
+l'extension à ces identifiants de jeu ; sans lui, l'extension s'applique à tous les
+jeux, et sur un autre jeu sa ligne indique « not for this game ».
+
+Un manifeste qu'Eidos refuse est listé en premier, avec la raison : un fichier
+illisible, un TOML invalide ou un champ obligatoire absent, un `id` vide ou
+contenant une espace, un `exec` vide, un `id` qu'un manifeste précédent a déjà pris
+(les fichiers sont lus par ordre de nom), un `kind` qu'Eidos ne connaît pas, ou un
+installateur, un aperçu ou une info de sauvegarde sans `protocol = 1` et sans
+nom de fichier `extensions`.
 
 ## Pourquoi rien n'est chargé dans Eidos
 
@@ -15,7 +29,8 @@ Mod Organizer 2 charge ses greffons comme bibliothèques partagées et héberge 
 en Python via Qt. Ni l'un ni l'autre ne se transpose. Rust n'a pas d'ABI stable :
 une bibliothèque partagée compilée avec un autre compilateur - ou un autre drapeau
 d'optimisation, ou un autre jeu de fonctionnalités d'une dépendance commune - est
-un comportement indéfini, pas une incompatibilité de version. Et les widgets
+un comportement indéfini, et rien ne le signale comme une incompatibilité de
+version. Et les widgets
 d'Eidos sont génériques à la compilation, donc une bibliothèque ne pourrait même
 pas en construire un à rendre, l'ABI fût-elle stable.
 
@@ -35,8 +50,9 @@ author = "you"
 version = "1.0"
 ```
 
-Elle apparaît dans **View -> Extensions** avec un bouton Run, et démarre détachée
-- Eidos ne l'attend pas.
+Elle apparaît dans View -> Extensions avec un bouton Run, et démarre détachée
+- Eidos ne l'attend pas, et la ligne d'état donne son pid. Sa sortie est jetée.
+Sans `workdir`, elle démarre dans le dossier d'où Eidos lui-même a été lancé.
 
 ## Un contrôle
 
@@ -48,21 +64,30 @@ exec = "/home/me/bin/esl-count.sh"
 args = ["{profile_dir}/plugins.txt"]
 ```
 
-Il s'exécute à chaque rafraîchissement et écrit un constat par ligne :
+Il s'exécute à chaque rafraîchissement, dans la racine de l'instance sauf si
+`workdir` dit autre chose, et écrit un constat par ligne :
 
 ```
 level<TAB>title<TAB>detail
 ```
 
-où `level` vaut `problem`, `advice` ou `ok`. Le détail est facultatif. Tout ce qui
-ne commence pas par un niveau connu est ignoré, si bien qu'une sortie de
-progression ou un avertissement égaré ne peuvent pas produire une ligne qui
-ressemble à un contrôle d'Eidos lui-même. Les constats apparaissent dans l'onglet
-**Health**, préfixés du nom de l'extension.
+où `level` vaut `problem`, `advice` ou `ok`. Le détail est facultatif ; une ligne
+sans titre est abandonnée. Tout ce qui ne commence pas par un niveau connu est
+ignoré, si bien qu'une sortie de progression ou un avertissement égaré ne peuvent
+pas produire une ligne qui ressemble à un contrôle d'Eidos lui-même. Les constats
+apparaissent dans l'onglet Diagnostics sous la forme `<name> - <title>`, après les
+cartes du préfixe et de Nexus et avant les autres cartes Health.
 
 Un contrôle dispose de trois secondes. Celui qui déborde est arrêté et signalé
 comme un problème contre lui-même - il s'exécute au même rafraîchissement qui suit
-chaque clic, donc un contrôle bloqué figerait la fenêtre.
+chaque clic, donc un contrôle bloqué figerait la fenêtre. L'horloge tourne jusqu'à
+ce que le contrôle soit terminé et que ses tubes de sortie soient fermés : un
+processus fils en arrière-plan qui les garde ouverts compte donc dans les trois
+secondes. Un contrôle qui se termine en erreur sans rien écrire est signalé de la
+même façon, avec la première ligne de sa sortie d'erreur, de même que celui qui
+écrit plus de 1 Mio sur l'un ou l'autre flux. Dans les deux cas Eidos ne le relance
+pas avant que vous appuyiez sur Reload, et sa ligne dit « It will not be retried
+until you press Reload. » Un contrôle ne lit rien sur son entrée standard.
 
 ## Substitutions
 
@@ -78,13 +103,22 @@ chaque clic, donc un contrôle bloqué figerait la fenêtre.
 | `{profile_dir}` | le dossier du profil actif                   |
 | `{game}`        | l'identifiant du jeu, p. ex. `skyrimse`      |
 | `{game_name}`   | le nom d'affichage du jeu                    |
-| `{install}`     | le dossier d'installation du jeu             |
-| `{data}`        | le dossier `Data` du jeu                     |
+| `{install}`     | le dossier du jeu que l'instance exécute     |
+| `{data}`        | le dossier `Data` de ce dossier              |
 
-Une substitution inconnue est laissée exactement telle qu'écrite plutôt que vidée,
-pour qu'une faute échoue visiblement au lieu de transformer `--out {typo}` en
-`--out --next-flag`. Lancer un outil dont toutes les substitutions ne peuvent pas
-être résolues est refusé, et Eidos dit lesquelles manquent.
+`{install}` est l'installation de la boutique, ou la copie du jeu quand l'instance
+en exécute une (un `Stock Game` figé ou le dossier de jeu propre à une liste ;
+voir [usage.md](usage.md#fichiers-du-jeu--linstallation-de-la-boutique-ou-une-copie)). `{data}` la
+suit.
+
+Un contrôle reçoit aussi `{addon_dir}`, le dossier qui contient son manifeste, et
+les extensions du protocole 1 ci-dessous aussi. Un outil non.
+
+Une substitution inconnue n'est jamais vidée, ce qui transformerait `--out {typo}`
+en `--out --next-flag`. Eidos refuse d'exécuter un outil ou un contrôle dont les
+substitutions ne peuvent pas toutes être résolues, et dit lesquelles manquent :
+dans la ligne d'état pour un outil, dans la ligne du contrôle dans l'onglet
+Diagnostics pour un contrôle.
 
 ## Ce qu'une extension ne peut pas faire
 

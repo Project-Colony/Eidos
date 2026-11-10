@@ -1,829 +1,1107 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=aaff8588275e2b036c2a1c344c01509a4c9d0f00 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=15b7f6e81560a7045c8b62dd59dde35c8e45d32c -->
 
 # Používání Eidosu
 
-Praktická příručka: CLI, GUI, parametr spuštění ve Steamu, sestavení ze
-zdrojových kódů a skript s důkazem konceptu. Co dělat, když něco vypadá špatně,
-najdete v [troubleshooting.cs.md](troubleshooting.md).
+Jak používat Eidos: instance a kopie hry, příkazová řádka, testovací běhy, okno,
+kolekce z Nexusu a aktualizace, přesun instance na jiný stroj, nástroje a
+rozšíření. Problémy řeší [troubleshooting.md](troubleshooting.md); sestavení ze
+zdrojů a rozložení repozitáře popisuje
+[../internals/contributing.md](../../../../internals/contributing.md).
 
-## Použití (CLI)
+## Instance: globální a přenosné
 
-```sh
-eidos games                       # supported games installed here (like MO2's list)
-eidos init skyrimse               # create a modding instance
-# ...drop each mod as a folder into <instance>/mods/ (the global instance lives
-#    at ~/.local/share/Colony/Eidos/instances/skyrimse; `eidos init` prints yours)...
-eidos install skyrimse mod.7z     # or install a downloaded archive (Simple / FOMOD)
-eidos import skyrimse <mo2-profile>  # adopt an existing MO2 profile's order + plugin state
-eidos sort skyrimse               # LOOT-sort the plugin load order
-eidos play skyrimse               # show what would be mounted
-eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
-eidos shell skyrimse              # shell ve sloučeném pohledu, zápisy skončí v Overwrite
-eidos check skyrimse              # kontroly zdraví bez okna (--json pro skripty)
-eidos sessions skyrimse           # zaznamenaná spuštění hry a nástrojů, nejnovější první
-eidos sessions skyrimse diff      # co se změnilo od posledního spuštění, které skončilo kódem 0
-eidos stock-game skyrimse         # které herní soubory instance používá; zmrazit je nebo přepnout
-eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
-eidos nexus update skyrimse --apply  # install the Nexus files that replaced yours
-eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
-eidos unpack backup.eidos <folder>   # put it back on the other machine
-```
-
-`eidos tool`, `eidos prereqs`, `eidos nexus`, `eidos nxm` a `eidos export` sadu
-doplňují; úplný seznam vypíše `eidos` bez argumentů.
-
-### Kontroly zdraví z terminálu
-
-`eidos check <instance>` spustí kontroly prefixu, pluginů, chybějících masterů a script extenderu z karty **Diagnostics**, aniž by otevřel okno, takže mohou běžet přes SSH nebo v Game Mode a skončit v hlášení chyby. Vypíše stejné systémové řádky jako **Copy report** a pak jeden řádek na každé zjištění, s domovskou složkou zobrazenou jako `~` a přihlašovacím jménem jako `<user>`. Návratový kód je 0, když se nenašel žádný problém (samotné rady stále dávají 0), 1, když se našel aspoň jeden problém, a 2, když Eidos nemohl kontrolu provést: chybné argumenty, instance, kterou nedokáže otevřít, nebo hra, kterou nerozpozná.
-
-`eidos check <instance> --json` místo toho vypíše jeden objekt JSON. Jeho pole nejvyšší úrovně jsou `eidos` (verze), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`, `max_map_count`, `open_files_hard`) a `findings`. `max_map_count` a `open_files_hard` jsou čísla, nebo `null`, když je Eidos nedokázal přečíst. Každé zjištění tvoří `code`, `level` (`problem` nebo `advice`) a jeho `args`; karta Diagnostics ukazuje větu ke každému kódu.
-
-### Shell ve sloučeném pohledu
-
-`eidos shell <instance>` spustí váš `$SHELL` (nebo `/bin/sh`) ve složce hry tak, jak by ji viděla hra: každý zapnutý mód připojený nad `Data`, módy Root nad kořenem hry a vše, co se tam zapíše, skončí v Overwrite. `eidos shell <instance> -- <command>` místo toho spustí jediný příkaz, například `eidos shell skyrimse -- ls Data/meshes` nebo nativní nástroj jako NifSkope. Běh drží zámek instance stejně jako herní relace, takže okno nemůže ukládat změny, dokud neskončíte, a v `eidos sessions` je zapsán pod názvem `shell`, nikdy jako spuštění hry. Ctrl+C u příkazu zastaví běh stejně jako Stop: Eidos příkaz ukončí, zachytí relaci a odpojí pohled. V interaktivním shellu zůstává Ctrl+C shellu, jako obvykle; běh ukončíte příkazem `exit`.
-
-### Instance: globální a přenosné
-
-Každý příkaz výše se obrací na instanci. `skyrimse` pojmenovává tu **globální** -
-uloženou centrálně v `~/.local/share/Colony/Eidos/instances/skyrimse` a spravovanou Eidosem.
-Druhý druh je **přenosná**: soběstačná složka kdekoli chcete (druhý disk, herní
-oddíl), přesunutelná a izolovaná, přesně jako přenosné instance v MO2. Kdekoli
-příkaz bere identifikátor hry, bere i složku přenosné instance:
+Příkazy, které berou instanci, přijímají identifikátor hry nebo složku přenosné
+instance. `skyrimse` jmenuje globální instanci, kterou Eidos drží v
+`~/.local/share/Colony/Eidos/instances/skyrimse`. Přenosná instance je samostatná
+složka kdekoli chcete (druhý disk, oddíl pro hry) a můžete ji přesouvat, stejně
+jako přenosné instance MO2:
 
 ```sh
-eidos init skyrimse /mnt/games/EidosSkyrim   # create a portable instance there
-eidos install /mnt/games/EidosSkyrim mod.7z  # every command accepts the folder
+eidos init skyrimse /mnt/games/EidosSkyrim   # vytvořit tam přenosnou instanci
+eidos install /mnt/games/EidosSkyrim mod.7z  # každý příkaz přijímá složku
 eidos play /mnt/games/EidosSkyrim -- %command%
 ```
 
-Složka se popisuje sama (její `eidos-instance.ini` pojmenovává hru), takže nic
-dalšího není potřeba - a `EIDOS_INSTANCE=<folder>` v prostředí přesměruje
-identifikátor hry na tu složku, což se hodí v parametrech spuštění ve Steamu.
-Přenosné instance, které jste vytvořili nebo otevřeli, si Eidos pamatuje
-(naposledy použité první) v `~/.config/Colony/Eidos/instances.ini`; uvítací
-obrazovka GUI je nabízí k otevření jedním kliknutím, spuštění ze Steamu přistane
-na té, kterou jste hráli naposledy, a obsluha `nxm://` stahuje do ní. Dvě
-výhrady, které stojí za to znát: ruční přesun přenosné složky zachová všechno
-kromě záznamů nástrojů, které jste zaregistrovali absolutními cestami do
-původního umístění (`eidos pack` / `eidos unpack` níže je za vás opraví; prosté
-`mv` ne), a sdílená mezipaměť běhových prostředí
-(`~/.local/share/Colony/Eidos/runtimes/`) záměrně zůstává společná pro celý
-stroj - 78MB hostitel .NET není záležitost jednotlivé instance.
+Soubor `eidos-instance.ini` ve složce jmenuje hru, takže složka nepotřebuje nic
+dalšího. `EIDOS_INSTANCE=<folder>` v prostředí přesměruje identifikátor hry na tu
+složku, například v parametru spuštění Steamu. Přenosné instance, které jste
+vytvořili nebo otevřeli, si Eidos pamatuje, nejnověji použité první, v
+`~/.config/Colony/Eidos/instances.ini`: uvítací obrazovka okna je vypisuje, spuštění
+ze Steamu skončí na té, kterou jste hráli naposledy, a obsluha `nxm://` stahuje do ní.
 
-Eidos drží vlastní soubory pod `Colony/Eidos`, v rozvržení, které používá každý
-program z rodiny Colony: `~/.config/Colony/Eidos/` pro to, co jste zvolili
-(předvolby, vaše relace na Nexusu, seznam instancí, definice her a doplňků,
-které jste napsali), `~/.local/share/Colony/Eidos/` pro globální instance
-(`instances/`), stažené runtimy a logy relací (`logs/`) a
-`~/.cache/Colony/Eidos/` pro masterlisty LOOT, které se stáhnou znovu, kdykoli
-chybí.
+Ruční přesun přenosné složky zachová všechno kromě záznamů nástrojů, které jste
+zaregistrovali s absolutními cestami do starého umístění. `eidos pack` a
+`eidos unpack` ([níže](#přesun-instance-na-jiný-stroj)) je opraví; prosté
+`mv` ne. Cache runtimů v `~/.local/share/Colony/Eidos/runtimes/` sdílí každá
+instance na stroji, takže se 78 MB hostitel .NET nekopíruje do každé z nich.
 
-Starší Eidos je držel v `~/.config/eidos/`, `~/.local/share/eidos/` a
-`~/.local/state/`. První spuštění po aktualizaci je **zkopíruje** a napíše to do
-logu. Globální instance se přesouvá pevnými odkazy místo kopírování bajtů, takže
-desítky gigabajtů módů se přesunou v okamžiku a nezaberou žádné místo navíc, a
-její položky nástrojů se přesměrují na novou složku. Staré adresáře zůstanou
-přesně takové, jaké byly - nic se nemaže, takže vás špatná aktualizace nemůže
-stát přihlášení ani uloženou hru - a až budete spokojeni, můžete je smazat sami.
-Pokud kopii nejde vytvořit (plný disk nebo disk jen pro čtení, stará složka
-instance na jiném disku, hra z ní stále běží), Eidos dál používá staré umístění
-a při dalším spuštění to zkusí znovu. Parametr spuštění ve Steamu, který stále
-jmenuje starou složku instance, otevře tu přesunutou.
-Místo navíc přesun nezabírá jen zpočátku: mód nebo stažený soubor, který potom
-odeberete nebo přeinstalujete, si přes starou složku instance nechá na disku
-svou starou kopii, takže to místo vrátí až smazání `~/.local/share/eidos/<game>/`.
+Jedno místo je odmítnuto: uvnitř instalační složky hry, kam uživatelé MO2 často
+dávají svou instanci. Ten strom vlastní Steam a aktualizace, „ověření integrity" nebo
+odinstalace ho mohou přepsat nebo smazat i s vaším nastavením. Eidos také připojuje
+přes kořen hry, takže instance uvnitř by ležela uvnitř vlastního cíle připojení.
+Průvodce, `eidos init`, `eidos play` a `eidos shell` to odmítnou. Dejte složku vedle
+hry; sourozenecká složka na stejném disku je stejně pohodlná.
+
+### Kde Eidos drží své soubory
+
+Eidos drží své soubory pod `Colony/Eidos`, v rozložení, které používá každý program
+rodiny Colony: `~/.config/Colony/Eidos/` pro to, co jste zvolili (předvolby, vaše
+relace na Nexusu, seznam instancí, definice her a doplňků, které jste napsali),
+`~/.local/share/Colony/Eidos/` pro globální instance (`instances/`), stažené runtimy a
+logy relací (`logs/`) a `~/.cache/Colony/Eidos/` pro masterlisty LOOTu, které se
+stáhnou znovu, kdykoli chybí.
+
+Když najde soubory v rozložení staršího Eidosu (`~/.config/eidos/`,
+`~/.local/share/eidos/` a `~/.local/state/`), první spuštění je zkopíruje a řekne to v
+logu. Globální instance se přesouvá pevnými odkazy místo kopie bajtů, takže její módy
+nezabírají další místo, a její záznamy nástrojů se přesměrují na novou složku. Nic ve
+starých adresářích se nemění ani nemaže; odstraňte je sami, až nové rozložení
+funguje. Když kopii nelze vytvořit (plný nebo jen pro čtení disk, stará složka
+instance na jiném disku, hra, která z ní ještě běží), Eidos dál používá staré umístění
+a zkusí to znovu při příštím spuštění. Parametr spuštění Steamu, který pořád jmenuje
+starou složku instance, otevře přesunutou.
+
+Pevné odkazy šetří místo jen zpočátku. Mód nebo stažený soubor, který potom odeberete
+nebo přeinstalujete, si přes starou složku instance ponechá svou starou kopii na disku
+a smazáním `~/.local/share/eidos/<game>/` se to místo uvolní.
 
 Přenosná instance se nikdy nepřesouvá: zůstává tam, kam jste ji dali.
 
-Jedno místo je odmítnuto rovnou: **uvnitř instalační složky hry** (reflex
-veteránů MO2). Ten strom vlastní Steam - aktualizace, „ověření integrity" nebo
-odinstalace jej mohou přepsat nebo smazat a vzít s sebou celou vaši sestavu - a
-Eidos připojuje přes kořen hry, takže instance uvnitř by seděla uvnitř vlastního
-cíle připojení. Průvodce, `eidos init` i `eidos play` řeknou ne; dejte složku
-raději VEDLE hry (sourozenec na stejném disku dá stejné pohodlí).
+## Příkazová řádka
 
-`play` připojí módy instance přes vlastní adresář `Data` hry (přes bind-stash,
-takže démon dál čte nedotčené soubory) uvnitř soukromého jmenného prostoru a pak
-skrz tento pohled spustí příkaz. Zápisy (savy, znovu vygenerované konfigurace)
-přistanou ve vrstvě `overwrite/` dané instance; instalace hry i každý zdroj módu
-zůstanou bajt po bajtu nedotčené.
+```sh
+eidos games                                # podporované hry nainstalované tady, jako seznam MO2
+eidos init skyrimse [folder]               # vytvořit instanci; se složkou je přenosná
+eidos init skyrimse --game-path <folder>   # použít kopii nainstalovanou v <folder>, když je nainstalováno víc
+eidos install skyrimse mod.7z [name]       # nainstalovat archiv (Simple, FOMOD, BAIN, OMOD)
+eidos install skyrimse mod.7z --replace --backup  # přeinstalovat přes mód (--merge instaluje přes jeho soubory)
+eidos import skyrimse <mo2-profile>        # převzít pořadí módů a stav pluginů profilu MO2
+eidos sort skyrimse [--dry-run]            # seřadit pořadí načítání LOOTem (--update-masterlist ho nejdřív obnoví)
+eidos play skyrimse                        # ukázat, co by se připojilo
+eidos play skyrimse -- <command>           # spustit <command> s módy připojenými přes hru
+eidos shell skyrimse                       # shell ve sloučeném pohledu; zápisy skončí v Overwrite
+eidos check skyrimse [--json]              # kontroly Health bez okna
+eidos sessions skyrimse                    # zaznamenané běhy her a nástrojů, nejnovější první
+eidos sessions skyrimse diff [<id>]        # co se změnilo od posledního běhu s kódem ukončení 0
+eidos stock-game skyrimse                  # které soubory hry instance spouští; zmrazit kopii nebo přepnout
+eidos tool skyrimse                        # vypsat nástroje (add, rm a run: viz Nástroje níže)
+eidos tool skyrimse run --exe <path>       # spustit exe jednou přes sloučený pohled
+eidos tool skyrimse import-mo2 [--write]   # spustitelné soubory z ModOrganizer.ini; --write je přidá
+eidos prereqs skyrimse [--install]         # co nástroje potřebují; --install stáhne, co chybí
+eidos collection skyrimse <link>           # nainstalovat kolekci z Nexusu (--dry-run, --no-optional)
+eidos nexus status                         # zkontrolovat uložené přihlášení k Nexusu
+eidos nexus update skyrimse [--apply]      # zkontrolovat aktualizace módů; --apply je nainstaluje
+eidos nxm <link>                           # stáhnout odkaz Mod Manager Download
+eidos nxm --register                       # nechat tlačítko Mod Manager Download na webu otevřít Eidos
+eidos export skyrimse -o mods.csv --active # formát CSV z MO2; --active vypíše jen zapnuté módy
+eidos pack skyrimse backup.eidos           # celá instance v jednom souboru
+eidos unpack backup.eidos [folder]         # bez složky se globální instance vrátí na své centrální místo
+eidos --version                            # vypsat verzi
+```
 
-### Seznamy Wabbajack
+`eidos` bez argumentů vypíše seznam příkazů. Většina příkazů vypíše své vlastní
+volby, když chybí argument (`eidos init` a `eidos import` vypíšou místo toho celý
+seznam), a `eidos tool --help` vypíše podpříkazy nástrojů. `eidos pack` bere
+`--dry-run`, `--level`, `--no-downloads`, `--no-recovery` a `--force` a `eidos unpack`
+bere `--info` a `--force`; obojí je popsáno
+[níže](#přesun-instance-na-jiný-stroj). `eidos stock-game` je popsán v části
+[Soubory hry](#soubory-hry-instalace-z-obchodu-nebo-kopie).
 
-Eidos nemá instalátor Wabbajack. Nainstalujte seznam pomocí CLF3 nebo Jackify mimo Eidos a v průvodci zvolte instalační složku jako přenosnou instanci. Eidos čte složku v uspořádání MO2: `mods/`, `profiles/<název>/modlist.txt` a seznamy pluginů. Soubor `ModOrganizer.ini`, který zapsal instalátor, ponechá a nikdy ho nepřepíše, takže programy samotného seznamu zůstanou zaregistrované.
+### Spuštění hry přes sloučený pohled
 
-Mnoho seznamů přidává složku `Stock Game` nebo `Game Root` s upravenou kopií hry a MO2 spouští hru odtud. Když průvodce nebo `eidos init` převezme složku seznamu poprvé, instance spouští hru také z této složky, stále přes Steam nebo obchod, kterému hra patří, takže není třeba nic přesouvat. Eidos složku najde podle `gamePath` v souboru `ModOrganizer.ini` seznamu, nebo podle těch dvou názvů. Instance převzatá starší verzí Eidos zůstává u instalace z obchodu, dokud ji nepřepnete (viz další oddíl). CLF3 znovu vytváří soubory BSA a DDS vlastními nástroji, takže výsledek se může lišit od instalace Wabbajack a autoři seznamů ho nepodporují.
+`eidos play` připojí módy instance přes vlastní adresář `Data` hry uvnitř soukromého
+jmenného prostoru a pak spustí příkaz skrz tento pohled. Vlastní soubory hry se
+nejdřív odloží přes bind, takže je démon stále čte beze změny. Zápisy (uložené pozice,
+znovu vygenerované konfigurace) přistávají ve vrstvě `overwrite/` instance; instalace
+hry i každá složka módu zůstanou bajt po bajtu takové, jaké byly.
 
-### Herní soubory: instalace z obchodu, nebo kopie
+Eidos nepotřebuje root. Připojuje v soukromém jmenném prostoru uživatele a připojení,
+bez pomocníka setuid, bez systémové služby a bez čehokoli k udělování. Volitelné
+oprávnění na binárce `eidos` umožňuje FUSE passthrough, který zůstává vypnutý, dokud
+se nenastaví `EIDOS_FUSE_PASSTHROUGH=1`; viz
+[install.md](install.md#volitelně-fuse-passthrough). S oprávněním Eidos používá
+obyčejný jmenný prostor připojení místo uživatelského a módy se nasazují v obou
+případech stejně.
 
-Ve výchozím stavu hra běží ze své instalace z obchodu, tedy ze složky, ve které ji má Steam, Heroic nebo Legendary. Instance může místo toho běžet z kopie této složky uvnitř instance. Módy leží nad kopií a instalace z obchodu je jen místo, kam Eidos výsledek připojí. Hru dál spouští obchod, takže Steam si ponechá overlay, mezipaměť shaderů i uložené pozice v cloudu.
+### Shell ve sloučeném pohledu
 
-Karta Game files nahoře na kartě Diagnostics ukazuje, které soubory instance používá, a přepíná mezi nimi. `eidos stock-game <instance>` dělá totéž z terminálu: `use <folder>`, `store`, `freeze` a `delete --yes`.
+`eidos shell <instance>` spustí váš `$SHELL` (nebo `/bin/sh`) ve složce hry tak, jak
+by ji viděla hra: každý zapnutý mód připojený přes `Data`, módy Root přes kořen hry a
+vše, co se tam zapíše, skončí v Overwrite. `eidos shell <instance> -- <command>`
+místo toho spustí jeden příkaz, například `eidos shell skyrimse -- ls Data/meshes`
+nebo nativní nástroj jako NifSkope. Běh drží zámek instance jako herní relace, takže
+okno nemůže ukládat změny, dokud neskončíte, a v `eidos sessions` se zaznamená pod
+názvem `shell`, nikdy jako spuštění hry. Ctrl+C na příkazu zastaví běh tak, jak to
+dělá Stop: Eidos příkaz ukončí, zachytí relaci a odpojí. V interaktivním shellu patří
+Ctrl+C shellu, jak je obvyklé; běh ukončíte příkazem `exit`.
 
-**Freeze this version** zkopíruje instalaci z obchodu do `<instance>/Stock Game` a spouští hru z ní, takže aktualizace z obchodu už nerozbije pluginy script extenderu: aktualizace změní instalaci z obchodu, ne kopii. První stisk ukáže velikost a to, co s ní udělá souborový systém, druhý kopíruje. Na btrfs a XFS kopie sdílí bloky s obchodem (reflink) a nezabírá téměř žádné místo, dokud obchod nezmění nějaký soubor. Na ext4, nebo když jsou hra a instance na různých souborových systémech, jde o plnou kopii velkou jako složka hry. Eidos odmítne, dokud Steam hlásí hru jako zaneprázdněnou nebo aktualizovanou a dokud běží hra nebo nástroj instance. Stop nebo chyba zanechá `Stock Game.eidos-tmp`, kterou karta nabídne ke smazání; tato složka se nikdy nepoužije.
+### Kontroly Health z terminálu
 
-Kopie skryje každý soubor, který obchod po vytvoření kopie ve složce hry přidá, změní nebo odstraní: nové soubory Creation Clubu, nový spustitelný soubor, nové DLL. Hra, seznam pluginů, LOOT i kontroly Health čtou kopii. Neskryje to, co se děje mimo složku hry: aktualizace může při dalším spuštění dál instalovat runtime knihovny do prefixu Protonu a Steam může hru přepnout na jiný Proton.
+`eidos check <instance>` spustí kontroly Health, které nepotřebují okno, takže mohou
+běžet přes SSH nebo v Game Mode a jít do hlášení chyby:
 
-**Return to the store version** po druhém stisku vyřadí kopii z dalšího spuštění. Kopie zůstane na disku a **Delete the copy** ji odstraní, opět po druhém stisku. Eidos nikdy nesmaže vlastní složku `Stock Game` nebo `Game Root` seznamu. Když složka kopie zmizí, spuštění se odmítají a Diagnostics složku pojmenuje, takže verze z obchodu se nikdy nespustí nečekaně.
+- prefix Proton a jeho registr;
+- diagnostika pluginů a chybějící mastery;
+- script extender a jeho pluginy;
+- aktualizace hry od posledního čistého spuštění;
+- parametr spuštění Steamu;
+- nastavení grafiky (NVAPI, celá obrazovka, ENB);
+- log pádu z posledního běhu;
+- řádky `sTestFile` v INI profilu;
+- pluginy `.esp` a blueprint ve Starfieldu;
+- `vm.max_map_count` a limit otevřených souborů;
+- kopie hry, kterou instance spouští, a `gamePath` v `ModOrganizer.ini` seznamu, který
+  jmenuje jinou složku hry;
+- pravidla pořadí kolekce, která už neplatí;
+- soubory hry na NTFS, exFAT nebo FAT;
+- datové cesty BodySlidu;
+- složky `Data` zbylé v `Overwrite/Root`;
+- knihovny fontů, které jmenuje `Interface/fontconfig.txt` a žádný mód je nedodává;
+- komprimovaný zvuk v archivech BA2 módů pro Fallout 4 a Fallout 4 VR.
 
-Morrowind a Oblivion s `bUseMyGamesDirectory=0` mají seznam pluginů ve složce hry a Eidos je zatím z kopie nespouští.
+Některé karty počítá jen okno, v záložce Diagnostics: pořadí patchů, skripty
+extenderu, které mód nahrazuje, archivy, které nic nenačítá, požadavky z Nexusu,
+pluginy, které LOOT označuje jako špinavé, sestavení Protonu, které spouští hru,
+karta Display a výstup nástroje starší než jeho vstupy.
 
-### Seznam módů
+Příkaz vypíše stejné systémové řádky jako **Copy report** a pak jeden řádek na
+zjištění, s vaší domovskou složkou zobrazenou jako `~` a přihlašovacím jménem jako
+`<user>`. Kód ukončení je 0, když se nenašel žádný problém (samotná rada dává také 0),
+1, když se našel aspoň jeden problém, a 2, když Eidos nemohl kontrolovat: špatné
+argumenty, instance, kterou nelze otevřít, nebo hra, kterou nedetekuje.
 
-Stejně jako v MO2 má každý profil vlastní `modlist.txt` (které módy jsou zapnuté
-a s jakou prioritou), zatímco složky módů žijí ve sdíleném `mods/` instance.
-Složka, kterou do `mods/` vložíte ručně, v seznamu ještě není: objeví se
-**vypnutá s nejvyšší prioritou** - na konci seznamu v okně, kam ji dává i MO2 -
-takže jakmile ji zapnete, vyhraje své konflikty. Starší verze ji dávaly na
-začátek, kde ji přebil každý jiný mód.
+`eidos check <instance> --json` vypíše místo toho jeden objekt JSON. Jeho pole nejvyšší
+úrovně jsou `eidos` (verze), `game`, `instance`, `system` (`proton`, `flatpak_steam`,
+`passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`,
+`max_map_count`, `open_files_hard`) a `findings`. `max_map_count` a `open_files_hard`
+jsou čísla, nebo `null`, když je Eidos nemohl přečíst. Každé zjištění je `code`, `level`
+(`problem` nebo `advice`) a jeho `args`; záložka Diagnostics ukazuje větu pro každý kód.
 
-Protože jsou složky sdílené, odebrání nebo přejmenování módu změní každý profil:
-jeho řádek se z `modlist.txt` každého profilu odstraní, nebo se v něm přejmenuje,
-a ve zbytku si každý profil drží vlastní stav a pořadí. Profil, kterému nezůstal
-žádný mód, nemá `modlist.txt` vůbec, místo prázdného souboru, který se četl jako
-poškozený a blokoval další instalaci.
+### Co se změnilo od posledního dobrého běhu
 
-Okno pracuje s vlastní kopií seznamu módů a pořadí načítání. Pokud jedno nebo
-druhé zapíše jiný proces Eidosu, zatímco je okno otevřené - `eidos install` nebo
-`eidos sort` v terminálu, kolekce, relace spuštěná Steamem, druhé okno - další
-úprava v okně se odmítne, místo aby tu práci přepsala. Okno se znovu načte
-z disku a řekne *Not saved: another Eidos process changed the mod
-list. It has been reloaded - redo the change.* (nebo totéž pro pořadí načítání);
-ztratí se jen to jedno kliknutí, takže ho udělejte znovu. Rename, New mod, Add
-separator, Remove a proměna Overwrite v mód provádějí kontrolu dřív, než sáhnou
-na `mods/`, takže odmítnutá úprava na disku nic nezmění. Editor INI stejně tak
-odmítne uložit přes soubor, který se změnil od chvíle, kdy jej otevřel.
+Každý běh přes `eidos play`, `eidos shell` nebo `eidos tool run`, spuštěný z okna,
+terminálu nebo Steamu, zapíše záznam do `<instance>/logs/sessions/`: profil, každý
+zapnutý mód s jeho verzí a id souborů z Nexusu, pořadí pluginů, kontrolní součet
+každého INI profilu, verzi spustitelného souboru hry, verzi Eidosu, kód ukončení a
+uložené pozice, které běh vytvořil. Uchovává se 50 nejnovějších a `logs/` zůstává mimo
+zabalenou instanci. `eidos sessions <instance> diff` porovná nejnovější běh hry, který
+skončil kódem 0, se současným stavem; `diff <id>` vybere jiný záznam ze seznamu.
+Seznam označí [testovací běh](#testovací-běhy) jako `test` a testovací běh se nikdy nevybere
+jako poslední dobrý běh. Běh, který jste zastavili, zaznamená kód ukončení 143, takže
+se také nikdy nevybere. Eidos tu pády zatím nedetekuje a hra, která spadla pod
+Protonem, může stále skončit kódem 0: pokud byl takový běh ten, který vybere, pojmenujte
+dřívější přes `diff <id>`.
 
-### Savy patří profilu
+## Seznam módů
 
-Každý profil si drží vlastní savy v `profiles/<name>/saves/` a po dobu běhu se
-tato složka připojí přes složku savů hry v prefixu Protonu. První spuštění
-profilu do ní jednou zkopíruje savy, které už v prefixu jsou, takže sav, který
-z profilu později smažete, zůstane smazaný. Po každém běhu se nejnovější savy
-profilu zkopírují zpět do prefixu kvůli Steam Cloud; sav v prefixu, který tam
-nedal Eidos, se nejdřív uchová v profilu jako `orphan-<time>-<name>`, nikdy se
-nepřepíše.
+Stejně jako v MO2 má každý profil vlastní `modlist.txt` (které módy jsou zapnuté a v
+jaké prioritě), zatímco složky módů leží ve sdíleném `mods/` instance. Složka, kterou
+vložíte do `mods/` ručně, zatím není uvedena: objeví se vypnutá s nejvyšší prioritou,
+na konci seznamu v okně jako v MO2, takže po zapnutí vyhrává své konflikty.
 
-Sav, který se do prefixu dostane po tom prvním kopírování, aniž by prošel
-Eidosem - stažení ze Steam Cloud ze Steam Decku, spuštění bez Eidosu - zůstane
-skrytý, dokud jsou savy profilu připojené. Nic ho nemaže: spuštění ho jmenuje
-v logu běhu (`logs/run-*.log` dané instance při spuštění z okna, konzole Steamu
-při spuštění ze Steamu), a to jednou pokaždé, když se ta sada souborů změní.
-Chcete-li ho hrát, stiskněte Import na kartě Saves. Import ho zkopíruje i s jeho
-co-savem do profilu a žádný sav profilu nenahradí.
+Protože jsou složky sdílené, odebrání nebo přejmenování módu mění každý profil: jeho
+řádek se odstraní z `modlist.txt` každého profilu, nebo se v něm přejmenuje, a každý
+profil si ponechá vlastní stav a pořadí pro ostatní. Profil bez módů nemá `modlist.txt`
+vůbec.
 
-### Co se změnilo od posledního úspěšného spuštění
+Okno pracuje s vlastní kopií seznamu módů a pořadí načítání. Pokud jiný proces Eidosu
+zapíše jedno nebo druhé, zatímco je otevřené (`eidos install` nebo `eidos sort` v
+terminálu, kolekce, relace spuštěná Steamem, druhé okno), další úprava okna se
+odmítne místo přepsání té práce. Okno se znovu načte z disku a řekne *Not saved:
+another Eidos process changed the mod list. It has been reloaded - redo the change.*
+(nebo totéž pro pořadí načítání); ztratí se jen to jedno kliknutí, takže ho udělejte
+znovu. Rename, New mod, Add separator, Remove a přeměna Overwrite na mód kontrolují
+před sáhnutím na `mods/`, takže odmítnutá úprava na disku nic nezmění. Editor INI
+stejně odmítne uložit přes soubor, který se od otevření změnil.
 
-Každé spuštění přes `eidos play` nebo `eidos tool run`, z okna, terminálu nebo Steamu, zapíše záznam do `<instance>/logs/sessions/`: profil, každý zapnutý mod s verzí a ID souborů z Nexusu, pořadí pluginů, kontrolní součet každého INI profilu, verzi spustitelného souboru hry, verzi Eidos, návratový kód a uložené hry, které spuštění vytvořilo. Uchovává se 50 nejnovějších a `logs/` se do zabalené instance nedostane. `eidos sessions <instance> diff` porovná poslední spuštění hry s kódem 0 se současným stavem; `diff <id>` vybere jiný záznam ze seznamu. Eidos tu zatím pády nepozná a hra, která spadla pod Protonem, může skončit kódem 0 i tak: pokud vybrané spuštění patří mezi ně, zadejte dřívější přes `diff <id>`.
+## Uložené pozice patří profilu
 
-### Testovací spuštění
+Každý profil drží své uložené pozice v `profiles/<name>/saves/` a po dobu běhu je ta
+složka připojena přes složku uložených pozic hry v prefixu Proton. První spuštění
+profilu zkopíruje pozice, které už v prefixu jsou, do něj, jednou, takže pozice, kterou
+později z profilu smažete, zůstane smazaná. Po každém běhu se nejnovější pozice
+profilu zkopírují zpět do prefixu pro Steam Cloud; pozice v prefixu, kterou tam Eidos
+nedal, se nejdřív uchová v profilu jako `orphan-<time>-<name>`, nikdy se nepřepíše.
 
-Tlačítko Test run vedle Run spustí hru stejně jako Run, ale vše, co hra zapíše, jde do `<instance>/test-run/` místo do vašeho profilu, do Overwrite a do prefixu: nové a změněné savy, změny INI, `plugins.txt`, soubory zapsané do Data nebo do složky hry a logy v `Documents/My Games/<game>`. Testovat můžete s mody profilu, úplně bez modů, nebo jen s mody vybranými v seznamu a s mody, jejichž pluginy potřebují jako mastery.
+Pozice, která se do prefixu dostane po tom prvním kopírování mimo Eidos (stažení ze
+Steam Cloudu ze Steam Decku, spuštění bez Eidosu), zůstane skrytá, dokud jsou pozice
+profilu připojené. Nic ji nemaže: spuštění ji jmenuje v logu běhu (`logs/run-*.log`
+instance při spuštění z okna, konzole Steamu při spuštění přes Steam), jednou pokaždé,
+když se ta sada souborů změní, a záložka Saves tyto pozice počítá na řádku pod svým
+nadpisem. Chcete-li jednu hrát, stiskněte Import v záložce Saves. Import zkopíruje
+každou i s jejím co-save do profilu a nikdy nenahradí pozici profilu: pozice, jejíž
+název už profil používá, se naimportuje jako `orphan-<time>-<name>`.
 
-Když hra skončí, Eidos ty soubory ukáže v pěti skupinách (savy, změny INI, stav pluginů, výstup do Overwrite, logy) a u každé se zeptá, zda ji ponechat, nebo zahodit. Ponechání savů nikdy nesmaže sav z profilu, ani ten, který hra během běhu smazala. Zahození čehokoli vyžaduje druhé stisknutí. Pokud se Eidos nebo počítač během testovacího spuštění zastaví, soubory zůstanou v `test-run/` a seznam se otevře, až příště otevřete instanci nebo stisknete F5.
+## Testovací běhy
 
-Když okno nespustil obchod hry, Test run předá hru tomuto obchodu (Steam, Heroic nebo Legendary), stejně jako Run, a spuštění, které provede obchod, je testovací spuštění. Testovací spuštění pokrývá jen výše uvedené složky: ostatní zápisy hry, například do registru Wine, jdou tam, kam vždy. Savy z testovacího spuštění se do Steam Cloud dostanou až poté, co je ponecháte a zahrajete si normální spuštění.
+Tlačítko Test run vedle Run spustí hru tak jako Run, ale vše, co hra zapíše, jde do
+`<instance>/test-run/` místo do vašeho profilu, Overwrite a prefixu: nové a změněné
+uložené pozice, změny INI, `plugins.txt`, soubory zapsané do Data nebo složky hry a
+logy v `Documents/My Games/<game>`. Můžete testovat s módy profilu, bez jakéhokoli
+módu, nebo jen s vybranými módy, které jsou zapnuté, plus módy, jejichž pluginy
+potřebují jako mastery.
 
-### Jak najít mod, který způsobuje problém
+Když hra skončí, Eidos vypíše tyto soubory v pěti skupinách (uložené pozice, změny
+INI, stav pluginů, výstup do Overwrite, logy) a zeptá se, zda každou ponechat, nebo
+zahodit. Apply čeká, dokud nemá odpověď každá skupina, která obsahuje soubory. Stav
+pluginů se nenabízí, když běh použil jinou sadu módů než profil. Ponechání pozic nikdy
+nesmaže pozici z profilu, ani takovou, kterou hra během běhu smazala. Ponechání výstupu
+do Overwrite také odstraní z Overwrite soubory, které hra smazala, a seznam je nejdřív
+spočítá. Zahození čehokoli chce druhé stisknutí. Decide later zavře seznam a nechá
+soubory v `test-run/` a seznam se otevře znovu při příštím otevření instance nebo
+stisku F5. Když Eidos nebo počítač během testovacího běhu přestane, soubory tam také
+zůstanou a seznam se otevře stejně.
 
-Tlačítko Find the mod behind a problem v Diagnostics hledá mod, který způsobuje problém, jenž umíte zopakovat, například pád na určitém místě. Každý krok je testovací spuštění s polovinou zbývajících podezřelých, mastery, které potřebují, a mody, které necháváte vždy zapnuté (mody vybrané v seznamu při startu hledání a mod, který dodává script extender). Po každém spuštění odpovíte, zda se problém objevil; Not sure rozdělí podezřelé jinak a Run it again krok zopakuje. Odpověď nebo Run it again zahodí soubory, které krok zapsal, po druhém stisknutí. Chcete-li některé z nich ponechat, stiskněte nejdřív See the files: otevře se stejný seznam jako po testovacím spuštění. Když hra spadla a crash logger zapsal log, nebo hra skončila chybovým kódem, Eidos označí Yes jako pravděpodobnou odpověď. 200 podezřelých zabere asi 8 spuštění.
+Když okno nespustil obchod hry, Test run předá hru tomu obchodu (Steam, Heroic nebo
+Legendary), jako Run, a běh, který obchod spustí, je testovací běh. Pokud obchod hru
+nespustí, požadavek čeká: další běh hry toho profilu, z Run nebo z obchodu, je
+testovací běh, a Cancel the waiting test run ho zahodí. Testovací běh pokrývá jen výše
+uvedené složky: ostatní zápisy hry, například registr Wine, jdou tam, kam vždy.
+Uložené pozice z testovacího běhu se dostanou do Steam Cloudu, až když je ponecháte a
+zahrajete normální běh.
 
-Hledání se ukládá do `<instance>/bisect.json`, takže mezi kroky můžete Eidos zavřít. Stop the search ho po druhém stisknutí zahodí. Výsledek jmenuje mod, nebo sadu modů, které potřebují mastery jedna druhé, a uchová se v `<instance>/logs/bisect-<time>.txt`. Generované mody (výstup Nemesis nebo DynDOLOD, Bashed Patch) jsou sestavené pro celý seznam a s jeho polovinou mohou selhat: nechte je vždy zapnuté, nebo je nechte vypnuté po celé hledání.
+### Hledání módu za problémem
 
-### Žádný privilegovaný krok
+Find the mod behind a problem v záložce Diagnostics hledá mód, který způsobuje problém,
+který umíte zopakovat, například pád na daném místě. Každý krok je testovací běh s
+polovinou zbývajících podezřelých, jejich mastery a módy, které ponecháte stále
+zapnuté: zapnuté módy vybrané v seznamu při zahájení a mód, který dodává script
+extender. Po každém běhu odpovíte, zda se problém objevil. Not sure rozdělí podezřelé
+jinak a Run it again krok zopakuje. Odpověď nebo Run it again zahodí soubory, které krok
+zapsal, po druhém stisknutí. Chcete-li některé ponechat, stiskněte nejdřív See the files:
+otevře stejný seznam jako po testovacím běhu. Když hra spadla a záznamník pádů zapsal
+log, nebo hra skončila s chybovým kódem, Eidos označí Yes jako pravděpodobnou
+odpověď. 200 podezřelých zabere asi 8 běhů.
 
-Eidos běží plně bez roota. Připojuje v soukromém uživatelském + připojovacím
-jmenném prostoru, takže žádný setuid pomocník, žádný démon a nic, co byste
-museli udělovat.
+Hledání se ukládá do `<instance>/bisect.json`, takže můžete mezi kroky zavřít Eidos, a
+patří profilu, ve kterém začalo. Stop the search ho zahodí po druhém stisknutí.
+Výsledek jmenuje mód, nebo sadu módů, které potřebují mastery jedna druhé, a ukládá se
+do `<instance>/logs/bisect-<time>.txt`. Generované módy (výstup Nemesis nebo DynDOLOD,
+Bashed Patch) jsou postavené pro celý seznam a s polovinou mohou selhat: ponechte je
+stále zapnuté, nebo je po celé hledání nechte vypnuté.
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` je **volitelné** a otevírá
-přesně jednu věc: jaderný FUSE passthrough, který je ve výchozím stavu vypnutý,
-protože dřívější verze démona s ním rozbíjela hru a změna, která se vyhýbá
-nejpravděpodobnější příčině, zatím nebyla ve hře znovu změřena (níže). S touto
-schopností si Eidos vezme prostý připojovací jmenný prostor místo uživatelského;
-módy se nasadí v obou případech stejně.
+## Seznamy Wabbajack
 
+Eidos nemá instalátor Wabbajack. Nainstalujte seznam přes CLF3 nebo Jackify, mimo
+Eidos, a pak v průvodci vyberte instalační složku jako přenosnou instanci. Eidos čte
+složku tak, jak ji rozloží MO2: `mods/`, `profiles/<name>/modlist.txt` a seznamy
+pluginů. Ponechá si `ModOrganizer.ini`, který zapsal instalátor, a nikdy ho nepřepíše,
+takže spustitelné soubory samotného seznamu zůstanou zaregistrované.
 
-Proč stará rada se `setcap` zmizela - a proč se FUSE passthrough dodává vypnutý -
-vysvětluje [troubleshooting.cs.md](troubleshooting.md#proč-je-passthrough-ve-výchozím-stavu-vypnutý).
+Mnoho seznamů přidává složku `Stock Game` nebo `Game Root`, která drží záplatovanou
+kopii hry, a MO2 spouští hru odtamtud. Když průvodce nebo `eidos init` poprvé převezme
+složku seznamu a ta složka obsahuje spustitelný soubor hry, instance spouští hru také
+z ní. Hra se stále spouští přes Steam nebo obchod, který ji vlastní, takže se nemusí nic
+přesouvat. Eidos najde složku podle `gamePath` v `ModOrganizer.ini` seznamu, nebo podle
+těch dvou názvů. Instance převzatá dřívějším Eidosem si ponechá instalaci z obchodu,
+dokud ji nepřepnete (viz další část). Když tento `gamePath` jmenuje složku hry, kterou
+instance nespouští, Diagnostics to řekne, protože nástroje v režimu Mod Organizer 2,
+například PGPatcher, čtou hru odtud. CLF3 přestavuje soubory BSA a DDS vlastními
+nástroji, takže se výsledek může lišit od instalace Wabbajackem a autoři seznamů ho
+nepodporují.
+
+## Soubory hry: instalace z obchodu, nebo kopie
+
+Ve výchozím stavu hra běží z instalace z obchodu, ze složky, ve které ji drží Steam,
+Heroic nebo Legendary. Instance může místo toho běžet z kopie té složky uvnitř
+instance. Módy leží na kopii a instalace z obchodu je jen místo, kde Eidos připojuje
+výsledek. Hru stále spouští obchod, takže Steam si ponechá overlay, shader cache a
+cloudové uložené pozice.
+
+Karta Game files nahoře v záložce Diagnostics ukazuje, které soubory instance spouští,
+s verzí hry kopie a instalace z obchodu, a mezi nimi přepíná. V terminálu
+`eidos stock-game <instance>` vypíše tytéž údaje a `use <folder>`, `store`, `freeze` a
+`delete --yes` dělají to, co tlačítka karty. `freeze` vypíše velikost a druh kopie a
+`freeze --yes` kopíruje.
+
+**Freeze this version** zkopíruje instalaci z obchodu do `<instance>/Stock Game` a
+spouští hru z ní, takže aktualizace obchodu už nerozbije pluginy script extenderu:
+aktualizace změní instalaci z obchodu, ne kopii. První stisknutí ukáže velikost a co s
+ní souborový systém udělá a druhé zkopíruje. Na souborovém systému, který umí sdílet
+bloky (reflink), například btrfs nebo XFS, kopie zabere skoro žádné místo, dokud obchod
+nezmění soubor. Na ext4, nebo když hra a instance leží na různých souborových
+systémech, je to plná kopie velká jako složka hry. Eidos odmítne, dokud Steam hlásí hru
+jako zaneprázdněnou nebo ne zcela nainstalovanou, dokud běží hra nebo nástroj instance,
+když instance už drží kopii hry ze seznamu, zmrazenou kopii nebo nedokončenou, a když
+má souborový systém méně volného místa, než plná kopie potřebuje. Kopie z Heroicu a
+Legendary se nekontrolují na probíhající aktualizaci. Stop, selhání nebo aktualizace
+hry ze Steamu během kopírování nechá `Stock Game.eidos-tmp`, které karta nabídne
+smazat; nikdy se nepoužije.
+
+Kopie skryje každý soubor, který obchod po pořízení kopie ve složce hry přidá, změní
+nebo odebere: nové soubory Creation Clubu, nový spustitelný soubor, nové DLL. Hra, seznam
+pluginů, LOOT i kontroly Health čtou kopii. Neskryje to, co se děje mimo složku hry:
+aktualizace může při dalším spuštění stále nainstalovat runtimy do prefixu Proton a
+Steam může hru přepnout na jiný Proton.
+
+**Return to the store version** vyřadí kopii z dalšího spuštění po druhém stisknutí.
+Kopie zůstane na disku a **Delete the copy** ji odstraní, opět po druhém stisknutí.
+Delete se odmítne, dokud instance kopii stále spouští. Eidos nikdy nemaže vlastní složku
+`Stock Game` nebo `Game Root` seznamu. Když složka kopie zmizí nebo už neobsahuje
+spustitelný soubor hry, spuštění se odmítnou a Diagnostics jmenuje složku, takže
+verze z obchodu nikdy nepoběží z překvapení.
+
+Morrowind a Oblivion s `bUseMyGamesDirectory=0` drží seznam pluginů ve složce hry a
+Eidos je z kopie zatím nespouští.
 
 ## Instalace kolekce z Nexusu
 
 ```sh
 eidos collection skyrimse nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest
-eidos collection skyrimse rqhcxy --dry-run     # read it and say what would happen
+eidos collection skyrimse rqhcxy --dry-run      # přečíst ji a říct, co by se stalo
+eidos collection skyrimse rqhcxy --no-optional  # přeskočit členy, které označuje jako volitelné
 ```
 
-V okně: vložte odkaz do **File -> Open a Nexus collection...** a stiskněte
-*Install this collection*.
+V okně vložte odkaz do **File -> Open a Nexus collection...**, nebo klikněte na kolekci
+na webu. Eidos vypíše členy revize, každý porovnaný s touto instancí: nainstalovaný,
+stažený nebo chybějící. *Install this collection* spustí celý recept ve vlákně workeru,
+s ukazatelem průběhu, který používají úlohy pack a unpack, a po dokončení se ukazatel
+změní na zprávu. Okno a `eidos collection` spouštějí stejnou instalaci.
 
-### Proč tohle není „stáhni tyhle módy"
+Bez odkazu se **File -> Open a Nexus collection...** otevře na záložce **Browse**.
+Vypisuje kolekce publikované pro hru otevřené instance, po 20, seřazené podle nejvíc
+stažených, nedávno aktualizovaných nebo nejnovějších, a vyhledávací pole zúží seznam na
+kolekce, jejichž název nebo text odpovídá. Každý řádek uvádí autora, nejnovější revizi,
+počet módů, stažení a datum. **View** otevře nejnovější revizi té kolekce na záložce
+**Link**, stejně jako vložení jejího odkazu. Kolekce označené jako pro dospělé se
+vynechají, pokud váš účet na Nexusu neukazuje obsah pro dospělé, kolekce bez hodnocení se
+vynechají vždy a řádek pod seznamem počítá obojí. Procházení potřebuje přihlášený účet na
+Nexusu, jako zbytek panelu.
 
-Kolekce je RECEPT, ne nákupní seznam, a z API Nexusu není vidět skoro nic
-z toho receptu. Pořadí instalace, odpovědi, které autor dal skriptovanému
-instalátoru každého módu, který mód vyhraje konflikt souboru, které pluginy se
-načtou kde, binární patche - to všechno žije v souboru `collection.json` uvnitř
-vlastního archivu kolekce. Stáhnout tytéž módy a nainstalovat je s jejich
-výchozími volbami vyrobí jinou hru.
+Kolekce se otevře jen proti instanci vlastní hry. Kolekce pro Skyrim otevřená při
+načtené instanci Falloutu 4 se odmítne jménem, místo aby se její členové porovnávali se
+špatným seznamem módů.
 
-Eidos tedy archiv stáhne, přečte recept a použije jej:
+### Co Eidos z kolekce čte
 
-| Kolekce říká | Eidos udělá |
+Téměř nic z kolekce není vidět přes API Nexusu. Pořadí instalace, odpovědi, které autor
+dal skriptovanému instalátoru každého módu, který mód vyhrává konflikt souboru, které
+pluginy se načítají kam a binární patche jsou všechny v `collection.json` uvnitř
+vlastního archivu kolekce. Stažení týchž módů a jejich instalace s výchozími volbami dá
+jinou hru.
+
+Eidos stáhne archiv, přečte `collection.json` a použije ho:
+
+| Kolekce říká | Eidos dělá |
 | --- | --- |
-| `phase` | instaluje v tomto pořadí, volitelné členy jako poslední |
+| `phase` | instaluje v tomto pořadí, volitelné členy nakonec |
 | `choices` | přehraje autorovy odpovědi na každý FOMOD a řekne to, když nemůže |
-| `modRules` | přeuspořádá seznam módů tak, aby každý soubor vyhrál ten správný mód |
-| `plugins` / `pluginRules` | sloučí pravidla LOOT do vašeho userlistu a seřadí |
+| `modRules` | přeřadí seznam módů tak, aby správný mód vyhrál každý soubor |
+| `plugins` / `pluginRules` | sloučí pravidla LOOTu do vašeho userlistu a seřadí |
 | `INI Tweaks/` | nainstaluje je jako samostatný mód |
-| `tools` | řekne vám, které nástroje očekává; nic nevytváří |
+| `tools` | řekne, které nástroje očekává; nic nevytváří |
 
-Členové se při instalaci **zapínají**, na konec seznamu módů v pořadí
-instalace, ještě než s nimi pohne `modRules` - mód, který není v žádném seznamu,
-je mód, který se nikdy nenačte, a kolekce nečinně ležící na disku je to jediné
-selhání, které zpráva vidět nedokáže.
+Členové se zapínají při instalaci, na konci seznamu módů v pořadí instalace, než je
+`modRules` přesune. Člen, který by v seznamu módů chyběl, by se nenačetl a zpráva by ho
+neukázala.
 
-Stav se zapisuje do `<instance>/collections/<slug>-<revision>.state.json` po
-**každém** členovi - vedle složky té revize, nikdy do ní, takže si kolekce
-nemůže přinést vlastní účetnictví - a instalace přerušená na 147. členovi z 200
-pokračuje od 147. Zapisuje se pod dočasným názvem a na místo se přejmenuje,
-takže po přerušení zůstane starý záznam, nebo nový, nikdy půlka ani jednoho
-z nich; a pokud jej někdy nelze přečíst, Eidos se zastaví a řekne to, místo aby
-potichu začal celou kolekci znovu. Spusťte tentýž příkaz znovu.
+Stav se po každém členu zapisuje do `<instance>/collections/<slug>-<revision>.state.json`.
+Leží vedle složky té revize, nikdy v ní, takže kolekce nemůže dodat vlastní soubor se
+stavem, a instalace přerušená u člena 147 z 200 pokračuje od 147. Zapisuje se pod
+dočasným názvem a přejmenuje na místo, takže přerušení nechá starý záznam nebo nový a
+nikdy půlku z obou. Kdyby se nedal přečíst, Eidos se zastaví a řekne to, místo aby celou
+kolekci začal znovu. Spusťte stejný příkaz znovu.
 
-Instalace novější revize kolekce, kterou už máte, převezme složky předchozí
-revize: nezměněný člen se ověří na místě, člen, jehož soubor autor aktualizoval,
-se nahradí uvnitř své staré složky, a člen, kterého nová revize vypustila,
-zůstane nainstalovaný a zpráva ho jmenuje, abyste ho vypnuli nebo odebrali.
-Složka, kterou zapíná jiný profil, se nikdy nepřevezme, protože složka mods je
-sdílená a ten profil by se vám změnil pod rukama: nová revize místo toho
-nainstaluje vlastní kopii vedle ní a zpráva vás požádá, abyste starou v tomto
-profilu vypnuli, nikdy ne, abyste ji odebrali. Návrat ke starší revizi si vezme
-její složky zpět stejným způsobem, nebo nainstaluje čerstvé kopie těch, které
+Instalace novější revize kolekce, kterou už máte, převezme složky předchozí revize:
+nezměněný člen se ověří na místě, člen, jehož soubor autor aktualizoval, se nahradí
+uvnitř své staré složky a člen, kterého nová revize vypustila, zůstane nainstalovaný a
+zpráva ho jmenuje, abyste ho vypnuli nebo odebrali. Složka, kterou zapíná jiný profil, se
+nikdy nepřevezme, protože složka módů je sdílená a ten profil by se vám pod rukama
+změnil: nová revize místo toho nainstaluje vlastní kopii vedle ní a zpráva vás požádá,
+abyste starou v tomto profilu vypnuli, nikdy abyste ji odebrali. Návrat ke starší revizi
+převezme její složky stejným způsobem, nebo nainstaluje čerstvé kopie těch, které
 převzít nemůže.
-Kdykoli se člen takto nahrazuje a vy jste v jeho složce změnili nebo přidali
-soubory, stará složka se nejprve ponechá vedle jako `<name>_backup`, která se
-do hry nikdy nenačte, a zpráva ji jmenuje.
+Kdykoli se člen takto nahradí a vy jste v jeho složce změnili nebo přidali soubory, stará
+složka se nejdřív uchová vedle ní jako `<name>_backup`, která se do hry nikdy nenačte, a
+zpráva ji jmenuje.
 
-Pozůstatek z dřívější revize, který zůstane zapnutý, brání tomu, aby se
-instalace počítala jako ta, kterou sestavil autor; poznámka zmizí, jakmile ho
-vypnete. Člen, kterého jste přeskočili pomocí `--no-optional`, se nepřevezme a
-zpráva ho jmenuje stejným způsobem. Pokud selže samotné převzetí, běh se zastaví
-s *previous revision: its folders could not be taken over* a důvodem; to opravte
-a spusťte příkaz znovu.
+Pozůstatek z dřívější revize, který zůstane zapnutý, brání tomu, aby se instalace
+počítala za tu, kterou autor postavil; poznámka zmizí, až ho vypnete. Člen, kterého jste
+přeskočili přes `--no-optional`, se nepřebírá a jmenuje se stejně. Když selže samotné
+převzetí, běh se zastaví s *previous revision: its folders could not be taken over* a
+důvodem; opravte to a spusťte příkaz znovu.
 
-### Co nebude předstírat
+### Bezplatné účty a členové, které stahujete sami
 
-**Bezplatný účet na Nexusu módy členů stáhnout nedokáže.** Nexus přes API
-bezplatným účtům odkazy ke stažení nevyrábí; každý soubor potřebuje vlastní
-tlačítko „Mod Manager Download" na webu. ARCHIV kolekce se na bezplatném účtu
-stáhne bez potíží - takže si celý recept přečtete - ale u každého člena se
-nahlásí přesná URL jeho stránky, abyste si jej stáhli sami. To je obchodní
-pravidlo Nexusu a žádné množství opakovaných pokusů se přes ně nedostane.
-Stáhněte je tlačítkem na webu a spusťte příkaz znovu: tito členové se při každém
-běhu hledají v `downloads/`, takže se kolekce dokončuje tak, jak ji dodáváte.
+Bezplatný účet na Nexusu nemůže stáhnout členské módy. Nexus bezplatným účtům nedává přes
+API žádné odkazy ke stažení: každý soubor potřebuje vlastní tlačítko „Mod Manager
+Download" na webu. Archiv kolekce se na bezplatném účtu stáhne, takže můžete přečíst
+celý recept, ale každý člen se hlásí s přesnou adresou své stránky, abyste ho stáhli sami,
+a opakování to nezmění. Stáhněte je přes tlačítko webu a spusťte příkaz znovu: tito
+členové se hledají v `downloads/` při každém běhu, takže kolekce skončí, jak je dodáváte.
 
-V okně dostane bezplatný účet v panelu kolekce místo hromadného stažení
-tlačítko *Fetch the N missing required files, one by one*. Otevře stránku
-prvního chybějícího povinného souboru na Nexusu, počká, až soubor dorazí do
-`downloads/`, a pak otevře další. Tlačítko ke stažení na stránce u každého
-souboru stisknete pořád vy. Panel ukazuje, kde právě je (*3 of 12*), a nabízí
-*Skip* a *Stop*. Když místo něj dorazí jiný soubor téhož módu, panel uvede obě
-id souborů a dál čeká na ten předepsaný. Volitelní členové do toho nepatří a
-ponechávají si vlastní tlačítko *Open*.
+V okně dostane bezplatný účet v panelu kolekce místo dávkového stažení
+*Fetch the N missing required files, one by one*. Otevře na Nexusu stránku prvního
+chybějícího povinného souboru, počká, až soubor přistane v `downloads/`, a pak otevře
+další. Tlačítko stažení na stránce pro každý soubor stále mačkáte vy. Panel ukazuje, jak
+daleko je (*3 of 12*), s *Skip* a *Stop*. Když místo toho přistane jiný soubor téhož
+módu, panel jmenuje obě id souborů a dál čeká na připnutý. Volitelní členové do toho
+nepatří a mají své vlastní tlačítko *Open*.
 
-Použije se tak, jak kolekce popisuje: **binární patche** (každý se ověří podle zaznamenaného CRC), **přepisy souborů** (pojmenované soubory se skryjí pomocí `.mohidden`, stejně jako v MO2) a členové, jejichž soubory cestují uvnitř archivu kolekce (`bundle`). U členů, u kterých kolekce čeká, že si je stáhnete ručně
-(`browse`, `manual`), se do zprávy přenesou vlastní pokyny autora. Člen, jehož
-název už patří některému z vašich módů, se nainstaluje vedle něj pod volným
-názvem, nikdy přes něj, a zpráva řekne, o který jde.
+Eidos také používá binární patche (každý ověřený proti zaznamenanému CRC), přepisy
+souborů (jmenované soubory se skryjí přes `.mohidden`, jako to dělá MO2) a členy, jejichž
+soubory cestují uvnitř archivu kolekce (`bundle`). Členové, které kolekce očekává, že
+stáhnete ručně (`browse`, `manual`), přenesou autorovy vlastní pokyny do zprávy. Člen,
+jehož název už je mód u vás, se nainstaluje vedle něj pod volným názvem, nikdy přes něj, a
+zpráva řekne, který.
 
 ### Zpráva
 
-Smysl zprávy je v tom, že se slovu „nainstalováno" dá věřit. Člen, u kterého se
-nepodařilo přehrát všechny odpovědi instalátoru, je **nainstalovaný, ale ne tak,
-jak kolekce žádá** - má vlastní řádek, oddělený od úspěchů, kterým se navenek
-podobá, protože soubory na disku se od autorových liší. Vypíšou se i pravidla
-pořadí, která v kolekci nic nepojmenovala, módy chycené ve smyčce protichůdných
-pravidel, skupiny LOOT, které neexistují, a jakákoli část manifestu, které tato
-verze Eidosu nerozumí.
+Člen, jehož odpovědi instalátoru nešlo všechny přehrát, dostane vlastní řádek,
+*installed, but not the way the collection asks*, odděleně od členů, kteří se nainstalovali
+tak, jak je autor postavil, protože jeho soubory na disku se od autorových liší. Zpráva
+také vypisuje pravidla řazení, která nejmenovala nic v kolekci, módy zachycené ve smyčce
+protichůdných pravidel, skupiny LOOTu, které neexistují, a každou část manifestu, které
+tato verze Eidosu nerozumí.
 
-Ta druhá možnost - něco takového zalogovat a prohlásit instalaci za hotovou - je
-přesně to, jak kolekce začne hrát špatně z důvodů, které nikdo nedokáže najít.
+### Zachování pořadí kolekce
+
+Eidos si po instalaci ponechává pravidla každé nainstalované kolekce. Když později
+přesunete dva její módy proti pravidlu before nebo after, záložka Diagnostics ukáže pro
+tu kolekci jednu kartu, která jmenuje první takový pár a počítá pravidla, která už
+neplatí. Počítají se jen módy zapnuté v současném profilu a pravidla zachycená ve smyčce
+se přeskakují, protože je žádné pořadí nesplní. **Restore collection order** přesune módy
+kolekce zpět do pořadí, které splňuje každé pravidlo, ponechá vaše vlastní pořadí všude,
+kde to pravidla dovolí, a módy, které nejsou v kolekci, nechá, kde jsou. Ctrl+Z to vrátí.
+`eidos check` uvádí totéž zjištění jako `collection_order_broken`. Kontrola čte recept
+revize v `collections/`, takže kolekce, jejíž recept v cache byl odstraněn, se nekontroluje.
 
 ## Přesun instance na jiný stroj
 
-`eidos pack` zapíše celou instanci - každý mód, pořadí načítání, všechny
-profily, Overwrite i s vašimi savy uvnitř a archivy, ze kterých se všechno
-instalovalo - do jediného souboru. `eidos unpack` ji vrátí zpět:
+`eidos pack` zapíše celou instanci (každý mód, pořadí načítání, všechny profily,
+Overwrite s vašimi uloženými pozicemi a archivy, ze kterých se vše instalovalo) do jednoho
+souboru. `eidos unpack` ji vrátí:
 
 ```sh
-eidos pack skyrimse ~/backup.eidos                  # or give a folder: named for the game and the date
-eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # on the other machine
+eidos pack skyrimse ~/backup.eidos                  # nebo zadejte složku: pojmenuje se podle hry a data
+eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # na druhém stroji
 ```
 
-`eidos pack --dry-run` přesně vypíše, co by se dovnitř dostalo, co ne a proč a
-kolik místa to potřebuje, aniž by cokoli zapsal. `eidos unpack --info` udělá
-totéž pro soubor, který už máte.
+`eidos pack --dry-run` vypíše přesně, co by se vložilo, co ne a proč, a kolik místa je
+potřeba, bez zápisu čehokoli. `eidos unpack --info` dělá totéž pro soubor, který už máte.
 
-Pokud 7-Zip něco nedokázal přečíst, nebo procházení muselo přeskočit něco, co
-byste v záloze čekali (symbolický odkaz, složku, kterou se nepodařilo přečíst,
-název, který 7-Zipu nelze bezpečně předat), archiv se přesto zapíše
-a pojmenuje - stojí za to ho mít - ale `eidos pack` skončí s kódem **1** a řekne,
-co chybí. Neúplná záloha není úspěch a tohle je příkaz, který lidé dávají před
-`&&`.
+Pokud 7-Zip něco nedokázal přečíst, nebo si průchod musel přeskočit něco, co byste v záloze
+čekali (symbolický odkaz, složku, kterou nešlo přečíst, název, který 7-Zip nelze bezpečně
+zadat), archiv se přesto zapíše pod zvoleným názvem, ale `eidos pack` skončí s kódem 1 a
+řekne, co chybí, takže skript, který spouští `eidos pack ... && ...`, se tam zastaví.
 
-Soubor `.eidos` je archiv 7-Zip pod vlastním názvem, což je volba, ne
-přestrojení: 7-Zip je stejně potřeba už k tomu, aby šlo mód vůbec nainstalovat,
-takže to nepřidává žádnou závislost, a kdybyste o Eidos někdy přišli, vaše
-záloha se pořád otevře v jakémkoli archivátoru, který máte. Komprimovaný je
-LZMA2 na úrovni `-mx1` - asi 43 % původní velikosti na seznamu bohatém na
-textury, ve zlomku času, který `-mx9` stráví, aby ušetřil o pár bodů víc.
-Textury a meshe jsou už komprimované formáty; pro větší slovník toho zbývá k
-nalezení jen velmi málo. `--level` (0, 1, 3, 5, 7, 9) to přebije, pokud u
-vlastního obsahu nesouhlasíte, a `--no-downloads` vynechá `downloads/`.
+Soubor `.eidos` je archiv 7-Zip s vlastní příponou. 7-Zip je už potřeba k instalaci módu,
+takže to nepřidává žádnou závislost a záloha se otevře i bez Eidosu v každém archivátoru,
+který čte 7-Zip. Je komprimovaná LZMA2 s `-mx1`, asi na 43 % originálu u seznamu s mnoha
+texturami; `-mx9` trvá mnohem déle a ušetří o pár bodů víc. Textury a meshe jsou už
+komprimované formáty, takže větší slovník najde k zkomprimování velmi málo. `--level` (0,
+1, 3, 5, 7 nebo 9) vybere jinou úroveň a `--no-downloads` vynechá `downloads/`.
 
-Na výchozí úrovni 1 jdou soubory do **solidních bloků o nejvýš 16 MB**. Vytažení
-jednoho souboru ze 70GB zálohy dekóduje nanejvýš blok, ve kterém leží, nikdy
-všechno před ním, a balení herního obsahu je 2 až 5krát rychlejší než s každým
-souborem komprimovaným zvlášť (rozbalení 2 až 4krát). Cena se platí při
-poškození: jediný vadný bajt může vzít s sebou všechny soubory ve svém bloku, až
-16 MB sousedních souborů. Data pro obnovu popsaná níže tenhle případ kryjí.
-Všechny ostatní úrovně zůstávají nesolidní: každý soubor má vlastní proud a
-vadný bajt stojí jen ten jeden soubor. Úroveň 0 soubory jen ukládá bez komprese.
-Od úrovně 3 výš už LZMA2 pracuje po kusech o 16 MB a víc a solidní bloky tam v
-měření vyšly pomalejší: na úrovni 5 trvalo balení meshů 1,4krát déle a rozbalení
-textur 6,8krát déle.
+Na výchozí úrovni 1 jdou soubory do solidních bloků nejvýš 16 MB. Vytažení jednoho souboru
+ze zálohy o 70 GB dekóduje nejvýš blok, ve kterém leží, nikdy vše před ním, a balení
+herního obsahu běží 2 až 5krát rychleji než s každým souborem komprimovaným zvlášť
+(rozbalení 2 až 4krát). Cenou je poškození: jeden poškozený bajt může vzít s sebou každý
+soubor ve svém bloku, až 16 MB sousedních souborů. Data pro obnovu popsaná níže to
+pokrývají. Každá další úroveň zůstává nesolidní: každý soubor je vlastní proud a poškozený
+bajt stojí ten jeden soubor. Úroveň 0 soubory jen uloží. Od úrovně 3 výš LZMA2 už pracuje v
+blocích 16 MB nebo víc a solidní bloky se tam změřily jako pomalejší: na úrovni 5 trvalo
+balení meshů 1,4krát déle a rozbalení textur 6,8krát déle.
 
-Balení bere zámek instance, takže nemůže běžet ve chvíli, kdy do té instance
-zapisuje hra nebo jiný Eidos - záloha je snímek, ne šmouha. Zapisuje se pod
-názvem s `.part`, propíše se na disk a celá se přečte zpátky přes `7z t`, než
-dostane název, který jste zvolili. Ta kontrola dekóduje každý blok a porovná
-každý kontrolní součet, tedy udělá stejnou práci jako rozbalení na druhém
-stroji. Ukazuje, co disk vrátil hned po zápisu, ne že to disk udrží; na to jsou
-data pro obnovu popsaná níže. Když selže, soubor `.part` se smaže, pod vaším
-názvem se nic nezapíše a `eidos pack` ocituje řádek, kde 7-Zip poškození našel.
-Přerušené nebo nepovedené balení zanechá něco zjevně nedokončeného, nebo nic,
-místo souboru `.eidos`, který vypadá kompletní a není.
+Balení vezme zámek instance, takže nemůže běžet, zatímco do té instance zapisuje hra nebo
+jiný Eidos, a nic instanci nemění, dokud se čte. Záloha se zapisuje pod názvem `.part`,
+vyprázdní se na disk a celá se přečte zpět přes `7z t`, než dostane zvolený název. Ta
+kontrola dekóduje každý blok a porovná každý kontrolní součet, tedy stejnou práci jako
+rozbalení na druhém stroji. Ukazuje, co disk vrátil hned po zápisu, ne že disk si to
+udrží; na to jsou data pro obnovu níže. Když selže, `.part` se smaže, pod vaším názvem se
+nezapíše nic a `eidos pack` ocituje řádek, kde 7-Zip poškození našel. Přerušené nebo
+selhavší balení nechá soubor `.part` nebo nic, nikdy soubor `.eidos`, který vypadá hotový a
+není.
 
-Když je nainstalovaný par2cmdline (`sudo pacman -S par2cmdline` na Archu,
-`sudo apt install par2` na Debianu a Ubuntu, `sudo dnf install par2cmdline` na
-Fedoře), `eidos pack` zapíše vedle archivu i data pro obnovu PAR2:
-`backup.eidos.par2` a několik souborů `backup.eidos.volNN+MM.par2`, dohromady 5
-% archivu plus malý index. Nechte je ve stejné složce jako soubor `.eidos`, pod
-názvy, se kterými byly zapsány, a kopírujte je spolu s ním: záloha přesunutá bez
-nich nemá z čeho se opravit a data pro obnovu si pamatují název archivu, takže
-přejmenovaná záloha už k nim nesedí. `eidos unpack` je najde podle názvu a
-archiv s nimi zkontroluje, než cokoli rozbalí, i zálohu, jejíž konec byl
-useknutý tak, že ji 7-Zip neotevře. Pokud se pár bajtů pokazilo, par2 archiv
-nejdřív opraví a poškozenou kopii si nechá jako `backup.eidos.1`, k čemuž
-potřebuje v jeho složce tolik volného místa, kolik zabírá archiv; poškození
-větší, než pokryje těch 5 %, zastaví rozbalení dřív, než se zapíše jediný
-soubor. Soubory pro obnovu, které k archivu nesedí, třeba ty ze starší zálohy se
-stejným názvem, se nepoužijí, když 7-Zip archiv přečte a najde ho neporušený, a
-rozbalení to oznámí. Na stroji bez par2 rozbalení i tak proběhne, s varováním,
-že data pro obnovu nebyla použita. `--no-recovery` balí bez nich a
-`eidos pack --dry-run` řekne, jestli se zapíšou.
+Když je nainstalován par2cmdline (`sudo pacman -S par2cmdline` na Archu,
+`sudo apt install par2` na Debianu a Ubuntu, `sudo dnf install par2cmdline` na Fedoře),
+`eidos pack` zapíše vedle archivu také data pro obnovu PAR2: `backup.eidos.par2` a několik
+souborů `backup.eidos.volNN+MM.par2`, 5 % archivu plus malý index. Držte je ve stejné složce
+jako soubor `.eidos`, pod názvy, se kterými byly zapsány, a kopírujte je s ním: záloha
+přesunutá bez nich nemá z čeho být opravena a data pro obnovu zaznamenávají název archivu,
+takže přejmenovaná záloha jim už neodpovídá. `eidos unpack` je najde podle názvu a archiv
+proti nim zkontroluje před extrakcí čehokoli, včetně zálohy, jejíž konec byl uříznut, takže
+ji 7-Zip nemůže otevřít. Když se pár bajtů pokazilo, par2 archiv nejdřív opraví a poškozenou
+kopii ponechá jako `backup.eidos.1`, což potřebuje volné místo o velikosti archivu v jeho
+složce; poškození nad rámec toho, co pokrývá těch 5 %, zastaví rozbalení dřív, než se zapíše
+jediný soubor. Soubory pro obnovu, které archivu neodpovídají, například ty ze starší zálohy
+se stejným názvem, se nepoužijí, když je 7-Zip archiv přečte a najde ho nepoškozený, a
+rozbalení to řekne. Na stroji bez par2 rozbalení stále běží, s varováním, že data pro obnovu
+nebyla použita. `--no-recovery` balí bez nich a `eidos pack --dry-run` řekne, zda se
+zapíšou. `--force` nahradí existující soubor stejného názvu.
 
 ### Co v ní není a proč
 
 | Vynecháno | Proč |
 | --- | --- |
-| Prefix Protonu | Má tvar daný strojem (mapování disků, pohled `Z:` na *tento* souborový systém) a Eidos jej za minutu znovu sestaví příkazem `eidos prereqs <instance> --install`. Vzít ho s sebou by archiv zhruba zdvojnásobilo, jen aby se dodalo něco, co druhý stroj stejně musí vygenerovat znovu. |
-| Hra | Instance moduje hru, kterou sama neobsahuje. Nainstalujte si ji tam ze Steamu. |
-| Nástroje mimo instanci | xEdit, DynDOLOD a spol. jsou binárky třetích stran s vlastními instalátory. V archivu jsou **pojmenované**, takže vám rozbalení přesně řekne, které na novém stroji chybí. |
-| `logs/`, `.eidos.lock`, `prereqs.done`, `prereqs.log` | Stopy po stroji, který zálohu vytvořil. `prereqs.done` by zvlášť tvrdil, že běhové knihovny už jsou nainstalované v prefixu, který tam není. |
-| `loot/`, kromě `userlist.yaml` | Mezipaměť masterlistu, kterou si Eidos podle potřeby stáhne znovu. Vaše vlastní pravidla LOOT žádná mezipaměť nejsou - ta nikdo znovu nestahuje - takže tenhle jeden soubor jede s sebou. |
-| `.base/`, `.base-root/` | Prázdné body připojení, kam se během relace odkládají vlastní soubory hry. |
+| Prefix Proton | Má tvar stroje (mapování jednotek, pohled `Z:` na *tento* souborový systém) a Eidos ho za minutu postaví znovu přes `eidos prereqs <instance> --install`. Nést ho by zhruba zdvojnásobilo archiv kvůli něčemu, co druhý stroj stejně musí vygenerovat znovu. |
+| Hra | Instance módy upravuje hru, kterou neobsahuje. Nainstalujte ji tam ze Steamu. |
+| Nástroje mimo instanci | xEdit, DynDOLOD a další nástroje jsou binárky třetích stran s vlastními instalátory. V archivu jsou pojmenovány, takže rozbalení řekne přesně, které na novém stroji chybí. |
+| `logs/`, `.eidos.lock`, `prereqs.done`, `prereqs.log` | Záznamy stroje, který zálohu vytvořil. Zejména `prereqs.done` by tvrdil, že runtime knihovny jsou už nainstalované v prefixu, který tam není. |
+| `loot/`, kromě `userlist.yaml` | Cache masterlistu, kterou Eidos na požádání stáhne znovu. Vaše vlastní pravidla LOOTu v `userlist.yaml` stáhnout znovu nelze, takže ten jeden soubor se vloží. |
+| `.base/`, `.base-root/` | Prázdné přípojné body, kam se během relace odkládají vlastní soubory hry. |
+| `test-run/`, `bisect.json` | [Testovací běh](#testovací-běhy) čekající na kontrolu a hledání módu za problémem mezi dvěma kroky. Obojí patří k během na tomto stroji. |
 | Napůl zapsané soubory | Pozastavené stahování (`*.unfinished`), probíhající atomický zápis (`*.eidos-tmp*`). |
-| Symbolické odkazy | 7-Zip by je následoval a zkopíroval to, na co ukazují, což u absolutního odkazu znamená vtáhnout do zálohy cizí strom. Místo toho se nahlásí a záloha se počítá jako neúplná: složka `mods/` nebo `downloads/` napojená odkazem na jiný disk se NEZABALÍ. Chcete-li záměrně zálohovat bez odkazované složky `downloads/`, předejte `--no-downloads` (nebo v okně zrušte zaškrtnutí *Include downloads/*); záměrné vynechání se jako chybějící nepočítá. |
+| Symbolické odkazy | 7-Zip by jeden následoval a zkopíroval, na co ukazuje, což u absolutního odkazu znamená vtáhnout cizí strom do vaší zálohy. Místo toho se hlásí a záloha se počítá za neúplnou: `mods/` nebo `downloads/` odkazované na jiný disk se nebalí. Chcete-li zálohovat bez odkazovaného `downloads/` záměrně, zadejte `--no-downloads` (nebo v okně odškrtněte *Include downloads/*); záměrné vynechání se za chybějící nepočítá. |
 
-Kopie hry v instanci (`Stock Game`) se zabalí jako každá jiná složka, takže záloha zmrazené instance je zhruba o velikost hry větší. Nedokončená kopie (`Stock Game.eidos-tmp`) se vynechá.
+Kopie hry v instanci (`Stock Game`) se balí jako každá jiná složka, takže záloha zmrazené
+instance je o velikost hry větší. Nedokončená kopie (`Stock Game.eidos-tmp`) se vynechá.
 
-Každá z těchto věcí je i se svým důvodem zapsaná v `eidos-backup.ini` v kořeni
-archivu - takže odpovědí na otázku „co tady není" je `cat`, ne dohad. Tentýž
-soubor zaznamenává, kde instance dřív žila, který profil byl aktivní, na kolik se
-rozbalí a které nástroje bude nový stroj potřebovat.
+Každé z těchto vynechání je uvedeno s důvodem v `eidos-backup.ini` v kořeni archivu, takže
+čtení toho souboru ukáže, co bylo vynecháno. Tentýž soubor zaznamenává, kde instance dříve
+žila, který profil byl aktivní, jak velká je po rozbalení a které nástroje bude nový stroj
+potřebovat.
 
-Záznamy o stažených souborech (`downloads/*.meta`) jdou dovnitř s
-**vyprázdněným** řádkem `url=`. Ta URL je podepsaný odkaz na Nexus: přestane
-fungovat během několika hodin a nese `user_id` účtu, který soubor stáhl. Záloha
-se dělá proto, aby se dala předat někomu jinému, takže tohle s sebou nenese.
-Všechno, díky čemu je stažení znovu dohledatelné - id módu, id souboru, verze -
-zůstává.
+Záznamy stahování (`downloads/*.meta`) se vkládají s vyprázdněným řádkem `url=`. Ta adresa
+je podepsaný odkaz z Nexusu, který přestane fungovat během hodin a nese `user_id` účtu,
+který soubor stáhl, a zálohu může někdo předat dál. Id módu, id souboru a verze zůstávají,
+takže stahování jde najít znovu.
 
 ### V okně
 
-Obojí najdete v nabídce **File**: *Pack this instance...* a *Unpack a backup...*.
-Rozbalení je i na uvítací obrazovce, pod seznamem instancí, protože stroj, který
-ho potřebuje nejvíc, je ten, který zatím žádnou instanci nemá.
+Obojí je v nabídce **File**: *Pack this instance...* a *Unpack a backup...*. Rozbalení je
+také na uvítací obrazovce, pod seznamem instancí, takže stroj, který ještě nemá žádnou
+instanci, může nějakou rozbalit.
 
-Dialog balení nejdřív ukáže náhled, než se k čemukoli zaváže: kolik souborů, jak
-velkých, kolik z toho je `downloads/`, na kolik archiv zhruba vyjde a které
-nástroje jsou pojmenované, ale s sebou nejedou. Jeho políčko *Write recovery
-data* je zaškrtnuté, když je par2 nainstalovaný, a zašedlé s balíčkem k
-instalaci, když není. Dialog rozbalení přečte manifest zálohy ve chvíli, kdy
-soubor zvolíte, takže vám dokáže říct, kterou hru obsahuje, kdy vznikla, kde
-dřív žila a které z jejích nástrojů tu chybí - ještě než mu dáte složku.
+Než se cokoli zapíše, dialog Pack ukáže, kolik souborů, jak velké, kolik z toho je
+`downloads/`, zhruba na kolik se archiv vyšplhá a které nástroje jsou jmenovány, ale
+nenesou se. Jeho políčko *Write recovery data* je zaškrtnuté, když je par2 nainstalován, a
+zašedlé s balíčkem k instalaci, když není. Dialog Unpack přečte manifest zálohy, jakmile
+soubor vyberete, takže vám dřív, než zvolíte složku, může říct, jakou hru obsahuje, kdy
+vznikla, kde dříve žila a které z jejích nástrojů tady chybí.
 
-Obojí běží v pracovním vlákně s ukazatelem průběhu, takže okno během práce dál
-odpovídá a z ukazatele se po dokončení stane zpráva o výsledku. Balení drží zámek
-instance po celý běh: dokud se instance čte, nesmí na ni sáhnout nic jiného,
-a právě proto je záloha snímek, a ne šmouha.
+Oba běží ve vlákně workeru s ukazatelem průběhu a po dokončení se ukazatel změní na zprávu.
 
 ### Co rozbalení opraví
 
-Prostá kopie složky by nechala každé tlačítko nástroje ukazovat na cestu na
-starém stroji. `eidos unpack` přepíše hodnoty, které pojmenovávají starý kořen
-instance, a jen ty: `exe`, `workdir` a číslované klíče `arg` v `tools.ini` a
-`installationFile` v `meta.ini` každého módu. Nástroj, který nikdy nebyl uvnitř
-instance (`/opt/xedit/SSEEdit.exe`), zůstane přesně takový, jaký byl, a vypíše se
-jako něco k přeinstalování - hádat, kam si někdo jiný dal xEdit, je vymýšlení, ne
-oprava. Opraví také to, jestli se instance označuje za centrální, nebo přenosnou,
-aby ji pozdější příkazy hledaly tam, kde teď je.
+Prostá kopie složky by nechala každé tlačítko nástroje ukazovat na cestu na starém stroji.
+`eidos unpack` přepíše hodnoty, které jmenují starý kořen instance, a jen ty: `exe`,
+`workdir` a číslované klíče `arg` v `tools.ini` a `installationFile` v `meta.ini` každého
+módu. Nástroj, který nikdy nebyl uvnitř instance (`/opt/xedit/SSEEdit.exe`), zůstane přesně
+tak, jak byl, a vypíše se jako něco k přeinstalaci; Eidos neodhaduje, kde ten nástroj na
+novém stroji je. Opraví také to, zda se instance nazývá centrální nebo přenosná, takže
+pozdější příkazy ji hledají tam, kde teď je.
 
-Rozbalení odmítne složku, která není prázdná (předejte `--force`, pokud ji
-opravdu chcete přepsat), disk příliš malý na číslo z vlastního manifestu, archiv
-vytvořený novějším Eidosem, než je ten váš, a jakýkoli archiv s položkou, která
-by se zapsala *mimo* složku, kterou jste zvolili.
+Rozbalení odmítne složku, která není prázdná (zadejte `--force`, pokud chcete přepsat),
+disk příliš malý podle údaje manifestu, archiv vytvořený novějším Eidosem, než je váš, a
+každý archiv obsahující položku, která by se zapsala *mimo* zvolenou složku. Bez složky se
+záloha globální instance vrátí na centrální místo její hry; přenosná složku potřebuje.
 
 Potom:
 
 ```sh
-eidos prereqs /mnt/games/EidosSkyrim --install   # rebuild the Proton prefix
+eidos prereqs /mnt/games/EidosSkyrim --install   # znovu postavit prefix Proton
 eidos play /mnt/games/EidosSkyrim
 ```
 
-## GUI
+## Okno
 
-```sh
-cargo run -p eidos-gui
-```
+Spusťte `eidos-gui`, nebo soubor `eidos-linux`, který instaluje Colony.
 
-Průvodce prvním spuštěním ve stylu MO2, vykreslený ve sdílených motivech Colony:
-uvítání -> typ instance (přenosná / globální) -> hra -> název a umístění ->
-shrnutí -> vytvoření -> hlavní obrazovka. Uvítací obrazovka také vypisuje každou
-známou existující instanci (globální i přenosnou, naposledy použité první)
-k otevření jedním kliknutím - slouží zároveň jako přepínač instancí - a když
-průvodce nasměrujete na složku, která už instanci obsahuje, PŘEVEZME ji tak, jak
-je, místo aby vytvářel přes ni (a rovnou odmítne, pokud složka patří jiné hře).
+První spuštění otevře průvodce jako v MO2: uvítání, typ instance (přenosná nebo
+globální), hra, název a umístění, souhrn, pak hlavní okno. Uvítací obrazovka také
+vypisuje každou známou instanci, globální i přenosné, naposledy použité první, k otevření
+jedním kliknutím, takže slouží i jako přepínač instancí. Nasměrování průvodce na složku,
+která už instanci obsahuje, tuto instanci otevře, jak je, místo vytvoření nové přes ni, a
+složka patřící jiné hře se odmítne.
 
-Hlavní okno o dvou panelech je hotové také: výběr profilu (přepnout, nebo
-vytvořit nový zkopírováním současného), seznam módů, který filtrujete, vybíráte,
-přeuspořádáváte, seskupujete oddělovači, zužujete podle kategorie a nad kterým
-pravým tlačítkem vyvoláte akce, plus záložky Data / Plugins / Conflicts /
-Overwrite / Saves / Downloads / Diagnostics a tlačítko Run s výběrem cíle
-spuštění.
+Hlavní okno má dva panely: seznam módů a záložky Data, Plugins, Conflicts, Overwrite,
+Archives, Saves, Downloads a Diagnostics, s tlačítkem Run, tlačítkem Test run
+([Testovací běhy](#testovací-běhy)) a výběrem cíle spuštění. Seznam módů filtrujete, vybíráte,
+přeřazujete, seskupujete oddělovači, zužujete podle kategorie a pravým tlačítkem otevíráte
+akce. Kromě odeslání nahoru a dolů má nabídka módu cílené přesuny z MO2: nad první
+konfliktní mód, pod poslední, na zadanou prioritu nebo do skupiny oddělovače.
 
-Přeuspořádání není jen poslat nahoru/dolů: cílené přesuny z MO2 jsou tu také -
-poslat nad první konfliktní mód, pod poslední, na výslovnou prioritu nebo do
-skupiny oddělovače. Všechny procházejí jedním sdíleným pomocníkem pro přesun,
-takže chyba o jedničku, která vzniká odebráním řádků před jejich opětovným
-vložením, existuje na jednom místě místo na pěti.
+Výběr profilu přepíná profily. Pravým tlačítkem na profil se zobrazí Rename,
+Copy to new..., Desktop shortcut, Import from MO2... a smazání, které chce dvě kliknutí a
+odmítne aktivní nebo poslední profil. Import from MO2... převezme pořadí módů a pořadí
+načítání profilu MO2. Desktop shortcut zapíše položku desktopu, která spustí
+`eidos tool <instance> run "<game>" --profile <name>`: udělá z toho profilu aktivní a
+požádá obchod, aby hru spustil (podrobnosti v
+[tools.md](tools.md#jak-se-k-nástroji-dostat-skrýt-připnout-a-zástupce-na-ploše)).
+
+Nabídka **File** také spouští winecfg, regedit, průzkumník souborů Wine a odinstalátor v
+prefixu hry a Prefix drive_c otevře disk `C:` prefixu; viz
+[tools.md](tools.md#vlastní-programy-wine-v-prefixu-hry). *Instances...* vypíše
+instance, které Eidos zná; Forget jednu z toho seznamu vyřadí a na disku se nedotkne
+ničeho. *Export the mod list...* zapíše seznam ve formátu CSV z MO2, jako `eidos export`.
 
 ### Předvolby
 
-Klikněte vlevo nahoře na **Eidos** a místo obou panelů se otevřou předvolby
-(Preferences); dalším kliknutím (nebo na **Close**) se vrátíte zpět. Nejdřív
-přichází General, Appearance a Accessibility, jako v každém programu Colony,
-potom Mod list, Nexus a About. Každá změna se okamžitě použije i uloží; žádné
-tlačítko Uložit není.
+Klikněte na **Eidos** vlevo nahoře a Preferences se otevřou místo obou panelů; dalším
+kliknutím (nebo **Close**) se vrátíte. General, Appearance a Accessibility jsou první, jako
+v každém programu Colony, pak Mod list, Nexus a About. Každá změna se použije a uloží
+hned; není tu tlačítko Save.
 
-- **General**: hra, kterou Eidos otevře, velikost okna, jazyk rozhraní, složka
-  s nástroji, způsob, jakým se hra spouští, a zda oznámení na ploše řekne, kdy
-  skončí dlouhá úloha, zatímco je okno v pozadí. Okno mluví anglicky a francouzsky;
-  **System** se řídí podle `LC_ALL`, `LC_MESSAGES` nebo `LANG` a změna se
-  projeví okamžitě. Příkazová řádka `eidos` odpovídá vždy anglicky.
-- **Appearance**: motiv (25 rodin, 57 palet, ve výchozím stavu pergamen
-  Eidosu), barva zvýraznění, velikost textu, efekty a živý náhled.
-- **Accessibility**: vysoký kontrast, písmo vhodné pro dyslektiky, omezený pohyb
-  a velikost textu pro čtení, která se násobí s tou z Appearance.
+- General: hra, kterou Eidos otevře, velikost okna, jazyk rozhraní, složka s nástroji a
+  jak se hra spouští. Lock the window while a game runs je ve výchozím stavu zapnuto. Start
+  the game at once when a store opens Eidos a oznámení na plochu, které říká, že dlouhá
+  úloha skončila, když je okno na pozadí, jsou ve výchozím stavu vypnuty. Okno mluví
+  anglicky a francouzsky; System sleduje `LC_ALL`, `LC_MESSAGES` nebo `LANG` a změna se
+  použije hned. Příkazová řádka `eidos` odpovídá vždy anglicky.
+- Appearance: motiv (26 rodin, 59 palet, ve výchozím stavu pergamen Eidosu), barva
+  zvýraznění, velikost textu, efekty a živý náhled.
+- Accessibility: vysoký kontrast, font přívětivý k dyslexii, omezený pohyb a velikost
+  textu pro čtení, která se násobí s tou z Appearance.
+- Mod list: rychlost automatického posouvání, když se mód táhne k hornímu nebo
+  dolnímu okraji seznamu.
+- Nexus: přihlášení, složka stahování, obsluha `nxm://` a její tlačítko Register,
+  preferované servery, Install downloads when they finish a Offline mode.
+- About: kde žijí soubory, klávesové zkratky, verze a kontrola vydání.
 
-Tyto předvolby žijí v `~/.config/Colony/Eidos/preferences.json`. Motiv, který
-starší Eidos držel v `settings.ini`, se napoprvé přenese.
+Vzhled a jazyk rozhraní žijí v `~/.config/Colony/Eidos/preferences.json`. Ostatní
+nastavení, která čte i příkazová řádka (výchozí hra, složka s nástroji, servery Nexusu,
+Offline mode a zbytek), žijí vedle v `settings.ini` a relace na Nexusu v `nexus.ini`.
+Motiv, který starší Eidos držel v `settings.ini`, se při prvním spuštění převezme.
 
-**About -> Version** obsahuje kontrolu vydání, ve výchozím stavu zapnutou. Při spuštění, nejvýše jednou denně, se Eidos zeptá GitHubu na poslední vydání `Project-Colony/Eidos`. Je-li novější než běžící kopie, panel nabídek ukáže za Help `Eidos 1.24.0 is available: release notes` a odkaz otevře stránku toho vydání s jeho seznamem změn. Eidos se nikdy sám nestahuje ani nenahrazuje. V režimu offline se kontrola vynechá. Je vypnutá u kopie, kterou do `/usr` nainstaloval správce balíčků, protože ten ji aktualizuje; `/usr/local`, kam Eidos dává `install.sh --system`, se počítá jako vaše vlastní instalace.
+**About -> Version** drží kontrolu vydání, ve výchozím stavu zapnutou. Při startu, nejvýš
+jednou denně, se Eidos zeptá GitHubu na nejnovější vydání `Project-Colony/Eidos`. Když je
+novější než běžící kopie, řádek nabídek ukáže za Help `Eidos <version> is available:
+release notes` a odkaz otevře stránku toho vydání s changelogem. Eidos nikdy nic nestahuje
+ani se nenahrazuje. Kontrola se v režimu offline přeskočí. U kopie nainstalované pod `/usr`
+správcem balíčků, který ji aktualizuje, je vypnutá; `/usr/local`, kam `install.sh --system`
+Eidos dává, se počítá jako vaše vlastní instalace.
 
 ### Sloupce, řazení a seskupování
 
-Seznam ve výchozím stavu kreslí čtyři sloupce a nabízí osm: Category, Content,
-Version, Author, Installed, Nexus id, Game, Flags. Zaškrtnete je v nabídce View.
-Že výchozí stav není všech osm, je záměr - seznam se všemi zobrazenými sloupci
-nemá místo na NÁZEV, což je sloupec, který ve skutečnosti čtete.
+Seznam ve výchozím stavu ukazuje čtyři sloupce (Category, Content, Version a Flags, ty,
+které ukazuje MO2) a nabízí osm: Category, Content, Version, Author, Installed, Nexus id,
+Game, Flags. Zaškrtněte je v nabídce View. Se všemi osmi zapnutými zbývá sloupci s názvem
+málo místa.
 
-Kliknutím na kterékoli záhlaví seřadíte podle něj. Další kliknutí obrátí pořadí
-a třetí vrátí **pořadí načítání**, na čemž záleží víc, než to zní: pořadí
-načítání je jediné pořadí, ve kterém lze seznamem táhnout, protože mezera pro
-vložení se obrací na skutečný seznam, kdežto seřazený řádek je někde úplně
-jinde. Když je řazení zapnuté, vkládací proužky se nekreslí a tažení je
-odmítnuto, místo aby přistálo někde, kam nikdo nemířil - přesně to dělá MO2, a
-ze stejného důvodu. Nabídka View to říká a nabízí cestu zpět.
+Kliknutím na záhlaví seřadíte podle něj, dalším obrátíte a třetím se vrátíte k pořadí
+načítání. Seznam lze přetahovat jen v pořadí načítání: pozice upuštění adresuje skutečný
+seznam a při řazení není místo řádku na obrazovce jeho místem v tom seznamu. Při zapnutém
+řazení se vkládací pruhy nekreslí a přetažení se odmítne, jako v MO2. Nabídka View to
+říká a nabízí cestu zpět.
 
-Nabídka View umí celý seznam také **seskupit**, podle kategorie nebo podle
-původu (z Nexusu, nebo instalované ručně). Záhlaví skupin nejsou oddělovače:
-není za nimi nic, co by šlo přejmenovat, obarvit nebo přesunout, sbalují se a
-při sbalení zůstává počet na záhlaví. Oddělovače ze seznamu při řazení nebo
-seskupení zmizí - oddělovač stojí v čele řádků, které po něm následují v pořadí
-načítání, a obojí s nimi pohnulo.
+Nabídka View může také seskupit celý seznam, podle kategorie nebo zdroje (z Nexusu, nebo
+nainstalované ručně). Záhlaví skupin nejsou oddělovače: nelze je přejmenovat, obarvit ani
+přesunout. Skládají se a složené záhlaví drží svůj počet. Oddělovače se při řazení nebo
+seskupení skryjí, protože oddělovač uvozuje řádky, které po něm v pořadí načítání
+následují, a obojí toto pořadí na obrazovce mění.
 
 ### Myš a klávesnice
 
-Dvojklik na mód otevře Information, Ctrl+dvojklik jeho složku, Shift+dvojklik
-jeho stránku na Nexusu. Ctrl+F umístí kurzor do filtračního pole. Napsáním
-písmene skočíte na další mód, který jím začíná, a dalším stiskem projdete
-zbytek, místo abyste uvízli na prvním. Žádný z nich nemůže přistát na řádku,
-který skrývá filtr, sbalený oddělovač nebo sbalená skupina - přesouvat
-zvýraznění, které nevidíte, je způsob, jak další mezerník přepne mód, na který
-jste se nedívali.
+Dvojklik na módu otevře Information, Ctrl+dvojklik jeho složku, Shift+dvojklik jeho
+stránku na Nexusu. Ctrl+F dá kurzor do pole filtru. Napsání písmene skočí na další mód,
+který jím začíná, a opětovné stisknutí projde zbytek, místo aby zůstalo na prvním. Žádné z
+nich nepřistane na řádku, který skrývá filtr, složený oddělovač nebo složená skupina, takže
+další mezerník nikdy nepřepne mód, který nevidíte.
 
-„Collapse others" v nabídce oddělovače sbalí všechny skupiny kromě té jedné.
-Během tažení se zastavením nad sbalenou skupinou skupina otevře, takže mód lze
-pustit dovnitř, aniž byste tažení nejdřív opustili - zastavením, ne přejetím.
+„Collapse others" v nabídce oddělovače složí každou skupinu kromě té. Při přetahování
+podržení ukazatele nad složenou skupinou ji otevře, takže mód lze upustit dovnitř;
+přejetí přes ni ne.
 
-Ctrl+Z vrátí poslední změnu seznamu modů nebo pořadí načítání: zaškrtnutí, přesun, hromadné vypnutí, řazení pomocí LOOT.
-Ctrl+Shift+Z ji provede znovu. Okno si pamatuje 50 kroků a zapomene je po F5, na
-konci běhu hry nebo nástroje, při přepnutí profilu a když seznam změní jiný
-proces Eidos. Instalace, přejmenování nebo odebrání modu mění složky na disku,
-takže vrácení za takový krok je odmítnuto.
+Ctrl+Z vrátí poslední změnu seznamu módů nebo pořadí načítání: zaškrtnutí, přesun,
+hromadné vypnutí, řazení LOOTem. Ctrl+Shift+Z ji zopakuje. Okno drží 50 kroků a zapomene
+je při F5, na konci běhu hry nebo nástroje, při přepnutí profilu a když jiný proces Eidosu
+změní seznam. Instalace, přejmenování nebo odebrání módu mění složky na disku, takže vrácení
+přes ně se odmítne.
 
 ### Filtrování seznamu
 
-Tlačítko Filters otevře jeden řádek pro každé kritérium: aktivní, v konfliktu,
-dostupná aktualizace, bez kategorie, doporučené na Nexusu (endorsed), sledované
-(tracked), s Nexus id, se skrytými soubory, bez platných herních dat, pro jinou
-hru, s poznámkami, a jeden řádek pro každý druh obsahu (pluginy, archivy BSA
-nebo BA2, textury, meshe, skripty, pluginy script extenderu, soubory rozhraní,
-zvuk, FaceGen). Kliknutí přepíná řádek dokola mezi vypnuto, „only" a „except".
-Řádek nahoře přepíná mezi módy, které splňují všechna zapnutá kritéria, a módy,
-které splňují aspoň jedno z nich. Pole pro název a seznam kategorií výsledek
-vždy dále zužují. Řádek se skrytými soubory se dívá jen na zapnuté módy.
+Tlačítko Filters otevře jeden řádek na kritérium: aktivní, v konfliktu, dostupná aktualizace,
+bez kategorie, schválený (endorsed), sledovaný (tracked), má id z Nexusu, má skryté soubory,
+bez platných herních dat, pro jinou hru, má poznámky a jeden řádek na druh obsahu (pluginy,
+archivy BSA nebo BA2, textury, meshe, skripty, pluginy script extenderu, soubory rozhraní,
+zvuk, FaceGen). Kliknutí přepíná řádek mezi off, only a except. Řádek nahoře přepíná mezi
+shodou se všemi zapnutými kritérii a shodou s kterýmkoli z nich. Pole názvu a seznam
+kategorií výsledek vždy dál zužují. Řádek skrytých souborů se dívá jen na zapnuté módy.
 
 ### Co vám seznam o módu řekne
 
-Dva poradní příznaky, oba glyf s vysvětlením po najetí myší. **No valid game
-data** znamená, že nic na vrcholu módu nevypadá jako něco, co tato hra načítá;
-možná potřebuje posunout složky o úroveň výš, nebo to není mód pro tuto hru.
-**Another game** znamená, že vlastní `meta.ini` módu pojmenovává jinou. Ani
-jeden nic neblokuje - mód se stejně nasadí - a „Mark as valid" v nabídce řádku
-umlčí kterýkoli z nich, skrze vlastní klíč `validated=` z MO2, takže mód, za
-který jste se zaručili v jednom správci, dorazí tichý i do druhého.
+Dva poradní příznaky, oba jako glyf s vysvětlením při najetí. No valid game data znamená,
+že nic nahoře v módu nevypadá jako něco, co tato hra načítá; může potřebovat přesun složek
+o úroveň výš, nebo to nemusí být mód pro tuto hru. Another game znamená, že vlastní
+`meta.ini` módu jmenuje jinou. Ani jeden nic neblokuje: mód se stále nasazuje. „Mark as
+valid" v nabídce řádku ztiší kterýkoli přes vlastní klíč `validated=` z MO2, takže mód
+označený jako platný v jednom správci není v druhém označen.
 
-Kontrola rozvržení je záměrně velkorysá: strom `Root/` se počítá, nečitelná
-složka se počítá, prázdná se počítá. Chybné varování na seznamu o pěti stech
-řádcích je horší než chybějící.
+Kontrola rozložení označí mód, jen když si je jistá: strom `Root/`, nečitelná složka a
+prázdná složka se všechny počítají jako platná herní data.
 
-### Vypnutí módu, který vaše uložené hry nebo jiné módy potřebují
+### Vypnutí módu, který vaše uložené pozice nebo jiné módy potřebují
 
-Než se mód vypne nebo odebere, Eidos přečte seznamy pluginů tří nejnovějších
-uložených her profilu. Když některá z nich používá plugin z tohoto módu, lišta nad
-seznamem tyto pluginy vyjmenuje a čeká na „Disable anyway" nebo „Cancel" (Esc
-také ruší). Remove přidá stejné názvy do své zprávy s výzvou kliknout znovu. Čtou
-se jen uložené hry Skyrimu a Falloutu 4; u ostatních her se mód vypne bez ptaní.
+Než se mód vypne nebo odebere, Eidos přečte seznamy pluginů tří nejnovějších pozic profilu.
+Když jedna z nich používá plugin z toho módu, lišta nad seznamem jmenuje pluginy a čeká na
+Disable anyway nebo Cancel (zruší i Escape). Remove přidá stejná jména do své zprávy s
+výzvou ke kliknutí znovu. Čtou se jen pozice Skyrimu a Falloutu 4; ostatní hry se vypínají
+bez ptaní.
 
-Karta General v Information u módu uvádí módy, které potřebuje, a módy, které potřebují jeho, a to podle masterů zapnutých pluginů. Vypnutí módu, který jiné potřebují, ukáže stejnou lištu s tlačítky „Disable them too", které vypne i každý mód, jenž ho potřebuje, i módy, které potřebují ty, nebo „Keep them enabled". Karta chybějících masterů na kartě Health má tlačítko "Enable what provides them": zapne mod, který každý chybějící master obsahuje, a zaškrtne master plugin, který je přítomen, ale nezaškrtnut.
+Information módu, záložka General, vypisuje módy, které vyžaduje, a módy, které vyžadují
+jeho, čtené z masterů zapnutých pluginů. Vypnutí módu, který jiné vyžadují, ukáže stejnou
+lištu s Disable them too, což vypne i každý mód, který ho potřebuje, a módy, které
+potřebují ty, nebo Keep them enabled. Karta chybějících masterů v záložce Diagnostics má
+Enable what provides them: zapne mód, který drží každý chybějící master, a zaškrtne master
+plugin, který je přítomný, ale nezaškrtnutý.
 
 ### Záloha módu, než na něj sáhnete
 
-„Back up this mod" zkopíruje jeho složku stranou jako `<name>_backup` (pak
-`_backup2` a tak dál - záloha nikdy nenahradí předchozí). Kopie je **netečná**:
-není to mód, její zaškrtávátko nedělá nic a do sloučeného pohledu nepřispívá
-ničím, protože jeho zaškrtnutí by nasadilo dvě kopie jednoho módu přes sebe.
-„Restore this backup over the mod" ji vrátí zpět, na dvě kliknutí; současný
-obsah se nejdřív odsune stranou a zahodí se až poté, co kopírování uspěje.
+„Back up this mod" zkopíruje jeho složku stranou jako `<name>_backup` (pak `_backup2` a tak
+dále; záloha nikdy nenahradí předchozí). Kopie není mód: její zaškrtávátko nic nedělá a nic
+nepřidává do sloučeného pohledu, protože zaškrtnutí by nasadilo dvě kopie jednoho módu
+přes sebe. „Restore this backup over the mod" ji vrátí, dvěma kliknutími; současný obsah se
+nejdřív odloží a zahodí se, až když kopie uspěje.
 
-**Data** je skutečný strom sloučeného pohledu, rozbalovaný po jedné úrovni,
-takže otevření uzlu stojí jedno čtení adresáře za každou vrstvu, která jej má,
-místo rekurzivní procházky každého zapnutého módu. Odpovídá na něj TÝŽ zásobník
-vrstev, ze kterého se obsluhuje připojení, takže whiteouty a skryté soubory jsou
-respektovány a záložka se nemůže rozejít s tím, co uvidí hra. Filtrujte podle
-názvu, zužte jen na sporné soubory, roztřiďte, co kde je, sloupci Size a
-Modified, a kterýkoli řádek ukažte pomocí Reveal ve správci souborů. `meta.ini`,
-`readme.txt`, `fomod/` a `Root/` v kořeni módu zůstávají mimo Data, v této
-záložce i v připojení: první tři patří správci módů a `Root/` jde místo toho do
-složky hry. Soubor, který hra nebo nástroj zapíše pod některým z těchto jmen,
-skončí v Overwrite a zůstane viditelný. **Plugins**
-je pořadí načítání ESP/ESM/ESL (přepínání, ruční přeuspořádání, nebo řazení
-LOOTem a čtení zprávy po seřazení, jejíž odkazy na rady se otevírají ve vašem
-prohlížeči). Jeho záhlaví počítá zapnuté pluginy v každém indexovém prostoru proti limitu hry, například `full 231/254, light 512/4096`, a když je některý prostor plný, zoranžoví. Po seřazení LOOTem plný plugin, jehož nové záznamy se všechny vejdou do rozsahu light, to ukáže při najetí myší a jeho nabídka na řádku obsahuje Flag as light. Eidos zapíše kopii s příznakem light do nového módu `<plugin> (light)` na konec seznamu módů (nejvyšší priorita) a originál nechá být, takže vypnutím toho módu se změna vrátí. Eidos odmítne, když některá ze tří nejnovějších uložených her profilu načítá plugin jako plný. Čtou se jen savy Skyrimu a Falloutu 4, takže na Starfieldu se žádný sav nekontroluje. LOOT kontroluje jen rozsahy záznamů: plugin, který přidává buňky nebo worldspaces, si před označením prohlédněte v xEditu. **Conflicts** vysvětluje vítěze a poražené u jednotlivých souborů.
-**Overwrite** promění to, co hra zapsala, v jednom kroku ve skutečný mód.
-**Saves** rozebere hlavičku každého savu - postava, úroveň, místo, odehraný
-čas - a porovná seznam pluginů zapečený uvnitř s vaším současným, s tlačítkem, které
-zapne módy, jež sav potřebuje, protože pojmenovat je a nechat to na vás je ta
-nudná polovina.
+**Backups** na liště nástrojů drží body obnovy seznamu módů profilu, jeho pořadí načítání
+(`plugins.txt` a `loadorder.txt` společně) a jeho herních INI, po 10 od každého, v
+`<profile>/backups/`. Back up now jeden přidá a Restore nejdřív zálohuje současný stav,
+takže chybný výběr jde vrátit. Eidos také uchovává bod obnovy INI před každým během
+BethINI (viz [tools.md](tools.md#bethini-pie)).
 
-Když najedete na plugin, zobrazí se, odkud pochází, jeho autor, verze hlavičky a formuláře, prvních 300 znaků popisu, jeho master soubory a po řazení LOOT také zprávy z LOOT. Na Skyrimu, Skyrimu SE, Skyrimu VR a Enderalu SE hra čte také INI pojmenovaný podle načteného pluginu; sloupec INI tyto pluginy označuje a kliknutí otevře soubor jen pro čtení.
+### Záložky
 
-Řádek `.exe` na kartě Data má tlačítko Add tool, které otevře editor Executables s vyplněným souborem (nic se neuloží, dokud nestisknete Save), a tlačítko Run, které soubor jednou spustí ve sloučeném pohledu jako registrovaný nástroj. Save tree zapíše celý sloučený strom Data do textového souboru, jeden řádek na soubor s modem, který jej poskytuje, bez vaší domovské složky a uživatelského jména, pro hlášení chyby.
+**Data** je strom sloučeného pohledu, rozbalovaný po jedné úrovni: otevření složky přečte tu
+složku v každé vrstvě, která ji má, nikdy každý zapnutý mód najednou. Staví se ze stejného
+zásobníku vrstev, který připojení obsluhuje, takže whiteouty a skryté soubory se
+respektují a záložka ukazuje, co hra uvidí. Filtrujte ji podle názvu, zužte na jen
+sporné soubory, zorientujte se, co kde je, sloupci Size a Modified a Reveal libovolný řádek
+ve správci souborů. Najetí na soubor vypíše další módy, které ho dodávají. Soubory
+`meta.ini`, `readme.txt`, `fomod/` a `Root/` na nejvyšší úrovni módu se z Data vynechávají,
+v této záložce i v připojení: první tři jsou pro správce módů a `Root/` jde místo toho do
+složky hry. Soubor, který hra nebo nástroj zapíše pod jedním z těchto názvů, skončí v
+Overwrite a zůstane viditelný.
 
-Savy, které Steam Cloud stáhne z jiného zařízení nebo které zapíše spuštění bez Eidosu, skončí ve vlastní složce savů hry, kterou savy profilu po dobu běhu hry překrývají. Karta Saves je spočítá na řádku pod svým nadpisem a Import zkopíruje každý z nich i s jeho co-savem do profilu. Sav, jehož jméno už profil používá, se importuje jako `orphan-<time>-<name>`; nic v profilu se nenahradí.
+Řádek `.exe` v Data má Add tool, které otevře editor Executables s vyplněným tím souborem
+(nic se neuloží, dokud nestisknete Save), a Run, které ho jednou spustí přes sloučený pohled
+jako zaregistrovaný nástroj ([Nástroje](#nástroje)). Save tree zapíše celý sloučený strom Data do
+textového souboru, jeden řádek na soubor s módem, který ho dodává, s odstraněnou domovskou
+složkou a uživatelským jménem, pro hlášení chyby.
 
-„Information..." otevře dialog konkrétního módu: obecné, konflikty, strom
-souborů, úpravy INI, poznámky. Ze stromu souborů (a ze stromu Data) lze
-kterýkoli soubor **skrýt** - přejmenovat na `<name>.mohidden`, což jej vyřadí
-z virtuálního pohledu, aniž by se smazal, takže tři zatoulané meshe jednoho módu
-lze potlačit, aniž byste sáhli na priority. Strom souborů zvládá i běžné
-souborové operace: nová složka, přejmenovat, smazat, otevřít. Všechny procházejí
-jedním resolverem, který odmítne cokoli, co není prostá cesta uvnitř toho módu -
-žádné `..`, žádná absolutní cesta a žádná komponenta, která je symlink, protože
-jeho následování by mazání odneslo úplně mimo složku módu. Přejmenování nahrazuje
-jen poslední komponentu, takže se z něj nikdy nemůže stát přesun, a odmítne už
-obsazený název, místo aby ten soubor mlčky nahradilo. Smazání vyžaduje dvě
-kliknutí; je to jediná zdejší akce, kterou další kliknutí nevrátí.
+**Plugins** je pořadí načítání ESP/ESM/ESL: přepínejte, přeřazujte ručně, nebo řaďte LOOTem
+a čtěte zprávu po řazení, jejíž odkazy s radami se otevírají v prohlížeči. Jeho záhlaví
+počítá zapnuté pluginy v každém indexovém prostoru proti limitu hry, například
+`full 231/254, light 512/4096`, a zoranžoví, když je jeden plný. Pole filtru zužuje seznam
+podle názvu. Mezerník, Ctrl+A, rozsahy se Shiftem a položky nabídky řádku Activate all shown
+a Deactivate all shown pak působí jen na zobrazené řádky a přetažení se odmítne, dokud se
+filtr nevymaže. Výběr pluginu obarví jeho mastery v seznamu pluginů a mód, který ho dodává,
+v seznamu módů. Pluginy, které LOOT označí jako špinavé, dostanou kartu v Diagnostics, která
+je umí vyčistit přes xEdit ([tools.md](tools.md#čištění-pluginu-který-loot-označí-jako-špinavý)).
 
-**View** na kterémkoli řádku stromu souborů nebo stromu Data soubor zobrazí:
-obrázky a text. Ne DDS ani NIF - ty potřebují blokový dekodér a vykreslovač,
-které tento strom nemá - ale řeknou to, místo aby ukázaly prázdné okno, a
-odkážou na Reveal. Text se čte do 64 KB a řekne, kde skončil, protože náhled je
-letmý pohled a log Papyrusu může mít sto megabajtů. **INI Tweaks** vypisuje
-fragmenty, které mód dodává ve své složce `INI Tweaks/`; zapnuté se při spuštění
-slučují do herního INI profilu, v pořadí priorit, a při zachycení INI souborů
-daného běhu se zase sundají - jinak by se z úpravy tiše stalo nastavení a její
-vypnutí by neudělalo nic.
+Po řazení LOOTem to plný plugin, jehož nové záznamy se všechny vejdou do rozsahu light, řekne
+při najetí a nabídka jeho řádku má Flag as light. Eidos zapíše kopii s příznakem light do
+nového módu pojmenovaného `<plugin> (light)` na konci seznamu módů (nejvyšší priorita) a
+originál nechá, takže vypnutí toho módu to vrátí. Odmítne, když jedna ze tří nejnovějších
+pozic profilu načítá plugin jako plný. Čtou se jen pozice Skyrimu a Falloutu 4, takže u
+Starfieldu se nekontroluje žádná. LOOT kontroluje jen rozsahy záznamů: plugin, který přidává
+cely nebo worldspacy, si před označením prohlédněte v xEditu.
 
-Stažený soubor lze **přetáhnout ze seznamu Downloads na pozici v seznamu módů**
-a nainstalovat jej s touto prioritou; archivy nebo složky puštěné na okno ze
-správce souborů se instalují také (tahle půlka potřebuje relaci X11 nebo
-XWayland - winit implementuje pouštění souborů jen pro X11). Samotná stahování
-lze pozastavit a obnovit: pozastavení zastaví přenos a ponechá rozpracovaný
-soubor, Resume znovu vyřeší čerstvý odkaz a pokračuje tam, kde skončilo.
+Najetí na plugin ukáže, odkud pochází, jeho autora, jeho hlavičku a verzi formulářů,
+prvních 300 znaků jeho popisu, jeho mastery a po řazení LOOTem zprávy LOOTu. U Skyrimu,
+Skyrimu SE, Skyrimu VR a Enderalu SE hra čte také INI pojmenované podle načteného pluginu;
+sloupec INI tyto pluginy označí a kliknutí otevře ten soubor jen pro čtení.
 
-Záložka Downloads je **knihovna** archivů, ne fronta přenosů. Filtrujte podle
-názvu (i podle přívětivého názvu módu, takže „skyui" najde
-`SkyUI_5_2_SE-12604-5-2SE.7z`), řaďte podle nejnovějších, názvu, velikosti nebo
-stavu a archiv, se kterým jste hotovi, **skryjte** - což zachová soubor a
-odstraní jen řádek, takže odložit knihu neznamená spálit ji. „Show hidden" je
-vrátí a totéž tlačítko skrytí zruší. „Remove N installed" smaže archivy módů,
-které jste už nainstalovali, na dvě kliknutí, a jen ty **na obrazovce**: filtrem
-jste řekli, které jste mysleli.
+**Conflicts** vysvětluje vítěze a poražené po souborech. **Overwrite** promění to, co hra
+zapsala, jedním krokem ve skutečný mód.
 
-**Preferences -> Nexus -> Install downloads when they finish** je ve výchozím stavu vypnuto. Po zapnutí se stažení z Nexusu, které skončí při otevřeném okně, nainstaluje samo, aniž byste museli na kartu Downloads. Je to obvyklá instalace: FOMOD otevře svůj instalátor a název, který už v seznamu modů je, se zeptá, co dělat. Archivy, které byly v `downloads/` před otevřením okna nebo před zapnutím volby, se nechají být, stejně jako stažení, jehož instalaci jste zrušili. Členy kolekce otevřené v panelu kolekcí a soubor, na který čeká čekající Update, instalují jen tyto postupy. Dokud hru nebo jiný Eidos drží instanci, instalace počká, až bude volná.
+**Archives** vypisuje každý BSA nebo BA2, který zapnuté módy dodávají, mód, ze kterého
+pochází, a proč se načítá: aktivní plugin stejného názvu, nebo ho registruje INI. Ten, který
+nic nenačítá, se označí jako mrtvá váha. Když jiný mód dodává archiv stejného názvu, který
+konflikt vyhrává, řádek jmenuje ten mód. Extract rozbalí archiv do nového módu pojmenovaného
+podle něj bez přípony (`Foo.ba2` dá `Foo (extracted)`) a archiv nechá v jeho módu; volné
+soubory vyhrávají nad soubory v kterémkoli archivu, ať je pořadí módů jakékoli.
+
+**Saves** čte hlavičku každé pozice (postava, úroveň, místo, doba hraní), porovnává uložený v
+ní seznam pluginů se současným a má tlačítko, které zapne módy, které potřebuje. Pozice,
+které se do prefixu dostaly bez Eidosu, popisuje část
+[Uložené pozice patří profilu](#uložené-pozice-patří-profilu).
+
+**Downloads** a **Diagnostics** mají níže vlastní části.
+
+### Informace o módu
+
+„Information..." otevře dialog pro mód se záložkami General, Conflicts, Filetree, INI Tweaks,
+Notes, Nexus files a Nexus page. Z filetree (a ze stromu Data) lze skrýt kterýkoli soubor:
+přejmenuje se na `<name>.mohidden`, což ho vyjme ze sloučeného pohledu bez smazání, takže
+několik zbloudilých souborů jednoho módu lze potlačit bez změny priorit. Filetree také dělá
+běžné operace se soubory: nová složka, přejmenování, smazání, otevření. Každá odmítne cestu,
+která není prostou cestou uvnitř toho módu: žádné `..`, žádná absolutní cesta a žádný
+symlink po cestě, protože jeho následování by mohlo smazat soubor mimo složku módu. Rename
+mění jen poslední část cesty, takže nikdy nepřesune soubor, a odmítne název, který je už
+obsazen. Delete chce dvě kliknutí a nelze ho vrátit.
+
+**View** na libovolném řádku ve filetree nebo stromu Data zobrazí náhled souboru: obrázky,
+text, textury DDS (vyberte mip, vrstvu, stěnu a kanál) a statické modely NIF s jejich
+difuzními texturami. Náhled NIF potřebuje `eidos-nif-preview` vedle Eidosu nebo v `PATH`;
+balík vydání, balíček pro Arch a sestavení ze zdrojů ho mají, `eidos-linux` ne. Text se čte
+do 64 KB a řekne, kde skončil.
+
+**INI Tweaks** vypisuje fragmenty, které mód dodává ve své složce `INI Tweaks/`; zapnuté se
+při spuštění slučují do herního INI profilu, v pořadí priority, a při zachycení INI běhu se
+zase odstraní, takže vypnutí tweaku jeho nastavení odstraní.
+
+Záložka **Nexus files** vypisuje soubory módu na Nexusu, nejnovější první, a označí ten
+nainstalovaný zde a ten, který ho nahrazuje. Ten druhý řádek má tlačítko **Update**; viz
+[Aktualizace módů](#aktualizace-módů).
+
+Záložka **Nexus page** ukazuje popis módu a, nejnovější první, changelog každé verze souboru
+na jeho stránce. Eidos čte obojí při prvním otevření záložky, z GraphQL API Nexusu, které se
+nepočítá do hodinového rozpočtu požadavků. Drží je, dokud se Eidos nezavře nebo nestisknete
+**Refresh**. Zobrazují se jako prostý text: formátování BBCode a HTML se odstraní, adresa
+odkazu se napíše za jeho text a obrázky a videa se vynechají. **Endorse** a **Track** nad
+textem dělají to, co nabídka módu na pravé tlačítko. Stránka módu pro dospělé zůstane
+skrytá, pokud váš účet na Nexusu neukazuje obsah pro dospělé, a stránka bez hodnocení zůstane
+skrytá vždy.
+
+### Stahování
+
+Stažený soubor lze přetáhnout ze seznamu Downloads na pozici v seznamu módů a nainstalovat ho
+s touto prioritou a archivy nebo složky upuštěné na okno ze správce souborů se také
+nainstalují. Upuštění souborů potřebuje relaci X11 nebo XWayland: winit je implementuje jen
+pro X11. Stahování lze pozastavit a obnovit: pozastavení zastaví přenos a ponechá částečný
+soubor a Resume požádá Nexus o nový odkaz a pokračuje od místa, kde přestal.
+
+Záložka Downloads drží archivy, které jste stáhli. Filtrujte ji podle názvu (i podle
+přátelského názvu módu, takže „skyui" najde `SkyUI_5_2_SE-12604-5-2SE.7z`), řaďte podle
+nejnovější, názvu, velikosti nebo stavu a skryjte archiv, který jste dokončili: soubor zůstane
+a zmizí jen řádek. „Show hidden" je vrátí a totéž tlačítko je odkryje. „Remove N installed"
+smaže archivy módů, které už jste nainstalovali, dvěma kliknutími, a jen ty, které filtr
+ukazuje.
+
+**Preferences -> Nexus -> Install downloads when they finish** je ve výchozím stavu vypnuto.
+Po zapnutí se stažení z Nexusu, které skončí, zatímco je okno otevřené, nainstaluje bez
+návštěvy záložky Downloads. Je to obvyklá instalace: FOMOD otevře svůj instalátor a název,
+který už v seznamu módů je, se zeptá, co dělat. Archivy, které byly v `downloads/` dřív, než
+se okno otevřelo nebo než se volba zapnula, se nechají být, stejně jako stažení, jehož
+instalaci jste zrušili. Dokud je v panelu kolekce otevřená kolekce, žádné stažení se
+nenainstaluje samo a to, které mezitím skončí, se nenainstaluje samo ani později; členy
+instaluje kolekce. Soubor, na který čeká čekající Update, nainstaluje Update. Tímto způsobem
+se instalují jen stažení z Nexusu a to, které filtr Downloads skrývá, čeká, dokud se filtr
+nevymaže. Zatímco probíhá přetahování, nebo zatímco instanci drží hra nebo jiný Eidos,
+instalace čeká.
 
 ### Aktualizace módů
 
-Tlačítko aktualizace na pravém konci panelu nástrojů porovná každý nainstalovaný
-soubor se souborem, který ho na Nexusu nahradil. Autoři označují nové nahrání
-jako nástupce staršího a Eidos jde po tomto řetězci od ID souboru, které
-zaznamenává `meta.ini` módu. Když řetězec žádného nástupce neuvádí, porovná se
-místo toho verze ze stránky módu.
+Tlačítko aktualizace poblíž pravého konce lišty nástrojů zkontroluje každý mód, který má id
+z Nexusu. Když stránka módu ukazuje verzi, kterou máte nainstalovanou, nic dalšího se
+nezjišťuje. Jinak Eidos přečte seznam souborů módu (jeden požadavek navíc, uchovaný po zbytek
+kontroly) a sleduje řetězec aktualizací od id souboru, které zaznamenává `meta.ini` módu:
+autoři označí nové nahrání jako nástupce staršího a MO2 čte stejný řetězec. Novější soubor v
+tom řetězci je aktualizace. Když řetězec žádný nejmenuje a nainstalovaný soubor je na stránce
+stále uveden, mód se počítá za aktuální, i když stránka ukazuje jinou verzi. Verze stránky
+rozhoduje jen tehdy, když není zaznamenáno žádné id souboru, když byl nainstalovaný soubor
+odstraněn nebo archivován, nebo když Nexus seznam souborů neposlal.
 
-Track a Untrack v nabídce pravého tlačítka módu přidají mód do vašich
-sledovaných módů na Nexusu nebo ho z nich odeberou, takže upozornění z webu
-odpovídají tomu, co sledujete tady. Každá kontrola aktualizací také načte z
-Nexusu vaše doporučení a sledované módy (dva požadavky) a podle nich nastaví
-příznaky Endorsed a Tracked každého módu, a to na vlastní doméně Nexusu daného
-módu. Když se obě strany liší, platí Nexus. Pokud se některý ze seznamů nepodaří
-načíst, kontrola to oznámí a tyto příznaky ponechá, jak byly.
+Každý mód používá doménu Nexusu té hry, kterou jmenuje jeho vlastní `meta.ini` (`gameName`),
+ne hry instance: kontrola aktualizací, Endorse, Track i Visit on Nexus míří tam. Enderal SE
+přijímá i módy `skyrimspecialedition`, takže mód pro Skyrim SE nainstalovaný v instanci
+Enderalu SE se kontroluje na své stránce pro Skyrim SE. Odkaz Mod Manager Download jde do
+instance, kterou jste použili naposledy, když její hra doménu odkazu přijímá. Jinak jde do
+instance hry, jejíž vlastní doménou je, dřív než do hry, která ji jen přijímá.
+`EIDOS_INSTANCE=<folder>` přepíše obojí.
 
-Karta **Nexus files** v „Information..." vypíše soubory módu na Nexusu,
-nejnovější první, a označí ten, který je nainstalovaný tady, a ten, který ho
-nahrazuje. Tento druhý řádek má tlačítko **Update**. S prémiovým účtem Eidos
-stáhne soubor sám. S bezplatným účtem otevře stránku souboru, kde ho Mod Manager
-Download pošle zpět, a instalace začne, jakmile archiv dorazí do `downloads/`.
-Odtud jde o obvyklou instalaci: FOMOD se otevře s odpověďmi, se kterými byl mód
-nainstalován, a potom dotaz nabídne Replace se zaškrtnutým „Keep a backup of the
-existing mod", ať jste při minulém dotazu zvolili cokoli. Replace zachová
-prioritu módu i to, zda je zapnutý.
+Track a Untrack v nabídce módu na pravé tlačítko přidají mód mezi vaše sledované módy na
+Nexusu nebo ho odeberou, takže oznámení webu sledují to, co sledujete zde. Endorse a Abstain
+ve stejné nabídce mód na Nexusu schválí nebo schválení stáhnou; tlačítko endorse vedle
+tlačítka aktualizace schválí vybraný mód. Každá kontrola aktualizací také čte vaše schválení a
+sledované módy z Nexusu (dva požadavky) a nastaví příznaky Endorsed a Tracked každého módu
+podle nich, na doméně Nexusu toho módu. Když se oba seznamy s příznaky neshodují, vyhrává Nexus.
+Když nejde přečíst jeden ze seznamů, kontrola to řekne a ty příznaky ponechá, jak byly.
 
-Karta **Nexus page** vedle ní ukazuje popis módu a, od nejnovější, seznam změn
-každé verze souboru na jeho stránce. Eidos obojí načte z GraphQL API Nexusu,
-které se nezapočítává do hodinového limitu požadavků, při prvním otevření karty
-a ponechá si to, dokud Eidos nezavřete nebo nestisknete **Refresh**. Obojí se
-zobrazuje jako prostý text: formátování BBCode a HTML je odstraněno, adresa
-odkazu je napsána za jeho textem a obrázky a videa jsou vynechány. **Endorse** a
-**Track** nad textem dělají totéž co nabídka pravého tlačítka módu. Stránka módu
-pro dospělé zůstane skrytá, pokud váš účet na Nexusu nezobrazuje obsah pro
-dospělé, a stránka bez hodnocení zůstane skrytá vždy.
+Tlačítko **Update** na záložce Nexus files v „Information..." nainstaluje novější soubor. S
+prémiovým účtem Eidos soubor stáhne sám. S bezplatným účtem otevře stránku souboru, kde ho
+Mod Manager Download pošle zpět, a instalace začne, když archiv přistane v `downloads/`.
+Odtud je to obvyklá instalace: FOMOD se otevře s odpověďmi, se kterými byl mód nainstalován, a
+pak výzva nabídne Replace se zaškrtnutým „Keep a backup of the existing mod", ať jste při
+poslední výzvě zvolili cokoli. Replace zachová prioritu a stav zapnutí módu.
 
-Než Replace vymění složku módu, Eidos porovná starou složku s novou podle názvů
-a velikostí souborů a přečte hlavičky pluginů v obou. Týká se to Update,
-aktualizace kolekce i Replace zvoleného v dotazu při instalaci. Stavový řádek
-pak spočítá přidané, odebrané a ve velikosti změněné soubory a jmenuje každý
-master, který nová verze potřebuje a stará ne. Karta **General** v
-„Information..." končí sekcí **Last update**, která uvádí verze, přidané nebo
-odebrané pluginy, přidané nebo zrušené mastery, pluginy se změněným příznakem
-ESM, ESL nebo ESH, módy, s nimiž tento mód nově sdílí soubory nebo je už
-nesdílí, a soubory. Soubor přepsaný se stejnou velikostí se neuvádí. Hlášení je
-uloženo v `logs/updates/<mod>.json` v instanci, kterou `eidos pack` vynechává;
-čerstvá instalace nebo Merge do složky ho smaže. `eidos install --replace`
-vypíše stejné počty na řádku `changes:`.
+Než Replace vymění složku módu, Eidos porovná starou složku s novou podle názvu souboru a
+velikosti a přečte hlavičky pluginů v obou. To platí pro Update, aktualizaci kolekce a
+Replace zvolené při výzvě k instalaci. Stavový řádek pak spočítá soubory přidané, odebrané a
+změněné ve velikosti a jmenuje každý master, který nová verze potřebuje a stará ne. Záložka
+**General** v „Information..." končí částí **Last update**, která vypisuje verze, přidané
+nebo odebrané pluginy, přidané nebo odebrané mastery, pluginy, jejichž příznak ESM, ESL nebo
+ESH se změnil, módy, se kterými tento mód teď sdílí soubory nebo už nesdílí, a soubory. Soubor
+přepsaný ve stejné velikosti se nevypisuje. Zpráva se drží v `logs/updates/<mod>.json` v
+instanci, který `eidos pack` vynechává; čerstvá instalace nebo Merge do složky ji odstraní.
+`eidos install --replace` vypíše stejné počty na řádku `changes:`.
 
-Složka, která obsahuje několik souborů z Nexusu, třeba hlavní soubor s
-přimíchaným volitelným souborem, je odmítnuta: nahrazení novým hlavním souborem
-by ostatní ztratilo. Aktualizujte je ručně.
+Složka, která drží několik souborů z Nexusu, například hlavní soubor s do něj sloučeným
+volitelným, se odmítne: nahrazení novým hlavním souborem by ostatní zahodilo. Takové
+aktualizujte ručně.
 
-`eidos nexus update skyrimse --apply` provede stejnou kontrolu a pak s prémiovým
-účtem stáhne každý nový soubor a nainstaluje ho přes jeho složku s
-`--replace --backup`. S bezplatným účtem místo toho vypíše `OPEN <url>` pro
-každou stránku souboru. Složky, které slučují několik souborů, přeskočí i s
-důvodem. FOMOD mod bez uložených odpovědí, například nainstalovaný dřív, než je
-Eidos začal ukládat, se znovu neinstaluje s výchozími volbami instalátoru:
-taková aktualizace selže se zprávou, abyste mod jednou aktualizovali z okna,
-které odpovědi uloží. FOMOD, jehož instalátor nenabízí žádnou volbu, se
-nainstaluje jako obvykle. Příkaz skončí kódem 1, pokud některá aktualizace
-selhala.
+`eidos nexus update skyrimse --apply` spustí stejnou kontrolu a pak na prémiovém účtu stáhne
+každý nový soubor a nainstaluje ho přes jeho složku s `--replace --backup`. Na bezplatném účtu
+místo toho vypíše `OPEN <url>` pro stránku každého souboru. Složky, které slučují několik
+souborů, se přeskočí s důvodem. Mód FOMOD bez zaznamenaných odpovědí, například nainstalovaný
+dřív, než je Eidos začal uchovávat, se nepřeinstaluje s výchozími hodnotami instalátoru: ta
+aktualizace selže se zprávou, aby se mód jednou aktualizoval z okna, které odpovědi
+zaznamená. FOMOD, jehož instalátor nemá co volit, se nainstaluje jako obvykle. Příkaz skončí
+kódem 1, pokud některá aktualizace selhala.
 
-### Kolekce z Nexusu
+### Aktualizace kolekcí
 
-Vložte odkaz na kolekci - nebo na něj klikněte na webu - a Eidos vypíše členy
-dané revize, každého spárovaného s touto instancí: nainstalovaný, stažený, nebo
-chybějící. *Install this collection* pak spustí celý recept v pracovním vlákně,
-se stejným ukazatelem průběhu, jaký používají úlohy pack a unpack, a z ukazatele
-se po dokončení stane zpráva. Všechno výše o tom, co se použije a co se jen
-pojmenuje, platí i tady slovo od slova: okno a `eidos collection` jsou jeden
-motor se dvěma rozhraními.
+Když spustíte Check for updates, Eidos se také zeptá Nexusu na nejnovější revizi každé kolekce
+nainstalované v této instanci. Řádek nad seznamem módů jmenuje každou kolekci s novější revizí
+a počítá přidané (+), aktualizované (~) a vypuštěné (-) módy; najetím se zobrazí jejich
+názvy. Počty chybí, když recept nainstalované revize už není v cache. **Update** otevře novější
+revizi v panelu kolekce, kde ji *Install this collection* spustí. Seznam se při každé kontrole
+staví znovu a neukládá se.
 
-Bez odkazu se **File -> Open a Nexus collection...** otevře na kartě **Browse**. Ta vypíše kolekce zveřejněné pro hru otevřené instance, po 20, seřazené podle počtu stažení, poslední aktualizace nebo od nejnovějších, a vyhledávací pole zúží seznam na kolekce, jejichž název nebo text odpovídá. Každý řádek uvádí autora, nejnovější revizi, počet modů, počet stažení a datum. **View** otevře nejnovější revizi dané kolekce na kartě **Link**, stejně jako vložení jejího odkazu. Kolekce označené jako obsah pro dospělé se vynechají, pokud váš účet Nexus obsah pro dospělé nezobrazuje, kolekce bez hodnocení se vynechají vždy a řádek pod seznamem počítá obojí. Procházení vyžaduje přihlášený účet Nexus, stejně jako zbytek panelu.
+### Nastavení Nexusu
 
-Kolekci lze číst jen proti **její vlastní hře**. Otevřete kolekci pro Skyrim
-s načtenou instancí Fallout 4 a Eidos ji jmenovitě odmítne, místo aby členy
-spároval s nesprávným seznamem módů, kde by každé „nainstalovaný" a každé
-„chybějící" byl šum ve tvaru odpovědi.
+**Preferences -> Nexus -> Offline** zastaví jakýkoli kontakt Eidosu s Nexusem a přeskočí
+denní kontrolu vydání na GitHubu. Kontroly aktualizací, přihlášení, stahování a kolekce to
+řeknou místo selhání s chybou připojení. Ve výchozím stavu je vypnuto.
 
-Když spustíte Zkontrolovat aktualizace, Eidos se také zeptá Nexusu na nejnovější revizi každé kolekce nainstalované v této instanci. Řádek nad seznamem modů uvádí každou kolekci s novější revizí a počty přidaných (+), aktualizovaných (~) a vyřazených (-) modů; jejich jména se zobrazí po najetí myší. Počty chybí, když recept nainstalované revize už není v mezipaměti. **Aktualizovat** otevře novější revizi v panelu kolekce, kde ji spustí *Install this collection*. Seznam se při každé kontrole sestaví znovu a neukládá se.
+**Preferred servers** řadí uzly CDN, které stahování preferuje, nejlepší první. Víc než jedno
+zrcadlo k výběru dostane jen prémiový účet, takže u všech ostatních vybírá Nexus a toto nic
+nemění. Když není nabídnut žádný z vámi jmenovaných serverů, stahování přesto proběhne, z
+prvního uzlu, který Nexus nabídne.
 
-Eidos si pravidla každé nainstalované kolekce ponechává i po instalaci. Když pozdější přetažení postaví dva její mody proti pravidlu pořadí (před nebo po), karta **Diagnostics** ukáže pro tuto kolekci jednu kartu, která uvede první takovou dvojici a spočítá pravidla, která už neplatí. Počítají se jen mody zapnuté v aktuálním profilu a pravidla zachycená ve smyčce se přeskakují, protože je žádné pořadí nemůže splnit. **Restore collection order** vrátí mody kolekce do pořadí, které splňuje každé pravidlo, zachová vaše vlastní pořadí všude, kde to pravidla dovolí, a mody, které do kolekce nepatří, nechá na místě. Ctrl+Z to vrátí zpět. `eidos check` hlásí totéž zjištění jako `collection_order_broken`. Kontrola potřebuje recept revize v `collections/`, takže kolekce, jejíž recept byl z mezipaměti odstraněn, se nekontroluje.
+### Kategorie
 
-### Režim offline
+Kategorie lze přiřadit jednomu módu nebo celému výběru, katalog lze upravovat ze stejného
+dialogu a oficiální seznam kategorií hry lze stáhnout z Nexusu. Oba soubory katalogu jsou
+vlastní soubory MO2 (`categories.dat` a `nexuscatmap.dat`), takže sdílená instance drží jeden
+katalog. Mód stažený z Nexusu se při instalaci zařadí do kategorie, jakmile Fetch from Nexus
+namapoval katalog.
 
-**Preferences -> Nexus -> Offline** Eidosu zcela zabrání kontaktovat Nexus a vynechá denní kontrolu vydání na GitHubu.
-Kontroly aktualizací, přihlášení, stahování a kolekce to řeknou, místo aby
-selhaly chybou spojení. Je vypnutý, dokud jej nezapnete - soubor nastavení
-zapsaný starším Eidosem takový klíč nemá a číst chybějící jako „zapnuto" by
-odřízlo síť každému, kdo aktualizuje.
+### Editor INI, log a rozšíření
 
-**Preferred servers** řadí uzly CDN, které stahování upřednostňuje, nejlepší
-první. Více než jedno zrcadlo na výběr dostane jedině prémiový účet, takže pro
-všechny ostatní vybírá Nexus a tohle nemění nic. Je to řazení, ne filtr: pokud
-dnes nic z toho, co jste jmenovali, není v nabídce, stahování stejně proběhne,
-z uzlu, který Nexus nabídl jako první.
+**View -> INI editor** upravuje herní INI profilu, kopii, kterou Eidos drží; kopie v prefixu
+Proton se při každém spuštění přepíše. Jeho poslední záložka je `launch-env.ini` profilu
+([Proměnné a obaly pro profil](#proměnné-a-obaly-pro-profil)).
+**View -> Log** čte logy relací. **View -> Extensions** vypisuje vaše vlastní doplňky; viz
+[extensions.md](extensions.md).
 
-**Categories** jsou upravitelné, nejen zobrazované: přiřaďte je jednomu módu
-nebo celému výběru, upravte z téhož dialogu i samotný katalog a stáhněte
-oficiální seznam kategorií hry z Nexusu. Oba soubory katalogu jsou vlastní
-soubory MO2 (`categories.dat` a `nexuscatmap.dat`), takže sdílená instance drží
-jeden katalog. Mod stažený z Nexusu se při instalaci zařadí do kategorie, jakmile Načíst z Nexusu namapuje katalog.
+Když spuštění nenajde hlavní INI hry (`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini`...) ani v
+profilu, ani v prefixu, Eidos nejdřív zkopíruje výchozí z herní složky (`Skyrim_Default.ini`,
+`Fallout4_Default.ini`...) do profilu, jako MO2. Když instance spouští kopii hry, výchozí se
+bere z kopie. Prefix a složka hry se nemění.
 
-**View -> INI editor** upravuje herní INI soubory profilu - tu kopii, která
-přetrvá, ne tu zahrabanou v prefixu Protonu, která se při každém spuštění
-přepíše. **View -> Log** čte logy relací. **View -> Extensions** vypisuje vaše
-vlastní doplňky; viz [extensions.cs.md](extensions.md).
+### Instalace módů
 
-Když start nenajde hlavní INI hry (`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini`...) ani v profilu, ani v prefixu, Eidos nejdřív zkopíruje do profilu výchozí soubor ze složky hry (`Skyrim_Default.ini`, `Fallout4_Default.ini`...), stejně jako MO2. Prefix a složka hry se nemění.
+Instalátor zvládá archivy Simple, FOMOD, balíčky Wrye Bash BAIN (zaškrtněte podbalíčky, které
+se slučují v pořadí) a balíčky OMOD z Oblivionu. Skript OMOD se spustí, když používá příkazy
+OBMM, které Eidos podporuje, nebo je jedním ze tří instalátorů v C#, které Eidos zná; žádný
+jiný kód v C# ani Visual Basicu Eidos nespouští a řekne to. Když rozložení nerozpozná žádná
+heuristika, ruční výběr ukáže strom archivu a nechá vás ukázat kořen dat.
 
-Instalace přijme všechno: cesty Simple a FOMOD, plus balíčky **BAIN** z Wrye
-Bash (zaškrtnete podbalíčky, které se slučují v pořadí) a **ruční** výběr, který
-ukáže strom archivu a nechá vás ukázat na kořen dat, když rozvržení nerozpozná
-žádná heuristika. Žádný archiv není odmítnut.
+Přeinstalace nebo aktualizace módu FOMOD otevře průvodce s odpověďmi z jeho poslední
+instalace zaškrtnutými, na prvním kroku, jehož volby se od té doby změnily, s vypsanými
+změnami. **Reinstall with new choices** místo toho začne od výchozích hodnot instalátoru.
+`eidos install --replace` nebo `--merge` použije uložené odpovědi a odmítne, s výpisem změn,
+když už nesedí.
 
-Přeinstalace nebo aktualizace FOMOD modu otevře průvodce se zaškrtnutými
-odpověďmi z poslední instalace, a to na prvním kroku, jehož možnosti se od té
-doby změnily, se seznamem změn. **Reinstall with new choices** místo toho začne
-od výchozích voleb instalátoru. `eidos install --replace` nebo `--merge` použije
-uložené odpovědi znovu, a když už nesedí, odmítne instalaci a vypíše změny.
+### Diagnostika
 
-**Diagnostics** provádí živé kontroly zdraví: především schopnost spustit hru,
-chybějící mastery (nejspolehlivější jediný předpovídač pádů), archivy, které
-nenačte žádný aktivní plugin, jestli seznam módů pořád odpovídá složce mods, a -
-po běhu - co vlastní log script extenderu říká o každé z jeho pluginových DLL,
-což z otázky „načetly se moje SKSE pluginy?" dělá místo dohadu důkaz.
-Hlásí také aktualizaci hry od posledního čistého spuštění, chybějící script extender nebo takový, který neodpovídá verzi hry (se stránkou ke stažení extenderu a tlačítkem, které nainstaluje stažený archiv), parametr spuštění ve Steamu, který nespouští Eidos s `%command%`, NVAPI vypnuté pro DLSS, exkluzivní celou obrazovku, která brání generování snímků, `enblocal.ini` od ENB bez `LinuxVersion=true`, deklarace pluginů F4SE a SFSE a crash log poslední relace s módy, které jmenuje.
-Kontrola aktualizací také načte požadavky každého modu na Nexusu. Diagnostics uvede požadovaný mod, který chybí nebo je vypnutý, a tlačítkem Ignore lze zahodit požadavek splněný jinak.
+Záložka Diagnostics spouští živé kontroly stavu. Hlásí chybějící mastery, pluginy, které LOOT
+označí jako špinavé, archivy, které žádný aktivní plugin nenačte, zda seznam módů stále
+odpovídá složce módů, zda je zapnutý FUSE passthrough a, když je vyžádán, zda je přítomné
+oprávnění, které k spuštění potřebuje. Po běhu ukazuje, co o každé DLL svých pluginů říká
+vlastní log script extenderu, takže uvidíte, zda se vaše pluginy SKSE načetly. Hlásí také
+aktualizaci hry od posledního čistého spuštění, chybějící script extender nebo takový, který
+neodpovídá verzi hry (se stránkou ke stažení extenderu a tlačítkem pro instalaci archivu,
+který stáhnete), parametr spuštění Steamu, který nespouští Eidos s `%command%`, NVAPI
+ponechané vypnuté pro DLSS, exkluzivní celou obrazovku, která brání generování snímků, ENB
+`enblocal.ini` bez `LinuxVersion=true`, deklarace pluginů F4SE a SFSE a log pádu z poslední
+relace s módy, které jmenuje.
 
-U Skyrim SE, Enderal SE a Fallout 4 má Diagnostics také kartu Zobrazení. Ukazuje velikost a režim okna nastavené v `SkyrimPrefs.ini` profilu (`EnderalPrefs.ini`, `Fallout4Prefs.ini`), nebo v kopii v prefixu, pokud ji profil ještě nemá. Když velikost nenastavuje ani jedna z nich, pole se vyplní podle největší připojené obrazovky uvedené v `/sys/class/drm`, takže Steam Deck ukáže 1280x800. Apply zapíše `iSize W`, `iSize H`, `bFull Screen` a `bBorderless` do kopie profilu; pokud ji profil nemá, nejdřív převezme kopii z prefixu. Když okno nastavuje SSE Display Tweaks, Apply zapíše stejnou velikost a režim do jeho kopie v Overwrite; vlastní soubor modu se nemění.
+Kontroly pro INI profilu a pluginy hledají řádky `sTestFile` v `[General]` vlastních INI
+Falloutu 4, Falloutu 4 VR a Starfieldu, které způsobí, že hra ignoruje `plugins.txt` (Fix je
+odstraní z kopie profilu a předchozí soubor ponechá jako `<ini>.pre-fix`), zapnuté pluginy
+`.esp` ve Starfieldu a pluginy blueprint, kterým chybí příznak blueprint, předpona
+`BlueprintShips-` nebo přípona `.esm`, nebo jejichž hlavní plugin není zapnutý. Systémové
+kontroly označí `vm.max_map_count` nebo pevný limit otevřených souborů pod tím, co Proton
+potřebuje, a hru, prefix nebo instanci na NTFS, exFAT nebo FAT. Kontroly módů jmenují datovou
+cestu BodySlidu, když neukazuje na `Data` hry, složky `Data`, které nástroj zapsal do
+`Overwrite/Root`, patch, jehož volné soubory prohrávají s módem, který záplatuje, a mód, který
+nahrazuje skripty Papyrus script extenderu.
 
-Chcete-li hru spouštět skrz GUI, nastavte parametr spuštění hry ve Steamu na
-absolutní cestu k binárce (Steam nevidí `~/.cargo/bin` v PATH):
+Check for updates také čte požadavky každého módu na Nexusu. Diagnostics vypíše požadovaný mód,
+který chybí nebo je vypnutý, s Ignore pro požadavek splněný jinak.
+
+Záložka také ukazuje, které sestavení Protonu hru spouští, a varuje, než starší Proton spustí
+prefix, který připravil novější; Rebuild odsune rozbitý prefix stranou, aby Steam vytvořil
+nový ([troubleshooting.md](troubleshooting.md#který-proton-hru-spouští-a-rozbitý-prefix)).
+Další karty označí prefix, který nebyl nikdy nastaven nebo jehož registr je zastaralý, jiný
+program než Eidos přijímající odkazy Mod Manager Download (Register to opraví), výstup nástroje
+starší než jeho vstupy (s tlačítkem, které nástroj spustí znovu) a vyčištěnou kopii nebo kopii s
+příznakem light pluginu, jehož originál se od té doby změnil. Každou kartu vysvětluje
+[troubleshooting.md](troubleshooting.md#karty-health). **Copy report** dá na schránku zprávu o
+systému a každém zjištění, s vaší domovskou složkou a přihlašovacím jménem skrytými, pro hlášení
+chyby.
+
+U Skyrimu SE, Enderalu SE a Falloutu 4 má Diagnostics také kartu Display. Ukazuje velikost a
+režim okna nastavené v `SkyrimPrefs.ini` profilu (`EnderalPrefs.ini`, `Fallout4Prefs.ini`), nebo v
+kopii prefixu, když ji profil zatím nemá. Když velikost nenastavuje ani jedno, její pole
+začínají na největší připojené obrazovce uvedené v `/sys/class/drm`, takže Steam Deck čte
+1280x800. Šířka a výška jsou celá čísla od 320 do 16384. Apply zapíše `iSize W`, `iSize H`,
+`bFull Screen` a `bBorderless` do kopie profilu, poté co převezme kopii prefixu, pokud ji profil
+nemá. Když okno nastavuje SSE Display Tweaks, Apply zapíše stejnou velikost a režim do jeho kopie
+v Overwrite; soubor samotného módu se nemění.
+
+Kartu Game files nahoře v záložce popisuje část
+[Soubory hry](#soubory-hry-instalace-z-obchodu-nebo-kopie), kartu pořadí kolekce část
+[Zachování pořadí kolekce](#zachování-pořadí-kolekce) a Find the mod behind a problem část
+[Testovací běhy](#hledání-módu-za-problémem).
+
+### Spuštění hry
+
+Chcete-li hru spustit přes okno, nastavte parametr spuštění hry ve Steamu na absolutní cestu k
+programu, protože Steam nečte `PATH` vašeho shellu
+([install.md](install.md#potom-nasměrovat-na-něj-steam)):
 
 ```
-~/.cargo/bin/eidos-gui %command%
+~/.local/bin/eidos-gui %command%
 ```
 
-Eidos se otevře na instanci té hry - té, kterou jste použili naposledy, takže
-přenosná instance se najde znovu stejně jako globální; kliknutím na Run ji
-spustíte skrz sloučený pohled.
+Z Colony je cesta `~/.local/share/Colony/apps/Eidos/eidos-linux`. Eidos se otevře na instanci
+hry, té, kterou jste naposledy použili, takže přenosná instance se najde znovu stejně jako
+globální; klikněte na Run a spustí se přes sloučený pohled.
 
-Se zapnutou volbou **Start the game at once when a store opens Eidos** (Preferences, General, Running a game) Eidos toto kliknutí přeskočí: zkontroluje Health a spustí hru, aniž by ukázal své okno. Okno se otevře jako obvykle, když Health hlásí problém, když seznam modů vyžaduje pozornost, když nástroj nastavený ke spuštění před hraním má zastaralý výstup nebo, u Skyrim SE, Enderal SE a Fallout 4, když profil ještě nemá velikost okna (okno se pak otevře na Diagnostics). Chcete-li okno pro jedno spuštění, dejte před příkaz `EIDOS_WINDOW=1`: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
+Se zapnutým **Start the game at once when a store opens Eidos** (Preferences, General, Running a
+game; ve výchozím stavu vypnuto) Eidos to kliknutí přeskočí: zkontroluje Health a spustí hru bez
+zobrazení okna. Okno se otevře jako obvykle, když Health uvádí problém, když seznam módů
+potřebuje pozornost, když nástroj nastavený ke spuštění před hraním má zastaralý výstup, nebo
+když u Skyrimu SE, Enderalu SE a Falloutu 4 profil zatím nemá velikost okna (okno se pak otevře
+na Diagnostics). Chcete-li okno pro jedno spuštění, dejte `EIDOS_WINDOW=1` před příkaz:
+`EIDOS_WINDOW=1 ~/.local/bin/eidos-gui %command%`.
 
-Mimo Steam Run nespouští hru sám přes Proton nebo Wine. Požádá obchod, kterému
-kopie patří, aby ji spustil, a obchod spustí Eidos:
+V okně, které neotevřel žádný obchod, Run hru nespouští samo a Eidos nikdy nespouští hru přes
+Proton ani Wine přímo. Run požádá o spuštění obchod, který kopii vlastní, a obchod spustí Eidos:
 
-- Steam spustí `steam -applaunch <appid>`, když je nastavena výše uvedená volba
-  spuštění. Je-li Steam zavřený, spustí se nejdřív Steam.
-- Heroic (kopie z GOG nebo Epic, nativní nebo Flatpak) dostane odkaz
-  `heroic://launch`, když je Eidos wrapperem v nastavení hry v Heroicu, s
-  absolutní cestou k `eidos-gui` jako spustitelným souborem a bez argumentů.
-  Je-li Heroic zavřený, spustí se nejdřív Heroic.
-- Samotný Legendary spustí `legendary launch <app>`, když
-  `~/.config/legendary/config.ini` obsahuje `wrapper =` a absolutní cestu k
-  `eidos-gui` v sekci hry `[<app>]` nebo v `[default]`.
+- Steam spustí `steam -applaunch <appid>`, když je nastaven parametr spuštění výše a hra má
+  prefix Proton, který Steam vytvoří při prvním spuštění hry. Steam se nejdřív spustí, je-li
+  zavřený.
+- Heroic (kopie z GOG nebo Epicu, nativní nebo Flatpak) dostane odkaz `heroic://launch`, když je
+  Eidos obalem v nastavení hry v Heroicu, s absolutní cestou k `eidos-gui` (nebo `eidos-linux`)
+  jako spustitelným souborem a bez argumentů. Heroic se nejdřív spustí, je-li zavřený.
+- Samotný Legendary spustí `legendary launch <app>`, když `~/.config/legendary/config.ini` má
+  `wrapper =` a absolutní cestu k `eidos-gui` (nebo `eidos-linux`) pod sekcí hry `[<app>]`, nebo
+  pod `[default]`.
 
-Eidos pak otevře druhé okno na instanci, kterou jste použili naposledy, a v něm
-kliknete na Run. První okno tento běh nesleduje, proto v něm po hraní stiskněte
-F5, aby se znovu načetly jeho seznamy. Když nastavení v obchodě chybí nebo
-loader script extenderu neleží vedle spustitelného souboru hry, Run nic nespustí
-a ukáže, co a kde nastavit, se skutečnou cestou ke spuštěné binárce.
+Loader script extenderu, launcher i spustitelný soubor hry v seznamu Run se obchodu takto
+předávají, stejně jako `eidos tool <instance> run <entry>` pro jeden z nich v terminálu. Některé
+kopie Eidos svému obchodu předat nedokáže, například kopii z GOG mimo Heroic: Run pak řekne, aby
+se hra spustila z toho obchodu.
 
-### Proměnné a wrappery pro profil
+Předání zaznamená tuto instanci jako tu, kterou jste použili naposledy, a obchod pak otevře na ní
+druhé okno Eidosu. Při vypnutém Start the game at once v něm kliknete na Run; při zapnutém to okno
+spustí hru bez zobrazení sebe sama, pokud ho neotevře některý z případů výše. První okno ten běh
+nesleduje, takže po hraní v něm stiskněte F5 a znovu načtěte jeho seznamy. Když nastavení obchodu
+chybí, nebo loader script extenderu neleží vedle spustitelného souboru hry, Run nespustí nic a
+ukáže, co a kam nastavit, se skutečnou cestou běžící binárky.
 
-Profil může mít vlastní proměnné prostředí a příkazy wrapperů v `profiles/<název>/launch-env.ini`, jeden záznam na řádek:
+Zatímco hra nebo nástroj běží, Run se změní na Stop. Dvě stisknutí ukončí každý program, který běh
+spustil, a Eidos pak zachytí relaci a odpojí jako po každém ukončení; zastavený běh se nikdy
+nepočítá jako čisté spuštění
+([troubleshooting.md](troubleshooting.md#hra-nebo-nástroj-který-se-nezavře)).
+
+`%command%` ze Steamu pro tituly Bethesdy obvykle ukazuje na `<Game>Launcher.exe`. Eidos ho nikdy
+nespouští: launcher je samostatná aplikace s nastavením, která znovu prohledá `Data` a přepíše
+`plugins.txt`, čímž zruší právě nasazené pořadí načítání. Eidos místo toho spustí loader script
+extenderu, je-li nainstalován, jinak binárku hry, a řekne to, když musí přejít na binárku hry.
+
+Eidos prohledá DLL zapnutých módů, zda neimportují `d3dcompiler_47.dll`, zkopíruje DLL od
+Microsoftu do prefixu a teprve potom nastaví `WINEDLLOVERRIDES=d3dcompiler_47=n,b`; sami to
+nastavovat nemusíte.
+
+### Proměnné a obaly pro profil
+
+Profil může nést vlastní proměnné prostředí a příkazy obalů v `profiles/<name>/launch-env.ini`, jedna
+položka na řádek:
 
 ```ini
 env=PROTON_ENABLE_NVAPI=1
@@ -832,64 +1110,69 @@ wrapper=gamemoderun
 wrapper=gamescope -W 1280 -H 800 -f -- %command%
 ```
 
-Platí pro každé `eidos play` tohoto profilu (hra spuštěná přes `%command%` ve Steamu nebo přes Run v okně, které otevřel obchod) i pro každé spuštění nástroje. `eidos shell` dostane proměnné a žádný wrapper. První řádek `wrapper=` je nejvnější. U řádku `wrapper=`, který obsahuje `%command%`, se příkaz vloží na toto místo, jako v parametrech spuštění Steamu; u řádku bez něj se příkaz přidá na konec. Wrappery běží v soukromém jmenném prostoru Eidos, takže vidí módy.
+Platí pro každé `eidos play` toho profilu (hra spuštěná přes `%command%` ze Steamu, nebo přes Run v
+okně, které otevřel obchod) a pro každý běh nástroje. `eidos shell` dostane proměnné a žádný obal.
+První řádek `wrapper=` je nejvnější. Řádek `wrapper=`, který obsahuje `%command%`, dostane příkaz na
+tom místě, jako v parametrech spuštění Steamu; řádek bez něj dostane příkaz na konci. Obaly běží
+uvnitř soukromého jmenného prostoru Eidosu, takže vidí módy.
 
-Proměnná zde nahradí hodnotu, kterou Eidos nastavuje pro stejný název, a vlastní řádek `env=` nástroje v `tools.ini` nahradí obojí. `WINEDLLOVERRIDES` se naopak přidá za overridy, které Eidos nastavuje pro ENB, ReShade a přibalené DLL: DLL uvedená v obou dostane nastavení profilu, ostatní si ponechají své.
+Proměnná zde nahradí hodnotu, kterou Eidos nastavuje pro stejný název, a vlastní řádek `env=`
+nástroje v `tools.ini` nahradí obojí. `WINEDLLOVERRIDES` se místo toho přidává za přepisy, které
+Eidos nastavuje pro ENB, ReShade a přibalená DLL, takže DLL jmenovaná v obou dostane nastavení
+profilu a ostatní si ponechají své.
 
-View -> INI editor otevře soubor jako poslední kartu, pro každou hru. Při uložení Eidos vypíše čísla řádků, které ignoruje: řádků, které nejsou ani `env=NÁZEV=hodnota`, ani `wrapper=příkaz`. `eidos play <instance>` bez příkazu vypíše proměnné, které spuštění dostane, a wrappery. Copy report v Diagnostics uvádí názvy proměnných a programů wrapperů, bez jejich hodnot.
-
-`%command%` ze Steamu u titulů Bethesdy obvykle ukazuje na
-`<Game>Launcher.exe`. Eidos jej nikdy nespouští: launcher je samostatná
-aplikace nastavení, která znovu prohledá `Data` a přepíše `plugins.txt`, čímž
-zruší právě nasazené pořadí načítání. Místo něj dosadí zavaděč script
-extenderu, pokud je nainstalovaný, jinak binárku hry, a řekne to, když musí
-ustoupit - hra, která nastartuje s každým SKSE módem netečným, je horší než ta,
-která nenastartuje.
-
-Starší instrukce tady vynucovaly `WINEDLLOVERRIDES="d3dcompiler_47=n"`. To už
-není potřeba a nikdy to nebylo úplně správně: přepsání na *native* pomůže jen
-tehdy, když je pravá `d3dcompiler_47.dll` už v prefixu. Eidos teď prochází
-importy DLL zapnutých módů, sám nasadí skutečnou DLL od Microsoftu a teprve pak
-nastaví přepsání.
-
-## Vyzkoušejte důkaz konceptu
-
-Není potřeba žádná hra. Dokazuje sjednocení + copy-on-write + nulový zásah +
-rozsah na jmenný prostor jen pomocí neprivilegovaného OverlayFS v uživatelském
-jmenném prostoru (Linux >= 5.11):
-
-```sh
-./scripts/poc-overlay.sh
-```
+View -> INI editor otevře soubor jako svou poslední záložku, pro každou hru. Prázdné řádky a řádky
+začínající `#` nebo `;` se přeskakují. Uložení vypíše čísla řádků, které Eidos ignoruje: řádky,
+které nejsou ani `env=NAME=value`, ani `wrapper=command`, a řádek `wrapper=`, jehož první slovo je
+`NAME=value`, jak to parametry spuštění Steamu dovolují; tu proměnnou dejte místo toho na řádek
+`env=`. `eidos play <instance>` bez příkazu vypíše proměnné, které běh dostane, a obaly. Copy report
+v Diagnostics jmenuje proměnné a programy obalů, bez jejich hodnot.
 
 ## Nástroje
 
-xEdit, BodySlide, DynDOLOD a spol. běží skrz sloučený pohled uvnitř prefixu
-Protonu dané hry:
+xEdit, BodySlide, DynDOLOD a další nástroje běží přes sloučený pohled uvnitř prefixu Wine hry
+(prefix Proton ze Steamu, nebo ten, který Heroic nastavil pro kopii z GOG nebo Epicu):
 
 ```sh
 eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse run BodySlide
-eidos prereqs skyrimse            # what the registered tools need, and its state
-eidos prereqs skyrimse --install  # fetch whatever is missing
+eidos tool skyrimse run --exe "<path>/GenerateFNISforUsers.exe"  # spustit exe jednou bez registrace
+eidos prereqs skyrimse            # co registrované nástroje potřebují, a jejich stav
+eidos prereqs skyrimse --install  # stáhnout, co chybí
 ```
 
-Jedna věc, kterou je dobré vědět před pojmenováním nástroje: **název rozhoduje,
-které běhové DLL mu Eidos poskytne** - `BodySlide` dostane své knihovny DirectX,
-`BS` nedostane nic. V GUI dialog Executables ukazuje pod polem skutečný stav
-každé podmínky a ty chybějící jsou tlačítka.
+Pandora, Nemesis, FNIS, BodySlide, DynDOLOD, TexGen, xLODGen a Synthesis se najdou bez
+registrace. Pandora, Nemesis, FNIS, BodySlide a Synthesis přicházejí s už nastaveným módem pro
+zachycení, takže jejich výstup jde do vlastního módu (podrobnosti v
+[tools.md](tools.md#posílání-výstupu-nástroje-do-jeho-vlastního-módu)).
 
-Tabulka, tři úrovně podmínek, proč DynDOLOD potřebuje běhové prostředí .NET,
-které winetricks neumí nainstalovat, a proč se nástroj nainstalovaný jako mód
-spouští ze sloučené cesty místo z vlastní složky, jsou v
-[tools.cs.md](tools.md).
+Název, který nástroji dáte, rozhoduje o tom, jaké runtimy a DLL mu Eidos poskytne: `BodySlide`
+dostane své knihovny DirectX, `BS` nedostane nic. V okně dialog Executables ukazuje pod polem
+skutečný stav každé prerekvizity a chybějící jsou tlačítka.
 
-Sestavení ze zdrojových kódů a rozvržení repozitáře jsou v
-[../internals/contributing.md](../../../../internals/contributing.md).
+Balík vydání nese instalátory vcrun2022 (x86 a x64), .NET 8 Desktop Runtime 8.0.12 a runtime .NET 10
+10.0.10 v `runtimes/` a `install.sh` je zkopíruje do `~/.local/share/Colony/Eidos/runtimes/`, takže
+`eidos prereqs <instance> --install` je nainstaluje bez stahování. Eidos spouští instalátory
+vcrun2022 a .NET 8 od Microsoftu bez okna v prefixu hry, bez winetricks. `eidos-linux` a sestavení ze
+zdrojů nenesou složku `runtimes/`, takže stahují tytéž připnuté soubory od Microsoftu. .NET 10 SDK,
+který Synthesis potřebuje (asi 300 MB), se stahuje vždy.
+
+Tabulka, tři úrovně prerekvizit, proč DynDOLOD potřebuje runtime .NET, který winetricks nenainstaluje,
+a proč se nástroj nainstalovaný jako mód spouští ze sloučené cesty místo ze své vlastní složky, jsou v
+[tools.md](tools.md).
 
 ## Rozšíření
 
-Eidos lze rozšířit, aniž byste jej znovu sestavovali: manifest TOML v
-`~/.config/Colony/Eidos/addons/` přidá nástroj do seznamu Extensions nebo
-kontrolu do záložky Health. Do Eidosu se nic nenačítá - rozšíření je program,
-který spustí. Viz [extensions.cs.md](extensions.md).
+Eidos lze rozšířit bez nového sestavení: manifest TOML v `~/.config/Colony/Eidos/addons/` přidá nástroj
+do seznamu Extensions nebo kontrolu do záložky Diagnostics. Do Eidosu se nic nenačítá: rozšíření je
+program, který Eidos spouští. Viz [extensions.md](extensions.md).
+
+## Vyzkoušejte důkaz konceptu
+
+Skript nepotřebuje žádnou hru. Ukáže sloučený pohled, copy-on-write, složku hry ponechanou nedotčenou a
+sloučení, které existuje jen uvnitř jeho jmenného prostoru, a používá jen neprivilegovaný OverlayFS v
+uživatelském jmenném prostoru (Linux 5.11 nebo novější):
+
+```sh
+./scripts/poc-overlay.sh
+```

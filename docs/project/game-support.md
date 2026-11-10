@@ -4,13 +4,13 @@ A design note, not a changelog. It covers one question: what has to change for a
 game declared in a `<id>.toml` to actually *install its mods*, and how much of that
 can stay declarative.
 
-Short answer: one function, five call sites, three new fields. The engine is not
+Short answer: one function, five call sites, four new fields. The engine is not
 involved at any point.
 
-## Status (2026-08-25)
+## Status (2026-11-10)
 
 **Two of the four proposed fields shipped in [#5](https://github.com/Project-Colony/Eidos/pull/5)
-on 2026-08-03; `valid_files` and `mod_unit` followed.** The section below called "The actual blocker" describes a state
+on 2026-08-03; `valid_files` and `mod_unit` followed.** The section below called "The blocker, as it stood before #5" describes a state
 that no longer exists; it is kept because the reasoning still explains the design,
 but read it as history.
 
@@ -21,6 +21,7 @@ but read it as history.
 | `valid_files` | **shipped** (`stardewvalley.toml`, `7daystodie.toml` use them) |
 | `mod_unit` | **shipped** (`stardewvalley.toml`, `7daystodie.toml` use them) |
 | `known_tools` | **shipped** in the TOML schema (2026-08-25), not part of the original proposal |
+| `nexus_sources` | **shipped** in 1.23, not part of the original proposal: other Nexus domains whose mods the game accepts (`enderalse.toml` lists `skyrimspecialedition`) |
 
 So a game whose mod root is marked by a FOLDER, an EXTENSION or a FILE is
 declarable today, with no recompile: Gamebryo/Creation, BepInEx/Unity,
@@ -29,12 +30,27 @@ Cyberpunk, Unreal `~mods`, and the FILE markers (`manifest.json`,
 rather than loose files is declarable too, through `mod_unit`: that is what
 SMAPI/Stardew and 7 Days to Die use.
 
+Four of the 15 built-in games are not Bethesda games:
+
+- Stellar Blade deploys paks into `SB/Content/Paks/~mods`; UE4SS mods travel
+  through `Root/`.
+- Stardew Valley swaps in SMAPI (`StardewModdingAPI.exe`), which the user
+  installs. The descriptor covers the Windows/Proton layout only.
+- 7 Days to Die covers the install-local `Mods` folder only. `UserDataFolder/Mods`
+  and `~/.local/share/7DaysToDie/Mods` are not projected.
+- Crimson Desert takes code mods (ASI plugins, Ultimate ASI Loader proxies,
+  ReShade) in `bin64`. A PAZ data mod that needs a new group and a rebuilt
+  `meta/0.papgt` is not handled. A mod that replaces a vanilla group in place
+  goes through `Root/`.
+
 ## The state of play
 
-The VFS engine has no game knowledge at all. Searching `eidos-core` and
-`eidos-fuse` for `skyrim`, `fallout`, `bethesda`, `gamebryo`, `plugins.txt` or
-`.esp` returns only test fixture filenames. The engine stacks directories and
-resolves reads; which game those directories belong to never reaches it.
+The VFS engine knows plugin extensions for one purpose and nothing else about
+games. `eidos-fuse/src/timestamps.rs` projects profile-owned modification times
+for `.esp`/`.esm`/`.esl` names in the Data root, which is how timestamp-ordered
+games (Oblivion, Morrowind) get their load order. Apart from that, the engine
+stacks directories and resolves reads; which game those directories belong to
+never reaches it.
 
 The catalogue is already declarative.
 [`eidos-gamedef`](../../crates/eidos-gamedef/src/lib.rs) mirrors MO2's
@@ -42,9 +58,13 @@ The catalogue is already declarative.
 registry with no recompile, exactly like MO2's `basic_games` plugin.
 [`internals/adding-games.md`](../internals/adding-games.md) documents it.
 
-So detection works for any Steam game, and the file union mounts over any
-`data_dir`. What does not work is the step between downloading a mod and having
-it on disk.
+So detection works for any Steam game, and for GOG and Epic copies that Heroic
+or Legendary installed when the descriptor lists their ids (`gog_ids`,
+`epic_ids`), and the file union mounts over any `data_dir`. Since 1.24 the
+union can also mount a copy of the game folder kept in the instance in place of
+the install (`eidos stock-game`), except for a game that keeps its plugin list
+in the game folder (Morrowind, and Oblivion with `bUseMyGamesDirectory=0`). What
+does not work is the step between downloading a mod and having it on disk.
 
 ## The blocker, as it stood before #5
 
@@ -58,8 +78,8 @@ const GAMEBRYO_FOLDERS: &[&str] = &["fonts", "interface", "meshes", "textures", 
 const GAMEBRYO_SUFFIXES: &[&str] = &["esp", "esm", "esl", "bsa", "ba2", "modgroups", "ini"];
 ```
 
-The comment above it already says "Per-game checkers can specialise this later."
-This note is that later.
+The comment above it said "Per-game checkers can specialise this later." This
+note is that later.
 
 Four public methods sit on top of it, so the hardcoding propagates:
 
@@ -74,10 +94,10 @@ When `data_looks_valid` says Invalid at every level, `simple_archive_base` retur
 `None`, `open_archive` returns `NotSimple`, and the user gets the manual picker
 with the tree and no guidance. For every non-Bethesda mod, every time.
 
-That was the whole gap, and it is closed for folder- and extension-marked games.
-It remains exactly true for the two families below whose marker is a file or whose
-unit is a folder: the game is declarable, the mount is correct, and the installer
-still refuses the archive.
+That was the whole gap. It is closed for folder- and extension-marked games, and
+since `valid_files` and `mod_unit` shipped, for the two families below whose
+marker is a file or whose unit is a folder: before that, the game was declarable
+and the mount was correct, but the installer refused the archive.
 
 ### Worked example: Stardew Valley
 
@@ -116,9 +136,10 @@ level is one above the marker, not the marker's own level. Any schema that only
 lists names gets Stardew backwards.
 
 (MO2 handles this with per-game Python checker classes that can also *fix* the
-tree rather than just judge it. I could not read `basic_games` from this machine
-to quote its Stardew checker, so the above is derived from what SMAPI requires on
-disk, not from MO2's source.)
+tree rather than just judge it. The analysis above was derived from what SMAPI
+requires on disk. `stardewvalley.toml` now cites the sources: MO2's
+`basic_games` `game_stardewvalley.py` for the ids and loader, and SMAPI's
+`docs/technical/mod-package.md` for the package layout.)
 
 ## Proposed schema
 
@@ -156,7 +177,7 @@ whole per-game cost once the mechanism exists.
 
 | Family | `valid_folders` | `valid_suffixes` | `valid_files` | `mod_unit` |
 |---|---|---|---|---|
-| Gamebryo / Creation | (today's list) | esp, esm, esl, bsa, ba2 | - | files |
+| Gamebryo / Creation | (today's list) | esp, esm, esl, bsa, ba2, modgroups, ini | - | files |
 | BepInEx (Unity) | bepinex, plugins, patchers, config, core | dll | - | files |
 | SMAPI (Stardew) | - | - | manifest.json | **folder** |
 | Cyberpunk 2077 | archive, bin, engine, r6, mods, red4ext | archive | - | files |
@@ -183,24 +204,37 @@ and a fifth `LoadOrder` variant. It is a separate piece of work and it *would*
 touch more than the checker.
 
 **`launch_env`.** BepInEx under Proton needs `WINEDLLOVERRIDES="winhttp=n,b"` to
-load at all. The existing `ScriptExtender { launcher, loader }` swap covers SMAPI
-(swap `Stardew Valley.exe` for `StardewModdingAPI.exe`) but cannot express an
-environment variable. Needed before Unity games actually *run* modded, not before
-their mods install. Separate change, separate PR.
+load at all. Since 1.22, `winhttp` and `wininet` are among the shadowed DLL names
+Eidos watches for: a mod that ships `winhttp.dll` at its top level or in `Root/`
+gets `winhttp=n,b` at launch, which is what BepInEx needs. `tools.ini` also takes
+a per-tool `env=`. The `ScriptExtender { launcher, loader }` swap covers SMAPI
+(swap `Stardew Valley.exe` for `StardewModdingAPI.exe`). Since 1.24 a profile
+can carry its own launch variables and wrappers in
+`profiles/<name>/launch-env.ini` (`env=NAME=value` and `wrapper=<command line>`
+lines), so a game that needs another variable can get it one profile at a
+time. What is still missing is a per-game launch environment in the TOML
+schema: `GameDef` has no environment field.
 
 ## What it touches in code
 
-`eidos-install` does not currently depend on `eidos-gamedef`. `eidos-gamedef` is a
-leaf (serde + toml only), so adding the edge creates no cycle.
+This section is the design as it stood at #5. Then, `eidos-install` did not
+depend on `eidos-gamedef`, and `eidos-gamedef` was a leaf (serde + toml only), so
+adding the edge created no cycle. Today `eidos-install` depends on
+`eidos-gamedef`, and `eidos-gamedef` depends on `eidos-paths` besides serde and
+toml.
 
 The shape that shipped is a narrow value type rather than `&GameDef` passed
-around:
+around. At #5 it had two fields; it now also has `files`, `mod_unit` and
+`data_dir`:
 
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LayoutRules {
     pub folders: &'static [&'static str],
     pub suffixes: &'static [&'static str],
+    pub files: &'static [&'static str],
+    pub mod_unit: ModUnit,
+    pub data_dir: &'static str,
 }
 
 impl Default for LayoutRules { /* the Gamebryo set */ }
@@ -214,7 +248,7 @@ at load). That makes the type `Copy`, so `ArchiveTree`'s methods take it by valu
 and threading it costs nothing. Matching is `eq_ignore_ascii_case`, so a
 descriptor may spell its rules the way the game's documentation does.
 
-Call sites, all of them:
+Call sites, all of them, as of #5 (the paths and line numbers have moved since):
 
 | Site | Change |
 |---|---|
@@ -222,6 +256,11 @@ Call sites, all of them:
 | `install.rs:1180, 1183, 1191` (`open_archive`) | **new parameter** |
 | `gui/main.rs:9906` (`root_looks_valid`) | thread the rules |
 | `lib.rs:224, 241, 273, 323, 351` | internal recursion |
+
+`install.rs` is now the module `crates/eidos-install/src/install/`:
+`open_archive` is at `install/mod.rs:215` and `install_extracted` at
+`install/simple.rs:92`. The GUI calls `root_looks_valid` from
+`crates/eidos-gui/src/modinfo/install.rs:744`.
 
 Only `open_archive` gains a parameter. Every other public entry point
 (`install_extracted`, `install_bain`, `install_manual`, `finish_fomod`,
@@ -236,9 +275,9 @@ Test cost: the existing checker tests in `eidos-install/src/lib.rs` all become
 
 Two `match` arms on game ids will stay in Rust, and that is correct:
 
-- [`eidos-plugins/src/lib.rs:81`](../../crates/eidos-plugins/src/lib.rs) maps to
+- [`eidos-plugins/src/lib.rs:85`](../../crates/eidos-plugins/src/lib.rs) maps to
   `esplugin::GameId`
-- [`eidos-loot/src/lib.rs:65`](../../crates/eidos-loot/src/lib.rs) maps to LOOT's
+- [`eidos-loot/src/lib.rs:63`](../../crates/eidos-loot/src/lib.rs) maps to LOOT's
   `GameType`
 
 Both are enum variants owned by third-party crates. A TOML string cannot name a
@@ -247,32 +286,36 @@ LOOT support by declaring it.
 
 Two others *are* data and could migrate later, though neither blocks anything:
 
-- [`eidos-gamefeatures/src/se_log.rs:52`](../../crates/eidos-gamefeatures/src/se_log.rs)
+- [`eidos-gamefeatures/src/se_log.rs:49`](../../crates/eidos-gamefeatures/src/se_log.rs)
   hardcodes each script extender's log path
-- [`eidos-gamefeatures/src/lib.rs:77`](../../crates/eidos-gamefeatures/src/lib.rs)
+- [`eidos-gamefeatures/src/lib.rs:86`](../../crates/eidos-gamefeatures/src/lib.rs)
   hardcodes BSA invalidation per engine
 
 ## Two things found in passing
 
-**`meta.ini` records the wrong game name.** The GUI passes `def.id` (`skyrimse`)
-into the installer's `game_name`, which writes `gameName=skyrimse`. MO2 writes the
-short name (`gameName=SkyrimSE`), and `eidos-instance/src/meta.rs` even has a test
-asserting `SkyrimSE` when read from a Nexus sidecar. Nothing reads the field back
-for behaviour, so this is interop-only: MO2 opening an Eidos-installed mod sees an
-id it does not recognise. One-line fix (`def.short_name`), unrelated to this work,
-worth doing while the install path is open.
+Both are fixed, by staging step 4 below.
 
-**The tab bar is unconditional.**
-[`gui/main.rs:8920`](../../crates/eidos-gui/src/main.rs) pushes every tab
-regardless of game, so a game with `load_order = "None"` shows an empty Plugins
-tab. Cosmetic, but it is the first thing a Stardew user would notice.
+**`meta.ini` recorded the wrong game name.** Fixed in step 4. The GUI passed
+`def.id` (`skyrimse`) into the installer's `game_name`, which wrote
+`gameName=skyrimse`. MO2 writes the short name (`gameName=SkyrimSE`), and
+`eidos-instance/src/meta.rs` even has a test asserting `SkyrimSE` when read from
+a Nexus sidecar. Nothing reads the field back for behaviour, so this was
+interop-only: MO2 opening an Eidos-installed mod saw an id it did not recognise.
+`install/meta.rs` now writes `GameDef::short_name`.
+
+**The tab bar was unconditional.** Fixed in step 4. `gui/main.rs:8920` pushed
+every tab regardless of game, so a game with `load_order = "None"` showed an empty
+Plugins tab. The tab bar now lives in
+[`modinfo/main_screen.rs`](../../crates/eidos-gui/src/modinfo/main_screen.rs)
+and offers Plugins only where `GameSpec::for_id` resolves.
 
 ## Staging
 
 **0. Done.** A characterisation test, `crates/eidos-install/tests/corpus.rs`,
-freezing the checker's verdicts on 49 real mod-root shapes and 7 downloaded
-archives taken from a live Skyrim SE instance and anonymised
-(`corpus/generate.py`). It passed on unmodified code before anything else moved.
+freezing the checker's verdicts on 49 real mod-root shapes (the count at this
+stage) and 7 downloaded archives taken from a live Skyrim SE instance and
+anonymised (`corpus/generate.py`). The corpus now holds 51 Skyrim SE mod roots,
+7 Skyrim SE archives, 28 Stellar Blade mod roots and 13 Stellar Blade archives. It passed on unmodified code before anything else moved.
 Not a design step - the point is that stages 1 and 2 claim to change no behaviour,
 and this is what turns that claim into something a test can refuse.
 
@@ -281,11 +324,14 @@ checker methods reading it. Every call site passes `LayoutRules::default()`. The
 golden record did not move.
 
 **2. Done.** `valid_folders` / `valid_suffixes` on `GameDef` (empty on all eleven
-built-ins) and in the TOML schema, `From<&GameDef>` falling back to the default,
+built-ins at the time; of today's 15, the four non-Bethesda games declare their
+own vocabulary) and in the TOML schema, `From<&GameDef>` falling back to the default,
 `LayoutRules::for_game`, and the rules threaded from the game id at every entry
 point. `open_archive` gained its parameter; nothing else did, because every other
 public entry already took the game. Guarded by
-`every_builtin_game_keeps_the_default_vocabulary`. The golden record still did not
+`a_game_that_declares_nothing_keeps_the_gamebryo_vocabulary`, which names the 11
+Bethesda ids outright so that a new game cannot shrink what it covers, and by
+`the_corpus_game_resolves_to_the_frozen_vocabulary` in the corpus test. The golden record still did not
 move, and it is now recorded through `for_game("skyrimse")` rather than a
 hand-built default, so it proves the real lookup path.
 
@@ -300,9 +346,14 @@ game that mattered instead, the answer was Stellar Blade, which is installed on
 the machine this was built on and already modded - so the descriptor could be read
 off a real install and a real set of downloads rather than guessed.
 
-Stellar Blade ships as a built-in game: Unreal, `LoadOrder::None`, `data_dir =
-SB/Content/Paks`, `valid_folders = ["~mods", "logicmods"]`, `valid_suffixes =
-["pak", "utoc", "ucas"]`. Thirteen real archives went into the corpus. Under the
+Stellar Blade ships as a built-in game: Unreal, `LoadOrder::None`. At this step
+the descriptor had `data_dir = SB/Content/Paks` and `valid_folders = ["~mods",
+"logicmods"]`. It now has `data_dir = "SB/Content/Paks/~mods"`, no
+`valid_folders`, and only `valid_suffixes = ["pak", "utoc", "ucas"]`.
+`stellarblade.toml` gives the reason: the mod frameworks read `~mods` by name, so
+a mod deployed one level higher loads its pak and adds nothing, and a `~mods`
+folder marker would let `~mods/foo.pak` survive as `~mods/~mods/foo.pak`.
+Thirteen real archives went into the corpus. Under the
 Gamebryo vocabulary **none** of them resolves; under the game's own, **nine of
 thirteen install with no question asked**. `the_game_vocabulary_is_what_makes_unreal_archives_install`
 asserts both numbers, so a regression in either direction has to be looked at.
@@ -343,8 +394,10 @@ The real archives forced one thing further. CustomNanosuitSystem ships a UE4SS m
 the pak back at `<game>/SB/Content/Paks`, which is exactly where the Data union is
 mounted, so the pak would be shadowed and never served: a mod that installs
 cleanly and works by half. The split is therefore cut along the `data_dir` path -
-`SB/Content/Paks` becomes the Data half, `SB/Binaries` travels through `Root/` at
-its own path.
+`SB/Content/Paks` became the Data half, `SB/Binaries` travels through `Root/` at
+its own path. Since the deploy root moved, the Data half is
+`SB/Content/Paks/~mods`, and a `LogicMods` half under `SB/Content/Paks` travels
+through `Root/` too. `game_dir` is still `SB`, so the result below holds.
 
 That last part needed `RootSplit`'s root entries to carry their archive-relative
 path rather than just a name, since `Root/Binaries` is not where the loader looks.
@@ -359,4 +412,6 @@ question asked**.
 
 ## Open question
 
-Shipped as the binary; no family has needed a depth yet.
+`mod_unit` shipped as a choice of two values, `files` or `folder`, the minimum
+that makes Stardew correct. A family whose unit sits two levels down would turn
+it into a depth number. No family has needed one yet.
