@@ -173,6 +173,15 @@ fn end_search(app: &mut App, result: Option<eidos_instance::BisectResult>) {
         app.bisect_line = Some(e.to_string());
         return;
     }
+    // A step's request no game has begun would make the next Run a step of a
+    // search that is gone. An ended step stays for its review.
+    load_test_state(app, false);
+    if matches!(&app.test_state, Some((run, TestState::Requested)) if run.bisect) {
+        app.status = Some(match inst.cancel_test_request() {
+            Ok(()) => t("status_test_cancelled").to_string(),
+            Err(e) => e.to_string(),
+        });
+    }
     app.bisect = None;
     app.bisect_open = false;
     load_test_state(app, true);

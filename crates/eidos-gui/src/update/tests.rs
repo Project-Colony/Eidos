@@ -9170,6 +9170,22 @@ fn stop_takes_two_presses_and_leaves_a_waiting_test_run_for_review() {
 }
 
 #[test]
+fn stop_drops_a_step_request_no_game_began() {
+    let (mut app, root) = list_app(&["A", "B", "C", "D"]);
+    let _ = update_inner(&mut app, Message::OpenBisect);
+    let _ = update_inner(&mut app, Message::BisectStart);
+    let _ = update_inner(&mut app, Message::BisectRunStep);
+    assert!(app.created.as_ref().unwrap().test_run().is_some());
+    let _ = update_inner(&mut app, Message::BisectStop);
+    let _ = update_inner(&mut app, Message::BisectStop);
+    let inst = app.created.as_ref().unwrap();
+    assert!(inst.read_bisect().is_none());
+    assert!(inst.test_run().is_none(), "the next Run is a normal run");
+    assert_eq!(app.status.as_deref(), Some(t("status_test_cancelled")));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn a_stale_window_reads_the_search_again_before_it_acts() {
     use eidos_instance::Answer;
     let (mut app, root) = answer_app(false);
