@@ -346,8 +346,8 @@ pub(crate) fn full_in_saves<'a>(
         .map(|(path, _)| path.as_path())
 }
 
-/// The plugins of the `targets` mods that one of `saves` uses: each enabled
-/// mod's top-level plugin files, minus those another mod currently wins,
+/// The plugins of the `targets` mods that one of `saves` uses: each target
+/// mod's top-level plugin files, enabled or not, minus those another mod currently wins,
 /// matched ASCII case-insensitively. File spelling, sorted, deduplicated.
 pub(crate) fn plugins_saves_use(
     app: &App,
