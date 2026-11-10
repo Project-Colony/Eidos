@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1bc10e692425e8168c40b0f3938e2264b6fa29d4 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=cad4336427eeb6622163ca009feb59f12db3635f -->
 
 # Eidos verwenden
 
@@ -670,8 +670,9 @@ zusammenführen, werden mit Begründung übersprungen. Ein FOMOD-Mod ohne
 gespeicherte Antworten, etwa einer, der installiert wurde, bevor Eidos sie
 aufbewahrte, wird nicht mit den Vorgaben des Installers neu installiert: Dieses
 Update schlägt fehl, mit dem Hinweis, den Mod einmal aus dem Fenster zu
-aktualisieren, das die Antworten dann speichert. Der Befehl endet mit 1, wenn
-ein Update fehlgeschlagen ist.
+aktualisieren, das die Antworten dann speichert. Ein FOMOD, dessen Installer
+nichts zur Auswahl stellt, wird wie gewohnt installiert. Der Befehl endet mit 1,
+wenn ein Update fehlgeschlagen ist.
 
 ### Nexus-Collections
 

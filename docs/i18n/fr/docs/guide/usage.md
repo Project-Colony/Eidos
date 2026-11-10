@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1bc10e692425e8168c40b0f3938e2264b6fa29d4 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=cad4336427eeb6622163ca009feb59f12db3635f -->
 
 # Utiliser Eidos
 
@@ -672,7 +672,9 @@ fichiers sont sautés avec la raison. Un mod FOMOD sans réponses enregistrées,
 par exemple installé avant qu'Eidos ne les garde, n'est pas réinstallé avec les
 valeurs par défaut de l'installateur : cette mise à jour échoue avec un message
 qui demande de mettre à jour le mod une fois depuis la fenêtre, qui enregistre
-alors les réponses. La commande sort avec le code 1 si une mise à jour a échoué.
+alors les réponses. Un FOMOD dont l'installateur ne propose aucun choix
+s'installe normalement. La commande sort avec le code 1 si une mise à jour a
+échoué.
 
 ### Collections Nexus
 

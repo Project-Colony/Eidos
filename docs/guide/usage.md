@@ -585,8 +585,9 @@ account downloads each new file and installs it over its folder with
 page instead. Folders that merge several files are skipped with the reason. A
 FOMOD mod with no recorded answers, such as one installed before Eidos kept
 them, is not reinstalled with the installer's defaults: that update fails with a
-message to update the mod once from the window, which records the answers. The
-command exits 1 if any update failed.
+message to update the mod once from the window, which records the answers. A
+FOMOD whose installer has nothing to choose is installed as usual. The command
+exits 1 if any update failed.
 
 ### Nexus collections
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1bc10e692425e8168c40b0f3938e2264b6fa29d4 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=cad4336427eeb6622163ca009feb59f12db3635f -->
 
 # Usar Eidos
 
@@ -644,8 +644,9 @@ para cada página de archivo. Las carpetas que fusionan varios archivos se omite
 con el motivo. Un mod FOMOD sin respuestas guardadas, como uno instalado antes
 de que Eidos las conservara, no se reinstala con los valores predeterminados del
 instalador: esa actualización falla con un mensaje que pide actualizar el mod
-una vez desde la ventana, que guarda las respuestas. La orden termina con 1 si
-alguna actualización falló.
+una vez desde la ventana, que guarda las respuestas. Un FOMOD cuyo instalador no
+ofrece nada que elegir se instala como siempre. La orden termina con 1 si alguna
+actualización falló.
 
 ### Colecciones de Nexus
 

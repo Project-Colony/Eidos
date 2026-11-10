@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1bc10e692425e8168c40b0f3938e2264b6fa29d4 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=cad4336427eeb6622163ca009feb59f12db3635f -->
 
 # Používání Eidosu
 
@@ -594,7 +594,9 @@ každou stránku souboru. Složky, které slučují několik souborů, přeskoč
 důvodem. FOMOD mod bez uložených odpovědí, například nainstalovaný dřív, než je
 Eidos začal ukládat, se znovu neinstaluje s výchozími volbami instalátoru:
 taková aktualizace selže se zprávou, abyste mod jednou aktualizovali z okna,
-které odpovědi uloží. Příkaz skončí kódem 1, pokud některá aktualizace selhala.
+které odpovědi uloží. FOMOD, jehož instalátor nenabízí žádnou volbu, se
+nainstaluje jako obvykle. Příkaz skončí kódem 1, pokud některá aktualizace
+selhala.
 
 ### Kolekce z Nexusu
 

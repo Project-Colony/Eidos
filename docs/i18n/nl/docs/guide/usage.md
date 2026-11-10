@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1bc10e692425e8168c40b0f3938e2264b6fa29d4 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=cad4336427eeb6622163ca009feb59f12db3635f -->
 
 # Eidos gebruiken
 
@@ -639,8 +639,9 @@ samenvoegen worden met de reden overgeslagen. Een FOMOD-mod zonder opgeslagen
 antwoorden, zoals een die geïnstalleerd is voordat Eidos ze bewaarde, wordt niet
 opnieuw geïnstalleerd met de standaardwaarden van het installatieprogramma: die
 update mislukt met een melding om de mod één keer vanuit het venster bij te
-werken, dat de antwoorden dan opslaat. De opdracht eindigt met 1 als een update
-mislukte.
+werken, dat de antwoorden dan opslaat. Een FOMOD waarvan het
+installatieprogramma niets te kiezen geeft, wordt gewoon geïnstalleerd. De
+opdracht eindigt met 1 als een update mislukte.
 
 ### Nexus-collecties
 

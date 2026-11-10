@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1bc10e692425e8168c40b0f3938e2264b6fa29d4 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=cad4336427eeb6622163ca009feb59f12db3635f -->
 
 # Usar o Eidos
 
@@ -626,7 +626,8 @@ página de arquivo. Pastas que mesclam vários arquivos são puladas com o motiv
 Um mod FOMOD sem respostas salvas, como um instalado antes de o Eidos guardá-las,
 não é reinstalado com os padrões do instalador: essa atualização falha com uma
 mensagem pedindo para atualizar o mod uma vez pela janela, que salva as
-respostas. O comando sai com 1 se alguma atualização falhou.
+respostas. Um FOMOD cujo instalador não oferece nada para escolher é instalado
+normalmente. O comando sai com 1 se alguma atualização falhou.
 
 ### Coleções do Nexus
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1bc10e692425e8168c40b0f3938e2264b6fa29d4 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=cad4336427eeb6622163ca009feb59f12db3635f -->
 
 # Używanie Eidos
 
@@ -624,8 +624,9 @@ każdej strony pliku. Foldery łączące kilka plików są pomijane z podaniem p
 Mod FOMOD bez zapisanych odpowiedzi, na przykład zainstalowany, zanim Eidos
 zaczął je przechowywać, nie jest instalowany ponownie z domyślnymi ustawieniami
 instalatora: ta aktualizacja kończy się błędem z prośbą, by raz zaktualizować
-moda z okna, które zapisze odpowiedzi. Polecenie kończy się kodem 1, jeśli
-któraś aktualizacja się nie powiodła.
+moda z okna, które zapisze odpowiedzi. FOMOD, którego instalator nie daje nic do
+wyboru, instaluje się normalnie. Polecenie kończy się kodem 1, jeśli któraś
+aktualizacja się nie powiodła.
 
 ### Kolekcje Nexusa
 

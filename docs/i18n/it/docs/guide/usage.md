@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1bc10e692425e8168c40b0f3938e2264b6fa29d4 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=cad4336427eeb6622163ca009feb59f12db3635f -->
 
 # Usare Eidos
 
@@ -656,8 +656,9 @@ ogni pagina di file. Le cartelle che uniscono più file vengono saltate con il
 motivo. Una mod FOMOD senza risposte salvate, per esempio installata prima che
 Eidos le conservasse, non viene reinstallata con i valori predefiniti
 dell'installer: quell'aggiornamento fallisce con un messaggio che chiede di
-aggiornare la mod una volta dalla finestra, che salva le risposte. Il comando
-esce con 1 se un aggiornamento è fallito.
+aggiornare la mod una volta dalla finestra, che salva le risposte. Una mod FOMOD
+il cui installer non offre nulla da scegliere si installa come sempre. Il
+comando esce con 1 se un aggiornamento è fallito.
 
 ### Collezioni di Nexus
 

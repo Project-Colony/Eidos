@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1bc10e692425e8168c40b0f3938e2264b6fa29d4 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=cad4336427eeb6622163ca009feb59f12db3635f -->
 
 # Eidos kullanımı
 
@@ -619,7 +619,9 @@ yazdırır. Birkaç dosyayı birleştiren klasörler gerekçesiyle atlanır. Kay
 cevabı olmayan bir FOMOD modu, örneğin Eidos cevapları saklamaya başlamadan önce
 kurulmuş olan, yükleyicinin varsayılanlarıyla yeniden kurulmaz: o güncelleme,
 modu bir kez pencereden güncellemenizi isteyen bir mesajla başarısız olur;
-pencere cevapları kaydeder. Bir güncelleme başarısız olduysa komut 1 ile çıkar.
+pencere cevapları kaydeder. Yükleyicisinde seçilecek bir şey olmayan bir FOMOD
+modu her zamanki gibi kurulur. Bir güncelleme başarısız olduysa komut 1 ile
+çıkar.
 
 ### Nexus koleksiyonları
 
