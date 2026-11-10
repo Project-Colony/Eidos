@@ -13,11 +13,18 @@ pub(super) fn open_panel(app: &mut App) {
     app.bisect_open = true;
 }
 
-/// Read the test state again (the step may have run, or a test run ended, in
-/// another window), then refuse while a run goes on or a normal test run waits
-/// for its review: its files are the review's to decide, never a step's.
-fn refused(app: &mut App) -> bool {
+/// Read the test state and the search again: another window (the one the
+/// store opened) may have run the step, answered it or started a search.
+fn reload(app: &mut App) {
     load_test_state(app, false);
+    app.bisect = app.created.as_ref().and_then(Instance::read_bisect);
+}
+
+/// Read the test state and the search again, then refuse while a run goes on
+/// or a normal test run waits for its review: its files are the review's to
+/// decide, never a step's.
+fn refused(app: &mut App) -> bool {
+    reload(app);
     if let Some(r) = &app.running {
         app.status = Some(tf("status_still_running", &[("title", &r.title)]));
         return true;
@@ -174,11 +181,12 @@ fn end_search(app: &mut App, result: Option<eidos_instance::BisectResult>) {
 pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
     match message {
         Message::OpenBisect => {
-            // The step may have run in the window the store opened.
-            load_test_state(app, false);
+            reload(app);
             open_panel(app);
         }
         Message::BisectStart => {
+            // A search another window started is shown, never replaced.
+            reload(app);
             let Some(inst) = app.created.clone().filter(|_| app.bisect.is_none()) else {
                 return Task::none();
             };

@@ -9170,6 +9170,36 @@ fn stop_takes_two_presses_and_leaves_a_waiting_test_run_for_review() {
 }
 
 #[test]
+fn a_stale_window_reads_the_search_again_before_it_acts() {
+    use eidos_instance::Answer;
+    let (mut app, root) = answer_app(false);
+    let inst = app.created.clone().unwrap();
+    // The window the store opened answered step 1: the step's run went and the
+    // search moved on. This window still holds step 1 unanswered.
+    inst.finish_test_run(&[]).unwrap();
+    let mut moved = inst.read_bisect().unwrap();
+    moved.answer(Answer::Good);
+    inst.write_bisect(&moved).unwrap();
+    assert_eq!(bisect_stage(&app), BisectStage::Answer, "the stale view");
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Bad));
+    assert_eq!(
+        inst.read_bisect().as_ref(),
+        Some(&moved),
+        "no second answer over the other window's"
+    );
+    assert_eq!(bisect_stage(&app), BisectStage::Ready);
+    app.bisect = None;
+    let _ = update_inner(&mut app, Message::OpenBisect);
+    assert_eq!(app.bisect.as_ref(), Some(&moved));
+    // A search another window started is shown, never replaced.
+    app.bisect = None;
+    let _ = update_inner(&mut app, Message::BisectStart);
+    assert_eq!(app.bisect.as_ref(), Some(&moved));
+    assert_eq!(inst.read_bisect(), Some(moved));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn a_refused_step_says_why_and_keeps_waiting_for_its_game() {
     use eidos_instance::{Bisect, TestRun, TestState};
     let (mut app, root) = list_app(&["A", "B", "C", "D"]);
