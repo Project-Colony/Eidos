@@ -224,6 +224,13 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                         actions: Vec::new(),
                     });
                 }
+                if selected_game(app).is_some_and(|g| g.def.id == "starfield") {
+                    out.extend(
+                        eidos::check::load_order::starfield_findings(list)
+                            .iter()
+                            .map(crate::health::finding_card),
+                    );
+                }
                 for p in list.plugins.iter().filter(|p| p.enabled) {
                     if let Some(meta) = app
                         .loot_meta

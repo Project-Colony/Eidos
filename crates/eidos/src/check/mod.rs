@@ -78,6 +78,9 @@ pub const CODES: &[&str] = &[
     "registry_missing",
     "gamedrive_foreign",
     "stestfile_present",
+    "starfield_esp_active",
+    "blueprint_invalid",
+    "blueprint_unpaired",
 ];
 
 /// The instance's enabled mods, highest priority first. Unmanaged rows (DLC,
@@ -452,6 +455,9 @@ fn check_findings(
                 level: Level::Advice,
                 args: vec![("n", unverified.to_string())],
             });
+        }
+        if game_id == "starfield" {
+            out.extend(load_order::starfield_findings(&list));
         }
         out.extend(
             list.missing_masters()

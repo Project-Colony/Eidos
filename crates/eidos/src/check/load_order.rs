@@ -77,6 +77,84 @@ pub fn fix_test_files(ini: &Path) -> io::Result<()> {
     write_text(ini, &strip_test_files(&text).0, cp1252)
 }
 
+pub const BLUEPRINT_PREFIX: &str = "blueprintships-";
+
+fn ends_with_ci(name: &str, ext: &str) -> bool {
+    name.len() >= ext.len()
+        && name.is_char_boundary(name.len() - ext.len())
+        && name[name.len() - ext.len()..].eq_ignore_ascii_case(ext)
+}
+
+fn has_blueprint_prefix(name: &str) -> bool {
+    name.get(..BLUEPRINT_PREFIX.len())
+        .is_some_and(|p| p.eq_ignore_ascii_case(BLUEPRINT_PREFIX))
+}
+
+/// Starfield only (the caller checks the game). Enabled plugins with a readable header.
+pub fn starfield_findings(list: &eidos_plugins::PluginList) -> Vec<Finding> {
+    let on: Vec<&eidos_plugins::Plugin> = list
+        .plugins
+        .iter()
+        .filter(|p| p.enabled && p.header_error.is_none())
+        .collect();
+    let mut out = Vec::new();
+    let esps: Vec<&str> = on
+        .iter()
+        .filter(|p| ends_with_ci(&p.name, ".esp") && !p.is_master)
+        .map(|p| p.name.as_str())
+        .collect();
+    if !esps.is_empty() {
+        out.push(Finding {
+            code: "starfield_esp_active",
+            level: Level::Advice,
+            args: vec![
+                ("n", esps.len().to_string()),
+                ("plugins", esps[..esps.len().min(8)].join(", ")),
+            ],
+        });
+    }
+    let invalid: Vec<&str> = on
+        .iter()
+        .filter(|p| {
+            p.is_blueprint != (has_blueprint_prefix(&p.name) && ends_with_ci(&p.name, ".esm"))
+        })
+        .map(|p| p.name.as_str())
+        .collect();
+    if !invalid.is_empty() {
+        out.push(Finding {
+            code: "blueprint_invalid",
+            level: Level::Problem,
+            args: vec![("plugins", invalid.join(", "))],
+        });
+    }
+    let unpaired: Vec<String> = on
+        .iter()
+        .filter(|p| {
+            p.is_blueprint && has_blueprint_prefix(&p.name) && ends_with_ci(&p.name, ".esm")
+        })
+        .filter_map(|p| {
+            let base = &p.name[BLUEPRINT_PREFIX.len()..p.name.len() - 4];
+            let found = list.plugins.iter().filter(|q| q.enabled).any(|q| {
+                [".esm", ".esp", ".esl"].iter().any(|e| {
+                    q.name.len() == base.len() + 4
+                        && q.name.is_char_boundary(base.len())
+                        && q.name[..base.len()].eq_ignore_ascii_case(base)
+                        && q.name[base.len()..].eq_ignore_ascii_case(e)
+                })
+            });
+            (!found).then(|| format!("{} ({base})", p.name))
+        })
+        .collect();
+    if !unpaired.is_empty() {
+        out.push(Finding {
+            code: "blueprint_unpaired",
+            level: Level::Advice,
+            args: vec![("plugins", unpaired.join(", "))],
+        });
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,5 +240,101 @@ mod tests {
             original
         );
         let _ = fs::remove_dir_all(root);
+    }
+
+    fn sf(name: &str, blueprint: bool, master: bool, enabled: bool) -> eidos_plugins::Plugin {
+        eidos_plugins::Plugin {
+            name: name.to_string(),
+            origin_mod: String::new(),
+            path: std::path::PathBuf::new(),
+            enabled,
+            force_disabled: false,
+            is_master: master,
+            is_light: false,
+            is_medium: false,
+            is_dummy: false,
+            header_error: None,
+            form_version: None,
+            is_blueprint: blueprint,
+            is_update: false,
+            masters: Vec::new(),
+            priority: 0,
+            index: None,
+        }
+    }
+    use eidos_plugins::PluginList;
+
+    #[test]
+    fn starfield_reports_active_esps_but_not_master_flagged_ones() {
+        let list = PluginList {
+            plugins: vec![
+                sf("Starfield.esm", false, true, true),
+                sf("Mod.esp", false, false, true),
+                sf("Patch.esp", false, true, true),
+                sf("Off.esp", false, false, false),
+            ],
+            ..Default::default()
+        };
+        let f = starfield_findings(&list);
+        assert_eq!(
+            f.iter().map(|f| f.code).collect::<Vec<_>>(),
+            ["starfield_esp_active"]
+        );
+        assert_eq!(
+            (f[0].arg("n"), f[0].arg("plugins"), f[0].level),
+            (Some("1"), Some("Mod.esp"), Level::Advice)
+        );
+    }
+    #[test]
+    fn a_blueprint_needs_the_flag_the_prefix_and_esm() {
+        let list = PluginList {
+            plugins: vec![
+                sf("A.esm", false, true, true),
+                sf("BlueprintShips-A.esm", true, true, true),
+                sf("BlueprintShips-B.esp", true, false, true),
+                sf("Ships-C.esm", true, true, true),
+                sf("BlueprintShips-D.esm", false, true, true),
+            ],
+            ..Default::default()
+        };
+        let bad = starfield_findings(&list)
+            .into_iter()
+            .find(|f| f.code == "blueprint_invalid")
+            .unwrap();
+        assert_eq!(bad.level, Level::Problem);
+        assert_eq!(
+            bad.arg("plugins"),
+            Some("BlueprintShips-B.esp, Ships-C.esm, BlueprintShips-D.esm")
+        );
+    }
+    #[test]
+    fn blueprint_pairing_compares_names_not_patterns() {
+        let list = PluginList {
+            plugins: vec![
+                sf("BlueprintShips-Foo (v1.2).esm", true, true, true),
+                sf("foo (V1.2).esm", false, true, true),
+                sf("BlueprintShips-Bar.esm", true, true, true),
+                sf("BarX.esm", false, true, true),
+                sf("BlueprintShips-Baz.esm", true, true, true),
+                sf("Baz.esp", false, false, false),
+            ],
+            ..Default::default()
+        };
+        let f = starfield_findings(&list);
+        let unpaired = f.iter().find(|f| f.code == "blueprint_unpaired").unwrap();
+        assert_eq!(
+            unpaired.arg("plugins"),
+            Some("BlueprintShips-Bar.esm (Bar), BlueprintShips-Baz.esm (Baz)")
+        );
+    }
+    #[test]
+    fn an_unreadable_header_is_not_called_an_invalid_blueprint() {
+        let mut p = sf("BlueprintShips-X.esm", false, false, true);
+        p.header_error = Some("truncated".into());
+        assert!(starfield_findings(&PluginList {
+            plugins: vec![p],
+            ..Default::default()
+        })
+        .is_empty());
     }
 }
