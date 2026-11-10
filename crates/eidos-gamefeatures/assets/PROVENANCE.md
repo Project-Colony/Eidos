@@ -10,16 +10,23 @@ Each is deployed arch-aware: the `x86_64.dll` build into the prefix
 `drive_c/windows/system32`, the `i386.dll` build into `syswow64` (a WoW64 prefix);
 on a pure win32 prefix the `i386.dll` goes into `system32`.
 
-| Verb | Arch | File | Size (bytes) | SHA-256 |
-|------|------|------|--------------|---------|
-| `d3dcompiler_47` | x86-64 | `d3dcompiler_47/x86_64.dll` | 4691496 | `9489124759292316d11eae5ffb67b74bfaf0e1853b968137b047567f31c76232` |
-| `d3dcompiler_47` | i386   | `d3dcompiler_47/i386.dll`   | 3657992 | `2ad0d4987fc4624566b190e747c9d95038443956ed816abfd1e2d389b5ec0851` |
-| `d3dcompiler_43` | x86-64 | `d3dcompiler_43/x86_64.dll` | 2526056 | `44c3a7e330b54a35a9efa015831392593aa02e7da1460be429d17c3644850e8a` |
-| `d3dcompiler_43` | i386   | `d3dcompiler_43/i386.dll`   | 2106216 | `2f23182ec6f4889397ac4bf03d62536136c5bdba825c7d2c4ef08c827f3a8a1c` |
-| `d3dx9_43`       | x86-64 | `d3dx9_43/x86_64.dll`       | 2401112 | `84b900dbd7fa978d6e0caee26fc54f2f61d92c9c75d10b35f00e3e82cd1d67b4` |
-| `d3dx9_43`       | i386   | `d3dx9_43/i386.dll`         | 1998168 | `0b28546be22c71834501f7d7185ede5d79742457331c7ee09efc14490dd64f5f` |
-| `d3dx11_43`      | x86-64 | `d3dx11_43/x86_64.dll`      | 276832  | `981e42629df751217406e7150477cddc853b79abd6a8568a1566298ed8f7bd59` |
-| `d3dx11_43`      | i386   | `d3dx11_43/i386.dll`        | 248672  | `492e960cb3ccfc8c25fc83f7c464ba77c86a20411347a1a9b3e5d3e8c9180a8d` |
+The DLLs are stored gzip-compressed, made with `gzip -9 -n` so the same DLL
+always gives the same bytes: the eight take 7889812 bytes in each binary
+instead of 17906544. Eidos unpacks only the DLL it is writing into a prefix.
+The size and SHA-256 below are those of the unpacked DLL, which is the file
+that lands in the prefix; `gzip -dc d3dx9_43/i386.dll.gz | sha256sum` checks
+one.
+
+| Verb | Arch | File | Size (bytes) | Stored (bytes) | SHA-256 |
+|------|------|------|--------------|----------------|---------|
+| `d3dcompiler_47` | x86-64 | `d3dcompiler_47/x86_64.dll.gz` | 4691496 | 2122458 | `9489124759292316d11eae5ffb67b74bfaf0e1853b968137b047567f31c76232` |
+| `d3dcompiler_47` | i386   | `d3dcompiler_47/i386.dll.gz` | 3657992 | 1590539 | `2ad0d4987fc4624566b190e747c9d95038443956ed816abfd1e2d389b5ec0851` |
+| `d3dcompiler_43` | x86-64 | `d3dcompiler_43/x86_64.dll.gz` | 2526056 | 1097722 | `44c3a7e330b54a35a9efa015831392593aa02e7da1460be429d17c3644850e8a` |
+| `d3dcompiler_43` | i386   | `d3dcompiler_43/i386.dll.gz` | 2106216 | 925056 | `2f23182ec6f4889397ac4bf03d62536136c5bdba825c7d2c4ef08c827f3a8a1c` |
+| `d3dx9_43`       | x86-64 | `d3dx9_43/x86_64.dll.gz`    | 2401112 | 1052335 | `84b900dbd7fa978d6e0caee26fc54f2f61d92c9c75d10b35f00e3e82cd1d67b4` |
+| `d3dx9_43`       | i386   | `d3dx9_43/i386.dll.gz`      | 1998168 | 892268 | `0b28546be22c71834501f7d7185ede5d79742457331c7ee09efc14490dd64f5f` |
+| `d3dx11_43`      | x86-64 | `d3dx11_43/x86_64.dll.gz`   | 276832  | 107797 | `981e42629df751217406e7150477cddc853b79abd6a8568a1566298ed8f7bd59` |
+| `d3dx11_43`      | i386   | `d3dx11_43/i386.dll.gz`     | 248672  | 101637 | `492e960cb3ccfc8c25fc83f7c464ba77c86a20411347a1a9b3e5d3e8c9180a8d` |
 
 ## What each is for
 
@@ -79,7 +86,7 @@ the binaries. The release bundle ships Microsoft's zip whole under `runtimes/`
 zip. .NET is MIT-licensed, so embedding it would be legal - the reasons it stays
 out of the binaries are size, and the failure mode below is why it ships whole.
 
-It is 193 files, 78 MB unpacked, against 18 MB for everything in this directory.
+It is 193 files, 78 MB unpacked, against 18 MB for the eight DLLs above, unpacked.
 Measured on a real generation run, LODGen touched 25 of those files, 25.6 MB, so
 a trimmed set is tempting. But those 25 are what ONE worldspace happened to need;
 another code path pulls in `System.Private.Xml` or `System.Text.Json`, and
