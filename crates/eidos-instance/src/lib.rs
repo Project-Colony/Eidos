@@ -37,6 +37,7 @@ mod registry;
 mod sessions;
 pub mod settings;
 mod tools;
+mod update_report;
 pub use categories::{
     format_categories, parse_all, parse_primary, Category, CategoryFactory, NexusCategory,
 };
@@ -63,6 +64,7 @@ pub use tools::{
     root_executable, root_executable_source, tool_for_exe, tool_search_roots, write_tools,
     GameExecutables, Runner, Tool, PREFIX_TOOLS,
 };
+pub use update_report::*;
 
 /// Where an instance is stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

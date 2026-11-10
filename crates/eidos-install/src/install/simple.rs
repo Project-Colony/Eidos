@@ -431,6 +431,10 @@ pub(super) fn install_destination_ready(
         .exists()
         .then(|| ModMeta::read_checked(&dest.join("meta.ini")))
         .transpose()?;
+    let old_version = preserved
+        .as_ref()
+        .and_then(ModMeta::version)
+        .unwrap_or_default();
     if let OverwritePolicy::ReplaceOwned(owner) | OverwritePolicy::ReplaceOwnedWithBackup(owner) =
         &policy
     {
@@ -562,10 +566,35 @@ pub(super) fn install_destination_ready(
                 return Err(error);
             }
         };
+        let mut changes = None;
         if let Some(stage) = stage {
+            // The old folder is only whole until publication moves it away.
+            if dest.exists() {
+                let mut report = compare_trees(&dest, &target, game_id);
+                report.old_version = old_version;
+                report.new_version = ModMeta::read(&target.join("meta.ini"))
+                    .version()
+                    .unwrap_or_default();
+                report.when = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_secs());
+                changes = Some(report);
+            }
             backup = publish_install_with(stage, &target, &dest, retain, |from, to| {
                 fs::rename(from, to)
             })?;
+        }
+        if let Some(root) = mods_dir.parent() {
+            match &changes {
+                Some(report) => {
+                    if let Err(e) = eidos_instance::save_update_report(root, &name, report) {
+                        eidos_log::warn!(
+                            "could not record what the update of '{name}' changed: {e}"
+                        );
+                    }
+                }
+                None => eidos_instance::remove_update_report(root, &name),
+            }
         }
         Ok(InstallReport {
             name,
@@ -574,6 +603,7 @@ pub(super) fn install_destination_ready(
             missing,
             dest,
             backup: backup.clone(),
+            changes,
         })
     })();
     result.map_err(|error: InstallError| match backup {
@@ -733,6 +763,72 @@ mod publication_tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_replace_keeps_its_report_a_fresh_install_drops_it_and_a_failed_replace_writes_none() {
+        let temp = std::env::temp_dir().join(format!(
+            "eidos-update-report-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        fs::create_dir(&temp).unwrap();
+        let _cleanup = ExtractedTree::owned(temp.clone());
+        let inst = eidos_instance::Instance::portable(temp);
+        inst.create().unwrap();
+        inst.create_empty_mod("Old").unwrap();
+        fs::write(inst.mods_dir().join("Old/a.txt"), b"a").unwrap();
+        let write = |name: &'static str| {
+            move |t: &Path, _: bool| -> Result<(String, bool, Vec<String>), InstallError> {
+                fs::write(t.join(name), b"x")?;
+                Ok((String::new(), false, Vec::new()))
+            }
+        };
+        let r = install_destination(
+            Path::new("Update.7z"),
+            &inst.mods_dir(),
+            "Old",
+            "skyrimse",
+            OverwritePolicy::Replace,
+            write("b.txt"),
+        )
+        .unwrap();
+        let changes = r.changes.clone().expect("a replace reports");
+        assert_eq!(changes.added, ["b.txt"]);
+        assert_eq!(changes.removed, ["a.txt"]);
+        assert_eq!(
+            eidos_instance::load_update_report(&inst.root, "Old"),
+            Some(changes)
+        );
+        let failed = install_destination(
+            Path::new("Bad.7z"),
+            &inst.mods_dir(),
+            "Old",
+            "skyrimse",
+            OverwritePolicy::Replace,
+            |_, _| Err(InstallError::BadSelection("refused".into())),
+        );
+        assert!(failed.is_err());
+        assert!(
+            eidos_instance::load_update_report(&inst.root, "Old").is_some(),
+            "a failure leaves the kept report"
+        );
+        fs::remove_dir_all(inst.mods_dir().join("Old")).unwrap();
+        let fresh = install_destination(
+            Path::new("Again.7z"),
+            &inst.mods_dir(),
+            "Old",
+            "skyrimse",
+            OverwritePolicy::Fail,
+            write("c.txt"),
+        )
+        .unwrap();
+        assert!(fresh.changes.is_none());
+        assert_eq!(
+            eidos_instance::load_update_report(&inst.root, "Old"),
+            None,
+            "a fresh install drops the stale report"
+        );
     }
 
     #[test]
