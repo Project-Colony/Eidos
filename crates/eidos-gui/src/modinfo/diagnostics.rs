@@ -336,6 +336,9 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
             premium,
         ));
     }
+    if let (Some(list), Some(map)) = (plugins, app.conflicts.as_ref()) {
+        out.extend(patch_order_checks(list, map));
+    }
 
     // ENB + Community Shaders both injecting into D3D11.
     if let (Some(game), Some(inst)) = (selected_game(app), app.created.as_ref()) {
@@ -696,6 +699,115 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
     }
 
     out
+}
+
+/// `shown` joined with ", ", then "and n more" when `total` is larger.
+pub(crate) fn file_list(shown: &[String], total: usize) -> String {
+    let mut s = shown.join(", ");
+    if total > shown.len() {
+        s.push_str(&tf("diag_and_n_more", &[("n", &(total - shown.len()))]));
+    }
+    s
+}
+
+/// Patches that sit below the mod they patch and so lose its copies of shared
+/// loose files. Only loose files: `map.files` does not hold archive members.
+pub(crate) fn patch_order_checks(
+    list: &PluginList,
+    map: &eidos_conflicts::ConflictMap,
+) -> Vec<Diagnostic> {
+    use eidos_conflicts::BASE_ORIGIN;
+    let origin: HashMap<&str, u32> = map
+        .names
+        .iter()
+        .filter(|(&o, _)| o != BASE_ORIGIN && o != u32::MAX)
+        .map(|(&o, n)| (n.as_str(), o))
+        .collect();
+    let by_name: HashMap<String, &eidos_plugins::Plugin> = list
+        .plugins
+        .iter()
+        .map(|p| (p.name.to_lowercase(), p))
+        .collect();
+    // (patch mod, master mod) -> (patch plugin, master plugin)
+    let mut pairs: std::collections::BTreeMap<(String, String), (&str, &str)> =
+        std::collections::BTreeMap::new();
+    for p in list.plugins.iter().filter(|p| p.enabled) {
+        let Some(&b) = origin.get(p.origin_mod.as_str()) else {
+            continue;
+        };
+        for m in &p.masters {
+            let Some(mp) = by_name.get(&m.to_lowercase()) else {
+                continue;
+            };
+            let Some(&a) = origin.get(mp.origin_mod.as_str()) else {
+                continue;
+            };
+            if a != b && map.mods.get(&a).is_some_and(|c| c.overwrites.contains(&b)) {
+                pairs
+                    .entry((p.origin_mod.clone(), mp.origin_mod.clone()))
+                    .or_insert((p.name.as_str(), mp.name.as_str()));
+            }
+        }
+    }
+    if pairs.is_empty() {
+        return Vec::new();
+    }
+    // Per pair: how many files, and the first 8 paths.
+    let mut found: Vec<(usize, Vec<String>)> = vec![(0, Vec::new()); pairs.len()];
+    let keys: Vec<(u32, u32)> = pairs
+        .keys()
+        .map(|(b, a)| (origin[b.as_str()], origin[a.as_str()]))
+        .collect();
+    for node in map.files.values().filter(|n| n.is_conflicted()) {
+        let providers: Vec<u32> = std::iter::once(node.winner)
+            .chain(node.alternatives.iter().copied())
+            .collect();
+        for (i, &(b, a)) in keys.iter().enumerate() {
+            let pos = |o: u32| providers.iter().position(|&x| x == o);
+            if let (Some(pa), Some(pb)) = (pos(a), pos(b)) {
+                if pa < pb {
+                    found[i].0 += 1;
+                    if found[i].1.len() < 8 {
+                        found[i].1.push(node.display_path.clone());
+                    }
+                }
+            }
+        }
+    }
+    pairs
+        .into_iter()
+        .zip(found)
+        .filter(|(_, (n, _))| *n > 0)
+        .map(
+            |(((patch, master), (plugin, master_plugin)), (n, shown))| Diagnostic {
+                level: DiagLevel::Advice,
+                title: tf(
+                    "diag_patch_loses",
+                    &[("patch", &patch), ("master", &master), ("n", &n)],
+                ),
+                detail: tf(
+                    "diag_patch_loses_detail",
+                    &[
+                        ("plugin", &plugin),
+                        ("patch", &patch),
+                        ("master_plugin", &master_plugin),
+                        ("master", &master),
+                        ("files", &file_list(&shown, n)),
+                    ],
+                ),
+                actions: vec![(
+                    tf(
+                        "diag_action_move_below",
+                        &[("mod", &patch), ("target", &master)],
+                    ),
+                    Message::MoveModBelow {
+                        folder: patch,
+                        below: master,
+                    },
+                )],
+            },
+        )
+        .collect()
 }
 
 /// Lowercased letters and digits only, so `Far Harbor` and `FarHarbor.esm` meet.

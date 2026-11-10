@@ -1129,3 +1129,163 @@ fn mod_information_lists_what_a_mod_requires_and_what_requires_it() {
     let _ = update(&mut app, Message::ShowModInfo(1));
     assert_eq!(app.info_requirements.1, ["ModA (A.esp needs B.esm)"]);
 }
+
+/// Layers highest priority first, as `conflict_layers` hands them over. Rows: Patch = 1, Master = 2.
+fn map_of(layers: &[(u32, &str, &[&str])]) -> eidos_conflicts::ConflictMap {
+    let parts: Vec<_> = layers
+        .iter()
+        .map(|(origin, name, files)| {
+            let layer = eidos_conflicts::Layer {
+                origin: *origin,
+                name: name.to_string(),
+                root: PathBuf::new(),
+            };
+            (
+                layer,
+                (
+                    files.iter().map(|f| f.to_string()).collect::<Vec<_>>(),
+                    false,
+                ),
+            )
+        })
+        .collect();
+    eidos_conflicts::ConflictMap::build_from(&parts)
+}
+fn patch_list() -> PluginList {
+    let mut patch = plugin_row("Patch.esp", "Patch");
+    patch.masters = vec!["Master.esm".into()];
+    PluginList {
+        plugins: vec![plugin_row("Master.esm", "Master"), patch],
+        ..Default::default()
+    }
+}
+#[test]
+fn a_patch_that_loses_files_to_its_master_gets_a_move_button() {
+    let list = patch_list();
+    let map = map_of(&[
+        (
+            2,
+            "Master",
+            &["Master.esm", "meshes/a.nif", "textures/a.dds"],
+        ),
+        (1, "Patch", &["Patch.esp", "meshes/a.nif", "textures/a.dds"]),
+        (0, "[skyrimse]", &[]),
+    ]);
+    let d = patch_order_checks(&list, &map);
+    assert_eq!(d.len(), 1);
+    assert_eq!(d[0].level, DiagLevel::Advice);
+    assert_eq!(
+        d[0].title,
+        tf(
+            "diag_patch_loses",
+            &[("patch", &"Patch"), ("master", &"Master"), ("n", &2)]
+        )
+    );
+    assert!(
+        d[0].detail.contains("meshes/a.nif")
+            && d[0].detail.contains("Patch.esp")
+            && d[0].detail.contains("Master.esm")
+    );
+    assert!(
+        matches!(&d[0].actions[..], [(_, Message::MoveModBelow { folder, below })] if folder == "Patch" && below == "Master")
+    );
+}
+#[test]
+fn a_patch_that_wins_or_shares_nothing_with_its_master_says_nothing() {
+    let list = patch_list();
+    let none = |list: &PluginList, map: &eidos_conflicts::ConflictMap| {
+        patch_order_checks(list, map).is_empty()
+    };
+    let map = map_of(&[
+        (2, "Patch", &["Patch.esp", "meshes/a.nif"]),
+        (1, "Master", &["Master.esm", "meshes/a.nif"]),
+        (0, "[skyrimse]", &[]),
+    ]);
+    assert!(none(&list, &map), "the patch already wins");
+    let mut from_game = list.clone();
+    from_game.plugins[0].origin_mod = String::new();
+    let map = map_of(&[
+        (2, "Other", &["meshes/a.nif"]),
+        (1, "Patch", &["Patch.esp", "meshes/a.nif"]),
+        (0, "[skyrimse]", &["Master.esm"]),
+    ]);
+    assert!(none(&from_game, &map), "a game master");
+    let map = map_of(&[
+        (3, "Other", &["meshes/a.nif"]),
+        (2, "Master", &["Master.esm"]),
+        (1, "Patch", &["Patch.esp", "meshes/a.nif"]),
+        (0, "[skyrimse]", &[]),
+    ]);
+    assert!(none(&list, &map), "an unrelated mod wins the file");
+    let mut same = list.clone();
+    same.plugins[1].origin_mod = "Master".into();
+    let map = map_of(&[
+        (2, "Master", &["Master.esm", "Patch.esp", "meshes/a.nif"]),
+        (0, "[skyrimse]", &[]),
+    ]);
+    assert!(none(&same, &map), "one mod");
+}
+#[test]
+fn patch_order_card_lists_eight_files_and_counts_the_rest() {
+    let list = patch_list();
+    let shared: Vec<String> = (0..10).map(|i| format!("meshes/f{i}.nif")).collect();
+    let with = |plugin: &'static str| {
+        std::iter::once(plugin)
+            .chain(shared.iter().map(String::as_str))
+            .collect::<Vec<_>>()
+    };
+    let (master, patch) = (with("Master.esm"), with("Patch.esp"));
+    let map = map_of(&[
+        (2, "Master", &master),
+        (1, "Patch", &patch),
+        (0, "[skyrimse]", &[]),
+    ]);
+    let d = patch_order_checks(&list, &map);
+    assert_eq!(
+        d[0].title,
+        tf(
+            "diag_patch_loses",
+            &[("patch", &"Patch"), ("master", &"Master"), ("n", &10)]
+        )
+    );
+    assert!(d[0].detail.contains("meshes/f7.nif") && !d[0].detail.contains("meshes/f8.nif"));
+    assert!(d[0].detail.contains(&tf("diag_and_n_more", &[("n", &2)])));
+}
+#[test]
+fn patch_order_cards_come_in_name_order() {
+    let patch = |name: &str, folder: &str, master: &str| {
+        let mut p = plugin_row(name, folder);
+        p.masters = vec![master.into()];
+        p
+    };
+    let list = PluginList {
+        plugins: vec![
+            plugin_row("Zeta.esm", "Zeta"),
+            plugin_row("Alpha.esm", "Alpha"),
+            patch("Zeta Patch.esp", "Zeta Patch", "Zeta.esm"),
+            patch("Alpha Patch.esp", "Alpha Patch", "Alpha.esm"),
+        ],
+        ..Default::default()
+    };
+    let map = map_of(&[
+        (4, "Zeta", &["Zeta.esm", "z.nif"]),
+        (3, "Alpha", &["Alpha.esm", "a.nif"]),
+        (2, "Zeta Patch", &["Zeta Patch.esp", "z.nif"]),
+        (1, "Alpha Patch", &["Alpha Patch.esp", "a.nif"]),
+        (0, "[skyrimse]", &[]),
+    ]);
+    let first: Vec<String> = patch_order_checks(&list, &map)
+        .into_iter()
+        .map(|d| d.title)
+        .collect();
+    assert!(first[0].contains("Alpha Patch"));
+    for _ in 0..5 {
+        assert_eq!(
+            patch_order_checks(&list, &map)
+                .into_iter()
+                .map(|d| d.title)
+                .collect::<Vec<_>>(),
+            first
+        );
+    }
+}

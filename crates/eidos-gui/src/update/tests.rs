@@ -7773,3 +7773,18 @@ mod cleaning {
         assert!(app.status.as_deref().unwrap().contains("Game"));
     }
 }
+
+#[test]
+fn move_mod_below_acts_by_name_and_ignores_a_stale_card() {
+    let (mut app, root) = list_app(&["Patch", "Other", "Master"]);
+    let mv = |a: &str, b: &str| Message::MoveModBelow {
+        folder: a.into(),
+        below: b.into(),
+    };
+    let _ = update_inner(&mut app, mv("Patch", "Master"));
+    assert_eq!(names(&app.mods), ["Other", "Master", "Patch"]);
+    let _ = update_inner(&mut app, mv("Patch", "Master"));
+    let _ = update_inner(&mut app, mv("Gone", "Other"));
+    assert_eq!(names(&app.mods), ["Other", "Master", "Patch"]);
+    let _ = fs::remove_dir_all(root);
+}
