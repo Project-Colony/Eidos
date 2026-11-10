@@ -614,7 +614,7 @@ is de saaie helft.
 
 Als u over een plugin beweegt, ziet u waar die vandaan komt, de auteur, de header- en formulierversie, de eerste 300 tekens van de beschrijving, de masters en, na een LOOT-sortering, de berichten van LOOT. Bij Skyrim, Skyrim SE, Skyrim VR en Enderal SE leest het spel ook een INI die naar een geladen plugin is genoemd; de kolom INI markeert die plugins en een klik opent dat bestand alleen-lezen.
 
-Een `.exe`-rij in Data heeft Add tool, dat de Executables-editor opent met dat bestand al ingevuld (er wordt niets opgeslagen tot je op Save drukt), en Run, dat het bestand één keer start via de samengevoegde weergave, zoals een geregistreerde tool. Boom opslaan schrijft de hele samengevoegde Data-boom naar een tekstbestand, één regel per bestand met de mod die het levert, zonder uw thuismap en gebruikersnaam, voor een bugmelding.
+Een `.exe`-rij in Data heeft Add tool, dat de Executables-editor opent met dat bestand al ingevuld (er wordt niets opgeslagen tot je op Save drukt), en Run, dat het bestand één keer start via de samengevoegde weergave, zoals een geregistreerde tool. Save tree schrijft de hele samengevoegde Data-boom naar een tekstbestand, één regel per bestand met de mod die het levert, zonder uw thuismap en gebruikersnaam, voor een bugmelding.
 
 Saves die Steam Cloud van een ander apparaat downloadt, of die een start zonder Eidos schrijft, komen in de eigen savemap van het spel terecht, die de saves van het profiel afdekken zolang het spel draait. Het tabblad Saves telt ze op de regel onder de kop, en Import kopieert elke save met zijn co-save naar het profiel. Een save waarvan het profiel de naam al gebruikt, wordt geïmporteerd als `orphan-<time>-<name>`; niets in het profiel wordt vervangen.
 

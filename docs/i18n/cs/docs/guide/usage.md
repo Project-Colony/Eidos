@@ -571,7 +571,7 @@ nudná polovina.
 
 Když najedete na plugin, zobrazí se, odkud pochází, jeho autor, verze hlavičky a formuláře, prvních 300 znaků popisu, jeho master soubory a po řazení LOOT také zprávy z LOOT. Na Skyrimu, Skyrimu SE, Skyrimu VR a Enderalu SE hra čte také INI pojmenovaný podle načteného pluginu; sloupec INI tyto pluginy označuje a kliknutí otevře soubor jen pro čtení.
 
-Řádek `.exe` na kartě Data má tlačítko Add tool, které otevře editor Executables s vyplněným souborem (nic se neuloží, dokud nestisknete Save), a tlačítko Run, které soubor jednou spustí ve sloučeném pohledu jako registrovaný nástroj. Uložit strom zapíše celý sloučený strom Data do textového souboru, jeden řádek na soubor s modem, který jej poskytuje, bez vaší domovské složky a uživatelského jména, pro hlášení chyby.
+Řádek `.exe` na kartě Data má tlačítko Add tool, které otevře editor Executables s vyplněným souborem (nic se neuloží, dokud nestisknete Save), a tlačítko Run, které soubor jednou spustí ve sloučeném pohledu jako registrovaný nástroj. Save tree zapíše celý sloučený strom Data do textového souboru, jeden řádek na soubor s modem, který jej poskytuje, bez vaší domovské složky a uživatelského jména, pro hlášení chyby.
 
 Savy, které Steam Cloud stáhne z jiného zařízení nebo které zapíše spuštění bez Eidosu, skončí ve vlastní složce savů hry, kterou savy profilu po dobu běhu hry překrývají. Karta Saves je spočítá na řádku pod svým nadpisem a Import zkopíruje každý z nich i s jeho co-savem do profilu. Sav, jehož jméno už profil používá, se importuje jako `orphan-<time>-<name>`; nic v profilu se nenahradí.
 

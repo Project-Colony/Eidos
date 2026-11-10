@@ -632,7 +632,7 @@ noiosa.
 
 Passando il mouse su un plugin si vedono la sua origine, l'autore, la versione dell'intestazione e del modulo, i primi 300 caratteri della descrizione, i suoi master e, dopo un ordinamento con LOOT, i messaggi di LOOT. In Skyrim, Skyrim SE, Skyrim VR ed Enderal SE il gioco legge anche un INI con il nome di un plugin caricato; la colonna INI segna quei plugin e un clic apre il file in sola lettura.
 
-Una riga `.exe` in Data ha Add tool, che apre l'editor Executables con quel file già inserito (nulla viene salvato finché non premi Save), e Run, che lo avvia una volta attraverso la vista unita come uno strumento registrato. Salva albero scrive l'intero albero Data unito in un file di testo, una riga per file con la mod che lo fornisce, senza la cartella home e il nome utente, per una segnalazione di bug.
+Una riga `.exe` in Data ha Add tool, che apre l'editor Executables con quel file già inserito (nulla viene salvato finché non premi Save), e Run, che lo avvia una volta attraverso la vista unita come uno strumento registrato. Save tree scrive l'intero albero Data unito in un file di testo, una riga per file con la mod che lo fornisce, senza la cartella home e il nome utente, per una segnalazione di bug.
 
 I salvataggi che Steam Cloud scarica da un altro dispositivo, o che un avvio senza Eidos scrive, finiscono nella cartella dei salvataggi del gioco, che i salvataggi del profilo coprono mentre il gioco è in esecuzione. La scheda Saves li conta sulla riga sotto il suo titolo, e Import copia ciascuno con il suo co-save nel profilo. Un salvataggio il cui nome il profilo usa già viene importato come `orphan-<time>-<name>`; nel profilo non viene sostituito nulla.
 
