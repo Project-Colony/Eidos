@@ -8944,3 +8944,267 @@ fn a_search_of_another_profile_offers_no_step() {
     assert!(inst.test_run().is_none());
     let _ = fs::remove_dir_all(root);
 }
+
+/// Task 88's resume fixture: four mods, step 1 tested A and B, and its test run
+/// ended with code 0 after writing one save in the working copy. With `crash`,
+/// the run also left an SKSE crash log.
+fn answer_app(crash: bool) -> (App, PathBuf) {
+    use eidos_instance::{Bisect, TestRun};
+    let (mut app, root) = list_app(&["A", "B", "C", "D"]);
+    let inst = app.created.clone().unwrap();
+    let mut b = Bisect::new(
+        "Default",
+        vec![],
+        ["A", "B", "C", "D"].map(String::from).to_vec(),
+        1,
+    );
+    b.begin_step(vec!["A".into(), "B".into()]);
+    inst.write_bisect(&b).unwrap();
+    inst.request_test_run(&TestRun {
+        profile: "Default".into(),
+        game: "skyrimse".into(),
+        mods: Some(vec!["A".into(), "B".into()]),
+        bisect: true,
+        requested: 1,
+        ..Default::default()
+    })
+    .unwrap();
+    inst.begin_test_run(&inst.profile("Default"), "skyrimse", &[], None, false, 2)
+        .unwrap();
+    let saves = inst.test_run_profile().saves_dir();
+    fs::create_dir_all(&saves).unwrap();
+    fs::write(saves.join("quick.ess"), "save").unwrap();
+    if crash {
+        let skse = inst.test_docs_upper().join("SKSE");
+        fs::create_dir_all(&skse).unwrap();
+        fs::write(skse.join("crash-1.log"), "crash").unwrap();
+    }
+    inst.end_test_run(Some(0), 3).unwrap();
+    load_test_state(&mut app, true);
+    (app, root)
+}
+
+#[test]
+fn a_crashed_step_prefills_bad_and_a_stop_exit_does_not() {
+    let (app, root) = answer_app(true);
+    assert!(matches!(bisect_hint(&app), Some(BisectHint::Crash(_))));
+    assert!(matches!(app.bisect_step.0, Some(BisectHint::Crash(_))));
+    let (mut stopped, root2) = answer_app(false);
+    let inst = stopped.created.clone().unwrap();
+    for (exit, hint) in [
+        (Some(143), None),
+        (Some(137), None),
+        (Some(1), Some(BisectHint::Exit(1))),
+        (Some(0), None),
+    ] {
+        let mut run = inst.test_run().unwrap();
+        run.exit = exit;
+        fs::write(
+            inst.test_run_dir().join("test-run.json"),
+            serde_json::to_vec(&run).unwrap(),
+        )
+        .unwrap();
+        load_test_state(&mut stopped, false);
+        assert_eq!(bisect_hint(&stopped), hint, "{exit:?}");
+    }
+    let _ = (fs::remove_dir_all(root), fs::remove_dir_all(root2));
+}
+
+#[test]
+fn answering_throws_away_after_two_presses_and_moves_on() {
+    use eidos_instance::Answer;
+    let (mut app, root) = answer_app(false);
+    assert_eq!(bisect_stage(&app), BisectStage::Answer);
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Bad));
+    assert_eq!(app.bisect_armed, Some(BisectArm::Answer(Answer::Bad)));
+    assert!(
+        app.created.as_ref().unwrap().test_run().is_some(),
+        "one press deletes nothing"
+    );
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Bad));
+    let inst = app.created.as_ref().unwrap();
+    assert!(inst.test_run().is_none());
+    assert_eq!(inst.read_bisect().unwrap().candidates, ["A", "B"]);
+    assert_eq!(bisect_stage(&app), BisectStage::Ready);
+    assert_eq!(app.bisect_armed, None);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn another_answer_or_action_rearms_instead_of_deleting() {
+    use eidos_instance::Answer;
+    let (mut app, root) = answer_app(false);
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Bad));
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Good));
+    assert_eq!(app.bisect_armed, Some(BisectArm::Answer(Answer::Good)));
+    let _ = update_inner(&mut app, Message::SelectTab(Tab::Data));
+    assert_eq!(app.bisect_armed, None, "any other action disarms");
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Good));
+    let inst = app.created.as_ref().unwrap();
+    assert!(inst.test_run().is_some());
+    assert_eq!(inst.read_bisect().unwrap().steps[0].answer, None);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_failed_throw_away_records_no_answer() {
+    use eidos_instance::Answer;
+    let (mut app, root) = answer_app(false);
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Bad));
+    // Another process holds the instance lock: the lock is re-entrant on one
+    // thread, so another thread holds it.
+    let holder = app.created.clone().unwrap();
+    let (held_tx, held) = std::sync::mpsc::channel();
+    let (release, release_rx) = std::sync::mpsc::channel::<()>();
+    let other = std::thread::spawn(move || {
+        let _lock = holder.try_lock("a tool run").unwrap();
+        held_tx.send(()).unwrap();
+        let _ = release_rx.recv();
+    });
+    held.recv().unwrap();
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Bad));
+    drop(release);
+    other.join().unwrap();
+    let inst = app.created.as_ref().unwrap();
+    assert!(inst.test_run().is_some());
+    assert_eq!(inst.read_bisect().unwrap().steps[0].answer, None);
+    assert!(app
+        .bisect_line
+        .as_deref()
+        .unwrap()
+        .starts_with(t("review_failed").split("{error}").next().unwrap()));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn repeat_runs_the_same_set_again() {
+    let (mut app, root) = answer_app(false);
+    let _ = update_inner(&mut app, Message::BisectRepeat);
+    assert_eq!(app.bisect_armed, Some(BisectArm::Repeat));
+    assert!(app
+        .created
+        .as_ref()
+        .unwrap()
+        .test_run()
+        .unwrap()
+        .started
+        .is_some());
+    let _ = update_inner(&mut app, Message::BisectRepeat);
+    let inst = app.created.as_ref().unwrap();
+    let run = inst.test_run().unwrap();
+    assert_eq!(
+        (run.mods.clone(), run.started, run.bisect),
+        (Some(vec!["A".into(), "B".into()]), None, true)
+    );
+    assert_eq!(
+        inst.read_bisect().unwrap().steps.len(),
+        1,
+        "the step stays unanswered"
+    );
+    assert_eq!(bisect_stage(&app), BisectStage::Running);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn the_steps_review_leaves_the_answer_with_nothing_to_throw_away() {
+    use eidos_instance::{Answer, TestGroup};
+    let (mut app, root) = answer_app(false);
+    assert_eq!(app.bisect_step.1, 1);
+    let _ = update_inner(&mut app, Message::BisectReview);
+    let _ = update_inner(&mut app, Message::ReviewChoose(TestGroup::Saves, true));
+    let _ = update_inner(&mut app, Message::ReviewApply);
+    assert!(app.test_review.is_none() && app.bisect_open);
+    assert_eq!(bisect_stage(&app), BisectStage::Answer);
+    assert_eq!(app.bisect_step.1, 0);
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Good));
+    let inst = app.created.as_ref().unwrap();
+    assert_eq!(inst.read_bisect().unwrap().candidates, ["C", "D"]);
+    assert!(inst
+        .profile("Default")
+        .saves_dir()
+        .join("quick.ess")
+        .is_file());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn stop_takes_two_presses_and_leaves_a_waiting_test_run_for_review() {
+    let (mut app, root) = answer_app(false);
+    let _ = update_inner(&mut app, Message::BisectStop);
+    assert_eq!(app.bisect_armed, Some(BisectArm::Stop));
+    assert!(app.created.as_ref().unwrap().read_bisect().is_some());
+    let _ = update_inner(&mut app, Message::BisectStop);
+    let inst = app.created.as_ref().unwrap();
+    assert!(inst.read_bisect().is_none() && inst.test_run().is_some());
+    assert!(!app.bisect_open && app.bisect.is_none());
+    assert!(app.test_review.is_some(), "the waiting run's review opens");
+    let log = fs::read_dir(inst.root.join("logs"))
+        .unwrap()
+        .flatten()
+        .find(|e| e.file_name().to_string_lossy().starts_with("bisect-"))
+        .unwrap()
+        .path();
+    assert_eq!(
+        fs::read_to_string(log).unwrap(),
+        "step 1: A, B -> no answer\nStopped with 4 suspects left: A, B, C, D\n"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn the_result_names_the_culprit_and_close_keeps_a_log() {
+    use eidos_instance::Answer;
+    let (mut app, root) = answer_app(false);
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Bad));
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Bad));
+    // step 2 on the candidates {A, B} tests ["A"]; its run writes nothing
+    let _ = update_inner(&mut app, Message::BisectRunStep);
+    let inst = app.created.clone().unwrap();
+    assert_eq!(inst.test_run().unwrap().mods, Some(vec!["A".into()]));
+    inst.begin_test_run(&inst.profile("Default"), "skyrimse", &[], None, false, 5)
+        .unwrap();
+    inst.end_test_run(Some(0), 6).unwrap();
+    load_test_state(&mut app, true);
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Bad));
+    assert_eq!(
+        bisect_stage(&app),
+        BisectStage::Result,
+        "nothing written, so one press answers"
+    );
+    let _ = update_inner(&mut app, Message::BisectClose);
+    assert!(inst.read_bisect().is_none() && !app.bisect_open);
+    let log = fs::read_dir(inst.root.join("logs"))
+        .unwrap()
+        .flatten()
+        .find(|e| e.file_name().to_string_lossy().starts_with("bisect-"))
+        .unwrap()
+        .path();
+    assert_eq!(
+        fs::read_to_string(log).unwrap(),
+        "step 1: A, B -> Bad\nstep 2: A -> Bad\nFound: A\n"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn the_result_lines_say_how_sure_the_search_is() {
+    use eidos_instance::BisectResult;
+    let en = |k: &str| crate::i18n::t_in(colony_ui::i18n::Locale::En, k);
+    let found = |mods: &[&str], confirmed| BisectResult::Found {
+        mods: mods.iter().map(|m| m.to_string()).collect(),
+        confirmed,
+    };
+    assert_eq!(bisect_result_lines(&found(&["A"], true), en), ["Found: A"]);
+    assert_eq!(
+        bisect_result_lines(&found(&["P", "Q"], false), en),
+        [
+            "Found: P, Q",
+            en("bisect_result_unconfirmed"),
+            en("bisect_result_set")
+        ]
+    );
+    assert_eq!(
+        bisect_result_lines(&BisectResult::NoneLeft, en),
+        [en("bisect_result_none")]
+    );
+}

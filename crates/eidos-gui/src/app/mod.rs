@@ -256,6 +256,13 @@ pub(crate) struct App {
     /// The mods Setup shows as always on and Start pins, read when the panel
     /// opens: finding the extender's mod reads every mod's `Root` folder.
     pub(crate) bisect_pinned: Vec<String>,
+    /// The first press of an answer, Run it again or Stop; the second acts.
+    pub(crate) bisect_armed: Option<BisectArm>,
+    /// The ended step's hint and how many files an answer throws away, read
+    /// with the test state so the view walks no folder.
+    pub(crate) bisect_step: (Option<BisectHint>, usize),
+    /// The panel's status slot when nothing is armed: why the last press failed.
+    pub(crate) bisect_line: Option<String>,
     /// Drift states the user chose to play with, for this window only:
     /// `(receipt id, hash of the inputs)`. Never saved.
     pub(crate) play_anyway: Vec<(String, u64)>,

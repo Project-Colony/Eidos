@@ -1765,11 +1765,27 @@ fn the_bisect_panel_keeps_its_bottom_row_in_place() {
     assert_eq!(hide_y(&app), setup, "Running moved the bottom row");
     inst.begin_test_run(&inst.profile("Default"), "skyrimse", &[], None, false, 2)
         .unwrap();
-    // Task 89 adds: a crash log with a 200-character path under test-run/docs/SKSE
     inst.end_test_run(Some(1), 3).unwrap();
     load_test_state(&mut app, false);
     assert_eq!(bisect_stage(&app), BisectStage::Answer);
+    assert_eq!(app.bisect_step, (Some(BisectHint::Exit(1)), 0));
     assert_eq!(hide_y(&app), setup, "Answer moved the bottom row");
+    // A crash log with a path of over 200 characters, so the run wrote a file.
+    let skse = inst.test_docs_upper().join("SKSE");
+    std::fs::create_dir_all(&skse).unwrap();
+    let crash = skse.join(format!("crash-{}.log", "x".repeat(200)));
+    std::fs::write(&crash, "crash").unwrap();
+    load_test_state(&mut app, false);
+    assert_eq!(app.bisect_step, (Some(BisectHint::Crash(crash)), 1));
+    assert_eq!(hide_y(&app), setup, "the crash line moved the bottom row");
+    app.bisect_armed = Some(BisectArm::Answer(Answer::Bad));
+    assert_eq!(hide_y(&app), setup, "the confirm line moved the bottom row");
+    app.bisect_armed = Some(BisectArm::Stop);
+    assert_eq!(hide_y(&app), setup, "the armed Stop moved the bottom row");
+    app.bisect_armed = None;
+    app.bisect_line = Some(tf("review_failed", &[("error", &"x".repeat(300))]));
+    assert_eq!(hide_y(&app), setup, "a failure line moved the bottom row");
+    app.bisect_line = None;
     for _ in 0..3 {
         b.answer(Answer::Bad);
         b.begin_step(vec!["A".into()]);
@@ -1803,6 +1819,8 @@ fn the_french_bisect_actions_fit_the_stage_area() {
     let mut renderer = renderer();
     let fr = |key| crate::i18n::t_in(Locale::Fr, key);
     let ready = eidos_instance::Bisect::new("Default", vec![], app.bisect_universe.0.clone(), 0);
+    let mut asking = ready.clone();
+    asking.begin_step(vec!["A".into(), "B".into()]);
     for (font, text) in [
         (FontSize::Default, TextSize::Default),
         (FontSize::Large, TextSize::XLarge),
@@ -1823,12 +1841,87 @@ fn the_french_bisect_actions_fit_the_stage_area() {
             let drawn = positions(panel, &mut renderer).labels;
             let at = |s: &str| drawn.iter().find(|(l, _)| l == s).unwrap().1;
             let (button, hide) = (at(&action), at(fr("bisect_hide")));
-            // Hide's own padding (6) and the card spacing (10) lie between them.
+            // Hide's own padding (6), the card spacing (10) and the status slot lie between them.
             assert!(
-                button.y + button.height + 6.0 <= hide.y - 16.0,
+                button.y + button.height + 6.0
+                    <= hide.y - 26.0 - crate::theme::scaled(BISECT_SLOT_H),
                 "{font:?} x {text:?}: {action} at {button:?}, Hide at {hide:?}"
             );
         }
+        // The Answer stage, with a crash hint and files to throw away: every
+        // button sits inside the stage area on one line (none squeezed), none
+        // on top of another.
+        app.bisect = Some(asking.clone());
+        app.test_state = Some((
+            eidos_instance::TestRun {
+                bisect: true,
+                ended: Some(3),
+                ..Default::default()
+            },
+            eidos_instance::TestState::Ended,
+        ));
+        app.bisect_step = (Some(BisectHint::Crash("/c/".repeat(70).into())), 12);
+        assert_eq!(bisect_stage(&app), BisectStage::Answer);
+        let panel = crate::i18n::with_locale(Locale::Fr, || bisect_panel(&app));
+        let drawn = positions(panel, &mut renderer).labels;
+        let at = |s: &str| drawn.iter().find(|(l, _)| l == s).unwrap().1;
+        let hide = at(fr("bisect_hide"));
+        let buttons = [
+            "bisect_good",
+            "bisect_bad",
+            "bisect_unsure",
+            "bisect_repeat",
+            "bisect_review",
+        ]
+        .map(|k| at(fr(k)));
+        for (i, b) in buttons.iter().enumerate() {
+            assert!(
+                b.y + b.height + 6.0 <= hide.y - 26.0 - crate::theme::scaled(BISECT_SLOT_H)
+                    && b.x + b.width <= 540.0
+                    && b.height <= hide.height,
+                "{font:?} x {text:?}: answer button {i} at {b:?}, Hide at {hide:?}"
+            );
+            for c in &buttons[i + 1..] {
+                let apart = b.x + b.width <= c.x
+                    || c.x + c.width <= b.x
+                    || b.y + b.height <= c.y
+                    || c.y + c.height <= b.y;
+                assert!(apart, "{font:?} x {text:?}: {b:?} overlaps {c:?}");
+            }
+        }
+        let written = drawn
+            .iter()
+            .find(|(l, _)| l == &fr("bisect_writes").replace("{n}", "12"))
+            .unwrap()
+            .1;
+        // The slot's fixed height caps the measured text: a line that does
+        // not fit reports exactly the slot's height.
+        assert!(
+            written.height < crate::theme::scaled(BISECT_FILES_H),
+            "{font:?} x {text:?}: the files line is {} px tall",
+            written.height
+        );
+        // The longest French lines of the status slot fit it.
+        for line in [
+            fr("bisect_stop_line").replace("{n}", "12"),
+            fr("bisect_confirm_answer").replace("{n}", "1200"),
+            fr("review_armed_line").replace("{n}", "1200"),
+        ] {
+            let h = positions(
+                container(crate::theme::text(line.clone()).size(sz(12)))
+                    .width(520.0)
+                    .into(),
+                &mut renderer,
+            )
+            .labels[0]
+                .1
+                .height;
+            assert!(
+                h <= crate::theme::scaled(BISECT_SLOT_H),
+                "{font:?} x {text:?}: {line} is {h} px tall"
+            );
+        }
+        app.test_state = None;
     }
     let _ = std::fs::remove_dir_all(root);
 }

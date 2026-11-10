@@ -4,7 +4,8 @@
 
 use crate::theme::{card_style, scaled};
 use crate::*;
-use eidos_instance::{Bisect, TestState};
+use eidos_instance::{Answer, Bisect, BisectResult, TestGroup, TestRunWrites, TestState};
+use iced::widget::text::Wrapping;
 
 /// Where the search stands, which decides what the panel shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +48,95 @@ pub(crate) fn bisect_stage(app: &App) -> BisectStage {
     BisectStage::Ready
 }
 
+/// What the step's test run says before the user answers. Either one pre-selects Bad.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum BisectHint {
+    /// The newest crash log the run wrote.
+    Crash(PathBuf),
+    /// A non-zero exit code that is not a Stop.
+    Exit(i32),
+}
+
+/// The first press of an action that throws files away or ends the search.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BisectArm {
+    Answer(Answer),
+    Repeat,
+    Stop,
+}
+
+/// What `app.test_state`'s run says about the problem. Not for a view: it
+/// lists the crash log folders.
+pub(crate) fn bisect_hint(app: &App) -> Option<BisectHint> {
+    let (inst, (run, _)) = (app.created.as_ref()?, app.test_state.as_ref()?);
+    if let Some(log) = selected_game(app).and_then(|g| test_run_crash_log(g, inst, run)) {
+        return Some(BisectHint::Crash(log));
+    }
+    // Stop leaves 143 or 137: `exit_code` maps a signal to 128 + signal.
+    run.exit
+        .filter(|c| ![0, 137, 143].contains(c))
+        .map(BisectHint::Exit)
+}
+
+/// The files a test run wrote, the Overwrite deletions it recorded included.
+pub(crate) fn files_written(w: &TestRunWrites) -> usize {
+    TestGroup::ALL.into_iter().map(|g| w.files(g)).sum()
+}
+
+/// The hint and the file count of an ended bisect step, for `app.bisect_step`.
+/// Not for a view: it walks the test run's folders.
+pub(crate) fn read_bisect_step(app: &App) -> (Option<BisectHint>, usize) {
+    match (&app.test_state, &app.created) {
+        (Some((run, TestState::Ended)), Some(inst)) if run.bisect => {
+            (bisect_hint(app), files_written(&inst.test_run_writes()))
+        }
+        _ => (None, 0),
+    }
+}
+
+/// The Result stage's lines; `t` picks the language, so the log can be English.
+pub(crate) fn bisect_result_lines(
+    r: &BisectResult,
+    t: impl Fn(&str) -> &'static str,
+) -> Vec<String> {
+    match r {
+        BisectResult::NoneLeft => vec![t("bisect_result_none").to_string()],
+        BisectResult::Found { mods, confirmed } => {
+            let mut lines = vec![t("bisect_result").replace("{names}", &mods.join(", "))];
+            if !confirmed {
+                lines.push(t("bisect_result_unconfirmed").to_string());
+            }
+            if mods.len() > 1 {
+                lines.push(t("bisect_result_set").to_string());
+            }
+            lines
+        }
+    }
+}
+
+/// The text `end_bisect` keeps: one line per step, then the result, or where
+/// the search stood when it was stopped.
+pub(crate) fn bisect_log(b: &Bisect, result: Option<&BisectResult>) -> String {
+    let mut log = String::new();
+    for (i, s) in b.steps.iter().enumerate() {
+        let answer = s
+            .answer
+            .map_or("no answer".to_string(), |a| format!("{a:?}"));
+        log += &format!("step {}: {} -> {answer}\n", i + 1, s.tested.join(", "));
+    }
+    log += &match result {
+        Some(r) => {
+            bisect_result_lines(r, |k| crate::i18n::t_in(colony_ui::i18n::Locale::En, k)).join(" ")
+        }
+        None => format!(
+            "Stopped with {} suspects left: {}",
+            b.candidates.len(),
+            b.candidates.join(", ")
+        ),
+    };
+    log + "\n"
+}
+
 /// The enabled managed mods in display order, and the plugin rows that give
 /// their masters. Not for a view: it can read every enabled mod's plugin headers.
 pub(crate) fn bisect_universe(app: &App) -> (Vec<String>, Vec<eidos_plugins::Plugin>) {
@@ -82,6 +172,21 @@ pub(crate) fn bisect_pinned(app: &App) -> Vec<String> {
 const BISECT_STAGE_H: f32 = 180.0;
 /// The always-on line: two lines, clipped when the list is longer.
 const PINNED_H: f32 = 32.0;
+/// The status slot under the stage area: three lines, for the French Stop line
+/// at the largest text size.
+pub(crate) const BISECT_SLOT_H: f32 = 48.0;
+/// The hint's one-line slot.
+const LINE_H: f32 = 18.0;
+/// The files line: three lines, for the French one beside its button at the
+/// largest text size.
+pub(crate) const BISECT_FILES_H: f32 = 48.0;
+
+/// A tool's run would never take the request, so a step waits for the game.
+fn game_picked(app: &App) -> bool {
+    app.tool_choice
+        .as_deref()
+        .is_none_or(|t| picks_the_game(app, t))
+}
 
 pub(crate) fn bisect_panel<'a>(app: &App) -> Element<'a, Message> {
     let line = |s: String| text(s).size(sz(12));
@@ -122,11 +227,6 @@ pub(crate) fn bisect_panel<'a>(app: &App) -> Element<'a, Message> {
             let tested = b
                 .next_run(universe, plugins)
                 .map_or(0, |(_, tested)| tested.len());
-            // A tool's run would never take the request, so the step waits for the game.
-            let game_picked = app
-                .tool_choice
-                .as_deref()
-                .is_none_or(|t| picks_the_game(app, t));
             stage
                 .push(line(tf(
                     "bisect_progress",
@@ -138,7 +238,7 @@ pub(crate) fn bisect_panel<'a>(app: &App) -> Element<'a, Message> {
                 )))
                 .push(primary(
                     tf("bisect_run_step", &[("n", &n)]),
-                    game_picked.then_some(Message::BisectRunStep),
+                    game_picked(app).then_some(Message::BisectRunStep),
                 ))
         }
         (BisectStage::Running, Some(b)) => {
@@ -147,9 +247,131 @@ pub(crate) fn bisect_panel<'a>(app: &App) -> Element<'a, Message> {
         (BisectStage::OtherProfile, Some(b)) => {
             stage.push(line(tf("bisect_other_profile", &[("profile", &b.profile)])))
         }
-        // shortcut: Answer and Result show an empty line until Task 89 fills them.
-        _ => stage.push(line(String::new())),
+        (BisectStage::Answer, Some(b)) => {
+            let (hint, files) = &app.bisect_step;
+            let hint_line = match hint {
+                Some(BisectHint::Crash(log)) => tf("bisect_hint_crash", &[("log", &log.display())]),
+                Some(BisectHint::Exit(code)) => tf("bisect_hint_exit", &[("code", code)]),
+                None => String::new(),
+            };
+            let pick = |key: &str, msg: Option<Message>, arm: BisectArm, hinted: bool| {
+                button(text(t(key)).size(sz(13)))
+                    .padding([6, 14])
+                    .on_press_maybe(msg)
+                    .style(if app.bisect_armed == Some(arm) {
+                        button::danger
+                    } else if hinted {
+                        button::primary
+                    } else {
+                        button::secondary
+                    })
+            };
+            let answer = |a: Answer, key: &str| {
+                let hinted = a == Answer::Bad && hint.is_some();
+                pick(
+                    key,
+                    Some(Message::BisectAnswer(a)),
+                    BisectArm::Answer(a),
+                    hinted,
+                )
+            };
+            let repeat = game_picked(app).then_some(Message::BisectRepeat);
+            let mut written = Row::new()
+                .spacing(8)
+                .align_y(iced::alignment::Vertical::Center);
+            if *files > 0 {
+                written = written
+                    .push(
+                        text(tf("bisect_writes", &[("n", files)]))
+                            .size(sz(12))
+                            .width(Length::Fill),
+                    )
+                    .push(
+                        button(text(t("bisect_review")).size(sz(12)))
+                            .padding([4, 12])
+                            .on_press(Message::BisectReview)
+                            .style(button::secondary),
+                    );
+            }
+            stage
+                .push(line(tf("bisect_ask", &[("n", &b.steps.len())])))
+                .push(
+                    container(text(hint_line).size(sz(12)).wrapping(Wrapping::None))
+                        .width(Length::Fill)
+                        .height(Length::Fixed(scaled(LINE_H)))
+                        .clip(true),
+                )
+                .push(
+                    Row::new()
+                        .spacing(8)
+                        .push(answer(Answer::Good, "bisect_good"))
+                        .push(answer(Answer::Bad, "bisect_bad"))
+                        .push(answer(Answer::Unsure, "bisect_unsure"))
+                        .push(pick("bisect_repeat", repeat, BisectArm::Repeat, false))
+                        .wrap()
+                        .vertical_spacing(8),
+                )
+                .push(
+                    container(written)
+                        .width(Length::Fill)
+                        .height(Length::Fixed(scaled(BISECT_FILES_H)))
+                        .clip(true),
+                )
+        }
+        (BisectStage::Result, Some(b)) => match b.result(universe, plugins) {
+            Some(r) => bisect_result_lines(&r, t)
+                .into_iter()
+                .fold(stage, |stage, l| stage.push(line(l))),
+            None => stage,
+        },
+        _ => stage,
     };
+    let answered = app
+        .bisect
+        .as_ref()
+        .map_or(0, |b| b.steps.iter().filter(|s| s.answer.is_some()).count());
+    let slot = match app.bisect_armed {
+        Some(BisectArm::Answer(_)) => tf("bisect_confirm_answer", &[("n", &app.bisect_step.1)]),
+        Some(BisectArm::Repeat) => tf("review_armed_line", &[("n", &app.bisect_step.1)]),
+        Some(BisectArm::Stop) => tf("bisect_stop_line", &[("n", &answered)]),
+        None => app.bisect_line.clone().unwrap_or_default(),
+    };
+    // Hide first: Stop's label grows when armed and moves nothing.
+    let mut bottom = Row::new().spacing(10).push(
+        button(text(t("bisect_hide")).size(sz(13)))
+            .padding([6, 22])
+            .on_press(Message::BisectHide)
+            .style(button::secondary),
+    );
+    match bisect_stage(app) {
+        BisectStage::Setup => {}
+        BisectStage::Result => {
+            bottom = bottom.push(primary(
+                t("bisect_close").to_string(),
+                Some(Message::BisectClose),
+            ))
+        }
+        _ => {
+            let armed = app.bisect_armed == Some(BisectArm::Stop);
+            bottom = bottom.push(
+                button(
+                    text(t(if armed {
+                        "bisect_stop_armed"
+                    } else {
+                        "bisect_stop"
+                    }))
+                    .size(sz(13)),
+                )
+                .padding([6, 22])
+                .on_press(Message::BisectStop)
+                .style(if armed {
+                    button::danger
+                } else {
+                    button::secondary
+                }),
+            );
+        }
+    }
     let card = Column::new()
         .spacing(10)
         .push(text(t("bisect_title")).size(sz(18)))
@@ -160,13 +382,12 @@ pub(crate) fn bisect_panel<'a>(app: &App) -> Element<'a, Message> {
                 .clip(true),
         )
         .push(
-            Row::new().spacing(10).push(
-                button(text(t("bisect_hide")).size(sz(13)))
-                    .padding([6, 22])
-                    .on_press(Message::BisectHide)
-                    .style(button::secondary),
-            ),
-        );
+            container(text(slot).size(sz(12)))
+                .width(Length::Fill)
+                .height(Length::Fixed(scaled(BISECT_SLOT_H)))
+                .clip(true),
+        )
+        .push(bottom);
     container(card)
         .max_width(560.0)
         .padding(20)

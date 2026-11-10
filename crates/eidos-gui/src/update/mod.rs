@@ -1216,6 +1216,14 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 r.line = None;
             }
         }
+        // Each of these re-arms for itself when it is not the armed one.
+        if !matches!(
+            message,
+            Message::BisectAnswer(_) | Message::BisectRepeat | Message::BisectStop
+        ) {
+            app.bisect_armed = None;
+        }
+        app.bisect_line = None;
         if !matches!(message, Message::RebuildPrefix) {
             app.confirm_rebuild_prefix = false;
         }
@@ -1482,7 +1490,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         m @ (Message::OpenBisect
         | Message::BisectStart
         | Message::BisectRunStep
-        | Message::BisectHide) => bisect::handle(app, m),
+        | Message::BisectHide
+        | Message::BisectAnswer(_)
+        | Message::BisectRepeat
+        | Message::BisectReview
+        | Message::BisectStop
+        | Message::BisectClose) => bisect::handle(app, m),
         m @ (Message::OverwriteToModStart
         | Message::ToolOutputModChanged(..)
         | Message::OverwriteToModName(..)

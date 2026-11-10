@@ -20,6 +20,7 @@ pub(crate) fn load_test_state(app: &mut App, open: bool) {
     let Some(inst) = app.created.as_ref() else {
         app.test_state = None;
         app.bisect = None;
+        app.bisect_step = (None, 0);
         return;
     };
     let mut state = inst.test_run_state();
@@ -30,6 +31,7 @@ pub(crate) fn load_test_state(app: &mut App, open: bool) {
         state = inst.test_run_state();
     }
     app.test_state = state;
+    app.bisect_step = read_bisect_step(app);
     if !open {
         return;
     }

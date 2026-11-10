@@ -174,6 +174,13 @@ pub(crate) enum Message {
     BisectStart,
     BisectRunStep,
     BisectHide,
+    /// Answer the step, run it again, review what it wrote, stop the search,
+    /// or close the result.
+    BisectAnswer(eidos_instance::Answer),
+    BisectRepeat,
+    BisectReview,
+    BisectStop,
+    BisectClose,
     ExecTogglePinned,
     ExecMakeShortcut,
     /// Executables dialog: list the entries of a foreign `ModOrganizer.ini`,
