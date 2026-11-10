@@ -51,8 +51,9 @@ pub use mo2_ini::{mo2_executables, Mo2Executable, Mo2Ini, Mo2Skip};
 pub use mod_backup::{backup_mod, reserve_mod_backup};
 pub use profile::{
     cosave_siblings, format_stamp, instance_sync_keys, is_save_data, is_save_listing,
-    merge_output_tree, read_text_lossy, save_sync_key, untweak_ini, write_text, Backup, BackupKind,
-    ListTrust, Profile, SaveEntry, SavesImport, TweakedKey,
+    merge_output_tree, parse_launch_env, read_text_lossy, save_sync_key, untweak_ini, write_text,
+    Backup, BackupKind, LaunchEnv, ListTrust, Profile, SaveEntry, SavesImport, TweakedKey,
+    LAUNCH_ENV_FILE,
 };
 pub use provenance::{
     GeneratedInput, GeneratedOutput, GeneratedReceipt, GeneratedRun, ToolExecutable,

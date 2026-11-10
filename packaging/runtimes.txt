@@ -1,0 +1,5 @@
+# <file> <sha256> <url>: shipped in eidos-linux-bundle.tar.gz by .github/workflows/release.yml; runtime.rs tests compare it with the pins in the code
+VC_redist.x86.exe 0c09f2611660441084ce0df425c51c11e147e6447963c3690f97e0b25c55ed64 https://download.visualstudio.microsoft.com/download/pr/990c720a-46ce-4dc7-87b9-c2eb615d34b9/0C09F2611660441084CE0DF425C51C11E147E6447963C3690F97E0B25C55ED64/VC_redist.x86.exe
+VC_redist.x64.exe cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b https://download.visualstudio.microsoft.com/download/pr/990c720a-46ce-4dc7-87b9-c2eb615d34b9/CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe
+windowsdesktop-runtime-8.0.12-win-x64.exe cb51b559f343cb56e23cad2e5af8c4d1701e221a0a2a4116193a2a9375568814 https://download.visualstudio.microsoft.com/download/pr/f1e7ffc8-c278-4339-b460-517420724524/f36bb75b2e86a52338c4d3a90f8dac9b/windowsdesktop-runtime-8.0.12-win-x64.exe
+dotnet-runtime-10.0.10-win-x64.zip 79bb04da40ab098f0c2e4ef4652fe5bb98c27c7d5697389003b7be53d2c86f6a https://builds.dotnet.microsoft.com/dotnet/Runtime/10.0.10/dotnet-runtime-10.0.10-win-x64.zip

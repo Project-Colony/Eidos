@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9bcb3911834069a7876af50486e7493e4e753c25 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=039b6ffd055eabf9e9c4c8978bbc3e47ad68e45c -->
 
 # Eidos 사용하기
 
@@ -679,6 +679,8 @@ Proton 프리픽스 속에 파묻힌 것이 아니라 남아 있는 사본 쪽�
 Log**는 세션 로그를 읽습니다. **View -> Extensions**는 여러분 자신의 애드온을
 나열합니다. [extensions.md](extensions.md)를 보세요.
 
+실행할 때 게임의 기본 INI(`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini` 등)가 프로필에도 프리픽스에도 없으면, Eidos는 MO2처럼 게임 폴더의 기본 파일(`Skyrim_Default.ini`, `Fallout4_Default.ini` 등)을 먼저 프로필로 복사합니다. 프리픽스와 게임 폴더는 바뀌지 않습니다.
+
 설치는 무엇이든 받습니다: Simple과 FOMOD 경로, 여기에 Wrye Bash **BAIN**
 패키지(하위 패키지를 체크하면 순서대로 병합됩니다)와, 어떤 휴리스틱도 배치를
 알아보지 못할 때 압축 파일 트리를 보여주고 데이터 루트를 직접 가리키게 해주는
@@ -698,6 +700,8 @@ FOMOD 모드를 다시 설치하거나 업데이트하면 마법사는 지난 �
 또한 마지막 정상 실행 이후의 게임 업데이트, 없거나 게임 버전과 맞지 않는 스크립트 익스텐더(익스텐더 다운로드 페이지와, 내려받은 아카이브를 설치하는 버튼 포함), Eidos를 `%command%`와 함께 시작하지 않는 Steam 실행 옵션, DLSS에 필요한데 꺼져 있는 NVAPI, 프레임 생성을 막는 전용 전체 화면, `LinuxVersion=true`가 없는 ENB `enblocal.ini`, F4SE와 SFSE 플러그인 선언, 그리고 지난 세션의 크래시 로그와 그 로그가 이름을 대는 모드도 보고합니다.
 업데이트 확인은 각 모드의 Nexus 요구 사항도 읽습니다. Diagnostics는 없거나 비활성화된 필수 모드를 나열하며, 다른 방법으로 충족한 요구 사항은 Ignore로 숨길 수 있습니다.
 
+Skyrim SE, Enderal SE, Fallout 4에서는 Diagnostics에 디스플레이 카드도 있습니다. 프로필의 `SkyrimPrefs.ini`(`EnderalPrefs.ini`, `Fallout4Prefs.ini`)에 설정된 창 크기와 모드를 보여 주며, 프로필에 아직 파일이 없으면 프리픽스 쪽 사본의 값을 보여 줍니다. 둘 다 크기를 정하지 않았으면 입력란은 `/sys/class/drm`에 나열된 연결된 화면 중 가장 큰 화면의 값으로 채워지므로 Steam Deck에서는 1280x800이 됩니다. Apply는 `iSize W`, `iSize H`, `bFull Screen`, `bBorderless`를 프로필 사본에 쓰며, 프로필에 사본이 없으면 먼저 프리픽스의 사본을 가져옵니다. SSE Display Tweaks가 창을 정하는 경우 Apply는 같은 크기와 모드를 Overwrite에 있는 그 사본에도 씁니다. 모드 자체의 파일은 바뀌지 않습니다.
+
 GUI를 통해 게임을 실행하려면 게임의 Steam 실행 옵션을 실행 파일의 절대 경로로
 설정하세요(Steam은 PATH의 `~/.cargo/bin`을 보지 못합니다):
 
@@ -709,7 +713,7 @@ Eidos는 그 게임의 인스턴스로 열립니다 - 마지막으로 쓴 것이
 전역 인스턴스와 똑같이 다시 찾아집니다. Run을 클릭하면 병합된 뷰를 통해
 실행됩니다.
 
-**Start the game at once when a store opens Eidos**를 켜 두면(Preferences, General, Running a game) Eidos는 그 클릭을 건너뜁니다. Health를 확인하고 창을 띄우지 않은 채 게임을 시작합니다. Health에 문제가 있을 때, 모드 목록에 확인이 필요할 때, 플레이 전에 실행하도록 설정한 도구의 출력이 오래되었을 때는 평소처럼 창이 열립니다. 한 번만 창을 보려면 명령 앞에 `EIDOS_WINDOW=1`을 붙이세요: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
+**Start the game at once when a store opens Eidos**를 켜 두면(Preferences, General, Running a game) Eidos는 그 클릭을 건너뜁니다. Health를 확인하고 창을 띄우지 않은 채 게임을 시작합니다. Health에 문제가 있을 때, 모드 목록에 확인이 필요할 때, 플레이 전에 실행하도록 설정한 도구의 출력이 오래되었을 때, Skyrim SE, Enderal SE, Fallout 4에서 프로필에 아직 창 크기가 없을 때는 평소처럼 창이 열립니다(마지막 경우에는 Diagnostics 탭으로 열립니다). 한 번만 창을 보려면 명령 앞에 `EIDOS_WINDOW=1`을 붙이세요: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Steam 밖에서 Run은 Proton이나 Wine으로 게임을 직접 시작하지 않습니다. 그 사본을 가진 스토어에 시작을 요청하고, 스토어가 Eidos를 시작합니다:
 
@@ -718,6 +722,23 @@ Steam 밖에서 Run은 Proton이나 Wine으로 게임을 직접 시작하지 않
 - 단독 Legendary는 `~/.config/legendary/config.ini`의 게임 `[<app>]` 섹션이나 `[default]` 아래에 `wrapper =`와 `eidos-gui`의 절대 경로가 있을 때 `legendary launch <app>`를 실행합니다.
 
 그러면 Eidos가 마지막으로 쓴 인스턴스로 두 번째 창을 열고, 거기서 Run을 클릭합니다. 첫 번째 창은 그 실행을 따라가지 않으므로, 플레이 후 그 창에서 F5를 눌러 목록을 다시 불러오세요. 스토어 설정이 없거나 스크립트 익스텐더의 로더가 게임 실행 파일 옆에 없으면, Run은 아무것도 시작하지 않고 무엇을 어디에 설정할지를 실행 중인 바이너리의 실제 경로와 함께 보여줍니다.
+
+### 프로필별 변수와 래퍼
+
+프로필은 `profiles/<이름>/launch-env.ini`에 자체 환경 변수와 래퍼 명령을 한 줄에 하나씩 둘 수 있습니다.
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+이 값들은 해당 프로필의 모든 `eidos play`(Steam의 `%command%`로 시작한 게임, 또는 스토어가 연 창에서 Run으로 시작한 게임)와 모든 도구 실행에 적용됩니다. `eidos shell`은 변수만 받고 래퍼는 받지 않습니다. 첫 번째 `wrapper=` 줄이 가장 바깥쪽입니다. `%command%`가 들어 있는 `wrapper=` 줄에서는 그 자리에 명령이 들어가며, Steam 시작 옵션과 같습니다. 없는 줄에서는 명령이 맨 끝에 붙습니다. 래퍼는 Eidos의 비공개 네임스페이스 안에서 실행되므로 모드를 볼 수 있습니다.
+
+여기에 적은 변수는 Eidos가 같은 이름에 설정하는 값을 대체하고, `tools.ini`에 있는 도구 자체의 `env=` 줄은 둘 다 대체합니다. `WINEDLLOVERRIDES`는 예외로, Eidos가 ENB, ReShade, 번들 DLL에 설정하는 오버라이드 뒤에 추가됩니다. 양쪽에 모두 나온 DLL은 프로필의 설정을 따르고 나머지는 원래 설정을 유지합니다.
+
+View -> INI editor는 이 파일을 모든 게임에서 마지막 탭으로 엽니다. 저장하면 Eidos가 무시하는 줄 번호(`env=이름=값`도 `wrapper=명령`도 아닌 줄)를 알려 줍니다. 명령 없이 실행한 `eidos play <인스턴스>`는 실행이 받는 변수와 래퍼를 나열합니다. Diagnostics의 Copy report에는 변수 이름과 래퍼 프로그램 이름이 값 없이 들어갑니다.
 
 Bethesda 타이틀의 Steam `%command%`는 보통 `<Game>Launcher.exe`를 가리킵니다.
 Eidos는 그것을 결코 실행하지 않습니다: 그 런처는 `Data`를 다시 훑고

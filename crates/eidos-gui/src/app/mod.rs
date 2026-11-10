@@ -230,6 +230,9 @@ pub(crate) struct App {
     pub(crate) diag_dirty: bool,
     /// The `&App`-reachable half of the same flag, so `bump_views` can set it.
     pub(crate) diag_stale: std::cell::Cell<bool>,
+    /// The Display card's form, refreshed with the health checks; `None` for a
+    /// game without the card.
+    pub(crate) display: Option<DisplayForm>,
     pub(crate) tab: Tab,
     pub(crate) status: Option<String>,
     /// Two-click guard for the destructive "Clear Overwrite" action.

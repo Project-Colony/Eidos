@@ -202,8 +202,10 @@ impl Profile {
     /// Divergence from MO2: MO2 seeds a new profile's INIs from the *vanilla game
     /// folder* (a clean baseline - it owns the INIs from the start). Eidos adopts a
     /// pre-existing Proton setup, so we seed from the user's *current* prefix INIs
-    /// to keep their working settings (resolution, language, tweaks). Like MO2 we
-    /// never overwrite an INI the profile already has.
+    /// to keep their working settings (resolution, language, tweaks). When the
+    /// prefix has no main INI either, `seed_default_ini` falls back to the game
+    /// folder's default, as MO2 does. Like MO2 we never overwrite an INI the
+    /// profile already has.
     pub fn seed_inis(&self, src_dir: &Path, ini_files: &[&str]) -> io::Result<u32> {
         fs::create_dir_all(self.dir())?;
         let mut n = 0;
@@ -216,6 +218,35 @@ impl Profile {
             }
         }
         Ok(n)
+    }
+
+    /// Give the profile `ini_file` from the game folder's `<stem>_default.ini`
+    /// (any letter case) when the profile has none. Returns the file copied, or
+    /// `None` when the profile already owns the INI or the folder has no default.
+    pub fn seed_default_ini(&self, install: &Path, ini_file: &str) -> io::Result<Option<PathBuf>> {
+        let dst = self.ini_path(ini_file);
+        if dst.exists() {
+            return Ok(None);
+        }
+        let stem = ini_file.strip_suffix(".ini").unwrap_or(ini_file);
+        let want = format!("{stem}_default.ini");
+        let Ok(entries) = fs::read_dir(install) else {
+            return Ok(None);
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if entry
+                .file_name()
+                .to_string_lossy()
+                .eq_ignore_ascii_case(&want)
+                && path.is_file()
+            {
+                fs::create_dir_all(self.dir())?;
+                copy_atomic(&path, &dst)?;
+                return Ok(Some(path));
+            }
+        }
+        Ok(None)
     }
 
     /// Deploy this profile's INIs into `dst_dir` (the prefix Documents) before

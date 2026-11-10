@@ -748,6 +748,8 @@ rather than the one buried in the Proton prefix that is overwritten at every
 launch. **View -> Log** reads the session logs. **View -> Extensions** lists
 your own add-ons; see [extensions.md](extensions.md).
 
+When a launch finds the game's main INI (`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini`...) neither in the profile nor in the prefix, Eidos first copies the game folder's default (`Skyrim_Default.ini`, `Fallout4_Default.ini`...) into the profile, as MO2 does. The prefix and the game folder are not changed.
+
 Installing accepts everything: the Simple and FOMOD paths, plus Wrye Bash
 **BAIN** packages (tick the sub-packages, which merge in order) and a **manual**
 picker that shows the archive tree and lets you point at the data root when no
@@ -773,6 +775,8 @@ the plugin declarations of F4SE and SFSE plugins, and the crash log of the last
 session with the mods it names.
 Check for updates also reads each mod's Nexus requirements. Diagnostics lists a required mod that is missing or disabled, with Ignore for a requirement met another way.
 
+For Skyrim SE, Enderal SE and Fallout 4, Diagnostics also has a Display card. It shows the window size and mode set in the profile's `SkyrimPrefs.ini` (`EnderalPrefs.ini`, `Fallout4Prefs.ini`), or in the prefix's copy when the profile has none yet. When neither sets a size, its fields start from the largest connected screen listed in `/sys/class/drm`, so a Steam Deck reads 1280x800. Apply writes `iSize W`, `iSize H`, `bFull Screen` and `bBorderless` into the profile's copy, after adopting the prefix's copy if the profile does not have one. When SSE Display Tweaks sets the window, Apply writes the same size and mode into its copy in the Overwrite; the mod's own file is not changed.
+
 To launch the game through the GUI, set the game's Steam launch option to the
 binary's absolute path (Steam doesn't see `~/.cargo/bin` on PATH):
 
@@ -787,8 +791,10 @@ through the merged view.
 With **Start the game at once when a store opens Eidos** on (Preferences,
 General, Running a game), Eidos skips that click: it checks Health and starts
 the game without showing its window. The window opens as usual when Health
-lists a problem, when the mod list needs attention, or when a tool set to run
-before playing has an out-of-date output. To get the window for one launch, put
+lists a problem, when the mod list needs attention, when a tool set to run
+before playing has an out-of-date output, or, for Skyrim SE, Enderal SE and
+Fallout 4, when the profile has no window size yet (the window then opens on
+Diagnostics). To get the window for one launch, put
 `EIDOS_WINDOW=1` before the command:
 `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
@@ -810,6 +816,23 @@ Run there. The first window does not follow that run, so press F5 in it after
 playing to reload its lists. When the store's setting is missing, or the script
 extender's loader is not next to the game's executable, Run starts nothing and
 shows what to set and where, with the running binary's real path.
+
+### Variables and wrappers per profile
+
+A profile can carry its own environment variables and wrapper commands in `profiles/<name>/launch-env.ini`, one entry per line:
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+They apply to every `eidos play` of that profile (the game started by Steam's `%command%`, or by Run in a window a store opened) and to every tool run. `eidos shell` gets the variables and no wrapper. The first `wrapper=` line is the outermost. A `wrapper=` line that holds `%command%` gets the command in that place, as in Steam's launch options; a line without it gets the command at the end. Wrappers run inside Eidos's private namespace, so they see the mods.
+
+A variable here replaces the value Eidos sets for the same name, and a tool's own `env=` line in `tools.ini` replaces both. `WINEDLLOVERRIDES` is added after the overrides Eidos sets for ENB, ReShade and the bundled DLLs instead, so a DLL named in both takes the profile's setting and the others keep theirs.
+
+View -> INI editor opens the file as its last tab, for every game. Saving lists the line numbers Eidos ignores: lines that are neither `env=NAME=value` nor `wrapper=command`. `eidos play <instance>` without a command lists the variables a run gets and the wrappers. Copy report in Diagnostics names the variables and the wrapper programs, without their values.
 
 Steam's `%command%` for the Bethesda titles usually points at
 `<Game>Launcher.exe`. Eidos never runs it: the launcher is a separate settings

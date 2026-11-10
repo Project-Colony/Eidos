@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 mod backup;
 mod inis;
+mod launch_env;
 mod modlist;
 mod plugins;
 mod saves;
@@ -20,6 +21,7 @@ mod tests;
 
 pub use backup::*;
 pub use inis::*;
+pub use launch_env::*;
 pub use modlist::*;
 use plugins::*;
 pub use saves::*;

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=24a826cf58aaf1ab0e91bef4d7acfb7ebb818ed3 -->
+<!-- eidos-i18n: source=README.md sha=65fb26275cd8e0b8dbf88b169fd66887cd7dd420 -->
 
 <div align="center">
 
@@ -348,7 +348,7 @@ každé spojení s Nexusem.
 | Stahování z Nexusu | odeslána | Soubory, o které požádáte, z hostitele CDN Nexusu, kterého uvádí odkaz ke stažení, uložené do složky stahování instance s `.meta` ve formátu MO2 vedle každého z nich. |
 | Odkazy `nxm://` | uložena | `eidos nxm --register`, který za vás spustí `install.sh`, zapíše `~/.local/share/applications/eidos-nxm.desktop` a přes `xdg-mime` z něj udělá obsluhu `nxm://`, takže tlačítko Mod Manager Download na webu předá svůj odkaz Eidosu. Balíček pro Arch instaluje stejnou položku pro celý systém. |
 | Masterlisty LOOT | odeslána | `raw.githubusercontent.com/loot/...`, při prvním řazení LOOTem pro danou hru a kdykoli požádáte o aktualizaci. Nic vašeho se neodesílá. [Prohlášení GitHubu o ochraně soukromí](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement) |
-| Runtimy nástrojů | odeslána | Jen když instalujete prerekvizitu nástroje nebo ji potřebuje mód: běhové prostředí .NET z `builds.dotnet.microsoft.com`, odmítnuté, pokud neodpovídá SHA-256 zabudovanému v Eidosu, a `winetricks`, který to, co instaluje do Proton prefixu hry (redistribuovatelné balíky Visual C++ a .NET), stahuje od Microsoftu a z dalších hostitelů, které winetricks používá. [Prohlášení Microsoftu o zásadách ochrany osobních údajů](https://www.microsoft.com/en-us/privacy/privacystatement) |
+| Runtimy nástrojů | odeslána | Jen když instalujete prerekvizitu nástroje nebo ji potřebuje mód, a jen pro to, co balík vydání nepřibalil (samostatný soubor `eidos-linux` a sestavení ze zdrojů nepřibalují nic): běhové prostředí .NET 10 z `builds.dotnet.microsoft.com` a instalátory Visual C++ a .NET 8 z `download.visualstudio.microsoft.com`, každý odmítnutý, pokud neodpovídá SHA-256 zabudovanému v Eidosu; SDK .NET 10, vždy z `builds.dotnet.microsoft.com`; a `winetricks` pro ostatní prerekvizity (.NET Framework 4.8, XAudio), který to, co instaluje, stahuje od Microsoftu a z dalších hostitelů, které winetricks používá. [Prohlášení Microsoftu o zásadách ochrany osobních údajů](https://www.microsoft.com/en-us/privacy/privacystatement) |
 | Logy sezení | uložena | `~/.local/share/Colony/Eidos/logs/`, režim 0600: deset sezení na instanci, smazané po 30 dnech. Vaše domovská složka se zapisuje jako `~` a vaše uživatelské jméno jako `<user>`, takže log lze vložit do issue tak, jak je. Váš stroj nikdy neopustí, pokud je sami neodešlete. |
 | Zástupci | uložena | `install.sh` zapíše `eidos.desktop` a jeho ikony pod `~/.local/share`; zástupce nástroje, který vytvoříte, jde do `~/.local/share/applications`. |
 | Odkazy, které otevřete | ani jedno | Stránky módů a další odkazy se otevírají ve vašem vlastním prohlížeči přes `xdg-open`. |

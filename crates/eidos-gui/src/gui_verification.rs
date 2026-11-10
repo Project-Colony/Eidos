@@ -952,6 +952,44 @@ fn the_dirty_plugin_card_keeps_one_height_with_xedit_without_it_and_while_cleani
     );
 }
 
+#[test]
+fn the_display_card_keeps_one_height_set_unset_and_with_display_tweaks() {
+    use eidos::check::display::{Display, DisplayFacts, WindowMode};
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    let mut below = |current, screen, tweaks, ini| {
+        let form = next_form(
+            None,
+            DisplayFacts {
+                ini,
+                current,
+                screen,
+                tweaks,
+            },
+        );
+        let col = Column::new()
+            .push(display_card(&form))
+            .push(text("below the card"));
+        label(col.into(), &mut renderer, "below the card", 0).y
+    };
+    let unset = below(None, None, false, "SkyrimPrefs.ini");
+    let set = Some(Display {
+        width: 3840,
+        height: 2160,
+        mode: WindowMode::Borderless,
+    });
+    assert_eq!(
+        below(set, Some((3840, 2160)), false, "Fallout4Prefs.ini"),
+        unset,
+        "a set size changed the height"
+    );
+    assert_eq!(
+        below(None, Some((1280, 800)), true, "EnderalPrefs.ini"),
+        unset,
+        "the Display Tweaks line changed the height"
+    );
+}
+
 /// The flags under a selected Executables entry stay on one line each at the
 /// dialog's 720 px cap, and an entry that starts the game offers no Desktop
 /// shortcut: from the desktop it would only hand the game to its store.
@@ -1566,6 +1604,114 @@ fn the_prefix_rows_keep_their_place_without_a_prefix() {
     }
     let _ = fs::remove_dir_all(root_with);
     let _ = fs::remove_dir_all(root_without);
+}
+
+/// The note under the INI editor sits in one slot, so the Save row stays put
+/// on the Prefs tab, on the launch-env tab, on a fresh profile's main INI
+/// (`ini_missing_main`, the longest note) and on an unreadable file, in English
+/// and in French, at every text size, in the interface font and in the
+/// dyslexia font (OpenDyslexic, wider). The slot also holds each note whole.
+#[test]
+fn the_ini_editor_keeps_its_save_row_in_place_on_the_launch_env_tab() {
+    use colony_ui::i18n::Locale;
+    use colony_ui::typography::{FontSize, TextSize};
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    // The window loads the Colony fonts at start; a test has only the system's.
+    // BYTES[3] is OpenDyslexic (colony_ui::fonts::BYTES lists the order).
+    iced::advanced::graphics::text::font_system()
+        .write()
+        .unwrap()
+        .load_font(std::borrow::Cow::Borrowed(colony_ui::fonts::BYTES[3]));
+    let mut width = |dyslexia| {
+        colony_ui::set_dyslexia_font(dyslexia);
+        let w = positions(text("Variables and wrappers").into(), &mut renderer).labels[0]
+            .1
+            .width;
+        colony_ui::set_dyslexia_font(false);
+        w
+    };
+    assert_ne!(width(true), width(false), "OpenDyslexic did not load");
+    let app = crate::test_support::app_for_game("skyrimse");
+    let state = |current: &str, missing| IniEditorState {
+        files: vec![
+            "Skyrim.ini".into(),
+            "SkyrimPrefs.ini".into(),
+            "launch-env.ini".into(),
+        ],
+        current: current.into(),
+        content: iced::widget::text_editor::Content::with_text(""),
+        cp1252: false,
+        dirty: false,
+        original: String::new(),
+        missing,
+        unreadable: false,
+        on_disk: 0,
+    };
+    let states = [
+        (state("SkyrimPrefs.ini", false), "ini_note"),
+        (state("launch-env.ini", true), "launch_env_note"),
+        (state("Skyrim.ini", true), "ini_missing_main"),
+        (
+            IniEditorState {
+                unreadable: true,
+                ..state("Skyrim.ini", false)
+            },
+            "ini_unreadable",
+        ),
+    ];
+    for dyslexia in [false, true] {
+        for (font, size) in FontSize::ALL
+            .into_iter()
+            .flat_map(|f| TextSize::ALL.into_iter().map(move |s| (f, s)))
+        {
+            let mut look = crate::preferences::UiPreferences::default();
+            look.standard.font_size = font;
+            look.standard.text_size_a11y = size;
+            look.standard.dyslexia_font = dyslexia;
+            look.standard.apply();
+            for locale in [Locale::En, Locale::Fr] {
+                let save = crate::i18n::t_in(locale, "common_save");
+                let mut save_ys = Vec::new();
+                for (s, key) in &states {
+                    let (dialog, note) = crate::i18n::with_locale(locale, || {
+                        (
+                            crate::dialogs::ini_editor_dialog(&app, s),
+                            crate::i18n::tf(key, &[("file", &s.current)]),
+                        )
+                    });
+                    let drawn = positions(dialog, &mut renderer).labels;
+                    let find = |name: &str| {
+                        drawn
+                            .iter()
+                            .find(|(t, _)| t == name)
+                            .unwrap_or_else(|| panic!("no {name}: {drawn:?}"))
+                            .1
+                    };
+                    save_ys.push(find(save).y);
+                    // The same text alone, as wide as the card less its padding.
+                    let whole = positions(
+                        container(text(note.clone()).size(sz(10)))
+                            .width(Length::Fixed(760.0 - 2.0 * 18.0))
+                            .into(),
+                        &mut renderer,
+                    )
+                    .labels[0]
+                        .1
+                        .height;
+                    assert_eq!(
+                        find(&note).height,
+                        whole,
+                        "dyslexia {dyslexia} {font:?}/{size:?} {locale:?}: the slot cuts {key}"
+                    );
+                }
+                assert!(
+                    save_ys.iter().all(|y| *y == save_ys[0]),
+                    "dyslexia {dyslexia} {font:?}/{size:?} {locale:?}: a note moved the Save row: {save_ys:?}"
+                );
+            }
+        }
+    }
 }
 
 /// The Test run button sits between the spacer and Run with a label that never

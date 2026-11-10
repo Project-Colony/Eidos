@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
 
 # Community Shaders, DLSS e geração de quadros
 
@@ -9,7 +9,7 @@ comuns e a união serve suas DLLs como qualquer outra coisa - mas três coisas *
 são descobríveis de dentro do jogo, e cada uma faz o recurso silenciosamente não
 fazer nada. Esta página é a lista delas, aprendida no osso numa instalação real.
 
-A aba Saúde verifica três deles por você: a variável NVAPI, quando há um driver NVIDIA e o pacote Upscaling e a versão do Proton do jogo deixa o NVAPI desligado por padrão (GE-Proton11-9 e Proton 11.0 o ligam), a tela cheia exclusiva no `SkyrimPrefs.ini` do perfil e a linha do ENB descrita mais abaixo. Os dois últimos têm um botão Corrigir.
+A aba Saúde verifica três deles por você: a variável NVAPI, quando há um driver NVIDIA e o pacote Upscaling e a versão do Proton do jogo deixa o NVAPI desligado por padrão (GE-Proton11-9 e Proton 11.0 o ligam), a tela cheia exclusiva no `SkyrimPrefs.ini` do perfil e a linha do ENB descrita mais abaixo. Os dois últimos têm um botão Corrigir, e o cartão Tela em Diagnostics define a janela sem bordas com um tamanho.
 
 ## A opção de inicialização de que o DLSS precisa
 
@@ -23,6 +23,8 @@ inicializar o DLSS e cai para o upscaling FSR - quietinho, sem nada na tela dize
 por quê. Definir a variável não custa nada em máquinas sem NVIDIA, então a opção de
 inicialização segura é simplesmente a linha acima. A geração de quadros em si é FSR
 3.1 e não precisa de NVAPI; só o upscaler DLSS precisa.
+
+Para defini-la só em um perfil, ponha `env=PROTON_ENABLE_NVAPI=1` no `launch-env.ini` desse perfil (View -> INI editor, última aba). O cartão de Saúde também conta essa linha.
 
 ## A geração de quadros exige janela sem borda
 

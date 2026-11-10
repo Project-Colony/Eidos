@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9bcb3911834069a7876af50486e7493e4e753c25 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=039b6ffd055eabf9e9c4c8978bbc3e47ad68e45c -->
 
 # Eidos の使い方
 
@@ -696,6 +696,8 @@ Nexus から取ってこられます。カタログのファイルはどちら�
 **View -> Log** はセッションログを読みます。**View -> Extensions** は自分の
 アドオンを一覧します。[extensions.ja.md](extensions.md) を参照。
 
+起動時にゲームのメイン INI (`Skyrim.ini`、`Fallout4.ini`、`Oblivion.ini` など) がプロファイルにもプレフィックスにもない場合、Eidos は MO2 と同じく、ゲームフォルダーの既定ファイル (`Skyrim_Default.ini`、`Fallout4_Default.ini` など) を先にプロファイルへコピーします。プレフィックスとゲームフォルダーは変更されません。
+
 インストールは何でも受け付けます。Simple と FOMOD の経路に加え、Wrye Bash の
 **BAIN** パッケージ(サブパッケージにチェックを入れると順に統合されます)、
 そしてどの推測も配置を認識できないときに書庫の木を見せてデータのルートを指させる
@@ -715,6 +717,8 @@ FOMOD の MOD を再インストールまたは更新すると、ウィザード
 さらに、前回の正常な起動以降のゲーム更新、スクリプトエクステンダの欠落やゲームのバージョンとの不一致(エクステンダのダウンロードページと、ダウンロードした書庫をインストールするボタン付き)、Eidos を `%command%` 付きで起動しない Steam の起動オプション、DLSS 用にオフのままの NVAPI、フレーム生成を止める排他的フルスクリーン、`LinuxVersion=true` のない ENB の `enblocal.ini`、F4SE と SFSE のプラグイン宣言、そして前回のセッションのクラッシュログとそこに名前の出る MOD も報告します。
 更新の確認では、各 mod の Nexus 上の要件も読み込みます。Diagnostics は、見つからない、または無効になっている必須 mod を一覧し、別の方法で満たしている要件は Ignore で非表示にできます。
 
+Skyrim SE、Enderal SE、Fallout 4 では、Diagnostics に「表示」カードもあります。プロファイルの `SkyrimPrefs.ini` (`EnderalPrefs.ini`、`Fallout4Prefs.ini`) に設定されたウィンドウのサイズとモードを表示し、プロファイルにまだファイルがない場合はプレフィックス側のコピーの値を表示します。どちらにもサイズがない場合、入力欄には `/sys/class/drm` に載っている接続中で最大の画面の値が入るので、Steam Deck では 1280x800 になります。Apply は `iSize W`、`iSize H`、`bFull Screen`、`bBorderless` をプロファイルのコピーに書き込みます。プロファイルにコピーがなければ、先にプレフィックスのコピーを取り込みます。SSE Display Tweaks がウィンドウを設定している場合、Apply は同じサイズとモードを Overwrite にあるそのコピーにも書き込みます。MOD 自体のファイルは変更されません。
+
 GUI からゲームを起動するには、そのゲームの Steam 起動オプションに実行ファイルの
 絶対パスを設定してください(Steam は PATH の `~/.cargo/bin` を見ません):
 
@@ -726,7 +730,7 @@ Eidos はそのゲームのインスタンスで開きます - 最後に使っ�
 インスタンスもグローバルと同じように見つかります。Run を押せば統合ビュー越しに
 起動します。
 
-**Start the game at once when a store opens Eidos** をオンにすると (Preferences、General、Running a game)、Eidos はこのクリックを省きます。Health を確認し、ウィンドウを表示せずにゲームを起動します。Health が問題を挙げたとき、MOD リストに対応が必要なとき、プレイ前に実行するよう設定したツールの出力が古いときは、いつもどおりウィンドウが開きます。1 回の起動だけウィンドウを出したい場合は、コマンドの前に `EIDOS_WINDOW=1` を付けます (`EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`)。
+**Start the game at once when a store opens Eidos** をオンにすると (Preferences、General、Running a game)、Eidos はこのクリックを省きます。Health を確認し、ウィンドウを表示せずにゲームを起動します。Health が問題を挙げたとき、MOD リストに対応が必要なとき、プレイ前に実行するよう設定したツールの出力が古いとき、Skyrim SE、Enderal SE、Fallout 4 でプロファイルにまだウィンドウサイズがないときは、いつもどおりウィンドウが開きます (最後の場合は Diagnostics タブで開きます)。1 回の起動だけウィンドウを出したい場合は、コマンドの前に `EIDOS_WINDOW=1` を付けます (`EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`)。
 
 Steam の外では、Run は Proton や Wine でゲームを自分で起動しません。そのコピーを持つストアに起動を頼み、ストアが Eidos を起動します。
 
@@ -735,6 +739,23 @@ Steam の外では、Run は Proton や Wine でゲームを自分で起動し�
 - Legendary 単体は、`~/.config/legendary/config.ini` のゲームの `[<app>]` セクションか `[default]` に `wrapper =` と `eidos-gui` の絶対パスがあるとき、`legendary launch <app>` を実行します。
 
 すると Eidos は最後に使ったインスタンスで 2 つ目のウィンドウを開くので、そちらで Run を押します。最初のウィンドウはその実行を追わないため、遊び終えたらそのウィンドウで F5 を押してリストを読み直してください。ストアの設定がない場合や、スクリプトエクステンダーのローダーがゲームの実行ファイルの隣にない場合、Run は何も起動せず、何をどこに設定するかを、動いている実行ファイルの実際のパス入りで表示します。
+
+### プロファイルごとの変数とラッパー
+
+プロファイルは、独自の環境変数とラッパーコマンドを `profiles/<名前>/launch-env.ini` に1行1項目で持てます。
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+これらは、そのプロファイルのすべての `eidos play`(Steam の `%command%` で起動したゲーム、またはストアが開いたウィンドウで Run が起動したゲーム)と、すべてのツール実行に適用されます。`eidos shell` には変数だけが渡され、ラッパーは付きません。最初の `wrapper=` 行が最も外側です。`%command%` を含む `wrapper=` 行ではその位置にコマンドが入ります(Steam の起動オプションと同じです)。含まない行では末尾にコマンドが付きます。ラッパーは Eidos の専用名前空間の中で動くので、MOD が見えます。
+
+ここに書いた変数は、Eidos が同じ名前に設定する値を置き換え、`tools.ini` にあるツール自身の `env=` 行はその両方を置き換えます。`WINEDLLOVERRIDES` だけは、Eidos が ENB、ReShade、同梱 DLL のために設定するオーバーライドの後ろに追加されます。両方に名前がある DLL はプロファイルの設定になり、それ以外は元の設定のままです。
+
+View -> INI editor は、このファイルをどのゲームでも最後のタブとして開きます。保存すると、Eidos が無視する行番号(`env=NAME=value` でも `wrapper=command` でもない行)が表示されます。コマンドなしの `eidos play <インスタンス>` は、実行が受け取る変数とラッパーを一覧します。Diagnostics の Copy report には、変数名とラッパーのプログラム名が値なしで載ります。
 
 Bethesda のタイトルでは、Steam の `%command%` はたいてい `<Game>Launcher.exe` を
 指しています。Eidos はそれを実行しません。あのランチャーは `Data` を再走査して

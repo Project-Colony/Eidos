@@ -6188,6 +6188,116 @@ fn health_fix_is_refused_while_a_game_runs() {
 }
 
 #[test]
+fn display_apply_checks_the_size_and_waits_for_the_run() {
+    let (mut app, root) = list_app(&["Keep"]);
+    let prefs = app
+        .created
+        .as_ref()
+        .unwrap()
+        .active()
+        .ini_path("SkyrimPrefs.ini");
+    let facts = eidos::check::display::DisplayFacts {
+        ini: "SkyrimPrefs.ini",
+        current: None,
+        screen: None,
+        tweaks: false,
+    };
+    app.display = Some(next_form(None, facts));
+    app.display.as_mut().unwrap().width = "abc".into();
+    let _ = update_inner(&mut app, Message::DisplayApply);
+    assert_eq!(app.status.as_deref(), Some(t("status_display_invalid")));
+    let _ = update_inner(&mut app, Message::DisplayWidth("1280".into()));
+    let _ = update_inner(&mut app, Message::DisplayHeight("800".into()));
+    start_run(
+        &mut app,
+        "Skyrim".into(),
+        std::process::Command::new("/bin/true"),
+    );
+    let _ = update_inner(&mut app, Message::DisplayApply);
+    assert!(app.status.as_deref().unwrap().contains("Skyrim"));
+    assert!(!prefs.exists());
+    app.running.take();
+    let _ = update_inner(&mut app, Message::DisplayApply);
+    let text = fs::read_to_string(&prefs).unwrap();
+    assert!(
+        text.contains("iSize W=1280") && text.contains("bBorderless=1"),
+        "{text}"
+    );
+    assert!(app.diag_dirty);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn typed_display_values_survive_a_health_refresh() {
+    use eidos::check::display::{Display, DisplayFacts, WindowMode};
+    let facts = |current| DisplayFacts {
+        ini: "SkyrimPrefs.ini",
+        current,
+        screen: Some((1280, 800)),
+        tweaks: false,
+    };
+    let fresh = next_form(None, facts(None));
+    assert_eq!(
+        (
+            fresh.width.as_str(),
+            fresh.height.as_str(),
+            fresh.mode,
+            fresh.edited
+        ),
+        ("1280", "800", WindowMode::Borderless, false)
+    );
+    let set = Some(Display {
+        width: 1920,
+        height: 1080,
+        mode: WindowMode::Fullscreen,
+    });
+    assert_eq!(next_form(Some(&fresh), facts(set)).width, "1920");
+    let typed = DisplayForm {
+        width: "1600".into(),
+        edited: true,
+        ..fresh
+    };
+    let kept = next_form(Some(&typed), facts(set));
+    assert_eq!((kept.width.as_str(), kept.facts.current), ("1600", set));
+}
+
+#[test]
+fn a_profile_without_a_window_size_holds_the_direct_start() {
+    use super::launch::direct_start_hold;
+    use eidos::check::display::{Display, DisplayFacts, WindowMode};
+    let mut app = app_for_game("skyrimse");
+    app.diag = Vec::new();
+    let facts = |current, tweaks| DisplayFacts {
+        ini: "SkyrimPrefs.ini",
+        current,
+        screen: None,
+        tweaks,
+    };
+    app.display = Some(next_form(None, facts(None, false)));
+    assert_eq!(direct_start_hold(&app), Some("status_direct_start_display"));
+    app.display = Some(next_form(None, facts(None, true)));
+    assert_eq!(
+        direct_start_hold(&app),
+        None,
+        "SSE Display Tweaks sets the window"
+    );
+    app.display = Some(next_form(
+        None,
+        facts(
+            Some(Display {
+                width: 1280,
+                height: 800,
+                mode: WindowMode::Borderless,
+            }),
+            false,
+        ),
+    ));
+    assert_eq!(direct_start_hold(&app), None);
+    app.display = None;
+    assert_eq!(direct_start_hold(&app), None, "a game without the card");
+}
+
+#[test]
 fn the_test_file_fix_edits_the_profile_copy() {
     let (mut app, root) = list_app(&["Keep"]);
     app.games[0].def = eidos_games::GameDef::for_id("fallout4").unwrap();
@@ -8451,6 +8561,55 @@ fn move_mod_below_acts_by_name_and_ignores_a_stale_card() {
     let _ = update_inner(&mut app, mv("Patch", "Master"));
     let _ = update_inner(&mut app, mv("Gone", "Other"));
     assert_eq!(names(&app.mods), ["Other", "Master", "Patch"]);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn the_ini_editor_opens_launch_env_for_every_game_and_names_ignored_lines() {
+    let root = temp_portable("skyrimse");
+    let inst = Instance::portable(root.join("instance"));
+    inst.create().unwrap();
+    let mut app = app_for_game("skyrimse");
+    app.created = Some(inst);
+    let _ = update_inner(&mut app, Message::ShowIniEditor);
+    assert_eq!(
+        app.ini_editor
+            .as_ref()
+            .unwrap()
+            .files
+            .last()
+            .map(String::as_str),
+        Some("launch-env.ini")
+    );
+    let _ = update_inner(&mut app, Message::IniEditorPick("launch-env.ini".into()));
+    {
+        let ed = app.ini_editor.as_mut().unwrap();
+        assert_eq!(ed.current, "launch-env.ini");
+        ed.content =
+            iced::widget::text_editor::Content::with_text("env=DXVK_HUD=fps\nnot a line\n");
+        ed.dirty = true;
+    }
+    let _ = update_inner(&mut app, Message::IniEditorSave);
+    let prof = app.created.as_ref().unwrap().active();
+    assert_eq!(
+        fs::read_to_string(prof.dir().join("launch-env.ini")).unwrap(),
+        "env=DXVK_HUD=fps\nnot a line\n"
+    );
+    assert_eq!(
+        app.status.as_deref(),
+        Some(
+            tf(
+                "status_launch_env_ignored",
+                &[("file", &"launch-env.ini"), ("lines", &"2")]
+            )
+            .as_str()
+        )
+    );
+    // A game with no INI of its own still gets the file.
+    let mut app = app_for_game("stellarblade");
+    app.created = Some(Instance::portable(root.join("instance")));
+    let _ = update_inner(&mut app, Message::ShowIniEditor);
+    assert_eq!(app.ini_editor.as_ref().unwrap().files, ["launch-env.ini"]);
     let _ = fs::remove_dir_all(root);
 }
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=24a826cf58aaf1ab0e91bef4d7acfb7ebb818ed3 -->
+<!-- eidos-i18n: source=README.md sha=65fb26275cd8e0b8dbf88b169fd66887cd7dd420 -->
 
 <div align="center">
 
@@ -304,7 +304,7 @@ Eidos 不傳送任何遙測、分析資料或當機報告。除了這張表裡�
 | Nexus 下載 | 傳送 | 你要求的檔案,來自下載連結所指名的 Nexus CDN 主機,存進實例的下載資料夾,每個檔案旁邊附一個 MO2 格式的 `.meta`。 |
 | `nxm://` 連結 | 儲存 | `eidos nxm --register`(`install.sh` 會替你執行)會寫出 `~/.local/share/applications/eidos-nxm.desktop`,並透過 `xdg-mime` 把它設為 `nxm://` 處理器,讓網站上的 Mod Manager Download 按鈕把連結交給 Eidos。Arch 套件會在全系統安裝同樣的項目。 |
 | LOOT 主清單 | 傳送 | `raw.githubusercontent.com/loot/...`,在某款遊戲第一次以 LOOT 排序時,以及你要求更新時。不會送出任何屬於你的資料。[GitHub 隱私權聲明](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement) |
-| 工具執行環境 | 傳送 | 只在你安裝某個工具的前置需求,或某個模組需要它時:來自 `builds.dotnet.microsoft.com` 的 .NET 執行環境(若與編進 Eidos 的 SHA-256 不符就拒絕),以及 `winetricks`,它會從 Microsoft 與 winetricks 使用的其他主機下載它要安裝進遊戲 Proton 前綴的東西(Visual C++ 與 .NET 可轉散發套件)。[Microsoft 隱私權聲明](https://www.microsoft.com/en-us/privacy/privacystatement) |
+| 工具執行環境 | 傳送 | 只在你安裝某個工具的前置需求,或某個模組需要它時,而且只針對發行套件沒有附上的東西(單一檔案 `eidos-linux` 與從原始碼建置都不附任何東西):來自 `builds.dotnet.microsoft.com` 的 .NET 10 執行環境,以及來自 `download.visualstudio.microsoft.com` 的 Visual C++ 與 .NET 8 安裝程式,若與編進 Eidos 的 SHA-256 不符就拒絕;.NET 10 SDK,一律來自 `builds.dotnet.microsoft.com`;以及用於其他前置需求(.NET Framework 4.8、XAudio)的 `winetricks`,它會從 Microsoft 與 winetricks 使用的其他主機下載它要安裝的東西。[Microsoft 隱私權聲明](https://www.microsoft.com/en-us/privacy/privacystatement) |
 | 工作階段日誌 | 儲存 | `~/.local/share/Colony/Eidos/logs/`,權限模式 0600:每個實例十個工作階段,30 天後清除。你的家目錄寫成 `~`,使用者名稱寫成 `<user>`,所以日誌可以原樣貼進 issue。除非你自己送出,它們永遠不會離開你的機器。 |
 | 捷徑 | 儲存 | `install.sh` 會在 `~/.local/share` 底下寫出 `eidos.desktop` 及其圖示;你建立的工具捷徑會放到 `~/.local/share/applications`。 |
 | 你開啟的連結 | 皆否 | 模組頁面與其他連結會透過 `xdg-open` 在你自己的瀏覽器中開啟。 |

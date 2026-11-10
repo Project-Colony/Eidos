@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=24a826cf58aaf1ab0e91bef4d7acfb7ebb818ed3 -->
+<!-- eidos-i18n: source=README.md sha=65fb26275cd8e0b8dbf88b169fd66887cd7dd420 -->
 
 <div align="center">
 
@@ -331,7 +331,7 @@ Eidos는 원격 측정도, 분석 데이터도, 크래시 보고도 보내지 �
 | Nexus 다운로드 | 전송 | 요청한 파일을, 다운로드 링크가 가리키는 Nexus CDN 호스트에서 받아 인스턴스의 다운로드 폴더에 저장하고, 각 파일 옆에 MO2 형식의 `.meta`를 둡니다. |
 | `nxm://` 링크 | 저장 | `install.sh`가 대신 실행해 주는 `eidos nxm --register`가 `~/.local/share/applications/eidos-nxm.desktop`을 쓰고 `xdg-mime`으로 그것을 `nxm://` 처리기로 지정하므로, 사이트의 Mod Manager Download 버튼이 링크를 Eidos에 넘깁니다. Arch 패키지는 같은 항목을 시스템 전체에 설치합니다. |
 | LOOT 마스터리스트 | 전송 | 게임의 첫 LOOT 정렬 때와 업데이트를 요청할 때마다 `raw.githubusercontent.com/loot/...`에서. 여러분의 것은 아무것도 보내지 않습니다. [GitHub 개인정보 처리방침](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement) |
-| 도구 런타임 | 전송 | 도구 사전 요구 사항을 설치하거나 모드가 필요로 할 때만: `builds.dotnet.microsoft.com`의 .NET 런타임(Eidos에 내장된 SHA-256과 일치하지 않으면 거부), 그리고 게임의 Proton 프리픽스에 설치할 것(Visual C++와 .NET 재배포 패키지)을 Microsoft와 winetricks가 쓰는 다른 호스트에서 내려받는 `winetricks`. [Microsoft 개인정보 처리방침](https://www.microsoft.com/en-us/privacy/privacystatement) |
+| 도구 런타임 | 전송 | 도구 사전 요구 사항을 설치하거나 모드가 필요로 할 때만, 그리고 릴리스 번들에 없던 것만(단일 `eidos-linux` 파일과 소스 빌드에는 아무것도 없습니다): `builds.dotnet.microsoft.com`의 .NET 10 런타임과 `download.visualstudio.microsoft.com`의 Visual C++ 및 .NET 8 설치 프로그램(각각 Eidos에 내장된 SHA-256과 일치하지 않으면 거부), 항상 `builds.dotnet.microsoft.com`에서 받는 .NET 10 SDK, 그리고 나머지 사전 요구 사항(.NET Framework 4.8, XAudio)을 위해 설치할 것을 Microsoft와 winetricks가 쓰는 다른 호스트에서 내려받는 `winetricks`. [Microsoft 개인정보 처리방침](https://www.microsoft.com/en-us/privacy/privacystatement) |
 | 세션 로그 | 저장 | `~/.local/share/Colony/Eidos/logs/`, 모드 0600: 인스턴스당 세션 열 개, 30일 뒤 정리. 홈 폴더는 `~`로, 사용자 이름은 `<user>`로 적히므로 로그를 그대로 이슈에 붙여 넣을 수 있습니다. 여러분이 보내지 않는 한 기기를 떠나지 않습니다. |
 | 바로가기 | 저장 | `install.sh`가 `eidos.desktop`과 아이콘을 `~/.local/share` 아래에 씁니다. 여러분이 만든 도구 바로가기는 `~/.local/share/applications`로 갑니다. |
 | 여러분이 여는 링크 | 해당 없음 | 모드 페이지와 그 밖의 링크는 `xdg-open`을 통해 여러분의 브라우저에서 열립니다. |

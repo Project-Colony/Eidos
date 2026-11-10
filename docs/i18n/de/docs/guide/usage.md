@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9bcb3911834069a7876af50486e7493e4e753c25 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=039b6ffd055eabf9e9c4c8978bbc3e47ad68e45c -->
 
 # Eidos verwenden
 
@@ -810,6 +810,8 @@ bleibt, statt der im Proton-Präfix vergrabenen, die bei jedem Start überschrie
 wird. **View -> Log** liest die Sitzungsprotokolle. **View -> Extensions** listet
 Ihre eigenen Add-ons; siehe [extensions.de.md](extensions.md).
 
+Findet ein Start die Haupt-INI des Spiels (`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini`...) weder im Profil noch im Präfix, kopiert Eidos zuerst die Standarddatei aus dem Spielordner (`Skyrim_Default.ini`, `Fallout4_Default.ini`...) ins Profil, wie MO2. Präfix und Spielordner bleiben unverändert.
+
 Das Installieren nimmt alles an: die Simple- und FOMOD-Wege, dazu Wrye Bash
 **BAIN**-Pakete (haken Sie die Unterpakete an, die der Reihe nach eingemischt
 werden) und eine **manuelle** Auswahl, die den Archivbaum zeigt und Sie auf die
@@ -833,6 +835,8 @@ Vermutung einen Beleg macht.
 Der Tab meldet außerdem ein Spiel-Update seit dem letzten sauberen Start, einen fehlenden Script Extender oder einen, der nicht zur Spielversion passt (mit der Download-Seite des Extenders und einer Schaltfläche, die das heruntergeladene Archiv installiert), eine Steam-Startoption, die Eidos nicht mit `%command%` startet, NVAPI, das für DLSS aus bleibt, exklusiven Vollbildmodus, der die Frame-Generierung verhindert, eine ENB-`enblocal.ini` ohne `LinuxVersion=true`, die Plugin-Deklarationen von F4SE- und SFSE-Plugins und das Crash-Log der letzten Sitzung mit den Mods, die es nennt.
 Die Update-Prüfung liest auch die Nexus-Voraussetzungen jeder Mod. Diagnostics listet eine benötigte Mod auf, die fehlt oder deaktiviert ist; mit Ignore lässt sich eine Voraussetzung ausblenden, die anders erfüllt ist.
 
+Für Skyrim SE, Enderal SE und Fallout 4 hat Diagnostics außerdem eine Karte Anzeige. Sie zeigt Fenstergröße und Fenstermodus aus der `SkyrimPrefs.ini` des Profils (`EnderalPrefs.ini`, `Fallout4Prefs.ini`) oder aus der Kopie im Präfix, solange das Profil noch keine hat. Legt keine der beiden eine Größe fest, übernehmen die Felder den größten angeschlossenen Bildschirm aus `/sys/class/drm`, ein Steam Deck zeigt also 1280x800. Apply schreibt `iSize W`, `iSize H`, `bFull Screen` und `bBorderless` in die Kopie des Profils und übernimmt vorher die Kopie aus dem Präfix, wenn das Profil keine hat. Legt SSE Display Tweaks das Fenster fest, schreibt Apply dieselbe Größe und denselben Modus in dessen Kopie im Overwrite; die Datei der Mod selbst bleibt unverändert.
+
 Um das Spiel durch die GUI zu starten, setzen Sie die Steam-Startoption des
 Spiels auf den absoluten Pfad der Binärdatei (Steam sieht `~/.cargo/bin` im PATH
 nicht):
@@ -845,7 +849,7 @@ Eidos öffnet sich auf der Instanz des Spiels - der zuletzt benutzten, sodass ei
 portable Instanz genauso wiedergefunden wird wie die globale; klicken Sie auf
 Run, um es durch den zusammengeführten Blick zu starten.
 
-Ist **Start the game at once when a store opens Eidos** eingeschaltet (Preferences, General, Running a game), spart Eidos diesen Klick: Es prüft Health und startet das Spiel, ohne sein Fenster zu zeigen. Das Fenster öffnet sich wie gewohnt, wenn Health ein Problem meldet, wenn die Modliste Aufmerksamkeit braucht oder wenn ein Werkzeug, das vor dem Spielen laufen soll, eine veraltete Ausgabe hat. Wenn Sie das Fenster für einen einzelnen Start möchten, setzen Sie `EIDOS_WINDOW=1` vor den Befehl: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
+Ist **Start the game at once when a store opens Eidos** eingeschaltet (Preferences, General, Running a game), spart Eidos diesen Klick: Es prüft Health und startet das Spiel, ohne sein Fenster zu zeigen. Das Fenster öffnet sich wie gewohnt, wenn Health ein Problem meldet, wenn die Modliste Aufmerksamkeit braucht, wenn ein Werkzeug, das vor dem Spielen laufen soll, eine veraltete Ausgabe hat, oder bei Skyrim SE, Enderal SE und Fallout 4, wenn das Profil noch keine Fenstergröße hat (das Fenster öffnet sich dann auf Diagnostics). Wenn Sie das Fenster für einen einzelnen Start möchten, setzen Sie `EIDOS_WINDOW=1` vor den Befehl: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Außerhalb von Steam startet Run das Spiel nicht selbst über Proton oder Wine. Es
 bittet den Store, dem die Kopie gehört, sie zu starten, und der Store startet
@@ -868,6 +872,23 @@ darin nach dem Spielen F5, um seine Listen neu zu laden. Fehlt die Einstellung
 im Store oder liegt der Loader des Script Extenders nicht neben der ausführbaren
 Datei des Spiels, startet Run nichts und zeigt, was wo zu setzen ist, mit dem
 echten Pfad der laufenden Binärdatei.
+
+### Variablen und Wrapper pro Profil
+
+Ein Profil kann eigene Umgebungsvariablen und Wrapper-Befehle in `profiles/<Name>/launch-env.ini` enthalten, ein Eintrag pro Zeile:
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+Sie gelten für jedes `eidos play` dieses Profils (das Spiel, das Steams `%command%` startet, oder Run in einem Fenster, das ein Store geöffnet hat) und für jeden Tool-Start. `eidos shell` bekommt die Variablen, aber keinen Wrapper. Die erste `wrapper=`-Zeile ist die äußerste. Enthält eine `wrapper=`-Zeile `%command%`, steht der Befehl an dieser Stelle, wie bei Steams Startoptionen; ohne `%command%` hängt er am Ende. Wrapper laufen im privaten Namensraum von Eidos und sehen deshalb die Mods.
+
+Eine Variable hier ersetzt den Wert, den Eidos für denselben Namen setzt, und die eigene `env=`-Zeile eines Tools in `tools.ini` ersetzt beides. `WINEDLLOVERRIDES` wird dagegen hinter die Overrides gesetzt, die Eidos für ENB, ReShade und die mitgelieferten DLLs setzt: Eine DLL, die in beiden steht, übernimmt die Einstellung des Profils, die übrigen behalten ihre.
+
+View -> INI editor öffnet die Datei als letzten Tab, für jedes Spiel. Beim Speichern nennt Eidos die Zeilennummern, die es ignoriert: Zeilen, die weder `env=NAME=Wert` noch `wrapper=Befehl` sind. `eidos play <Instanz>` ohne Befehl listet die Variablen, die ein Start bekommt, und die Wrapper. Copy report in Diagnostics nennt die Variablen und die Wrapper-Programme, ohne ihre Werte.
 
 Steams `%command%` zeigt bei den Bethesda-Titeln meist auf `<Game>Launcher.exe`.
 Eidos führt ihn nie aus: der Launcher ist eine eigene Einstellungs-App, die

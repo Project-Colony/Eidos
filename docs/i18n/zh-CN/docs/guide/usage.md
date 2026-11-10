@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9bcb3911834069a7876af50486e7493e4e753c25 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=039b6ffd055eabf9e9c4c8978bbc3e47ad68e45c -->
 
 # 使用 Eidos
 
@@ -566,6 +566,8 @@ MO2 自己的(`categories.dat` 和 `nexuscatmap.dat`),所以共享的实例保�
 前缀里、每次启动都被覆盖的那一份。**View -> Log** 读会话日志。**View -> Extensions**
 列出你自己的附加组件;见 [extensions.zh-CN.md](extensions.md)。
 
+启动时如果在配置档和前缀里都找不到游戏的主 INI(`Skyrim.ini`、`Fallout4.ini`、`Oblivion.ini` 等),Eidos 会像 MO2 一样,先把游戏文件夹里的默认文件(`Skyrim_Default.ini`、`Fallout4_Default.ini` 等)复制到配置档。前缀和游戏文件夹不会被改动。
+
 安装什么都接受:Simple 与 FOMOD 两条路,加上 Wrye Bash 的 **BAIN** 包(勾选子包,它们
 按顺序合并),以及一个**手动**选择器 - 当没有启发式认得出布局时,它展示压缩包的目录树,
 让你指出数据根目录在哪。没有压缩包会被拒绝。
@@ -582,6 +584,8 @@ MO2 自己的(`categories.dat` 和 `nexuscatmap.dat`),所以共享的实例保�
 它还会报告:自上次干净启动以来的游戏更新,缺失或与游戏版本不匹配的脚本扩展器(附扩展器的下载页面,以及安装你下载的档案的按钮),没有用 `%command%` 启动 Eidos 的 Steam 启动选项,DLSS 需要却仍关闭的 NVAPI,阻止帧生成的独占全屏,没有 `LinuxVersion=true` 的 ENB `enblocal.ini`,F4SE 和 SFSE 插件的声明,以及上次会话的崩溃日志和其中点名的模组。
 检查更新时还会读取每个 mod 在 Nexus 上的前置要求。Diagnostics 会列出缺失或已禁用的前置 mod,已通过其他方式满足的要求可用 Ignore 忽略。
 
+对于 Skyrim SE、Enderal SE 和 Fallout 4,Diagnostics 还有一张“显示”卡片。它显示配置档的 `SkyrimPrefs.ini`(`EnderalPrefs.ini`、`Fallout4Prefs.ini`)中设定的窗口大小和模式;配置档还没有这个文件时,则显示前缀里那份副本的设定。两者都没有设定大小时,输入框会取 `/sys/class/drm` 中列出的已连接的最大屏幕,所以 Steam Deck 上显示 1280x800。Apply 会把 `iSize W`、`iSize H`、`bFull Screen` 和 `bBorderless` 写进配置档的副本;配置档没有副本时,先接管前缀里的那份。SSE Display Tweaks 设定窗口时,Apply 还会把同样的大小和模式写进它在 Overwrite 中的副本;模组自己的文件不会被改动。
+
 要通过 GUI 启动游戏,把该游戏的 Steam 启动选项设成这个二进制的绝对路径(Steam 看不到
 PATH 上的 `~/.cargo/bin`):
 
@@ -592,7 +596,7 @@ PATH 上的 `~/.cargo/bin`):
 Eidos 会在这款游戏的实例上打开 - 你上次用的那一个,所以便携实例和全局实例一样能被重新
 找到;点 Run 让它穿过合并视图启动。
 
-打开 **Start the game at once when a store opens Eidos**(Preferences、General、Running a game)后,Eidos 会省掉这次点击:它先检查 Health,再不显示窗口直接启动游戏。Health 列出问题、模组列表需要处理,或设为在游戏前运行的工具输出已过期时,窗口照常打开。想在某一次启动时看到窗口,就在命令前加上 `EIDOS_WINDOW=1`:`EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`。
+打开 **Start the game at once when a store opens Eidos**(Preferences、General、Running a game)后,Eidos 会省掉这次点击:它先检查 Health,再不显示窗口直接启动游戏。Health 列出问题、模组列表需要处理、设为在游戏前运行的工具输出已过期,或 Skyrim SE、Enderal SE、Fallout 4 的配置档还没有窗口大小时,窗口照常打开(最后这种情况下窗口会停在 Diagnostics 标签页)。想在某一次启动时看到窗口,就在命令前加上 `EIDOS_WINDOW=1`:`EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`。
 
 在 Steam 之外,Run 不会自己用 Proton 或 Wine 启动游戏。它请拥有这份副本的商店来启动,再由商店启动 Eidos:
 
@@ -601,6 +605,23 @@ Eidos 会在这款游戏的实例上打开 - 你上次用的那一个,所以便�
 - 单独的 Legendary:当 `~/.config/legendary/config.ini` 在游戏的 `[<app>]` 段或 `[default]` 下有 `wrapper =` 加 `eidos-gui` 的绝对路径时,运行 `legendary launch <app>`。
 
 随后 Eidos 会在你上次用的实例上打开第二个窗口,你在那里点 Run。第一个窗口不跟踪这次运行,所以玩完后在它里面按 F5 重新载入列表。商店的设置缺失,或脚本扩展器的 loader 不在游戏可执行文件旁边时,Run 什么也不启动,并显示要在哪里设置什么,带上正在运行的二进制的真实路径。
+
+### 每个配置文件的变量和包装器
+
+配置文件可以在 `profiles/<名称>/launch-env.ini` 里带上自己的环境变量和包装器命令,每行一项:
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+它们对该配置文件的每次 `eidos play`(由 Steam 的 `%command%` 启动的游戏,或由商店打开的窗口里的 Run 启动的游戏)和每次工具运行生效。`eidos shell` 只得到变量,没有包装器。第一条 `wrapper=` 行在最外层。含有 `%command%` 的 `wrapper=` 行会把命令放在那个位置,和 Steam 的启动选项一样;不含的行把命令加在末尾。包装器在 Eidos 的私有命名空间里运行,所以能看到模组。
+
+这里的变量会替换 Eidos 为同名变量设置的值,而工具在 `tools.ini` 里自己的 `env=` 行会同时替换这两者。`WINEDLLOVERRIDES` 例外:它被追加在 Eidos 为 ENB、ReShade 和内置 DLL 设置的覆盖之后,所以两边都提到的 DLL 采用配置文件的设置,其余的保持原样。
+
+View -> INI editor 会把这个文件作为最后一个标签页打开,对每款游戏都是如此。保存时会列出 Eidos 忽略的行号:既不是 `env=名称=值` 也不是 `wrapper=命令` 的行。不带命令的 `eidos play <实例>` 会列出一次运行得到的变量和包装器。Diagnostics 里的 Copy report 会写出变量名和包装器程序名,不含它们的值。
 
 Bethesda 各作在 Steam 里的 `%command%` 通常指向 `<Game>Launcher.exe`。Eidos 从不运行
 它:那个 launcher 是一个独立的设置程序,它会重新扫描 `Data` 并重写 `plugins.txt`,把

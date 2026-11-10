@@ -518,6 +518,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         diag: Vec::new(),
         diag_dirty: true,
         diag_stale: std::cell::Cell::new(true),
+        display: None,
         data_listing: std::cell::RefCell::new(HashMap::new()),
         profiles_cache: std::cell::RefCell::new(None),
         archives_cache: std::cell::RefCell::new(None),
@@ -3058,6 +3059,20 @@ pub(crate) fn refresh_diagnostics(app: &mut App) {
     app.diag_dirty = false;
     run_diagnose_addons(app);
     app.diag = diagnostics(app);
+    let display = app
+        .created
+        .as_ref()
+        .zip(selected_game(app))
+        .and_then(|(inst, game)| {
+            eidos::check::display::display_facts(
+                game,
+                inst,
+                &eidos::check::active_mods(inst),
+                Path::new(eidos::check::display::DRM),
+            )
+        })
+        .map(|f| next_form(app.display.as_ref(), f));
+    app.display = display;
 }
 
 /// The values an add-on's `{placeholders}` are filled from.

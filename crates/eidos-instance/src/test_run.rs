@@ -565,6 +565,11 @@ mod tests {
         fs::write(real.dir().join("modlist.txt"), "+B\n+A\n").unwrap();
         fs::write(real.dir().join("Skyrim.ini"), "[General]\n").unwrap();
         fs::write(real.dir().join("plugins/plugins.txt"), "*A.esp\n").unwrap();
+        fs::write(
+            real.dir().join(crate::LAUNCH_ENV_FILE),
+            "wrapper=mangohud\n",
+        )
+        .unwrap();
         for d in ["saves", "runtime-root", "backups"] {
             fs::create_dir_all(real.dir().join(d)).unwrap();
             fs::write(real.dir().join(d).join("x"), "x").unwrap();
@@ -599,6 +604,8 @@ mod tests {
             test.dir().join("Skyrim.ini").is_file()
                 && test.dir().join("plugins/plugins.txt").is_file()
         );
+        // The test run's wrappers come from the working copy (Bundle G's launch-env.ini).
+        assert_eq!(test.launch_env().wrappers, ["mangohud"]);
         for d in ["saves", "runtime-root", "backups"] {
             assert!(!test.dir().join(d).join("x").exists(), "{d}");
         }

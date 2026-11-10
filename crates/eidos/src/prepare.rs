@@ -284,6 +284,45 @@ pub(crate) fn prepare_plugin_timestamps(
     }))
 }
 
+/// Seed the profile's INIs from the prefix (the game folder in root mode), then,
+/// when the main INI is still missing and the game is not in root mode, from the
+/// game folder's `<name>_Default.ini`. The prefix and the game folder are only read.
+pub(crate) fn seed_profile_inis(
+    id: &str,
+    game: &DetectedGame,
+    prof: &eidos_instance::Profile,
+) -> std::io::Result<()> {
+    let Some(spec) = game.plugin_spec() else {
+        return Ok(());
+    };
+    let Some(prefix) = game.prefix() else {
+        return Ok(());
+    };
+    let ini_files = eidos_gamefeatures::ini_files_for(id);
+    if ini_files.is_empty() {
+        return Ok(());
+    }
+    let root_mode =
+        eidos_plugins::plugin_state_dir(&prefix, &game.install_path, &spec) == game.install_path;
+    let source = if root_mode {
+        game.install_path.clone()
+    } else {
+        eidos_plugins::documents_my_games_dir(&prefix, &spec)
+    };
+    prof.seed_inis(&source, ini_files)?;
+    if !root_mode {
+        if let Some(from) = prof.seed_default_ini(&game.install_path, ini_files[0])? {
+            eprintln!(
+                "eidos play: profile '{}' and the prefix had no {}; copied {} from the game folder",
+                prof.name,
+                ini_files[0],
+                from.file_name().unwrap_or_default().to_string_lossy()
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Seed profile INIs once, then prepare the runtime copy. Install-root INIs use
 /// the profile's private root upper; ordinary Documents INIs keep their prefix
 /// path. Activation is prepared first so Morrowind uses one INI throughout.
@@ -315,7 +354,7 @@ pub(crate) fn prepare_inis(
     } else {
         source.clone()
     };
-    prof.seed_inis(&source, ini_files)?;
+    seed_profile_inis(id, game, prof)?;
     if root_mode {
         std::fs::create_dir_all(&docs)?;
         // A prior launcher may have atomically replaced or removed a case variant.
@@ -683,6 +722,62 @@ mod rescue_tests {
         fs,
         time::{Duration, UNIX_EPOCH},
     };
+
+    #[test]
+    fn a_fresh_prefix_gets_the_games_default_ini_and_a_prefix_copy_wins() {
+        let root = std::env::temp_dir().join(format!("eidos-default-ini-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let inst = Instance::portable(root.join("instance"));
+        inst.create().unwrap();
+        let def = eidos_games::catalog()
+            .iter()
+            .find(|g| g.id == "skyrimse")
+            .unwrap();
+        let game = DetectedGame {
+            def,
+            install_path: root.join("game"),
+            data_path: root.join("game/Data"),
+            compatdata: Some(root.join("compatdata")),
+            source: Default::default(),
+            steam_name: String::new(),
+        };
+        fs::create_dir_all(&game.data_path).unwrap();
+        fs::create_dir_all(game.prefix().unwrap()).unwrap();
+        fs::write(
+            game.install_path.join("Skyrim_Default.ini"),
+            "[General]\nsLanguage=ENGLISH\n",
+        )
+        .unwrap();
+        let fresh = inst.profile("Fresh");
+        fs::create_dir_all(fresh.dir()).unwrap();
+        seed_profile_inis("skyrimse", &game, &fresh).unwrap();
+        assert_eq!(
+            fs::read_to_string(fresh.ini_path("Skyrim.ini")).unwrap(),
+            "[General]\nsLanguage=ENGLISH\n"
+        );
+        assert!(
+            !fresh.ini_path("SkyrimPrefs.ini").exists(),
+            "only the main INI has a default"
+        );
+        let docs = eidos_plugins::documents_my_games_dir(
+            &game.prefix().unwrap(),
+            &game.plugin_spec().unwrap(),
+        );
+        fs::create_dir_all(&docs).unwrap();
+        fs::write(docs.join("Skyrim.ini"), "[General]\nsLanguage=FRENCH\n").unwrap();
+        let adopted = inst.profile("Adopted");
+        fs::create_dir_all(adopted.dir()).unwrap();
+        seed_profile_inis("skyrimse", &game, &adopted).unwrap();
+        assert_eq!(
+            fs::read_to_string(adopted.ini_path("Skyrim.ini")).unwrap(),
+            "[General]\nsLanguage=FRENCH\n"
+        );
+        assert!(
+            !game.install_path.join("Skyrim.ini").exists(),
+            "the game folder is never written"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn launch_preparation_reports_corrupt_plugins_and_winning_dlls() {

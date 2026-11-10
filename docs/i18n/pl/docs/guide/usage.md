@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9bcb3911834069a7876af50486e7493e4e753c25 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=039b6ffd055eabf9e9c4c8978bbc3e47ad68e45c -->
 
 # Używanie Eidos
 
@@ -755,6 +755,8 @@ przetrwa, a nie tę zakopaną w prefiksie Protona, nadpisywaną przy każdym
 uruchomieniu. **View -> Log** czyta logi sesji. **View -> Extensions** wypisuje
 twoje własne dodatki; zob. [extensions.pl.md](extensions.md).
 
+Gdy uruchomienie nie znajduje głównego pliku INI gry (`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini`...) ani w profilu, ani w prefiksie, Eidos najpierw kopiuje do profilu domyślny plik z folderu gry (`Skyrim_Default.ini`, `Fallout4_Default.ini`...), tak jak MO2. Prefiks i folder gry nie są zmieniane.
+
 Instalowanie przyjmuje wszystko: ścieżki Simple i FOMOD, plus paczki **BAIN**
 Wrye Bash (zaznaczasz podpaczki, które scalają się po kolei) i **ręczny** wybór,
 który pokazuje drzewo archiwum i pozwala wskazać katalog danych, gdy żadna
@@ -776,6 +778,8 @@ się wczytały?" z domysłu w dowód.
 Zgłasza też aktualizację gry od ostatniego czystego uruchomienia, brak script extendera albo taki, który nie pasuje do wersji gry (ze stroną pobierania extendera i przyciskiem instalującym pobrane archiwum), opcję uruchamiania Steama, która nie uruchamia Eidos z `%command%`, NVAPI wyłączone dla DLSS, wyłączny tryb pełnoekranowy blokujący generowanie klatek, `enblocal.ini` ENB bez `LinuxVersion=true`, deklaracje wtyczek F4SE i SFSE oraz log crasha z ostatniej sesji wraz z modami, które wymienia.
 Sprawdzanie aktualizacji odczytuje też wymagania każdego moda z Nexusa. Diagnostics wymienia wymagany mod, którego brakuje lub który jest wyłączony; przyciskiem Ignore można ukryć wymaganie spełnione w inny sposób.
 
+W Skyrim SE, Enderal SE i Fallout 4 Diagnostics ma też kartę Ekran. Pokazuje rozmiar i tryb okna ustawione w `SkyrimPrefs.ini` profilu (`EnderalPrefs.ini`, `Fallout4Prefs.ini`) albo w kopii w prefiksie, gdy profil jeszcze jej nie ma. Gdy żadna z nich nie ustawia rozmiaru, pola zaczynają od największego podłączonego ekranu wymienionego w `/sys/class/drm`, więc Steam Deck pokazuje 1280x800. Apply zapisuje `iSize W`, `iSize H`, `bFull Screen` i `bBorderless` w kopii profilu, a jeśli profil jej nie ma, najpierw przejmuje kopię z prefiksu. Gdy okno ustawia SSE Display Tweaks, Apply zapisuje ten sam rozmiar i tryb w jego kopii w Overwrite; plik samego moda się nie zmienia.
+
 Żeby uruchomić grę przez GUI, ustaw opcję uruchamiania gry w Steamie na ścieżkę
 bezwzględną pliku wykonywalnego (Steam nie widzi `~/.cargo/bin` w PATH):
 
@@ -787,7 +791,7 @@ Eidos otwiera się na instancji tej gry - tej, której użyłeś ostatnio, więc
 instancja przenośna zostaje odnaleziona tak samo jak globalna; kliknij Run, by
 uruchomić ją przez scalony widok.
 
-Gdy opcja **Start the game at once when a store opens Eidos** jest włączona (Preferences, General, Running a game), Eidos pomija to kliknięcie: sprawdza Health i uruchamia grę bez pokazywania swojego okna. Okno otwiera się jak zwykle, gdy Health zgłasza problem, gdy lista modów wymaga uwagi albo gdy narzędzie ustawione do uruchomienia przed grą ma nieaktualny wynik. Aby dostać okno przy jednym uruchomieniu, wpisz `EIDOS_WINDOW=1` przed poleceniem: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
+Gdy opcja **Start the game at once when a store opens Eidos** jest włączona (Preferences, General, Running a game), Eidos pomija to kliknięcie: sprawdza Health i uruchamia grę bez pokazywania swojego okna. Okno otwiera się jak zwykle, gdy Health zgłasza problem, gdy lista modów wymaga uwagi, gdy narzędzie ustawione do uruchomienia przed grą ma nieaktualny wynik albo, w Skyrim SE, Enderal SE i Fallout 4, gdy profil nie ma jeszcze rozmiaru okna (okno otwiera się wtedy na Diagnostics). Aby dostać okno przy jednym uruchomieniu, wpisz `EIDOS_WINDOW=1` przed poleceniem: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Poza Steamem Run nie uruchamia gry sam przez Protona ani Wine. Prosi sklep, do
 którego należy kopia, o jej uruchomienie, a sklep uruchamia Eidos:
@@ -809,6 +813,23 @@ by przeładować jego listy. Gdy brakuje ustawienia w sklepie albo loader script
 extendera nie leży obok pliku wykonywalnego gry, Run niczego nie uruchamia i
 pokazuje, co i gdzie ustawić, z prawdziwą ścieżką działającego pliku
 wykonywalnego.
+
+### Zmienne i wrappery dla profilu
+
+Profil może mieć własne zmienne środowiskowe i polecenia wrapperów w `profiles/<nazwa>/launch-env.ini`, jeden wpis w wierszu:
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+Obowiązują przy każdym `eidos play` tego profilu (gra uruchomiona przez `%command%` Steama albo przez Run w oknie otwartym przez sklep) i przy każdym uruchomieniu narzędzia. `eidos shell` dostaje zmienne, ale nie wrapper. Pierwszy wiersz `wrapper=` jest najbardziej zewnętrzny. W wierszu `wrapper=` zawierającym `%command%` polecenie trafia w to miejsce, jak w opcjach uruchamiania Steama; w wierszu bez niego polecenie trafia na koniec. Wrappery działają w prywatnej przestrzeni nazw Eidos, więc widzą mody.
+
+Zmienna podana tutaj zastępuje wartość, którą Eidos ustawia dla tej samej nazwy, a własny wiersz `env=` narzędzia w `tools.ini` zastępuje obie. `WINEDLLOVERRIDES` jest za to dopisywana po override'ach, które Eidos ustawia dla ENB, ReShade i dołączonych DLL: DLL wymieniona w obu miejscach dostaje ustawienie profilu, pozostałe zachowują swoje.
+
+View -> INI editor otwiera plik jako ostatnią kartę, dla każdej gry. Przy zapisie Eidos podaje numery wierszy, które pomija: wierszy, które nie są ani `env=NAZWA=wartość`, ani `wrapper=polecenie`. `eidos play <instancja>` bez polecenia wypisuje zmienne, które dostanie uruchomienie, oraz wrappery. Copy report w Diagnostics podaje nazwy zmiennych i programów wrapperów, bez ich wartości.
 
 `%command%` Steama dla tytułów Bethesdy zwykle wskazuje na
 `<Game>Launcher.exe`. Eidos nigdy go nie uruchamia: launcher to osobna aplikacja

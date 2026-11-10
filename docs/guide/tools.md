@@ -180,16 +180,32 @@ name) is given `--ignore-mo2vfscheck`. Why, and why it is not optional, is
 `d3dx11_43`). Eidos ships them and copies them into the prefix at launch.
 Nothing to do, no network.
 
-**Tier 2 - winetricks verbs** (`vcrun2022`, `dotnet8`, `dotnetdesktop8`,
-`dotnet48`, `xact`...). These write registry keys, the GAC and CLR hosts, so they
-cannot be file-copied. They **download from Microsoft**.
+**Tier 2 - installers** (`vcrun2022`, `dotnet8`, `dotnetdesktop8`, `dotnet48`,
+`xact`...). These write registry keys, the GAC and CLR hosts, so they cannot be
+file-copied. Eidos installs three of them with no winetricks: `vcrun2022` runs
+Microsoft's `VC_redist.x86.exe` and `VC_redist.x64.exe`, and `dotnet8` and
+`dotnetdesktop8` run the .NET 8.0.12 Desktop Runtime installer, which carries the
+.NET runtime too. The release bundle (`eidos-linux-bundle.tar.gz`) ships these
+installers in its `runtimes/` folder, and `install.sh` copies them to
+`~/.local/share/Colony/Eidos/runtimes/`. Without that copy (the single
+`eidos-linux` file, a source build) Eidos **downloads them from Microsoft**
+(`download.visualstudio.microsoft.com`) into the same folder. Either way a file is
+refused unless its SHA-256 matches the one built into Eidos, and it runs silently
+in the game's prefix with the Proton or Wine build that runs the game's tools. As
+winetricks does, `vcrun2022` first sets the Visual C++ DLLs to `native,builtin` in
+the prefix's DLL overrides. Afterwards Eidos checks that the prefix's C++ runtime
+is not half Microsoft's and half Proton's, and reports the install as failed when
+it is. Only the 64-bit .NET 8 is installed; a 32-bit .NET 8 tool still needs
+`winetricks dotnetdesktop8`. The other verbs go through the system `winetricks`.
 
 **Tier 3 - runtimes** (`dotnet10`, `dotnetsdk10`). A modern .NET runtime is 193
 files that live in their own directory and are found through `DOTNET_ROOT`: never
 registered, never installed into the prefix at all, so neither of the other tiers
 can carry it. Eidos downloads it itself, checks it against a checksum built into
 the binary, and caches it in `~/.local/share/Colony/Eidos/runtimes/` - **outside
-any instance**, because 78 MB is not per-game and not per-profile.
+any instance**, because 78 MB is not per-game and not per-profile. The release
+bundle ships the `dotnet10` runtime zip in `runtimes/` too, so Eidos unpacks that
+copy and downloads it only without one; `dotnetsdk10` is always downloaded.
 
 `dotnetsdk10` is the .NET 10 SDK, a 301 MB download that unpacks to 808 MB.
 Synthesis needs it to compile its patchers, and it calls a bare `dotnet` to build
@@ -246,11 +262,11 @@ touches `mscoree`. Point `DOTNET_ROOT` at a .NET 10 runtime and it runs. That is
 what `dotnet10` provisions, and Eidos sets the variable when launching any tool
 that declares it.
 
-Eidos runs the system `winetricks` against Proton's own `wine` and the game
-prefix, which sidesteps Steam's pressure-vessel container and the
-protontricks + Proton-GE mismatch. A tool that declares an uninstalled Tier-2
-verb still launches, with a warning naming the verb and the command to fix it -
-the user may have it from elsewhere.
+For the other Tier-2 verbs Eidos runs the system `winetricks` against Proton's
+own `wine` and the game prefix, which sidesteps Steam's pressure-vessel
+container and the protontricks + Proton-GE mismatch. A tool that declares an
+uninstalled Tier-2 verb still launches, with a warning naming the verb and the
+command to fix it - the user may have it from elsewhere.
 
 ### Why PGPatcher needs `--ignore-mo2vfscheck`
 
@@ -445,16 +461,16 @@ roots, and taking Steam's overlay out of `LD_PRELOAD`.
 On a GOG or Epic copy installed with Heroic, tools need no such entry when the
 game's Heroic settings (`GamesConfig/<appName>.json`) name a Wine or Proton
 build: Eidos runs them with that build in the game's Heroic prefix, and
-`eidos prereqs <instance> --install` gives it to winetricks. A copy installed
-with Legendary alone has no Heroic settings.
+`eidos prereqs <instance> --install` uses it for the installers and for
+winetricks. A copy installed with Legendary alone has no Heroic settings.
 
 `slr=1` starts the tool, and the registry import before it, inside the Steam
 Linux Runtime container that the tool's Proton build names (`require_tool_appid`
 in its `toolmanifest.vdf`), the way Steam starts the game. That runtime must be
 installed in a Steam library; if it is not, the run stops and names the Steam
-app to install. `eidos prereqs` still runs winetricks on the host, and a
-`runner=native` tool ignores the key. The container sees your home folder and
-the game's Steam library. A tool, a mod or a runtime anywhere else, on another
+app to install. `eidos prereqs` still runs its installers and winetricks on the
+host, and a `runner=native` tool ignores the key. The container sees your home
+folder and the game's Steam library. A tool, a mod or a runtime anywhere else, on another
 drive for example, needs `env=STEAM_COMPAT_MOUNTS=/that/path` (several paths
 separated by `:`). A Proton build installed under
 `/usr/share/steam/compatibilitytools.d` is probably not usable with `slr=1`,

@@ -68,7 +68,8 @@ zbus = { version = "5.19.0", default-features = false, features = ["async-io"] }
 
 [profile.release]
 # The Colony release profile (design/releases.md in Project-Colony-Resources,
-# "Release profile"): one codegen unit, thin LTO, no symbol table.
+# "Release profile"): one codegen unit and no symbol table. Eidos takes fat LTO
+# where that profile says thin, for size (measurements below).
 #
 # One codegen unit instead of the default 16. Measured on a real 182-layer
 # instance: the binary loses 22% (eidos-gui 40.6 -> 31.8 MB, eidos 29.3 -> 26.8)
@@ -77,10 +78,26 @@ zbus = { version = "5.19.0", default-features = false, features = ["async-io"] }
 # both are bound by syscalls rather than by generated code.
 #
 # The size is where it pays: at 16 units LLVM cannot see across them, so the
-# same monomorphised code lands in several and ships several times over. Thin
-# LTO on top of this was measured within 0.1 MB of this line alone: it is here
-# for the shared profile, not for size. Fat LTO reaches 27.8 MB but costs 2.5x
-# the build (187 s against 74).
+# same monomorphised code lands in several and ships several times over.
+#
+# Fat LTO. Measured on 2026-11-10 with rustc 1.99.1: one cold
+# `cargo build --profile release -p eidos -p eidos-gui` per variant, 3 build
+# jobs, sizes in bytes after strip:
+#
+#   variant                                   eidos     eidos-gui  build
+#   thin LTO (the profile before this one)    22117176  53567752   243 s
+#   fat LTO (this profile)                    20870160  49727560   334 s
+#   thin LTO, GUI stack at opt-level "s"      22116368  51839880   234 s
+#   fat LTO, GUI stack at opt-level "s"       20871056  48080456   325 s
+#
+# Fat LTO takes 1.2 MB (5.6%) off eidos and 3.8 MB (7.2%) off eidos-gui for
+# 37% more build time. The GUI stack was given `opt-level = "s"` through
+# `[profile.release.package.<name>]` for iced, iced_core, iced_widget,
+# iced_graphics, iced_renderer, iced_wgpu, iced_tiny_skia, iced_winit, wgpu,
+# wgpu-core, wgpu-hal, naga, cosmic-text, swash, skrifa, read-fonts, fontdb,
+# tiny-skia and colony-ui. On top of fat LTO it saved another 1.6 MB (3.3%) of
+# eidos-gui, too little to give up speed in the renderer and text shaping for,
+# so every crate stays at opt-level 3.
 #
 # `strip = "symbols"` drops the symbol table. The cost is that a panic
 # backtrace from a release binary shows addresses instead of function names,
@@ -94,5 +111,5 @@ zbus = { version = "5.19.0", default-features = false, features = ["async-io"] }
 # download identify). Aborting would turn a panic in any one of them into the
 # whole window dying, where today the poll reports it and the window survives.
 codegen-units = 1
-lto = "thin"
+lto = "fat"
 strip = "symbols"

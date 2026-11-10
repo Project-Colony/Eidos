@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9bcb3911834069a7876af50486e7493e4e753c25 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=039b6ffd055eabf9e9c4c8978bbc3e47ad68e45c -->
 
 # Používání Eidosu
 
@@ -722,6 +722,8 @@ přetrvá, ne tu zahrabanou v prefixu Protonu, která se při každém spuštěn
 přepíše. **View -> Log** čte logy relací. **View -> Extensions** vypisuje vaše
 vlastní doplňky; viz [extensions.cs.md](extensions.md).
 
+Když start nenajde hlavní INI hry (`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini`...) ani v profilu, ani v prefixu, Eidos nejdřív zkopíruje do profilu výchozí soubor ze složky hry (`Skyrim_Default.ini`, `Fallout4_Default.ini`...), stejně jako MO2. Prefix a složka hry se nemění.
+
 Instalace přijme všechno: cesty Simple a FOMOD, plus balíčky **BAIN** z Wrye
 Bash (zaškrtnete podbalíčky, které se slučují v pořadí) a **ruční** výběr, který
 ukáže strom archivu a nechá vás ukázat na kořen dat, když rozvržení nerozpozná
@@ -741,6 +743,8 @@ což z otázky „načetly se moje SKSE pluginy?" dělá místo dohadu důkaz.
 Hlásí také aktualizaci hry od posledního čistého spuštění, chybějící script extender nebo takový, který neodpovídá verzi hry (se stránkou ke stažení extenderu a tlačítkem, které nainstaluje stažený archiv), parametr spuštění ve Steamu, který nespouští Eidos s `%command%`, NVAPI vypnuté pro DLSS, exkluzivní celou obrazovku, která brání generování snímků, `enblocal.ini` od ENB bez `LinuxVersion=true`, deklarace pluginů F4SE a SFSE a crash log poslední relace s módy, které jmenuje.
 Kontrola aktualizací také načte požadavky každého modu na Nexusu. Diagnostics uvede požadovaný mod, který chybí nebo je vypnutý, a tlačítkem Ignore lze zahodit požadavek splněný jinak.
 
+U Skyrim SE, Enderal SE a Fallout 4 má Diagnostics také kartu Zobrazení. Ukazuje velikost a režim okna nastavené v `SkyrimPrefs.ini` profilu (`EnderalPrefs.ini`, `Fallout4Prefs.ini`), nebo v kopii v prefixu, pokud ji profil ještě nemá. Když velikost nenastavuje ani jedna z nich, pole se vyplní podle největší připojené obrazovky uvedené v `/sys/class/drm`, takže Steam Deck ukáže 1280x800. Apply zapíše `iSize W`, `iSize H`, `bFull Screen` a `bBorderless` do kopie profilu; pokud ji profil nemá, nejdřív převezme kopii z prefixu. Když okno nastavuje SSE Display Tweaks, Apply zapíše stejnou velikost a režim do jeho kopie v Overwrite; vlastní soubor modu se nemění.
+
 Chcete-li hru spouštět skrz GUI, nastavte parametr spuštění hry ve Steamu na
 absolutní cestu k binárce (Steam nevidí `~/.cargo/bin` v PATH):
 
@@ -752,7 +756,7 @@ Eidos se otevře na instanci té hry - té, kterou jste použili naposledy, tak�
 přenosná instance se najde znovu stejně jako globální; kliknutím na Run ji
 spustíte skrz sloučený pohled.
 
-Se zapnutou volbou **Start the game at once when a store opens Eidos** (Preferences, General, Running a game) Eidos toto kliknutí přeskočí: zkontroluje Health a spustí hru, aniž by ukázal své okno. Okno se otevře jako obvykle, když Health hlásí problém, když seznam modů vyžaduje pozornost nebo když nástroj nastavený ke spuštění před hraním má zastaralý výstup. Chcete-li okno pro jedno spuštění, dejte před příkaz `EIDOS_WINDOW=1`: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
+Se zapnutou volbou **Start the game at once when a store opens Eidos** (Preferences, General, Running a game) Eidos toto kliknutí přeskočí: zkontroluje Health a spustí hru, aniž by ukázal své okno. Okno se otevře jako obvykle, když Health hlásí problém, když seznam modů vyžaduje pozornost, když nástroj nastavený ke spuštění před hraním má zastaralý výstup nebo, u Skyrim SE, Enderal SE a Fallout 4, když profil ještě nemá velikost okna (okno se pak otevře na Diagnostics). Chcete-li okno pro jedno spuštění, dejte před příkaz `EIDOS_WINDOW=1`: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Mimo Steam Run nespouští hru sám přes Proton nebo Wine. Požádá obchod, kterému
 kopie patří, aby ji spustil, a obchod spustí Eidos:
@@ -772,6 +776,23 @@ kliknete na Run. První okno tento běh nesleduje, proto v něm po hraní stiskn
 F5, aby se znovu načetly jeho seznamy. Když nastavení v obchodě chybí nebo
 loader script extenderu neleží vedle spustitelného souboru hry, Run nic nespustí
 a ukáže, co a kde nastavit, se skutečnou cestou ke spuštěné binárce.
+
+### Proměnné a wrappery pro profil
+
+Profil může mít vlastní proměnné prostředí a příkazy wrapperů v `profiles/<název>/launch-env.ini`, jeden záznam na řádek:
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+Platí pro každé `eidos play` tohoto profilu (hra spuštěná přes `%command%` ve Steamu nebo přes Run v okně, které otevřel obchod) i pro každé spuštění nástroje. `eidos shell` dostane proměnné a žádný wrapper. První řádek `wrapper=` je nejvnější. U řádku `wrapper=`, který obsahuje `%command%`, se příkaz vloží na toto místo, jako v parametrech spuštění Steamu; u řádku bez něj se příkaz přidá na konec. Wrappery běží v soukromém jmenném prostoru Eidos, takže vidí módy.
+
+Proměnná zde nahradí hodnotu, kterou Eidos nastavuje pro stejný název, a vlastní řádek `env=` nástroje v `tools.ini` nahradí obojí. `WINEDLLOVERRIDES` se naopak přidá za overridy, které Eidos nastavuje pro ENB, ReShade a přibalené DLL: DLL uvedená v obou dostane nastavení profilu, ostatní si ponechají své.
+
+View -> INI editor otevře soubor jako poslední kartu, pro každou hru. Při uložení Eidos vypíše čísla řádků, které ignoruje: řádků, které nejsou ani `env=NÁZEV=hodnota`, ani `wrapper=příkaz`. `eidos play <instance>` bez příkazu vypíše proměnné, které spuštění dostane, a wrappery. Copy report v Diagnostics uvádí názvy proměnných a programů wrapperů, bez jejich hodnot.
 
 `%command%` ze Steamu u titulů Bethesdy obvykle ukazuje na
 `<Game>Launcher.exe`. Eidos jej nikdy nespouští: launcher je samostatná

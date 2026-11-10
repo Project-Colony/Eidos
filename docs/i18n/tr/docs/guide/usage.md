@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9bcb3911834069a7876af50486e7493e4e753c25 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=039b6ffd055eabf9e9c4c8978bbc3e47ad68e45c -->
 
 # Eidos kullanımı
 
@@ -752,6 +752,8 @@ MO2'nin kendisidir (`categories.dat` ve `nexuscatmap.dat`), yani paylaşılan bi
 **View -> Log**, oturum günlüklerini okur. **View -> Extensions**, kendi
 eklentilerinizi listeler; bkz. [extensions.tr.md](extensions.md).
 
+Bir başlatma oyunun ana INI dosyasını (`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini`...) ne profilde ne de önekte bulamazsa, Eidos önce oyun klasöründeki varsayılan dosyayı (`Skyrim_Default.ini`, `Fallout4_Default.ini`...) MO2'nin yaptığı gibi profile kopyalar. Önek ve oyun klasörü değiştirilmez.
+
 Kurulum her şeyi kabul eder: Simple ve FOMOD yolları, artı Wrye Bash **BAIN**
 paketleri (sırayla katılan alt paketleri işaretleyin) ve hiçbir sezgisel yöntem
 yerleşimi tanımadığında arşiv ağacını gösterip veri kökünü işaret etmenizi
@@ -773,6 +775,8 @@ eklentilerim yüklendi mi?" sorusunu bir çıkarımdan bir kanıta çevirir.
 Ayrıca son temiz başlatmadan bu yana bir oyun güncellemesini, eksik ya da oyun sürümüyle uyuşmayan bir script extender'ı (extender'ın indirme sayfası ve indirdiğiniz arşivi kuran bir düğmeyle), Eidos'u `%command%` ile başlatmayan bir Steam başlatma seçeneğini, DLSS için kapalı bırakılmış NVAPI'yi, kare üretimini durduran özel tam ekranı, `LinuxVersion=true` içermeyen bir ENB `enblocal.ini` dosyasını, F4SE ve SFSE eklenti bildirimlerini ve son oturumun çökme günlüğünü, adını verdiği modlarla birlikte bildirir.
 Güncelleme denetimi her modun Nexus gereksinimlerini de okur. Diagnostics, eksik veya devre dışı bir gerekli modu listeler; başka yoldan karşılanan bir gereksinim için Ignore vardır.
 
+Skyrim SE, Enderal SE ve Fallout 4 için Diagnostics'te bir de Ekran kartı vardır. Profilin `SkyrimPrefs.ini` dosyasında (`EnderalPrefs.ini`, `Fallout4Prefs.ini`) ayarlı pencere boyutunu ve kipini, profilde bu dosya henüz yoksa önekteki kopyadakini gösterir. İkisi de bir boyut belirtmiyorsa alanlar `/sys/class/drm` içinde listelenen en büyük bağlı ekranla dolar, yani Steam Deck 1280x800 gösterir. Apply `iSize W`, `iSize H`, `bFull Screen` ve `bBorderless` değerlerini profilin kopyasına yazar; profilde kopya yoksa önce önekteki kopyayı alır. Pencereyi SSE Display Tweaks belirliyorsa Apply aynı boyutu ve kipi onun Overwrite'taki kopyasına da yazar; modun kendi dosyası değiştirilmez.
+
 Oyunu GUI üzerinden başlatmak için oyunun Steam başlatma seçeneğini ikili
 dosyanın mutlak yoluna ayarlayın (Steam, PATH'te `~/.cargo/bin`'i görmez):
 
@@ -784,7 +788,7 @@ Eidos o oyunun örneğinde açılır - en son kullandığınızda, yani taşına
 örnek de global olan gibi yeniden bulunur; birleşik görünüm üzerinden başlatmak
 için Run'a tıklayın.
 
-**Start the game at once when a store opens Eidos** açıkken (Preferences, General, Running a game) Eidos bu tıklamayı atlar: Health'i denetler ve oyunu penceresini göstermeden başlatır. Health bir sorun bildirdiğinde, mod listesi ilgi gerektirdiğinde ya da oynamadan önce çalışacak şekilde ayarlanmış bir aracın çıktısı eskidiğinde pencere her zamanki gibi açılır. Pencereyi tek bir başlatma için isterseniz komutun önüne `EIDOS_WINDOW=1` ekleyin: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
+**Start the game at once when a store opens Eidos** açıkken (Preferences, General, Running a game) Eidos bu tıklamayı atlar: Health'i denetler ve oyunu penceresini göstermeden başlatır. Health bir sorun bildirdiğinde, mod listesi ilgi gerektirdiğinde, oynamadan önce çalışacak şekilde ayarlanmış bir aracın çıktısı eskidiğinde ya da Skyrim SE, Enderal SE ve Fallout 4'te profilin henüz bir pencere boyutu olmadığında pencere her zamanki gibi açılır (son durumda Diagnostics sekmesinde açılır). Pencereyi tek bir başlatma için isterseniz komutun önüne `EIDOS_WINDOW=1` ekleyin: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Steam dışında Run oyunu kendisi Proton ya da Wine ile başlatmaz. Kopyanın sahibi
 olan mağazadan onu başlatmasını ister, mağaza da Eidos'u başlatır:
@@ -805,6 +809,23 @@ yüklemek için oynadıktan sonra orada F5'e basın. Mağazadaki ayar eksikse ya
 script extender'ın loader'ı oyunun çalıştırılabilir dosyasının yanında değilse,
 Run hiçbir şey başlatmaz ve neyin nereye ayarlanacağını, çalışan ikili dosyanın
 gerçek yoluyla gösterir.
+
+### Profil başına değişkenler ve wrapper'lar
+
+Bir profil, kendi ortam değişkenlerini ve wrapper komutlarını `profiles/<ad>/launch-env.ini` içinde, satır başına bir girdi olacak şekilde taşıyabilir:
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+Bu profilin her `eidos play` çalıştırmasında (Steam'in `%command%` değeriyle ya da bir mağazanın açtığı pencerede Run ile başlatılan oyun) ve her araç çalıştırmasında geçerlidir. `eidos shell` değişkenleri alır, wrapper almaz. İlk `wrapper=` satırı en dıştakidir. `%command%` içeren bir `wrapper=` satırında komut o yere konur, Steam'in başlatma seçeneklerindeki gibi; içermeyen satırda komut sona eklenir. Wrapper'lar Eidos'un özel ad alanında çalışır, bu yüzden modları görür.
+
+Buradaki bir değişken, Eidos'un aynı ad için ayarladığı değerin yerine geçer; bir aracın `tools.ini` içindeki kendi `env=` satırı ise ikisinin de yerine geçer. `WINEDLLOVERRIDES` ise Eidos'un ENB, ReShade ve birlikte gelen DLL'ler için ayarladığı override'lardan sonra eklenir: ikisinde de adı geçen bir DLL profilin ayarını alır, diğerleri kendi ayarını korur.
+
+View -> INI editor dosyayı her oyun için son sekme olarak açar. Kaydederken Eidos'un yok saydığı satır numaralarını listeler: ne `env=AD=değer` ne de `wrapper=komut` olan satırlar. Komutsuz `eidos play <örnek>`, bir çalıştırmanın alacağı değişkenleri ve wrapper'ları listeler. Diagnostics içindeki Copy report değişkenleri ve wrapper programlarını değerleri olmadan adlandırır.
 
 Bethesda oyunları için Steam'in `%command%` değeri genellikle
 `<Game>Launcher.exe`'yi gösterir. Eidos onu asla çalıştırmaz: başlatıcı, `Data`'yı

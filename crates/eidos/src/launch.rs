@@ -44,6 +44,14 @@ pub(crate) fn cmd_play(args: &[String]) {
                 inst.mods_dir().display()
             );
         }
+        // Provision off: the listing copies nothing into the prefix.
+        print!(
+            "{}",
+            play_env_lines(
+                &run_env(&game, &inst, ToolOpts::default(), Vec::new(), false),
+                &inst.active().launch_env().wrappers
+            )
+        );
         println!("\nTo launch the game through Eidos, set this Steam launch option:");
         println!("    eidos play {id} -- %command%");
         println!("\nOr run any command through the view now, e.g.:");
@@ -758,6 +766,16 @@ pub(crate) fn run_through_view(
         }
     }
     let session = crate::sessions::begin(game, inst, &prof, opts.tool_name.or(opts.utility));
+    // Last, so the receipt and every argv check above saw the unwrapped command.
+    let wrappers = prof.launch_env().wrappers;
+    if applies_wrappers(&opts) && !wrappers.is_empty() {
+        eidos_log::info!(
+            "eidos: wrappers from profile '{}': {}",
+            real.name,
+            wrappers.join(" | ")
+        );
+        spec.command = with_wrappers(&wrappers, std::mem::take(&mut spec.command));
+    }
     let result = launch(spec);
     crate::sessions::finish(session, &result, inst, &prof);
     // A crash under Proton can still exit 0; a crash log written since the start says otherwise.
@@ -980,9 +998,11 @@ fn game_language(game: &DetectedGame, inst: &Instance) -> Option<String> {
 }
 
 /// The variables a run sets on top of the inherited environment: `env` (what
-/// the caller built), then what every run gets, then the tool's own `env=`
-/// lines, which replace any earlier value of the same name. `eidos tool --print`
-/// calls this too, with `provision` off so it copies no DLL into the prefix.
+/// the caller built), then what every run gets, then the profile's
+/// `launch-env.ini` variables, then the tool's own `env=` lines. Each replaces
+/// any earlier value of the same name, except a profile `WINEDLLOVERRIDES`,
+/// which goes after the earlier value. `eidos tool --print` calls this too,
+/// with `provision` off so it copies no DLL into the prefix.
 pub(crate) fn run_env(
     game: &DetectedGame,
     inst: &Instance,
@@ -1019,9 +1039,81 @@ pub(crate) fn run_env(
     if std::env::var_os("PROTON_USE_XALIA").is_none() {
         env.push(("PROTON_USE_XALIA".to_string(), "0".to_string()));
     }
+    // `inst.active()` cannot change under a run: `run_through_view` holds the
+    // instance lock a profile switch needs.
+    for (name, value) in inst.active().launch_env().env {
+        let value = if name == "WINEDLLOVERRIDES" {
+            let earlier = env
+                .iter()
+                .rev()
+                .find(|(k, _)| *k == name)
+                .map(|(_, v)| v.clone())
+                .or_else(|| std::env::var(&name).ok());
+            merge_dll_overrides(earlier.as_deref(), &value)
+        } else {
+            value
+        };
+        env.retain(|(k, _)| *k != name);
+        env.push((name, value));
+    }
     env.retain(|(k, _)| !opts.env.iter().any(|(t, _)| t == k));
     env.extend(opts.env.iter().cloned());
     env
+}
+
+/// `add` after `base`, joined with `;`. Wine lets a later entry for a DLL
+/// replace an earlier one, so a profile's `dxgi=n` keeps Eidos's other overrides.
+pub(crate) fn merge_dll_overrides(base: Option<&str>, add: &str) -> String {
+    [base.unwrap_or(""), add]
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// `command` inside the profile's wrapper lines, the first line outermost. A
+/// `%command%` word takes the command at its place, as in Steam's launch
+/// options; a line without one gets the command after its words.
+pub(crate) fn with_wrappers(wrappers: &[String], command: Vec<String>) -> Vec<String> {
+    wrappers.iter().rev().fold(command, |command, line| {
+        let mut words = crate::check::launch_option::shell_words(line);
+        // shortcut: a second `%command%` word in one line stays literal, splice the command at each one when a wrapper line needs it in two places.
+        match words.iter().position(|w| w == "%command%") {
+            Some(i) => {
+                words.splice(i..=i, command);
+                words
+            }
+            None if words.is_empty() => command,
+            None => words.into_iter().chain(command).collect(),
+        }
+    })
+}
+
+/// Whether the profile's wrappers go around this run. `eidos shell` gets the
+/// variables and no wrapper.
+pub(crate) fn applies_wrappers(opts: &ToolOpts) -> bool {
+    opts.utility != Some("shell")
+}
+
+/// The dry `eidos play` listing's variables and wrappers.
+fn play_env_lines(env: &[(String, String)], wrappers: &[String]) -> String {
+    let mut out = String::new();
+    if !env.is_empty() {
+        out.push_str("\nEnvironment added to every run:\n");
+        for (k, v) in env {
+            out.push_str(&format!("  {k}={v}\n"));
+        }
+    }
+    if !wrappers.is_empty() {
+        if env.is_empty() {
+            out.push('\n');
+        }
+        out.push_str("Wrappers, outermost first:\n");
+        for w in wrappers {
+            out.push_str(&format!("  {w}\n"));
+        }
+    }
+    out
 }
 
 // Wrapper DLLs a mod ships at its root (d3dcompiler_47 is handled by import
@@ -1333,6 +1425,130 @@ mod extender_tests {
             .join("drive_c/windows/system32/d3dx9_43.dll")
             .exists());
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn wrappers_wrap_outermost_first_and_take_the_command_at_percent_command() {
+        let cmd = vec!["/s/reaper".to_string(), "proton".into()];
+        assert_eq!(with_wrappers(&[], cmd.clone()), cmd);
+        assert_eq!(
+            with_wrappers(
+                &["gamemoderun".into(), "mangohud --dlsym".into()],
+                cmd.clone()
+            ),
+            ["gamemoderun", "mangohud", "--dlsym", "/s/reaper", "proton"]
+        );
+        assert_eq!(
+            with_wrappers(
+                &["gamescope -W 1280 -H 800 -f -- %command%".into()],
+                cmd.clone()
+            ),
+            [
+                "gamescope",
+                "-W",
+                "1280",
+                "-H",
+                "800",
+                "-f",
+                "--",
+                "/s/reaper",
+                "proton"
+            ]
+        );
+        assert_eq!(
+            with_wrappers(
+                &["'/opt/my tools/wrap' %command% --after".into()],
+                cmd.clone()
+            ),
+            ["/opt/my tools/wrap", "/s/reaper", "proton", "--after"]
+        );
+    }
+
+    #[test]
+    fn profile_dll_overrides_add_to_the_ones_eidos_sets() {
+        assert_eq!(
+            merge_dll_overrides(Some("d3d11,dxgi=n,b"), "dxgi=n"),
+            "d3d11,dxgi=n,b;dxgi=n"
+        );
+        assert_eq!(merge_dll_overrides(None, "dxgi=n"), "dxgi=n");
+        assert_eq!(merge_dll_overrides(Some(""), "dxgi=n"), "dxgi=n");
+    }
+
+    #[test]
+    fn profile_env_sits_between_eidos_and_the_tool() {
+        // Built like `a_tool_env_line_wins_over_what_every_run_gets`: a mod
+        // shipping dxgi.dll makes Eidos set its own WINEDLLOVERRIDES.
+        let root = std::env::temp_dir().join(format!("eidos-profile-env-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let instance = Instance::portable(root.join("instance"));
+        instance.create().unwrap();
+        let entry = instance.create_empty_mod("ReShade").unwrap();
+        std::fs::write(entry.path.join("dxgi.dll"), b"").unwrap();
+        instance.save_modlist(&[entry]).unwrap();
+        let game = DetectedGame {
+            def: eidos_games::GameDef::for_id("skyrimse").unwrap(),
+            install_path: root.join("game"),
+            data_path: root.join("game/Data"),
+            compatdata: Some(root.join("compatdata")),
+            source: Default::default(),
+            steam_name: String::new(),
+        };
+        std::fs::create_dir_all(game.prefix().unwrap().join("drive_c/windows")).unwrap();
+        let prof = instance.active();
+        std::fs::create_dir_all(prof.dir()).unwrap();
+        std::fs::write(
+            prof.dir().join(eidos_instance::LAUNCH_ENV_FILE),
+            "env=PROTON_USE_XALIA=1\nenv=DXVK_HUD=fps\nenv=WINEDLLOVERRIDES=d3d11=b\n",
+        )
+        .unwrap();
+        let tool_env = [("DXVK_HUD".to_string(), "full".to_string())];
+        let opts = ToolOpts {
+            env: &tool_env,
+            ..Default::default()
+        };
+        let env = run_env(&game, &instance, opts, Vec::new(), false);
+        let get = |k: &str| {
+            env.iter()
+                .filter(|(n, _)| n == k)
+                .map(|(_, v)| v.as_str())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(get("DXVK_HUD"), ["full"]);
+        if std::env::var_os("PROTON_USE_XALIA").is_none() {
+            assert_eq!(get("PROTON_USE_XALIA"), ["1"]);
+        }
+        let dll = get("WINEDLLOVERRIDES");
+        assert_eq!(dll.len(), 1);
+        assert!(
+            dll[0].contains("dxgi") && dll[0].ends_with(";d3d11=b"),
+            "{dll:?}"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn the_shell_gets_the_variables_and_no_wrapper() {
+        assert!(!applies_wrappers(&ToolOpts {
+            utility: Some("shell"),
+            ..Default::default()
+        }));
+        assert!(applies_wrappers(&ToolOpts::default()));
+        assert!(applies_wrappers(&ToolOpts {
+            utility: Some("winecfg"),
+            ..Default::default()
+        }));
+    }
+
+    #[test]
+    fn the_play_listing_shows_the_variables_and_wrappers() {
+        assert_eq!(
+            play_env_lines(&[("A".into(), "1".into())], &["gamemoderun".into()]),
+            "\nEnvironment added to every run:\n  A=1\nWrappers, outermost first:\n  gamemoderun\n"
+        );
+        assert_eq!(
+            play_env_lines(&[("A".into(), "1".into())], &[]),
+            "\nEnvironment added to every run:\n  A=1\n"
+        );
     }
 
     #[test]
