@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=cda9b5678bb47ad0246f2dfd09c9e2367886fe03 -->
 
 # Использование Eidos
 
@@ -745,6 +745,8 @@ Skyrim с загруженной инстанцией Fallout 4 - и она от
 сохраняется, а не ту, что зарыта в Proton-префиксе и переписывается при каждом
 запуске. **View -> Log** читает логи сессий. **View -> Extensions** перечисляет
 ваши собственные дополнения; см. [extensions.md](extensions.md).
+
+Если при запуске главный INI игры (`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini`...) не найден ни в профиле, ни в префиксе, Eidos сначала копирует в профиль файл по умолчанию из папки игры (`Skyrim_Default.ini`, `Fallout4_Default.ini`...), как это делает MO2. Префикс и папка игры не изменяются.
 
 Установка принимает всё: пути Simple и FOMOD, плюс пакеты **BAIN** от Wrye Bash
 (отметьте подпакеты, которые сливаются по порядку) и **ручной** выбор, который

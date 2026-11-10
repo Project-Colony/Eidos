@@ -366,6 +366,7 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("ini_title", "INI editor - profile '{profile}'"),
     ("ini_unreadable", "{file} exists but could not be read. Saving is refused - it would replace the file with an empty one. Check its permissions."),
     ("ini_missing", "{file} is not in this profile yet. Saving creates it; until then the game uses whatever is already in the prefix."),
+    ("ini_missing_main", "{file} is not in this profile yet. Saving creates it. Until then the next launch copies the prefix's {file}, or the game folder's default copy when the prefix has none."),
     ("ini_note", "Edits the profile's copy. It is deployed into the Proton prefix at launch, and what the game writes back is captured into the profile when it exits."),
     ("ini_unsaved", "Unsaved changes"),
     ("ini_open_externally", "Open externally"),

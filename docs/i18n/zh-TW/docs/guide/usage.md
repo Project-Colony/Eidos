@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=cda9b5678bb47ad0246f2dfd09c9e2367886fe03 -->
 
 # 使用 Eidos
 
@@ -568,6 +568,8 @@ MO2 自己的(`categories.dat` 與 `nexuscatmap.dat`),所以共用的實例只�
 前綴裡、每次啟動都被覆寫的那一份。**View -> Log** 讀取工作階段日誌。
 **View -> Extensions** 列出你自己的附加元件;見
 [extensions.md](extensions.md)。
+
+啟動時如果在設定檔和前綴裡都找不到遊戲的主 INI(`Skyrim.ini`、`Fallout4.ini`、`Oblivion.ini` 等),Eidos 會像 MO2 一樣,先把遊戲資料夾裡的預設檔(`Skyrim_Default.ini`、`Fallout4_Default.ini` 等)複製到設定檔。前綴和遊戲資料夾不會被改動。
 
 安裝什麼都接受:Simple 與 FOMOD 兩條路徑,加上 Wrye Bash 的 **BAIN** 套件(勾選子
 套件,它們會依序合併),以及一個**手動**選擇器,會顯示壓縮檔的樹狀結構,讓你在沒有

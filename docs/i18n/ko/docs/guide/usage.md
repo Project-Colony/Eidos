@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=cda9b5678bb47ad0246f2dfd09c9e2367886fe03 -->
 
 # Eidos 사용하기
 
@@ -664,6 +664,8 @@ Nexus가 고르고 이 설정은 아무것도 바꾸지 않습니다. 이것은 
 Proton 프리픽스 속에 파묻힌 것이 아니라 남아 있는 사본 쪽입니다. **View ->
 Log**는 세션 로그를 읽습니다. **View -> Extensions**는 여러분 자신의 애드온을
 나열합니다. [extensions.md](extensions.md)를 보세요.
+
+실행할 때 게임의 기본 INI(`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini` 등)가 프로필에도 프리픽스에도 없으면, Eidos는 MO2처럼 게임 폴더의 기본 파일(`Skyrim_Default.ini`, `Fallout4_Default.ini` 등)을 먼저 프로필로 복사합니다. 프리픽스와 게임 폴더는 바뀌지 않습니다.
 
 설치는 무엇이든 받습니다: Simple과 FOMOD 경로, 여기에 Wrye Bash **BAIN**
 패키지(하위 패키지를 체크하면 순서대로 병합됩니다)와, 어떤 휴리스틱도 배치를

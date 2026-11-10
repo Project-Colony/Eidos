@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=cda9b5678bb47ad0246f2dfd09c9e2367886fe03 -->
 
 # Користування Eidos
 
@@ -729,6 +729,8 @@ Skyrim із завантаженим екземпляром Fallout 4 - і во�
 не поховану в префіксі Proton, яку переписує кожен запуск. **View -> Log** читає
 логи сеансу. **View -> Extensions** перелічує ваші власні додатки; див.
 [extensions.uk.md](extensions.md).
+
+Якщо під час запуску головний INI гри (`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini`...) не знайдено ні в профілі, ні в префіксі, Eidos спершу копіює до профілю файл за замовчуванням із теки гри (`Skyrim_Default.ini`, `Fallout4_Default.ini`...), як це робить MO2. Префікс і тека гри не змінюються.
 
 Встановлення приймає все: шляхи Simple і FOMOD, плюс пакунки **BAIN** Wrye Bash
 (позначайте підпакунки, які зливаються по черзі) і **ручний** вибір, що показує

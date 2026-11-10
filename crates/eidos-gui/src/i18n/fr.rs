@@ -366,6 +366,7 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("ini_title", "Éditeur d'INI : profil « {profile} »"),
     ("ini_unreadable", "{file} existe mais n'a pas pu être lu. L'enregistrement est refusé, il remplacerait le fichier par un fichier vide. Vérifiez ses permissions."),
     ("ini_missing", "{file} n'est pas encore dans ce profil. L'enregistrer le crée ; d'ici là le jeu utilise ce qui est déjà dans le préfixe."),
+    ("ini_missing_main", "{file} n'est pas encore dans ce profil. L'enregistrer le crée. D'ici là, le prochain lancement copie le {file} du préfixe, ou la copie par défaut du dossier du jeu si le préfixe n'en a pas."),
     ("ini_note", "Modifie la copie du profil. Elle est déployée dans le préfixe Proton au lancement, et ce que le jeu y réécrit est récupéré dans le profil quand il se ferme."),
     ("ini_unsaved", "Modifications non enregistrées"),
     ("ini_open_externally", "Ouvrir dans un autre éditeur"),

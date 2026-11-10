@@ -1392,7 +1392,13 @@ pub(crate) fn ini_editor_dialog<'a>(app: &App, state: &'a IniEditorState) -> Ele
     let note = if state.unreadable {
         tf("ini_unreadable", &[("file", &state.current)])
     } else if state.missing {
-        tf("ini_missing", &[("file", &state.current)])
+        // shortcut: root-mode Oblivion also shows this line, though its INI is seeded from the game folder itself
+        let key = if state.files.first() == Some(&state.current) {
+            "ini_missing_main"
+        } else {
+            "ini_missing"
+        };
+        tf(key, &[("file", &state.current)])
     } else {
         t("ini_note").to_string()
     };

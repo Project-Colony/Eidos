@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=cda9b5678bb47ad0246f2dfd09c9e2367886fe03 -->
 
 # Eidos kullanımı
 
@@ -737,6 +737,8 @@ MO2'nin kendisidir (`categories.dat` ve `nexuscatmap.dat`), yani paylaşılan bi
 üzerine yazılan, Proton önekine gömülü olanı değil, kalıcı olan kopyayı.
 **View -> Log**, oturum günlüklerini okur. **View -> Extensions**, kendi
 eklentilerinizi listeler; bkz. [extensions.tr.md](extensions.md).
+
+Bir başlatma oyunun ana INI dosyasını (`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini`...) ne profilde ne de önekte bulamazsa, Eidos önce oyun klasöründeki varsayılan dosyayı (`Skyrim_Default.ini`, `Fallout4_Default.ini`...) MO2'nin yaptığı gibi profile kopyalar. Önek ve oyun klasörü değiştirilmez.
 
 Kurulum her şeyi kabul eder: Simple ve FOMOD yolları, artı Wrye Bash **BAIN**
 paketleri (sırayla katılan alt paketleri işaretleyin) ve hiçbir sezgisel yöntem

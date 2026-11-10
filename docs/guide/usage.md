@@ -734,6 +734,8 @@ rather than the one buried in the Proton prefix that is overwritten at every
 launch. **View -> Log** reads the session logs. **View -> Extensions** lists
 your own add-ons; see [extensions.md](extensions.md).
 
+When a launch finds the game's main INI (`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini`...) neither in the profile nor in the prefix, Eidos first copies the game folder's default (`Skyrim_Default.ini`, `Fallout4_Default.ini`...) into the profile, as MO2 does. The prefix and the game folder are not changed.
+
 Installing accepts everything: the Simple and FOMOD paths, plus Wrye Bash
 **BAIN** packages (tick the sub-packages, which merge in order) and a **manual**
 picker that shows the archive tree and lets you point at the data root when no

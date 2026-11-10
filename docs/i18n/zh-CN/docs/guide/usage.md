@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=cda9b5678bb47ad0246f2dfd09c9e2367886fe03 -->
 
 # 使用 Eidos
 
@@ -551,6 +551,8 @@ MO2 自己的(`categories.dat` 和 `nexuscatmap.dat`),所以共享的实例保�
 **View -> INI editor** 编辑配置档的游戏 INI - 是会持久保留的那一份,而不是埋在 Proton
 前缀里、每次启动都被覆盖的那一份。**View -> Log** 读会话日志。**View -> Extensions**
 列出你自己的附加组件;见 [extensions.zh-CN.md](extensions.md)。
+
+启动时如果在配置档和前缀里都找不到游戏的主 INI(`Skyrim.ini`、`Fallout4.ini`、`Oblivion.ini` 等),Eidos 会像 MO2 一样,先把游戏文件夹里的默认文件(`Skyrim_Default.ini`、`Fallout4_Default.ini` 等)复制到配置档。前缀和游戏文件夹不会被改动。
 
 安装什么都接受:Simple 与 FOMOD 两条路,加上 Wrye Bash 的 **BAIN** 包(勾选子包,它们
 按顺序合并),以及一个**手动**选择器 - 当没有启发式认得出布局时,它展示压缩包的目录树,

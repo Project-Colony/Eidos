@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=cda9b5678bb47ad0246f2dfd09c9e2367886fe03 -->
 
 # Používání Eidosu
 
@@ -707,6 +707,8 @@ jeden katalog. Mod stažený z Nexusu se při instalaci zařadí do kategorie, j
 přetrvá, ne tu zahrabanou v prefixu Protonu, která se při každém spuštění
 přepíše. **View -> Log** čte logy relací. **View -> Extensions** vypisuje vaše
 vlastní doplňky; viz [extensions.cs.md](extensions.md).
+
+Když start nenajde hlavní INI hry (`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini`...) ani v profilu, ani v prefixu, Eidos nejdřív zkopíruje do profilu výchozí soubor ze složky hry (`Skyrim_Default.ini`, `Fallout4_Default.ini`...), stejně jako MO2. Prefix a složka hry se nemění.
 
 Instalace přijme všechno: cesty Simple a FOMOD, plus balíčky **BAIN** z Wrye
 Bash (zaškrtnete podbalíčky, které se slučují v pořadí) a **ruční** výběr, který

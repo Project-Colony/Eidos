@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=cda9b5678bb47ad0246f2dfd09c9e2367886fe03 -->
 
 # Używanie Eidos
 
@@ -740,6 +740,8 @@ jeden katalog. Mod pobrany z Nexusa dostaje kategorię przy instalacji, gdy Pobi
 przetrwa, a nie tę zakopaną w prefiksie Protona, nadpisywaną przy każdym
 uruchomieniu. **View -> Log** czyta logi sesji. **View -> Extensions** wypisuje
 twoje własne dodatki; zob. [extensions.pl.md](extensions.md).
+
+Gdy uruchomienie nie znajduje głównego pliku INI gry (`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini`...) ani w profilu, ani w prefiksie, Eidos najpierw kopiuje do profilu domyślny plik z folderu gry (`Skyrim_Default.ini`, `Fallout4_Default.ini`...), tak jak MO2. Prefiks i folder gry nie są zmieniane.
 
 Instalowanie przyjmuje wszystko: ścieżki Simple i FOMOD, plus paczki **BAIN**
 Wrye Bash (zaznaczasz podpaczki, które scalają się po kolei) i **ręczny** wybór,

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=cda9b5678bb47ad0246f2dfd09c9e2367886fe03 -->
 
 # Eidos の使い方
 
@@ -681,6 +681,8 @@ Nexus から取ってこられます。カタログのファイルはどちら�
 上書きされる Proton プレフィックスの奥のものではなく、残るほうの写しです。
 **View -> Log** はセッションログを読みます。**View -> Extensions** は自分の
 アドオンを一覧します。[extensions.ja.md](extensions.md) を参照。
+
+起動時にゲームのメイン INI (`Skyrim.ini`、`Fallout4.ini`、`Oblivion.ini` など) がプロファイルにもプレフィックスにもない場合、Eidos は MO2 と同じく、ゲームフォルダーの既定ファイル (`Skyrim_Default.ini`、`Fallout4_Default.ini` など) を先にプロファイルへコピーします。プレフィックスとゲームフォルダーは変更されません。
 
 インストールは何でも受け付けます。Simple と FOMOD の経路に加え、Wrye Bash の
 **BAIN** パッケージ(サブパッケージにチェックを入れると順に統合されます)、

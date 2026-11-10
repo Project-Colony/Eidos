@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=cda9b5678bb47ad0246f2dfd09c9e2367886fe03 -->
 
 # Utiliser Eidos
 
@@ -797,6 +797,8 @@ Les deux fichiers de catalogue sont ceux de MO2 (`categories.dat` et
 plutôt que celle enfouie dans le préfixe Proton qui est écrasée à chaque
 lancement. **View -> Log** lit les logs de session. **View -> Extensions** liste
 vos propres add-ons ; voir [extensions.fr.md](extensions.md).
+
+Quand un lancement ne trouve l'INI principal du jeu (`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini`...) ni dans le profil ni dans le préfixe, Eidos copie d'abord dans le profil celui par défaut du dossier du jeu (`Skyrim_Default.ini`, `Fallout4_Default.ini`...), comme MO2. Le préfixe et le dossier du jeu ne sont pas modifiés.
 
 L'installation accepte tout : les chemins Simple et FOMOD, plus les paquets
 **BAIN** de Wrye Bash (cochez les sous-paquets, qui fusionnent dans l'ordre) et

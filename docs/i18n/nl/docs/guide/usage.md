@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=cda9b5678bb47ad0246f2dfd09c9e2367886fe03 -->
 
 # Eidos gebruiken
 
@@ -758,6 +758,8 @@ houdt één catalogus. Een van Nexus gedownloade mod krijgt bij de installatie e
 blijft bestaan, niet die begraven in het Proton-prefix die bij elke start
 overschreven wordt. **View -> Log** leest de sessielogs. **View -> Extensions**
 toont je eigen add-ons; zie [extensions.md](extensions.md).
+
+Vindt een start de hoofd-INI van het spel (`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini`...) niet in het profiel en niet in het prefix, dan kopieert Eidos eerst de standaardversie uit de spelmap (`Skyrim_Default.ini`, `Fallout4_Default.ini`...) naar het profiel, zoals MO2 doet. Het prefix en de spelmap blijven ongewijzigd.
 
 Installeren aanvaardt alles: de Simple- en FOMOD-paden, plus Wrye
 Bash-**BAIN**-pakketten (vink de subpakketten aan, die op volgorde samenvloeien)

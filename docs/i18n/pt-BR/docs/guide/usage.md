@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=cda9b5678bb47ad0246f2dfd09c9e2367886fe03 -->
 
 # Usar o Eidos
 
@@ -741,6 +741,8 @@ compartilhada mantém um catálogo só. Um mod baixado do Nexus é categorizado 
 não a que fica enterrada no prefixo Proton e é sobrescrita a cada início.
 **View -> Log** lê os logs de sessão. **View -> Extensions** lista os seus
 próprios add-ons; veja [extensions.pt-BR.md](extensions.md).
+
+Quando um início não encontra o INI principal do jogo (`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini`...) nem no perfil nem no prefixo, o Eidos copia antes para o perfil o padrão da pasta do jogo (`Skyrim_Default.ini`, `Fallout4_Default.ini`...), como o MO2 faz. O prefixo e a pasta do jogo não são alterados.
 
 A instalação aceita tudo: os caminhos Simple e FOMOD, mais os pacotes **BAIN**
 do Wrye Bash (marque os sub-pacotes, que são mesclados em ordem) e um seletor
