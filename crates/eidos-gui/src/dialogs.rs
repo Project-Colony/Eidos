@@ -1182,7 +1182,7 @@ fn tool_flags_row<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
     let sel = state.selected.and_then(|i| state.merged.get(i));
     let (hidden, pinned) = sel.map(|t| (t.hidden, t.pinned)).unwrap_or((false, false));
     let check = sel.is_some_and(|t| t.check_before_play);
-    Row::new()
+    let row = Row::new()
         .spacing(8)
         .align_y(iced::Alignment::Center)
         .push(
@@ -1213,20 +1213,21 @@ fn tool_flags_row<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
             .on_press(Message::ExecToggleHidden),
         )
         .push(
-            button(text(t("exe_check_before_play")).size(sz(11)))
-                .padding([4, 10])
-                .style(if check {
-                    button::primary
-                } else {
-                    button::secondary
-                })
-                .on_press(Message::ExecToggleCheckBeforePlay),
-        )
-        .push(
             button(text(t("exe_desktop_shortcut")).size(sz(11)))
                 .padding([4, 10])
                 .style(button::secondary)
                 .on_press(Message::ExecMakeShortcut),
+        );
+    // The check on its own line: beside the buttons its label overflowed the
+    // pane. The buttons wrap, since French "Afficher dans le sélecteur" is long.
+    Column::new()
+        .spacing(8)
+        .push(row.wrap())
+        .push(
+            checkbox(check)
+                .label(t("exe_check_before_play"))
+                .on_toggle(|_| Message::ExecToggleCheckBeforePlay)
+                .text_size(sz(11)),
         )
         .into()
 }

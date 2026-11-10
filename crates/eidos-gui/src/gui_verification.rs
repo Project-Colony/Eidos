@@ -883,3 +883,51 @@ fn the_plugin_filter_keeps_full_list_indices_and_holds_the_drag() {
         "{messages:?}"
     );
 }
+
+/// The flags under a selected Executables entry stay on one line each at the
+/// dialog's 720 px cap.
+#[test]
+fn executables_flags_fit_on_their_lines() {
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    let (app, root) = crate::test_support::list_app(&[]);
+    let mut state = crate::state::open_executables_dialog(&app).unwrap();
+    let tool = |title: &str, exe: &str| eidos_instance::Tool {
+        title: title.into(),
+        exe: exe.into(),
+        ..Default::default()
+    };
+    state.merged = vec![
+        tool("SSEEdit", "/t/SSEEdit.exe"),
+        tool("SKSE", "skse64_loader.exe"),
+    ];
+    state.user_len = 2;
+    let mut labels = |selected: usize| {
+        state.selected = Some(selected);
+        state.load_buffers();
+        let dialog =
+            iced::widget::container(dialogs::executables_dialog(&app, &state)).center(Length::Fill);
+        positions(dialog.into(), &mut renderer).labels
+    };
+    let tool_labels = labels(0);
+    let height = |name: &str| {
+        tool_labels
+            .iter()
+            .find(|(text, _)| text == name)
+            .unwrap_or_else(|| panic!("Missing label {name}: {tool_labels:?}"))
+            .1
+            .height
+    };
+    let one_line = height(t("exe_pin"));
+    for name in [
+        t("exe_hide_from_picker"),
+        t("exe_desktop_shortcut"),
+        t("exe_check_before_play"),
+    ] {
+        assert!(
+            height(name) < one_line * 1.5,
+            "{name} wraps: {tool_labels:?}"
+        );
+    }
+    let _ = fs::remove_dir_all(root);
+}
