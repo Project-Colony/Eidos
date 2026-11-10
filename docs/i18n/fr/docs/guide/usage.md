@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=039b6ffd055eabf9e9c4c8978bbc3e47ad68e45c -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=d9e26a15d52ab549773ed61d97c7ecf36fea8342 -->
 
 # Utiliser Eidos
 
@@ -750,6 +750,33 @@ mod a été installé, puis la fenêtre propose Replace avec « Keep a backup of
 existing mod » coché, quel que soit votre choix à la fenêtre précédente. Replace
 garde la priorité du mod et son état activé ou non.
 
+L'onglet **Page Nexus**, à côté, affiche la description du mod et, du plus
+récent au plus ancien, le journal des modifications de chaque version de fichier
+de sa page. Eidos les lit dans l'API GraphQL de Nexus, qui ne compte pas dans le
+quota horaire de requêtes, la première fois que vous ouvrez l'onglet, et les
+garde jusqu'à la fermeture d'Eidos ou jusqu'à ce que vous appuyiez sur
+**Actualiser**. Ils s'affichent en texte brut : la mise en forme BBCode et HTML
+est retirée, l'adresse d'un lien est écrite après son texte, et les images et
+les vidéos sont laissées de côté. **Recommander** et **Suivre**, au-dessus du
+texte, font ce que fait le menu du clic droit du mod. La page d'un mod pour
+adultes reste masquée tant que votre compte Nexus n'affiche pas le contenu pour
+adultes, et une page sans classification reste masquée dans tous les cas.
+
+Avant qu'un Replace ne remplace le dossier d'un mod, Eidos compare l'ancien
+dossier au nouveau par nom et taille de fichier, et lit les en-têtes des plugins
+des deux. Cela couvre Update, une mise à jour de collection et Replace choisi à
+la fenêtre d'installation. La ligne d'état compte ensuite les fichiers ajoutés,
+supprimés et de taille modifiée, et nomme chaque master dont la nouvelle version
+a besoin et pas l'ancienne. L'onglet **Général** de « Information... » se
+termine par une section **Dernière mise à jour** qui liste les versions, les
+plugins ajoutés ou supprimés, les masters ajoutés ou abandonnés, les plugins
+dont l'indicateur ESM, ESL ou ESH a changé, les mods avec lesquels celui-ci
+partage désormais des fichiers ou n'en partage plus, et les fichiers. Un fichier
+réécrit à la même taille n'est pas listé. Le rapport est gardé dans
+`logs/updates/<mod>.json` de l'instance, que `eidos pack` laisse de côté ; une
+nouvelle installation ou un Merge dans le dossier le supprime. `eidos install
+--replace` affiche les mêmes totaux sur une ligne `changes:`.
+
 Un dossier qui contient plusieurs fichiers Nexus, par exemple un fichier
 principal avec un fichier optionnel fusionné dedans, est refusé : le remplacer
 par le nouveau fichier principal ferait perdre les autres. Mettez-les à jour à
@@ -778,12 +805,16 @@ Tout ce qui est dit plus haut sur ce qui est appliqué et ce qui est seulement
 nommé vaut ici mot pour mot : la fenêtre et `eidos collection` sont un seul
 moteur avec deux façades.
 
+Sans lien, **Fichier -> Ouvrir une collection Nexus...** s'ouvre sur l'onglet **Parcourir**. Il liste les collections publiées pour le jeu de l'instance ouverte, 20 à la fois, par nombre de téléchargements, dernière mise à jour ou date de création, et le champ de recherche réduit la liste aux collections dont le nom ou le texte correspond. Chaque ligne donne l'auteur, la dernière révision, le nombre de mods, les téléchargements et une date. **Voir** ouvre la dernière révision de cette collection dans l'onglet **Lien**, comme si vous colliez son lien. Les collections marquées adultes sont écartées sauf si votre compte Nexus affiche le contenu adulte, les collections sans note le sont toujours, et la ligne sous la liste compte les deux. L'onglet **Parcourir** demande un compte Nexus connecté, comme le reste du volet.
+
 Une collection ne peut être lue que contre **son propre jeu**. Ouvrez une
 collection Skyrim avec une instance Fallout 4 chargée et il refuse en nommant le
 jeu plutôt que de rapprocher les membres de la mauvaise liste de mods, où chaque
 « installé » et chaque « manquant » serait du bruit déguisé en réponse.
 
 Quand vous lancez la recherche de mises à jour, Eidos demande aussi à Nexus la dernière révision de chaque collection installée dans cette instance. Une ligne au-dessus de la liste des mods nomme chaque collection dont une révision plus récente existe et compte les mods ajoutés (+), mis à jour (~) et retirés (-) ; survolez-la pour voir leurs noms. Les comptes manquent quand la recette de la révision installée n'est plus en cache. **Mettre à jour** ouvre la révision récente dans le volet des collections, où *Install this collection* l'exécute. La liste est refaite à chaque vérification et n'est pas enregistrée.
+
+Eidos garde les règles de chaque collection installée après l'installation. Quand un glisser-déposer ultérieur place deux de ses mods à l'encontre d'une règle d'ordre (avant ou après), l'onglet **Diagnostics** affiche une carte pour cette collection, qui nomme la première paire concernée et compte les règles qui ne sont plus respectées. Seuls les mods activés dans le profil actuel comptent, et les règles prises dans une boucle sont ignorées, car aucun ordre ne peut les respecter. **Restaurer l'ordre de la collection** remet les mods de la collection dans un ordre qui respecte chaque règle, garde votre propre ordre partout où les règles le permettent et laisse à leur place les mods qui ne font pas partie de la collection. Ctrl+Z annule l'opération. `eidos check` signale le même constat sous le code `collection_order_broken`. Le contrôle a besoin de la recette de la révision dans `collections/` : une collection dont la recette en cache a été supprimée n'est pas contrôlée.
 
 ### Mode hors ligne
 

@@ -1244,6 +1244,25 @@ struct Header {
     masters: Vec<String>,
 }
 
+/// The header flags and masters of one plugin file, for callers outside this crate.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HeaderFacts {
+    pub is_master: bool,
+    pub is_light: bool,
+    pub is_medium: bool,
+    pub masters: Vec<String>,
+}
+
+pub fn header_facts(path: &Path, spec: &GameSpec) -> Result<HeaderFacts, String> {
+    let h = parse_header(path, spec.esplugin_id)?;
+    Ok(HeaderFacts {
+        is_master: h.is_master,
+        is_light: h.is_light,
+        is_medium: h.is_medium,
+        masters: h.masters,
+    })
+}
+
 fn parse_header(path: &Path, game_id: GameId) -> Result<Header, String> {
     use std::io::Read;
     let mut p = EspPlugin::new(game_id, path);

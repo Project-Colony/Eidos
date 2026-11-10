@@ -1303,41 +1303,6 @@ fn collection_app(mods: &[(&str, u64)], downloads: &[u64]) -> (App, PathBuf) {
     (app, root)
 }
 
-/// A revision with three members. Built by hand rather than parsed: the
-/// PARSE is already tested against a captured real payload in eidos-nexus,
-/// and what these tests exercise is the local join, which only needs ids.
-fn captured_revision() -> eidos_nexus::collections::CollectionRevision {
-    use eidos_nexus::collections::{CollectionMod, CollectionRevision};
-    let member = |name: &str, mod_id: u64, file_id: u64| CollectionMod {
-        name: name.to_string(),
-        mod_id,
-        file_id,
-        domain: "skyrimspecialedition".to_string(),
-        version: "2.1".to_string(),
-        file_title: format!("{name}.7z"),
-        size_in_bytes: 1024,
-        optional: false,
-    };
-    CollectionRevision {
-        slug: "rqhcxy".to_string(),
-        revision_number: 1,
-        name: "The Great Cities Collection".to_string(),
-        summary: String::new(),
-        author: "HookerHeels".to_string(),
-        game_domain: "skyrimspecialedition".to_string(),
-        download_link: "/v2/collections/335/revisions/467/download_link".to_string(),
-        mod_count: 3,
-        total_size: 3072,
-        instructions: String::new(),
-        mods: vec![
-            member("Karthwasten", 37471, 232153),
-            member("Mixwater Mill", 37414, 232146),
-            member("Shors Stone", 36462, 234034),
-        ],
-        hidden: None,
-    }
-}
-
 #[test]
 fn a_collection_member_is_matched_against_what_the_instance_already_has() {
     let rev = captured_revision();
@@ -1356,6 +1321,7 @@ fn a_collection_member_is_matched_against_what_the_instance_already_has() {
         confirm_fetch: false,
         asked: std::collections::HashSet::new(),
         walk: None,
+        ..Default::default()
     });
     recompute_collection_states(&mut app);
 
@@ -1399,6 +1365,7 @@ fn the_join_does_not_claim_more_than_it_knows() {
             confirm_fetch: false,
             asked: std::collections::HashSet::new(),
             walk: None,
+            ..Default::default()
         });
         recompute_collection_states(app);
         app.collection.as_ref().unwrap().states.clone()
@@ -1587,6 +1554,7 @@ fn collection_matching_uses_every_exact_merged_source_and_rejects_same_version_f
         confirm_fetch: false,
         asked: HashSet::new(),
         walk: None,
+        ..Default::default()
     });
     recompute_collection_states(&mut app);
     assert_eq!(
@@ -1683,6 +1651,7 @@ fn fetching_the_missing_members_takes_two_clicks() {
         confirm_fetch: false,
         asked: std::collections::HashSet::new(),
         walk: None,
+        ..Default::default()
     });
     recompute_collection_states(&mut app);
     assert!(
@@ -1729,6 +1698,7 @@ fn a_member_already_asked_for_is_not_asked_for_twice() {
         // pane would spawn the same transfers again on the next click.
         asked: all.into_iter().collect(),
         walk: None,
+        ..Default::default()
     });
     recompute_collection_states(&mut app);
 
@@ -1827,6 +1797,7 @@ fn the_walk_names_a_wrong_file_then_offers_the_install_when_the_last_one_lands()
             at: 0,
             seen: HashSet::new(),
         }),
+        ..Default::default()
     });
     let dl = app.created.as_ref().unwrap().downloads_dir();
     let land = |name: &str, file_id: u64| {
@@ -1857,6 +1828,142 @@ fn the_walk_names_a_wrong_file_then_offers_the_install_when_the_last_one_lands()
     assert!(app.collection.as_ref().unwrap().walk.is_none());
     assert_eq!(app.status, Some(tf("collection_walk_done", &[("n", &1)])));
     let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn an_empty_link_opens_browse_and_a_link_opens_the_collection() {
+    let mut app = nav_app(&[]);
+    let _ = update_inner(&mut app, Message::ShowCollection(String::new()));
+    let c = app.collection.as_ref().unwrap();
+    assert_eq!(c.pane, CollectionPane::Browse);
+    assert!(!c.browse.loading, "no instance, no request");
+    assert_eq!(
+        c.browse.result.as_ref().unwrap().as_ref().unwrap_err(),
+        t("status_open_instance_first")
+    );
+    let link = "nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest".to_string();
+    let _ = update_inner(&mut app, Message::ShowCollection(link));
+    assert_eq!(app.collection.as_ref().unwrap().pane, CollectionPane::Link);
+}
+
+#[test]
+fn picking_a_tile_loads_it_through_the_link_path() {
+    let (mut app, root) = collection_app(&[], &[]);
+    let _ = update_inner(&mut app, Message::ShowCollection(String::new()));
+    app.collection.as_mut().unwrap().browse.result =
+        Some(Ok(eidos_nexus::collections::CollectionSearch {
+            tiles: vec![browse_tile("abc123")],
+            total: 1,
+            hidden: 0,
+        }));
+    let _ = update_inner(&mut app, Message::CollectionBrowsePick(7));
+    assert_eq!(
+        app.collection.as_ref().unwrap().pane,
+        CollectionPane::Browse,
+        "out of range does nothing"
+    );
+    let _ = update_inner(&mut app, Message::CollectionBrowsePick(0));
+    let c = app.collection.as_ref().unwrap();
+    assert_eq!(c.pane, CollectionPane::Link);
+    assert_eq!(
+        c.link,
+        "nxm://skyrimspecialedition/collections/abc123/revisions/latest"
+    );
+    // CollectionFetch ran past the link parse and the game guard.
+    assert!(
+        c.loading || c.error.as_deref() == Some(t("status_connect_nexus_first_short")),
+        "{:?}",
+        c.error
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_browse_answer_for_another_query_sort_or_instance_is_dropped() {
+    use eidos_nexus::collections::{CollectionSearch, CollectionSort};
+    let (mut app, root) = collection_app(&[], &[]);
+    let _ = update_inner(&mut app, Message::ShowCollection(String::new()));
+    app.collection.as_mut().unwrap().browse.result = None;
+    let reply = |instance: PathBuf, query: &str, sort| Message::CollectionBrowseFetched {
+        instance,
+        query: query.into(),
+        sort,
+        result: Ok(CollectionSearch {
+            tiles: vec![browse_tile("abc123")],
+            total: 1,
+            hidden: 0,
+        }),
+    };
+    let _ = update_inner(
+        &mut app,
+        reply(root.join("other"), "", CollectionSort::Downloads),
+    );
+    let _ = update_inner(
+        &mut app,
+        reply(root.clone(), "cities", CollectionSort::Downloads),
+    );
+    let _ = update_inner(&mut app, reply(root.clone(), "", CollectionSort::Updated));
+    assert!(app.collection.as_ref().unwrap().browse.result.is_none());
+    let _ = update_inner(&mut app, reply(root.clone(), "", CollectionSort::Downloads));
+    assert!(
+        matches!(&app.collection.as_ref().unwrap().browse.result, Some(Ok(s)) if s.tiles.len() == 1)
+    );
+    assert!(is_ambient(
+        &app,
+        &reply(root.clone(), "", CollectionSort::Downloads)
+    ));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn only_a_failed_nexus_answer_says_nexus_did_not_send_the_list() {
+    use eidos_nexus::collections::CollectionSort;
+    let (mut app, root) = collection_app(&[], &[]);
+    let error = |app: &App| {
+        app.collection
+            .as_ref()
+            .unwrap()
+            .browse
+            .result
+            .as_ref()
+            .unwrap()
+            .clone()
+            .unwrap_err()
+    };
+    // No account in the scratch env: nothing was sent, so nothing failed.
+    let _ = update_inner(&mut app, Message::ShowCollection(String::new()));
+    assert_eq!(error(&app), t("status_connect_nexus_first_short"));
+    let _ = update_inner(
+        &mut app,
+        Message::CollectionBrowseFetched {
+            instance: root.clone(),
+            query: String::new(),
+            sort: CollectionSort::Downloads,
+            result: Err("Nexus answered 500".into()),
+        },
+    );
+    assert_eq!(
+        error(&app),
+        tf(
+            "collection_browse_failed",
+            &[("error", &"Nexus answered 500")]
+        )
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn typing_a_query_releases_a_search_in_flight() {
+    let mut app = nav_app(&[]);
+    let _ = update_inner(&mut app, Message::ShowCollection(String::new()));
+    app.collection.as_mut().unwrap().browse.loading = true;
+    let _ = update_inner(
+        &mut app,
+        Message::CollectionBrowseQueryChanged("cit".into()),
+    );
+    let c = app.collection.as_ref().unwrap();
+    assert!(!c.browse.loading);
+    assert_eq!(c.browse.query, "cit");
 }
 
 #[test]
@@ -4424,6 +4531,7 @@ fn collection_runtime_mismatch_requires_a_current_explicit_continuation() {
         confirm_fetch: false,
         asked: Default::default(),
         walk: None,
+        ..Default::default()
     });
     let mismatch = eidos_collections::recipe::RuntimeCheck::Mismatch {
         observed: "1.7.104.0".into(),
@@ -8468,6 +8576,7 @@ fn a_collection_walk_notifies_once_when_it_ends() {
             at: 0,
             seen: HashSet::new(),
         }),
+        ..Default::default()
     });
     app.prefs.notify_when_away = true;
     app.focused = false;
@@ -8561,6 +8670,159 @@ fn move_mod_below_acts_by_name_and_ignores_a_stale_card() {
     let _ = update_inner(&mut app, mv("Patch", "Master"));
     let _ = update_inner(&mut app, mv("Gone", "Other"));
     assert_eq!(names(&app.mods), ["Other", "Master", "Patch"]);
+    let _ = fs::remove_dir_all(root);
+}
+
+/// A cached recipe and install state for `slug` revision 1: `members` are
+/// (name, mod id, file id), each installed as a folder of its own name.
+fn write_ruled(root: &Path, slug: &str, members: &[(&str, u64, u64)], before: &[(&str, &str)]) {
+    use eidos_collections::state::{self, InstallState, Status};
+    let mods: Vec<serde_json::Value> = members
+        .iter()
+        .map(|(n, m, f)| {
+            serde_json::json!({"name": n, "source": {"type": "nexus", "modId": m, "fileId": f}})
+        })
+        .collect();
+    let rules: Vec<serde_json::Value> = before
+        .iter()
+        .map(|(a, b)| {
+            serde_json::json!({"source": {"fileExpression": a}, "type": "before", "reference": {"fileExpression": b}})
+        })
+        .collect();
+    let text = serde_json::json!({
+        "info": {"name": "Cities", "domainName": "skyrimspecialedition"},
+        "mods": mods,
+        "modRules": rules,
+    })
+    .to_string();
+    let dir = state::revision_dir(root, slug, 1);
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("collection.json"), &text).unwrap();
+    let md5 = eidos_nexus::md5_file(&dir.join("collection.json")).unwrap();
+    fs::write(dir.with_extension("payload-complete"), md5).unwrap();
+    let mut st = InstallState {
+        slug: slug.to_string(),
+        revision: 1,
+        game_domain: "skyrimspecialedition".to_string(),
+        ..InstallState::default()
+    };
+    for m in &eidos_collections::read(&text).unwrap().collection.mods {
+        st.set(
+            &state::key_for(m, "skyrimspecialedition"),
+            Status::Installed(m.name.clone()),
+        );
+    }
+    st.save(&InstallState::path(root, slug, 1)).unwrap();
+}
+
+#[test]
+fn a_broken_collection_order_gets_a_last_card_and_restore_puts_it_back() {
+    // history_app saves the list and reloads it, so the history has its baseline.
+    let (mut app, root) = history_app(&["B", "Mine", "A"]);
+    write_ruled(
+        &root,
+        "abc123",
+        &[("A", 1, 10), ("B", 2, 20)],
+        &[("A", "B")],
+    );
+    let restore = |m: &Message| matches!(m, Message::RestoreCollectionOrder(s) if s == "abc123");
+    let cards = crate::modinfo::diagnostics(&app);
+    let last = cards.last().expect("cards");
+    assert!(
+        last.actions.iter().any(|(_, m)| restore(m)),
+        "the card is last: {}",
+        last.title
+    );
+    assert!(last.title.contains("Cities"), "{}", last.title);
+    let _ = update(&mut app, Message::RestoreCollectionOrder("abc123".into()));
+    assert_eq!(names(&app.mods), ["A", "Mine", "B"]);
+    assert_eq!(
+        app.status,
+        Some(tf(
+            "status_collection_order_restored",
+            &[("n", &2), ("collection", &"Cities")]
+        ))
+    );
+    let on_disk: Vec<String> = app
+        .created
+        .as_ref()
+        .unwrap()
+        .modlist()
+        .into_iter()
+        .map(|m| m.name)
+        .collect();
+    assert_eq!(on_disk, ["A", "Mine", "B"]);
+    assert!(crate::modinfo::diagnostics(&app)
+        .iter()
+        .all(|d| !d.actions.iter().any(|(_, m)| restore(m))));
+    // A second press finds nothing to move and records no step, so one Undo
+    // still takes the list back.
+    let _ = update(&mut app, Message::RestoreCollectionOrder("abc123".into()));
+    assert_eq!(
+        app.status,
+        Some(tf(
+            "status_collection_order_unchanged",
+            &[("collection", &"Cities")]
+        ))
+    );
+    let _ = update(&mut app, Message::Undo);
+    assert_eq!(names(&app.mods), ["B", "Mine", "A"]);
+    // The rules are kept between refreshes, and read again once the recipe goes.
+    assert!(crate::modinfo::diagnostics(&app)
+        .iter()
+        .any(|d| d.actions.iter().any(|(_, m)| restore(m))));
+    fs::remove_file(
+        eidos_collections::state::revision_dir(&root, "abc123", 1).join("collection.json"),
+    )
+    .unwrap();
+    assert!(crate::modinfo::diagnostics(&app)
+        .iter()
+        .all(|d| !d.actions.iter().any(|(_, m)| restore(m))));
+    let _ = update(&mut app, Message::RestoreCollectionOrder("gone".into()));
+    assert_eq!(
+        app.status,
+        Some(tf(
+            "status_collection_order_unreadable",
+            &[("collection", &"gone")]
+        ))
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn opening_the_nexus_page_asks_once_and_keeps_only_the_awaited_answer() {
+    let (mut app, root) = collection_app(&[("Sky UI", 3863)], &[]);
+    app.info_mod = Some(0);
+    let key = ("skyrimspecialedition".to_string(), 3863u64);
+    let _ = update_inner(&mut app, Message::InfoSelectTab(InfoTab::NexusPage));
+    assert_eq!(app.nexus_page_loading.as_ref(), Some(&key));
+    let page = eidos_nexus::ModPage {
+        description: "Text".into(),
+        ..Default::default()
+    };
+    let reply = |mod_id| Message::NexusPageFetched {
+        domain: key.0.clone(),
+        mod_id,
+        result: Ok(page.clone()),
+    };
+    assert!(is_ambient(&app, &reply(3863)));
+    let _ = update_inner(&mut app, reply(99));
+    assert!(
+        app.nexus_pages.is_empty(),
+        "an answer nobody waits for is dropped"
+    );
+    let _ = update_inner(&mut app, reply(3863));
+    assert_eq!(app.nexus_pages.get(&key), Some(&Ok(page.clone())));
+    assert!(app.nexus_page_loading.is_none());
+    let _ = update_inner(&mut app, Message::InfoSelectTab(InfoTab::General));
+    let _ = update_inner(&mut app, Message::InfoSelectTab(InfoTab::NexusPage));
+    assert!(
+        app.nexus_page_loading.is_none(),
+        "the cached page is reused"
+    );
+    let _ = update_inner(&mut app, Message::NexusPageRefresh);
+    assert_eq!(app.nexus_page_loading.as_ref(), Some(&key));
+    assert!(!app.nexus_pages.contains_key(&key));
     let _ = fs::remove_dir_all(root);
 }
 

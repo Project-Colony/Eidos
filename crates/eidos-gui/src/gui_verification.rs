@@ -1047,18 +1047,50 @@ fn executables_flags_fit_on_their_lines() {
     let _ = fs::remove_dir_all(root);
 }
 
-/// The Nexus files tab of the 660 px mod info card: every file keeps its Open
-/// button, the successor its Update button, each whole on one line and inside
-/// the card. Fixed columns used to take 560 px before the buttons, which iced
-/// then squeezed or cut off.
+/// The Last update section closes the General tab: every row the tab had keeps
+/// its place when a report exists.
 #[test]
-fn nexus_file_buttons_fit_inside_the_mod_info_card() {
+fn the_last_update_section_closes_the_general_tab() {
     let _look = crate::test_support::look_lock();
     let (_dir, mut app, _archive) = installers::tests::fixture();
     let folder = app.created.as_ref().unwrap().mods_dir().join("Sky UI");
     fs::create_dir_all(&folder).unwrap();
+    app.mods = vec![ModEntry {
+        name: "Sky UI".into(),
+        enabled: true,
+        path: folder,
+        unmanaged: false,
+    }];
+    app.info_mod = Some(0);
+    app.info_tab = InfoTab::General;
+    let mut renderer = renderer();
+    let before = positions(crate::modinfo::mod_info_dialog(&app, 0), &mut renderer).labels;
+    app.info_update = Some((
+        eidos_instance::UpdateReport {
+            added: vec!["a.esp".into(), "b.dds".into()],
+            ..Default::default()
+        },
+        Default::default(),
+    ));
+    let after = positions(crate::modinfo::mod_info_dialog(&app, 0), &mut renderer).labels;
+    for (text, bounds) in &before {
+        assert!(
+            after.iter().any(|(t, b)| t == text && b.y == bounds.y),
+            "{text} moved"
+        );
+    }
+    let added = tf("info_update_files_added", &[("n", &2)]);
+    assert!(after.iter().any(|(t, _)| *t == added), "{after:?}");
+}
+
+/// The fixture's only mod: `Sky UI`, Nexus mod 3863 on the fixture's game.
+/// Returns its `meta.ini`.
+fn sky_ui_mod(app: &mut App) -> PathBuf {
+    let folder = app.created.as_ref().unwrap().mods_dir().join("Sky UI");
+    fs::create_dir_all(&folder).unwrap();
+    let meta = folder.join("meta.ini");
     fs::write(
-        folder.join("meta.ini"),
+        &meta,
         "[General]\nmodid=3863\nversion=5.1\n[installedFiles]\n1\\modid=3863\n1\\fileid=101\nsize=1\n",
     )
     .unwrap();
@@ -1068,6 +1100,18 @@ fn nexus_file_buttons_fit_inside_the_mod_info_card() {
         path: folder,
         unmanaged: false,
     }];
+    meta
+}
+
+/// The Nexus files tab of the 660 px mod info card: every file keeps its Open
+/// button, the successor its Update button, each whole on one line and inside
+/// the card. Fixed columns used to take 560 px before the buttons, which iced
+/// then squeezed or cut off.
+#[test]
+fn nexus_file_buttons_fit_inside_the_mod_info_card() {
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    sky_ui_mod(&mut app);
     let file = |file_id, category_id, name: &str, version: &str| eidos_nexus::NexusFile {
         file_id,
         name: name.into(),
@@ -1113,6 +1157,143 @@ fn nexus_file_buttons_fit_inside_the_mod_info_card() {
         assert!(b.x + b.width <= 660.0 - 16.0, "past the card: {b:?}");
         assert!(b.height < line * 1.5, "wrapped: {b:?}");
     }
+}
+
+/// The Track and Refresh slots keep their place whether the mod is endorsed
+/// or tracked, in English and French, and every label fits its slot.
+#[test]
+fn the_nexus_page_buttons_keep_their_places_in_english_and_french() {
+    use colony_ui::i18n::Locale;
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    let meta = sky_ui_mod(&mut app);
+    let key = crate::modinfo::nexus_files_target(&app, 0).unwrap();
+    app.nexus_pages.insert(
+        key,
+        Ok(eidos_nexus::ModPage {
+            description: "Text".into(),
+            ..Default::default()
+        }),
+    );
+    app.info_mod = Some(0);
+    app.info_tab = InfoTab::NexusPage;
+    let mut renderer = renderer();
+    for locale in [Locale::En, Locale::Fr] {
+        // A slot clips its label, so the label drawn there never reports more
+        // than the slot: measure it alone and add the button's 6 px padding.
+        for (keys, width) in [
+            (
+                &["nexus_page_endorse", "nexus_page_abstain"][..],
+                PAGE_ENDORSE_W,
+            ),
+            (&["nexus_page_track", "nexus_page_untrack"], PAGE_TRACK_W),
+            (&["nexus_page_refresh"], PAGE_REFRESH_W),
+        ] {
+            for key in keys {
+                let alone = positions(
+                    crate::theme::text(crate::i18n::t_in(locale, key))
+                        .size(colony_ui::sz(12))
+                        .into(),
+                    &mut renderer,
+                )
+                .labels[0]
+                    .1
+                    .width;
+                assert!(
+                    alone + 12.0 <= crate::theme::scaled(width),
+                    "{locale:?} {key}: {alone} px"
+                );
+            }
+        }
+        let mut slots = Vec::new();
+        for flags in ["endorsed=0\ntracked=0\n", "endorsed=1\ntracked=1\n"] {
+            fs::write(&meta, format!("[General]\nmodid=3863\n{flags}")).unwrap();
+            let labels = crate::i18n::with_locale(locale, || {
+                positions(crate::modinfo::mod_info_dialog(&app, 0), &mut renderer).labels
+            });
+            let at = |key: &str| {
+                let s = crate::i18n::t_in(locale, key);
+                labels.iter().find(|(t, _)| t == s).map(|(_, b)| *b)
+            };
+            let track = at("nexus_page_track")
+                .or_else(|| at("nexus_page_untrack"))
+                .unwrap();
+            let refresh = at("nexus_page_refresh").unwrap();
+            slots.push((track.x, refresh.x));
+        }
+        assert_eq!(
+            slots[0], slots[1],
+            "{locale:?}: a flag change moved a button"
+        );
+    }
+}
+
+/// Seven tabs, Nexus page last, fit the 660 px card in English and French,
+/// each at the width of its label drawn alone.
+#[test]
+fn every_mod_info_tab_fits_the_card_in_english_and_french() {
+    use colony_ui::i18n::Locale;
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    sky_ui_mod(&mut app);
+    app.info_mod = Some(0);
+    let mut renderer = renderer();
+    for locale in [Locale::En, Locale::Fr] {
+        let labels = crate::i18n::with_locale(locale, || {
+            positions(crate::modinfo::mod_info_dialog(&app, 0), &mut renderer).labels
+        });
+        for key in [
+            "info_tab_general",
+            "info_tab_conflicts",
+            "info_tab_filetree",
+            "info_tab_ini_tweaks",
+            "info_tab_notes",
+            "info_tab_nexus_files",
+            "info_tab_nexus_page",
+        ] {
+            let s = crate::i18n::t_in(locale, key);
+            let tab = labels
+                .iter()
+                .find(|(t, _)| t == s)
+                .unwrap_or_else(|| panic!("{locale:?}: no {key} tab in {labels:?}"))
+                .1;
+            // The row squeezes a tab that does not fit, and its label wraps
+            // or is cut inside the card: it is then narrower than alone.
+            let alone = positions(
+                crate::theme::text(s).size(colony_ui::sz(12)).into(),
+                &mut renderer,
+            )
+            .labels[0]
+                .1
+                .width;
+            assert!(
+                (tab.width - alone).abs() < 0.5 && tab.x + tab.width <= 660.0 - 16.0,
+                "{locale:?} {key}: {tab:?}, {alone} px alone"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_withheld_nexus_page_shows_the_reason_only() {
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    sky_ui_mod(&mut app);
+    let key = crate::modinfo::nexus_files_target(&app, 0).unwrap();
+    app.nexus_pages.insert(
+        key,
+        Ok(eidos_nexus::ModPage {
+            hidden: Some(eidos_nexus::HiddenReason::AdultDenied),
+            ..Default::default()
+        }),
+    );
+    app.info_mod = Some(0);
+    app.info_tab = InfoTab::NexusPage;
+    let labels = positions(crate::modinfo::mod_info_dialog(&app, 0), &mut renderer()).labels;
+    assert!(labels
+        .iter()
+        .any(|(s, _)| s == eidos_nexus::HiddenReason::AdultDenied.message()));
+    assert!(!labels.iter().any(|(s, _)| s == t("nexus_page_description")));
 }
 
 /// Collection notices arrive seconds after Check for updates, maybe while the
@@ -1604,6 +1785,128 @@ fn the_prefix_rows_keep_their_place_without_a_prefix() {
     }
     let _ = fs::remove_dir_all(root_with);
     let _ = fs::remove_dir_all(root_without);
+}
+
+/// The Browse list area and its footer keep one height whatever they hold,
+/// so the explainer under them never moves while results load or fail.
+#[test]
+fn the_browse_results_keep_one_height_while_loading_failing_and_listing() {
+    use eidos_nexus::collections::CollectionSearch;
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    let mut state = CollectionState {
+        pane: CollectionPane::Browse,
+        ..Default::default()
+    };
+    let mut y = |s: &CollectionState| {
+        label(
+            collection_dialog(s, false),
+            &mut renderer,
+            t("collection_explainer"),
+            0,
+        )
+        .y
+    };
+    state.browse.loading = true;
+    let loading = y(&state);
+    state.browse.loading = false;
+    state.browse.result = Some(Err("Nexus answered 500".into()));
+    assert_eq!(y(&state), loading, "error");
+    state.browse.result = Some(Ok(CollectionSearch::default()));
+    assert_eq!(y(&state), loading, "empty");
+    let tiles = (0..20)
+        .map(|i| crate::test_support::browse_tile(&format!("s{i:05}")))
+        .collect();
+    state.browse.result = Some(Ok(CollectionSearch {
+        tiles,
+        total: 4933,
+        hidden: 3,
+    }));
+    assert_eq!(y(&state), loading, "twenty tiles and a hidden count");
+}
+
+/// The Browse footer with a hidden count fits its two-line slot at every text
+/// size, in English and French. The slot clips, so the text is measured alone
+/// at the card's inner width: 720 px less 18 px padding on each side.
+#[test]
+fn the_browse_footer_and_its_hidden_count_fit_two_lines_at_every_text_size() {
+    use colony_ui::i18n::Locale;
+    use colony_ui::typography::{FontSize, TextSize};
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    for (font, size) in [
+        (FontSize::Default, TextSize::Default),
+        (FontSize::Small, TextSize::Small),
+        (FontSize::Small, TextSize::Default),
+        (FontSize::Large, TextSize::XLarge),
+    ] {
+        let mut look = crate::preferences::UiPreferences::default();
+        look.standard.font_size = font;
+        look.standard.text_size_a11y = size;
+        look.standard.apply();
+        for locale in [Locale::En, Locale::Fr] {
+            let footer = crate::i18n::with_locale(locale, || {
+                tf(
+                    "collection_browse_footer",
+                    &[("shown", &20), ("total", &99999)],
+                ) + &tf("collection_browse_hidden", &[("n", &999)])
+            });
+            let drawn = positions_in(
+                iced::widget::container(crate::theme::text(footer).size(colony_ui::sz(10)))
+                    .width(iced::Length::Fill)
+                    .into(),
+                &mut renderer,
+                Size::new(720.0 - 2.0 * 18.0, 800.0),
+            )
+            .labels[0]
+                .1;
+            assert!(
+                drawn.height <= crate::theme::scaled(BROWSE_FOOT_H),
+                "{font:?} x {size:?} {locale:?}: {drawn:?}"
+            );
+        }
+    }
+}
+
+/// A Browse error is drawn in the words the handler gave it, so a missing
+/// account never reads as an answer Nexus failed to send.
+#[test]
+fn a_browse_guard_is_drawn_in_its_own_words() {
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    let mut state = CollectionState {
+        pane: CollectionPane::Browse,
+        ..Default::default()
+    };
+    let guard = t("status_connect_nexus_first_short");
+    state.browse.result = Some(Err(guard.into()));
+    let _ = label(collection_dialog(&state, false), &mut renderer, guard, 0);
+}
+
+/// Browse and Link differ in height by hundreds of pixels, and a revision adds
+/// more. The overlay hangs the card from a fixed top, so the pane buttons stay
+/// under the pointer when either is pressed and when a revision arrives.
+#[test]
+fn the_collection_pane_buttons_stay_put_across_panes_and_a_loaded_revision() {
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    let mut y = |s: &CollectionState| {
+        label(
+            collection_overlay(s, false),
+            &mut renderer,
+            t("collection_pane_link"),
+            0,
+        )
+        .y
+    };
+    let browse = y(&CollectionState {
+        pane: CollectionPane::Browse,
+        ..Default::default()
+    });
+    let mut link = CollectionState::default();
+    assert_eq!(y(&link), browse, "empty Link pane");
+    link.revision = Some(crate::test_support::captured_revision());
+    assert_eq!(y(&link), browse, "Link pane with a revision");
 }
 
 /// The note under the INI editor sits in one slot, so the Save row stays put

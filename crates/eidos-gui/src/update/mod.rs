@@ -1131,6 +1131,7 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         | Message::NxmHandlerRead(..)
         | Message::NxmRegistered(..)
         | Message::NexusFilesFetched { .. }
+        | Message::NexusPageFetched { .. }
         | Message::RequirementsRefreshed(..)
         | Message::CollectionRevisionsChecked(..)
         | Message::RequirementFilePicked { .. }
@@ -1138,6 +1139,7 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         | Message::DataTreeSaved(..)
         | Message::ArchiveExtracted(..)
         | Message::CollectionInstallChecked { .. }
+        | Message::CollectionBrowseFetched { .. }
         // And the hover-to-expand timer, which fires only while a drag rests on
         // a collapsed group. Same reason: the program watching a pointer sit
         // still is not the user deciding anything.
@@ -1636,6 +1638,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::ModTrack(..)
         | Message::ModTracked(..)
         | Message::NexusFilesFetched { .. }
+        | Message::NexusPageFetched { .. }
+        | Message::NexusPageRefresh
         | Message::NexusUpdate { .. }
         | Message::CheckUpdates
         | Message::UpdatesChecked { .. }
@@ -1654,6 +1658,13 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::CollectionWalkStart
         | Message::CollectionWalkSkip
         | Message::CollectionWalkStop
+        | Message::CollectionPaneSelected(..)
+        | Message::CollectionBrowseQueryChanged(..)
+        | Message::CollectionBrowseSortChanged(..)
+        | Message::CollectionBrowseSearch
+        | Message::CollectionBrowseFetched { .. }
+        | Message::CollectionBrowsePick(..)
+        | Message::RestoreCollectionOrder(..)
         | Message::CollectionInstall
         | Message::CollectionInstallChecked { .. }) => nexus::handle(app, m),
         m @ (Message::ShowCategoriesDialog(..)

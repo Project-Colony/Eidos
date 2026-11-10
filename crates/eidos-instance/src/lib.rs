@@ -39,6 +39,7 @@ mod sessions;
 pub mod settings;
 mod test_run;
 mod tools;
+mod update_report;
 pub use bisect::*;
 pub use categories::{
     format_categories, parse_all, parse_primary, Category, CategoryFactory, NexusCategory,
@@ -68,6 +69,7 @@ pub use tools::{
     root_executable, root_executable_source, tool_for_exe, tool_search_roots, write_tools,
     GameExecutables, Runner, Tool, PREFIX_TOOLS,
 };
+pub use update_report::*;
 
 /// The files a root-mode game reads beside its executable that the profile owns:
 /// a Root capture leaves them in the profile's `runtime-root` instead of moving

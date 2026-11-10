@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=039b6ffd055eabf9e9c4c8978bbc3e47ad68e45c -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=d9e26a15d52ab549773ed61d97c7ecf36fea8342 -->
 
 # Používání Eidosu
 
@@ -665,6 +665,29 @@ nainstalován, a potom dotaz nabídne Replace se zaškrtnutým „Keep a backup 
 existing mod", ať jste při minulém dotazu zvolili cokoli. Replace zachová
 prioritu módu i to, zda je zapnutý.
 
+Karta **Nexus page** vedle ní ukazuje popis módu a, od nejnovější, seznam změn
+každé verze souboru na jeho stránce. Eidos obojí načte z GraphQL API Nexusu,
+které se nezapočítává do hodinového limitu požadavků, při prvním otevření karty
+a ponechá si to, dokud Eidos nezavřete nebo nestisknete **Refresh**. Obojí se
+zobrazuje jako prostý text: formátování BBCode a HTML je odstraněno, adresa
+odkazu je napsána za jeho textem a obrázky a videa jsou vynechány. **Endorse** a
+**Track** nad textem dělají totéž co nabídka pravého tlačítka módu. Stránka módu
+pro dospělé zůstane skrytá, pokud váš účet na Nexusu nezobrazuje obsah pro
+dospělé, a stránka bez hodnocení zůstane skrytá vždy.
+
+Než Replace vymění složku módu, Eidos porovná starou složku s novou podle názvů
+a velikostí souborů a přečte hlavičky pluginů v obou. Týká se to Update,
+aktualizace kolekce i Replace zvoleného v dotazu při instalaci. Stavový řádek
+pak spočítá přidané, odebrané a ve velikosti změněné soubory a jmenuje každý
+master, který nová verze potřebuje a stará ne. Karta **General** v
+„Information..." končí sekcí **Last update**, která uvádí verze, přidané nebo
+odebrané pluginy, přidané nebo zrušené mastery, pluginy se změněným příznakem
+ESM, ESL nebo ESH, módy, s nimiž tento mód nově sdílí soubory nebo je už
+nesdílí, a soubory. Soubor přepsaný se stejnou velikostí se neuvádí. Hlášení je
+uloženo v `logs/updates/<mod>.json` v instanci, kterou `eidos pack` vynechává;
+čerstvá instalace nebo Merge do složky ho smaže. `eidos install --replace`
+vypíše stejné počty na řádku `changes:`.
+
 Složka, která obsahuje několik souborů z Nexusu, třeba hlavní soubor s
 přimíchaným volitelným souborem, je odmítnuta: nahrazení novým hlavním souborem
 by ostatní ztratilo. Aktualizujte je ručně.
@@ -690,12 +713,16 @@ se po dokončení stane zpráva. Všechno výše o tom, co se použije a co se j
 pojmenuje, platí i tady slovo od slova: okno a `eidos collection` jsou jeden
 motor se dvěma rozhraními.
 
+Bez odkazu se **File -> Open a Nexus collection...** otevře na kartě **Browse**. Ta vypíše kolekce zveřejněné pro hru otevřené instance, po 20, seřazené podle počtu stažení, poslední aktualizace nebo od nejnovějších, a vyhledávací pole zúží seznam na kolekce, jejichž název nebo text odpovídá. Každý řádek uvádí autora, nejnovější revizi, počet modů, počet stažení a datum. **View** otevře nejnovější revizi dané kolekce na kartě **Link**, stejně jako vložení jejího odkazu. Kolekce označené jako obsah pro dospělé se vynechají, pokud váš účet Nexus obsah pro dospělé nezobrazuje, kolekce bez hodnocení se vynechají vždy a řádek pod seznamem počítá obojí. Procházení vyžaduje přihlášený účet Nexus, stejně jako zbytek panelu.
+
 Kolekci lze číst jen proti **její vlastní hře**. Otevřete kolekci pro Skyrim
 s načtenou instancí Fallout 4 a Eidos ji jmenovitě odmítne, místo aby členy
 spároval s nesprávným seznamem módů, kde by každé „nainstalovaný" a každé
 „chybějící" byl šum ve tvaru odpovědi.
 
 Když spustíte Zkontrolovat aktualizace, Eidos se také zeptá Nexusu na nejnovější revizi každé kolekce nainstalované v této instanci. Řádek nad seznamem modů uvádí každou kolekci s novější revizí a počty přidaných (+), aktualizovaných (~) a vyřazených (-) modů; jejich jména se zobrazí po najetí myší. Počty chybí, když recept nainstalované revize už není v mezipaměti. **Aktualizovat** otevře novější revizi v panelu kolekce, kde ji spustí *Install this collection*. Seznam se při každé kontrole sestaví znovu a neukládá se.
+
+Eidos si pravidla každé nainstalované kolekce ponechává i po instalaci. Když pozdější přetažení postaví dva její mody proti pravidlu pořadí (před nebo po), karta **Diagnostics** ukáže pro tuto kolekci jednu kartu, která uvede první takovou dvojici a spočítá pravidla, která už neplatí. Počítají se jen mody zapnuté v aktuálním profilu a pravidla zachycená ve smyčce se přeskakují, protože je žádné pořadí nemůže splnit. **Restore collection order** vrátí mody kolekce do pořadí, které splňuje každé pravidlo, zachová vaše vlastní pořadí všude, kde to pravidla dovolí, a mody, které do kolekce nepatří, nechá na místě. Ctrl+Z to vrátí zpět. `eidos check` hlásí totéž zjištění jako `collection_order_broken`. Kontrola potřebuje recept revize v `collections/`, takže kolekce, jejíž recept byl z mezipaměti odstraněn, se nekontroluje.
 
 ### Režim offline
 

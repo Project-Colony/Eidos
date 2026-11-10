@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=039b6ffd055eabf9e9c4c8978bbc3e47ad68e45c -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=d9e26a15d52ab549773ed61d97c7ecf36fea8342 -->
 
 # Eidos gebruiken
 
@@ -714,6 +714,32 @@ waarmee de mod geïnstalleerd werd, daarna biedt de vraag Replace aan met "Keep 
 backup of the existing mod" aangevinkt, wat je bij de vorige vraag ook koos.
 Replace behoudt de prioriteit van de mod en of hij aanstaat.
 
+Het tabblad **Nexus page** ernaast toont de beschrijving van de mod en, nieuwste
+eerst, de changelog van elke bestandsversie op de pagina. Eidos leest beide uit
+de GraphQL-API van Nexus, die niet meetelt voor het verzoekenbudget per uur, de
+eerste keer dat je het tabblad opent, en bewaart ze tot Eidos sluit of je op
+**Refresh** drukt. Ze worden getoond als platte tekst: BBCode- en HTML-opmaak
+wordt verwijderd, het adres van een link staat achter de tekst ervan, en
+afbeeldingen en video's worden weggelaten. **Endorse** en **Track** boven de
+tekst doen wat het rechtermuismenu van de mod doet. De pagina van een mod voor
+volwassenen blijft verborgen tenzij je Nexus-account inhoud voor volwassenen
+toont, en een pagina zonder classificatie blijft altijd verborgen.
+
+Voordat een Replace de map van een mod verwisselt, vergelijkt Eidos de oude map
+met de nieuwe op bestandsnaam en grootte en leest het de headers van de plugins
+in beide. Dit geldt voor Update, voor een collectie-update en voor Replace
+gekozen in de installatievraag. De statusregel telt daarna de toegevoegde,
+verwijderde en in grootte gewijzigde bestanden en noemt elke master die de
+nieuwe versie nodig heeft en de oude niet. Het tabblad **General** van
+"Information..." eindigt met een sectie **Last update** met de versies, de
+toegevoegde of verwijderde plugins, de toegevoegde of vervallen masters, de
+plugins waarvan de ESM-, ESL- of ESH-vlag veranderde, de mods waarmee deze nu
+bestanden deelt of niet meer deelt, en de bestanden. Een bestand dat met
+dezelfde grootte is herschreven, staat er niet in. Het rapport staat in
+`logs/updates/<mod>.json` in de instantie, die `eidos pack` weglaat; een verse
+installatie of een Merge in de map verwijdert het. `eidos install --replace`
+toont dezelfde aantallen op een regel `changes:`.
+
 Een map met meerdere Nexus-bestanden, zoals een hoofdbestand met een optioneel
 bestand erin samengevoegd, wordt geweigerd: hem vervangen door het nieuwe
 hoofdbestand zou de andere kwijtraken. Werk die met de hand bij.
@@ -740,12 +766,16 @@ en de balk wordt het verslag zodra de run klaar is. Alles hierboven over wat er
 toegepast wordt en wat er alleen benoemd wordt, geldt hier woord voor woord: het
 venster en `eidos collection` zijn één motor met twee front-ends.
 
+Zonder link opent **File -> Open a Nexus collection...** op het tabblad **Browse**. Dat toont de collecties die voor het spel van de geopende instantie zijn gepubliceerd, 20 tegelijk, op meeste downloads, laatste update of nieuwste, en het zoekveld beperkt de lijst tot collecties waarvan de naam of tekst overeenkomt. Elke rij geeft de auteur, de nieuwste revisie, het aantal mods, de downloads en een datum. **View** opent de nieuwste revisie van die collectie op het tabblad **Link**, net als het plakken van haar link. Collecties die als inhoud voor volwassenen zijn gemarkeerd, worden weggelaten tenzij uw Nexus-account inhoud voor volwassenen toont, collecties zonder classificatie worden altijd weggelaten, en de regel onder de lijst telt beide. Bladeren vereist een aangemeld Nexus-account, net als de rest van het paneel.
+
 Een collectie kan alleen tegen **haar eigen spel** gelezen worden. Open een
 Skyrim-collectie met een Fallout 4-instantie geladen en het weigert met naam en
 toenaam in plaats van de leden aan de verkeerde modlijst te koppelen, waar elke
 "installed" en elke "missing" ruis zou zijn in de vorm van een antwoord.
 
 Als u op updates controleert, vraagt Eidos Nexus ook om de nieuwste revisie van elke collectie die in deze instantie is geïnstalleerd. Een regel boven de modlijst noemt elke collectie met een nieuwere revisie en telt de toegevoegde (+), bijgewerkte (~) en vervallen (-) mods; houd de muis erboven voor de namen. De aantallen ontbreken als het recept van de geïnstalleerde revisie niet meer in de cache staat. **Bijwerken** opent de nieuwere revisie in het collectiepaneel, waar *Install this collection* hem uitvoert. De lijst wordt bij elke controle opnieuw opgebouwd en niet bewaard.
+
+Eidos bewaart de regels van elke geïnstalleerde collectie na de installatie. Als een latere sleepactie twee van haar mods tegen een volgorderegel (voor of na) in plaatst, toont het tabblad **Diagnostics** één kaart voor die collectie, die het eerste zulke paar noemt en de regels telt die niet meer kloppen. Alleen mods die in het huidige profiel zijn ingeschakeld tellen mee, en regels die in een lus zitten worden overgeslagen, omdat geen volgorde ze kan naleven. **Restore collection order** zet de mods van de collectie terug in een volgorde die elke regel naleeft, houdt uw eigen volgorde aan waar de regels dat toelaten en laat de mods die niet bij de collectie horen op hun plaats. Ctrl+Z maakt het ongedaan. `eidos check` meldt dezelfde bevinding als `collection_order_broken`. De controle heeft het recept van de revisie in `collections/` nodig, dus een collectie waarvan het recept uit de cache is verwijderd, wordt niet gecontroleerd.
 
 ### Offlinemodus
 

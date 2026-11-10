@@ -3,6 +3,7 @@
 //! CLI prints the code and its args.
 
 pub mod bodyslide;
+pub mod collections;
 pub mod crash;
 pub mod display;
 pub mod extender;
@@ -89,6 +90,7 @@ pub const CODES: &[&str] = &[
     "windows_filesystem",
     "bodyslide_data_path",
     "overwrite_root_data",
+    "collection_order_broken",
 ];
 
 /// The instance's enabled mods, highest priority first. Unmanaged rows (DLC,
@@ -532,6 +534,7 @@ fn check_findings(
     }
     let mods = active_mods(inst);
     out.extend(host_findings(home, game, inst, &mods));
+    out.extend(collections::collection_order_findings(&inst.root, &mods));
     let overwrite = inst.overwrite_dir();
     let preflight = scan_extender_plugins(
         game.def,

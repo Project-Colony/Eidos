@@ -1,0 +1,7 @@
+{"data":{"modFiles":[
+  {"version":"1.0","date":1000,"changelogText":[]},
+  {"version":"1.1","date":2000,"changelogText":["First fix."]},
+  {"version":"2.0","date":3000,"changelogText":["Fixed the crash on load.","Added <b>Dawnguard</b> support."]},
+  {"version":"2.0","date":2500,"changelogText":["An older note for the same version."]},
+  {"version":"","date":4000,"changelogText":["No version."]}
+]}}

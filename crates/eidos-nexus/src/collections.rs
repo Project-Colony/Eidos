@@ -37,7 +37,7 @@ use crate::{AdultPolicy, HiddenReason, NxmCollection};
 /// `"totalSize": "22342118"` - and `Value::as_u64` only matches
 /// `Value::Number`, so every size this crate reported was 0. Nothing asserted
 /// on the field, so five green tests said nothing about it.
-fn loose_u64(v: Option<&serde_json::Value>) -> Option<u64> {
+pub(crate) fn loose_u64(v: Option<&serde_json::Value>) -> Option<u64> {
     match v? {
         serde_json::Value::Number(n) => n.as_u64(),
         serde_json::Value::String(s) => s.trim().parse().ok(),
@@ -275,6 +275,146 @@ pub(crate) fn from_payload(
     })
 }
 
+/// Tiles per search page.
+pub const BROWSE_PAGE: u32 = 20;
+
+/// How a collection search is ordered, newest or biggest first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CollectionSort {
+    #[default]
+    Downloads,
+    Updated,
+    Created,
+}
+
+/// One collection in a search result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CollectionTile {
+    pub slug: String,
+    pub name: String,
+    pub author: String,
+    pub revision: u32,
+    pub mod_count: u32,
+    pub downloads: u64,
+    /// `YYYY-MM-DD`, empty when Nexus sent none.
+    pub updated: String,
+    pub created: String,
+}
+
+/// A page of search results. `hidden` counts the collections the adult gate
+/// withheld, so the list can say how many it left out.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CollectionSearch {
+    pub tiles: Vec<CollectionTile>,
+    pub total: u64,
+    pub hidden: usize,
+}
+
+const SEARCH_QUERY: &str = r#"
+query collections($filter: CollectionsSearchFilter, $sort: [CollectionsSearchSort!], $count: Int, $offset: Int) {
+  collectionsV2(filter: $filter, sort: $sort, count: $count, offset: $offset) {
+    totalCount
+    nodes {
+      slug name createdAt updatedAt totalDownloads
+      user { name }
+      game { domainName }
+      latestPublishedRevision { revisionNumber modCount adultContent }
+    }
+  }
+}"#;
+
+/// Build the search request for one game.
+pub(crate) fn search_body(
+    domain: &str,
+    query: &str,
+    sort: CollectionSort,
+    view_adult: bool,
+) -> serde_json::Value {
+    let mut filter = serde_json::json!({
+        "op": "AND",
+        "gameDomain": [{"value": domain, "op": "EQUALS"}],
+    });
+    let q: String = query.trim().chars().take(100).collect();
+    if !q.is_empty() {
+        filter["generalSearch"] = serde_json::json!([{"value": q, "op": "WILDCARD"}]);
+    }
+    if !view_adult {
+        filter["adultContent"] = serde_json::json!([{"value": false, "op": "EQUALS"}]);
+    }
+    let key = match sort {
+        CollectionSort::Downloads => "downloads",
+        CollectionSort::Updated => "updatedAt",
+        CollectionSort::Created => "createdAt",
+    };
+    serde_json::json!({
+        "query": SEARCH_QUERY,
+        "variables": {
+            "filter": filter,
+            "sort": [{ key: {"direction": "DESC"} }],
+            "count": BROWSE_PAGE,
+            "offset": 0,
+        }
+    })
+}
+
+/// Parse a search reply. Unpublished collections, odd slugs and gated ones are
+/// left out; Nexus's order is kept.
+pub(crate) fn search_from_payload(
+    v: &serde_json::Value,
+    policy: AdultPolicy,
+) -> Result<CollectionSearch, String> {
+    let list = v
+        .get("data")
+        .and_then(|d| d.get("collectionsV2"))
+        .filter(|l| !l.is_null())
+        .ok_or_else(|| "Nexus returned no collection list".to_string())?;
+    let text = |v: Option<&serde_json::Value>, k: &str| -> String {
+        v.and_then(|v| v.get(k))
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
+    let day = |s: String| s.chars().take(10).collect::<String>();
+    let mut out = CollectionSearch {
+        total: loose_u64(list.get("totalCount")).unwrap_or(0),
+        ..Default::default()
+    };
+    for n in list
+        .get("nodes")
+        .and_then(|n| n.as_array())
+        .into_iter()
+        .flatten()
+    {
+        let Some(rev) = n.get("latestPublishedRevision").filter(|r| !r.is_null()) else {
+            continue;
+        };
+        let slug = text(Some(n), "slug");
+        if slug.is_empty() || !slug.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            continue;
+        }
+        if gate(
+            rev.get("adultContent").and_then(serde_json::Value::as_bool),
+            policy,
+        )
+        .is_some()
+        {
+            out.hidden += 1;
+            continue;
+        }
+        out.tiles.push(CollectionTile {
+            slug,
+            name: text(Some(n), "name"),
+            author: text(n.get("user"), "name"),
+            revision: loose_u64(rev.get("revisionNumber")).unwrap_or(0) as u32,
+            mod_count: loose_u64(rev.get("modCount")).unwrap_or(0) as u32,
+            downloads: loose_u64(n.get("totalDownloads")).unwrap_or(0),
+            updated: day(text(Some(n), "updatedAt")),
+            created: day(text(Some(n), "createdAt")),
+        });
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -425,5 +565,105 @@ mod tests {
             ..c
         };
         assert_eq!(query_body(&c2, true)["variables"]["revision"], 3);
+    }
+
+    const SEARCH: &str = include_str!("../tests/data/collections_search.json");
+
+    #[test]
+    fn search_body_asks_for_one_game_and_leaves_adult_out_unless_allowed() {
+        let b = search_body(
+            "skyrimspecialedition",
+            "  cities ",
+            CollectionSort::Updated,
+            false,
+        );
+        let f = &b["variables"]["filter"];
+        assert_eq!(f["op"], "AND");
+        assert_eq!(f["gameDomain"][0]["value"], "skyrimspecialedition");
+        assert_eq!(f["gameDomain"][0]["op"], "EQUALS");
+        assert_eq!(f["generalSearch"][0]["value"], "cities");
+        assert_eq!(f["generalSearch"][0]["op"], "WILDCARD");
+        assert_eq!(f["adultContent"][0]["value"], false);
+        assert_eq!(b["variables"]["sort"][0]["updatedAt"]["direction"], "DESC");
+        assert_eq!(b["variables"]["count"], 20);
+        let open = search_body("skyrimspecialedition", "", CollectionSort::Downloads, true);
+        assert!(open["variables"]["filter"].get("adultContent").is_none());
+        assert!(open["variables"]["filter"].get("generalSearch").is_none());
+        assert_eq!(
+            open["variables"]["sort"][0]["downloads"]["direction"],
+            "DESC"
+        );
+        let created = search_body("x", "", CollectionSort::Created, true);
+        assert_eq!(
+            created["variables"]["sort"][0]["createdAt"]["direction"],
+            "DESC"
+        );
+        let long = search_body("x", &"a".repeat(300), CollectionSort::Downloads, true);
+        assert_eq!(
+            long["variables"]["filter"]["generalSearch"][0]["value"]
+                .as_str()
+                .unwrap()
+                .len(),
+            100
+        );
+    }
+
+    #[test]
+    fn search_reads_tiles_in_the_order_nexus_sent() {
+        let v: serde_json::Value = serde_json::from_str(SEARCH).unwrap();
+        let s = search_from_payload(&v, AdultPolicy::Allowed).unwrap();
+        assert_eq!(s.total, 29);
+        let first = &s.tiles[0];
+        assert_eq!(
+            (
+                first.slug.as_str(),
+                first.name.as_str(),
+                first.author.as_str()
+            ),
+            ("aaa111", "Cities Plus", "AuthorOne")
+        );
+        assert_eq!(
+            (first.revision, first.mod_count, first.downloads),
+            (3, 12, 25205)
+        );
+        assert_eq!(
+            (first.updated.as_str(), first.created.as_str()),
+            ("2026-11-01", "2024-01-02")
+        );
+        assert_eq!(
+            s.tiles.iter().map(|t| t.slug.as_str()).collect::<Vec<_>>(),
+            ["aaa111", "bbb222"]
+        );
+    }
+
+    #[test]
+    fn search_hides_adult_and_unrated_collections_unless_allowed() {
+        let v: serde_json::Value = serde_json::from_str(SEARCH).unwrap();
+        for policy in [AdultPolicy::Denied, AdultPolicy::Unknown] {
+            let s = search_from_payload(&v, policy).unwrap();
+            assert_eq!(
+                s.tiles.iter().map(|t| t.slug.as_str()).collect::<Vec<_>>(),
+                ["aaa111"],
+                "{policy:?}"
+            );
+            assert_eq!(s.hidden, 2, "{policy:?}");
+        }
+        let s = search_from_payload(&v, AdultPolicy::Allowed).unwrap();
+        assert_eq!(
+            s.hidden, 1,
+            "a collection with no rating stays hidden when adult content is allowed"
+        );
+    }
+
+    #[test]
+    fn search_skips_unpublished_and_unloadable_collections_and_refuses_an_empty_reply() {
+        let v: serde_json::Value = serde_json::from_str(SEARCH).unwrap();
+        let s = search_from_payload(&v, AdultPolicy::Allowed).unwrap();
+        assert!(s
+            .tiles
+            .iter()
+            .all(|t| t.slug != "ddd444" && t.slug != "bad/slug"));
+        let none = serde_json::json!({"data": {"collectionsV2": null}});
+        assert!(search_from_payload(&none, AdultPolicy::Allowed).is_err());
     }
 }

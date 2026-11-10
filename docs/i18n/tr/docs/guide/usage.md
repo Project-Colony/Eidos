@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=039b6ffd055eabf9e9c4c8978bbc3e47ad68e45c -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=d9e26a15d52ab549773ed61d97c7ecf36fea8342 -->
 
 # Eidos kullanımı
 
@@ -693,6 +693,30 @@ kurulduğu cevaplarla açılır, ardından soru penceresi "Keep a backup of the
 existing mod" işaretli olarak Replace seçeneğini sunar; bir önceki pencerede ne
 seçmiş olursanız olun. Replace, modun önceliğini ve etkin olup olmadığını korur.
 
+Yanındaki **Nexus page** sekmesi modun açıklamasını ve, en yeniden başlayarak,
+sayfasındaki her dosya sürümünün değişiklik günlüğünü gösterir. Eidos ikisini de
+sekmeyi ilk açtığınızda Nexus'un GraphQL API'sinden okur; bu API saatlik istek
+sınırına sayılmaz. Okunan içerik Eidos kapanana ya da siz **Refresh** düğmesine
+basana kadar tutulur. İçerik düz metin olarak gösterilir: BBCode ve HTML
+biçimlendirmesi kaldırılır, bir bağlantının adresi metninin arkasına yazılır,
+resimler ve videolar dışarıda bırakılır. Metnin üstündeki **Endorse** ve
+**Track**, modun sağ tık menüsüyle aynı işi yapar. Yetişkin bir modun sayfası,
+Nexus hesabınız yetişkin içeriği göstermedikçe gizli kalır; derecelendirmesi
+olmayan bir sayfa ise her durumda gizli kalır.
+
+Bir Replace modun klasörünü değiştirmeden önce Eidos eski klasörü yenisiyle
+dosya adı ve boyutuna göre karşılaştırır ve ikisindeki eklentilerin başlıklarını
+okur. Bu, Update, bir koleksiyon güncellemesi ve kurulum sorusunda seçilen
+Replace için geçerlidir. Durum satırı ardından eklenen, silinen ve boyutu
+değişen dosyaları sayar, yeni sürümün gerek duyduğu ama eskisinin duymadığı her
+master'ı adıyla anar. "Information..." penceresindeki **General** sekmesi bir
+**Last update** bölümüyle biter; bölümde sürümler, eklenen veya silinen
+eklentiler, eklenen veya bırakılan master'lar, ESM, ESL ya da ESH bayrağı
+değişen eklentiler, bu modun artık dosya paylaştığı veya paylaşmadığı modlar ve
+dosyalar listelenir. Aynı boyutla yeniden yazılan dosya listelenmez. Rapor,
+instance içindeki `logs/updates/<mod>.json` dosyasında tutulur; `eidos pack` bunu dışarıda bırakır. Yeni bir kurulum ya da klasöre Merge raporu siler. `eidos
+install --replace` aynı sayıları `changes:` satırında yazdırır.
+
 Birkaç Nexus dosyası barındıran bir klasör, örneğin içine isteğe bağlı bir dosya
 karıştırılmış bir ana dosya, reddedilir: onu yeni ana dosyayla değiştirmek
 ötekileri kaybettirir. Bunları elle güncelleyin.
@@ -719,12 +743,16 @@ uygulandığı ve neyin yalnızca adının geçtiği üzerine söylenen her şey
 kelimesi kelimesine geçerlidir: pencere ile `eidos collection`, iki ön yüzü olan
 tek bir motordur.
 
+Bağlantı olmadan **File -> Open a Nexus collection...**, **Browse** sekmesinde açılır. Bu sekme, açık örneğin oyunu için yayımlanmış koleksiyonları 20'şer 20'şer, en çok indirilene, son güncellemeye ya da en yeniye göre listeler; arama kutusu listeyi adı ya da metni eşleşen koleksiyonlara daraltır. Her satır yazarı, en son revizyonu, mod sayısını, indirme sayısını ve bir tarihi verir. **View**, o koleksiyonun en son revizyonunu **Link** sekmesinde açar; bağlantısını yapıştırmakla aynıdır. Yetişkin olarak işaretli koleksiyonlar, Nexus hesabınız yetişkin içeriği göstermiyorsa dışarıda bırakılır, derecelendirmesi olmayan koleksiyonlar her zaman dışarıda bırakılır ve listenin altındaki satır ikisini de sayar. Göz atmak için, panelin geri kalanında olduğu gibi, oturum açılmış bir Nexus hesabı gerekir.
+
 Bir koleksiyon yalnızca **kendi oyununa** karşı okunabilir. Yüklü bir Fallout 4
 örneğiyle bir Skyrim koleksiyonu açın; üyeleri yanlış mod listesiyle
 eşleştirmektense adını vererek reddeder - o listede her "kurulu" ve her "eksik",
 yanıt kılığına girmiş gürültü olurdu.
 
 Güncellemeleri denetlediğinizde Eidos, Nexus'a bu örnekte kurulu her koleksiyonun en son revizyonunu da sorar. Mod listesinin üstündeki bir satır, daha yeni revizyonu olan her koleksiyonu adıyla verir ve eklenen (+), güncellenen (~) ve çıkarılan (-) mod sayısını gösterir; adlar için üzerine gelin. Kurulu revizyonun tarifi artık önbellekte değilse sayılar görünmez. **Güncelle**, yeni revizyonu koleksiyon panelinde açar; orada *Install this collection* onu çalıştırır. Liste her denetimde yeniden kurulur ve kaydedilmez.
+
+Eidos, kurulu her koleksiyonun kurallarını kurulumdan sonra da saklar. Sonradan yapılan bir sürükleme, mod'larından ikisini bir sıralama kuralına (önce veya sonra) aykırı biçimde yerleştirirse, **Diagnostics** sekmesi o koleksiyon için tek bir kart gösterir; kart bu türden ilk çifti adıyla verir ve artık uyulmayan kuralları sayar. Yalnızca geçerli profilde etkin olan mod'lar sayılır; bir döngüye takılan kurallar ise atlanır, çünkü hiçbir sıra onlara uyamaz. **Restore collection order**, koleksiyonun mod'larını her kurala uyan bir sıraya geri koyar, kuralların izin verdiği her yerde sizin sıranızı korur ve koleksiyonda olmayan mod'ları yerinde bırakır. Ctrl+Z bunu geri alır. `eidos check` aynı bulguyu `collection_order_broken` olarak listeler. Denetim, revizyonun `collections/` içindeki tarifine ihtiyaç duyar; bu yüzden önbellekteki tarifi silinmiş bir koleksiyon denetlenmez.
 
 ### Çevrimdışı kip
 

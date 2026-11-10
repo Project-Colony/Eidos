@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=039b6ffd055eabf9e9c4c8978bbc3e47ad68e45c -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=d9e26a15d52ab549773ed61d97c7ecf36fea8342 -->
 
 # Używanie Eidos
 
@@ -697,6 +697,29 @@ potem okno proponuje Replace z zaznaczonym „Keep a backup of the existing mod"
 niezależnie od wyboru w poprzednim oknie. Replace zachowuje priorytet moda i to,
 czy jest włączony.
 
+Karta **Nexus page** obok pokazuje opis moda i listę zmian każdej wersji pliku
+na jego stronie, od najnowszej. Eidos odczytuje oba z API GraphQL Nexusa, które
+nie wlicza się do godzinnego limitu zapytań, przy pierwszym otwarciu karty i
+trzyma je, dopóki nie zamkniesz Eidos albo nie naciśniesz **Refresh**. Są
+pokazane jako zwykły tekst: formatowanie BBCode i HTML jest usuwane, adres linku
+jest zapisany po jego tekście, a obrazy i filmy są pomijane. **Endorse** i
+**Track** nad tekstem robią to samo co menu prawego przycisku moda. Strona moda
+dla dorosłych pozostaje ukryta, chyba że twoje konto Nexus pokazuje treści dla
+dorosłych, a strona bez klasyfikacji pozostaje ukryta w każdym przypadku.
+
+Zanim Replace podmieni folder moda, Eidos porównuje stary folder z nowym według
+nazw i rozmiarów plików oraz czyta nagłówki pluginów w obu. Dotyczy to Update,
+aktualizacji kolekcji i Replace wybranego w oknie instalacji. Wiersz stanu
+podaje potem liczbę plików dodanych, usuniętych i ze zmienionym rozmiarem oraz
+wymienia każdy master, którego potrzebuje nowa wersja, a stara nie potrzebowała.
+Karta **General** w „Information..." kończy się sekcją **Last update**, która
+wylicza wersje, dodane lub usunięte pluginy, dodane lub porzucone mastery,
+pluginy ze zmienioną flagą ESM, ESL lub ESH, mody, z którymi ten mod teraz
+współdzieli pliki lub już ich nie współdzieli, oraz pliki. Plik przepisany z tym
+samym rozmiarem nie jest wymieniony. Raport leży w `logs/updates/<mod>.json` w
+instancji, którą `eidos pack` pomija; świeża instalacja lub Merge do folderu go
+usuwa. `eidos install --replace` wypisuje te same liczby w wierszu `changes:`.
+
 Folder, który zawiera kilka plików z Nexusa, na przykład plik główny z
 wmieszanym w niego plikiem opcjonalnym, jest odrzucany: zastąpienie go nowym
 plikiem głównym zgubiłoby pozostałe. Zaktualizuj je ręcznie.
@@ -722,12 +745,16 @@ rozpakowanie, a pasek na koniec staje się raportem. Wszystko powyżej o tym, co
 jest stosowane, a co tylko nazwane, obowiązuje tu co do słowa: okno i
 `eidos collection` to jeden silnik z dwoma interfejsami.
 
+Bez odnośnika **File -> Open a Nexus collection...** otwiera się na karcie **Browse**. Wypisuje ona kolekcje opublikowane dla gry otwartej instancji, po 20 naraz, według największej liczby pobrań, ostatniej aktualizacji albo od najnowszych, a pole wyszukiwania zawęża listę do kolekcji, których nazwa lub tekst pasuje. Każdy wiersz podaje autora, najnowszą rewizję, liczbę modów, liczbę pobrań i datę. **View** otwiera najnowszą rewizję tej kolekcji na karcie **Link**, tak samo jak wklejenie jej odnośnika. Kolekcje oznaczone jako treści dla dorosłych są pomijane, chyba że twoje konto Nexusa pokazuje treści dla dorosłych, kolekcje bez oceny są pomijane zawsze, a wiersz pod listą liczy jedne i drugie. Przeglądanie wymaga zalogowanego konta Nexusa, tak jak reszta panelu.
+
 Kolekcję da się odczytać tylko wobec **jej własnej gry**. Otwórz kolekcję do
 Skyrima przy wczytanej instancji Fallouta 4, a odmówi z nazwy, zamiast zestawiać
 członków z niewłaściwą listą modów, gdzie każde „zainstalowany" i każde
 „brakujący" byłoby szumem w kształcie odpowiedzi.
 
 Gdy sprawdzasz aktualizacje, Eidos pyta też Nexusa o najnowszą rewizję każdej kolekcji zainstalowanej w tej instancji. Wiersz nad listą modów podaje każdą kolekcję z nowszą rewizją i liczbę modów dodanych (+), zaktualizowanych (~) i usuniętych (-); po najechaniu kursorem widać ich nazwy. Liczb brakuje, gdy przepis zainstalowanej rewizji nie jest już w pamięci podręcznej. **Aktualizuj** otwiera nowszą rewizję w panelu kolekcji, gdzie uruchamia ją *Install this collection*. Lista jest budowana od nowa przy każdym sprawdzeniu i nie jest zapisywana.
+
+Eidos zachowuje reguły każdej zainstalowanej kolekcji po instalacji. Gdy późniejsze przeciągnięcie ustawi dwa jej mody wbrew regule kolejności (przed lub po), karta **Diagnostics** pokazuje jedną kartę dla tej kolekcji, która podaje pierwszą taką parę i liczy reguły, które przestały być spełnione. Liczą się tylko mody włączone w bieżącym profilu, a reguły uwięzione w pętli są pomijane, bo żadna kolejność nie może ich spełnić. **Restore collection order** przywraca mody kolekcji do kolejności, która spełnia każdą regułę, zachowuje twoją własną kolejność wszędzie, gdzie reguły na to pozwalają, i zostawia na miejscu mody spoza kolekcji. Ctrl+Z to cofa. `eidos check` zgłasza to samo ustalenie jako `collection_order_broken`. Sprawdzenie potrzebuje przepisu rewizji w `collections/`, więc kolekcja, której przepis usunięto z pamięci podręcznej, nie jest sprawdzana.
 
 ### Tryb offline
 

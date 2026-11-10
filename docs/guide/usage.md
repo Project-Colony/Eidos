@@ -693,6 +693,29 @@ the mod was installed with, then the prompt offers Replace with "Keep a backup o
 the existing mod" ticked, whatever you chose at the last prompt. Replace keeps
 the mod's priority and enabled state.
 
+The **Nexus page** tab beside it shows the mod's description and, newest first,
+the changelog of each file version on its page. Eidos reads both from Nexus's
+GraphQL API, which does not count against the hourly request budget, the first
+time you open the tab, and keeps them until Eidos closes or you press
+**Refresh**. They are shown as plain text: BBCode and HTML formatting is
+removed, a link's address is written after its text, and images and videos are
+left out. **Endorse** and **Track** above the text do what the mod's right-click
+menu does. The page of an adult mod stays hidden unless your Nexus account shows
+adult content, and a page with no rating stays hidden in every case.
+
+Before a Replace swaps a mod's folder, Eidos compares the old folder with the
+new one by file name and size and reads the headers of the plugins in both. This
+covers Update, a collection update, and Replace picked at the install prompt.
+The status line then counts the files added, removed and changed in size, and
+names every master the new version needs that the old one did not. The
+**General** tab of "Information..." ends with a **Last update** section listing
+the versions, the plugins added or removed, the masters added or removed, the
+plugins whose ESM, ESL or ESH flag changed, the mods this one now shares files
+with or no longer does, and the files. A file rewritten at the same size is not
+listed. The report is kept in `logs/updates/<mod>.json` in the instance, which
+`eidos pack` leaves out; a fresh install or a Merge into the folder removes it.
+`eidos install --replace` prints the same counts on a `changes:` line.
+
 A folder that holds several Nexus files, such as a main file with an optional
 file merged into it, is refused: replacing it with the new main file would drop
 the others. Update those by hand.
@@ -717,12 +740,16 @@ becomes the report when it finishes. Everything above about what is applied and
 what is only named applies here word for word: the window and `eidos collection`
 are one engine with two front ends.
 
+With no link, **File -> Open a Nexus collection...** opens on the **Browse** tab. It lists the collections published for the open instance's game, 20 at a time, by most downloads, latest update or newest, and the search box narrows the list to collections whose name or text matches. Each row gives the author, the latest revision, the number of mods, the downloads and a date. **View** opens that collection's latest revision on the **Link** tab, the same as pasting its link. Collections marked adult are left out unless your Nexus account shows adult content, collections with no rating are always left out, and the line under the list counts both. Browsing needs a signed-in Nexus account, like the rest of the pane.
+
 A collection can only be read against **its own game**. Open a Skyrim collection
 with a Fallout 4 instance loaded and it refuses by name rather than joining the
 members against the wrong mod list, where every "installed" and every "missing"
 would be noise wearing the shape of an answer.
 
 When you run Check for updates, Eidos also asks Nexus for the latest revision of each collection installed in this instance. A line above the mod list names every collection with a newer revision and counts the mods added (+), updated (~) and dropped (-); hover it for their names. The counts are missing when the installed revision's recipe is no longer cached. **Update** opens the newer revision in the collection pane, where *Install this collection* runs it. The list is rebuilt on every check and is not saved.
+
+Eidos keeps each installed collection's rules after the install. When a later drag puts two of its mods against a before or after rule, the **Diagnostics** tab shows one card for that collection, naming the first such pair and counting the rules that no longer hold. Only mods enabled in the current profile count, and rules caught in a loop are skipped, because no order can keep them. **Restore collection order** moves the collection's mods back into an order that keeps every rule, keeps your own order wherever the rules allow, and leaves the mods that are not in the collection where they are. Ctrl+Z undoes it. `eidos check` lists the same finding as `collection_order_broken`. The check needs the revision's recipe in `collections/`, so a collection whose cached recipe was removed is not checked.
 
 ### Offline mode
 

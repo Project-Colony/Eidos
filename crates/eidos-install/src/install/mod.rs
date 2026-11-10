@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{ArchiveEntry, ArchiveTree, LayoutRules, BAIN_MIN_SUBPACKAGES, MAX_TREE_DEPTH};
 
+mod changes;
 pub mod custom;
 mod extract;
 mod fomod;
@@ -22,6 +23,7 @@ mod simple;
 #[cfg(test)]
 mod tests;
 
+pub use changes::*;
 pub use extract::*;
 pub use fomod::*;
 use fsops::*;
@@ -94,6 +96,9 @@ pub struct InstallReport {
     pub dest: PathBuf,
     /// Complete previous mod retained by an explicit backup policy.
     pub backup: Option<PathBuf>,
+    /// What a Replace changed against the previous folder; `None` for a fresh
+    /// install or a Merge.
+    pub changes: Option<eidos_instance::UpdateReport>,
 }
 
 impl ArchiveTree {

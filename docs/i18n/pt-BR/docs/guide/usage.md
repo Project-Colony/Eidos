@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=039b6ffd055eabf9e9c4c8978bbc3e47ad68e45c -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=d9e26a15d52ab549773ed61d97c7ecf36fea8342 -->
 
 # Usar o Eidos
 
@@ -700,6 +700,32 @@ Replace com "Keep a backup of the existing mod" marcado, seja qual for a sua
 escolha no aviso anterior. Replace mantém a prioridade do mod e se ele está
 ativado.
 
+A aba **Nexus page**, ao lado, mostra a descrição do mod e, da mais nova à mais
+antiga, o registro de alterações de cada versão de arquivo da página dele. O
+Eidos lê os dois da API GraphQL do Nexus, que não conta para o limite de
+requisições por hora, na primeira vez que você abre a aba, e os guarda até o
+Eidos fechar ou você apertar **Refresh**. Eles aparecem como texto simples: a
+formatação BBCode e HTML é removida, o endereço de um link é escrito depois do
+texto dele, e imagens e vídeos ficam de fora. **Endorse** e **Track**, acima do
+texto, fazem o mesmo que o menu de clique direito do mod. A página de um mod
+adulto fica oculta a menos que sua conta do Nexus mostre conteúdo adulto, e uma
+página sem classificação fica oculta em qualquer caso.
+
+Antes que um Replace troque a pasta de um mod, o Eidos compara a pasta antiga
+com a nova por nome e tamanho de arquivo e lê os cabeçalhos dos plugins das
+duas. Isso vale para Update, para a atualização de uma coleção e para o Replace
+escolhido no aviso de instalação. A linha de status então conta os arquivos
+adicionados, removidos e com tamanho alterado, e nomeia cada master que a versão
+nova precisa e a antiga não precisava. A aba **General** de "Information..."
+termina com uma seção **Last update** que lista as versões, os plugins
+adicionados ou removidos, os masters adicionados ou abandonados, os plugins cujo
+indicador ESM, ESL ou ESH mudou, os mods com que este passou a compartilhar
+arquivos ou deixou de compartilhar, e os arquivos. Um arquivo reescrito com o
+mesmo tamanho não aparece. O relatório fica em `logs/updates/<mod>.json` na
+instância, que o `eidos pack` deixa de fora; uma instalação nova ou um Merge na
+pasta o apaga. `eidos install --replace` imprime as mesmas contagens em uma
+linha `changes:`.
+
 Uma pasta que contém vários arquivos do Nexus, como um arquivo principal com um
 opcional mesclado dentro, é recusada: substituí-la pelo novo arquivo principal
 perderia os outros. Atualize esses à mão.
@@ -724,12 +750,16 @@ unpack usam, e a barra vira o relatório quando termina. Tudo o que está acima
 sobre o que é aplicado e o que é só nomeado vale aqui palavra por palavra: a
 janela e o `eidos collection` são um motor só com duas interfaces.
 
+Sem link, **File -> Open a Nexus collection...** abre na aba **Browse**. Ela lista as coleções publicadas para o jogo da instância aberta, 20 por vez, por mais downloads, última atualização ou mais recentes, e a caixa de busca restringe a lista às coleções cujo nome ou texto corresponde. Cada linha traz o autor, a última revisão, o número de mods, os downloads e uma data. **View** abre a última revisão dessa coleção na aba **Link**, o mesmo que colar o link dela. Coleções marcadas como adultas ficam de fora, a menos que sua conta do Nexus mostre conteúdo adulto, coleções sem classificação ficam sempre de fora, e a linha abaixo da lista conta as duas. Navegar exige uma conta do Nexus conectada, como o resto do painel.
+
 Uma coleção só pode ser lida contra **o próprio jogo dela**. Abra uma coleção de
 Skyrim com uma instância de Fallout 4 carregada e ele recusa dizendo o nome, em
 vez de cruzar os membros com a lista de mods errada, onde cada "instalado" e
 cada "faltando" seria ruído com forma de resposta.
 
 Ao verificar atualizações, o Eidos também pergunta à Nexus pela última revisão de cada coleção instalada nesta instância. Uma linha acima da lista de mods nomeia cada coleção com revisão mais nova e conta os mods adicionados (+), atualizados (~) e removidos (-); passe o mouse para ver os nomes. As contagens somem quando a receita da revisão instalada não está mais no cache. **Atualizar** abre a revisão nova no painel de coleções, onde *Install this collection* a executa. A lista é refeita a cada verificação e não é salva.
+
+O Eidos guarda as regras de cada coleção instalada depois da instalação. Quando um arrasto posterior coloca dois de seus mods contra uma regra de ordem (antes ou depois), a aba **Diagnostics** mostra um cartão para essa coleção, que nomeia o primeiro par afetado e conta as regras que não valem mais. Só contam os mods ativados no perfil atual, e regras presas em um ciclo são ignoradas, porque nenhuma ordem consegue cumpri-las. **Restore collection order** devolve os mods da coleção a uma ordem que cumpre todas as regras, mantém a sua própria ordem onde as regras permitem e deixa no lugar os mods que não fazem parte da coleção. Ctrl+Z desfaz isso. `eidos check` lista o mesmo achado como `collection_order_broken`. A verificação precisa da receita da revisão em `collections/`, então uma coleção cuja receita em cache foi removida não é verificada.
 
 ### Modo offline
 

@@ -253,6 +253,23 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.nexus_files.insert(key, result);
             }
         }
+        Message::NexusPageFetched {
+            domain,
+            mod_id,
+            result,
+        } => {
+            let key = (domain, mod_id);
+            if app.nexus_page_loading.as_ref() == Some(&key) {
+                app.nexus_page_loading = None;
+                app.nexus_pages.insert(key, result);
+            }
+        }
+        Message::NexusPageRefresh => {
+            if let Some((domain, mod_id)) = app.info_mod.and_then(|i| nexus_files_target(app, i)) {
+                app.nexus_pages.remove(&(domain.clone(), mod_id));
+                return fetch_nexus_page(app, domain, mod_id);
+            }
+        }
         Message::NexusUpdate {
             folder,
             domain,
@@ -662,25 +679,24 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         // ---- Nexus collections ------------------------------------------------
         Message::ShowCollection(link) => {
             app.file_menu_open = false;
+            let browse = link.trim().is_empty();
             app.collection = Some(CollectionState {
-                install_check: None,
-                runtime: None,
                 link,
-                revision: None,
-                states: Vec::new(),
-                loading: false,
-                error: None,
-                confirm_fetch: false,
-                asked: std::collections::HashSet::new(),
-                walk: None,
+                pane: if browse {
+                    CollectionPane::Browse
+                } else {
+                    CollectionPane::Link
+                },
+                ..Default::default()
             });
-            if app
-                .collection
-                .as_ref()
-                .is_some_and(|c| !c.link.trim().is_empty())
-            {
-                return update(app, Message::CollectionFetch);
-            }
+            return update(
+                app,
+                if browse {
+                    Message::CollectionBrowseSearch
+                } else {
+                    Message::CollectionFetch
+                },
+            );
         }
         Message::CloseCollection => app.collection = None,
         Message::CollectionLinkChanged(t) => {
@@ -780,6 +796,136 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // Joined against the instance HERE rather than in the view: the view
             // runs every frame and this reads every mod's meta.ini once.
             recompute_collection_states(app);
+        }
+        Message::CollectionPaneSelected(pane) => {
+            let Some(c) = &mut app.collection else {
+                return Task::none();
+            };
+            c.pane = pane;
+            if pane == CollectionPane::Browse && c.browse.result.is_none() && !c.browse.loading {
+                return update(app, Message::CollectionBrowseSearch);
+            }
+        }
+        Message::CollectionBrowseQueryChanged(query) => {
+            app.typing = true;
+            if let Some(c) = &mut app.collection {
+                c.browse.query = query;
+                // The answer for the old query will be dropped, so the button
+                // has to come back.
+                c.browse.loading = false;
+            }
+        }
+        Message::CollectionBrowseSortChanged(sort) => {
+            if let Some(c) = &mut app.collection {
+                c.browse.sort = sort;
+            }
+            return update(app, Message::CollectionBrowseSearch);
+        }
+        Message::CollectionBrowseSearch => {
+            let instance = app.created.as_ref().map(|i| i.root.clone());
+            // The domain CollectionFetch checks a link against.
+            let domain = selected_game(app).map(|g| g.def.nexus_game);
+            let Some(c) = &mut app.collection else {
+                return Task::none();
+            };
+            let (Some(instance), Some(domain)) = (instance, domain) else {
+                c.browse.result = Some(Err(t("status_open_instance_first").to_string()));
+                return Task::none();
+            };
+            if !eidos_nexus::Nexus::have_credentials() {
+                c.browse.result = Some(Err(t("status_connect_nexus_first_short").to_string()));
+                return Task::none();
+            }
+            c.browse.loading = true;
+            let (query, sort) = (c.browse.query.clone(), c.browse.sort);
+            let asked = query.clone();
+            return Task::perform(
+                smol::unblock(move || {
+                    eidos_nexus::Nexus::connect()?.search_collections(domain, &asked, sort)
+                }),
+                move |result| Message::CollectionBrowseFetched {
+                    instance: instance.clone(),
+                    query: query.clone(),
+                    sort,
+                    result,
+                },
+            );
+        }
+        Message::CollectionBrowseFetched {
+            instance,
+            query,
+            sort,
+            result,
+        } => {
+            if app.created.as_ref().is_none_or(|i| i.root != instance) {
+                return Task::none();
+            }
+            let Some(c) = &mut app.collection else {
+                return Task::none();
+            };
+            if c.browse.query != query || c.browse.sort != sort {
+                return Task::none();
+            }
+            c.browse.loading = false;
+            // Only a request that went out can say what Nexus did; the local
+            // guards in CollectionBrowseSearch keep their own words.
+            c.browse.result =
+                Some(result.map_err(|e| tf("collection_browse_failed", &[("error", &e)])));
+        }
+        Message::CollectionBrowsePick(i) => {
+            let domain = selected_game(app).map(|g| g.def.nexus_game);
+            let Some(c) = &mut app.collection else {
+                return Task::none();
+            };
+            let tile = c
+                .browse
+                .result
+                .as_ref()
+                .and_then(|r| r.as_ref().ok()?.tiles.get(i));
+            let (Some(tile), Some(domain)) = (tile, domain) else {
+                return Task::none();
+            };
+            c.link = browse_link(domain, &tile.slug);
+            c.pane = CollectionPane::Link;
+            c.install_check = None;
+            c.runtime = None;
+            c.error = None;
+            return update(app, Message::CollectionFetch);
+        }
+        Message::RestoreCollectionOrder(slug) => {
+            if app.created.is_none() {
+                return Task::none();
+            }
+            let orders = crate::modinfo::collection_orders(app);
+            let Some(order) = orders.iter().find(|o| o.slug == slug) else {
+                app.status = Some(tf(
+                    "status_collection_order_unreadable",
+                    &[("collection", &slug)],
+                ));
+                return Task::none();
+            };
+            let collection = &order.name;
+            let names: Vec<String> = app.mods.iter().map(|m| m.name.clone()).collect();
+            let new = order.rules.restore(&names);
+            if new == names {
+                app.status = Some(tf(
+                    "status_collection_order_unchanged",
+                    &[("collection", collection)],
+                ));
+                return Task::none();
+            }
+            let moved = new.iter().zip(&names).filter(|(a, b)| a != b).count();
+            // A sort, so every entry is kept and only moved; the selection follows by name.
+            let held = hold_mod_selection(app);
+            app.mods
+                .sort_by_cached_key(|m| new.iter().position(|n| *n == m.name));
+            put_mod_selection(app, held);
+            if mods_changed(app) {
+                app.status = Some(tf(
+                    "status_collection_order_restored",
+                    &[("n", &moved), ("collection", &collection)],
+                ));
+            }
         }
         Message::CollectionOpenMod(i) => {
             let Some(c) = app.collection.as_ref() else {

@@ -478,6 +478,14 @@ pub(crate) enum Message {
         mod_id: u64,
         result: Result<eidos_nexus::ModFiles, String>,
     },
+    /// A mod's Nexus page arrived (or failed), keyed like `NexusFilesFetched`.
+    NexusPageFetched {
+        domain: String,
+        mod_id: u64,
+        result: Result<eidos_nexus::ModPage, String>,
+    },
+    /// Ask Nexus again for the open mod's page.
+    NexusPageRefresh,
     /// Replace a mod's folder with the file that succeeds its installed one.
     NexusUpdate {
         folder: String,
@@ -877,6 +885,26 @@ pub(crate) enum Message {
     /// Move to the next member without waiting for this one.
     CollectionWalkSkip,
     CollectionWalkStop,
+    /// Show the Browse or the Link half of the collection pane.
+    CollectionPaneSelected(CollectionPane),
+    /// The Browse search box.
+    CollectionBrowseQueryChanged(String),
+    /// A sort button; searches again.
+    CollectionBrowseSortChanged(eidos_nexus::collections::CollectionSort),
+    /// Ask Nexus for one page of the open game's collections.
+    CollectionBrowseSearch,
+    /// The page came back, tagged with what it was asked for.
+    CollectionBrowseFetched {
+        instance: PathBuf,
+        query: String,
+        sort: eidos_nexus::collections::CollectionSort,
+        result: Result<eidos_nexus::collections::CollectionSearch, String>,
+    },
+    /// View a listed collection: its latest revision on the Link pane.
+    CollectionBrowsePick(usize),
+    /// Put the members of the installed collection with this slug back into an
+    /// order that keeps its before/after rules.
+    RestoreCollectionOrder(String),
     // ---- Instance manager (MO2's Manage Instances) ----
     ShowInstanceManager,
     CloseInstanceManager,

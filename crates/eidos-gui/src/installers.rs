@@ -41,7 +41,7 @@ enum Session {
 }
 enum Outcome {
     Reviewed,
-    Installed(eidos_install::InstallReport, Vec<String>),
+    Installed(Box<eidos_install::InstallReport>, Vec<String>),
     ChoicesSaved,
 }
 struct Reply {
@@ -354,7 +354,7 @@ fn work(app: &mut App, install: bool) -> Task<Message> {
                 if let Err(error) = inst.register_installed_mod(&report.name) {
                     warnings.push(tf("installer_registration_failed", &[("error", &error)]));
                 }
-                Ok(Outcome::Installed(report, warnings))
+                Ok(Outcome::Installed(Box::new(report), warnings))
             })()
             .map_err(|e: eidos_install::InstallError| e.to_string());
             if let Ok(mut slot) = result.lock() {
@@ -566,7 +566,7 @@ pub(crate) fn update(app: &mut App, action: Action) -> Task<Message> {
                 let archive = w.archive.clone();
                 if current.as_ref() == Some(&w.target) {
                     app.installer = None;
-                    after_install_report(app, report, &archive);
+                    after_install_report(app, *report, &archive);
                     if !warnings.is_empty() {
                         app.status
                             .get_or_insert_with(String::new)

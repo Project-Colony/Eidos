@@ -708,7 +708,45 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         });
     }
 
+    // Last, so the card leaving after Restore moves nothing below it.
+    if app.created.is_some() {
+        let mods = app
+            .mods
+            .iter()
+            .rev()
+            .filter(|m| m.is_active() && !m.is_unmanaged())
+            .map(|m| (m.name.clone(), m.path.clone()))
+            .collect::<Vec<_>>();
+        out.extend(
+            eidos::check::collections::order_findings(&collection_orders(app), &mods)
+                .iter()
+                .map(crate::health::finding_card),
+        );
+    }
+
     out
+}
+
+/// The open instance's collection rules, read again only when one of the files
+/// they come from changed (see `App::collection_orders`).
+pub(crate) fn collection_orders(
+    app: &App,
+) -> std::rc::Rc<Vec<eidos::check::collections::CollectionOrder>> {
+    let Some(inst) = app.created.as_ref() else {
+        return Default::default();
+    };
+    // Stamped before the read: a file that changes during it changes the
+    // stamp again, and the next refresh reads it.
+    let stamp = eidos::check::collections::orders_stamp(&inst.root);
+    let mut cache = app.collection_orders.borrow_mut();
+    match cache.as_ref() {
+        Some((at, orders)) if *at == stamp => orders.clone(),
+        _ => {
+            let orders = std::rc::Rc::new(eidos::check::collections::collection_orders(&inst.root));
+            *cache = Some((stamp, orders.clone()));
+            orders
+        }
+    }
 }
 
 /// `shown` joined with ", ", then "and n more" when `total` is larger.
