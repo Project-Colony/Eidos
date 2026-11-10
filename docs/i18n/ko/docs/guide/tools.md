@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f4111e41cc9dfecb83a8395affe2370c96b62e55 -->
 
 # 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -431,6 +431,8 @@ Path**(Settings)는 그 위의 게임 폴더가 아니라 게임의 `Data` 디�
 잡아냅니다 - 여러분의 설치 폴더가 아니라 `Overwrite/Root/`로 떨어집니다 - 그러나
 여러분의 바디가 만들어지지 않았다는 것 말고는 게임 입장에서 잘못된 것이 하나도
 없습니다.
+
+Eidos가 이를 확인합니다. BodySlide나 Outfit Studio를 실행하기 전에, 우선하는 `CalienteTools/BodySlide/Config.xml`의 `GameDataPath`나 `OutputDataPath`가 실행 중에 게임의 `Data` 폴더로 이어지지 않으면 상태 줄이 경고하고, Health 탭에는 설정할 값과 함께 같은 카드가 나타납니다. `S:` 경로는 Eidos가 도구용으로 `S:`를 연결하는 방식대로 Steam 라이브러리 폴더로 읽습니다. 인스턴스의 `mods/` 폴더 안에 있는 `OutputDataPath`는 출력 모드용이므로 받아들입니다. `Overwrite/Root/`에 `meshes`나 `textures` 폴더가 있을 때도 Health에 카드가 나타납니다.
 
 도구의 출력은 Overwrite에 속합니다. 실행이 간직할 만한 것을 만들어냈다면,
 **Overwrite -> Create mod...**가 그것을 다른 모드와 마찬가지로 순서를 정하고

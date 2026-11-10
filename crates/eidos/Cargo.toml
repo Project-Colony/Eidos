@@ -36,3 +36,5 @@ eidos-collections = { path = "../eidos-collections" }
 eidos-fomod = { path = "../eidos-fomod" }
 eidos-sevenzip = { path = "../eidos-sevenzip" }
 eidos-nexus = { path = "../eidos-nexus" }
+# BodySlide's Config.xml, for the A49 data path check.
+roxmltree.workspace = true

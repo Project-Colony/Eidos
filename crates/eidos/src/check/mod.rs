@@ -2,6 +2,7 @@
 //! renders a finding through `diag_<code>` / `diag_<code>_detail` strings; the
 //! CLI prints the code and its args.
 
+pub mod bodyslide;
 pub mod crash;
 pub mod extender;
 pub mod graphics;
@@ -85,6 +86,8 @@ pub const CODES: &[&str] = &[
     "max_map_count_low",
     "open_files_low",
     "windows_filesystem",
+    "bodyslide_data_path",
+    "overwrite_root_data",
 ];
 
 /// The instance's enabled mods, highest priority first. Unmanaged rows (DLC,
@@ -153,6 +156,9 @@ pub fn host_findings(
     }
     out.extend(crash::crash_findings(game, inst, mods));
     out.extend(system::system_findings(&system::system_facts(game, inst)));
+    out.extend(bodyslide::bodyslide_findings(&bodyslide::bodyslide_facts(
+        game, inst, mods,
+    )));
     out
 }
 

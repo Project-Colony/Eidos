@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f4111e41cc9dfecb83a8395affe2370c96b62e55 -->
 
 # Strumenti: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -487,6 +487,16 @@ in blocco riporta "All sets processed successfully" e scrive 1439 mesh dove il
 gioco non le cercherà mai. Eidos le intercetta - atterrano in `Overwrite/Root/`
 invece che nella tua installazione - ma dal punto di vista del gioco non c'è
 niente di sbagliato, tranne che i tuoi corpi non sono costruiti.
+
+Eidos lo controlla per te. Prima di un'esecuzione di BodySlide o di Outfit
+Studio, la riga di stato avvisa quando `GameDataPath` o `OutputDataPath` nel
+`CalienteTools/BodySlide/Config.xml` vincente non porta alla cartella `Data` del
+gioco durante l'esecuzione, e la scheda Health mostra lo stesso avviso con il
+valore da impostare. Un percorso su `S:` viene letto come Eidos mappa `S:` per
+uno strumento, cioè sulla cartella della libreria di Steam. Un `OutputDataPath`
+dentro la cartella `mods/` dell'istanza, per una mod di output, è accettato.
+Health mostra anche un avviso quando `Overwrite/Root/` contiene una cartella
+`meshes` o `textures`.
 
 L'output degli strumenti sta di casa nell'Overwrite. Quando un'esecuzione produce
 qualcosa che vale la pena tenere, **Overwrite -> Create mod...** lo trasforma in

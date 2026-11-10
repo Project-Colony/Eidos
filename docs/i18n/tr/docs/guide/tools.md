@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f4111e41cc9dfecb83a8395affe2370c96b62e55 -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -485,6 +485,16 @@ successfully" bildirir ve 1439 mesh'i oyunun asla bakmayacağı bir yere yazar.
 Eidos onları yakalar - kurulumunuza değil `Overwrite/Root/` içine inerler - ama
 oyunun bakış açısından, bedenlerinizin inşa edilmemiş olması dışında yanlış
 hiçbir şey yoktur.
+
+Eidos bunu sizin için denetler. Bir BodySlide veya Outfit Studio
+çalıştırmasından önce, kazanan `CalienteTools/BodySlide/Config.xml` içindeki
+`GameDataPath` veya `OutputDataPath` çalıştırma sırasında oyunun `Data`
+klasörüne çıkmıyorsa durum satırı uyarır, Health sekmesi de ayarlanacak değerle
+aynı kartı gösterir. Bir `S:` yolu, Eidos'un bir araç için `S:` sürücüsünü
+eşlediği gibi Steam kütüphanesi klasörü olarak okunur. Örneğe ait `mods/`
+klasörünün içindeki bir `OutputDataPath`, bir çıktı modu için olduğundan kabul
+edilir. Health, `Overwrite/Root/` bir `meshes` veya `textures` klasörü
+içerdiğinde de bir kart gösterir.
 
 Araç çıktısı Overwrite'a aittir. Bir çalıştırma saklamaya değer bir şey
 ürettiğinde, **Overwrite -> Create mod...** onu, başka herhangi biri gibi

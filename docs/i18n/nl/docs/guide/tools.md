@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f4111e41cc9dfecb83a8395affe2370c96b62e55 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -489,6 +489,16 @@ processed successfully" en schrijft 1439 meshes daar waar het spel er nooit naar
 zal kijken. Eidos vangt ze op - ze landen in `Overwrite/Root/` en niet in je
 installatie - maar vanuit het spel gezien is er niets mis behalve dat je lichamen
 niet gebouwd zijn.
+
+Eidos controleert dit voor je. Vóór het starten van BodySlide of Outfit Studio
+waarschuwt de statusregel wanneer `GameDataPath` of `OutputDataPath` in de
+winnende `CalienteTools/BodySlide/Config.xml` tijdens het draaien niet naar de
+`Data`-map van het spel leidt, en het tabblad Health toont dezelfde kaart met de
+waarde die je moet instellen. Een `S:`-pad wordt gelezen zoals Eidos `S:` voor
+een tool koppelt: aan de map van de Steam-bibliotheek. Een `OutputDataPath` in
+de map `mods/` van de instantie, voor een uitvoermod, wordt geaccepteerd. Health
+toont ook een kaart wanneer `Overwrite/Root/` een map `meshes` of `textures`
+bevat.
 
 Uitvoer van tools hoort in de Overwrite. Wanneer een draai iets oplevert dat het
 bewaren waard is, maakt **Overwrite -> Create mod...** er een gewone mod van die

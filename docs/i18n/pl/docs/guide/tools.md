@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f4111e41cc9dfecb83a8395affe2370c96b62e55 -->
 
 # Narzędzia: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -477,6 +477,15 @@ Ustawiony o poziom za wysoko sprawia, że batch build zgłasza „All sets proce
 successfully" i zapisuje 1439 siatek tam, gdzie gra nigdy ich nie poszuka. Eidos
 je łapie - lądują w `Overwrite/Root/`, a nie w twojej instalacji - ale z punktu
 widzenia gry nic nie jest nie tak poza tym, że twoje ciała nie są zbudowane.
+
+Eidos sprawdza to za ciebie. Przed uruchomieniem BodySlide'a lub Outfit Studio
+pasek stanu ostrzega, gdy `GameDataPath` lub `OutputDataPath` w wygrywającym
+`CalienteTools/BodySlide/Config.xml` podczas uruchomienia nie prowadzi do
+folderu `Data` gry, a karta Health pokazuje to samo ostrzeżenie z wartością do
+ustawienia. Ścieżka na `S:` jest czytana tak, jak Eidos mapuje `S:` dla
+narzędzia, czyli na folder biblioteki Steam. `OutputDataPath` wewnątrz folderu
+`mods/` instancji, dla moda wyjściowego, jest akceptowany. Health pokazuje też
+ostrzeżenie, gdy `Overwrite/Root/` zawiera folder `meshes` lub `textures`.
 
 Wyjście narzędzia należy do Overwrite. Gdy uruchomienie wytworzy coś wartego
 zachowania, **Overwrite -> Create mod...** zmienia to w zwykłego moda, którego

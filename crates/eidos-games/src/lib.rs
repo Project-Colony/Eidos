@@ -18,6 +18,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 mod paths;
+pub use paths::wine_drive_root;
 mod stores;
 pub use stores::{
     heroic_wrappers, legendary_wrapper, plain_app_id, select_installation, GameSource, Store,

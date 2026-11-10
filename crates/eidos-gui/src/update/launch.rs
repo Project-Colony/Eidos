@@ -151,7 +151,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 // The owned arg ends the immutable borrow before `start_run`.
                 if let Some(arg) = instance_arg(app) {
                     let cmd = tool_command(&arg, &title, !app.launch_command.is_empty());
+                    let note = crate::health::bodyslide_run_note(app, &title);
                     start_run(app, title, cmd);
+                    if let (Some(note), Some(s)) = (note, app.status.take()) {
+                        app.status = Some(format!("{note} {s}"));
+                    }
                 } else {
                     app.status = Some(t("status_create_or_open_instance").to_string());
                 }
