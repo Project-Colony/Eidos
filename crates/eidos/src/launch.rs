@@ -997,6 +997,7 @@ pub(crate) fn merge_dll_overrides(base: Option<&str>, add: &str) -> String {
 pub(crate) fn with_wrappers(wrappers: &[String], command: Vec<String>) -> Vec<String> {
     wrappers.iter().rev().fold(command, |command, line| {
         let mut words = crate::check::launch_option::shell_words(line);
+        // shortcut: a second `%command%` word in one line stays literal, splice the command at each one when a wrapper line needs it in two places.
         match words.iter().position(|w| w == "%command%") {
             Some(i) => {
                 words.splice(i..=i, command);
