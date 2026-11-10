@@ -3759,6 +3759,24 @@ fn collection_notices_from_another_instance_are_dropped() {
 }
 
 #[test]
+fn collection_notices_do_not_survive_switching_instance() {
+    let root = temp_portable("notices-switch");
+    let inst = Instance::portable(root.join("instance"));
+    inst.create().unwrap();
+    let mut app = app_for_game("morrowind");
+    app.collection_notices = vec![CollectionNotice {
+        slug: "abc".into(),
+        domain: "skyrimspecialedition".into(),
+        name: "Some list".into(),
+        have: 1,
+        latest: 2,
+        diff: None,
+    }];
+    open_instance(&mut app, inst);
+    assert!(app.collection_notices.is_empty());
+}
+
+#[test]
 fn an_update_check_records_what_is_left_of_the_budget() {
     let mut app = nav_app(&[]);
     let result = eidos_nexus::UpdateCheckResult {

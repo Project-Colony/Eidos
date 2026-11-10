@@ -1864,6 +1864,8 @@ pub(crate) fn open_instance(app: &mut App, inst: Instance) {
     app.loot_meta = None;
     app.endorsing = None;
     app.collection = None;
+    // Update checks are per instance; the old notices would open against this game.
+    app.collection_notices.clear();
     // An update waits for a file in the instance it was asked from.
     app.pending_update = None;
     app.update_target = None;
