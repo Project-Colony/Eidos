@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=a2dfee4604b4e78f8f22e935fab06fbfe6d4d301 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
 
 # Community Shaders, DLSS i generowanie klatek
 
@@ -8,6 +8,8 @@ Wszystko to działa przez Eidos na Linuksie - CS i jego pakiety instalują się 
 zwykłe mody, a unia podaje ich biblioteki DLL jak wszystko inne - ale trzech rzeczy
 **nie da się** odkryć od wewnątrz gry, a każda z nich sprawia, że funkcja po cichu
 nic nie robi. Ta strona to ich lista, zdobyta boleśnie na prawdziwej instalacji.
+
+Karta Stan sprawdza za Ciebie trzy z nich: zmienną NVAPI, gdy jest sterownik NVIDIA i pakiet Upscaling, a build Protona gry domyślnie wyłącza NVAPI (GE-Proton11-9 i Proton 11.0 go włączają), pełny ekran wyłączny w `SkyrimPrefs.ini` profilu oraz opisaną niżej linię ENB. Przy ostatnich dwóch jest przycisk Napraw.
 
 ## Opcja uruchamiania, której potrzebuje DLSS
 
@@ -109,6 +111,10 @@ Nie używaj jako Output location moda wybranego w **Capture output into**. Eidos
 po każdym uruchomieniu przenosi do tego moda własne `cfg/` i `log/` PGPatchera,
 a PGPatcher zatrzymuje się wtedy z komunikatem
 „Output directory has non-PGPatcher related files".
+
+## ENB pod Protonem: LinuxVersion
+
+Jackify zapisuje `LinuxVersion=true` w sekcji `[GLOBAL]` pliku `enblocal.ini` dla każdego ENB, który instaluje pod Protonem. Własna dokumentacja ENB nie opisuje tego klucza. Karta Stan zgłasza `enblocal.ini` bez tej linii, a przycisk Napraw zapisuje w `overwrite/Root/` kopię zwycięskiego `enblocal.ini` z ustawioną linią, więc mod ENB zachowuje swój plik.
 
 ## Odczytywanie liczb potem
 

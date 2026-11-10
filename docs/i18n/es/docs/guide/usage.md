@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=cad4336427eeb6622163ca009feb59f12db3635f -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a52fda783776900495152e3b3a35c98d83d96d42 -->
 
 # Usar Eidos
 
@@ -19,6 +19,7 @@ eidos import skyrimse <mo2-profile>  # adoptar el orden y el estado de plugins d
 eidos sort skyrimse               # ordenar la carga de plugins con LOOT
 eidos play skyrimse               # mostrar qué se montaría
 eidos play skyrimse -- <command>  # ejecutar <command> con los mods montados sobre el juego
+eidos check skyrimse              # comprobaciones de salud sin la ventana (--json para scripts)
 eidos collection skyrimse <link>  # instalar una colección de Nexus tal como la construyó su autor
 eidos nexus update skyrimse --apply  # instalar los archivos de Nexus que reemplazaron a los tuyos
 eidos pack skyrimse backup.eidos  # toda la instancia en un solo fichero, para llevarla a otro sitio
@@ -27,6 +28,12 @@ eidos unpack backup.eidos <folder>   # devolverla a su sitio en la otra máquina
 
 `eidos tool`, `eidos prereqs`, `eidos nexus`, `eidos nxm` y `eidos export`
 completan el conjunto; ejecuta `eidos` sin argumentos para la lista completa.
+
+### Comprobaciones de salud desde la terminal
+
+`eidos check <instance>` ejecuta las comprobaciones de prefijo, plugins, masters ausentes y script extender de la pestaña **Diagnostics** sin abrir la ventana, de modo que pueden ejecutarse por SSH o en el Game Mode y acabar en un informe de errores. Imprime las mismas líneas de sistema que **Copy report** y luego una línea por hallazgo, con tu carpeta personal mostrada como `~` y tu nombre de usuario como `<user>`. El código de salida es 0 cuando no se encontró ningún problema (los consejos solos siguen dando 0), 1 cuando se encontró al menos un problema y 2 cuando Eidos no pudo comprobar: argumentos incorrectos, una instancia que no puede abrir o un juego que no detecta.
+
+`eidos check <instance> --json` imprime en su lugar un único objeto JSON. Sus campos de nivel superior son `eidos` (la versión), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`) y `findings`. Cada hallazgo es un `code`, un `level` (`problem` o `advice`) y sus `args`; la pestaña Diagnostics muestra la frase de cada código.
 
 ### Instancias: globales y portátiles
 
@@ -709,7 +716,9 @@ lanzamiento ante todo, los masters ausentes (el predictor de fallos más fiable 
 existe), los archivos que ningún plugin activo cargará, si la lista de mods sigue
 coincidiendo con la carpeta de mods y - tras una ejecución - qué dice el propio
 registro del script extender sobre cada una de sus DLL de plugin, lo que convierte
-«¿se cargaron mis plugins de SKSE?» de una inferencia en una evidencia. Buscar actualizaciones también lee los requisitos de cada mod en Nexus. Diagnostics lista el mod requerido que falta o está desactivado, con Ignore para un requisito cubierto de otra forma.
+«¿se cargaron mis plugins de SKSE?» de una inferencia en una evidencia.
+También informa de una actualización del juego desde el último lanzamiento limpio, un script extender ausente o que no coincide con la versión del juego (con la página de descarga del extender y un botón que instala el archivo que descargues), una opción de lanzamiento de Steam que no inicia Eidos con `%command%`, NVAPI desactivado para DLSS, una pantalla completa exclusiva que impide la generación de fotogramas, un `enblocal.ini` de ENB sin `LinuxVersion=true`, las declaraciones de plugins de F4SE y SFSE, y el registro de fallos de la última sesión con los mods que nombra.
+Buscar actualizaciones también lee los requisitos de cada mod en Nexus. Diagnostics lista el mod requerido que falta o está desactivado, con Ignore para un requisito cubierto de otra forma.
 
 Para lanzar el juego a través de la interfaz gráfica, pon la opción de lanzamiento
 de Steam del juego con la ruta absoluta del binario (Steam no ve `~/.cargo/bin` en

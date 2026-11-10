@@ -1494,6 +1494,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::LogRefresh
         | Message::LogCopy
         | Message::CopyHealthReport
+        | Message::HealthFix(..)
+        | Message::CopyCrashLog(..)
         | Message::LogOpenFolder
         | Message::ShowIniEditor
         | Message::CloseIniEditor

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=cad4336427eeb6622163ca009feb59f12db3635f -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a52fda783776900495152e3b3a35c98d83d96d42 -->
 
 # 使用 Eidos
 
@@ -17,6 +17,7 @@ eidos import skyrimse <mo2-profile>  # adopt an existing MO2 profile's order + p
 eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
+eidos check skyrimse              # 不開視窗跑健康檢查(腳本用 --json)
 eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
 eidos nexus update skyrimse --apply  # install the Nexus files that replaced yours
 eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
@@ -25,6 +26,12 @@ eidos unpack backup.eidos <folder>   # put it back on the other machine
 
 `eidos tool`、`eidos prereqs`、`eidos nexus`、`eidos nxm` 與 `eidos export` 把整套
 補齊;不帶參數執行 `eidos` 就會列出完整清單。
+
+### 從終端機執行健康檢查
+
+`eidos check <instance>` 不開啟視窗就執行 **Diagnostics** 分頁裡的前綴、外掛、缺少的 master 與 script extender 檢查,因此可以透過 SSH 或在 Game Mode 下執行,結果也能放進錯誤回報。它先印出與 **Copy report** 相同的系統資訊行,再為每項發現印出一行,家目錄顯示為 `~`,登入名稱顯示為 `<user>`。沒有發現問題時結束碼為 0(只有建議仍為 0),至少發現一個問題時為 1,Eidos 無法檢查時為 2:參數錯誤、無法開啟的實例,或偵測不到的遊戲。
+
+`eidos check <instance> --json` 改為印出一個 JSON 物件。最上層欄位是 `eidos`(版本)、`game`、`instance`、`system`(`proton`、`flatpak_steam`、`passthrough`、`session`、`distro`、`kernel`、`dev_fuse`、`fusermount3`)與 `findings`。每項發現由 `code`、`level`(`problem` 或 `advice`)和它的 `args` 組成;Diagnostics 分頁會顯示每個代碼對應的句子。
 
 ### 實例:全域與可攜
 
@@ -522,7 +529,9 @@ MO2 自己的(`categories.dat` 與 `nexuscatmap.dat`),所以共用的實例只�
 **Diagnostics** 會跑即時的健康檢查:首要是啟動能力、缺少的 master(最可靠的單一
 當機預測指標)、沒有任何啟用外掛會載入的封裝檔、模組清單是否仍與 mods 資料夾相符,
 以及 - 在一次執行之後 - script extender 自己的日誌對它每一個外掛 DLL 說了什麼,這把
-「我的 SKSE 外掛載入了嗎?」從推測變成證據。檢查更新時也會讀取每個 mod 在 Nexus 上的前置需求。Diagnostics 會列出缺少或已停用的前置 mod,已用其他方式滿足的需求可用 Ignore 忽略。
+「我的 SKSE 外掛載入了嗎?」從推測變成證據。
+它也會回報:自上次乾淨啟動以來的遊戲更新,缺少或與遊戲版本不符的 script extender(附 extender 的下載頁面,以及安裝你下載的封裝檔的按鈕),沒有用 `%command%` 啟動 Eidos 的 Steam 啟動選項,DLSS 需要卻仍關閉的 NVAPI,阻擋畫格生成的獨佔全螢幕,沒有 `LinuxVersion=true` 的 ENB `enblocal.ini`,F4SE 與 SFSE 外掛的宣告,以及上次工作階段的當機日誌和其中點名的模組。
+檢查更新時也會讀取每個 mod 在 Nexus 上的前置需求。Diagnostics 會列出缺少或已停用的前置 mod,已用其他方式滿足的需求可用 Ignore 忽略。
 
 要透過 GUI 啟動遊戲,把該遊戲的 Steam 啟動選項設成執行檔的絕對路徑(Steam 看不到
 PATH 上的 `~/.cargo/bin`):

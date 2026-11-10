@@ -16,6 +16,7 @@ eidos import skyrimse <mo2-profile>  # adopt an existing MO2 profile's order + p
 eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
+eidos check skyrimse              # Health checks without the window (--json for scripts)
 eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
 eidos nexus update skyrimse --apply  # install the Nexus files that replaced yours
 eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
@@ -24,6 +25,23 @@ eidos unpack backup.eidos <folder>   # put it back on the other machine
 
 `eidos tool`, `eidos prereqs`, `eidos nexus`, `eidos nxm` and `eidos export` round
 out the set; run `eidos` with no arguments for the full list.
+
+### Health checks from the terminal
+
+`eidos check <instance>` runs the prefix, plugin, missing master and script
+extender checks of the window's **Diagnostics** tab without opening the window,
+so they can run over SSH or in Game Mode and go into a bug report. It prints the
+same system lines as **Copy report**, then one line per finding, with your home
+folder shown as `~` and your login name as `<user>`. The exit code is 0 when no
+problem was found (advice alone still gives 0), 1 when at least one problem was
+found, and 2 when Eidos could not check: wrong arguments, an instance it cannot
+open, or a game it does not detect.
+
+`eidos check <instance> --json` prints one JSON object instead. Its top-level
+fields are `eidos` (the version), `game`, `instance`, `system` (`proton`,
+`flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`,
+`fusermount3`) and `findings`. Each finding is a `code`, a `level` (`problem` or
+`advice`) and its `args`; the Diagnostics tab shows the sentence for each code.
 
 ### Instances: global and portable
 
@@ -645,7 +663,15 @@ answers and refuses, listing the changes, when they no longer fit.
 masters (the single most reliable crash predictor), archives no active plugin
 will load, whether the mod list still matches the mods folder, and - after a
 run - what the script extender's own log says about each of its plugin DLLs, which
-turns "did my SKSE plugins load?" from an inference into evidence. Check for updates also reads each mod's Nexus requirements. Diagnostics lists a required mod that is missing or disabled, with Ignore for a requirement met another way.
+turns "did my SKSE plugins load?" from an inference into evidence. It also
+reports a game update since the last clean launch, a missing script extender or
+one that does not match the game version (with the extender's download page and
+an install button for the archive you download), a Steam launch option that does
+not start Eidos with `%command%`, NVAPI left off for DLSS, exclusive fullscreen
+that stops frame generation, an ENB `enblocal.ini` without `LinuxVersion=true`,
+the plugin declarations of F4SE and SFSE plugins, and the crash log of the last
+session with the mods it names.
+Check for updates also reads each mod's Nexus requirements. Diagnostics lists a required mod that is missing or disabled, with Ignore for a requirement met another way.
 
 To launch the game through the GUI, set the game's Steam launch option to the
 binary's absolute path (Steam doesn't see `~/.cargo/bin` on PATH):

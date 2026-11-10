@@ -1359,6 +1359,7 @@ pub(crate) fn finish_run(app: &mut App) {
             };
         }
     }
+    let mut refused = false;
     app.status = Some(if failed {
         match &run.log {
             // When `eidos` itself refused (the instance in use, a list it cannot
@@ -1368,14 +1369,17 @@ pub(crate) fn finish_run(app: &mut App) {
                 .ok()
                 .and_then(|b| refusal_line(&String::from_utf8_lossy(&b)))
             {
-                Some(reason) => tf(
-                    "status_exited_refused",
-                    &[
-                        ("title", &run.title),
-                        ("reason", &reason),
-                        ("log", &p.display()),
-                    ],
-                ),
+                Some(reason) => {
+                    refused = true;
+                    tf(
+                        "status_exited_refused",
+                        &[
+                            ("title", &run.title),
+                            ("reason", &reason),
+                            ("log", &p.display()),
+                        ],
+                    )
+                }
                 None => tf(
                     "status_exited_error_log",
                     &[("title", &run.title), ("log", &p.display())],
@@ -1386,6 +1390,19 @@ pub(crate) fn finish_run(app: &mut App) {
     } else {
         tf("status_exited", &[("title", &run.title)])
     });
+    // A crash can still exit 0 under Proton; the crash log is the better answer.
+    // A refused launch never started the game, so its crash log is an older one.
+    if run.game && !refused {
+        if let (Some(game), Some(inst)) = (selected_game(app), app.created.as_ref()) {
+            let mods = eidos::check::active_mods(inst);
+            if let Some(f) = eidos::check::crash::crash_findings(game, inst, &mods).first() {
+                app.status = Some(tf(
+                    "status_game_crashed",
+                    &[("title", &run.title), ("log", &f.arg("log").unwrap_or(""))],
+                ));
+            }
+        }
+    }
 }
 
 /// The first line in a run log where the `eidos` CLI refused to go on, without

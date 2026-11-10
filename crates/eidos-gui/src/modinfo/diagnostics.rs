@@ -336,7 +336,12 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
             .filter(|m| m.is_active() && !m.is_unmanaged())
             .map(|m| (m.name.clone(), m.path.clone()))
             .collect::<Vec<_>>();
-        for d in eidos_gamefeatures::preflight::scan_skse(
+        out.extend(
+            eidos::check::host_findings(&home(), game, inst, &mods)
+                .iter()
+                .map(crate::health::finding_card),
+        );
+        for d in eidos_gamefeatures::preflight::scan_extender_plugins(
             game.def,
             &game.data_path,
             &game.install_path,
@@ -939,62 +944,12 @@ pub(crate) fn diagnostics_tab_label(app: &App) -> String {
     }
 }
 
-/// What the copied report states about the machine and the setup, gathered
-/// apart from the text so the builder can be tested without a real host.
-pub(crate) struct ReportFacts {
-    pub(crate) version: String,
-    pub(crate) game_id: String,
-    pub(crate) proton_build: String,
-    /// None when no Proton command could be resolved for the selected game.
-    pub(crate) flatpak_steam: Option<bool>,
-    pub(crate) passthrough_requested: bool,
-    pub(crate) cap_missing: bool,
-    pub(crate) session: &'static str,
-    pub(crate) distro: String,
-    pub(crate) kernel: String,
-    pub(crate) dev_fuse: bool,
-    pub(crate) fusermount3: bool,
-}
-
-fn yes_no(b: bool) -> &'static str {
-    if b {
-        "yes"
-    } else {
-        "no"
-    }
-}
-
 /// Plain text for a bug report. Every line goes through `eidos_log::redact`
 /// (home path, user name), because titles and Proton paths can carry both.
-pub(crate) fn health_report(f: &ReportFacts, checks: &[Diagnostic]) -> String {
-    let passthrough = match (f.passthrough_requested, f.cap_missing) {
-        (false, _) => "off (default)",
-        (true, true) => "requested, launch capability missing",
-        (true, false) => "requested, launch capability present",
-    };
-    let mut lines = vec![
-        format!("Eidos: {}", f.version),
-        format!("Game: {}", f.game_id),
-        format!("Proton: {}", f.proton_build),
-        format!(
-            "Flatpak Steam: {}",
-            f.flatpak_steam.map_or("unknown", yes_no)
-        ),
-        format!("Passthrough: {passthrough}"),
-        format!("Session: {}", f.session),
-        format!("Distro: {}", f.distro),
-        format!("Kernel: {}", f.kernel),
-        format!(
-            "/dev/fuse: {}",
-            if f.dev_fuse { "present" } else { "missing" }
-        ),
-        format!(
-            "fusermount3: {}",
-            if f.fusermount3 { "found" } else { "not found" }
-        ),
-        String::new(),
-        "Health:".to_string(),
-    ];
+pub(crate) fn health_report(f: &eidos::check::ReportFacts, checks: &[Diagnostic]) -> String {
+    let mut lines = eidos::check::report_header(f);
+    lines.push(String::new());
+    lines.push("Health:".to_string());
     for d in checks {
         let state = match d.level {
             DiagLevel::Problem => "problem",
@@ -1008,44 +963,6 @@ pub(crate) fn health_report(f: &ReportFacts, checks: &[Diagnostic]) -> String {
         .map(|l| eidos_log::redact(l).into_owned())
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-/// Read the facts off the running host and the selected game.
-pub(crate) fn report_facts(app: &App) -> ReportFacts {
-    let game = crate::state::selected_game(app);
-    let run = game.and_then(|g| {
-        let cd = g.compatdata.as_ref()?;
-        eidos_games::proton_command(&home(), g.def.steam_app_id, cd, &g.install_path)
-    });
-    let proton_build = run
-        .as_ref()
-        .and_then(|r| r.proton.parent()?.file_name())
-        .map_or_else(|| "unknown".into(), |n| n.to_string_lossy().into_owned());
-    let distro = std::fs::read_to_string("/etc/os-release")
-        .ok()
-        .and_then(|s| {
-            s.lines()
-                .find_map(|l| l.strip_prefix("PRETTY_NAME="))
-                .map(|v| v.trim_matches('"').to_string())
-        })
-        .unwrap_or_else(|| "unknown".into());
-    let kernel = std::fs::read_to_string("/proc/sys/kernel/osrelease")
-        .map_or_else(|_| "unknown".into(), |s| s.trim().to_string());
-    let fusermount3 = std::env::var_os("PATH")
-        .is_some_and(|p| std::env::split_paths(&p).any(|d| d.join("fusermount3").is_file()));
-    ReportFacts {
-        version: env!("CARGO_PKG_VERSION").to_string(),
-        game_id: game.map_or_else(|| "none".into(), |g| g.def.id.to_string()),
-        proton_build,
-        flatpak_steam: run.map(|r| r.flatpak),
-        passthrough_requested: passthrough_requested(),
-        cap_missing: app.cap_missing,
-        session: if on_wayland() { "Wayland" } else { "X11" },
-        distro,
-        kernel,
-        dev_fuse: std::path::Path::new("/dev/fuse").exists(),
-        fusermount3,
-    }
 }
 
 pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {

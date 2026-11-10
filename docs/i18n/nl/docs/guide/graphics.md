@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=a2dfee4604b4e78f8f22e935fab06fbfe6d4d301 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
 
 # Community Shaders, DLSS en frame generation
 
@@ -9,6 +9,8 @@ en de samenvoeging serveert hun DLL's als al het andere - maar drie dingen zijn
 **niet** vanuit het spel te ontdekken, en elk ervan zorgt dat de functie
 stilzwijgend niets doet. Deze pagina is die lijst, op een echte opstelling met
 schade en schande geleerd.
+
+Het tabblad Status controleert er drie van voor u: de NVAPI-variabele, wanneer er een NVIDIA-stuurprogramma en het Upscaling-pakket aanwezig zijn en de Proton-build van het spel NVAPI standaard uit laat (GE-Proton11-9 en Proton 11.0 zetten het aan), exclusief volledig scherm in de `SkyrimPrefs.ini` van het profiel, en de ENB-regel hieronder. Bij de laatste twee zit een knop Herstellen.
 
 ## De opstartoptie die DLSS nodig heeft
 
@@ -110,6 +112,10 @@ hij hoort te winnen.
 Gebruik geen mod uit **Capture output into** als Output location. Eidos
 verplaatst na elke draai de eigen `cfg/` en `log/` van PGPatcher naar die mod,
 en PGPatcher stopt dan met "Output directory has non-PGPatcher related files".
+
+## ENB onder Proton: LinuxVersion
+
+Jackify schrijft `LinuxVersion=true` in de sectie `[GLOBAL]` van `enblocal.ini` voor elke ENB die het onder Proton installeert. De eigen documentatie van ENB beschrijft deze sleutel niet. Het tabblad Status meldt een `enblocal.ini` zonder die regel, en de knop Herstellen schrijft een kopie van de winnende `enblocal.ini` met de regel erin naar `overwrite/Root/`, zodat de ENB-mod zijn eigen bestand houdt.
 
 ## De getallen achteraf lezen
 

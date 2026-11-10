@@ -5925,6 +5925,27 @@ fn setup_prereqs_is_refused_while_a_run_is_tracked() {
     let _ = fs::remove_dir_all(root);
 }
 
+#[test]
+fn health_fix_is_refused_while_a_game_runs() {
+    let (mut app, root) = list_app(&["Keep"]);
+    let prefs_path = app
+        .created
+        .as_ref()
+        .unwrap()
+        .active()
+        .ini_path("SkyrimPrefs.ini");
+    start_run(
+        &mut app,
+        "Skyrim".into(),
+        std::process::Command::new("/bin/true"),
+    );
+    let _ = update_inner(&mut app, Message::HealthFix("fullscreen_blocks_framegen"));
+    assert!(app.status.as_deref().unwrap().contains("Skyrim"));
+    assert!(!prefs_path.exists());
+    app.running.take();
+    let _ = fs::remove_dir_all(root);
+}
+
 /// Wait for the tracked run's child to exit, then let the poll finish it.
 fn finish_tracked_run(app: &mut App) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
@@ -6014,6 +6035,50 @@ fn a_run_eidos_refused_says_why_in_the_status_bar() {
         "{status}"
     );
     assert!(status.contains("run-"), "the log stays named: {status}");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_crashed_game_names_its_log_unless_eidos_refused_the_launch() {
+    let (mut app, root) = list_app(&["Keep"]);
+    let compat = root.join("compatdata");
+    let skse =
+        compat.join("pfx/drive_c/users/steamuser/Documents/My Games/Skyrim Special Edition/SKSE");
+    fs::create_dir_all(&skse).unwrap();
+    let log = skse.join("crash-2026-11-09-21-30-00.log");
+    fs::write(&log, "Unhandled exception \"EXCEPTION_ACCESS_VIOLATION\"\n").unwrap();
+    app.games[0].compatdata = Some(compat);
+    let started = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        - 60;
+    app.created
+        .as_ref()
+        .unwrap()
+        .record_launch_start(&Default::default(), started)
+        .unwrap();
+
+    for (script, crashed) in [
+        ("exit 0", true),
+        (
+            "echo 'WARN  eidos: refusing to launch: in use' >&2; exit 1",
+            false,
+        ),
+    ] {
+        let mut cmd = std::process::Command::new("/bin/sh");
+        cmd.arg("-c").arg(script);
+        start_run(&mut app, "Skyrim".into(), cmd);
+        app.running.as_mut().unwrap().game = true;
+        finish_tracked_run(&mut app);
+        let status = app.status.clone().unwrap_or_default();
+        assert_eq!(
+            status.contains(&log.display().to_string()),
+            crashed,
+            "{status}"
+        );
+        assert_eq!(status.contains("refusing to launch"), !crashed, "{status}");
+    }
     let _ = fs::remove_dir_all(root);
 }
 

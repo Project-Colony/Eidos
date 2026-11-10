@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=a2dfee4604b4e78f8f22e935fab06fbfe6d4d301 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
 
 # Community Shaders、DLSS 与帧生成
 
@@ -7,6 +7,8 @@ Community Shaders 1.4+ 自带超分(DLSS 4 / FSR 3.1 / XeSS,通过单独的
 Eidos 工作 —— CS 及其附加包按普通模组安装,合并视图像对待其它文件一样提供它们的
 DLL —— 但有三件事在游戏里**看不出来**,而且每一件都会让功能静悄悄地什么也不做。
 本页就是这份清单,是在真实环境里吃过苦头换来的。
+
+“健康”标签页会替你检查其中三项:存在 NVIDIA 驱动和 Upscaling 包、而游戏所用的 Proton 版本默认关闭 NVAPI 时的 NVAPI 变量(GE-Proton11-9 和 Proton 11.0 会开启它),配置文件 `SkyrimPrefs.ini` 中的独占全屏,以及下面介绍的 ENB 那一行。后两项带有“修复”按钮。
 
 ## DLSS 需要的启动选项
 
@@ -87,6 +89,10 @@ PGPatcher 会先清空文件夹再重新写入，而 Eidos 假定视图挂载期
 不要把 **Capture output into** 的模组用作 Output location。每次运行之后，Eidos
 会把 PGPatcher 自己的 `cfg/` 和 `log/` 移进那个模组，PGPatcher 随后就会报
 「Output directory has non-PGPatcher related files」并停止。
+
+## Proton 下的 ENB:LinuxVersion
+
+Jackify 为它在 Proton 下安装的每个 ENB,都会在 `enblocal.ini` 的 `[GLOBAL]` 段写入 `LinuxVersion=true`。ENB 自己的文档没有说明这个键。“健康”标签页会提示缺少这一行的 `enblocal.ini`,“修复”按钮则把生效的 `enblocal.ini` 加上这一行后复制一份写入 `overwrite/Root/`,ENB 模组的文件保持不变。
 
 ## 事后怎么读这些数字
 
