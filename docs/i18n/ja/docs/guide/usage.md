@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=97258d215328aaa54e93db5456cee947c9048e9e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c05b0ecbbaa6d1901978bddc1de4c064a367f9ee -->
 
 # Eidos の使い方
 
@@ -19,6 +19,7 @@ eidos sort skyrimse               # プラグインのロード順を LOOT で�
 eidos play skyrimse               # 何がマウントされるかを表示する
 eidos play skyrimse -- <command>  # MOD をゲームに重ねた状態で <command> を実行する
 eidos collection skyrimse <link>  # Nexus のコレクションを、作者が組んだとおりにインストールする
+eidos nexus update skyrimse --apply  # 手元のファイルを置き換えた Nexus のファイルをインストールする
 eidos pack skyrimse backup.eidos  # インスタンス丸ごとを一つのファイルに。よそへ移すために
 eidos unpack backup.eidos <folder>   # 向こうのマシンで元に戻す
 ```
@@ -530,6 +531,34 @@ Downloads タブは転送の待ち行列ではなく、書庫の**書棚**です
 「Remove N installed」は、すでにインストールした MOD の書庫を二クリックで
 削除します。消えるのは**画面に出ているもの**だけ。どれのことかは、絞り込みで
 言ったのですから。
+
+### MOD の更新
+
+Check for updates(ツールバーのボタン、または MOD のメニュー)は、インストール済みの
+各ファイルを、Nexus でそれを置き換えたファイルと比べます。作者は新しいアップロードを
+古いものの後継として印を付け、Eidos は MOD の `meta.ini` が記録しているファイル ID
+からその連鎖をたどります。連鎖が後継を示さないときは、代わりに MOD ページの
+バージョンを比べます。
+
+「Information...」の **Nexus files** タブは、Nexus 上の MOD のファイルを新しい順に
+並べ、ここにインストールされているものと、それを置き換えるものに印を付けます。
+後者の行には **Update** ボタンがあります。プレミアムアカウントなら Eidos がファイルを
+自分でダウンロードします。無料アカウントならファイルのページを開き、そこで
+Mod Manager Download がファイルを送り返し、書庫が `downloads/` に届いた時点で
+インストールが始まります。その先はいつものインストールです。FOMOD は MOD を
+インストールしたときの答えで開き、続く確認では「Keep a backup of the existing mod」に
+チェックが入った状態で Replace を選べます。前回の確認で何を選んでいても同じです。
+Replace は MOD の優先度と、有効かどうかを保ちます。
+
+複数の Nexus ファイルを抱えるフォルダ(メインファイルにオプションのファイルを混ぜ込んだ
+ものなど)は断ります。新しいメインファイルで置き換えると、ほかのファイルが失われる
+からです。それらは手で更新してください。
+
+`eidos nexus update skyrimse --apply` は同じ確認をしたうえで、プレミアムアカウントなら
+新しいファイルをそれぞれダウンロードし、`--replace --backup` でそのフォルダの上に
+インストールします。無料アカウントでは代わりに、ファイルのページごとに `OPEN <url>`
+を表示します。複数のファイルをまとめたフォルダは理由を添えて飛ばし、どれかの更新が
+失敗すればコマンドは 1 で終わります。
 
 ### Nexus のコレクション
 

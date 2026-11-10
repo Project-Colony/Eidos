@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=97258d215328aaa54e93db5456cee947c9048e9e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c05b0ecbbaa6d1901978bddc1de4c064a367f9ee -->
 
 # Eidos kullanımı
 
@@ -19,6 +19,7 @@ eidos sort skyrimse               # eklenti yükleme sırasını LOOT ile sıral
 eidos play skyrimse               # neyin bağlanacağını göster
 eidos play skyrimse -- <command>  # <command>'ı modlar oyunun üzerine bağlanmış halde çalıştır
 eidos collection skyrimse <link>  # bir Nexus koleksiyonunu yazarının kurduğu gibi kur
+eidos nexus update skyrimse --apply  # sizinkilerin yerini alan Nexus dosyalarını kur
 eidos pack skyrimse backup.eidos  # bütün örnek tek bir dosyada, başka yere taşımak için
 eidos unpack backup.eidos <folder>   # öteki makinede geri koy
 ```
@@ -578,6 +579,34 @@ yani bir kitabı kaldırıp koymak onu yakmak değildir. "Show hidden" onları g
 getirir, aynı düğme gizlemeyi de kaldırır. "Remove N installed", zaten kurduğunuz
 modların arşivlerini iki tıkla siler, hem de yalnızca **ekranda olanları**:
 süzgeç, hangilerini kastettiğinizi söyleme biçiminizdir.
+
+### Mod güncellemeleri
+
+Check for updates (araç çubuğundaki düğme ya da modun menüsü) kurulu her dosyayı
+Nexus'ta onun yerini alan dosyayla karşılaştırır. Yazarlar yeni bir yüklemeyi
+daha eskisinin ardılı olarak işaretler; Eidos bu zinciri, modun `meta.ini`
+dosyasının kaydettiği dosya kimliğinden başlayarak izler. Zincir hiçbir ardıl
+göstermiyorsa bunun yerine mod sayfasındaki sürüm karşılaştırılır.
+
+"Information..." içindeki **Nexus files** sekmesi modun Nexus'taki dosyalarını
+en yeniden başlayarak listeler; burada kurulu olanı ve onun yerini alanı
+işaretler. Bu ikinci satırda bir **Update** düğmesi vardır. Premium bir hesapla
+Eidos dosyayı kendisi indirir. Ücretsiz bir hesapla dosyanın sayfasını açar;
+orada Mod Manager Download dosyayı geri gönderir ve arşiv `downloads/` klasörüne
+vardığında kurulum başlar. Oradan sonrası alışılmış kurulumdur: bir FOMOD, modun
+kurulduğu cevaplarla açılır, ardından soru penceresi "Keep a backup of the
+existing mod" işaretli olarak Replace seçeneğini sunar; bir önceki pencerede ne
+seçmiş olursanız olun. Replace, modun önceliğini ve etkin olup olmadığını korur.
+
+Birkaç Nexus dosyası barındıran bir klasör, örneğin içine isteğe bağlı bir dosya
+karıştırılmış bir ana dosya, reddedilir: onu yeni ana dosyayla değiştirmek
+ötekileri kaybettirir. Bunları elle güncelleyin.
+
+`eidos nexus update skyrimse --apply` aynı denetimi yapar, ardından premium bir
+hesapta her yeni dosyayı indirip `--replace --backup` ile klasörünün üzerine
+kurar. Ücretsiz bir hesapta bunun yerine her dosya sayfası için `OPEN <url>`
+yazdırır. Birkaç dosyayı birleştiren klasörler gerekçesiyle atlanır ve bir
+güncelleme başarısız olduysa komut 1 ile çıkar.
 
 ### Nexus koleksiyonları
 

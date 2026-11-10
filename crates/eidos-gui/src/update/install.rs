@@ -221,12 +221,14 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             if let Some(w) = app.fomod.as_ref() {
                 if let Some(name) = eidos_install::collision_name(&mods_dir, w.session.mod_name()) {
                     let rename_to = suggest_free_name(&mods_dir, &name);
+                    let (archive, game_id) = (w.archive.clone(), w.game_id.clone());
+                    let backup = backup_default(app, &name);
                     app.collision = Some(CollisionPrompt {
                         target: target.clone(),
-                        backup: app.prefs.retain_install_backup,
-                        archive: w.archive.clone(),
+                        backup,
+                        archive,
                         name: name.clone(),
-                        game_id: w.game_id.clone(),
+                        game_id,
                         rename_to,
                         fomod: true,
                         // The wizard (still open) owns the extracted tree.
@@ -360,19 +362,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             return Task::done(Message::DrainDrops);
         }
         Message::DrainDrops => {
-            // A modal is open: the current install is still being answered. The
-            // queue is drained again from `after_install` and from every cancel.
-            if app.installer.is_some() || app.fomod.is_some()
-                || app.picker.is_some()
-                || app.collision.is_some()
-                // An extraction is already running. Starting a second one would
-                // race it for `mods/<name>/` and put two 7-Zips on the same disk.
-                || app.install_job.is_some()
-                // Same reason, over twenty minutes rather than thirty seconds.
-                || app.transfer_job.is_some()
-                // And a copy step: its worker holds the instance lock.
-                || app.place_job.is_some()
-            {
+            // The queue is drained again from `after_install` and from every cancel.
+            if install_busy(app) {
                 return Task::none();
             }
             let Some(path) = app.dropped.first().cloned() else {

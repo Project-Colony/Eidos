@@ -107,27 +107,37 @@ pub(crate) fn info_nexus_files<'a>(app: &App, i: usize, m: &ModEntry) -> Element
         };
         let when =
             std::time::UNIX_EPOCH + std::time::Duration::from_secs(r.file.uploaded_timestamp);
-        col = col.push(
-            Row::new()
-                .spacing(8)
-                .align_y(iced::Alignment::Center)
-                .push(cell(r.file.name.clone(), 150.0))
-                .push(cell(
-                    t(&format!("nexus_file_cat_{}", r.file.category_id)),
-                    80.0,
-                ))
-                .push(cell(r.file.version.clone(), 60.0))
-                .push(cell(
-                    format!("{:.1} MiB", r.file.size_in_bytes as f64 / 1_048_576.0),
-                    70.0,
-                ))
-                .push(cell(format_mtime(when), 110.0))
-                .push(cell(mark, 90.0))
-                .push(tool_btn(
-                    t("nexus_file_open"),
-                    Message::OpenUrl(file_page_url(&domain, mod_id, r.file.file_id)),
-                )),
-        );
+        let mut row = Row::new()
+            .spacing(8)
+            .align_y(iced::Alignment::Center)
+            .push(cell(r.file.name.clone(), 150.0))
+            .push(cell(
+                t(&format!("nexus_file_cat_{}", r.file.category_id)),
+                80.0,
+            ))
+            .push(cell(r.file.version.clone(), 60.0))
+            .push(cell(
+                format!("{:.1} MiB", r.file.size_in_bytes as f64 / 1_048_576.0),
+                70.0,
+            ))
+            .push(cell(format_mtime(when), 110.0))
+            .push(cell(mark, 90.0))
+            .push(tool_btn(
+                t("nexus_file_open"),
+                Message::OpenUrl(file_page_url(&domain, mod_id, r.file.file_id)),
+            ));
+        if r.successor {
+            row = row.push(tool_btn(
+                t("nexus_file_update"),
+                Message::NexusUpdate {
+                    folder: m.name.clone(),
+                    domain: domain.clone(),
+                    mod_id,
+                    file_id: r.file.file_id,
+                },
+            ));
+        }
+        col = col.push(row);
     }
     col.into()
 }

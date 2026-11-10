@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=97258d215328aaa54e93db5456cee947c9048e9e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c05b0ecbbaa6d1901978bddc1de4c064a367f9ee -->
 
 # 使用 Eidos
 
@@ -18,6 +18,7 @@ eidos sort skyrimse               # 用 LOOT 排序插件加载顺序
 eidos play skyrimse               # 显示将会挂载什么
 eidos play skyrimse -- <command>  # 在模组盖住游戏的视图下运行 <command>
 eidos collection skyrimse <link>  # 按作者构建它的方式安装一个 Nexus 合集
+eidos nexus update skyrimse --apply  # 安装取代了你那些文件的 Nexus 文件
 eidos pack skyrimse backup.eidos  # 整个实例装进一个文件,好搬到别处去
 eidos unpack backup.eidos <folder>   # 在另一台机器上把它放回去
 ```
@@ -429,6 +430,27 @@ Downloads 标签页是一个压缩包**库**,不是传输队列。按名称过�
 烧掉它。"Show hidden" 把它们带回来,同一个按钮也取消隐藏。"Remove N installed" 两下
 点击删除你已经安装过的模组的压缩包,而且只删**屏幕上**的那些:过滤就是你表明你指的是
 哪些的方式。
+
+### 模组更新
+
+Check for updates(工具栏按钮,或模组菜单)会把每个已安装的文件与 Nexus 上取代它的
+文件相比较。作者会把一次新上传标记为某个旧文件的后继,Eidos 从模组 `meta.ini` 记录的
+文件 ID 出发沿这条链往下找。链上没有后继时,改为比较模组页面的版本。
+
+"Information..." 的 **Nexus files** 标签页列出该模组在 Nexus 上的文件,最新的在前,
+并标出这里安装的那个和取代它的那个。后者那一行有一个 **Update** 按钮。premium 账户由
+Eidos 自己下载文件。免费账户则打开文件页面,在那里 Mod Manager Download 把文件发回来,
+压缩包到达 `downloads/` 时安装开始。之后就是平常的安装:FOMOD 以模组安装时的答案打开,
+随后的询问提供 Replace,并勾选 "Keep a backup of the existing mod",不论你上次询问时
+选了什么。Replace 保留模组的优先级和启用状态。
+
+包含多个 Nexus 文件的文件夹(例如混入了一个可选文件的主文件)会被拒绝:用新的主文件
+替换它会丢掉其他文件。这些请手动更新。
+
+`eidos nexus update skyrimse --apply` 做同样的检查,然后在 premium 账户上下载每个新
+文件,并用 `--replace --backup` 安装到它的文件夹上。在免费账户上则改为为每个文件页面
+打印 `OPEN <url>`。合并了多个文件的文件夹会被跳过并说明原因,只要有一个更新失败,
+命令就以 1 退出。
 
 ### Nexus 合集
 

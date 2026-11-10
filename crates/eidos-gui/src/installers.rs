@@ -145,7 +145,7 @@ pub(crate) fn begin(
         selected: vec![],
         input: String::new(),
         replace: false,
-        backup: app.prefs.retain_install_backup,
+        backup: backup_default(app, &name),
         approval: Default::default(),
         error: None,
         review: String::new(),

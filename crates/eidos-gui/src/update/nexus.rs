@@ -155,6 +155,61 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.nexus_files.insert(key, result);
             }
         }
+        Message::NexusUpdate {
+            folder,
+            domain,
+            mod_id,
+            file_id,
+        } => {
+            let Some(inst) = app.created.as_ref() else {
+                return Task::none();
+            };
+            if inst.mod_meta(&folder).installed_files().len() > 1 {
+                app.status = Some(tf("nexus_update_merged_refused", &[("folder", &folder)]));
+                return Task::none();
+            }
+            let root = inst.root.clone();
+            let Some(premium) = app.nexus_account.as_ref().map(|a| a.is_premium) else {
+                app.status = Some(t("status_connect_nexus_first").to_string());
+                return Task::none();
+            };
+            let task = if premium {
+                // The keyless link, as Fetch missing sends it: a premium
+                // account can mint the download from the ids alone.
+                let link = format!("nxm://{domain}/mods/{mod_id}/files/{file_id}");
+                if let Err(e) = eidos_command()
+                    .arg("nxm")
+                    .arg(&link)
+                    .env("EIDOS_INSTANCE", &root)
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()
+                {
+                    app.status = Some(tf(
+                        "status_start_failed",
+                        &[("name", &"eidos nxm"), ("error", &e)],
+                    ));
+                    return Task::none();
+                }
+                app.status = Some(tf("status_update_started", &[("folder", &folder)]));
+                Task::none()
+            } else {
+                // A free account downloads through the page's own button.
+                let task = update(
+                    app,
+                    Message::OpenUrl(eidos_nexus::file_page_url(&domain, mod_id, file_id)),
+                );
+                app.status = Some(t("status_update_waiting_download").to_string());
+                task
+            };
+            app.pending_update = Some(PendingUpdate {
+                folder,
+                mod_id,
+                file_id,
+            });
+            return task;
+        }
         Message::ModEndorsed(instance, folder, mod_id, result) => {
             if app.created.as_ref().is_none_or(|i| i.root != instance) {
                 return Task::none();

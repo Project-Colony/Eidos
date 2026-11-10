@@ -48,6 +48,8 @@ pub(crate) struct DownloadRow {
     pub(crate) mod_id: Option<u64>,
     /// The sidecar's `gameName`, which names the Nexus domain the mod page is on.
     pub(crate) game_name: Option<String>,
+    /// The Nexus file id from the sidecar.
+    pub(crate) file_id: Option<u64>,
     /// The derived install status.
     pub(crate) state: DownloadState,
     /// Bytes on disk so far. Equals `size` once finished.
@@ -63,6 +65,14 @@ pub(crate) struct DownloadRow {
     pub(crate) hidden: bool,
     /// When the archive was last written, for sorting by date.
     pub(crate) modified: std::time::SystemTime,
+}
+
+/// An update waiting for its new file to land in `downloads/`.
+#[derive(Debug, Clone)]
+pub(crate) struct PendingUpdate {
+    pub(crate) folder: String,
+    pub(crate) mod_id: u64,
+    pub(crate) file_id: u64,
 }
 
 /// How the Downloads list is ordered.

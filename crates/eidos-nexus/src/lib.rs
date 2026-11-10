@@ -2016,6 +2016,26 @@ pub fn meta_path_for(archive: &Path) -> PathBuf {
     PathBuf::from(format!("{}.meta", archive.display()))
 }
 
+/// A whole archive in `dir` (nothing still arriving beside it) whose `.meta`
+/// names this Nexus mod and file.
+pub fn find_download(dir: &Path, mod_id: u64, file_id: u64) -> Option<PathBuf> {
+    fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| {
+            p.is_file()
+                && !p
+                    .extension()
+                    .is_some_and(|x| x == "meta" || x == "unfinished")
+                && !unfinished_path(p).exists()
+                && {
+                    let meta = eidos_instance::ModMeta::read(&meta_path_for(p));
+                    meta.mod_id() == Some(mod_id) && meta.file_id() == Some(file_id)
+                }
+        })
+}
+
 /// Set (or add) one key in a download's `.meta`, leaving every other line as it
 /// was. A missing sidecar is a no-op, not an error: a manually dropped archive
 /// legitimately has none.
@@ -2537,6 +2557,26 @@ mod tests {
         assert!(a.is_file());
         assert!(meta_path_for(&a).is_file());
         let _ = fs::remove_dir_all(a.parent().unwrap());
+    }
+
+    #[test]
+    fn find_download_ignores_partials_and_other_files() {
+        let dir = std::env::temp_dir().join(format!("eidos-dl-find-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let meta = |file_id: u64| format!("[General]\nmodID=42\nfileID={file_id}\n");
+        for (name, file_id) in [("a.7z", 103), ("b.7z", 104)] {
+            fs::write(dir.join(name), b"x").unwrap();
+            fs::write(meta_path_for(&dir.join(name)), meta(file_id)).unwrap();
+        }
+        // b.7z is still arriving; c.7z has a sidecar and no archive yet.
+        fs::write(unfinished_path(&dir.join("b.7z")), b"x").unwrap();
+        fs::write(meta_path_for(&dir.join("c.7z")), meta(105)).unwrap();
+        assert_eq!(find_download(&dir, 42, 103), Some(dir.join("a.7z")));
+        assert_eq!(find_download(&dir, 42, 104), None);
+        assert_eq!(find_download(&dir, 42, 105), None);
+        assert_eq!(find_download(&dir, 43, 103), None);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

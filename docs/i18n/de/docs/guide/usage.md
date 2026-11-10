@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=97258d215328aaa54e93db5456cee947c9048e9e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c05b0ecbbaa6d1901978bddc1de4c064a367f9ee -->
 
 # Eidos verwenden
 
@@ -19,6 +19,7 @@ eidos sort skyrimse               # die Plugin-Ladereihenfolge mit LOOT sortiere
 eidos play skyrimse               # zeigen, was gemountet würde
 eidos play skyrimse -- <command>  # <command> mit den über das Spiel gemounteten Mods starten
 eidos collection skyrimse <link>  # eine Nexus-Collection so installieren, wie ihr Autor sie gebaut hat
+eidos nexus update skyrimse --apply  # die Nexus-Dateien installieren, die Ihre ersetzt haben
 eidos pack skyrimse backup.eidos  # die ganze Instanz in einer Datei, um sie woandershin mitzunehmen
 eidos unpack backup.eidos <folder>   # sie auf dem anderen Rechner wieder auspacken
 ```
@@ -627,6 +628,36 @@ zurück, und derselbe Knopf hebt das Verbergen wieder auf. "Remove N installed"
 löscht in zwei Klicks die Archive der Mods, die Sie bereits installiert haben,
 und nur die **auf dem Bildschirm**: der Filter ist Ihre Art zu sagen, welche Sie
 meinten.
+
+### Mod-Updates
+
+Check for updates (der Knopf in der Werkzeugleiste oder das Mod-Menü) vergleicht
+jede installierte Datei mit der Datei, die sie auf Nexus ersetzt hat. Autoren
+markieren einen neuen Upload als Nachfolger eines älteren, und Eidos folgt
+dieser Kette ab der Datei-ID, die die `meta.ini` der Mod festhält. Nennt die
+Kette keinen Nachfolger, wird stattdessen die Version der Mod-Seite verglichen.
+
+Der Reiter **Nexus files** von "Information..." listet die Dateien der Mod auf
+Nexus, die neueste zuerst, und markiert die hier installierte und die, die sie
+ersetzt. Diese zweite Zeile hat einen Knopf **Update**. Mit einem Premium-Konto
+lädt Eidos die Datei selbst herunter. Mit einem kostenlosen Konto öffnet es die
+Seite der Datei, wo Mod Manager Download die Datei zurückschickt, und die
+Installation beginnt, sobald das Archiv in `downloads/` ankommt. Danach ist es
+die gewohnte Installation: Ein FOMOD öffnet sich mit den Antworten, mit denen
+die Mod installiert wurde, dann bietet die Abfrage Replace mit angehaktem "Keep
+a backup of the existing mod" an, egal was Sie bei der letzten Abfrage gewählt
+haben. Replace behält die Priorität der Mod und ob sie aktiviert ist.
+
+Ein Ordner mit mehreren Nexus-Dateien, etwa einer Hauptdatei mit einer
+hineingemischten optionalen Datei, wird abgelehnt: Ersetzt durch die neue Hauptdatei,
+gingen die anderen verloren. Aktualisieren Sie diese von Hand.
+
+`eidos nexus update skyrimse --apply` führt dieselbe Prüfung aus und lädt dann
+bei einem Premium-Konto jede neue Datei herunter und installiert sie mit
+`--replace --backup` über ihren Ordner. Bei einem kostenlosen Konto gibt es
+stattdessen für jede Dateiseite `OPEN <url>` aus. Ordner, die mehrere Dateien
+zusammenführen, werden mit Begründung übersprungen, und der Befehl endet mit 1,
+wenn ein Update fehlgeschlagen ist.
 
 ### Nexus-Collections
 

@@ -552,6 +552,7 @@ pub(crate) fn load_downloads(app: &mut App) {
                 mod_name: meta.mod_name(),
                 mod_id: meta.mod_id(),
                 game_name: meta.game_name().filter(|g| !g.is_empty()),
+                file_id: meta.file_id(),
                 state,
                 downloaded: md.len(),
                 total,

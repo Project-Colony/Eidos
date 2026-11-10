@@ -416,6 +416,13 @@ pub(crate) enum Message {
         mod_id: u64,
         result: Result<eidos_nexus::ModFiles, String>,
     },
+    /// Replace a mod's folder with the file that succeeds its installed one.
+    NexusUpdate {
+        folder: String,
+        domain: String,
+        mod_id: u64,
+        file_id: u64,
+    },
     /// The endorse/abstain finished: the new endorsed state, or an error.
     /// Endorse round-trip done. Carries the mod's FOLDER NAME (not an index): the
     /// list can shift while the network call is in flight, and writing the result

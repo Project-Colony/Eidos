@@ -155,7 +155,7 @@ pub(crate) fn run_picker_install(app: &mut App) -> Task<Message> {
     let Some(p) = app.picker.take() else {
         return Task::none();
     };
-    let backup = app.prefs.retain_install_backup;
+    let backup = backup_default(app, &name);
     let (target, archive) = (p.target.clone(), p.archive.clone());
     place_on_worker(
         app,

@@ -940,6 +940,7 @@ fn dl_row(name: &str) -> DownloadRow {
         mod_name: None,
         mod_id: None,
         game_name: None,
+        file_id: None,
         state: DownloadState::Ready,
         downloaded: 1,
         total: 1,
@@ -6005,5 +6006,101 @@ fn a_reinstall_opens_on_the_stored_choices_and_new_choices_start_from_defaults()
         }
         app.fomod = None;
     }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn update_is_refused_for_a_folder_that_merges_several_nexus_files() {
+    let merged =
+        "[installedFiles]\n1\\modid=42\n1\\fileid=101\n2\\modid=42\n2\\fileid=201\nsize=2\n";
+    let (mut app, root) = collection_app_with(&[("Merged", 42, merged), ("Mod", 42, "")], &[], &[]);
+    let update = |folder: &str| Message::NexusUpdate {
+        folder: folder.into(),
+        domain: "skyrimspecialedition".into(),
+        mod_id: 42,
+        file_id: 103,
+    };
+    let _ = update_inner(&mut app, update("Merged"));
+    assert!(app.pending_update.is_none());
+    assert_eq!(
+        app.status,
+        Some(tf("nexus_update_merged_refused", &[("folder", &"Merged")]))
+    );
+    // A single-file folder gets past that check; without an account it stops
+    // before anything is spawned or opened.
+    app.nexus_account = None;
+    let _ = update_inner(&mut app, update("Mod"));
+    assert!(app.pending_update.is_none());
+    assert_eq!(app.status.as_deref(), Some(t("status_connect_nexus_first")));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_finished_update_download_opens_the_install_for_that_folder() {
+    let (mut app, root) = collection_app_with(&[("Mod", 42, "")], &[], &[]);
+    app.pending_update = Some(PendingUpdate {
+        folder: "Mod".into(),
+        mod_id: 42,
+        file_id: 103,
+    });
+    let dl = app.created.as_ref().unwrap().downloads_dir();
+    let meta = "[General]\ngameName=SkyrimSE\nmodID=42\nfileID=103\n";
+    // Still arriving: nothing starts yet.
+    fs::write(dl.join("new.7z.unfinished"), b"x").unwrap();
+    fs::write(dl.join("new.7z.meta"), meta).unwrap();
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(app.pending_update.is_some());
+    assert!(app.install_job.is_none());
+
+    fs::rename(dl.join("new.7z.unfinished"), dl.join("new.7z")).unwrap();
+    // Arrived while another install runs: it waits for that one.
+    app.install_job = Some(fake_job(None));
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(app.pending_update.is_some());
+    app.install_job = None;
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(app.pending_update.is_none());
+    assert_eq!(
+        app.install_job.as_ref().map(|j| j.name.as_str()),
+        Some("Mod")
+    );
+    assert_eq!(app.update_target.as_deref(), Some("Mod"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn an_update_collision_defaults_to_keeping_a_backup() {
+    let mut app = nav_app(&[]);
+    app.prefs.retain_install_backup = false;
+    app.update_target = Some("Mod".into());
+    assert!(!backup_default(&mut app, "Other"), "another folder");
+    app.update_target = Some("Mod".into());
+    assert!(backup_default(&mut app, "Mod"));
+    assert!(!backup_default(&mut app, "Mod"), "used once");
+    app.prefs.retain_install_backup = true;
+    assert!(backup_default(&mut app, "Mod"));
+}
+
+#[test]
+fn an_update_over_its_folder_asks_with_the_backup_ticked() {
+    let (mut app, root) = list_app(&["Mod"]);
+    let inst = app.created.clone().unwrap();
+    fs::write(inst.mods_dir().join("Mod").join("old.esp"), b"x").unwrap();
+    let archive = root.join("new.zip");
+    let status = std::process::Command::new("python3")
+        .arg("-c")
+        .arg("import sys,zipfile\nwith zipfile.ZipFile(sys.argv[1],'w') as z: z.writestr('new.esp','x')")
+        .arg(&archive)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    app.prefs.retain_install_backup = false;
+    app.update_target = Some("Mod".into());
+    let opened =
+        eidos_install::open_archive(&archive, &inst.mods_dir(), "Mod", "skyrimse").unwrap();
+    let target = collection_target(&app).unwrap();
+    let _ = finish_open(&mut app, Ok(opened), archive, "Mod".into(), target, false);
+    assert!(app.collision.as_ref().expect("Replace is offered").backup);
+    assert_eq!(app.update_target, None);
     fs::remove_dir_all(root).unwrap();
 }

@@ -17,6 +17,7 @@ eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
 eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
+eidos nexus update skyrimse --apply  # install the Nexus files that replaced yours
 eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
 eidos unpack backup.eidos <folder>   # put it back on the other machine
 ```
@@ -545,6 +546,34 @@ putting a book away is not burning it. "Show hidden" brings them back, and the
 same button unhides. "Remove N installed" deletes the archives of mods you have
 already installed, in two clicks, and only the ones **on screen**: the filter is
 how you said which ones you meant.
+
+### Mod updates
+
+Check for updates (the toolbar button, or the mod menu) compares each installed
+file with the file that replaced it on Nexus. Authors mark a new upload as the
+successor of an older one, and Eidos follows that chain from the file id the
+mod's `meta.ini` records. When the chain names no successor, the mod page's
+version is compared instead.
+
+The **Nexus files** tab of "Information..." lists the mod's files on Nexus,
+newest first, and marks the one installed here and the one that replaces it.
+That second row has an **Update** button. With a premium account Eidos downloads
+the file itself. With a free account it opens the file's page, where Mod Manager
+Download sends the file back, and the install starts when the archive arrives in
+`downloads/`. From there it is the usual install: a FOMOD opens on the answers
+the mod was installed with, then the prompt offers Replace with "Keep a backup of
+the existing mod" ticked, whatever you chose at the last prompt. Replace keeps
+the mod's priority and enabled state.
+
+A folder that holds several Nexus files, such as a main file with an optional
+file merged into it, is refused: replacing it with the new main file would drop
+the others. Update those by hand.
+
+`eidos nexus update skyrimse --apply` runs the same check, then on a premium
+account downloads each new file and installs it over its folder with
+`--replace --backup`. On a free account it prints `OPEN <url>` for each file
+page instead. Folders that merge several files are skipped with the reason, and
+the command exits 1 if any update failed.
 
 ### Nexus collections
 

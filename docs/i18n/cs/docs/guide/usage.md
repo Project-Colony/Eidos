@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=97258d215328aaa54e93db5456cee947c9048e9e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c05b0ecbbaa6d1901978bddc1de4c064a367f9ee -->
 
 # Používání Eidosu
 
@@ -19,6 +19,7 @@ eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
 eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
+eidos nexus update skyrimse --apply  # install the Nexus files that replaced yours
 eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
 eidos unpack backup.eidos <folder>   # put it back on the other machine
 ```
@@ -554,6 +555,34 @@ odstraní jen řádek, takže odložit knihu neznamená spálit ji. „Show hidd
 vrátí a totéž tlačítko skrytí zruší. „Remove N installed" smaže archivy módů,
 které jste už nainstalovali, na dvě kliknutí, a jen ty **na obrazovce**: filtrem
 jste řekli, které jste mysleli.
+
+### Aktualizace módů
+
+Check for updates (tlačítko na panelu nástrojů nebo menu módu) porovná každý
+nainstalovaný soubor se souborem, který ho na Nexusu nahradil. Autoři označují
+nové nahrání jako nástupce staršího a Eidos jde po tomto řetězci od ID souboru,
+které zaznamenává `meta.ini` módu. Když řetězec žádného nástupce neuvádí,
+porovná se místo toho verze ze stránky módu.
+
+Karta **Nexus files** v „Information..." vypíše soubory módu na Nexusu,
+nejnovější první, a označí ten, který je nainstalovaný tady, a ten, který ho
+nahrazuje. Tento druhý řádek má tlačítko **Update**. S prémiovým účtem Eidos
+stáhne soubor sám. S bezplatným účtem otevře stránku souboru, kde ho Mod Manager
+Download pošle zpět, a instalace začne, jakmile archiv dorazí do `downloads/`.
+Odtud jde o obvyklou instalaci: FOMOD se otevře s odpověďmi, se kterými byl mód
+nainstalován, a potom dotaz nabídne Replace se zaškrtnutým „Keep a backup of the
+existing mod", ať jste při minulém dotazu zvolili cokoli. Replace zachová
+prioritu módu i to, zda je zapnutý.
+
+Složka, která obsahuje několik souborů z Nexusu, třeba hlavní soubor s
+přimíchaným volitelným souborem, je odmítnuta: nahrazení novým hlavním souborem
+by ostatní ztratilo. Aktualizujte je ručně.
+
+`eidos nexus update skyrimse --apply` provede stejnou kontrolu a pak s prémiovým
+účtem stáhne každý nový soubor a nainstaluje ho přes jeho složku s
+`--replace --backup`. S bezplatným účtem místo toho vypíše `OPEN <url>` pro
+každou stránku souboru. Složky, které slučují několik souborů, přeskočí i s
+důvodem, a příkaz skončí kódem 1, pokud některá aktualizace selhala.
 
 ### Kolekce z Nexusu
 

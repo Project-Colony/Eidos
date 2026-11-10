@@ -345,8 +345,9 @@ pub(crate) fn subscription(app: &App) -> iced::Subscription<Message> {
     //
     // Faster while something is arriving, so a bar moves instead of jumping;
     // slower otherwise, because the idle case only has to notice that a download
-    // has begun.
-    if app.tab == Tab::Downloads {
+    // has begun. An update waiting for its file keeps the tick running on
+    // every tab.
+    if app.tab == Tab::Downloads || app.pending_update.is_some() {
         let arriving = app
             .downloads
             .iter()

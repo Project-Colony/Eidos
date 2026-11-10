@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=97258d215328aaa54e93db5456cee947c9048e9e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c05b0ecbbaa6d1901978bddc1de4c064a367f9ee -->
 
 # Eidos 사용하기
 
@@ -19,6 +19,7 @@ eidos sort skyrimse               # 플러그인 로드 순서를 LOOT로 정렬
 eidos play skyrimse               # 무엇이 마운트될지 보기
 eidos play skyrimse -- <command>  # 게임 위에 모드를 마운트한 채 <command> 실행
 eidos collection skyrimse <link>  # Nexus 컬렉션을 제작자가 만든 그대로 설치하기
+eidos nexus update skyrimse --apply  # 내 파일을 대체한 Nexus 파일을 설치하기
 eidos pack skyrimse backup.eidos  # 인스턴스 전체를 파일 하나로, 다른 곳으로 옮기려고
 eidos unpack backup.eidos <folder>   # 다른 기계에서 되돌려 놓기
 ```
@@ -519,6 +520,30 @@ Downloads 탭은 전송 대기열이 아니라 압축 파일 **서고**입니다
 다시 숨김을 풉니다. "Remove N installed"는 이미 설치한 모드의 압축 파일을 두 번의
 클릭으로 지우는데, **화면에 보이는** 것만 지웁니다: 필터가 곧 여러분이 어느 것을
 뜻했는지 말한 방식입니다.
+
+### 모드 업데이트
+
+Check for updates(도구 모음의 버튼, 또는 모드 메뉴)는 설치된 각 파일을 Nexus에서
+그것을 대체한 파일과 비교합니다. 제작자는 새 업로드를 이전 파일의 후속 파일로 표시하고,
+Eidos는 모드의 `meta.ini`에 기록된 파일 ID에서 시작해 그 사슬을 따라갑니다. 사슬이
+후속 파일을 가리키지 않으면 대신 모드 페이지의 버전을 비교합니다.
+
+"Information..."의 **Nexus files** 탭은 Nexus에 있는 모드의 파일을 최신순으로 나열하고,
+여기에 설치된 파일과 그것을 대체하는 파일을 표시합니다. 그 두 번째 행에는 **Update**
+버튼이 있습니다. 프리미엄 계정이면 Eidos가 파일을 직접 내려받습니다. 무료 계정이면 파일
+페이지를 열고, 거기서 Mod Manager Download가 파일을 되돌려 보내며, 압축 파일이
+`downloads/`에 도착하면 설치가 시작됩니다. 그다음은 평소의 설치입니다. FOMOD는 모드를
+설치할 때의 답으로 열리고, 이어지는 확인 창은 "Keep a backup of the existing mod"가
+체크된 상태로 Replace를 제시합니다. 지난번 확인 창에서 무엇을 골랐든 마찬가지입니다.
+Replace는 모드의 우선순위와 활성화 여부를 유지합니다.
+
+Nexus 파일 여러 개를 담은 폴더(예: 선택 파일을 섞어 넣은 메인 파일)는 거부됩니다. 새
+메인 파일로 대체하면 나머지 파일이 사라지기 때문입니다. 그런 폴더는 직접 업데이트하세요.
+
+`eidos nexus update skyrimse --apply`는 같은 확인을 한 뒤, 프리미엄 계정이면 새 파일을
+하나씩 내려받아 `--replace --backup`으로 해당 폴더 위에 설치합니다. 무료 계정이면 대신
+파일 페이지마다 `OPEN <url>`을 출력합니다. 여러 파일을 합친 폴더는 이유와 함께
+건너뛰고, 업데이트가 하나라도 실패하면 명령은 1로 끝납니다.
 
 ### Nexus 컬렉션
 

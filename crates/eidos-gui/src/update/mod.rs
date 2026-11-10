@@ -786,6 +786,28 @@ pub(crate) fn lock_install_target(
     Ok(guard)
 }
 
+/// Whether an install is under way, so another one has to wait.
+pub(crate) fn install_busy(app: &App) -> bool {
+    // A modal is open: the current install is still being answered.
+    app.installer.is_some() || app.fomod.is_some()
+        || app.picker.is_some()
+        || app.collision.is_some()
+        // An extraction is already running. Starting a second one would
+        // race it for `mods/<name>/` and put two 7-Zips on the same disk.
+        || app.install_job.is_some()
+        // Same reason, over twenty minutes rather than thirty seconds.
+        || app.transfer_job.is_some()
+        // And a copy step: its worker holds the instance lock.
+        || app.place_job.is_some()
+}
+
+/// Whether the backup box starts ticked for an install over `name`: the
+/// preference, or an update landing on that folder (once).
+pub(crate) fn backup_default(app: &mut App, name: &str) -> bool {
+    let update = app.update_target.take().is_some_and(|t| t == name);
+    app.prefs.retain_install_backup || update
+}
+
 pub(crate) fn finish_open(
     app: &mut App,
     result: Result<eidos_install::Opened, eidos_install::InstallError>,
@@ -843,7 +865,7 @@ pub(crate) fn finish_open(
                 Err(eidos_install::InstallError::Exists(_)) => {
                     app.collision = Some(CollisionPrompt {
                         target: target.clone(),
-                        backup: app.prefs.retain_install_backup,
+                        backup: backup_default(app, &name),
                         rename_to: suggest_free_name(&mods_dir, &name),
                         archive: path,
                         name: name.clone(),
@@ -906,7 +928,7 @@ pub(crate) fn finish_open(
                     let rename_to = suggest_free_name(&mods_dir, &name);
                     app.collision = Some(CollisionPrompt {
                         target: target.clone(),
-                        backup: app.prefs.retain_install_backup,
+                        backup: backup_default(app, &name),
                         archive: path,
                         name: name.clone(),
                         game_id: gid,
@@ -1521,6 +1543,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::ModEndorse(..)
         | Message::ModEndorsed(..)
         | Message::NexusFilesFetched { .. }
+        | Message::NexusUpdate { .. }
         | Message::CheckUpdates
         | Message::UpdatesChecked(..)
         | Message::ShowCollection(..)
@@ -1830,6 +1853,9 @@ pub(crate) fn open_instance(app: &mut App, inst: Instance) {
     app.loot_meta = None;
     app.endorsing = None;
     app.collection = None;
+    // An update waits for a file in the instance it was asked from.
+    app.pending_update = None;
+    app.update_target = None;
     reload_mods(app);
     app.tab = Tab::Data;
     app.error = None;

@@ -447,6 +447,8 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         save_missing: Vec::new(),
         downloads: Vec::new(),
         resuming: None,
+        pending_update: None,
+        update_target: None,
         confirm_delete_download: None,
         identifying_download: None,
         extracting_archives: HashSet::new(),

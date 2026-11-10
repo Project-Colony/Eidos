@@ -516,6 +516,11 @@ pub(crate) struct App {
     /// a failure can be reported instead of the row silently going back to
     /// Stalled.
     pub(crate) resuming: Option<(String, std::process::Child, PathBuf)>,
+    /// The update whose new file is awaited in `downloads/`.
+    pub(crate) pending_update: Option<PendingUpdate>,
+    /// The folder an update is being installed over, so its collision prompt
+    /// ticks the backup box (see `backup_default`).
+    pub(crate) update_target: Option<String>,
     /// Two-click guard for a download deletion (the row's index in `downloads`).
     pub(crate) confirm_delete_download: Option<String>,
     /// The download whose MD5 lookup is in flight, so the row can say so and a

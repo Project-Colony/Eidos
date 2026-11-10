@@ -113,11 +113,14 @@ fn cmd_nexus(args: &[String]) {
             }
         }
         Some("update") => {
-            let Some(id) = args.get(1) else {
-                eidos_log::info!("usage: eidos nexus update <game-id-or-instance-path>");
-                exit(2);
+            let (id, apply) = match update_args(args) {
+                Ok(parsed) => parsed,
+                Err(usage) => {
+                    eidos_log::info!("{usage}");
+                    exit(2);
+                }
             };
-            let target = resolve(id);
+            let target = resolve(&id);
             let Some(game) = find_instance_game(&target) else {
                 eidos_log::info!(
                     "Game '{}' is not detected. Run `eidos games`.",
@@ -163,16 +166,105 @@ fn cmd_nexus(args: &[String]) {
                     "Some mods were not checked (request budget spent). Re-run once it refills."
                 );
             }
+            if apply && !apply_updates(&nexus, &id, &inst, game.def, &result.updates) {
+                exit(1);
+            }
         }
         _ => {
             eidos_log::info!(
                 "usage:\n\
-                 \x20 eidos nexus status          check the stored sign-in\n\
-                 \x20 eidos nexus update <game>   check installed mods for updates"
+                 \x20 eidos nexus status                  check the stored sign-in\n\
+                 \x20 eidos nexus update <game> [--apply] check installed mods for updates (--apply installs them)"
             );
             exit(2);
         }
     }
+}
+
+/// `eidos nexus update <instance> [--apply]`: the instance and whether to apply.
+fn update_args(args: &[String]) -> Result<(String, bool), String> {
+    let usage = "usage: eidos nexus update <game-id-or-instance-path> [--apply]";
+    let (mut id, mut apply) = (None, false);
+    for arg in &args[1..] {
+        match arg.as_str() {
+            "--apply" if !apply => apply = true,
+            a if !a.starts_with("--") && id.is_none() => id = Some(a.to_string()),
+            _ => return Err(usage.into()),
+        }
+    }
+    id.map(|id| (id, apply)).ok_or_else(|| usage.into())
+}
+
+/// Install each update's successor file over its folder: a free account gets
+/// the file page to download from, a premium one the download and the install
+/// (FOMOD answers replayed, the old folder kept as a backup). Each step is a
+/// child `eidos` that takes the instance lock itself. False if any failed.
+fn apply_updates(
+    nexus: &eidos_nexus::Nexus,
+    id: &str,
+    inst: &eidos_instance::Instance,
+    game: &eidos_games::GameDef,
+    updates: &[eidos_nexus::ModUpdate],
+) -> bool {
+    let premium = nexus.account().is_ok_and(|a| a.is_premium);
+    let cli = |args: &[&std::ffi::OsStr]| {
+        let (exe, marker) = this_exe();
+        let mut cmd = std::process::Command::new(exe);
+        if marker {
+            cmd.arg(CLI_MARKER);
+        }
+        cmd.args(args);
+        cmd
+    };
+    let ok = |cmd: &mut std::process::Command| cmd.status().is_ok_and(|s| s.success());
+    let mut all_ok = true;
+    for update in updates {
+        let Some(file_id) = update.file_id else {
+            continue;
+        };
+        let meta = inst.mod_meta(&update.name);
+        if meta.installed_files().len() > 1 {
+            println!(
+                "  SKIP {}: it holds several Nexus files, so replacing it with one would drop the others. Update them by hand.",
+                update.name
+            );
+            continue;
+        }
+        let game_name = meta.game_name().filter(|g| !g.is_empty());
+        let (Some(mod_id), Some(domain)) =
+            (meta.mod_id(), game.nexus_domain_for(game_name.as_deref()))
+        else {
+            continue;
+        };
+        if !premium {
+            println!(
+                "  OPEN {}",
+                eidos_nexus::file_page_url(domain, mod_id, file_id)
+            );
+            continue;
+        }
+        let link = format!("nxm://{domain}/mods/{mod_id}/files/{file_id}");
+        // Pinned like the window's downloads, so the file lands in this
+        // instance and not in whichever one `eidos nxm` would pick.
+        let installed = ok(cli(&["nxm".as_ref(), link.as_ref()]).env("EIDOS_INSTANCE", &inst.root))
+            && eidos_nexus::find_download(&inst.downloads_dir(), mod_id, file_id).is_some_and(
+                |archive| {
+                    ok(&mut cli(&[
+                        "install".as_ref(),
+                        id.as_ref(),
+                        archive.as_os_str(),
+                        update.name.as_ref(),
+                        "--replace".as_ref(),
+                        "--backup".as_ref(),
+                    ]))
+                },
+            );
+        if !installed {
+            eidos_log::warn!("Could not update {}.", update.name);
+            all_ok = false;
+        }
+    }
+    all_ok
 }
 
 fn usage() -> ! {
@@ -189,7 +281,7 @@ fn usage() -> ! {
          \x20 eidos pack <instance> <file.eidos> write the whole instance into one file\n\
          \x20 eidos unpack <file.eidos> [folder] put a packed instance back (--info to look first)\n\
          \x20 eidos tool <instance> [...]       manage + run tools (xEdit/FNIS/...) through the view\n\
-         \x20 eidos nexus status|update         check the Nexus sign-in / check for mod updates\n\
+         \x20 eidos nexus status|update         check the Nexus sign-in / check for mod updates (--apply installs them)\n\
          \x20 eidos nxm <url> | --register      download a Nexus Mod Manager link / register the handler\n\
          \x20 eidos export <instance> [-o file] export the mod list to CSV (MO2 format; --active = enabled only)\n\
          \x20 eidos sort <instance> [--dry-run] LOOT-sort the plugin load order (--update-masterlist to refresh)\n\
