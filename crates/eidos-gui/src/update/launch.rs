@@ -10,6 +10,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         Message::ToolPicked(choice) => {
             app.tool_choice = (choice != run_game_label()).then_some(choice);
         }
+        Message::RunTool(title) => {
+            let previous = app.tool_choice.replace(title);
+            let task = handle(app, Message::Run);
+            app.tool_choice = previous;
+            return task;
+        }
         Message::Run => {
             if app.running.is_some() {
                 // Already waiting on a launched application (MO2 won't launch a

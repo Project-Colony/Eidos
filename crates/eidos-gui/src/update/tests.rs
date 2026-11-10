@@ -5678,6 +5678,25 @@ fn finish_tracked_run(app: &mut App) {
 }
 
 #[test]
+fn run_tool_keeps_the_picker_and_the_run_guards() {
+    let (mut app, root) = list_app(&["Keep"]);
+    let mut cmd = std::process::Command::new("/bin/sleep");
+    cmd.arg("30");
+    start_run(&mut app, "Game".into(), cmd);
+    app.tool_choice = None;
+    let _ = update_inner(&mut app, Message::RunTool("xEdit".into()));
+    assert_eq!(app.tool_choice, None);
+    assert_eq!(
+        app.status.as_deref(),
+        Some(tf("status_still_running", &[("title", &"Game")]).as_str())
+    );
+    let _ = update_inner(&mut app, Message::StopRun);
+    let _ = update_inner(&mut app, Message::StopRun);
+    finish_tracked_run(&mut app);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn a_run_with_an_explicit_log_writes_its_header_and_exit_there() {
     // What the prerequisite install relies on. The SetupPrereqs arm itself
     // (tracked, unlocked, status naming the log) is not driven here: that

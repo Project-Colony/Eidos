@@ -978,6 +978,7 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("diag_tool_history_unverified", "Historique des lancements d'outils non vérifié"),
     ("diag_generated_inputs_unverified", "Entrées des fichiers générés non vérifiées"),
     ("diag_generated_inputs_unverified_detail", "Le jeu de plugins actuel est indisponible pour la sortie de {tool} dans {owner}."),
+    ("diag_action_run_tool_again", "Relancer {tool}"),
     ("diag_generated_inputs_changed", "Les entrées des fichiers générés ont changé"),
     ("diag_generated_inputs_changed_detail", "La sortie de {tool} dans {owner} a été générée pour d'autres entrées enregistrées, un autre ordre des plugins, un autre profil ou un autre exécutable. Voyez s'il faut relancer l'outil. Fichiers : {files}"),
     ("diag_generated_provenance_unverified", "Provenance des fichiers générés non vérifiée"),

@@ -978,6 +978,7 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("diag_tool_history_unverified", "Unverified tool-run history"),
     ("diag_generated_inputs_unverified", "Unverified generated-output inputs"),
     ("diag_generated_inputs_unverified_detail", "The current plugin set is unavailable for {tool} output in {owner}."),
+    ("diag_action_run_tool_again", "Run {tool} again"),
     ("diag_generated_inputs_changed", "Generated output inputs changed"),
     ("diag_generated_inputs_changed_detail", "{tool} output in {owner} was generated for different recorded inputs, plugin order, profile or tool executable. Review whether to rerun the tool. Files: {files}"),
     ("diag_generated_provenance_unverified", "Unverified generated-output provenance"),

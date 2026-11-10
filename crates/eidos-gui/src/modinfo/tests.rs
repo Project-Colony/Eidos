@@ -737,6 +737,46 @@ fn preflight_diagnostics_preserve_interrupted_runs_and_warn_when_inputs_change()
 }
 
 #[test]
+fn a_stale_output_card_offers_run_again_only_for_a_known_tool() {
+    let (mut app, root) = data_app(&[("meshes/test.nif", "mesh")], &[]);
+    let inst = app.created.as_ref().unwrap();
+    let plugins = compute_plugins(&app)
+        .unwrap()
+        .plugins
+        .into_iter()
+        .map(|p| (p.name, p.enabled))
+        .collect::<Vec<_>>();
+    let run = inst
+        .begin_tool_run("xEdit", None, &["xEdit.exe".into()], &plugins)
+        .unwrap();
+    fs::write(inst.overwrite_dir().join("Patch.esp"), b"generated").unwrap();
+    inst.finish_tool_run(run).unwrap();
+    let mut meta = inst.mod_meta("AAA");
+    meta.set_installed_files(&[(12, 34)]);
+    meta.write(&inst.meta_path("AAA")).unwrap();
+    let card = |app: &App| {
+        diagnostics(app)
+            .into_iter()
+            .find(|d| d.title == t("diag_generated_inputs_changed"))
+            .unwrap()
+    };
+    assert!(card(&app).actions.is_empty());
+    app.tools = vec![eidos_instance::Tool {
+        title: "xEdit".into(),
+        exe: "xEdit.exe".into(),
+        ..Default::default()
+    }];
+    let card = card(&app);
+    assert_eq!(card.actions.len(), 1);
+    assert_eq!(
+        card.actions[0].0,
+        tf("diag_action_run_tool_again", &[("tool", &"xEdit")])
+    );
+    assert!(matches!(&card.actions[0].1, Message::RunTool(t) if t == "xEdit"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn contested_paths_are_scanned_once_per_map_and_mod() {
     let app = app_for_game("skyrimse");
     let layer = |origin, name: &str, files: Vec<String>| {

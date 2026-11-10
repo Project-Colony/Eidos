@@ -45,6 +45,8 @@ pub(crate) enum Message {
     FomodInstall,
     FomodCancel,
     Run,
+    /// Run the tool with this title as configured now; the picker is unchanged.
+    RunTool(String),
     Refresh,
     OpenFolder(PathBuf),
     ClearOverwrite,

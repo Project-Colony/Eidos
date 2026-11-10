@@ -127,7 +127,8 @@ retain the source data and its attribution. All receipt data lives in the
 instance's `.generated-output.json`, outside the game-visible Data layers.
 
 Open a generated mod's General tab to inspect its receipts and recorded inputs.
-Diagnostics warns when the inputs have changed. Creating this run's own output
+Diagnostics warns when the inputs have changed. Its card has a button that
+runs the tool again, as it is configured now. Creating this run's own output
 mod/plugin does not itself make the receipt stale. Unrecorded external rewrites
 invalidate file attribution rather than assigning them to an old run.
 

@@ -505,7 +505,19 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                                     ),
                                 ],
                             ),
-                            actions: Vec::new(),
+                            // Runs the tool as configured now, not the recorded preset.
+                            actions: app
+                                .tools
+                                .iter()
+                                .find(|x| x.title.eq_ignore_ascii_case(&output.receipt.tool))
+                                .map(|x| {
+                                    (
+                                        tf("diag_action_run_tool_again", &[("tool", &x.title)]),
+                                        Message::RunTool(x.title.clone()),
+                                    )
+                                })
+                                .into_iter()
+                                .collect(),
                         });
                     }
                 }

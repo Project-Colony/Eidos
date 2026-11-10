@@ -1403,6 +1403,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::FomodUnhover(..)) => install::handle(app, m),
         m @ (Message::ToolPicked(..)
         | Message::Run
+        | Message::RunTool(..)
         | Message::PollRunning
         | Message::ForceUnlock
         | Message::StopRun
