@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1574126d8bbe4e781425adacb21a701cb3c92dd7 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=b104d41bad9288dd17e4a760128ff6a3773563c8 -->
 
 # Używanie Eidos
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # przejąć kolejność i stan wtyczek istn
 eidos sort skyrimse               # posortować kolejność wczytywania wtyczek LOOT-em
 eidos play skyrimse               # pokazać, co zostałoby zamontowane
 eidos play skyrimse -- <command>  # uruchomić <command> z modami zamontowanymi nad grą
+eidos check skyrimse              # kontrole kondycji bez okna (--json dla skryptów)
 eidos collection skyrimse <link>  # zainstalować kolekcję Nexusa tak, jak zbudował ją jej autor
 eidos nexus update skyrimse --apply  # zainstalować pliki z Nexusa, które zastąpiły twoje
 eidos pack skyrimse backup.eidos  # cała instancja w jednym pliku, żeby przenieść ją gdzie indziej
@@ -26,6 +27,12 @@ eidos unpack backup.eidos <folder>   # odtworzyć ją na drugiej maszynie
 
 `eidos tool`, `eidos prereqs`, `eidos nexus`, `eidos nxm` i `eidos export`
 dopełniają zestaw; uruchom `eidos` bez argumentów, by zobaczyć pełną listę.
+
+### Kontrole kondycji z terminala
+
+`eidos check <instance>` uruchamia kontrole prefiksu, wtyczek, brakujących plików master i script extendera z karty **Diagnostics** bez otwierania okna, więc mogą działać przez SSH lub w Game Mode i trafić do zgłoszenia błędu. Wypisuje te same wiersze systemowe co **Copy report**, a potem jeden wiersz na każde ustalenie, z folderem domowym pokazanym jako `~` i nazwą użytkownika jako `<user>`. Kod wyjścia to 0, gdy nie znaleziono żadnego problemu (same porady nadal dają 0), 1, gdy znaleziono co najmniej jeden problem, i 2, gdy Eidos nie mógł sprawdzić: błędne argumenty, instancja, której nie może otworzyć, albo gra, której nie wykrywa.
+
+`eidos check <instance> --json` wypisuje zamiast tego jeden obiekt JSON. Jego pola najwyższego poziomu to `eidos` (wersja), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`) i `findings`. Każde ustalenie to `code`, `level` (`problem` lub `advice`) i jego `args`; karta Diagnostics pokazuje zdanie dla każdego kodu.
 
 ### Instancje: globalne i przenośne
 
@@ -704,7 +711,9 @@ do uruchomienia, brakujące pliki master (najbardziej niezawodny pojedynczy
 zwiastun crasha), archiwa, których żadna aktywna wtyczka nie wczyta, czy lista
 modów wciąż zgadza się z folderem modów i - po przebiegu - co własny log script
 extendera mówi o każdej z jego wtyczek DLL, co zamienia „czy moje wtyczki SKSE
-się wczytały?" z domysłu w dowód. Sprawdzanie aktualizacji odczytuje też wymagania każdego moda z Nexusa. Diagnostics wymienia wymagany mod, którego brakuje lub który jest wyłączony; przyciskiem Ignore można ukryć wymaganie spełnione w inny sposób.
+się wczytały?" z domysłu w dowód.
+Zgłasza też aktualizację gry od ostatniego czystego uruchomienia, brak script extendera albo taki, który nie pasuje do wersji gry (ze stroną pobierania extendera i przyciskiem instalującym pobrane archiwum), opcję uruchamiania Steama, która nie uruchamia Eidos z `%command%`, NVAPI wyłączone dla DLSS, wyłączny tryb pełnoekranowy blokujący generowanie klatek, `enblocal.ini` ENB bez `LinuxVersion=true`, deklaracje wtyczek F4SE i SFSE oraz log crasha z ostatniej sesji wraz z modami, które wymienia.
+Sprawdzanie aktualizacji odczytuje też wymagania każdego moda z Nexusa. Diagnostics wymienia wymagany mod, którego brakuje lub który jest wyłączony; przyciskiem Ignore można ukryć wymaganie spełnione w inny sposób.
 
 Żeby uruchomić grę przez GUI, ustaw opcję uruchamiania gry w Steamie na ścieżkę
 bezwzględną pliku wykonywalnego (Steam nie widzi `~/.cargo/bin` w PATH):

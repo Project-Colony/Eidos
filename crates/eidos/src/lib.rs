@@ -13,6 +13,7 @@
 
 use std::process::exit;
 
+pub mod check;
 mod collection;
 mod export;
 mod games;
@@ -286,6 +287,7 @@ fn usage() -> ! {
          \x20 eidos export <instance> [-o file] export the mod list to CSV (MO2 format; --active = enabled only)\n\
          \x20 eidos sort <instance> [--dry-run] LOOT-sort the plugin load order (--update-masterlist to refresh)\n\
          \x20 eidos import <instance> <mo2-profile> take over an MO2 profile's mod order + plugin state\n\
+         \x20 eidos check <instance> [--json]    Health checks without the window (exit 1 on a problem)\n\
          \x20 eidos --version                   print the version\n\
          \n\
          <instance> is a game id (skyrimse - the central instance) or the path of a\n\
@@ -406,6 +408,7 @@ pub fn run(mut args: Vec<String>) {
         Some("nexus") => cmd_nexus(&args[1..]),
         Some("nxm") => cmd_nxm(&args[1..]),
         Some("import") => cmd_import(&args[1..]),
+        Some("check") => check::cmd_check(&args[1..]),
         _ => usage(),
     }
 }

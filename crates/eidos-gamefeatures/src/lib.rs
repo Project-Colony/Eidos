@@ -20,6 +20,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 pub mod archives;
+pub mod crash_log;
 pub mod crt;
 mod native_dll;
 pub mod omod_shaders;

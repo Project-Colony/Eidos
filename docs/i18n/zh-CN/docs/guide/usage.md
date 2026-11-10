@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1574126d8bbe4e781425adacb21a701cb3c92dd7 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=b104d41bad9288dd17e4a760128ff6a3773563c8 -->
 
 # 使用 Eidos
 
@@ -17,6 +17,7 @@ eidos import skyrimse <mo2-profile>  # 接管已有 MO2 配置档的顺序与插
 eidos sort skyrimse               # 用 LOOT 排序插件加载顺序
 eidos play skyrimse               # 显示将会挂载什么
 eidos play skyrimse -- <command>  # 在模组盖住游戏的视图下运行 <command>
+eidos check skyrimse              # 不开窗口跑健康检查(脚本用 --json)
 eidos collection skyrimse <link>  # 按作者构建它的方式安装一个 Nexus 合集
 eidos nexus update skyrimse --apply  # 安装取代了你那些文件的 Nexus 文件
 eidos pack skyrimse backup.eidos  # 整个实例装进一个文件,好搬到别处去
@@ -25,6 +26,12 @@ eidos unpack backup.eidos <folder>   # 在另一台机器上把它放回去
 
 `eidos tool`、`eidos prereqs`、`eidos nexus`、`eidos nxm` 与 `eidos export` 补齐了
 这一组;不带参数运行 `eidos` 可看到完整列表。
+
+### 从终端运行健康检查
+
+`eidos check <instance>` 不打开窗口就运行 **Diagnostics** 标签页里的前缀、插件、缺失 master 和脚本扩展器检查,所以可以通过 SSH 或在 Game Mode 下运行,结果也能放进 bug 报告。它先打印与 **Copy report** 相同的系统信息行,再为每条发现打印一行,主目录显示为 `~`,登录名显示为 `<user>`。没有发现问题时退出码为 0(只有建议仍为 0),至少发现一个问题时为 1,Eidos 无法检查时为 2:参数错误、无法打开的实例,或检测不到的游戏。
+
+`eidos check <instance> --json` 改为打印一个 JSON 对象。顶层字段为 `eidos`(版本)、`game`、`instance`、`system`(`proton`、`flatpak_steam`、`passthrough`、`session`、`distro`、`kernel`、`dev_fuse`、`fusermount3`)和 `findings`。每条发现由 `code`、`level`(`problem` 或 `advice`)和它的 `args` 组成;Diagnostics 标签页显示每个代码对应的句子。
 
 ### 实例:全局与便携
 
@@ -518,7 +525,9 @@ MO2 自己的(`categories.dat` 和 `nexuscatmap.dat`),所以共享的实例保�
 **Diagnostics** 跑实时健康检查:首先是启动能力,缺失的 master(单一最可靠的崩溃预测
 指标),没有任何活动插件会加载的档案,模组列表是否仍与 mods 文件夹一致,以及 - 在一次
 运行之后 - 脚本扩展器自己的日志对它每一个插件 DLL 说了什么,这把"我的 SKSE 插件加载了
-吗?"从一次推断变成了证据。检查更新时还会读取每个 mod 在 Nexus 上的前置要求。Diagnostics 会列出缺失或已禁用的前置 mod,已通过其他方式满足的要求可用 Ignore 忽略。
+吗?"从一次推断变成了证据。
+它还会报告:自上次干净启动以来的游戏更新,缺失或与游戏版本不匹配的脚本扩展器(附扩展器的下载页面,以及安装你下载的档案的按钮),没有用 `%command%` 启动 Eidos 的 Steam 启动选项,DLSS 需要却仍关闭的 NVAPI,阻止帧生成的独占全屏,没有 `LinuxVersion=true` 的 ENB `enblocal.ini`,F4SE 和 SFSE 插件的声明,以及上次会话的崩溃日志和其中点名的模组。
+检查更新时还会读取每个 mod 在 Nexus 上的前置要求。Diagnostics 会列出缺失或已禁用的前置 mod,已通过其他方式满足的要求可用 Ignore 忽略。
 
 要通过 GUI 启动游戏,把该游戏的 Steam 启动选项设成这个二进制的绝对路径(Steam 看不到
 PATH 上的 `~/.cargo/bin`):

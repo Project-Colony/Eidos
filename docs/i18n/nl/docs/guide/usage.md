@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1574126d8bbe4e781425adacb21a701cb3c92dd7 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=b104d41bad9288dd17e4a760128ff6a3773563c8 -->
 
 # Eidos gebruiken
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # de volgorde + pluginstatus van een bestaa
 eidos sort skyrimse               # de laadvolgorde van de plugins met LOOT sorteren
 eidos play skyrimse               # tonen wat er gekoppeld zou worden
 eidos play skyrimse -- <command>  # <command> draaien met de mods over het spel gekoppeld
+eidos check skyrimse              # gezondheidscontroles zonder het venster (--json voor scripts)
 eidos collection skyrimse <link>  # een Nexus-collectie installeren zoals de auteur haar gebouwd heeft
 eidos nexus update skyrimse --apply  # de Nexus-bestanden installeren die de jouwe vervingen
 eidos pack skyrimse backup.eidos  # de hele instantie in één bestand, om ze elders heen te verhuizen
@@ -26,6 +27,12 @@ eidos unpack backup.eidos <folder>   # zet ze terug op de andere machine
 
 `eidos tool`, `eidos prereqs`, `eidos nexus`, `eidos nxm` en `eidos export` maken
 het geheel compleet; draai `eidos` zonder argumenten voor de volledige lijst.
+
+### Gezondheidscontroles vanuit de terminal
+
+`eidos check <instance>` draait de controles op prefix, plugins, ontbrekende masters en script extender uit het tabblad **Diagnostics** zonder het venster te openen, zodat ze via SSH of in Game Mode kunnen draaien en in een bugrapport terechtkomen. Het drukt dezelfde systeemregels af als **Copy report**, daarna één regel per bevinding, met je thuismap getoond als `~` en je inlognaam als `<user>`. De exitcode is 0 als er geen probleem is gevonden (alleen adviezen geven nog steeds 0), 1 als er minstens één probleem is gevonden, en 2 als Eidos niet kon controleren: verkeerde argumenten, een instantie die het niet kan openen, of een spel dat het niet detecteert.
+
+`eidos check <instance> --json` drukt in plaats daarvan één JSON-object af. De velden op het hoogste niveau zijn `eidos` (de versie), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`) en `findings`. Elke bevinding is een `code`, een `level` (`problem` of `advice`) en zijn `args`; het tabblad Diagnostics toont de zin bij elke code.
 
 ### Instanties: globaal en draagbaar
 
@@ -723,7 +730,9 @@ ontbrekende masters (de betrouwbaarste crashvoorspeller die er is), archieven di
 geen enkele actieve plugin zal laden, of de modlijst nog overeenkomt met de
 mods-map, en - na een run - wat het eigen log van de script extender over elk van
 zijn plugin-DLL's zegt, wat "zijn mijn SKSE-plugins geladen?" van een
-gevolgtrekking in bewijs verandert. Op updates controleren leest ook de Nexus-vereisten van elke mod. Diagnostics toont een vereiste mod die ontbreekt of is uitgeschakeld, met Ignore voor een vereiste die op een andere manier is vervuld.
+gevolgtrekking in bewijs verandert.
+Het meldt ook een game-update sinds de laatste schone start, een ontbrekende script extender of een die niet bij de spelversie past (met de downloadpagina van de extender en een knop die het gedownloade archief installeert), een Steam-startoptie die Eidos niet met `%command%` start, NVAPI dat voor DLSS uit blijft, exclusief volledig scherm dat framegeneratie tegenhoudt, een ENB-`enblocal.ini` zonder `LinuxVersion=true`, de plugindeclaraties van F4SE- en SFSE-plugins, en het crashlog van de laatste sessie met de mods die het noemt.
+Op updates controleren leest ook de Nexus-vereisten van elke mod. Diagnostics toont een vereiste mod die ontbreekt of is uitgeschakeld, met Ignore voor een vereiste die op een andere manier is vervuld.
 
 Om het spel via de GUI te starten, zet je de Steam-opstartoptie van het spel op
 het absolute pad van het binaire bestand (Steam ziet `~/.cargo/bin` niet in

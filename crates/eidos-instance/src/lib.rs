@@ -26,6 +26,7 @@ use std::time::SystemTime;
 
 mod categories;
 mod export;
+mod launch_record;
 mod manifest;
 mod meta;
 mod mo2_ini;
@@ -39,6 +40,7 @@ pub use categories::{
     format_categories, parse_all, parse_primary, Category, CategoryFactory, NexusCategory,
 };
 pub use export::{csv_quote, fmt_mtime, mod_list_csv, Column, ExportScope};
+pub use launch_record::{GameBuild, LaunchRecord};
 pub use manifest::Manifest;
 pub use meta::{same_version, ModMeta, PluginSource};
 pub use mo2_ini::Mo2Ini;

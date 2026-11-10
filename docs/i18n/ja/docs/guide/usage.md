@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1574126d8bbe4e781425adacb21a701cb3c92dd7 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=b104d41bad9288dd17e4a760128ff6a3773563c8 -->
 
 # Eidos の使い方
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # 既存の MO2 プロファイルの順序
 eidos sort skyrimse               # プラグインのロード順を LOOT で並べ替える
 eidos play skyrimse               # 何がマウントされるかを表示する
 eidos play skyrimse -- <command>  # MOD をゲームに重ねた状態で <command> を実行する
+eidos check skyrimse              # ウィンドウなしで健全性チェック(スクリプト向けに --json)
 eidos collection skyrimse <link>  # Nexus のコレクションを、作者が組んだとおりにインストールする
 eidos nexus update skyrimse --apply  # 手元のファイルを置き換えた Nexus のファイルをインストールする
 eidos pack skyrimse backup.eidos  # インスタンス丸ごとを一つのファイルに。よそへ移すために
@@ -26,6 +27,12 @@ eidos unpack backup.eidos <folder>   # 向こうのマシンで元に戻す
 
 `eidos tool`、`eidos prereqs`、`eidos nexus`、`eidos nxm`、`eidos export` が
 残りを埋めます。引数なしで `eidos` を実行すれば全一覧が出ます。
+
+### ターミナルからの健全性チェック
+
+`eidos check <instance>` は、ウィンドウを開かずに、**Diagnostics** タブにあるプレフィックス、プラグイン、欠けたマスター、スクリプトエクステンダのチェックを実行します。SSH 越しや Game Mode でも動かせ、バグ報告にも貼れます。**Copy report** と同じシステム情報の行を出力し、続いて検出ごとに 1 行を出力します。ホームフォルダは `~`、ログイン名は `<user>` に置き換えて表示します。終了コードは、問題が見つからなければ 0(助言だけなら 0 のまま)、問題が 1 つ以上見つかれば 1、Eidos がチェックできなかったとき(引数の誤り、開けないインスタンス、検出できないゲーム)は 2 です。
+
+`eidos check <instance> --json` は代わりに JSON オブジェクトを 1 つ出力します。最上位のフィールドは `eidos`(バージョン)、`game`、`instance`、`system`(`proton`、`flatpak_steam`、`passthrough`、`session`、`distro`、`kernel`、`dev_fuse`、`fusermount3`)、`findings` です。各検出は `code`、`level`(`problem` または `advice`)、その `args` からなり、各コードの説明文は Diagnostics タブに表示されます。
 
 ### インスタンス: グローバルとポータブル
 
@@ -644,7 +651,9 @@ FOMOD の MOD を再インストールまたは更新すると、ウィザード
 欠けたマスター(最も当たるクラッシュの予兆)、有効なプラグインがどれも読み込ま
 ない書庫、MOD 一覧が今も mods フォルダと一致しているか、そして実行後には -
 スクリプトエクステンダ自身のログが各プラグイン DLL について何と言っているか。
-「SKSE のプラグインは読み込まれたのか?」が推測から証拠に変わります。更新の確認では、各 mod の Nexus 上の要件も読み込みます。Diagnostics は、見つからない、または無効になっている必須 mod を一覧し、別の方法で満たしている要件は Ignore で非表示にできます。
+「SKSE のプラグインは読み込まれたのか?」が推測から証拠に変わります。
+さらに、前回の正常な起動以降のゲーム更新、スクリプトエクステンダの欠落やゲームのバージョンとの不一致(エクステンダのダウンロードページと、ダウンロードした書庫をインストールするボタン付き)、Eidos を `%command%` 付きで起動しない Steam の起動オプション、DLSS 用にオフのままの NVAPI、フレーム生成を止める排他的フルスクリーン、`LinuxVersion=true` のない ENB の `enblocal.ini`、F4SE と SFSE のプラグイン宣言、そして前回のセッションのクラッシュログとそこに名前の出る MOD も報告します。
+更新の確認では、各 mod の Nexus 上の要件も読み込みます。Diagnostics は、見つからない、または無効になっている必須 mod を一覧し、別の方法で満たしている要件は Ignore で非表示にできます。
 
 GUI からゲームを起動するには、そのゲームの Steam 起動オプションに実行ファイルの
 絶対パスを設定してください(Steam は PATH の `~/.cargo/bin` を見ません):

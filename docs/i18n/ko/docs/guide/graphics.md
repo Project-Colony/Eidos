@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=a2dfee4604b4e78f8f22e935fab06fbfe6d4d301 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
 
 # Community Shaders, DLSS, 프레임 생성
 
@@ -8,6 +8,8 @@ Community Shaders 1.4+는 자체 업스케일링(DLSS 4 / FSR 3.1 / XeSS, 별도
 설치되고, 병합된 뷰는 다른 파일과 똑같이 그 DLL을 제공합니다 - 그러나 게임 안에서는
 **알아챌 수 없는** 세 가지가 있고, 각각이 기능을 조용히 아무 일도 하지 않게 만듭니다.
 이 페이지가 그 목록이며, 실제 환경에서 호되게 배운 것입니다.
+
+상태 탭은 이 중 세 가지를 대신 확인합니다. NVIDIA 드라이버와 Upscaling 패키지가 있고 게임의 Proton 빌드가 NVAPI를 기본으로 꺼 둔 경우의 NVAPI 변수(GE-Proton11-9와 Proton 11.0은 켭니다), 프로필 `SkyrimPrefs.ini`의 독점 전체 화면, 그리고 아래에 설명하는 ENB 줄입니다. 마지막 두 가지에는 수정 버튼이 있습니다.
 
 ## DLSS에 필요한 실행 옵션
 
@@ -98,6 +100,10 @@ Linux에서 실행하기 전에 두 가지:
 **Capture output into** 모드를 Output location으로 쓰지 마세요. Eidos가 실행이
 끝날 때마다 PGPatcher 자신의 `cfg/`와 `log/`를 그 모드로 옮기므로, PGPatcher는
 "Output directory has non-PGPatcher related files"라며 멈춥니다.
+
+## Proton에서의 ENB: LinuxVersion
+
+Jackify는 Proton에서 설치하는 모든 ENB의 `enblocal.ini` `[GLOBAL]` 섹션에 `LinuxVersion=true`를 씁니다. ENB 자체 문서에는 이 키에 대한 설명이 없습니다. 상태 탭은 이 줄이 없는 `enblocal.ini`를 알려 주고, 수정 버튼은 우선 적용되는 `enblocal.ini`의 복사본에 이 줄을 설정해 `overwrite/Root/`에 씁니다. 그래서 ENB 모드는 자기 파일을 그대로 유지합니다.
 
 ## 그 뒤에 숫자를 읽는 법
 

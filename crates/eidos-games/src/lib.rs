@@ -20,6 +20,8 @@ use std::path::{Path, PathBuf};
 mod paths;
 mod stores;
 pub use stores::{select_installation, GameSource, Store};
+mod steam_config;
+pub use steam_config::steam_launch_options;
 mod proton;
 pub use proton::{
     is_flatpak_steam, library_path, proton_command, steam_root, wineserver_wait_for, ProtonRun,
@@ -175,6 +177,17 @@ pub fn scan_installed(home: &Path) -> Vec<InstalledApp> {
     apps
 }
 
+/// `buildid` from `<library>/steamapps/appmanifest_<app_id>.acf`; None outside a Steam library.
+pub fn steam_build_id(install_path: &Path, app_id: u32) -> Option<String> {
+    let common = install_path.parent()?;
+    let steamapps = common.parent()?;
+    if common.file_name()? != "common" || steamapps.file_name()? != "steamapps" {
+        return None;
+    }
+    let acf = fs::read_to_string(steamapps.join(format!("appmanifest_{app_id}.acf"))).ok()?;
+    kv_first(&acf, "buildid")
+}
+
 /// Installed games that we support, with their on-disk paths resolved.
 pub fn detect(home: &Path) -> Vec<DetectedGame> {
     let mut games: Vec<_> = scan_installed(home)
@@ -285,6 +298,24 @@ mod tests {
         format!(
             "\"AppState\"\n{{\n\t\"appid\"\t\t\"{appid}\"\n\t\"name\"\t\t\"{name}\"\n\t\"installdir\"\t\t\"{installdir}\"\n}}\n"
         )
+    }
+
+    #[test]
+    fn reads_the_build_id_from_the_app_manifest() {
+        let t = Tmp::new();
+        let steamapps = t.0.join("lib/steamapps");
+        let install = steamapps.join("common/Skyrim Special Edition");
+        fs::create_dir_all(&install).unwrap();
+        fs::write(
+            steamapps.join("appmanifest_489830.acf"),
+            "\"AppState\"\n{\n\t\"appid\"\t\t\"489830\"\n\t\"buildid\"\t\t\"15012345\"\n}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            steam_build_id(&install, 489830).as_deref(),
+            Some("15012345")
+        );
+        assert_eq!(steam_build_id(Path::new("/games/gog/Skyrim"), 489830), None);
     }
 
     #[test]
