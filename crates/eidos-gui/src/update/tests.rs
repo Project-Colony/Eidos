@@ -8610,3 +8610,100 @@ fn game_files_actions_wait_for_a_tracked_run_and_any_other_action_disarms() {
     finish_tracked_run(&mut app);
     let _ = fs::remove_dir_all(root);
 }
+
+#[test]
+fn freeze_shows_the_plan_on_the_first_press_and_copies_nothing() {
+    let (mut app, inst_root) = list_app(&[]);
+    let install = inst_root.join("game");
+    fs::create_dir_all(install.join("Data")).unwrap();
+    fs::write(install.join("SkyrimSE.exe"), b"x").unwrap();
+    fs::write(install.join("Data/Skyrim.esm"), b"x").unwrap();
+    app.games[0].data_path = install.join("Data");
+    app.games[0].install_path = install;
+    let _ = update_inner(&mut app, Message::GameFiles(GameFilesAction::Freeze));
+    assert_eq!(app.confirm_game_files, Some(GameFilesAction::Freeze));
+    let s = app.status.clone().unwrap();
+    assert!(
+        s.contains(&inst_root.join("Stock Game").display().to_string()) && s.contains("(2 files)"),
+        "{s}"
+    );
+    assert!(!inst_root.join("Stock Game").exists() && app.running.is_none());
+    let _ = fs::remove_dir_all(inst_root);
+}
+
+#[test]
+fn a_full_copy_that_does_not_fit_is_refused_before_arming() {
+    use super::game_files::freeze_status;
+    use eidos::stock_game::{CopyKind, FreezePlan};
+    let p = FreezePlan {
+        from: "/g".into(),
+        to: "/i/Stock Game".into(),
+        bytes: 10 << 30,
+        files: 3,
+        kind: CopyKind::Full,
+        fs: Some("ext4"),
+        free: Some(1 << 30),
+    };
+    assert!(freeze_status(&p)
+        .unwrap_err()
+        .contains(&eidos_transfer::human_bytes(10 << 30)));
+    let reflink = freeze_status(&FreezePlan {
+        kind: CopyKind::Reflink,
+        fs: Some("btrfs"),
+        ..p
+    })
+    .unwrap();
+    assert!(
+        reflink.contains(&tf("freeze_how_reflink", &[("fs", &"btrfs")])),
+        "{reflink}"
+    );
+}
+
+#[test]
+fn the_freeze_and_delete_commands_run_the_cli_with_yes() {
+    use super::game_files::{delete_copy_command, freeze_command};
+    let args = |c: std::process::Command| {
+        c.get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+    };
+    assert!(args(freeze_command("/i")).ends_with(&[
+        "stock-game".into(),
+        "/i".into(),
+        "freeze".into(),
+        "--yes".into()
+    ]));
+    assert!(args(delete_copy_command("/i")).ends_with(&[
+        "stock-game".into(),
+        "/i".into(),
+        "delete".into(),
+        "--yes".into()
+    ]));
+}
+
+#[test]
+fn delete_the_copy_arms_with_its_path_and_size() {
+    let (mut app, inst_root) = list_app(&[]);
+    let inst = app.created.clone().unwrap();
+    inst.edit_manifest(|m| m.frozen_copy = Some("Stock Game".into()))
+        .unwrap();
+    fs::create_dir_all(inst_root.join("Stock Game")).unwrap();
+    fs::write(inst_root.join("Stock Game/SkyrimSE.exe"), b"x").unwrap();
+    let _ = update_inner(&mut app, Message::GameFiles(GameFilesAction::Delete));
+    assert_eq!(app.confirm_game_files, Some(GameFilesAction::Delete));
+    assert_eq!(
+        app.status.as_deref(),
+        Some(
+            tf(
+                "status_delete_copy_confirm",
+                &[
+                    ("path", &inst_root.join("Stock Game").display()),
+                    ("size", &"1 B")
+                ]
+            )
+            .as_str()
+        )
+    );
+    assert!(inst_root.join("Stock Game").is_dir() && app.running.is_none());
+    let _ = fs::remove_dir_all(inst_root);
+}
