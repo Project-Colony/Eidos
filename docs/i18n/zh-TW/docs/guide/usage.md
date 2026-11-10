@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=25a1ec0af89508cf1c8d9ee3a8851ab91cf0d6af -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a4937f3b4963b22e6dbdebf4234835a12acea5c2 -->
 
 # 使用 Eidos
 
@@ -459,7 +459,7 @@ ESP/ESM/ESL 的載入順序(切換、手動重新排序,或用 LOOT 排序並閱
 標頭 - 角色、等級、位置、遊玩時間 - 並把烘進存檔的外掛清單和你目前的比對,還附一個
 按鈕啟用它需要的模組,因為只點名它們然後丟給你自己處理,是無聊的那一半。
 
-將滑鼠停在外掛上,會顯示它的來源、作者、標頭版本與表單版本、說明的前 300 個字元、它的主檔,以及在 LOOT 排序之後 LOOT 的訊息。
+將滑鼠停在外掛上,會顯示它的來源、作者、標頭版本與表單版本、說明的前 300 個字元、它的主檔,以及在 LOOT 排序之後 LOOT 的訊息。 在 Skyrim、Skyrim SE、Skyrim VR 與 Enderal SE 上,遊戲還會讀取與已載入外掛同名的 INI;INI 欄會標出這些外掛,點擊即以唯讀方式開啟該檔案。
 
 「Information...」會開啟每個模組專屬的對話框:general、conflicts、filetree、
 INI tweaks、notes。在 filetree 裡(以及在 Data 樹裡),任何檔案都可以被**隱藏** -

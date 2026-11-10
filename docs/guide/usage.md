@@ -581,7 +581,7 @@ level, location, playtime - and diffs the plugin list baked into it against your
 current one, with a button that enables the mods it needs, because naming them
 and leaving you to it is the boring half.
 
-Hovering a plugin shows where it comes from, its author, its header and form version, the first 300 characters of its description, its masters and, after a LOOT sort, LOOT's messages.
+Hovering a plugin shows where it comes from, its author, its header and form version, the first 300 characters of its description, its masters and, after a LOOT sort, LOOT's messages. On Skyrim, Skyrim SE, Skyrim VR and Enderal SE the game also reads an INI named after a loaded plugin; the INI column marks those plugins, and a click opens that file read-only.
 
 "Information..." opens a per-mod dialog: general, conflicts, filetree, INI
 tweaks, notes. From the filetree (and from the Data tree) any file can be

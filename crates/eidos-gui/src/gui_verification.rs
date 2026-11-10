@@ -1217,3 +1217,37 @@ fn the_match_toggle_never_moves_the_filter_rows() {
         plugins
     );
 }
+
+#[test]
+fn a_plugin_ini_marker_never_moves_the_plugin_rows() {
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    // The fixture is an Oblivion instance, an engine without the column.
+    app.games[0].def = eidos_games::GameDef::for_id("skyrimse").unwrap();
+    let mut list = eidos_plugins::PluginList::default();
+    for name in ["Alpha.esp", "Beta.esp"] {
+        list.plugins
+            .push(crate::test_support::plugin_row(name, "Alpha"));
+    }
+    app.plugins = Some(list);
+    let mut renderer = renderer();
+    let panel = |app: &App| crate::modinfo::plugins_panel(app);
+    let inis = |app: &App, r: &mut iced::Renderer| {
+        positions(panel(app), r)
+            .labels
+            .iter()
+            .filter(|(s, _)| s == "INI")
+            .count()
+    };
+    let beta = label(panel(&app), &mut renderer, "Beta.esp", 0);
+    let loot = label(panel(&app), &mut renderer, "LOOT", 0);
+    assert_eq!(inis(&app, &mut renderer), 1, "the column header only");
+    app.plugins.as_mut().unwrap().plugins[0].ini = Some(PathBuf::from("/m/Alpha/Alpha.ini"));
+    assert_eq!(label(panel(&app), &mut renderer, "Beta.esp", 0), beta);
+    assert_eq!(label(panel(&app), &mut renderer, "LOOT", 0), loot);
+    assert_eq!(
+        inis(&app, &mut renderer),
+        2,
+        "the header and Alpha's marker"
+    );
+}

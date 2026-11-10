@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=25a1ec0af89508cf1c8d9ee3a8851ab91cf0d6af -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a4937f3b4963b22e6dbdebf4234835a12acea5c2 -->
 
 # Utiliser Eidos
 
@@ -644,7 +644,7 @@ un vrai mod en une seule étape. **Saves** analyse l'en-tête de chaque sauvegar
 est gravée à la vôtre, avec un bouton qui active les mods dont elle a besoin,
 parce que les nommer et vous laisser faire le reste, c'est la moitié ennuyeuse.
 
-Au survol d'un plugin s'affichent son origine, son auteur, sa version d'en-tête et de formulaire, les 300 premiers caractères de sa description, ses masters et, après un tri LOOT, les messages de LOOT.
+Au survol d'un plugin s'affichent son origine, son auteur, sa version d'en-tête et de formulaire, les 300 premiers caractères de sa description, ses masters et, après un tri LOOT, les messages de LOOT. Sur Skyrim, Skyrim SE, Skyrim VR et Enderal SE, le jeu lit aussi un INI portant le nom d'un plugin chargé ; la colonne INI marque ces plugins, et un clic ouvre le fichier en lecture seule.
 
 « Information... » ouvre une boîte de dialogue par mod : général, conflits,
 arborescence des fichiers, INI tweaks, notes. Depuis l'arborescence (et depuis

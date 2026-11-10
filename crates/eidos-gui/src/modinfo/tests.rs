@@ -1129,3 +1129,33 @@ fn mod_information_lists_what_a_mod_requires_and_what_requires_it() {
     let _ = update(&mut app, Message::ShowModInfo(1));
     assert_eq!(app.info_requirements.1, ["ModA (A.esp needs B.esm)"]);
 }
+
+#[test]
+fn a_plugin_gets_the_ini_the_merged_data_holds_for_it() {
+    let (mut app, _root) = crate::test_support::data_app(
+        &[
+            ("Foo.esp", "TES4"),
+            ("Foo.ini", "[General]\n"),
+            ("Bar.esp", "TES4"),
+            ("Baz.esp", "TES4"),
+            ("Baz.ini.mohidden", "x"),
+        ],
+        &[],
+    );
+    let list = compute_plugins(&app).unwrap();
+    let ini = |n: &str| {
+        list.plugins
+            .iter()
+            .find(|p| p.name == n)
+            .unwrap()
+            .ini
+            .clone()
+    };
+    assert!(ini("Foo.esp").is_some_and(|p| p.ends_with("Foo.ini")));
+    assert_eq!(ini("Bar.esp"), None);
+    assert_eq!(ini("Baz.esp"), None, "a hidden INI is not loaded");
+    // Same files on an engine that does not read plugin INIs: no marker.
+    app.games[0].def = eidos_games::GameDef::for_id("fallout4").unwrap();
+    let list = compute_plugins(&app).unwrap();
+    assert!(list.plugins.iter().all(|p| p.ini.is_none()));
+}

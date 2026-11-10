@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=25a1ec0af89508cf1c8d9ee3a8851ab91cf0d6af -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a4937f3b4963b22e6dbdebf4234835a12acea5c2 -->
 
 # Eidos gebruiken
 
@@ -612,7 +612,7 @@ en vergelijkt de erin gebakken pluginlijst met je huidige, met een knop die de
 mods inschakelt die ze nodig heeft, want ze benoemen en het verder aan jou laten
 is de saaie helft.
 
-Als u over een plugin beweegt, ziet u waar die vandaan komt, de auteur, de header- en formulierversie, de eerste 300 tekens van de beschrijving, de masters en, na een LOOT-sortering, de berichten van LOOT.
+Als u over een plugin beweegt, ziet u waar die vandaan komt, de auteur, de header- en formulierversie, de eerste 300 tekens van de beschrijving, de masters en, na een LOOT-sortering, de berichten van LOOT. Bij Skyrim, Skyrim SE, Skyrim VR en Enderal SE leest het spel ook een INI die naar een geladen plugin is genoemd; de kolom INI markeert die plugins en een klik opent dat bestand alleen-lezen.
 
 "Information..." opent een dialoog per mod: algemeen, conflicten, bestandsboom,
 INI-tweaks, notities. Vanuit de bestandsboom (en vanuit de Data-boom) kan elk

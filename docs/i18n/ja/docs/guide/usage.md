@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=25a1ec0af89508cf1c8d9ee3a8851ab91cf0d6af -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a4937f3b4963b22e6dbdebf4234835a12acea5c2 -->
 
 # Eidos の使い方
 
@@ -545,7 +545,7 @@ MOD に変えます。**Saves** は各セーブのヘッダを解析し - キャ
 必要な MOD を有効にするボタンを添えます。名前を挙げて後はご自由に、では退屈な
 ほうの半分だからです。
 
-プラグインにカーソルを合わせると、入手元、作者、ヘッダーとフォームのバージョン、説明の先頭300文字、マスター、そして LOOT でソートした後は LOOT のメッセージが表示されます。
+プラグインにカーソルを合わせると、入手元、作者、ヘッダーとフォームのバージョン、説明の先頭300文字、マスター、そして LOOT でソートした後は LOOT のメッセージが表示されます。 Skyrim、Skyrim SE、Skyrim VR、Enderal SE では、読み込まれたプラグインと同名の INI もゲームが読み込みます。INI 列はそのプラグインに印を付け、クリックするとそのファイルを読み取り専用で開きます。
 
 「Information...」は MOD ごとのダイアログを開きます。general、conflicts、
 filetree、INI tweaks、notes。filetree から(そして Data の木から)どのファイルも

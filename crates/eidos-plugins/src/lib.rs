@@ -106,6 +106,12 @@ impl GameSpec {
         })
     }
 
+    /// Skyrim reads `<plugin>.ini` beside a loaded plugin; the other engines are
+    /// not known to.
+    pub fn loads_plugin_inis(&self) -> bool {
+        matches!(self.esplugin_id, GameId::Skyrim | GameId::SkyrimSE)
+    }
+
     fn light_supported(&self) -> bool {
         self.esplugin_id.supports_light_plugins()
     }
@@ -165,6 +171,10 @@ pub struct Plugin {
     pub priority: i32,
     /// Game-visible mod index (`00`, `FE:001`, `FD:00`); `None` when disabled.
     pub index: Option<String>,
+    /// The merged Data root's `<stem>.ini` for this plugin, on an engine that
+    /// loads one. `discover` leaves it `None`; the caller that knows the union
+    /// fills it.
+    pub ini: Option<PathBuf>,
 }
 
 impl Plugin {
@@ -508,6 +518,7 @@ impl PluginList {
                         masters,
                         priority: -1,
                         index: None,
+                        ini: None,
                     });
                 }
             }
@@ -1525,6 +1536,24 @@ pub fn dependents_of(reqs: &[ModRequirement], mods: &[&str]) -> Vec<String> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn only_the_skyrim_engines_load_plugin_inis() {
+        for id in ["skyrim", "skyrimse", "skyrimvr", "enderalse"] {
+            assert!(GameSpec::for_id(id).unwrap().loads_plugin_inis(), "{id}");
+        }
+        for id in [
+            "fallout4",
+            "fallout4vr",
+            "starfield",
+            "oblivion",
+            "falloutnv",
+            "fallout3",
+            "morrowind",
+        ] {
+            assert!(!GameSpec::for_id(id).unwrap().loads_plugin_inis(), "{id}");
+        }
+    }
+
     fn p(name: &str, masters: &[&str]) -> Plugin {
         let lower = name.to_ascii_lowercase();
         Plugin {
@@ -1547,6 +1576,7 @@ mod tests {
             masters: masters.iter().map(|s| s.to_string()).collect(),
             priority: -1,
             index: None,
+            ini: None,
         }
     }
 

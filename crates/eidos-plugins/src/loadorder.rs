@@ -507,6 +507,7 @@ mod tests {
             masters: Vec::new(),
             priority: -1,
             index: None,
+            ini: None,
         }
     }
 
@@ -763,6 +764,7 @@ mod tests {
             masters: vec![],
             priority: 0,
             index: None,
+            ini: None,
         });
         list.write_load_order(&dir, &spec).unwrap();
         let variants: Vec<String> = fs::read_dir(&dir)
@@ -823,6 +825,7 @@ mod tests {
                 masters: vec![],
                 priority: 0,
                 index: None,
+                ini: None,
             }],
             implicit: Default::default(),
             locked: Default::default(),

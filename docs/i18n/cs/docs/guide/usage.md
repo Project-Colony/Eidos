@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=25a1ec0af89508cf1c8d9ee3a8851ab91cf0d6af -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a4937f3b4963b22e6dbdebf4234835a12acea5c2 -->
 
 # Používání Eidosu
 
@@ -569,7 +569,7 @@ prohlížeči). Jeho záhlaví počítá zapnuté pluginy v každém indexovém 
 zapne módy, jež sav potřebuje, protože pojmenovat je a nechat to na vás je ta
 nudná polovina.
 
-Když najedete na plugin, zobrazí se, odkud pochází, jeho autor, verze hlavičky a formuláře, prvních 300 znaků popisu, jeho master soubory a po řazení LOOT také zprávy z LOOT.
+Když najedete na plugin, zobrazí se, odkud pochází, jeho autor, verze hlavičky a formuláře, prvních 300 znaků popisu, jeho master soubory a po řazení LOOT také zprávy z LOOT. Na Skyrimu, Skyrimu SE, Skyrimu VR a Enderalu SE hra čte také INI pojmenovaný podle načteného pluginu; sloupec INI tyto pluginy označuje a kliknutí otevře soubor jen pro čtení.
 
 „Information..." otevře dialog konkrétního módu: obecné, konflikty, strom
 souborů, úpravy INI, poznámky. Ze stromu souborů (a ze stromu Data) lze

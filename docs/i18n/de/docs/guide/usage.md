@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=25a1ec0af89508cf1c8d9ee3a8851ab91cf0d6af -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a4937f3b4963b22e6dbdebf4234835a12acea5c2 -->
 
 # Eidos verwenden
 
@@ -642,7 +642,7 @@ Ort, Spielzeit - und vergleicht die darin eingebackene Plugin-Liste mit Ihrer
 aktuellen, mit einem Knopf, der die benötigten Mods aktiviert, denn sie zu
 benennen und Sie damit sitzenzulassen ist die langweilige Hälfte.
 
-Beim Überfahren eines Plugins erscheinen seine Herkunft, sein Autor, die Header- und die Formularversion, die ersten 300 Zeichen der Beschreibung, seine Master und nach einer LOOT-Sortierung die Meldungen von LOOT.
+Beim Überfahren eines Plugins erscheinen seine Herkunft, sein Autor, die Header- und die Formularversion, die ersten 300 Zeichen der Beschreibung, seine Master und nach einer LOOT-Sortierung die Meldungen von LOOT. Bei Skyrim, Skyrim SE, Skyrim VR und Enderal SE liest das Spiel zusätzlich eine INI, die nach einem geladenen Plugin benannt ist; die Spalte INI markiert diese Plugins, und ein Klick öffnet die Datei schreibgeschützt.
 
 "Information..." öffnet einen Dialog je Mod: Allgemeines, Konflikte, Dateibaum,
 INI-Anpassungen, Notizen. Aus dem Dateibaum (und aus dem Data-Baum) kann jede

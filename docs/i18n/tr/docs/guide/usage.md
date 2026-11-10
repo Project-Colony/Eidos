@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=25a1ec0af89508cf1c8d9ee3a8851ab91cf0d6af -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a4937f3b4963b22e6dbdebf4234835a12acea5c2 -->
 
 # Eidos kullanımı
 
@@ -595,7 +595,7 @@ süresi - ve içine gömülü eklenti listesini geçerli listenizle karşılaşt
 gerektirdiği modları etkinleştiren bir düğmeyle birlikte, çünkü onları adlandırıp
 gerisini size bırakmak işin sıkıcı yarısıdır.
 
-Bir eklentinin üzerine gelince kaynağı, yazarı, başlık ve form sürümü, açıklamasının ilk 300 karakteri, master dosyaları ve LOOT sıralamasından sonra LOOT iletileri görünür.
+Bir eklentinin üzerine gelince kaynağı, yazarı, başlık ve form sürümü, açıklamasının ilk 300 karakteri, master dosyaları ve LOOT sıralamasından sonra LOOT iletileri görünür. Skyrim, Skyrim SE, Skyrim VR ve Enderal SE'de oyun, yüklenen bir eklentinin adını taşıyan bir INI dosyasını da okur; INI sütunu bu eklentileri işaretler ve tıklamak dosyayı salt okunur açar.
 
 "Information...", mod başına bir iletişim kutusu açar: genel, çakışmalar, dosya
 ağacı, INI ayarlamaları, notlar. Dosya ağacından (ve Data ağacından) herhangi bir

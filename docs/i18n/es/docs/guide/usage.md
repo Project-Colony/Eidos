@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=25a1ec0af89508cf1c8d9ee3a8851ab91cf0d6af -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a4937f3b4963b22e6dbdebf4234835a12acea5c2 -->
 
 # Usar Eidos
 
@@ -618,7 +618,7 @@ guardada - personaje, nivel, lugar, tiempo jugado - y compara la lista de plugin
 grabada en ella con la tuya actual, con un botón que activa los mods que necesita,
 porque nombrarlos y dejarte a ti el resto es la mitad aburrida.
 
-Al pasar el cursor sobre un plugin se muestran su origen, su autor, la versión de cabecera y de formulario, los primeros 300 caracteres de su descripción, sus masters y, tras una ordenación con LOOT, los mensajes de LOOT.
+Al pasar el cursor sobre un plugin se muestran su origen, su autor, la versión de cabecera y de formulario, los primeros 300 caracteres de su descripción, sus masters y, tras una ordenación con LOOT, los mensajes de LOOT. En Skyrim, Skyrim SE, Skyrim VR y Enderal SE el juego también lee un INI con el nombre de un plugin cargado; la columna INI marca esos plugins y un clic abre el archivo en modo de solo lectura.
 
 «Information...» abre un diálogo por mod: general, conflictos, árbol de archivos,
 ajustes INI, notas. Desde el árbol de archivos (y desde el árbol Data) cualquier

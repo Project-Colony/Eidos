@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=25a1ec0af89508cf1c8d9ee3a8851ab91cf0d6af -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a4937f3b4963b22e6dbdebf4234835a12acea5c2 -->
 
 # 使用 Eidos
 
@@ -445,7 +445,7 @@ Filters 按钮为每个条件列出一行:已启用、有冲突、有更新、�
 的插件列表与你当前的做差异比较,还带一个按钮来启用它需要的模组,因为只把它们的名字
 念出来、剩下的留给你自己弄,那是无聊的那一半。
 
-将鼠标悬停在插件上,会显示它的来源、作者、头部版本和表单版本、说明的前 300 个字符、它的主文件,以及在 LOOT 排序之后 LOOT 的消息。
+将鼠标悬停在插件上,会显示它的来源、作者、头部版本和表单版本、说明的前 300 个字符、它的主文件,以及在 LOOT 排序之后 LOOT 的消息。 在 Skyrim、Skyrim SE、Skyrim VR 和 Enderal SE 上,游戏还会读取与已加载插件同名的 INI;INI 列会标出这些插件,点击即以只读方式打开该文件。
 
 "Information..." 打开一个按模组的对话框:general、conflicts、filetree、INI tweaks、
 notes。从 filetree(以及从 Data 树)里,任何文件都可以被**隐藏** - 重命名为

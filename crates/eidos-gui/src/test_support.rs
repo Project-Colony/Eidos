@@ -62,6 +62,7 @@ pub(crate) fn plugin_row(name: &str, origin: &str) -> eidos_plugins::Plugin {
         masters: Vec::new(),
         priority: 0,
         index: None,
+        ini: None,
     }
 }
 

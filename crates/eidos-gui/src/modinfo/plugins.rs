@@ -44,6 +44,15 @@ pub(crate) fn compute_plugins(app: &App) -> Option<PluginList> {
             root.get(&plugin.name.to_ascii_lowercase())
                 .is_some_and(|path| path.is_file())
         });
+        if spec.loads_plugin_inis() {
+            for plugin in &mut list.plugins {
+                let key = std::path::Path::new(&plugin.name)
+                    .with_extension("ini")
+                    .to_string_lossy()
+                    .to_ascii_lowercase();
+                plugin.ini = root.get(&key).filter(|path| path.is_file()).cloned();
+            }
+        }
     }
 
     // Recorded BEFORE the state is read, for the same reason as `reload_mods`:
@@ -346,7 +355,11 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         ));
     }
 
-    let header = Row::new()
+    // The column set is constant per game, so the rows never shift.
+    let show_ini = selected_game(app)
+        .and_then(|g| GameSpec::for_id(g.def.id))
+        .is_some_and(|s| s.loads_plugin_inis());
+    let mut header = Row::new()
         .spacing(6)
         .push(
             text(t("plugins_col_index"))
@@ -367,7 +380,15 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             text(t("plugins_col_type"))
                 .size(sz(11))
                 .width(Length::Fixed(scaled(36.0))),
-        )
+        );
+    if show_ini {
+        header = header.push(
+            text(t("plugins_col_ini"))
+                .size(sz(11))
+                .width(Length::Fixed(scaled(28.0))),
+        );
+    }
+    let header = header
         .push(text("LOOT").size(sz(11)).width(Length::Fixed(scaled(48.0))))
         .push(
             text(t("plugins_col_pin"))
@@ -558,6 +579,18 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             tip.push('\n');
             tip.push_str(&l);
         }
+        if let Some(ini) = &p.ini {
+            tip.push('\n');
+            tip.push_str(&tf(
+                "plugin_tip_ini",
+                &[(
+                    "ini",
+                    &ini.file_name()
+                        .map(|n| n.to_string_lossy())
+                        .unwrap_or_default(),
+                )],
+            ));
+        }
         // The LOOT verdicts from the last sort - MO2's plugin flags: a compact
         // badge in its own column, the detail folded into the hover the row
         // already carries. Absent until a sort has run, exactly like MO2.
@@ -625,13 +658,25 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             tooltip::Position::FollowCursor,
         )
         .gap(4);
-        let row = Row::new()
+        let mut row = Row::new()
             .spacing(6)
             .align_y(iced::Alignment::Center)
             .push(text(idx).size(sz(11)).width(Length::Fixed(scaled(52.0))))
             .push(container(toggle).width(Length::Fixed(scaled(28.0))))
             .push(container(name_cell).width(Length::Fill))
-            .push(text(kind).size(sz(10)).width(Length::Fixed(scaled(36.0))))
+            .push(text(kind).size(sz(10)).width(Length::Fixed(scaled(36.0))));
+        if show_ini {
+            let cell: Element<'a, Message> = match &p.ini {
+                Some(path) => button(text(t("plugins_col_ini")).size(sz(10)))
+                    .padding(0)
+                    .style(button::text)
+                    .on_press(Message::PreviewFile(path.clone()))
+                    .into(),
+                None => text("").size(sz(10)).into(),
+            };
+            row = row.push(container(cell).width(Length::Fixed(scaled(28.0))));
+        }
+        let row = row
             .push(
                 text(loot_badge)
                     .size(sz(10))
