@@ -605,7 +605,7 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("status_click_remove_again_n", "Click Remove again to permanently delete {n} mod(s) from disk."),
     ("warn_saves_use", "Your newest saves use {plugins}. A save loaded without a plugin it uses loses what that plugin added to it."),
     ("disable_anyway", "Disable anyway"),
-    ("warn_dependents", "{mods} list its plugins as masters. The game will crash on load when a master is missing."),
+    ("warn_dependents", "Mods whose plugins need a master from what you are disabling: {mods}. The game crashes on load when a master is missing."),
     ("disable_with_dependents", "Disable them too"),
     ("disable_keep_dependents", "Keep them enabled"),
     ("status_cannot_remove_mods_now", "Cannot remove mods now: {error}."),

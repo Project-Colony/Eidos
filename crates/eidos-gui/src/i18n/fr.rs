@@ -605,7 +605,7 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("status_click_remove_again_n", "Cliquez encore sur Supprimer pour effacer définitivement {n} mod(s) du disque."),
     ("warn_saves_use", "Vos sauvegardes les plus récentes utilisent {plugins}. Une sauvegarde chargée sans un plugin qu'elle utilise perd ce que ce plugin lui avait ajouté."),
     ("disable_anyway", "Désactiver quand même"),
-    ("warn_dependents", "{mods} listent ses plugins comme masters. Le jeu plante au chargement quand un master manque."),
+    ("warn_dependents", "Mods dont les plugins ont besoin d'un master dans ce que vous désactivez : {mods}. Le jeu plante au chargement quand un master manque."),
     ("disable_with_dependents", "Les désactiver aussi"),
     ("disable_keep_dependents", "Les laisser activés"),
     ("status_cannot_remove_mods_now", "Impossible de supprimer des mods pour l'instant : {error}."),
