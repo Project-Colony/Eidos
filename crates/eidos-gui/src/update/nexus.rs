@@ -328,8 +328,6 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             app.update_in_progress = true;
             app.status = Some(t("status_checking_nexus_updates").to_string());
-            let reqs_inst = inst.clone();
-            let root = inst.root.clone();
             let notices_root = inst.root.clone();
             let notices_reply = inst.root.clone();
             return Task::batch([
@@ -342,14 +340,6 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         eidos_nexus::check_updates(&nexus, &inst, def)
                     }),
                     Message::UpdatesChecked,
-                ),
-                // Health reads these; GraphQL, so outside the v1 budget above.
-                Task::perform(
-                    smol::unblock(move || {
-                        let nexus = eidos_nexus::Nexus::connect()?;
-                        eidos_nexus::refresh_requirements(&nexus, &reqs_inst, def)
-                    }),
-                    move |r| Message::RequirementsRefreshed(root.clone(), r),
                 ),
                 // One GraphQL request per installed collection.
                 Task::perform(
@@ -365,6 +355,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.collection_notices = notices;
         }
         Message::RequirementsRefreshed(root, result) => {
+            // The last step of Check for updates (see UpdatesChecked).
+            app.update_in_progress = false;
             if app.created.as_ref().is_none_or(|i| i.root != root) {
                 return Task::none();
             }
@@ -375,7 +367,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     app.diag_dirty = true;
                 }
                 Err(e) => {
-                    app.status = Some(tf("health_requirements_failed", &[("error", &e)]));
+                    // After the update check's summary, not over it.
+                    let failed = tf("health_requirements_failed", &[("error", &e)]);
+                    app.status = Some(match app.status.take() {
+                        Some(s) => format!("{s} {failed}"),
+                        None => failed,
+                    });
                 }
             }
         }
@@ -454,7 +451,6 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::UpdatesChecked(result) => {
-            app.update_in_progress = false;
             match result {
                 Ok(r) => {
                     // The check rewrote a version line in an unknown number of
@@ -513,6 +509,23 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     app.status = Some(tf("status_update_check_failed", &[("error", &e)]));
                 }
             }
+            // Health reads these; GraphQL, so outside the v1 budget. Started
+            // only now, and the button stays off until it answers: both write
+            // meta.ini under the instance lock, which a second thread of this
+            // process gets refused, not queued for.
+            let (Some(inst), Some(def)) = (app.created.clone(), selected_game(app).map(|g| g.def))
+            else {
+                app.update_in_progress = false;
+                return Task::none();
+            };
+            let root = inst.root.clone();
+            return Task::perform(
+                smol::unblock(move || {
+                    let nexus = eidos_nexus::Nexus::connect()?;
+                    eidos_nexus::refresh_requirements(&nexus, &inst, def)
+                }),
+                move |r| Message::RequirementsRefreshed(root.clone(), r),
+            );
         }
         // ---- Nexus collections ------------------------------------------------
         Message::ShowCollection(link) => {

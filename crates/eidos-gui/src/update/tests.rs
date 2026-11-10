@@ -4574,6 +4574,44 @@ fn a_failed_update_check_still_recounts_updates() {
     let _ = fs::remove_dir_all(&root);
 }
 
+/// The requirements refresh and the update check both write meta.ini under the
+/// instance lock, which a second thread of this process is refused. So the
+/// refresh starts only once the check answered, failed or not, and Check for
+/// updates stays off until the refresh answered too.
+#[test]
+fn the_requirements_refresh_runs_after_the_update_check_never_beside_it() {
+    let root = temp_portable("skyrimse");
+    let mut app = app_for_game("skyrimse");
+    let inst = Instance::portable(root.clone());
+    inst.create().unwrap();
+    app.created = Some(inst);
+    app.screen = Screen::Main;
+    for checked in [Ok(Default::default()), Err("HTTP 503".to_string())] {
+        app.update_in_progress = true;
+        let next = update_inner(&mut app, Message::UpdatesChecked(checked));
+        assert_eq!(next.units(), 1, "the refresh starts after the check");
+        assert!(app.update_in_progress, "no second check meanwhile");
+        let _ = update_inner(
+            &mut app,
+            Message::RequirementsRefreshed(root.clone(), Err("HTTP 502".into())),
+        );
+        assert!(!app.update_in_progress);
+        let status = app.status.clone().unwrap();
+        assert!(
+            status.starts_with("Update check") && status.contains("HTTP 502"),
+            "the refresh error follows the check's summary: {status}"
+        );
+    }
+    // Another instance's answer still frees the button.
+    app.update_in_progress = true;
+    let _ = update_inner(
+        &mut app,
+        Message::RequirementsRefreshed(PathBuf::from("/elsewhere"), Ok(0)),
+    );
+    assert!(!app.update_in_progress);
+    let _ = fs::remove_dir_all(&root);
+}
+
 /// A copy step that panics still answers. `unblock` would otherwise re-raise
 /// the panic in a task the executor drops, no `Placed` would come back, and
 /// the modal (which has no dismiss) would stay up for the session.
