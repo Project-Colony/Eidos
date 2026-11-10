@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=28cada8f5976ca2734f3bcdf3e7f48913c15e05b -->
 
 # Používání Eidosu
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # adopt an existing MO2 profile's order + p
 eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
+eidos check skyrimse              # kontroly zdraví bez okna (--json pro skripty)
 eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
 eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
 eidos unpack backup.eidos <folder>   # put it back on the other machine
@@ -25,6 +26,12 @@ eidos unpack backup.eidos <folder>   # put it back on the other machine
 
 `eidos tool`, `eidos prereqs`, `eidos nexus`, `eidos nxm` a `eidos export` sadu
 doplňují; úplný seznam vypíše `eidos` bez argumentů.
+
+### Kontroly zdraví z terminálu
+
+`eidos check <instance>` spustí kontroly prefixu, pluginů, chybějících masterů a script extenderu z karty **Diagnostics**, aniž by otevřel okno, takže mohou běžet přes SSH nebo v Game Mode a skončit v hlášení chyby. Vypíše stejné systémové řádky jako **Copy report** a pak jeden řádek na každé zjištění, s domovskou složkou zobrazenou jako `~` a přihlašovacím jménem jako `<user>`. Návratový kód je 0, když se nenašel žádný problém (samotné rady stále dávají 0), 1, když se našel aspoň jeden problém, a 2, když Eidos nemohl kontrolu provést: chybné argumenty, instance, kterou nedokáže otevřít, nebo hra, kterou nerozpozná.
+
+`eidos check <instance> --json` místo toho vypíše jeden objekt JSON. Jeho pole nejvyšší úrovně jsou `eidos` (verze), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`) a `findings`. Každé zjištění tvoří `code`, `level` (`problem` nebo `advice`) a jeho `args`; karta Diagnostics ukazuje větu ke každému kódu.
 
 ### Instance: globální a přenosné
 
@@ -605,6 +612,7 @@ chybějící mastery (nejspolehlivější jediný předpovídač pádů), archiv
 nenačte žádný aktivní plugin, jestli seznam módů pořád odpovídá složce mods, a -
 po běhu - co vlastní log script extenderu říká o každé z jeho pluginových DLL,
 což z otázky „načetly se moje SKSE pluginy?" dělá místo dohadu důkaz.
+Hlásí také aktualizaci hry od posledního čistého spuštění, chybějící script extender nebo takový, který neodpovídá verzi hry (se stránkou ke stažení extenderu a tlačítkem, které nainstaluje stažený archiv), parametr spuštění ve Steamu, který nespouští Eidos s `%command%`, NVAPI vypnuté pro DLSS, exkluzivní celou obrazovku, která brání generování snímků, `enblocal.ini` od ENB bez `LinuxVersion=true`, deklarace pluginů F4SE a SFSE a crash log poslední relace s módy, které jmenuje.
 
 Chcete-li hru spouštět skrz GUI, nastavte parametr spuštění hry ve Steamu na
 absolutní cestu k binárce (Steam nevidí `~/.cargo/bin` v PATH):

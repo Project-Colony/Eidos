@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=5c2553948b3b6a436c155a1dcc6460d2b41e6d29 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=28cada8f5976ca2734f3bcdf3e7f48913c15e05b -->
 
 # Eidos kullanımı
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # var olan bir MO2 profilinin sırasını +
 eidos sort skyrimse               # eklenti yükleme sırasını LOOT ile sırala
 eidos play skyrimse               # neyin bağlanacağını göster
 eidos play skyrimse -- <command>  # <command>'ı modlar oyunun üzerine bağlanmış halde çalıştır
+eidos check skyrimse              # pencere olmadan sağlık denetimleri (betikler için --json)
 eidos collection skyrimse <link>  # bir Nexus koleksiyonunu yazarının kurduğu gibi kur
 eidos pack skyrimse backup.eidos  # bütün örnek tek bir dosyada, başka yere taşımak için
 eidos unpack backup.eidos <folder>   # öteki makinede geri koy
@@ -25,6 +26,12 @@ eidos unpack backup.eidos <folder>   # öteki makinede geri koy
 
 `eidos tool`, `eidos prereqs`, `eidos nexus`, `eidos nxm` ve `eidos export`
 takımı tamamlar; tam liste için `eidos`'u argümansız çalıştırın.
+
+### Terminalden sağlık denetimleri
+
+`eidos check <instance>`, **Diagnostics** sekmesindeki prefix, eklenti, eksik master ve script extender denetimlerini pencereyi açmadan çalıştırır; böylece bunlar SSH üzerinden ya da Game Mode'da çalışabilir ve bir hata raporuna eklenebilir. **Copy report** ile aynı sistem satırlarını, ardından her bulgu için bir satır yazdırır; ev klasörünüz `~`, oturum adınız `<user>` olarak gösterilir. Çıkış kodu, hiçbir sorun bulunmadığında 0 (yalnızca öneriler yine 0 verir), en az bir sorun bulunduğunda 1, Eidos denetleyemediğinde 2'dir: yanlış argümanlar, açamadığı bir örnek ya da algılamadığı bir oyun.
+
+`eidos check <instance> --json` bunun yerine tek bir JSON nesnesi yazdırır. Üst düzey alanları `eidos` (sürüm), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`) ve `findings`'dir. Her bulgu bir `code`, bir `level` (`problem` ya da `advice`) ve kendi `args` alanından oluşur; Diagnostics sekmesi her kodun cümlesini gösterir.
 
 ### Örnekler: global ve taşınabilir
 
@@ -632,6 +639,7 @@ hiçbir eklentinin yüklemeyeceği arşivler, mod listesinin hâlâ mods klasör
 eşleşip eşleşmediği ve - bir çalıştırmadan sonra - script extender'ın kendi
 günlüğünün, eklenti DLL'lerinin her biri hakkında ne söylediği; bu da "SKSE
 eklentilerim yüklendi mi?" sorusunu bir çıkarımdan bir kanıta çevirir.
+Ayrıca son temiz başlatmadan bu yana bir oyun güncellemesini, eksik ya da oyun sürümüyle uyuşmayan bir script extender'ı (extender'ın indirme sayfası ve indirdiğiniz arşivi kuran bir düğmeyle), Eidos'u `%command%` ile başlatmayan bir Steam başlatma seçeneğini, DLSS için kapalı bırakılmış NVAPI'yi, kare üretimini durduran özel tam ekranı, `LinuxVersion=true` içermeyen bir ENB `enblocal.ini` dosyasını, F4SE ve SFSE eklenti bildirimlerini ve son oturumun çökme günlüğünü, adını verdiği modlarla birlikte bildirir.
 
 Oyunu GUI üzerinden başlatmak için oyunun Steam başlatma seçeneğini ikili
 dosyanın mutlak yoluna ayarlayın (Steam, PATH'te `~/.cargo/bin`'i görmez):

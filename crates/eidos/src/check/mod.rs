@@ -8,7 +8,11 @@ pub mod graphics;
 pub mod launch_option;
 
 use std::path::{Path, PathBuf};
+use std::process::exit;
 
+use eidos_gamefeatures::preflight::{
+    scan_compressed_audio, scan_extender_plugins, scan_fontconfig, DiagnosticSeverity,
+};
 use eidos_gamefeatures::RegistryStatus;
 use eidos_games::DetectedGame;
 use eidos_instance::Instance;
@@ -24,6 +28,15 @@ pub struct Finding {
     pub code: &'static str,
     pub level: Level,
     pub args: Vec<(&'static str, String)>,
+}
+
+impl Level {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Level::Problem => "problem",
+            Level::Advice => "advice",
+        }
+    }
 }
 
 impl Finding {
@@ -309,14 +322,18 @@ fn yes_no(b: bool) -> &'static str {
     }
 }
 
-/// The report's first lines, one fact each. Not redacted: the caller redacts
-/// the whole report once, with the findings in it.
-pub fn report_header(f: &ReportFacts) -> Vec<String> {
-    let passthrough = match (f.passthrough_requested, f.cap_missing) {
+fn passthrough_state(f: &ReportFacts) -> &'static str {
+    match (f.passthrough_requested, f.cap_missing) {
         (false, _) => "off (default)",
         (true, true) => "requested, launch capability missing",
         (true, false) => "requested, launch capability present",
-    };
+    }
+}
+
+/// The report's first lines, one fact each. Not redacted: the caller redacts
+/// the whole report once, with the findings in it.
+pub fn report_header(f: &ReportFacts) -> Vec<String> {
+    let passthrough = passthrough_state(f);
     vec![
         format!("Eidos: {}", f.version),
         format!("Game: {}", f.game_id),
@@ -338,6 +355,174 @@ pub fn report_header(f: &ReportFacts) -> Vec<String> {
             if f.fusermount3 { "found" } else { "not found" }
         ),
     ]
+}
+
+/// `eidos check <instance> [--json]`: the Health checks that need no window.
+/// Exits 0 when nothing is a problem (advice allowed), 1 on a problem, 2 when
+/// it could not check.
+pub(crate) fn cmd_check(args: &[String]) {
+    let json = args.iter().any(|a| a == "--json");
+    let rest: Vec<&String> = args.iter().filter(|a| *a != "--json").collect();
+    let arg = match rest.as_slice() {
+        [arg] if !arg.starts_with('-') => arg.as_str(),
+        _ => {
+            eidos_log::info!("usage: eidos check <instance> [--json]");
+            exit(2);
+        }
+    };
+    let target = match crate::resolve::try_resolve(arg) {
+        Ok(target) => target,
+        Err(e) => {
+            eidos_log::info!("eidos: {e}");
+            exit(2);
+        }
+    };
+    let Some(game) = crate::games::find_instance_game(&target) else {
+        eidos_log::info!(
+            "Game '{}' is not detected. Run `eidos games`.",
+            target.game_id
+        );
+        exit(2);
+    };
+    let home = eidos_games::home();
+    let findings = check_findings(&home, &game, &target.game_id, &target.inst);
+    let cap_missing = !eidos_launch::binary_has_cap_sys_admin(&crate::this_exe().0);
+    let facts = report_facts(&home, Some(&game), cap_missing);
+    if json {
+        println!("{}", to_json(&facts, &target.inst.root, &findings));
+    } else {
+        let mut lines = report_header(&facts);
+        lines.push(String::new());
+        lines.push("Health:".to_string());
+        lines.extend(
+            findings
+                .iter()
+                .map(|f| format!("- [{}] {}: {}", f.level.as_str(), f.code, f.args_line())),
+        );
+        for line in lines {
+            println!("{}", eidos_log::redact(&line));
+        }
+    }
+    exit(exit_code(&findings));
+}
+
+/// Every check `eidos check` runs: the prefix, plugin diagnostics, missing
+/// masters, the host checks the window shares, and the preflight scans.
+fn check_findings(
+    home: &Path,
+    game: &DetectedGame,
+    game_id: &str,
+    inst: &Instance,
+) -> Vec<Finding> {
+    let mut out = prefix_facts(game)
+        .map(|f| prefix_findings(&f))
+        .unwrap_or_default();
+    let list = inst.plugin_list(&game.data_path, game_id, None);
+    if let (Some(list), Some(spec)) = (list, eidos_plugins::GameSpec::for_id(game_id)) {
+        let mut unverified = 0;
+        for d in list.diagnostics(&spec) {
+            if d.code == "plugin_records_unverified" {
+                unverified += 1;
+                continue;
+            }
+            out.push(Finding {
+                code: d.code,
+                level: if d.severity == eidos_plugins::DiagnosticSeverity::Error {
+                    Level::Problem
+                } else {
+                    Level::Advice
+                },
+                args: vec![
+                    ("plugin", d.plugin),
+                    ("mod", d.origin_mod),
+                    ("detail", d.detail),
+                ],
+            });
+        }
+        if unverified > 0 {
+            out.push(Finding {
+                code: "plugin_records_unverified",
+                level: Level::Advice,
+                args: vec![("n", unverified.to_string())],
+            });
+        }
+        out.extend(
+            list.missing_masters()
+                .into_iter()
+                .map(|(plugin, master)| Finding {
+                    code: "missing_master",
+                    level: Level::Problem,
+                    args: vec![("plugin", plugin), ("master", master)],
+                }),
+        );
+    }
+    let mods = active_mods(inst);
+    out.extend(host_findings(home, game, inst, &mods));
+    let overwrite = inst.overwrite_dir();
+    let preflight = scan_extender_plugins(
+        game.def,
+        &game.data_path,
+        &game.install_path,
+        &mods,
+        &overwrite,
+    )
+    .into_iter()
+    .chain(scan_fontconfig(
+        game.def,
+        &game.data_path,
+        &mods,
+        &overwrite,
+    ))
+    .chain(scan_compressed_audio(game.def, &mods, &overwrite));
+    out.extend(preflight.map(|d| Finding {
+        code: d.code,
+        level: if d.severity == DiagnosticSeverity::Error {
+            Level::Problem
+        } else {
+            Level::Advice
+        },
+        args: vec![
+            ("path", d.path.display().to_string()),
+            ("mod", d.origin_mod),
+            ("detail", d.detail),
+        ],
+    }));
+    out
+}
+
+/// The machine-readable report. Every string goes through `eidos_log::redact`
+/// before it enters the value, so no home path or login name leaves the host.
+fn to_json(facts: &ReportFacts, instance: &Path, findings: &[Finding]) -> serde_json::Value {
+    let r = |s: &str| serde_json::Value::from(eidos_log::redact(s).into_owned());
+    let findings: Vec<serde_json::Value> = findings
+        .iter()
+        .map(|f| {
+            let args: serde_json::Map<String, serde_json::Value> =
+                f.args.iter().map(|(k, v)| (k.to_string(), r(v))).collect();
+            serde_json::json!({"code": r(f.code), "level": r(f.level.as_str()), "args": args})
+        })
+        .collect();
+    serde_json::json!({
+        "eidos": r(&facts.version),
+        "game": r(&facts.game_id),
+        "instance": r(&instance.display().to_string()),
+        "system": {
+            "proton": r(&facts.proton_build),
+            "flatpak_steam": facts.flatpak_steam,
+            "passthrough": r(passthrough_state(facts)),
+            "session": r(facts.session),
+            "distro": r(&facts.distro),
+            "kernel": r(&facts.kernel),
+            "dev_fuse": facts.dev_fuse,
+            "fusermount3": facts.fusermount3,
+        },
+        "findings": findings,
+    })
+}
+
+/// 1 when any finding is a problem, else 0. Advice alone never fails a script.
+fn exit_code(findings: &[Finding]) -> i32 {
+    i32::from(findings.iter().any(|f| f.level == Level::Problem))
 }
 
 /// Whether the user opted into FUSE passthrough. Read from this process's own
@@ -378,5 +563,142 @@ mod tests {
             ..f
         };
         assert!(prefix_findings(&steam).is_empty());
+    }
+
+    fn report() -> ReportFacts {
+        ReportFacts {
+            version: "1.22.0".into(),
+            game_id: "skyrimse".into(),
+            proton_build: "GE-Proton11-9".into(),
+            flatpak_steam: None,
+            passthrough_requested: false,
+            cap_missing: true,
+            session: "none",
+            distro: "Arch Linux".into(),
+            kernel: "7.2.15-arch1-1".into(),
+            dev_fuse: true,
+            fusermount3: true,
+        }
+    }
+
+    #[test]
+    fn exit_code_is_one_only_for_problems() {
+        let advice = Finding {
+            code: "game_updated",
+            level: Level::Advice,
+            args: vec![],
+        };
+        let problem = Finding {
+            code: "missing_master",
+            level: Level::Problem,
+            args: vec![],
+        };
+        assert_eq!(exit_code(&[]), 0);
+        assert_eq!(exit_code(std::slice::from_ref(&advice)), 0);
+        assert_eq!(exit_code(&[advice, problem]), 1);
+    }
+
+    #[test]
+    fn check_json_is_valid_and_redacted_with_windows_paths() {
+        let home = std::env::var("HOME").unwrap();
+        let win = format!(r"Z:{}\Games\Skyrim\", home.replace('/', "\\"));
+        let f = Finding {
+            code: "registry_stale",
+            level: Level::Problem,
+            args: vec![
+                ("found", win.clone()),
+                ("want", format!("{home}/Games/Skyrim \"quoted\"\n")),
+            ],
+        };
+        let text = to_json(&report(), Path::new(&format!("{home}/Eidos")), &[f]).to_string();
+        let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(v["findings"][0]["level"], "problem");
+        assert_eq!(v["findings"][0]["code"], "registry_stale");
+        assert_eq!(v["findings"][0]["args"]["found"], r"Z:~\Games\Skyrim\");
+        assert_eq!(v["instance"], "~/Eidos");
+        assert_eq!(v["system"]["passthrough"], "off (default)");
+        assert_eq!(v["system"]["flatpak_steam"], serde_json::Value::Null);
+        assert_eq!(v["system"]["dev_fuse"], true);
+        assert!(
+            !text.contains(&home) && !text.contains(&home.replace('/', "\\\\")),
+            "{text}"
+        );
+    }
+
+    /// A Skyrim SE plugin header naming `master` as its only master.
+    fn plugin_with_master(master: &str) -> Vec<u8> {
+        let mut bytes = vec![0u8; 24];
+        bytes[..4].copy_from_slice(b"TES4");
+        bytes.extend_from_slice(b"MAST");
+        bytes.extend_from_slice(&(master.len() as u16 + 1).to_le_bytes());
+        bytes.extend_from_slice(master.as_bytes());
+        bytes.push(0);
+        let len = (bytes.len() - 24) as u32;
+        bytes[4..8].copy_from_slice(&len.to_le_bytes());
+        bytes
+    }
+
+    #[test]
+    fn check_findings_map_preflight_and_plugin_diagnostics() {
+        let root = std::env::temp_dir().join(format!("eidos-check-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let tmp_home = root.join("home");
+        std::fs::create_dir_all(&tmp_home).unwrap();
+        let game_dir = root.join("game");
+        std::fs::create_dir_all(game_dir.join("Data")).unwrap();
+        std::fs::write(game_dir.join("Data/Skyrim.esm"), b"").unwrap();
+        let game = DetectedGame {
+            source: Default::default(),
+            def: eidos_games::catalog()
+                .iter()
+                .find(|g| g.id == "skyrimse")
+                .unwrap(),
+            install_path: game_dir.clone(),
+            data_path: game_dir.join("Data"),
+            compatdata: None,
+            steam_name: "synthetic".into(),
+        };
+        let inst = Instance::portable(root.join("instance"));
+        inst.create().unwrap();
+        let mod_dir = inst.mods_dir().join("Needs");
+        std::fs::create_dir_all(&mod_dir).unwrap();
+        std::fs::write(mod_dir.join("Needs.esp"), plugin_with_master("Missing.esm")).unwrap();
+        std::fs::create_dir_all(mod_dir.join("SKSE/Plugins")).unwrap();
+        std::fs::write(mod_dir.join("SKSE/Plugins/Crash.dll"), b"invalid PE").unwrap();
+        inst.save_modlist(&[eidos_instance::ModEntry {
+            name: "Needs".into(),
+            enabled: true,
+            path: mod_dir,
+            unmanaged: false,
+        }])
+        .unwrap();
+
+        let f = check_findings(&tmp_home, &game, "skyrimse", &inst);
+
+        let missing = f
+            .iter()
+            .find(|f| f.code == "missing_master")
+            .expect("missing_master finding");
+        assert_eq!(missing.level, Level::Problem);
+        assert_eq!(missing.arg("plugin"), Some("Needs.esp"));
+        assert_eq!(missing.arg("master"), Some("Missing.esm"));
+        // The game's own Skyrim.esm is empty: a plugin diagnostic, from no mod.
+        let header = f
+            .iter()
+            .find(|f| f.code == "plugin_header")
+            .expect("plugin_header finding");
+        assert_eq!(header.level, Level::Problem);
+        assert_eq!(header.arg("plugin"), Some("Skyrim.esm"));
+        assert_eq!(header.arg("mod"), Some(""));
+        // A preflight diagnostic keeps its path and the mod it came from.
+        let dll = f
+            .iter()
+            .find(|f| f.code == "pe_unverified")
+            .expect("pe_unverified finding");
+        assert_eq!(dll.level, Level::Advice);
+        assert_eq!(dll.arg("mod"), Some("Needs"));
+        assert!(dll.arg("path").is_some_and(|p| p.ends_with("Crash.dll")));
+        assert_eq!(exit_code(&f), 1);
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

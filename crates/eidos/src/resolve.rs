@@ -75,7 +75,7 @@ pub(crate) fn resolve(arg: &str) -> Target {
     }
 }
 
-fn try_resolve(arg: &str) -> Result<Target, String> {
+pub(crate) fn try_resolve(arg: &str) -> Result<Target, String> {
     try_resolve_from(arg, std::env::var_os("EIDOS_INSTANCE"))
 }
 
