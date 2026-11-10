@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=423c553c7c39162e947aa28fa65b37fc33c675b8 -->
 
 # Eidos gebruiken
 
@@ -540,6 +540,19 @@ Het venster bewaart 50 stappen en vergeet ze bij F5, aan het eind van een spel- 
 toolrun, bij een profielwissel en wanneer een ander Eidos-proces de lijst wijzigt.
 Een mod installeren, hernoemen of verwijderen verandert de mappen op schijf, dus
 ongedaan maken voorbij zo'n stap wordt geweigerd.
+
+### De lijst filteren
+
+De knop Filters opent een regel per criterium: actief, in conflict, update
+beschikbaar, geen categorie, op Nexus aanbevolen (endorsed), gevolgd (tracked),
+met een Nexus-id, met verborgen bestanden, geen geldige speldata, voor een
+ander spel, met notities, en een regel per soort inhoud (plugins, BSA- of
+BA2-archieven, textures, meshes, scripts, plugins van de script extender,
+interfacebestanden, geluid, FaceGen). Elke klik zet een regel een stap verder:
+uit, "only", "except" en weer uit. De bovenste regel wisselt tussen mods die
+aan alle aangezette criteria voldoen en mods die aan minstens één voldoen. Het
+naamvak en de categorielijst beperken het resultaat altijd nog verder. De regel
+voor verborgen bestanden kijkt alleen naar ingeschakelde mods.
 
 ### Wat de lijst je over een mod vertelt
 

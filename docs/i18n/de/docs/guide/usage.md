@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=423c553c7c39162e947aa28fa65b37fc33c675b8 -->
 
 # Eidos verwenden
 
@@ -569,6 +569,20 @@ Tool-Laufs, beim Profilwechsel und wenn ein anderer Eidos-Prozess die Liste
 ändert. Installieren, Umbenennen oder Entfernen einer Mod ändert die Ordner auf
 der Festplatte, daher wird ein Rückgängigmachen über einen solchen Schritt hinaus
 abgelehnt.
+
+### Die Liste filtern
+
+Der Knopf Filters öffnet eine Zeile je Kriterium: aktiv, im Konflikt, Update
+verfügbar, ohne Kategorie, auf Nexus empfohlen (endorsed), verfolgt (tracked),
+mit Nexus-ID, mit versteckten Dateien, ohne gültige Spieldaten, für ein anderes
+Spiel, mit Notizen, und eine Zeile je Art von Inhalt (Plugins, BSA- oder
+BA2-Archive, Texturen, Meshes, Skripte, Script-Extender-Plugins,
+Interface-Dateien, Sound, FaceGen). Ein Klick schaltet eine Zeile reihum
+zwischen aus, "only" und "except". Die oberste Zeile wechselt zwischen Mods,
+die alle eingeschalteten Kriterien erfüllen, und Mods, die mindestens eines
+davon erfüllen. Das Namensfeld und die Kategorienliste schränken das Ergebnis
+immer zusätzlich ein. Die Zeile für versteckte Dateien sieht nur aktivierte
+Mods an.
 
 ### Was die Liste Ihnen über eine Mod sagt
 

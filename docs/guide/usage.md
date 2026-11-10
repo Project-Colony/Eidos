@@ -513,6 +513,18 @@ end of a game or tool run, on a profile switch and when another Eidos process
 changes the list. Installing, renaming or removing a mod changes the folders on
 disk, so an undo past one of those is refused.
 
+### Filtering the list
+
+The Filters button opens one row per criterion: active, conflicted, update
+available, no category, endorsed, tracked, has a Nexus id, has hidden files, no
+valid game data, for another game, has notes, and one row per kind of content
+(plugins, BSA or BA2 archives, textures, meshes, scripts, script extender
+plugins, interface files, sound, FaceGen). A click cycles a row through off,
+only and except. The row at the top switches between matching all of the
+criteria that are on and matching any of them. The name box and the category
+list always narrow the result further. The hidden files row looks at enabled
+mods only.
+
 ### What the list tells you about a mod
 
 Two advisory flags, both a glyph with the explanation on hover. **No valid game

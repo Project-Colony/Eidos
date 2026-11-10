@@ -347,6 +347,8 @@ pub(crate) enum Message {
     IdentifiedDownload(Result<String, String>),
     /// Cycle one filter criterion: off -> require -> exclude.
     CycleFilter(FilterField),
+    /// Switch the criteria between matching all of them and matching any.
+    ToggleFilterMatch,
     ToggleFilterPane,
     ClearFilters,
     ShowBackupsDialog,

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=423c553c7c39162e947aa28fa65b37fc33c675b8 -->
 
 # Usar o Eidos
 
@@ -530,6 +530,19 @@ passos e os esquece no F5, ao fim de uma execução do jogo ou de uma ferramenta
 na troca de perfil e quando outro processo do Eidos altera a lista. Instalar,
 renomear ou remover um mod altera as pastas no disco, então um desfazer que passe
 de uma dessas ações é recusado.
+
+### Filtrar a lista
+
+O botão Filters abre uma linha por critério: ativo, em conflito, atualização
+disponível, sem categoria, recomendado no Nexus (endorsed), acompanhado
+(tracked), com id do Nexus, com arquivos ocultos, sem dados de jogo válidos,
+para outro jogo, com notas, e uma linha por tipo de conteúdo (plugins, arquivos
+BSA ou BA2, texturas, malhas, scripts, plugins do script extender, arquivos de
+interface, som, FaceGen). Cada clique passa a linha para o próximo estado:
+desligado, "only", "except" e de volta a desligado. A linha do topo alterna
+entre os mods que cumprem todos os critérios ligados e os que cumprem pelo
+menos um. A caixa de nome e a lista de categorias sempre restringem o resultado
+ainda mais. A linha de arquivos ocultos só olha para mods ativados.
 
 ### O que a lista diz sobre um mod
 

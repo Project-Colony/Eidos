@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=423c553c7c39162e947aa28fa65b37fc33c675b8 -->
 
 # Eidos kullanımı
 
@@ -525,6 +525,19 @@ bunları F5'te, bir oyun ya da araç çalıştırmasının sonunda, profil deği
 başka bir Eidos süreci listeyi değiştirdiğinde unutur. Bir modu kurmak, yeniden
 adlandırmak ya da kaldırmak diskteki klasörleri değiştirir, bu yüzden bunlardan
 birinin ötesine geçen bir geri alma reddedilir.
+
+### Listeyi süzmek
+
+Filters düğmesi her ölçüt için bir satır açar: etkin, çakışmalı, güncelleme var,
+kategorisiz, Nexus'ta beğenilmiş (endorsed), takip edilen (tracked), Nexus
+id'si olan, gizli dosyası olan, geçerli oyun verisi olmayan, başka bir oyun
+için, notu olan ve her içerik türü için bir satır (eklentiler, BSA veya BA2
+arşivleri, dokular, mesh'ler, betikler, script extender eklentileri, arayüz
+dosyaları, ses, FaceGen). Her tıklama satırı bir sonraki duruma geçirir: kapalı,
+"only", "except" ve yeniden kapalı. En üstteki satır, açık ölçütlerin hepsini
+karşılayan modlarla en az birini karşılayan modlar arasında geçiş yapar. Ad
+kutusu ve kategori listesi sonucu her zaman daha da daraltır. Gizli dosyalar
+satırı yalnızca etkin modlara bakar.
 
 ### Listenin bir mod hakkında söyledikleri
 

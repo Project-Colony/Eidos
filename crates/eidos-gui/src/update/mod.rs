@@ -1335,6 +1335,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::SetSeparatorColor(..)
         | Message::ToggleCollapse(..)
         | Message::CycleFilter(..)
+        | Message::ToggleFilterMatch
         | Message::ToggleFilterPane
         | Message::ClearFilters
         | Message::ModTrack(..)

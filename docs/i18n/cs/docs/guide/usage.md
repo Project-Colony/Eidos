@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=423c553c7c39162e947aa28fa65b37fc33c675b8 -->
 
 # Používání Eidosu
 
@@ -503,6 +503,18 @@ Ctrl+Shift+Z ji provede znovu. Okno si pamatuje 50 kroků a zapomene je po F5, n
 konci běhu hry nebo nástroje, při přepnutí profilu a když seznam změní jiný
 proces Eidos. Instalace, přejmenování nebo odebrání modu mění složky na disku,
 takže vrácení za takový krok je odmítnuto.
+
+### Filtrování seznamu
+
+Tlačítko Filters otevře jeden řádek pro každé kritérium: aktivní, v konfliktu,
+dostupná aktualizace, bez kategorie, doporučené na Nexusu (endorsed), sledované
+(tracked), s Nexus id, se skrytými soubory, bez platných herních dat, pro jinou
+hru, s poznámkami, a jeden řádek pro každý druh obsahu (pluginy, archivy BSA
+nebo BA2, textury, meshe, skripty, pluginy script extenderu, soubory rozhraní,
+zvuk, FaceGen). Kliknutí přepíná řádek dokola mezi vypnuto, „only" a „except".
+Řádek nahoře přepíná mezi módy, které splňují všechna zapnutá kritéria, a módy,
+které splňují aspoň jedno z nich. Pole pro název a seznam kategorií výsledek
+vždy dále zužují. Řádek se skrytými soubory se dívá jen na zapnuté módy.
 
 ### Co vám seznam o módu řekne
 

@@ -788,13 +788,26 @@ fn a_criterion_cycles_off_only_except_and_back() {
     // Three settings, not two: "only conflicted" and "everything except
     // conflicted" are both questions people ask.
     let mut app = nav_app(&["a"]);
-    assert_eq!(app.filters.active, Criterion::Off);
+    assert_eq!(app.filters.get(FilterField::Active), Criterion::Off);
     let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Active));
-    assert_eq!(app.filters.active, Criterion::Require);
+    assert_eq!(app.filters.get(FilterField::Active), Criterion::Require);
     let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Active));
-    assert_eq!(app.filters.active, Criterion::Exclude);
+    assert_eq!(app.filters.get(FilterField::Active), Criterion::Exclude);
     let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Active));
-    assert_eq!(app.filters.active, Criterion::Off, "back to not filtering");
+    assert_eq!(
+        app.filters.get(FilterField::Active),
+        Criterion::Off,
+        "back to not filtering"
+    );
+}
+
+#[test]
+fn the_match_toggle_flips_and_clear_resets_it() {
+    let mut app = nav_app(&["A"]);
+    let _ = update_inner(&mut app, Message::ToggleFilterMatch);
+    assert!(app.filters.match_any);
+    let _ = update_inner(&mut app, Message::ClearFilters);
+    assert!(!app.filters.match_any);
 }
 
 #[test]
@@ -838,7 +851,7 @@ fn a_filter_never_leaves_the_keyboard_aimed_at_a_row_it_hid() {
 
     let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Active));
     let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Active));
-    assert_eq!(app.filters.active, Criterion::Exclude);
+    assert_eq!(app.filters.get(FilterField::Active), Criterion::Exclude);
     assert_eq!(
         mod_row_visibility(&app, None),
         vec![true, false],
@@ -5201,8 +5214,8 @@ fn the_button_says_how_many_criteria_are_narrowing_the_list() {
     // A list that looks short must always say why.
     let mut app = nav_app(&["a"]);
     assert_eq!(app.filters.active_count(), 0);
-    app.filters.active = Criterion::Require;
-    app.filters.update = Criterion::Exclude;
+    app.filters.set(FilterField::Active, Criterion::Require);
+    app.filters.set(FilterField::Update, Criterion::Exclude);
     assert_eq!(app.filters.active_count(), 2);
     let _ = update_inner(&mut app, Message::ClearFilters);
     assert_eq!(app.filters.active_count(), 0, "Clear really clears");

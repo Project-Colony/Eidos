@@ -1177,3 +1177,43 @@ fn the_disable_confirmation_never_moves_the_mod_rows() {
         "{messages:?}"
     );
 }
+
+/// The match toggle sits in its own full-width row above the criteria, so
+/// switching it changes only its own text.
+#[test]
+fn the_match_toggle_never_moves_the_filter_rows() {
+    let _look = crate::test_support::look_lock();
+    let mut app = crate::test_support::nav_app(&["A"]);
+    let mut renderer = renderer();
+    let before = label(
+        crate::view::filter_pane(&app),
+        &mut renderer,
+        t("filter_active"),
+        0,
+    );
+    let plugins = label(
+        crate::view::filter_pane(&app),
+        &mut renderer,
+        t("filter_plugins"),
+        0,
+    );
+    app.filters.match_any = true;
+    assert_eq!(
+        label(
+            crate::view::filter_pane(&app),
+            &mut renderer,
+            t("filter_active"),
+            0
+        ),
+        before
+    );
+    assert_eq!(
+        label(
+            crate::view::filter_pane(&app),
+            &mut renderer,
+            t("filter_plugins"),
+            0
+        ),
+        plugins
+    );
+}

@@ -774,7 +774,8 @@ pub(crate) struct App {
     pub(crate) known: Vec<KnownInstance>,
 }
 
-/// Which criterion a [`Message::CycleFilter`] refers to.
+/// Which criterion a [`Message::CycleFilter`] refers to. Declaration order is
+/// the pane's row order: the twelve state rows, then the eight content rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FilterField {
     Active,
@@ -782,6 +783,75 @@ pub(crate) enum FilterField {
     Update,
     Plugins,
     Uncategorised,
+    Endorsed,
+    Tracked,
+    NexusId,
+    HiddenFiles,
+    InvalidData,
+    OtherGame,
+    Notes,
+    Archives,
+    Textures,
+    Meshes,
+    Scripts,
+    Extender,
+    Interface,
+    Sound,
+    FaceGen,
+}
+
+impl FilterField {
+    /// Every criterion in declaration order, so `f as usize` indexes it.
+    pub(crate) const ALL: [FilterField; 20] = {
+        use FilterField::*;
+        [
+            Active,
+            Conflicted,
+            Update,
+            Plugins,
+            Uncategorised,
+            Endorsed,
+            Tracked,
+            NexusId,
+            HiddenFiles,
+            InvalidData,
+            OtherGame,
+            Notes,
+            Archives,
+            Textures,
+            Meshes,
+            Scripts,
+            Extender,
+            Interface,
+            Sound,
+            FaceGen,
+        ]
+    };
+
+    pub(crate) fn label(self) -> &'static str {
+        t(match self {
+            FilterField::Active => "filter_active",
+            FilterField::Conflicted => "filter_conflicted",
+            FilterField::Update => "filter_update",
+            FilterField::Plugins => "filter_plugins",
+            FilterField::Uncategorised => "filter_no_category",
+            FilterField::Endorsed => "filter_endorsed",
+            FilterField::Tracked => "filter_tracked",
+            FilterField::NexusId => "filter_nexus_id",
+            FilterField::HiddenFiles => "filter_hidden_files",
+            FilterField::InvalidData => "filter_invalid_data",
+            FilterField::OtherGame => "filter_other_game",
+            FilterField::Notes => "filter_notes",
+            FilterField::Archives => "filter_archives",
+            FilterField::Textures => "filter_textures",
+            FilterField::Meshes => "filter_meshes",
+            FilterField::Scripts => "filter_scripts",
+            FilterField::Extender => "filter_extender",
+            FilterField::Interface => "filter_interface",
+            FilterField::Sound => "filter_sound",
+            FilterField::FaceGen => "filter_facegen",
+        })
+    }
 }
 
 /// The slice of a mod's `meta.ini` the main window shows (extra columns + the
@@ -806,6 +876,8 @@ pub(crate) struct RowMeta {
     pub(crate) update: bool,
     /// The user endorsed it on Nexus (`endorsed=`), for the status-bar count.
     pub(crate) endorsed: bool,
+    /// The user tracks it (`tracked=`), for the Tracked filter.
+    pub(crate) tracked: bool,
     /// The row's display colour (MO2's `color=@Variant(...)`), if set. Stored per
     /// mod, not only per separator.
     pub(crate) color: Option<[u8; 3]>,

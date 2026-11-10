@@ -2178,8 +2178,28 @@ pub(crate) fn filter_pane<'a>(app: &App) -> Element<'a, Message> {
                     .on_press(Message::ClearFilters),
             ),
     );
+    // Always drawn, one line in either mode, so the rows below never move.
+    col = col.push(
+        button(
+            text(t(if app.filters.match_any {
+                "view_filters_match_any"
+            } else {
+                "view_filters_match_all"
+            }))
+            .size(sz(11)),
+        )
+        .width(Length::Fill)
+        .padding([2, 6])
+        .style(button::text)
+        .on_press(Message::ToggleFilterMatch),
+    );
+    let mut rows = Column::new().spacing(2);
     for (label, state, field) in app.filters.rows() {
-        col = col.push(
+        // The state rows end where the content rows (Archives onwards) start.
+        if field == FilterField::Archives {
+            rows = rows.push(menu_sep());
+        }
+        rows = rows.push(
             button(
                 Row::new()
                     .spacing(6)
@@ -2200,6 +2220,9 @@ pub(crate) fn filter_pane<'a>(app: &App) -> Element<'a, Message> {
             .on_press(Message::CycleFilter(field)),
         );
     }
+    // Twenty rows outgrow a small window. An embedded scrollbar takes its own
+    // width instead of covering the "only" and "except" labels.
+    col = col.push(container(scrollable(rows).spacing(2)).max_height(scaled(440.0)));
     // Wrapped in a mouse_area that SWALLOWS the press. iced's Stack dispatches
     // top-down and stops only when a widget captures the event; a bare container
     // never captures, so every click landing on the card's own padding, on the

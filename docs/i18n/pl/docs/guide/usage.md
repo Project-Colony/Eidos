@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=423c553c7c39162e947aa28fa65b37fc33c675b8 -->
 
 # Używanie Eidos
 
@@ -530,6 +530,19 @@ przesunięcie, zbiorcze wyłączenie, sortowanie LOOT. Ctrl+Shift+Z ją przywrac
 F5, po zakończeniu uruchomienia gry lub narzędzia, po zmianie profilu i gdy inny
 proces Eidos zmieni listę. Instalacja, zmiana nazwy lub usunięcie moda zmienia
 foldery na dysku, więc cofnięcie poza taki krok zostaje odrzucone.
+
+### Filtrowanie listy
+
+Przycisk Filters otwiera jeden wiersz na kryterium: aktywne, w konflikcie,
+dostępna aktualizacja, bez kategorii, polecone na Nexusie (endorsed),
+obserwowane (tracked), z id Nexusa, z ukrytymi plikami, bez prawidłowych danych
+gry, dla innej gry, z notatkami, oraz jeden wiersz na rodzaj zawartości
+(wtyczki, archiwa BSA lub BA2, tekstury, siatki, skrypty, wtyczki script
+extendera, pliki interfejsu, dźwięk, FaceGen). Każde kliknięcie przestawia
+wiersz dalej: wyłączone, „only", „except" i znowu wyłączone. Górny wiersz
+przełącza między modami, które spełniają wszystkie włączone kryteria, a modami,
+które spełniają choć jedno. Pole nazwy i lista kategorii zawsze dodatkowo
+zawężają wynik. Wiersz ukrytych plików patrzy tylko na włączone mody.
 
 ### Co lista mówi ci o modzie
 
