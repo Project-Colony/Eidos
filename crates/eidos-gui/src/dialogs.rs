@@ -2155,8 +2155,10 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
 
 /// Height of the Browse list area, whatever it holds.
 pub(crate) const BROWSE_LIST_H: f32 = 320.0;
-/// Height of the one line under the Browse list.
-pub(crate) const BROWSE_FOOT_H: f32 = 18.0;
+/// Height of the footer under the Browse list: two lines of `sz(10)` text, so
+/// the hidden count still shows at the largest text size in the 720 px card.
+/// 28 rather than 2 x 13: `sz` rounds up, 17 px at 1.68x needs 44.2 px.
+pub(crate) const BROWSE_FOOT_H: f32 = 28.0;
 
 /// The Browse pane: the search row, the sort row, then a list area and a footer
 /// of fixed heights, so the explainer under them never moves.
@@ -2262,18 +2264,11 @@ fn collection_browse<'a>(b: &CollectionBrowse) -> Column<'a, Message> {
                 .width(Length::Fill)
                 .height(Length::Fixed(scaled(BROWSE_LIST_H))),
         )
-        // shortcut: the card is 720 px at every text size, so above the default
-        // size this line is cut at its right edge; widen the card if users ask.
         .push(
-            container(
-                text(footer)
-                    .size(sz(10))
-                    .color(text_muted())
-                    .wrapping(iced::widget::text::Wrapping::None),
-            )
-            .width(Length::Fill)
-            .height(Length::Fixed(scaled(BROWSE_FOOT_H)))
-            .clip(true),
+            container(text(footer).size(sz(10)).color(text_muted()))
+                .width(Length::Fill)
+                .height(Length::Fixed(scaled(BROWSE_FOOT_H)))
+                .clip(true),
         )
 }
 

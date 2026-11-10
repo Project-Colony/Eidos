@@ -1787,6 +1787,49 @@ fn the_browse_results_keep_one_height_while_loading_failing_and_listing() {
     assert_eq!(y(&state), loading, "twenty tiles and a hidden count");
 }
 
+/// The Browse footer with a hidden count fits its two-line slot at every text
+/// size, in English and French. The slot clips, so the text is measured alone
+/// at the card's inner width: 720 px less 18 px padding on each side.
+#[test]
+fn the_browse_footer_and_its_hidden_count_fit_two_lines_at_every_text_size() {
+    use colony_ui::i18n::Locale;
+    use colony_ui::typography::{FontSize, TextSize};
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    for (font, size) in [
+        (FontSize::Default, TextSize::Default),
+        (FontSize::Small, TextSize::Small),
+        (FontSize::Small, TextSize::Default),
+        (FontSize::Large, TextSize::XLarge),
+    ] {
+        let mut look = crate::preferences::UiPreferences::default();
+        look.standard.font_size = font;
+        look.standard.text_size_a11y = size;
+        look.standard.apply();
+        for locale in [Locale::En, Locale::Fr] {
+            let footer = crate::i18n::with_locale(locale, || {
+                tf(
+                    "collection_browse_footer",
+                    &[("shown", &20), ("total", &99999)],
+                ) + &tf("collection_browse_hidden", &[("n", &999)])
+            });
+            let drawn = positions_in(
+                iced::widget::container(crate::theme::text(footer).size(colony_ui::sz(10)))
+                    .width(iced::Length::Fill)
+                    .into(),
+                &mut renderer,
+                Size::new(720.0 - 2.0 * 18.0, 800.0),
+            )
+            .labels[0]
+                .1;
+            assert!(
+                drawn.height <= crate::theme::scaled(BROWSE_FOOT_H),
+                "{font:?} x {size:?} {locale:?}: {drawn:?}"
+            );
+        }
+    }
+}
+
 /// A Browse error is drawn in the words the handler gave it, so a missing
 /// account never reads as an answer Nexus failed to send.
 #[test]
