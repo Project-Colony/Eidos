@@ -489,8 +489,8 @@ pub(crate) fn run_through_view(
         eidos_log::warn!("eidos: refusing to launch: pending profile capture failed: {e}");
         exit(1);
     }
-    // A requested test run (A36) begins here, and every later step runs on its
-    // working copy. Tools and utility runs are never test runs.
+    // A requested test run (A36) gets its working copy here, and every later
+    // step runs on it. Tools and utility runs are never test runs.
     let test = records_game_launch(&opts)
         .then(|| crate::test_run::take(inst, game_id, game, &real))
         .transpose()
@@ -730,6 +730,15 @@ pub(crate) fn run_through_view(
     if let Some(session) = &shader_session {
         if let Err(error) = session.validate_sources(&shader_cancel) {
             eidos_log::warn!("eidos: refusing to launch: shader sources changed: {error}");
+            drop(shader_session);
+            exit(1);
+        }
+    }
+    // Eidos refuses nothing after this: the test run begins. A refusal above
+    // leaves its request waiting for the next Run, and the log says why.
+    if test.is_some() {
+        if let Err(e) = inst.mark_test_run_started(crate::sessions::now()) {
+            eidos_log::warn!("eidos: refusing to launch: could not begin the test run: {e}");
             drop(shader_session);
             exit(1);
         }

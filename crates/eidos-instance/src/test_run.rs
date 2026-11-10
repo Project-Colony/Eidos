@@ -300,17 +300,18 @@ impl Instance {
         fs::remove_dir_all(self.test_run_dir())
     }
 
-    /// Begin the waiting request if it is for this game and this profile: make
-    /// the working copy and mark the run started. `Ok(None)` means this is a
-    /// normal run. The caller holds the instance lock.
-    pub fn begin_test_run(
+    /// Make the working copy for the waiting request if it is for this game and
+    /// this profile. The run is begun only by `mark_test_run_started`, right
+    /// before the game starts, so a launch refused in between leaves the request
+    /// waiting. `Ok(None)` means this is a normal run. The caller holds the
+    /// instance lock.
+    pub fn prepare_test_run(
         &self,
         real: &Profile,
         game_id: &str,
         ini_files: &[&str],
         docs: Option<PathBuf>,
         cloud: bool,
-        now: u64,
     ) -> io::Result<Option<TestRun>> {
         let Some(mut run) = self.test_run() else {
             return Ok(None);
@@ -319,6 +320,14 @@ impl Instance {
             return Ok(None);
         }
         let test = self.test_run_profile();
+        // A copy a refused launch left holds only Eidos's own preparation, since
+        // no game ran in it: start over.
+        for dir in [test.dir(), self.test_data_upper(), self.test_docs_upper()] {
+            match fs::remove_dir_all(&dir) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
+                _ => {}
+            }
+        }
         fs::create_dir_all(test.dir())?;
         // Top-level files and the plugin state only: saves, runtime-root and
         // backups start empty, so every write of the run is the run's own.
@@ -347,11 +356,35 @@ impl Instance {
         }
         fs::create_dir_all(self.test_data_upper())?;
         fs::create_dir_all(self.test_docs_upper())?;
-        run.started = Some(now);
         run.ini_files = ini_files.iter().map(|f| f.to_string()).collect();
         run.docs = docs;
         run.cloud = cloud;
         self.write_test_run(&run)?;
+        Ok(Some(run))
+    }
+
+    /// The game starts: the prepared run is begun, and its writes wait for the
+    /// review. The caller holds the instance lock.
+    pub fn mark_test_run_started(&self, now: u64) -> io::Result<()> {
+        self.update_test_run(|r| r.started = Some(now))
+    }
+
+    /// `prepare_test_run`, then `mark_test_run_started`: for a game that starts
+    /// at once.
+    pub fn begin_test_run(
+        &self,
+        real: &Profile,
+        game_id: &str,
+        ini_files: &[&str],
+        docs: Option<PathBuf>,
+        cloud: bool,
+        now: u64,
+    ) -> io::Result<Option<TestRun>> {
+        let Some(mut run) = self.prepare_test_run(real, game_id, ini_files, docs, cloud)? else {
+            return Ok(None);
+        };
+        self.mark_test_run_started(now)?;
+        run.started = Some(now);
         Ok(Some(run))
     }
 
@@ -576,6 +609,39 @@ mod tests {
                 .is_none(),
             "begun once"
         );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_launch_refused_before_its_game_leaves_the_request_waiting() {
+        let (inst, root) = inst("refused");
+        let real = inst.profile("Default");
+        fs::create_dir_all(real.dir()).unwrap();
+        fs::write(real.dir().join("Skyrim.ini"), "[General]\n").unwrap();
+        inst.request_test_run(&request("Default", None)).unwrap();
+        let prepare = || {
+            inst.prepare_test_run(&real, "skyrimse", &["Skyrim.ini"], None, false)
+                .unwrap()
+        };
+        assert!(prepare().is_some_and(|r| r.started.is_none()));
+        assert_eq!(inst.test_run_state().unwrap().1, TestState::Requested);
+        // What the refused launch prepared in the copy and the uppers.
+        let test = inst.test_run_profile();
+        put(test.dir().join("runtime-root/Skyrim.ini"), "deployed");
+        put(inst.test_data_upper().join("stale.txt"), "stale");
+        put(inst.test_docs_upper().join("stale.log"), "stale");
+        assert!(prepare().is_some(), "the next run takes the request");
+        assert!(test.dir().join("Skyrim.ini").is_file());
+        for stale in [
+            test.dir().join("runtime-root/Skyrim.ini"),
+            inst.test_data_upper().join("stale.txt"),
+            inst.test_docs_upper().join("stale.log"),
+        ] {
+            assert!(!stale.exists(), "{stale:?}");
+        }
+        inst.mark_test_run_started(200).unwrap();
+        assert_eq!(inst.test_run().unwrap().started, Some(200));
+        assert!(prepare().is_none(), "a begun run is never prepared again");
         let _ = fs::remove_dir_all(root);
     }
 

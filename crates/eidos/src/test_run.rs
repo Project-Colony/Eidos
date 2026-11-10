@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 use eidos_games::{DetectedGame, GameDef};
 use eidos_instance::{Instance, Profile, TestGroup, TestRun, TestRunWrites};
 
-/// Begin the instance's waiting test run when it is for this game and `real`.
+/// Prepare the instance's waiting test run when it is for this game and `real`;
+/// the launch begins it only once nothing can refuse the game any more.
 /// `Ok(None)` is a normal run; a request for another game or profile keeps
 /// waiting, and the run says so.
 pub(crate) fn take(
@@ -23,13 +24,12 @@ pub(crate) fn take(
     let cloud = game
         .saves_path()
         .is_some_and(|p| crate::launch::steam_cloud_save_target(game, &p));
-    let run = inst.begin_test_run(
+    let run = inst.prepare_test_run(
         real,
         game_id,
         eidos_gamefeatures::ini_files_for(game_id),
         docs,
         cloud,
-        crate::sessions::now(),
     )?;
     if run.is_none() {
         if let Some(waiting) = inst.test_run().filter(|r| r.started.is_none()) {

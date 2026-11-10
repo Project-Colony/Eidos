@@ -9170,6 +9170,60 @@ fn stop_takes_two_presses_and_leaves_a_waiting_test_run_for_review() {
 }
 
 #[test]
+fn a_refused_step_says_why_and_keeps_waiting_for_its_game() {
+    use eidos_instance::{Bisect, TestRun, TestState};
+    let (mut app, root) = list_app(&["A", "B", "C", "D"]);
+    let inst = app.created.clone().unwrap();
+    let mut b = Bisect::new(
+        "Default",
+        vec![],
+        ["A", "B", "C", "D"].map(String::from).to_vec(),
+        1,
+    );
+    b.begin_step(vec!["A".into(), "B".into()]);
+    inst.write_bisect(&b).unwrap();
+    app.bisect = Some(b);
+    app.bisect_universe = bisect_universe(&app);
+    inst.request_test_run(&TestRun {
+        profile: "Default".into(),
+        game: "skyrimse".into(),
+        mods: Some(vec!["A".into(), "B".into()]),
+        bisect: true,
+        requested: 1,
+        ..Default::default()
+    })
+    .unwrap();
+    let mut cmd = std::process::Command::new("sh");
+    cmd.args([
+        "-c",
+        "echo 'WARN  eidos: refusing to launch: INI preparation failed: boom'; exit 1",
+    ]);
+    start_run(&mut app, "Game".into(), cmd);
+    app.running.as_mut().unwrap().game = true;
+    // What `eidos play` leaves when it refuses after making the working copy.
+    inst.prepare_test_run(&inst.profile("Default"), "skyrimse", &[], None, false)
+        .unwrap()
+        .unwrap();
+    finish_tracked_run(&mut app);
+    let said = app.status.clone().unwrap();
+    assert!(
+        said.contains("eidos: refusing to launch: INI preparation failed: boom"),
+        "{said}"
+    );
+    assert_eq!(
+        app.test_state.as_ref().map(|s| s.1),
+        Some(TestState::Requested)
+    );
+    assert!(app.test_review.is_none());
+    assert_eq!(
+        bisect_stage(&app),
+        BisectStage::Running,
+        "no answer for a game that never started"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn the_result_names_the_culprit_and_close_keeps_a_log() {
     use eidos_instance::Answer;
     let (mut app, root) = answer_app(false);
