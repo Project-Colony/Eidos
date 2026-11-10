@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ae7cbbab8d37d90f52b713a0b2fae9406ba13279 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
 
 # Eidos verwenden
 
@@ -685,6 +685,8 @@ eine Skyrim-Collection bei geladener Fallout-4-Instanz, und sie lehnt namentlich
 ab, statt die Mitglieder gegen die falsche Mod-Liste abzugleichen, wo jedes
 "installiert" und jedes "fehlend" Rauschen wäre, das die Form einer Antwort
 trägt.
+
+Wenn Sie nach Updates suchen, fragt Eidos bei Nexus auch die neueste Revision jeder in dieser Instanz installierten Kollektion ab. Eine Zeile über der Modliste nennt jede Kollektion mit neuerer Revision und zählt die hinzugekommenen (+), aktualisierten (~) und entfernten (-) Mods; die Namen erscheinen beim Darüberfahren. Die Zahlen fehlen, wenn das Rezept der installierten Revision nicht mehr im Cache liegt. **Aktualisieren** öffnet die neuere Revision im Kollektionsbereich, wo *Install this collection* sie ausführt. Die Liste wird bei jeder Prüfung neu aufgebaut und nicht gespeichert.
 
 ### Offline-Modus
 

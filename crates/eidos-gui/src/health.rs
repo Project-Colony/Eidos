@@ -411,14 +411,26 @@ mod tests {
 
     #[test]
     fn nxm_handler_cards_offer_register() {
-        let card = |h| nexus_checks(&NexusFacts { signed_in: true, last_error: None, nxm: Some(h) });
+        let card = |h| {
+            nexus_checks(&NexusFacts {
+                signed_in: true,
+                last_error: None,
+                nxm: Some(h),
+            })
+        };
         assert!(card(NxmHandler::Eidos { exec: "/x".into() }).is_empty());
         assert!(card(NxmHandler::Unknown).is_empty());
         let missing = card(NxmHandler::EidosMissing { exec: "/x".into() });
         assert_eq!(missing[0].level, DiagLevel::Problem);
         assert!(matches!(missing[0].actions[0].1, Message::RegisterNxm));
         assert_eq!(card(NxmHandler::Unset)[0].level, DiagLevel::Advice);
-        assert_eq!(card(NxmHandler::Other { desktop: "a.desktop".into() })[0].level, DiagLevel::Advice);
+        assert_eq!(
+            card(NxmHandler::Other {
+                desktop: "a.desktop".into()
+            })[0]
+                .level,
+            DiagLevel::Advice
+        );
     }
 
     #[test]

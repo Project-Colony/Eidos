@@ -461,6 +461,9 @@ pub(crate) enum Message {
     /// The requirements refresh that rides on an update check finished for the
     /// instance at this root: how many mods it looked up, or the error.
     RequirementsRefreshed(PathBuf, Result<usize, String>),
+    /// The collection revision check that rides on an update check finished
+    /// for the instance at this root.
+    CollectionRevisionsChecked(PathBuf, Vec<CollectionNotice>),
     /// Health: stop listing this requirement (`key`) of the mod in `folder`.
     IgnoreRequirement {
         folder: String,

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ae7cbbab8d37d90f52b713a0b2fae9406ba13279 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
 
 # Używanie Eidos
 
@@ -637,6 +637,8 @@ Kolekcję da się odczytać tylko wobec **jej własnej gry**. Otwórz kolekcję 
 Skyrima przy wczytanej instancji Fallouta 4, a odmówi z nazwy, zamiast zestawiać
 członków z niewłaściwą listą modów, gdzie każde „zainstalowany" i każde
 „brakujący" byłoby szumem w kształcie odpowiedzi.
+
+Gdy sprawdzasz aktualizacje, Eidos pyta też Nexusa o najnowszą rewizję każdej kolekcji zainstalowanej w tej instancji. Wiersz nad listą modów podaje każdą kolekcję z nowszą rewizją i liczbę modów dodanych (+), zaktualizowanych (~) i usuniętych (-); po najechaniu kursorem widać ich nazwy. Liczb brakuje, gdy przepis zainstalowanej rewizji nie jest już w pamięci podręcznej. **Aktualizuj** otwiera nowszą rewizję w panelu kolekcji, gdzie uruchamia ją *Install this collection*. Lista jest budowana od nowa przy każdym sprawdzeniu i nie jest zapisywana.
 
 ### Tryb offline
 

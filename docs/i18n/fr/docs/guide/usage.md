@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ae7cbbab8d37d90f52b713a0b2fae9406ba13279 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
 
 # Utiliser Eidos
 
@@ -686,6 +686,8 @@ Une collection ne peut être lue que contre **son propre jeu**. Ouvrez une
 collection Skyrim avec une instance Fallout 4 chargée et il refuse en nommant le
 jeu plutôt que de rapprocher les membres de la mauvaise liste de mods, où chaque
 « installé » et chaque « manquant » serait du bruit déguisé en réponse.
+
+Quand vous lancez la recherche de mises à jour, Eidos demande aussi à Nexus la dernière révision de chaque collection installée dans cette instance. Une ligne au-dessus de la liste des mods nomme chaque collection dont une révision plus récente existe et compte les mods ajoutés (+), mis à jour (~) et retirés (-) ; survolez-la pour voir leurs noms. Les comptes manquent quand la recette de la révision installée n'est plus en cache. **Mettre à jour** ouvre la révision récente dans le volet des collections, où *Install this collection* l'exécute. La liste est refaite à chaque vérification et n'est pas enregistrée.
 
 ### Mode hors ligne
 

@@ -167,6 +167,91 @@ pub fn safe_slug(slug: &str) -> String {
     }
 }
 
+/// Every installed collection, the highest revision per slug.
+///
+/// A file that cannot be read is skipped: this feeds a notice, and a notice
+/// must not fail because one state file is damaged.
+pub fn installed(root: &Path) -> Vec<InstallState> {
+    let Ok(dir) = std::fs::read_dir(root.join("collections")) else {
+        return Vec::new();
+    };
+    let mut best: BTreeMap<String, InstallState> = BTreeMap::new();
+    for entry in dir.flatten() {
+        let path = entry.path();
+        let is_state = path
+            .file_name()
+            .is_some_and(|n| n.to_string_lossy().ends_with(".state.json"));
+        let Some(state) = is_state
+            .then(|| InstallState::load(&path).ok().flatten())
+            .flatten()
+        else {
+            continue;
+        };
+        match best.get(&state.slug) {
+            Some(have) if have.revision >= state.revision => {}
+            _ => {
+                best.insert(state.slug.clone(), state);
+            }
+        }
+    }
+    best.into_values().collect()
+}
+
+/// What a newer revision changes, by member name.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RevisionDiff {
+    pub added: Vec<String>,
+    pub updated: Vec<String>,
+    pub dropped: Vec<String>,
+}
+
+/// Compare an installed revision's manifest with a newer revision.
+///
+/// Only Nexus members count, keyed by (domain, mod id): the same mod with
+/// another file id is an update. Members without a mod id have nothing to match on.
+pub fn revision_diff(
+    old: &crate::manifest::Collection,
+    collection_domain: &str,
+    new: &eidos_nexus::collections::CollectionRevision,
+) -> RevisionDiff {
+    let key = |domain: &str, id: u64| {
+        let d = if domain.trim().is_empty() {
+            collection_domain
+        } else {
+            domain
+        };
+        (d.trim().to_ascii_lowercase(), id)
+    };
+    let old: BTreeMap<_, _> = old
+        .mods
+        .iter()
+        .filter(|m| m.source.kind == crate::manifest::SourceType::Nexus)
+        .filter_map(|m| {
+            Some((
+                key(&m.domain_name, m.source.mod_id?),
+                (m.source.file_id, &m.name),
+            ))
+        })
+        .collect();
+    let mut diff = RevisionDiff::default();
+    let mut seen = std::collections::BTreeSet::new();
+    for m in &new.mods {
+        let k = key(&m.domain, m.mod_id);
+        match old.get(&k) {
+            None => diff.added.push(m.name.clone()),
+            Some((file, _)) if *file != Some(m.file_id) => diff.updated.push(m.name.clone()),
+            Some(_) => {}
+        }
+        seen.insert(k);
+    }
+    diff.dropped = old
+        .iter()
+        .filter(|(k, _)| !seen.contains(*k))
+        .map(|(_, (_, name))| (*name).clone())
+        .collect();
+    diff
+}
+
 impl InstallState {
     /// Record an outcome, honouring [`may_write`].
     pub fn set(&mut self, key: &str, outcome: Status) -> bool {
@@ -551,5 +636,86 @@ mod tests {
         assert_eq!(safe_slug("rqhcxy"), "rqhcxy");
         assert_eq!(safe_slug("a/b"), "a_b");
         assert_eq!(safe_slug("///"), "collection");
+    }
+
+    #[test]
+    fn installed_reports_the_newest_revision_per_slug() {
+        let root = std::env::temp_dir().join(format!("eidos-installed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for (slug, rev) in [("abc", 12), ("abc", 14), ("xyz", 3)] {
+            let s = InstallState {
+                slug: slug.into(),
+                revision: rev,
+                game_domain: "skyrimspecialedition".into(),
+                ..InstallState::default()
+            };
+            s.save(&InstallState::path(&root, slug, rev)).unwrap();
+        }
+        std::fs::write(root.join("collections/junk.state.json"), "nope").unwrap();
+        let mut got: Vec<_> = installed(&root)
+            .into_iter()
+            .map(|s| (s.slug, s.revision))
+            .collect();
+        got.sort();
+        assert_eq!(got, [("abc".to_string(), 14), ("xyz".to_string(), 3)]);
+        assert!(installed(&root.join("missing")).is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn revision_diff_names_added_updated_and_dropped_members() {
+        use crate::manifest::{Collection, Mod, Source};
+        use eidos_nexus::collections::{CollectionMod, CollectionRevision};
+        let old_mod = |name: &str, domain: &str, mod_id, file_id| Mod {
+            name: name.into(),
+            domain_name: domain.into(),
+            source: Source {
+                mod_id: Some(mod_id),
+                file_id: Some(file_id),
+                ..Source::default()
+            },
+            ..Mod::default()
+        };
+        let new_mod = |name: &str, domain: &str, mod_id, file_id| CollectionMod {
+            name: name.into(),
+            domain: domain.into(),
+            mod_id,
+            file_id,
+            version: String::new(),
+            file_title: String::new(),
+            size_in_bytes: 0,
+            optional: false,
+        };
+        let old = Collection {
+            mods: vec![
+                old_mod("A", "", 1, 10),
+                old_mod("B", "skyrimspecialedition", 2, 20),
+                old_mod("C", "skyrim", 3, 30),
+            ],
+            ..Collection::default()
+        };
+        let new = CollectionRevision {
+            slug: "abc".into(),
+            revision_number: 2,
+            name: String::new(),
+            summary: String::new(),
+            author: String::new(),
+            game_domain: "skyrimspecialedition".into(),
+            mod_count: 3,
+            total_size: 0,
+            instructions: String::new(),
+            mods: vec![
+                new_mod("A", "SkyrimSpecialEdition", 1, 10),
+                new_mod("B", "", 2, 21),
+                new_mod("D", "skyrim", 4, 40),
+            ],
+            download_link: String::new(),
+            hidden: None,
+        };
+        let d = revision_diff(&old, "skyrimspecialedition", &new);
+        assert_eq!(
+            (d.added, d.updated, d.dropped),
+            (vec!["D".into()], vec!["B".into()], vec!["C".into()])
+        );
     }
 }

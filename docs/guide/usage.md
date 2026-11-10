@@ -600,6 +600,8 @@ with a Fallout 4 instance loaded and it refuses by name rather than joining the
 members against the wrong mod list, where every "installed" and every "missing"
 would be noise wearing the shape of an answer.
 
+When you run Check for updates, Eidos also asks Nexus for the latest revision of each collection installed in this instance. A line above the mod list names every collection with a newer revision and counts the mods added (+), updated (~) and dropped (-); hover it for their names. The counts are missing when the installed revision's recipe is no longer cached. **Update** opens the newer revision in the collection pane, where *Install this collection* runs it. The list is rebuilt on every check and is not saved.
+
 ### Offline mode
 
 **Preferences -> Nexus -> Offline** stops Eidos contacting Nexus at all. Update

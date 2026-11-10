@@ -1799,9 +1799,11 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
             .height(Length::Fixed(20.0))
             .align_y(iced::alignment::Vertical::Center);
 
-    let inner = Column::new()
-        .spacing(6)
-        .push(profile)
+    let mut inner = Column::new().spacing(6).push(profile);
+    for n in &app.collection_notices {
+        inner = inner.push(collection_notice_row(n));
+    }
+    let inner = inner
         .push(search)
         .push(legend)
         .push(header)
@@ -1816,6 +1818,53 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         .height(Length::Fill)
         .padding(8)
         .style(panel_style)
+        .into()
+}
+
+/// One line above the mod list: an installed collection has a newer revision.
+fn collection_notice_row<'a>(n: &CollectionNotice) -> Element<'a, Message> {
+    let mut label = tf(
+        "collection_revision_available",
+        &[("name", &n.name), ("latest", &n.latest), ("have", &n.have)],
+    );
+    let mut hover = String::new();
+    if let Some(d) = &n.diff {
+        label.push_str(&format!(
+            "  +{} ~{} -{}",
+            d.added.len(),
+            d.updated.len(),
+            d.dropped.len()
+        ));
+        for (sign, names) in [("+", &d.added), ("~", &d.updated), ("-", &d.dropped)] {
+            for name in names {
+                hover.push_str(&format!("{sign} {name}\n"));
+            }
+        }
+    }
+    let line = text(label).size(sz(12));
+    let line: Element<'a, Message> = if hover.is_empty() {
+        line.into()
+    } else {
+        tooltip(
+            line,
+            text(hover.trim_end().to_string()).size(sz(12)),
+            tooltip::Position::Bottom,
+        )
+        .style(container::bordered_box)
+        .into()
+    };
+    Row::new()
+        .spacing(6)
+        .align_y(iced::alignment::Vertical::Center)
+        .push(line)
+        .push(Space::new().width(Length::Fill))
+        .push(tool_btn(
+            t("collection_revision_update"),
+            Message::ShowCollection(format!(
+                "nxm://{}/collections/{}/revisions/latest",
+                n.domain, n.slug
+            )),
+        ))
         .into()
 }
 

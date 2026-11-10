@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ae7cbbab8d37d90f52b713a0b2fae9406ba13279 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
 
 # Usare Eidos
 
@@ -670,6 +670,8 @@ Una collezione può essere letta solo contro **il proprio gioco**. Apri una
 collezione di Skyrim con un'istanza Fallout 4 caricata e rifiuta dicendone il
 nome invece di confrontare i membri con l'elenco di mod sbagliato, dove ogni
 "installato" e ogni "mancante" sarebbe rumore con la forma di una risposta.
+
+Quando controllate gli aggiornamenti, Eidos chiede a Nexus anche l'ultima revisione di ogni collezione installata in questa istanza. Una riga sopra l'elenco delle mod indica ogni collezione con una revisione più recente e conta le mod aggiunte (+), aggiornate (~) e rimosse (-); passateci sopra il mouse per vederne i nomi. I conteggi mancano se la ricetta della revisione installata non è più in cache. **Aggiorna** apre la revisione più recente nel pannello delle collezioni, dove *Install this collection* la esegue. L'elenco viene rifatto a ogni controllo e non viene salvato.
 
 ### Modalità offline
 

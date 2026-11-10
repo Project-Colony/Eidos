@@ -95,6 +95,18 @@ pub(crate) enum Pane {
     Plugins,
 }
 
+/// An installed collection with a newer revision on Nexus.
+#[derive(Debug, Clone)]
+pub(crate) struct CollectionNotice {
+    pub(crate) slug: String,
+    pub(crate) domain: String,
+    pub(crate) name: String,
+    pub(crate) have: u32,
+    pub(crate) latest: u32,
+    /// None when the installed revision's manifest is no longer cached.
+    pub(crate) diff: Option<eidos_collections::state::RevisionDiff>,
+}
+
 /// One Data-tab row: entry name, the layer providing it, and whether it is a
 /// folder (the merged view as the FUSE union would serve it).
 /// One row of the merged Data tree.
@@ -452,6 +464,9 @@ pub(crate) struct App {
     /// by one.
     pub(crate) nexus_hourly_left: Option<i64>,
     pub(crate) nexus_daily_left: Option<i64>,
+    /// Installed collections with a newer revision, from the last update check.
+    /// Not persisted.
+    pub(crate) collection_notices: Vec<CollectionNotice>,
     /// A Nexus mod-update check is in flight (guards the Update button).
     pub(crate) update_in_progress: bool,
     /// A LOOT sort is in flight. The sort runs on smol's blocking pool, so

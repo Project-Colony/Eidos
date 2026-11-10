@@ -181,10 +181,14 @@ impl Sections<'_> {
             .align_y(Alignment::Center)
             .push(text(line).size(self.typo.sz(12)).font(self.typo.regular))
             .push(
-                button(text(t("settings_nxm_register")).size(self.typo.sz(12)).font(self.typo.regular))
-                    .padding([5, 12])
-                    .style(button::primary)
-                    .on_press(Message::RegisterNxm),
+                button(
+                    text(t("settings_nxm_register"))
+                        .size(self.typo.sz(12))
+                        .font(self.typo.regular),
+                )
+                .padding([5, 12])
+                .style(button::primary)
+                .on_press(Message::RegisterNxm),
             )
             .into()
     }

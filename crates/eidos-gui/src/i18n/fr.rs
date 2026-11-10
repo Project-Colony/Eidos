@@ -153,6 +153,8 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("view_game_content", "Contenu du jeu"),
     ("view_profile", "Profil :"),
     ("view_new_profile", "+ Nouveau"),
+    ("collection_revision_available", "{name} : la révision {latest} est disponible (vous avez la {have})"),
+    ("collection_revision_update", "Mettre à jour"),
     ("view_list_stats", "Actifs : {active}  |  Recommandés : {endorsed}  |  Mises à jour : {updates}{budget}"),
     ("view_nexus_budget", "  |  Nexus : {n} requêtes restantes"),
     ("view_all_categories", "Toutes les catégories"),

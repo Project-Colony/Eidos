@@ -71,6 +71,13 @@ pub fn fetch_manifest(
     })()
 }
 
+/// The cached manifest of an installed revision, if it is still there and whole.
+pub fn cached_collection(root: &Path, slug: &str, revision: u32) -> Option<Collection> {
+    let dir = crate::state::revision_dir(root, slug, revision);
+    let text = cached_manifest(&dir).ok().flatten()?;
+    crate::read(&text).ok().map(|r| r.collection)
+}
+
 fn cache_marker(dir: &Path) -> PathBuf {
     dir.with_extension("payload-complete")
 }

@@ -2,6 +2,47 @@
 
 use super::*;
 
+/// Installed collections whose latest visible revision is newer than the one
+/// installed. Errors are logged and yield nothing.
+fn collection_notices(root: &Path) -> Vec<CollectionNotice> {
+    let states = eidos_collections::state::installed(root);
+    if states.is_empty() {
+        return Vec::new();
+    }
+    let nexus = match eidos_nexus::Nexus::connect() {
+        Ok(n) => n,
+        Err(e) => {
+            eidos_log::warn!("Collection revisions not checked: {e}");
+            return Vec::new();
+        }
+    };
+    let mut out = Vec::new();
+    for s in states {
+        let want = eidos_nexus::NxmCollection {
+            game: s.game_domain.clone(),
+            slug: s.slug.clone(),
+            revision: None,
+        };
+        match nexus.collection_revision(&want) {
+            Ok(rev) if rev.visible() && rev.revision_number > s.revision => {
+                let diff = eidos_collections::driver::cached_collection(root, &s.slug, s.revision)
+                    .map(|old| eidos_collections::state::revision_diff(&old, &s.game_domain, &rev));
+                out.push(CollectionNotice {
+                    slug: s.slug,
+                    domain: s.game_domain,
+                    name: rev.name,
+                    have: s.revision,
+                    latest: rev.revision_number,
+                    diff,
+                });
+            }
+            Ok(_) => {}
+            Err(e) => eidos_log::warn!("Collection {} not checked: {e}", s.slug),
+        }
+    }
+    out
+}
+
 /// The `update` arms for this group. [`update_inner`] routes only these
 /// messages here.
 pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
@@ -289,6 +330,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.status = Some(t("status_checking_nexus_updates").to_string());
             let reqs_inst = inst.clone();
             let root = inst.root.clone();
+            let notices_root = inst.root.clone();
+            let notices_reply = inst.root.clone();
             return Task::batch([
                 Task::perform(
                     // One `mod_info` request per stale mod, one after another:
@@ -308,7 +351,18 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     }),
                     move |r| Message::RequirementsRefreshed(root.clone(), r),
                 ),
+                // One GraphQL request per installed collection.
+                Task::perform(
+                    smol::unblock(move || collection_notices(&notices_root)),
+                    move |n| Message::CollectionRevisionsChecked(notices_reply.clone(), n),
+                ),
             ]);
+        }
+        Message::CollectionRevisionsChecked(root, notices) => {
+            if app.created.as_ref().is_none_or(|i| i.root != root) {
+                return Task::none();
+            }
+            app.collection_notices = notices;
         }
         Message::RequirementsRefreshed(root, result) => {
             if app.created.as_ref().is_none_or(|i| i.root != root) {

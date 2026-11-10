@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ae7cbbab8d37d90f52b713a0b2fae9406ba13279 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
 
 # Eidos kullanımı
 
@@ -633,6 +633,8 @@ Bir koleksiyon yalnızca **kendi oyununa** karşı okunabilir. Yüklü bir Fallo
 örneğiyle bir Skyrim koleksiyonu açın; üyeleri yanlış mod listesiyle
 eşleştirmektense adını vererek reddeder - o listede her "kurulu" ve her "eksik",
 yanıt kılığına girmiş gürültü olurdu.
+
+Güncellemeleri denetlediğinizde Eidos, Nexus'a bu örnekte kurulu her koleksiyonun en son revizyonunu da sorar. Mod listesinin üstündeki bir satır, daha yeni revizyonu olan her koleksiyonu adıyla verir ve eklenen (+), güncellenen (~) ve çıkarılan (-) mod sayısını gösterir; adlar için üzerine gelin. Kurulu revizyonun tarifi artık önbellekte değilse sayılar görünmez. **Güncelle**, yeni revizyonu koleksiyon panelinde açar; orada *Install this collection* onu çalıştırır. Liste her denetimde yeniden kurulur ve kaydedilmez.
 
 ### Çevrimdışı kip
 

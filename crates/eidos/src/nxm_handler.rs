@@ -130,8 +130,14 @@ mod tests {
 
     #[test]
     fn exec_first_token_handles_quotes_and_field_codes() {
-        assert_eq!(exec_program("[Desktop Entry]\nExec=/opt/eidos/eidos --eidos-cli nxm %u\n").as_deref(), Some("/opt/eidos/eidos"));
-        assert_eq!(exec_program("Exec=\"/home/a b/eidos-gui\" nxm %u\n").as_deref(), Some("/home/a b/eidos-gui"));
+        assert_eq!(
+            exec_program("[Desktop Entry]\nExec=/opt/eidos/eidos --eidos-cli nxm %u\n").as_deref(),
+            Some("/opt/eidos/eidos")
+        );
+        assert_eq!(
+            exec_program("Exec=\"/home/a b/eidos-gui\" nxm %u\n").as_deref(),
+            Some("/home/a b/eidos-gui")
+        );
         assert_eq!(exec_program("Name=x\n"), None);
     }
 
@@ -139,8 +145,23 @@ mod tests {
     fn classify_tells_eidos_moved_binaries_and_other_apps_apart() {
         let text = Some("Exec=/gone/eidos nxm %u\n");
         assert_eq!(classify("", None, |_| true), NxmHandler::Unset);
-        assert_eq!(classify("eidos-nxm.desktop", text, |_| true), NxmHandler::Eidos { exec: "/gone/eidos".into() });
-        assert_eq!(classify("eidos-nxm.desktop", text, |_| false), NxmHandler::EidosMissing { exec: "/gone/eidos".into() });
-        assert_eq!(classify("modorganizer2-nxm-handler.desktop", None, |_| true), NxmHandler::Other { desktop: "modorganizer2-nxm-handler.desktop".into() });
+        assert_eq!(
+            classify("eidos-nxm.desktop", text, |_| true),
+            NxmHandler::Eidos {
+                exec: "/gone/eidos".into()
+            }
+        );
+        assert_eq!(
+            classify("eidos-nxm.desktop", text, |_| false),
+            NxmHandler::EidosMissing {
+                exec: "/gone/eidos".into()
+            }
+        );
+        assert_eq!(
+            classify("modorganizer2-nxm-handler.desktop", None, |_| true),
+            NxmHandler::Other {
+                desktop: "modorganizer2-nxm-handler.desktop".into()
+            }
+        );
     }
 }

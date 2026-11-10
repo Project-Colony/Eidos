@@ -430,6 +430,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         updated_count: 0,
         nexus_hourly_left: None,
         nexus_daily_left: None,
+        collection_notices: Vec::new(),
         update_in_progress: false,
         sorting: false,
         ui_toolbar_visible: true,

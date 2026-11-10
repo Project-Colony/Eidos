@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ae7cbbab8d37d90f52b713a0b2fae9406ba13279 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
 
 # Používání Eidosu
 
@@ -607,6 +607,8 @@ Kolekci lze číst jen proti **její vlastní hře**. Otevřete kolekci pro Skyr
 s načtenou instancí Fallout 4 a Eidos ji jmenovitě odmítne, místo aby členy
 spároval s nesprávným seznamem módů, kde by každé „nainstalovaný" a každé
 „chybějící" byl šum ve tvaru odpovědi.
+
+Když spustíte Zkontrolovat aktualizace, Eidos se také zeptá Nexusu na nejnovější revizi každé kolekce nainstalované v této instanci. Řádek nad seznamem modů uvádí každou kolekci s novější revizí a počty přidaných (+), aktualizovaných (~) a vyřazených (-) modů; jejich jména se zobrazí po najetí myší. Počty chybí, když recept nainstalované revize už není v mezipaměti. **Aktualizovat** otevře novější revizi v panelu kolekce, kde ji spustí *Install this collection*. Seznam se při každé kontrole sestaví znovu a neukládá se.
 
 ### Režim offline
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ae7cbbab8d37d90f52b713a0b2fae9406ba13279 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=9a08ef406678334c276442cc33256b06d9424bd2 -->
 
 # Eidos gebruiken
 
@@ -652,6 +652,8 @@ Een collectie kan alleen tegen **haar eigen spel** gelezen worden. Open een
 Skyrim-collectie met een Fallout 4-instantie geladen en het weigert met naam en
 toenaam in plaats van de leden aan de verkeerde modlijst te koppelen, waar elke
 "installed" en elke "missing" ruis zou zijn in de vorm van een antwoord.
+
+Als u op updates controleert, vraagt Eidos Nexus ook om de nieuwste revisie van elke collectie die in deze instantie is geïnstalleerd. Een regel boven de modlijst noemt elke collectie met een nieuwere revisie en telt de toegevoegde (+), bijgewerkte (~) en vervallen (-) mods; houd de muis erboven voor de namen. De aantallen ontbreken als het recept van de geïnstalleerde revisie niet meer in de cache staat. **Bijwerken** opent de nieuwere revisie in het collectiepaneel, waar *Install this collection* hem uitvoert. De lijst wordt bij elke controle opnieuw opgebouwd en niet bewaard.
 
 ### Offlinemodus
 

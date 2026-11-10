@@ -3741,6 +3741,24 @@ fn a_global_instance_offers_neither_rename_nor_forget() {
 }
 
 #[test]
+fn collection_notices_from_another_instance_are_dropped() {
+    let mut app = nav_app(&[]);
+    let notice = CollectionNotice {
+        slug: "abc".into(),
+        domain: "skyrimspecialedition".into(),
+        name: "Some list".into(),
+        have: 1,
+        latest: 2,
+        diff: None,
+    };
+    let _ = update_inner(
+        &mut app,
+        Message::CollectionRevisionsChecked(PathBuf::from("/elsewhere"), vec![notice]),
+    );
+    assert!(app.collection_notices.is_empty());
+}
+
+#[test]
 fn an_update_check_records_what_is_left_of_the_budget() {
     let mut app = nav_app(&[]);
     let result = eidos_nexus::UpdateCheckResult {
