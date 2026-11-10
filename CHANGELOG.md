@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.23.0](https://github.com/Project-Colony/Eidos/compare/v1.22.0...v1.23.0) (2026-11-10)
+
+
+### Features
+
+* **health:** name the cause of extender, game update, Proton and crash failures, and add eidos check ([#128](https://github.com/Project-Colony/Eidos/issues/128)) ([0490ee3](https://github.com/Project-Colony/Eidos/commit/0490ee3d1c8b5d7810ebbbd305a32198963541f4))
+* **launch:** start the game through the store that owns the copy, stop a stuck run, rebuild a prefix, and import MO2 tools ([#131](https://github.com/Project-Colony/Eidos/issues/131)) ([da69a97](https://github.com/Project-Colony/Eidos/commit/da69a97b16f4c9fe7f1809dad06e85ee7862591a))
+* **mods:** warn before breaking saves, undo edits, clean and light-flag plugins on copies, and journal every run ([#132](https://github.com/Project-Colony/Eidos/issues/132)) ([2928f99](https://github.com/Project-Colony/Eidos/commit/2928f99936c50ad07d465fe57fd85cd495c6ff7a))
+* **nexus:** follow each mod's own domain and update chain, update in place with FOMOD replay, and help free accounts with collections ([#129](https://github.com/Project-Colony/Eidos/issues/129)) ([de0a7f4](https://github.com/Project-Colony/Eidos/commit/de0a7f42bb1007f040f7075f4df314ce13973384))
+
 ## [1.22.0](https://github.com/Project-Colony/Eidos/compare/v1.21.1...v1.22.0) (2026-11-09)
 
 
