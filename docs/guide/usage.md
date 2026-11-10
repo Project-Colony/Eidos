@@ -481,6 +481,15 @@ change applies and saves at once; there is no Save button.
 These live in `~/.config/Colony/Eidos/preferences.json`. The theme an older
 Eidos kept in `settings.ini` is carried over the first time.
 
+**About -> Version** holds the release check, on by default. At start, at most
+once a day, Eidos asks GitHub for the latest release of `Project-Colony/Eidos`.
+When it is newer than the running copy, the menu bar shows `Eidos 1.24.0 is
+available: release notes` after Help, and the link opens that release's page
+with its changelog. Eidos never downloads or replaces itself. The check is
+skipped in offline mode. It is off for a copy installed under `/usr` by a
+package manager, which updates it; `/usr/local`, where `install.sh --system`
+puts Eidos, counts as your own install.
+
 ### Columns, sorting and grouping
 
 The list draws four columns out of the box and offers eight: Category, Content,
@@ -616,6 +625,16 @@ same button unhides. "Remove N installed" deletes the archives of mods you have
 already installed, in two clicks, and only the ones **on screen**: the filter is
 how you said which ones you meant.
 
+**Preferences -> Nexus -> Install downloads when they finish** is off by
+default. Turned on, a Nexus download that finishes while the window is open
+installs without a visit to the Downloads tab. It is the usual install: a FOMOD opens its installer, and a name
+already in the mod list asks what to do. Archives that were in `downloads/`
+before the window opened or before the option was turned on are left alone, and
+so is a download whose install you cancelled. Members of a collection open in
+the collection pane, and the file a pending Update waits for, are installed by
+those flows only. While the game or another Eidos holds the instance, the
+install waits until it is free.
+
 ### Mod updates
 
 The update button at the right end of the toolbar compares each installed file
@@ -623,6 +642,13 @@ with the file that replaced it on Nexus. Authors mark a new upload as the
 successor of an older one, and Eidos follows that chain from the file id the
 mod's `meta.ini` records. When the chain names no successor, the mod page's
 version is compared instead.
+
+Track and Untrack in a mod's right-click menu add the mod to your tracked mods
+on Nexus or remove it, so the site's notifications follow what you track here.
+Each update check also reads your endorsements and tracked mods from Nexus (two
+requests) and sets every mod's Endorsed and Tracked flags to match, on the mod's
+own Nexus domain. When the two disagree, Nexus wins. If either list cannot be
+read, the check says so and leaves those flags as they were.
 
 The **Nexus files** tab of "Information..." lists the mod's files on Nexus,
 newest first, and marks the one installed here and the one that replaces it.
@@ -667,8 +693,8 @@ When you run Check for updates, Eidos also asks Nexus for the latest revision of
 
 ### Offline mode
 
-**Preferences -> Nexus -> Offline** stops Eidos contacting Nexus at all. Update
-checks, sign-in, downloads and collections say so instead of failing with a
+**Preferences -> Nexus -> Offline** stops Eidos contacting Nexus at all, and
+skips the daily release check on GitHub. Update checks, sign-in, downloads and collections say so instead of failing with a
 connection error. It is off unless you turn it on - a settings file written by an
 older Eidos has no such key, and reading a missing one as "on" would cut the
 network for everybody who upgrades.

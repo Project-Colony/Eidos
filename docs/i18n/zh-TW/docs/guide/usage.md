@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=0433d51887d1d1997dd785a7a18f7a4be58dfcd5 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1d62e34566cf1855eda40becbf2626b490ad7dd0 -->
 
 # 使用 Eidos
 
@@ -380,6 +380,8 @@ Mod list、Nexus 與 About。每項變更都會立即套用並儲存;沒有儲�
 這些設定存放在 `~/.config/Colony/Eidos/preferences.json`。舊版 Eidos 存在
 `settings.ini` 裡的主題,會在第一次啟動時沿用過來。
 
+**About -> Version** 裡有版本檢查,預設開啟。啟動時,每天最多一次,Eidos 會向 GitHub 詢問 `Project-Colony/Eidos` 的最新版本。如果它比正在執行的這一份新,選單列會在 Help 後面顯示 `Eidos 1.24.0 is available: release notes`,點這個連結會開啟該版本的頁面與它的變更記錄。Eidos 從不自己下載或取代自己。離線模式下不做這項檢查。由套件管理員裝在 `/usr` 下的副本也不做檢查,因為由套件管理員負責更新;`install.sh --system` 放置 Eidos 的 `/usr/local` 算作你自己的安裝。
+
 ### 欄位、排序與分組
 
 清單開箱畫出四個欄位,總共提供八個:Category、Content、Version、Author、
@@ -485,11 +487,19 @@ Downloads 分頁是一座壓縮檔**圖書館**,不是傳輸佇列。可以依�
 取消隱藏。「Remove N installed」會用兩次點擊刪掉你已經安裝過的模組的壓縮檔,而且
 只刪**畫面上**的那些:篩選就是你說明自己指的是哪些的方式。
 
+**Preferences -> Nexus -> Install downloads when they finish** 預設為關閉。開啟後，視窗開著時完成的 Nexus 下載會直接安裝，不必再到 Downloads 分頁。這是一般的安裝：FOMOD 會開啟它的安裝程式，模組清單裡已有的名稱會詢問如何處理。視窗開啟之前、或選項開啟之前就在 `downloads/` 裡的壓縮檔不會被動，你取消過安裝的下載也一樣。在合集面板中開啟的合集的成員，以及等待中的 Update 所等的檔案，只由各自的流程安裝。遊戲或另一個 Eidos 佔用實例時，安裝會等到它空閒。
+
 ### 模組更新
 
 工具列右端的更新按鈕會把每個已安裝的檔案,與 Nexus 上取代它的
 檔案相比較。作者會把一次新上傳標記為某個舊檔案的後繼,Eidos 從模組 `meta.ini` 記錄的
 檔案 ID 出發,沿著這條鏈往下找。鏈上沒有後繼時,改為比較模組頁面的版本。
+
+模組右鍵選單裡的 Track 和 Untrack 會把該模組加入或移出你在 Nexus 上的追蹤模組,
+這樣網站的通知就會與你在這裡追蹤的內容一致。每次檢查更新時,Eidos 也會從 Nexus 讀取你的
+推薦(endorsement)與追蹤模組(兩次請求),並依模組自己的 Nexus 網域,把每個模組的
+Endorsed 與 Tracked 標記設成一致。兩邊不一致時,以 Nexus 為準。任一清單讀取失敗時,
+檢查結果會說明這一點,並保留那些標記不變。
 
 「Information...」的 **Nexus files** 分頁列出該模組在 Nexus 上的檔案,最新的在前,
 並標出這裡安裝的那個與取代它的那個。後者那一列有一個 **Update** 按鈕。premium 帳號由
@@ -524,7 +534,7 @@ Eidos 自己下載檔案。免費帳號則開啟檔案頁面,在那裡 Mod Manag
 
 ### 離線模式
 
-**Preferences -> Nexus -> Offline** 會讓 Eidos 完全不去接觸 Nexus。更新檢查、登入、
+**Preferences -> Nexus -> Offline** 會讓 Eidos 完全不去接觸 Nexus,也會跳過每天一次的 GitHub 版本檢查。更新檢查、登入、
 下載與合集都會直說,而不是以連線錯誤失敗。除非你打開它,否則它是關的 - 舊版 Eidos
 寫出的設定檔沒有這個鍵,而把一個缺少的鍵讀成「開」,會切斷每一個升級者的網路。
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=0433d51887d1d1997dd785a7a18f7a4be58dfcd5 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1d62e34566cf1855eda40becbf2626b490ad7dd0 -->
 
 # Usare Eidos
 
@@ -514,6 +514,8 @@ alcun pulsante Save.
 Stanno in `~/.config/Colony/Eidos/preferences.json`. Il tema che un Eidos più
 vecchio teneva in `settings.ini` viene trasferito la prima volta.
 
+**About -> Version** contiene il controllo delle release, attivo per impostazione predefinita. All'avvio, al massimo una volta al giorno, Eidos chiede a GitHub l'ultima release di `Project-Colony/Eidos`. Se è più recente della copia in esecuzione, la barra dei menu mostra `Eidos 1.24.0 is available: release notes` dopo Help, e il link apre la pagina di quella release con il suo changelog. Eidos non si scarica né si sostituisce mai da solo. In modalità offline il controllo viene saltato. È disattivato per una copia installata sotto `/usr` da un gestore di pacchetti, che la aggiorna; `/usr/local`, dove `install.sh --system` mette Eidos, conta come una tua installazione.
+
 ### Colonne, ordinamento e raggruppamento
 
 L'elenco disegna quattro colonne di serie e ne offre otto: Category, Content,
@@ -665,6 +667,8 @@ nuovo visibili. "Remove N installed" cancella gli archivi delle mod che hai già
 installato, in due clic, e solo quelli **a schermo**: il filtro è il modo in cui
 hai detto quali intendevi.
 
+**Preferences -> Nexus -> Install downloads when they finish** è disattivata per impostazione predefinita. Attivata, un download di Nexus che finisce a finestra aperta si installa senza passare dalla scheda Downloads. È l'installazione di sempre: un FOMOD apre il suo installer e un nome già presente nell'elenco delle mod chiede cosa fare. Gli archivi che erano in `downloads/` prima dell'apertura della finestra o prima di attivare l'opzione restano com'erano, come un download di cui avete annullato l'installazione. I membri di una collezione aperta nel pannello delle collezioni e il file che aspetta un aggiornamento in sospeso li installano solo quei flussi. Finché il gioco o un altro Eidos tiene l'istanza, l'installazione aspetta che sia libera.
+
 ### Aggiornamenti delle mod
 
 Il pulsante di aggiornamento all'estremità destra della barra degli strumenti
@@ -673,6 +677,14 @@ autori segnano un nuovo caricamento come successore di uno più vecchio, ed Eido
 segue questa catena a partire dall'id del file che il `meta.ini` della mod
 registra. Quando la catena non nomina alcun successore, si confronta invece la
 versione della pagina della mod.
+
+Track e Untrack, nel menu del tasto destro di una mod, aggiungono la mod alle
+mod che segui su Nexus o la tolgono, così le notifiche del sito corrispondono a
+ciò che segui qui. Ogni controllo degli aggiornamenti legge anche da Nexus le
+tue approvazioni e le mod che segui (due richieste) e imposta di conseguenza i
+flag Endorsed e Tracked di ogni mod, sul dominio Nexus proprio della mod. Quando
+i due non concordano, vale Nexus. Se una delle due liste non si può leggere, il
+controllo lo segnala e lascia quei flag com'erano.
 
 La scheda **Nexus files** di "Information..." elenca i file della mod su Nexus,
 dal più recente, e segna quello installato qui e quello che lo sostituisce.
@@ -721,7 +733,7 @@ Quando controllate gli aggiornamenti, Eidos chiede a Nexus anche l'ultima revisi
 ### Modalità offline
 
 **Preferences -> Nexus -> Offline** impedisce del tutto a Eidos di contattare
-Nexus. Il controllo degli aggiornamenti, l'accesso, i download e le collezioni
+Nexus e salta il controllo giornaliero delle release su GitHub. Il controllo degli aggiornamenti, l'accesso, i download e le collezioni
 lo dicono invece di fallire con un errore di connessione. È disattivata a meno
 che tu non l'attivi - un file di impostazioni scritto da un Eidos più vecchio
 non ha quella chiave, e leggerne una mancante come "attiva" taglierebbe la rete

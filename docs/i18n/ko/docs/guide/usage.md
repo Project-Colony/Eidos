@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=0433d51887d1d1997dd785a7a18f7a4be58dfcd5 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1d62e34566cf1855eda40becbf2626b490ad7dd0 -->
 
 # Eidos 사용하기
 
@@ -439,6 +439,8 @@ Accessibility가 먼저 오고, 그다음 Mod list, Nexus, About이 옵니다. �
 이 설정은 `~/.config/Colony/Eidos/preferences.json`에 저장됩니다. 예전 Eidos가
 `settings.ini`에 두던 테마는 처음 한 번 옮겨집니다.
 
+**About -> Version**에 릴리스 확인이 있으며 기본으로 켜져 있습니다. 시작할 때 하루 한 번까지, Eidos는 GitHub에 `Project-Colony/Eidos`의 최신 릴리스를 묻습니다. 실행 중인 사본보다 새로우면 메뉴 막대의 Help 뒤에 `Eidos 1.24.0 is available: release notes`가 표시되고, 링크는 변경 내역이 담긴 그 릴리스의 페이지를 엽니다. Eidos는 스스로를 내려받거나 교체하지 않습니다. 오프라인 모드에서는 확인을 건너뜁니다. 패키지 관리자가 `/usr` 아래에 설치한 사본에서는 꺼져 있으며, 업데이트는 패키지 관리자가 합니다. `install.sh --system`이 Eidos를 두는 `/usr/local`은 직접 설치한 것으로 칩니다.
+
 ### 열, 정렬, 그룹
 
 목록은 기본으로 네 개의 열을 그리고 여덟 개를 제공합니다: Category, Content,
@@ -566,12 +568,21 @@ Downloads 탭은 전송 대기열이 아니라 압축 파일 **서고**입니다
 클릭으로 지우는데, **화면에 보이는** 것만 지웁니다: 필터가 곧 여러분이 어느 것을
 뜻했는지 말한 방식입니다.
 
+**Preferences -> Nexus -> Install downloads when they finish** 는 기본값이 꺼짐입니다. 켜면 창이 열려 있는 동안 끝난 Nexus 다운로드가 Downloads 탭을 거치지 않고 설치됩니다. 설치 방식은 평소와 같아서, FOMOD는 설치 창을 열고 모드 목록에 이미 있는 이름이면 어떻게 할지 묻습니다. 창을 열기 전이나 옵션을 켜기 전부터 `downloads/`에 있던 아카이브는 건드리지 않으며, 설치를 취소한 다운로드도 마찬가지입니다. 컬렉션 패널에 열려 있는 컬렉션의 구성원과 대기 중인 업데이트가 기다리는 파일은 해당 흐름만 설치합니다. 게임이나 다른 Eidos가 인스턴스를 잡고 있는 동안에는 풀릴 때까지 설치를 기다립니다.
+
 ### 모드 업데이트
 
 도구 모음 오른쪽 끝의 업데이트 버튼은 설치된 각 파일을 Nexus에서
 그것을 대체한 파일과 비교합니다. 제작자는 새 업로드를 이전 파일의 후속 파일로 표시하고,
 Eidos는 모드의 `meta.ini`에 기록된 파일 ID에서 시작해 그 사슬을 따라갑니다. 사슬이
 후속 파일을 가리키지 않으면 대신 모드 페이지의 버전을 비교합니다.
+
+모드 오른쪽 클릭 메뉴의 Track과 Untrack은 그 모드를 Nexus의 추적 중인 모드에 추가하거나
+거기서 제거하므로, 사이트 알림이 여기서 추적하는 것과 맞춰집니다. 업데이트를 확인할 때마다
+Nexus에서 추천(endorsement) 목록과 추적 중인 모드 목록도 읽어(요청 2회) 각 모드의 Endorsed와
+Tracked 플래그를 그 모드 자신의 Nexus 도메인 기준으로 맞춥니다. 둘이 다르면 Nexus가
+우선합니다. 어느 한 목록이라도 읽지 못하면 확인 결과가 그렇다고 알리고 해당 플래그는
+그대로 둡니다.
 
 "Information..."의 **Nexus files** 탭은 Nexus에 있는 모드의 파일을 최신순으로 나열하고,
 여기에 설치된 파일과 그것을 대체하는 파일을 표시합니다. 그 두 번째 행에는 **Update**
@@ -613,7 +624,7 @@ Skyrim 컬렉션을 열면, 구성 항목들을 엉뚱한 모드 목록에 맞�
 
 ### 오프라인 모드
 
-**Preferences -> Nexus -> Offline**은 Eidos가 Nexus에 접촉하는 일을 아예 멈춥니다.
+**Preferences -> Nexus -> Offline**은 Eidos가 Nexus에 접촉하는 일을 아예 멈추고, GitHub에서 하루 한 번 하는 릴리스 확인도 건너뜁니다.
 업데이트 확인, 로그인, 내려받기, 컬렉션은 연결 오류로 실패하는 대신 그렇다고
 말합니다. 켜지 않는 한 꺼져 있습니다 - 예전 Eidos가 쓴 설정 파일에는 그런 키가
 없고, 없는 것을 "켜짐"으로 읽으면 업그레이드하는 모두의 네트워크를 끊게 됩니다.

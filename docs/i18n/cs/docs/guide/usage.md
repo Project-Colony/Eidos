@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=0433d51887d1d1997dd785a7a18f7a4be58dfcd5 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1d62e34566cf1855eda40becbf2626b490ad7dd0 -->
 
 # Používání Eidosu
 
@@ -468,6 +468,8 @@ tlačítko Uložit není.
 Tyto předvolby žijí v `~/.config/Colony/Eidos/preferences.json`. Motiv, který
 starší Eidos držel v `settings.ini`, se napoprvé přenese.
 
+**About -> Version** obsahuje kontrolu vydání, ve výchozím stavu zapnutou. Při spuštění, nejvýše jednou denně, se Eidos zeptá GitHubu na poslední vydání `Project-Colony/Eidos`. Je-li novější než běžící kopie, panel nabídek ukáže za Help `Eidos 1.24.0 is available: release notes` a odkaz otevře stránku toho vydání s jeho seznamem změn. Eidos se nikdy sám nestahuje ani nenahrazuje. V režimu offline se kontrola vynechá. Je vypnutá u kopie, kterou do `/usr` nainstaloval správce balíčků, protože ten ji aktualizuje; `/usr/local`, kam Eidos dává `install.sh --system`, se počítá jako vaše vlastní instalace.
+
 ### Sloupce, řazení a seskupování
 
 Seznam ve výchozím stavu kreslí čtyři sloupce a nabízí osm: Category, Content,
@@ -602,6 +604,8 @@ vrátí a totéž tlačítko skrytí zruší. „Remove N installed" smaže arch
 které jste už nainstalovali, na dvě kliknutí, a jen ty **na obrazovce**: filtrem
 jste řekli, které jste mysleli.
 
+**Preferences -> Nexus -> Install downloads when they finish** je ve výchozím stavu vypnuto. Po zapnutí se stažení z Nexusu, které skončí při otevřeném okně, nainstaluje samo, aniž byste museli na kartu Downloads. Je to obvyklá instalace: FOMOD otevře svůj instalátor a název, který už v seznamu modů je, se zeptá, co dělat. Archivy, které byly v `downloads/` před otevřením okna nebo před zapnutím volby, se nechají být, stejně jako stažení, jehož instalaci jste zrušili. Členy kolekce otevřené v panelu kolekcí a soubor, na který čeká čekající Update, instalují jen tyto postupy. Dokud hru nebo jiný Eidos drží instanci, instalace počká, až bude volná.
+
 ### Aktualizace módů
 
 Tlačítko aktualizace na pravém konci panelu nástrojů porovná každý nainstalovaný
@@ -609,6 +613,14 @@ soubor se souborem, který ho na Nexusu nahradil. Autoři označují nové nahr�
 jako nástupce staršího a Eidos jde po tomto řetězci od ID souboru, které
 zaznamenává `meta.ini` módu. Když řetězec žádného nástupce neuvádí, porovná se
 místo toho verze ze stránky módu.
+
+Track a Untrack v nabídce pravého tlačítka módu přidají mód do vašich
+sledovaných módů na Nexusu nebo ho z nich odeberou, takže upozornění z webu
+odpovídají tomu, co sledujete tady. Každá kontrola aktualizací také načte z
+Nexusu vaše doporučení a sledované módy (dva požadavky) a podle nich nastaví
+příznaky Endorsed a Tracked každého módu, a to na vlastní doméně Nexusu daného
+módu. Když se obě strany liší, platí Nexus. Pokud se některý ze seznamů nepodaří
+načíst, kontrola to oznámí a tyto příznaky ponechá, jak byly.
 
 Karta **Nexus files** v „Information..." vypíše soubory módu na Nexusu,
 nejnovější první, a označí ten, který je nainstalovaný tady, a ten, který ho
@@ -654,7 +666,7 @@ Když spustíte Zkontrolovat aktualizace, Eidos se také zeptá Nexusu na nejnov
 
 ### Režim offline
 
-**Preferences -> Nexus -> Offline** Eidosu zcela zabrání kontaktovat Nexus.
+**Preferences -> Nexus -> Offline** Eidosu zcela zabrání kontaktovat Nexus a vynechá denní kontrolu vydání na GitHubu.
 Kontroly aktualizací, přihlášení, stahování a kolekce to řeknou, místo aby
 selhaly chybou spojení. Je vypnutý, dokud jej nezapnete - soubor nastavení
 zapsaný starším Eidosem takový klíč nemá a číst chybějící jako „zapnuto" by

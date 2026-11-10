@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=0433d51887d1d1997dd785a7a18f7a4be58dfcd5 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1d62e34566cf1855eda40becbf2626b490ad7dd0 -->
 
 # Eidos gebruiken
 
@@ -502,6 +502,8 @@ is geen Save-knop.
 Deze staan in `~/.config/Colony/Eidos/preferences.json`. Het thema dat een oudere
 Eidos in `settings.ini` bewaarde, wordt de eerste keer overgenomen.
 
+**About -> Version** bevat de releasecontrole, standaard aan. Bij het starten vraagt Eidos GitHub hoogstens één keer per dag naar de nieuwste release van `Project-Colony/Eidos`. Is die nieuwer dan de draaiende kopie, dan toont de menubalk na Help `Eidos 1.24.0 is available: release notes`, en de link opent de pagina van die release met de changelog. Eidos downloadt of vervangt zichzelf nooit. In offlinemodus wordt de controle overgeslagen. Ze staat uit voor een kopie die een pakketbeheerder onder `/usr` installeerde, want die werkt hem bij; `/usr/local`, waar `install.sh --system` Eidos neerzet, telt als je eigen installatie.
+
 ### Kolommen, sorteren en groeperen
 
 De lijst tekent standaard vier kolommen en biedt er acht: Category, Content,
@@ -649,6 +651,8 @@ zichtbaar. "Remove N installed" verwijdert de archieven van mods die je al
 geïnstalleerd hebt, in twee klikken, en alleen die **op het scherm**: met het
 filter heb je gezegd welke je bedoelde.
 
+**Preferences -> Nexus -> Install downloads when they finish** staat standaard uit. Staat de optie aan, dan wordt een Nexus-download die klaar is terwijl het venster open is geïnstalleerd zonder omweg via het tabblad Downloads. Het is de gewone installatie: een FOMOD opent zijn installatieprogramma en een naam die al in de modlijst staat vraagt wat er moet gebeuren. Archieven die al in `downloads/` stonden voordat het venster openging of voordat de optie aanging, blijven met rust, net als een download waarvan u de installatie hebt geannuleerd. Leden van een collectie die in het collectiepaneel openstaat en het bestand waarop een lopende Update wacht, worden alleen door die stromen geïnstalleerd. Zolang het spel of een andere Eidos de instantie vasthoudt, wacht de installatie tot ze vrij is.
+
 ### Mod-updates
 
 De updateknop aan het rechtereinde van de werkbalk vergelijkt elk geïnstalleerd
@@ -656,6 +660,14 @@ bestand met het bestand dat het op Nexus verving. Auteurs markeren een nieuwe
 upload als opvolger van een oudere, en Eidos volgt die keten vanaf het
 bestands-id dat de `meta.ini` van de mod vastlegt. Noemt de keten geen opvolger,
 dan wordt in plaats daarvan de versie van de modpagina vergeleken.
+
+Track en Untrack in het rechtermuismenu van een mod voegen de mod toe aan je
+gevolgde mods op Nexus of halen hem eruit, zodat de meldingen van de site
+overeenkomen met wat je hier volgt. Elke updatecontrole leest ook je
+endorsements en gevolgde mods van Nexus (twee verzoeken) en zet de vlaggen
+Endorsed en Tracked van elke mod daarnaar, op het eigen Nexus-domein van de mod.
+Verschillen die twee, dan wint Nexus. Kan een van beide lijsten niet worden
+gelezen, dan meldt de controle dat en blijven die vlaggen zoals ze waren.
 
 Het tabblad **Nexus files** van "Information..." toont de bestanden van de mod
 op Nexus, nieuwste eerst, en markeert het bestand dat hier geïnstalleerd is en
@@ -703,7 +715,7 @@ Als u op updates controleert, vraagt Eidos Nexus ook om de nieuwste revisie van 
 
 ### Offlinemodus
 
-**Preferences -> Nexus -> Offline** laat Eidos Nexus helemaal niet meer benaderen.
+**Preferences -> Nexus -> Offline** laat Eidos Nexus helemaal niet meer benaderen en slaat de dagelijkse releasecontrole op GitHub over.
 Updatecontroles, aanmelden, downloads en collecties zeggen dat, in plaats van te
 falen met een verbindingsfout. Het staat uit tenzij je het aanzet - een
 instellingenbestand dat door een oudere Eidos geschreven is heeft zo'n sleutel

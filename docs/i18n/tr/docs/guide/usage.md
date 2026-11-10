@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=0433d51887d1d1997dd785a7a18f7a4be58dfcd5 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1d62e34566cf1855eda40becbf2626b490ad7dd0 -->
 
 # Eidos kullanımı
 
@@ -489,6 +489,8 @@ düğmesi yoktur.
 Bunlar `~/.config/Colony/Eidos/preferences.json` içinde durur. Daha eski bir
 Eidos'un `settings.ini` içinde tuttuğu tema ilk seferde aktarılır.
 
+**About -> Version**, varsayılan olarak açık olan sürüm denetimini içerir. Eidos başlarken, günde en fazla bir kez, GitHub'a `Project-Colony/Eidos` deposunun en son sürümünü sorar. Bu sürüm çalışan kopyadan yeniyse menü çubuğunda Help'in ardından `Eidos 1.24.0 is available: release notes` görünür ve bağlantı o sürümün değişiklik günlüğünü içeren sayfasını açar. Eidos kendini asla indirmez ya da değiştirmez. Çevrimdışı kipte denetim atlanır. Bir paket yöneticisinin `/usr` altına kurduğu kopyada kapalıdır, çünkü onu paket yöneticisi günceller; `install.sh --system` komutunun Eidos'u koyduğu `/usr/local` sizin kendi kurulumunuz sayılır.
+
 ### Sütunlar, sıralama ve gruplama
 
 Liste kutudan çıktığı gibi dört sütun çizer ve sekiz sunar: Category, Content,
@@ -629,6 +631,8 @@ getirir, aynı düğme gizlemeyi de kaldırır. "Remove N installed", zaten kurd
 modların arşivlerini iki tıkla siler, hem de yalnızca **ekranda olanları**:
 süzgeç, hangilerini kastettiğinizi söyleme biçiminizdir.
 
+**Preferences -> Nexus -> Install downloads when they finish** varsayılan olarak kapalıdır. Açıkken, pencere açıkken biten bir Nexus indirmesi Downloads sekmesine uğramadan kurulur. Bu olağan kurulumdur: FOMOD kendi kurucusunu açar, mod listesinde zaten bulunan bir ad ne yapılacağını sorar. Pencere açılmadan önce ya da seçenek açılmadan önce `downloads/` içinde duran arşivlere dokunulmaz, kurulumunu iptal ettiğiniz indirmeye de. Koleksiyon panelinde açık bir koleksiyonun üyelerini ve bekleyen bir Update'in beklediği dosyayı yalnızca o akışlar kurar. Oyun ya da başka bir Eidos örneği tutarken kurulum, örnek boşalana kadar bekler.
+
 ### Mod güncellemeleri
 
 Araç çubuğunun sağ ucundaki güncelleme düğmesi kurulu her dosyayı Nexus'ta onun
@@ -636,6 +640,14 @@ yerini alan dosyayla karşılaştırır. Yazarlar yeni bir yüklemeyi daha eskis
 ardılı olarak işaretler; Eidos bu zinciri, modun `meta.ini` dosyasının
 kaydettiği dosya kimliğinden başlayarak izler. Zincir hiçbir ardıl göstermiyorsa
 bunun yerine mod sayfasındaki sürüm karşılaştırılır.
+
+Bir modun sağ tık menüsündeki Track ve Untrack, modu Nexus'ta takip ettiğiniz
+modlara ekler ya da oradan çıkarır; böylece sitenin bildirimleri burada takip
+ettiklerinizle örtüşür. Her güncelleme denetimi ayrıca Nexus'tan onaylarınızı
+(endorsement) ve takip ettiğiniz modları okur (iki istek) ve her modun Endorsed
+ve Tracked işaretlerini, modun kendi Nexus alan adında, bunlara göre ayarlar.
+İkisi uyuşmadığında Nexus kazanır. Listelerden biri okunamazsa denetim bunu
+bildirir ve o işaretleri olduğu gibi bırakır.
 
 "Information..." içindeki **Nexus files** sekmesi modun Nexus'taki dosyalarını
 en yeniden başlayarak listeler; burada kurulu olanı ve onun yerini alanı
@@ -683,7 +695,7 @@ Güncellemeleri denetlediğinizde Eidos, Nexus'a bu örnekte kurulu her koleksiy
 ### Çevrimdışı kip
 
 **Preferences -> Nexus -> Offline**, Eidos'un Nexus'la hiç bağlantı kurmasını
-durdurur. Güncelleme denetimleri, oturum açma, indirmeler ve koleksiyonlar bir
+durdurur ve GitHub'daki günlük sürüm denetimini atlar. Güncelleme denetimleri, oturum açma, indirmeler ve koleksiyonlar bir
 bağlantı hatasıyla başarısız olmak yerine bunu söyler. Siz açmadıkça kapalıdır -
 daha eski bir Eidos'un yazdığı bir ayar dosyasında böyle bir anahtar yoktur ve
 eksik olanı "açık" diye okumak, yükseltme yapan herkesin ağını keserdi.

@@ -784,34 +784,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.filters = ModFilters::default();
             forget_hidden_rows(app);
         }
-        // ---- per-mod local flags (Track / Ignore update) --------------------
-        Message::ModTrack(i) => {
-            app.menu_mod = None;
-            if let (Some(inst), Some(m)) = (app.created.as_ref(), app.mods.get(i)) {
-                if !m.is_separator() {
-                    let result = edit_mod_meta(inst, &m.name, |meta| {
-                        let now = !meta.tracked();
-                        meta.set_tracked(now);
-                        now
-                    });
-                    let now = match result {
-                        Ok(now) => now,
-                        Err(e) => {
-                            app.status = Some(tf("status_meta_save_failed", &[("error", &e)]));
-                            return Task::none();
-                        }
-                    };
-                    app.status = Some(tf(
-                        if now {
-                            "status_tracking"
-                        } else {
-                            "status_untracked"
-                        },
-                        &[("name", &m.display_name())],
-                    ));
-                }
-            }
-        }
+        // ---- per-mod local flag (Ignore update) ----
         Message::ModIgnoreUpdate(i) => {
             app.menu_mod = None;
             if let (Some(inst), Some(m)) = (app.created.as_ref(), app.mods.get(i)) {

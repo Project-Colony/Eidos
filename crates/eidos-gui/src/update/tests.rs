@@ -1512,13 +1512,15 @@ fn metadata_actions_preserve_unreadable_content_and_invalidate_ini_views() {
     let inst = app.created.clone().unwrap();
     let path = inst.meta_path("Personal");
     fs::write(&path, [0xff, 0xfe, 0xfd]).unwrap();
-    let _ = update_inner(&mut app, Message::ModTrack(0));
+    let _ = update_inner(
+        &mut app,
+        Message::ModTracked(root.clone(), "Personal".into(), 42, Ok(true)),
+    );
     assert_eq!(fs::read(&path).unwrap(), [0xff, 0xfe, 0xfd]);
-    assert!(app
-        .status
-        .as_deref()
-        .unwrap_or_default()
-        .contains("Could not save"));
+    assert_eq!(
+        app.status.as_deref(),
+        Some(t("status_track_meta_unreadable"))
+    );
     fs::write(&path, "[General]\nmodid=42\n").unwrap();
     let epoch = app.archive_epoch.get();
     let _ = update_inner(&mut app, Message::ToggleIniTweak(0, "Skyrim.ini".into()));
@@ -3789,6 +3791,7 @@ fn an_update_check_records_what_is_left_of_the_budget() {
         daily_remaining: Some(2100),
         unavailable: Vec::new(),
         failures: Vec::new(),
+        account_sync_error: None,
     };
     let _ = update_inner(
         &mut app,
@@ -3802,6 +3805,85 @@ fn an_update_check_records_what_is_left_of_the_budget() {
     assert_eq!(app.nexus_hourly_left, Some(1388));
     assert_eq!(app.nexus_daily_left, Some(2100));
     assert!(nexus_budget_suffix(&app).contains("1388"));
+}
+
+#[test]
+fn track_without_a_nexus_session_sends_nothing_and_keeps_the_flag() {
+    let (mut app, root) = list_app(&["Personal"]);
+    let inst = app.created.clone().unwrap();
+    fs::write(
+        inst.meta_path("Personal"),
+        "[General]\nmodid=42\ntracked=0\n",
+    )
+    .unwrap();
+    refresh_meta_cache(&mut app);
+    assert!(
+        !eidos_nexus::Nexus::have_credentials(),
+        "run with the scratch XDG env: with a Nexus session this test would track mod 42 on the real account"
+    );
+    let _ = update_inner(&mut app, Message::ModTrack(0));
+    assert_eq!(app.status.as_deref(), Some(t("status_connect_nexus_first")));
+    assert!(app.tracking.is_none());
+    assert!(!inst.mod_meta("Personal").tracked());
+    // One request at a time: a click while one is in flight does nothing.
+    app.tracking = Some(0);
+    app.status = None;
+    let _ = update_inner(&mut app, Message::ModTrack(0));
+    assert!(app.status.is_none());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_track_reply_is_saved_only_for_the_same_mod_in_the_open_instance() {
+    let (mut app, root) = list_app(&["Personal"]);
+    let inst = app.created.clone().unwrap();
+    fs::write(
+        inst.meta_path("Personal"),
+        "[General]\nmodid=42\ntracked=0\n",
+    )
+    .unwrap();
+    let reply = |root: PathBuf, id, r| Message::ModTracked(root, "Personal".into(), id, r);
+    let _ = update_inner(&mut app, reply(root.join("other-instance"), 42, Ok(true)));
+    let _ = update_inner(&mut app, reply(root.clone(), 99, Ok(true)));
+    assert!(!inst.mod_meta("Personal").tracked());
+    app.tracking = Some(0);
+    let _ = update_inner(&mut app, reply(root.clone(), 42, Err("HTTP 503".into())));
+    assert_eq!(
+        app.status,
+        Some(tf("status_track_failed", &[("error", &"HTTP 503")]))
+    );
+    assert!(app.tracking.is_none());
+    assert!(!inst.mod_meta("Personal").tracked());
+    let _ = update_inner(&mut app, reply(root.clone(), 42, Ok(true)));
+    assert!(inst.mod_meta("Personal").tracked());
+    assert_eq!(
+        app.status,
+        Some(tf("status_tracking", &[("name", &"Personal")]))
+    );
+    // A worker's answer: it must not disarm a confirmation, and it must get
+    // through while an installer is open, or `tracking` would stay set for good.
+    assert!(is_ambient(&app, &reply(root.clone(), 42, Ok(false))));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn an_update_check_says_when_the_account_lists_were_not_read() {
+    let mut app = nav_app(&[]);
+    let result = eidos_nexus::UpdateCheckResult {
+        checked: 1,
+        account_sync_error: Some("HTTP 503".into()),
+        ..Default::default()
+    };
+    let _ = update_inner(
+        &mut app,
+        Message::UpdatesChecked {
+            root: PathBuf::from("/nowhere"),
+            connected: true,
+            result: Ok(result),
+        },
+    );
+    let status = app.status.as_deref().unwrap();
+    assert!(status.contains(&tf("status_flags_not_synced", &[("error", &"HTTP 503")])));
 }
 
 #[test]
@@ -7860,6 +7942,191 @@ mod cleaning {
         assert!(app.cleaning.is_none());
         assert!(app.status.as_deref().unwrap().contains("Game"));
     }
+}
+
+/// A scratch app with auto-install on and a window that started a minute ago.
+fn auto_install_app() -> (App, PathBuf, PathBuf) {
+    let (mut app, root) = collection_app_with(&[("Mod", 42, "")], &[], &[]);
+    let dl = app.created.as_ref().unwrap().downloads_dir();
+    fs::create_dir_all(&dl).unwrap();
+    app.prefs.auto_install_downloads = true;
+    app.auto_install_since = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+    (app, root, dl)
+}
+
+fn arrive(dl: &Path, name: &str, mod_id: u64, file_id: u64) {
+    fs::write(dl.join(name), b"x").unwrap();
+    fs::write(
+        dl.join(format!("{name}.meta")),
+        format!("[General]\ngameName=SkyrimSE\nmodID={mod_id}\nfileID={file_id}\n"),
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_finished_download_installs_itself_when_the_option_is_on() {
+    let (mut app, root, dl) = auto_install_app();
+    arrive(&dl, "new.7z", 77, 701);
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    let name = eidos_install::mod_name_for(&dl.join("new.7z"));
+    assert_eq!(
+        app.install_job.as_ref().map(|j| j.name.as_str()),
+        Some(name.as_str())
+    );
+    assert_eq!(
+        app.status,
+        Some(tf("status_auto_installing", &[("name", &name)]))
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// Auto-install returns early from the tick, so the notification check must
+/// run before it: a download that installs itself still says it has ended.
+#[test]
+fn an_auto_installed_download_still_notifies_when_away() {
+    let (mut app, root, dl) = auto_install_app();
+    app.prefs.notify_when_away = true;
+    app.focused = false;
+    let _ = crate::notify::take_sent();
+    fs::write(dl.join("new.7z.unfinished"), b"x").unwrap();
+    fs::write(
+        dl.join("new.7z.meta"),
+        "[General]\ngameName=SkyrimSE\nmodID=77\nfileID=701\n",
+    )
+    .unwrap();
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(app.install_job.is_none(), "a partial was installed");
+    fs::rename(dl.join("new.7z.unfinished"), dl.join("new.7z")).unwrap();
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(
+        app.install_job.is_some(),
+        "the download did not install itself"
+    );
+    let sent = crate::notify::take_sent();
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(sent[0].0, t("notify_downloads_done"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn auto_install_leaves_older_archives_and_the_option_off_alone() {
+    let (mut app, root, dl) = auto_install_app();
+    arrive(&dl, "old.7z", 77, 701);
+    fs::File::options()
+        .write(true)
+        .open(dl.join("old.7z"))
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(3600))
+        .unwrap();
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(
+        app.install_job.is_none(),
+        "an archive older than the option was installed"
+    );
+    app.prefs.auto_install_downloads = false;
+    arrive(&dl, "new.7z", 78, 801);
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(app.install_job.is_none());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_cancelled_auto_install_is_not_opened_again() {
+    let (mut app, root, dl) = auto_install_app();
+    arrive(&dl, "new.7z", 77, 701);
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(app.install_job.is_some());
+    app.install_job = None; // the wizard was cancelled; the archive stays Ready
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(app.install_job.is_none());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn auto_install_waits_for_a_busy_installer_and_a_locked_instance() {
+    let (mut app, root, dl) = auto_install_app();
+    arrive(&dl, "new.7z", 77, 701);
+    app.install_job = Some(fake_job(None));
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(app.auto_install_tried.is_empty());
+    app.install_job = None;
+    // A running game holds the lock from another process; another thread stands in.
+    let inst = app.created.clone().unwrap();
+    let (held, release) = (std::sync::mpsc::channel(), std::sync::mpsc::channel::<()>());
+    let holder = std::thread::spawn(move || {
+        let _lock = inst.try_lock("synthetic game run").unwrap();
+        held.0.send(()).unwrap();
+        release.1.recv().unwrap();
+    });
+    held.1.recv().unwrap();
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(app.install_job.is_none() && app.auto_install_tried.is_empty());
+    release.0.send(()).unwrap();
+    holder.join().unwrap();
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(app.install_job.is_some());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn collection_members_are_never_auto_installed() {
+    let (mut app, root, dl) = auto_install_app();
+    let _ = update_inner(&mut app, Message::ShowCollection(String::new()));
+    arrive(&dl, "member.7z", 77, 701);
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(app.install_job.is_none());
+    let _ = update_inner(&mut app, Message::CloseCollection);
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(
+        app.install_job.is_none(),
+        "a member arrived during the pane was installed later"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn an_update_download_is_not_auto_installed_as_a_second_mod() {
+    let (mut app, root, dl) = auto_install_app();
+    app.pending_update = Some(PendingUpdate {
+        folder: "Mod".into(),
+        mod_id: 42,
+        file_id: 103,
+    });
+    arrive(&dl, "upd.7z", 42, 103);
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert_eq!(
+        app.install_job.as_ref().map(|j| j.name.as_str()),
+        Some("Mod")
+    );
+    app.install_job = None; // the update's install failed; the archive stays Ready
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(app.install_job.is_none());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn the_downloads_tick_runs_on_every_tab_only_with_the_option_and_an_instance() {
+    let (mut app, _root) = collection_app_with(&[], &[], &[]);
+    app.tab = Tab::Plugins;
+    assert!(!crate::subscription::watches_downloads(&app));
+    app.prefs.auto_install_downloads = true;
+    assert!(crate::subscription::watches_downloads(&app));
+    app.prefs.auto_install_downloads = false;
+    app.prefs.notify_when_away = true;
+    assert!(!crate::subscription::watches_downloads(&app), "focused");
+    app.focused = false;
+    assert!(crate::subscription::watches_downloads(&app));
+    app.created = None;
+    assert!(!crate::subscription::watches_downloads(&app));
+}
+
+#[test]
+fn a_release_answer_disarms_no_confirmation() {
+    let app = nav_app(&[]);
+    assert!(is_ambient(
+        &app,
+        &Message::EidosReleaseChecked(Ok("99.0.0".into()))
+    ));
 }
 
 #[test]

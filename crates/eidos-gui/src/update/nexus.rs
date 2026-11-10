@@ -1,4 +1,5 @@
-//! Nexus: identifying archives, endorsing, update checks and collections.
+//! Nexus: identifying archives, endorsing, tracking, update checks and
+//! collections.
 
 use super::*;
 
@@ -58,6 +59,75 @@ pub(super) fn requirements_refresh_target(
     let def = selected_game(app)?.def;
     let any_nexus_mod = app.meta_cache.values().any(|m| m.mod_id.is_some());
     (connected && any_nexus_mod).then(|| (inst.clone(), def))
+}
+
+/// The Nexus mod at row `i` of the open instance, for Endorse and Track:
+/// `(folder, meta, mod id, domain)`, or the status to show instead. The domain
+/// is the one the mod's own `gameName` names: a Skyrim SE mod in an Enderal SE
+/// instance is endorsed and tracked on Skyrim SE's page. `no_id_key` is the
+/// status for a row without a Nexus id.
+fn nexus_mod_at(
+    app: &App,
+    i: usize,
+    no_id_key: &'static str,
+) -> Result<(String, eidos_instance::ModMeta, u64, String), String> {
+    let no_id = || t(no_id_key).to_string();
+    let (Some(inst), Some(m), Some(game)) =
+        (app.created.as_ref(), app.mods.get(i), selected_game(app))
+    else {
+        return Err(no_id());
+    };
+    if m.is_separator() {
+        return Err(no_id());
+    }
+    let meta = inst.mod_meta(&m.name);
+    let Some(mod_id) = meta.mod_id() else {
+        return Err(no_id());
+    };
+    let game_name = meta.game_name().filter(|g| !g.is_empty());
+    match (game.def.nexus_domain_for(game_name.as_deref()), game_name) {
+        (Some(domain), _) => Ok((m.name.clone(), meta, mod_id, domain.to_string())),
+        (None, Some(game)) => Err(tf(
+            "status_unknown_nexus_game",
+            &[("name", &m.display_name()), ("game", &game)],
+        )),
+        (None, None) => Err(no_id()),
+    }
+}
+
+/// Store a flag Nexus just confirmed (`key` = `on`) in the mod's `meta.ini`.
+/// By folder name: the row index from before the network round trip may point
+/// at a different mod by now. `Ok(Some(display name))` once written, `Ok(None)`
+/// when the folder is gone or no longer holds `mod_id`. `errors` are the status
+/// keys for a busy lock (takes `{error}`), an unreadable file and a failed
+/// write (takes `{error}`).
+fn store_nexus_flag(
+    app: &App,
+    folder: &str,
+    mod_id: u64,
+    key: &str,
+    on: bool,
+    errors: [&'static str; 3],
+) -> Result<Option<String>, String> {
+    let (Some(inst), Some(m)) = (
+        app.created.as_ref(),
+        app.mods.iter().find(|m| m.name == folder),
+    ) else {
+        return Ok(None);
+    };
+    let _lock = inst
+        .try_lock("saving a flag from Nexus")
+        .map_err(|e| tf(errors[0], &[("error", &e)]))?;
+    let path = inst.meta_path(&m.name);
+    let mut meta =
+        eidos_instance::ModMeta::read_checked(&path).map_err(|_| t(errors[1]).to_string())?;
+    if meta.mod_id() != Some(mod_id) {
+        return Ok(None);
+    }
+    meta.set(key, if on { "1" } else { "0" });
+    meta.write(&path)
+        .map_err(|e| tf(errors[2], &[("error", &e)]))?;
+    Ok(Some(m.display_name().to_string()))
 }
 
 /// The `update` arms for this group. [`update_inner`] routes only these
@@ -144,50 +214,20 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(t("status_connect_nexus_first").to_string());
                 return Task::none();
             }
-            let def = selected_game(app).map(|g| g.def);
-            let folder = app.mods.get(i).map(|m| m.name.clone()).unwrap_or_default();
-            // The mod's own domain, from the game its meta.ini names: a Skyrim SE
-            // mod in an Enderal SE instance is endorsed on Skyrim SE's page.
-            let info = app
-                .created
-                .as_ref()
-                .zip(app.mods.get(i))
-                .filter(|(_, m)| !m.is_separator())
-                .zip(def)
-                .map(|((inst, m), def)| {
-                    let meta = inst.mod_meta(&m.name);
-                    let game = meta.game_name().filter(|g| !g.is_empty());
-                    (
-                        meta.mod_id(),
-                        def.nexus_domain_for(game.as_deref())
-                            .ok_or((m.display_name(), game)),
-                        meta.version().unwrap_or_default(),
-                        meta.endorsed(),
-                    )
-                });
-            let Some((Some(mod_id), domain, version, endorsed)) = info else {
-                app.status = Some(t("status_no_nexus_id_endorse").to_string());
-                return Task::none();
-            };
-            let domain = match domain {
-                Ok(domain) => domain.to_string(),
-                Err((name, Some(game))) => {
-                    app.status = Some(tf(
-                        "status_unknown_nexus_game",
-                        &[("name", &name), ("game", &game)],
-                    ));
-                    return Task::none();
-                }
-                Err((_, None)) => {
-                    app.status = Some(t("status_no_nexus_id_endorse").to_string());
-                    return Task::none();
-                }
-            };
-            // Toggle: endorse when not yet endorsed, abstain when already endorsed.
+            let (folder, meta, mod_id, domain) =
+                match nexus_mod_at(app, i, "status_no_nexus_id_endorse") {
+                    Ok(found) => found,
+                    Err(status) => {
+                        app.status = Some(status);
+                        return Task::none();
+                    }
+                };
             let Some(instance) = app.created.as_ref().map(|i| i.root.clone()) else {
                 return Task::none();
             };
-            let endorse = !endorsed;
+            let version = meta.version().unwrap_or_default();
+            // Toggle: endorse when not yet endorsed, abstain when already endorsed.
+            let endorse = !meta.endorsed();
             app.endorsing = Some(i);
             app.status = Some(if endorse {
                 t("status_endorsing").to_string()
@@ -281,42 +321,34 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.endorsing = None;
             match result {
                 Ok(now_endorsed) => {
-                    // Persist by folder name: the row index from before the network
-                    // round-trip may point at a different mod by now.
-                    if let (Some(inst), Some(m)) = (
-                        app.created.as_ref(),
-                        app.mods.iter().find(|m| m.name == folder),
-                    ) {
-                        let _lock = match inst.try_lock("saving a Nexus endorsement") {
-                            Ok(lock) => lock,
-                            Err(e) => {
-                                app.status = Some(tf("status_endorse_meta_busy", &[("error", &e)]));
-                                return Task::none();
-                            }
-                        };
-                        let Ok(mut meta) =
-                            eidos_instance::ModMeta::read_checked(&inst.meta_path(&m.name))
-                        else {
-                            app.status = Some(t("status_endorse_meta_unreadable").into());
-                            return Task::none();
-                        };
-                        if meta.mod_id() != Some(mod_id) {
+                    let stored = store_nexus_flag(
+                        app,
+                        &folder,
+                        mod_id,
+                        "endorsed",
+                        now_endorsed,
+                        [
+                            "status_endorse_meta_busy",
+                            "status_endorse_meta_unreadable",
+                            "status_endorse_meta_save_failed",
+                        ],
+                    );
+                    match stored {
+                        Ok(Some(name)) => {
+                            app.status = Some(tf(
+                                if now_endorsed {
+                                    "status_endorsed"
+                                } else {
+                                    "status_abstained"
+                                },
+                                &[("name", &name)],
+                            ));
+                        }
+                        Ok(None) => {}
+                        Err(status) => {
+                            app.status = Some(status);
                             return Task::none();
                         }
-                        meta.set("endorsed", if now_endorsed { "1" } else { "0" });
-                        if let Err(e) = meta.write(&inst.meta_path(&m.name)) {
-                            app.status =
-                                Some(tf("status_endorse_meta_save_failed", &[("error", &e)]));
-                            return Task::none();
-                        }
-                        app.status = Some(tf(
-                            if now_endorsed {
-                                "status_endorsed"
-                            } else {
-                                "status_abstained"
-                            },
-                            &[("name", &m.display_name())],
-                        ));
                     }
                     // The count reads the row cache, so the row this rewrote
                     // has to be dropped and read again first.
@@ -325,6 +357,78 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     recompute_counts(app);
                 }
                 Err(e) => app.status = Some(tf("status_endorse_failed", &[("error", &e)])),
+            }
+        }
+        // ---- Track (MO2's Track: the account's tracked mods on Nexus) --------
+        Message::ModTrack(i) => {
+            app.menu_mod = None;
+            if app.tracking.is_some() {
+                return Task::none();
+            }
+            if !eidos_nexus::Nexus::have_credentials() {
+                app.status = Some(t("status_connect_nexus_first").to_string());
+                return Task::none();
+            }
+            let (folder, meta, mod_id, domain) =
+                match nexus_mod_at(app, i, "status_no_nexus_id_track") {
+                    Ok(found) => found,
+                    Err(status) => {
+                        app.status = Some(status);
+                        return Task::none();
+                    }
+                };
+            let Some(instance) = app.created.as_ref().map(|i| i.root.clone()) else {
+                return Task::none();
+            };
+            let track = !meta.tracked();
+            app.tracking = Some(i);
+            app.status = Some(t("status_track_requesting").to_string());
+            return Task::perform(
+                smol::unblock(move || {
+                    eidos_nexus::Nexus::connect()?.set_tracked(&domain, mod_id, track)
+                }),
+                move |r| Message::ModTracked(instance.clone(), folder.clone(), mod_id, r),
+            );
+        }
+        Message::ModTracked(instance, folder, mod_id, result) => {
+            if app.created.as_ref().is_none_or(|i| i.root != instance) {
+                return Task::none();
+            }
+            app.tracking = None;
+            let now_tracked = match result {
+                Ok(now) => now,
+                Err(e) => {
+                    app.status = Some(tf("status_track_failed", &[("error", &e)]));
+                    return Task::none();
+                }
+            };
+            let stored = store_nexus_flag(
+                app,
+                &folder,
+                mod_id,
+                "tracked",
+                now_tracked,
+                [
+                    "status_track_meta_busy",
+                    "status_track_meta_unreadable",
+                    "status_track_meta_save_failed",
+                ],
+            );
+            match stored {
+                Ok(Some(name)) => {
+                    app.status = Some(tf(
+                        if now_tracked {
+                            "status_tracking"
+                        } else {
+                            "status_untracked"
+                        },
+                        &[("name", &name)],
+                    ));
+                    invalidate_meta(app, &folder);
+                    refresh_meta_cache(app);
+                }
+                Ok(None) => {}
+                Err(status) => app.status = Some(status),
             }
         }
         // ---- Mod update check ------------------------------------------------
@@ -522,6 +626,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     if r.rate_limited {
                         msg.push(' ');
                         msg.push_str(t("status_update_rate_limited"));
+                    }
+                    if let Some(e) = &r.account_sync_error {
+                        msg.push(' ');
+                        msg.push_str(&tf("status_flags_not_synced", &[("error", e)]));
                     }
                     app.status = Some(msg);
                 }

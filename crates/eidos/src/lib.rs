@@ -150,6 +150,9 @@ fn cmd_nexus(args: &[String]) {
             for (name, error) in &result.failures {
                 eidos_log::warn!("Update not checked for {name}: {error}");
             }
+            if let Some(e) = &result.account_sync_error {
+                eidos_log::warn!("Endorsements and tracked mods were not read from Nexus: {e}");
+            }
             for name in &result.unavailable {
                 println!("  UNAVAILABLE {name}");
             }

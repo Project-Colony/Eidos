@@ -685,7 +685,7 @@ fn bar_item<'a>(label: &'a str, msg: Message, open: bool) -> Element<'a, Message
 }
 
 pub(crate) fn menu_bar<'a>(app: &App) -> Element<'a, Message> {
-    let row = Row::new()
+    let mut row = Row::new()
         .spacing(0)
         .push(
             container(bar_item(
@@ -708,6 +708,21 @@ pub(crate) fn menu_bar<'a>(app: &App) -> Element<'a, Message> {
         .push(flat_btn(t("menu_run"), Message::Run))
         .push(flat_btn(t("menu_refresh"), Message::Refresh))
         .push(flat_btn(t("menu_help"), Message::ShowAbout));
+    // Help ends a left-packed row, so a link after it moves nothing. It never
+    // wraps: in a narrow window or at a large text size a wrapped link would
+    // make the bar taller and push every row down. Cut at the edge instead.
+    if let Some(v) = &app.eidos_release {
+        row = row.push(
+            button(
+                text(tf("menu_eidos_release", &[("version", v)]))
+                    .size(sz(13))
+                    .wrapping(iced::widget::text::Wrapping::None),
+            )
+            .padding(6)
+            .on_press(Message::OpenUrl(eidos_nexus::release::notes_url(v)))
+            .style(button::text),
+        );
+    }
     container(row)
         .width(Length::Fill)
         .padding(1)
