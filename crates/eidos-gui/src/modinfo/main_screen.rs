@@ -297,9 +297,6 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
     if app.cap_missing && passthrough_requested() {
         base = base.push(cap_warning_banner());
     }
-    if let Some(banner) = disable_confirm_banner(app) {
-        base = base.push(banner);
-    }
     base = base.push(body);
     if app.ui_statusbar_visible {
         base = base.push(status_bar(app));
@@ -319,6 +316,16 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
             let card = floating_at(mod_menu_card(app, i), at, app.window);
             layers = layers.push(catcher).push(card);
         }
+    }
+
+    // The disable confirmation answers a click or Space on a row, so it floats:
+    // in the column it pushed the rows down under the pointer (the #120 pattern),
+    // and the next click toggled the row above. The scrim cancels it.
+    if let Some(card) = disable_confirm_dialog(app) {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::CancelDisable);
+        let card = container(mouse_area(card).on_press(Message::Noop)).center(Length::Fill);
+        layers = layers.push(scrim).push(card);
     }
 
     // The per-mod info dialog is a centered modal (MO2's modinfodialog).

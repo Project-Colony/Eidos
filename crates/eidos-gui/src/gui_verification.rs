@@ -1073,3 +1073,50 @@ fn the_nxm_register_button_stays_put_when_the_status_line_changes() {
     });
     assert_eq!(label(crate::view(&app), &mut renderer, register, 0), before);
 }
+
+/// The disable confirmation answers a click or Space on a row. It floats over
+/// the list, so no row moves under the pointer, and a second click at the same
+/// spot cancels it instead of toggling the row that slid there (#120).
+#[test]
+fn the_disable_confirmation_never_moves_the_mod_rows() {
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    let mods_dir = app.created.as_ref().unwrap().mods_dir();
+    app.mods = ["Alpha", "Beta"]
+        .into_iter()
+        .map(|name| ModEntry {
+            name: name.into(),
+            enabled: true,
+            path: mods_dir.join(name),
+            unmanaged: false,
+        })
+        .collect();
+    let mut renderer = renderer();
+    let before = label(crate::view(&app), &mut renderer, "Beta", 0);
+    app.disable_confirm = Some(DisableConfirm {
+        targets: vec![0],
+        plugins: (1..=9)
+            .map(|n| format!("A long plugin name {n}.esp"))
+            .collect(),
+        dependents: Vec::new(),
+    });
+    assert_eq!(label(crate::view(&app), &mut renderer, "Beta", 0), before);
+    let drawn = positions(crate::view(&app), &mut renderer).labels;
+    assert!(
+        drawn.iter().any(|(s, _)| s == t("disable_anyway")),
+        "the confirmation is drawn: {drawn:?}"
+    );
+    let (_, messages) = frame(
+        crate::view(&app),
+        &mut renderer,
+        Cache::new(),
+        &click(),
+        before,
+        Some("disable-confirm"),
+    );
+    assert!(
+        messages.iter().any(|m| matches!(m, Message::CancelDisable))
+            && !messages.iter().any(|m| matches!(m, Message::ToggleMod(_))),
+        "{messages:?}"
+    );
+}

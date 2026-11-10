@@ -792,11 +792,11 @@ pub(crate) fn loot_severity_label(kind: eidos_loot::MessageType) -> &'static str
     }
 }
 
-/// The bar a disable waits behind while the newest saves use the mods'
-/// plugins, styled like [`cap_warning_banner`]. None when nothing is held.
-pub(crate) fn disable_confirm_banner<'a>(app: &App) -> Option<Element<'a, Message>> {
+/// The card a disable waits behind while the newest saves use the mods'
+/// plugins or other mods need them as masters. None when nothing is held.
+pub(crate) fn disable_confirm_dialog<'a>(app: &App) -> Option<Element<'a, Message>> {
     let confirm = app.disable_confirm.as_ref()?;
-    let mut lines = Column::new().spacing(2).width(Length::Fill);
+    let mut lines = Column::new().spacing(6).width(Length::Fill);
     if !confirm.plugins.is_empty() {
         lines = lines.push(text(saves_warning(&confirm.plugins)).size(sz(11)));
     }
@@ -819,8 +819,7 @@ pub(crate) fn disable_confirm_banner<'a>(app: &App) -> Option<Element<'a, Messag
     }
     let mut row = Row::new()
         .spacing(10)
-        .align_y(iced::Alignment::Center)
-        .push(lines);
+        .push(Space::new().width(Length::Fill));
     row = if confirm.dependents.is_empty() {
         row.push(flat_btn(t("disable_anyway"), Message::ConfirmDisable))
     } else {
@@ -835,18 +834,16 @@ pub(crate) fn disable_confirm_banner<'a>(app: &App) -> Option<Element<'a, Messag
     };
     let row = row.push(flat_btn(t("common_cancel"), Message::CancelDisable));
     Some(
-        container(row)
-            .width(Length::Fill)
-            .padding([4, 8])
-            .style(|_| container::Style {
-                background: Some(Background::Color(pal().warning_bg)),
+        container(Column::new().spacing(12).push(lines).push(row))
+            .max_width(560)
+            .padding(16)
+            .style(|th| container::Style {
                 border: Border {
                     color: pal().warning,
-                    width: 1.0,
-                    radius: 4.0.into(),
+                    ..crate::theme::card_style(th).border
                 },
                 text_color: Some(pal().warning),
-                ..Default::default()
+                ..crate::theme::card_style(th)
             })
             .into(),
     )
