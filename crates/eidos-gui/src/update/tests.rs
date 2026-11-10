@@ -5950,7 +5950,13 @@ fn the_hand_off_pick_is_taken_once() {
 #[test]
 fn a_direct_start_needs_a_store_window_the_preference_and_no_override() {
     let (mut app, root) = list_app(&[]);
-    app.launch_command = vec!["/bin/true".into()];
+    // The game's own executable, so these two reach their guards; past them,
+    // the fixture's diag_no_prefix would set status_direct_start_held.
+    app.launch_command = vec![app.games[0]
+        .install_path
+        .join("SkyrimSE.exe")
+        .display()
+        .to_string()];
     assert!(!start_directly(&mut app, false), "preference off");
     app.prefs.start_game_directly = true;
     assert!(!start_directly(&mut app, true), "EIDOS_WINDOW=1");
