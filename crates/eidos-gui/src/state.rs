@@ -1464,6 +1464,7 @@ pub(crate) fn play_command(
     game_id: &str,
     inst_arg: &str,
     install: &Path,
+    files_root: &Path,
     instance: &eidos_instance::Instance,
     command: &[String],
 ) -> (std::process::Command, Option<String>) {
@@ -1480,8 +1481,14 @@ pub(crate) fn play_command(
                 continue;
             }
             let picked = prefer.iter().find_map(|to| {
-                eidos_instance::root_executable(install, &root_layers, &root_overwrite, to)
-                    .map(|path| (*to, path.to_string_lossy().into_owned()))
+                eidos_instance::root_executable(
+                    install,
+                    files_root,
+                    &root_layers,
+                    &root_overwrite,
+                    to,
+                )
+                .map(|path| (*to, path.to_string_lossy().into_owned()))
             });
             match picked {
                 Some((to, candidate)) => {
@@ -1813,6 +1820,17 @@ pub(crate) fn refusal_line(log: &str) -> Option<String> {
 
 pub(crate) fn selected_game(app: &App) -> Option<&DetectedGame> {
     app.selected.and_then(|i| app.games.get(i))
+}
+
+/// The game files the open instance runs the selected game from. Reads the
+/// manifest, so it is not for a per-frame caller.
+pub(crate) fn game_files(app: &App) -> Option<eidos_instance::GameFiles> {
+    let g = selected_game(app)?;
+    Some(
+        app.created
+            .as_ref()?
+            .game_files(&g.install_path, &g.data_path),
+    )
 }
 
 /// The mod folder names currently selected in the mod list, lowercased for
@@ -3602,7 +3620,7 @@ mod tests {
             .find(|parent| !parent.as_os_str().is_empty())
             .unwrap_or_else(|| Path::new("."));
         let instance = eidos_instance::Instance::portable(install.join("test-instance"));
-        let (cmd, warning) = play_command(game_id, game_id, install, &instance, command);
+        let (cmd, warning) = play_command(game_id, game_id, install, install, &instance, command);
         let args: Vec<String> = cmd
             .get_args()
             .map(|a| a.to_string_lossy().into_owned())
@@ -3648,8 +3666,14 @@ mod tests {
         fs::write(entry.path.join("Root/skse64_loader.exe"), b"loader").unwrap();
         instance.save_modlist(&[entry]).unwrap();
         let command = vec![game.join("SkyrimSELauncher.exe").display().to_string()];
-        let (cmd, warning) =
-            play_command("skyrimse", "portable-fixture", &game, &instance, &command);
+        let (cmd, warning) = play_command(
+            "skyrimse",
+            "portable-fixture",
+            &game,
+            &game,
+            &instance,
+            &command,
+        );
         assert_eq!(warning, None);
         assert!(cmd
             .get_args()

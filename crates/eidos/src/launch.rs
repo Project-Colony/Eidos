@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::exit;
 
 use eidos_games::DetectedGame;
-use eidos_instance::{Instance, InstanceKind};
+use eidos_instance::{GameFiles, Instance, InstanceKind};
 use eidos_launch::{launch, LaunchSpec};
 
 use crate::*;
@@ -22,6 +22,7 @@ pub(crate) fn cmd_play(args: &[String]) {
     };
 
     let (game_id, game, inst) = open_for_run(id);
+    let files = crate::stock_game::game_files(&game, &inst);
 
     if command.is_empty() {
         let layers = inst.load_order();
@@ -30,6 +31,13 @@ pub(crate) fn cmd_play(args: &[String]) {
             "Mount target  : {}  (the game's Data dir)",
             game.data_path.display()
         );
+        match &files.copy {
+            Some(folder) => println!(
+                "Game files    : {}  (the copy '{folder}')",
+                files.root.display()
+            ),
+            None => println!("Game files    : the store install"),
+        }
         println!("Mod layers ({}):", layers.len());
         for (i, l) in layers.iter().enumerate() {
             println!(
@@ -71,7 +79,13 @@ pub(crate) fn cmd_play(args: &[String]) {
     // the nxm:// handler follow the user here.
     remember_use(&inst, &game_id);
     let mut command = command;
-    swap_script_extender(&game_id, &game.install_path, &inst, &mut command);
+    swap_script_extender(
+        &game_id,
+        &game.install_path,
+        &files.root,
+        &inst,
+        &mut command,
+    );
     run_through_view(
         &game_id,
         &game,
@@ -251,10 +265,12 @@ pub(crate) fn warn_if_flatpak_proton(run: &eidos_games::ProtonRun) {
     }
 }
 
-/// Swap a vanilla launcher argument for the loader visible in the root union.
+/// Swap a vanilla launcher argument for the loader visible in the root union,
+/// whose bottom is `files_root` (`GameFiles::root`).
 pub(crate) fn swap_script_extender(
     id: &str,
     install: &Path,
+    files_root: &Path,
     inst: &Instance,
     command: &mut [String],
 ) {
@@ -263,6 +279,7 @@ pub(crate) fn swap_script_extender(
     };
     let loader = eidos_instance::root_executable(
         install,
+        files_root,
         &inst.root_layers(),
         &inst.root_overwrite_dir(),
         se.loader,
@@ -277,6 +294,41 @@ pub(crate) fn swap_script_extender(
             }
         }
     }
+}
+
+/// What the two unions read at the bottom and where they are mounted.
+pub(crate) struct UnionBases {
+    pub base_bind: Option<(PathBuf, PathBuf)>,
+    pub root_base_bind: Option<(PathBuf, PathBuf)>,
+    pub root_base: Option<PathBuf>,
+}
+
+/// The Data union reads `files.data`; the root union is mounted on the store
+/// install and reads the copy when there is one. `game` is the launch game.
+pub(crate) fn union_bases(game: &DetectedGame, files: &GameFiles, inst: &Instance) -> UnionBases {
+    UnionBases {
+        base_bind: Some((files.data.clone(), inst.base_dir())),
+        root_base_bind: Some((game.install_path.clone(), inst.base_root_dir())),
+        root_base: files.copy.as_ref().map(|_| files.root.clone()),
+    }
+}
+
+/// The first `.exe` argument under `install` (relative to it) that `resolves`
+/// says the merged root does not have: a launcher the store starts that the
+/// game copy lacks.
+pub(crate) fn first_missing_exe(
+    command: &[String],
+    install: &Path,
+    resolves: impl Fn(&str) -> bool,
+) -> Option<String> {
+    command.iter().find_map(|argument| {
+        let rel = Path::new(argument).strip_prefix(install).ok()?;
+        let exe = rel
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("exe"));
+        let rel = rel.to_str()?;
+        (exe && !resolves(rel)).then(|| rel.to_owned())
+    })
 }
 
 /// The shared launch pipeline behind `play` and `tool`: write `plugins.txt`,
@@ -409,6 +461,34 @@ pub(crate) fn run_through_view(
             exit(1);
         });
     let game = &launch_game;
+    let files = crate::stock_game::game_files(game, inst);
+    if let Some(f) = crate::check::game_files::findings(game, inst, &files).first() {
+        eidos_log::warn!(
+            "eidos: refusing to launch: {}",
+            crate::check::game_files::refusal(f)
+        );
+        exit(1);
+    }
+    let root_layers = inst.root_layers();
+    // A game run only: a tool from a mod runs from Data, which the root stack does not hold.
+    if let Some(folder) = files.copy.as_ref().filter(|_| records_game_launch(&opts)) {
+        let missing = first_missing_exe(&command, &game.install_path, |rel| {
+            eidos_instance::root_executable(
+                &game.install_path,
+                &files.root,
+                &root_layers,
+                &inst.root_overwrite_dir(),
+                rel,
+            )
+            .is_some()
+        });
+        if let Some(exe) = missing {
+            eidos_log::warn!(
+                "eidos: refusing to launch: the store starts {exe}, which '{folder}' does not have"
+            );
+            exit(1);
+        }
+    }
     let cwd = cwd.or_else(|| Some(game.install_path.clone()));
 
     // The mod list is JUDGED before anything is prepared, and a bad verdict stops
@@ -576,7 +656,7 @@ pub(crate) fn run_through_view(
             .filter(|m| m.is_active())
             .map(|m| m.path)
             .collect();
-        if eidos_gamefeatures::enb_cs_conflict(&game.install_path, &cs_roots) {
+        if eidos_gamefeatures::enb_cs_conflict(&files.root, &cs_roots) {
             eidos_log::info!(
                 "eidos play: note - ENB (game root) and Community Shaders (a mod) are both active. \
                  Both can run together; if visuals look wrong, disable one in its INI."
@@ -586,7 +666,6 @@ pub(crate) fn run_through_view(
 
     let env = run_env(game, inst, opts, env, true);
 
-    let root_layers = inst.root_layers();
     if runtime_root.is_some() {
         std::fs::create_dir_all(inst.root_overwrite_dir()).unwrap_or_else(|e| {
             eidos_log::warn!("eidos: cannot create root output directory: {e}");
@@ -607,18 +686,22 @@ pub(crate) fn run_through_view(
     //
     // Creating it is the same promise Eidos already makes for its own directories,
     // and an empty directory inside the game is inert: nothing loads from it, and
-    // it is what the user would have had to make by hand anyway.
-    if !game.data_path.is_dir() {
-        if let Err(e) = std::fs::create_dir_all(&game.data_path) {
+    // it is what the user would have had to make by hand anyway. A game copy
+    // needs the same directory on its side, where the Data union reads it.
+    for dir in [&game.data_path, &files.data] {
+        if dir.is_dir() {
+            continue;
+        }
+        if let Err(e) = std::fs::create_dir_all(dir) {
             eidos_log::warn!(
                 "eidos: cannot create the mod directory {}: {e}",
-                game.data_path.display()
+                dir.display()
             );
             exit(1);
         }
         eidos_log::info!(
             "eidos: created {} (the game does not ship it)",
-            game.data_path.display()
+            dir.display()
         );
     }
 
@@ -628,6 +711,7 @@ pub(crate) fn run_through_view(
             eidos_log::warn!("eidos: refusing to launch: OMOD shader preparation failed: {error}");
             exit(1);
         });
+    let bases = union_bases(game, &files, inst);
     let spec = LaunchSpec {
         readonly_data_binds: shader_session
             .as_ref()
@@ -638,7 +722,7 @@ pub(crate) fn run_through_view(
         mountpoint: game.data_path.clone(),
         command,
         env,
-        base_bind: Some((game.data_path.clone(), inst.base_dir())),
+        base_bind: bases.base_bind,
         // The saves bind and the plugins bind ride the same mechanism: the
         // profile's dir over the prefix's, for the life of the run only.
         binds: save_bind
@@ -651,9 +735,10 @@ pub(crate) fn run_through_view(
         // ROOT rather than into Data/, which is how a script extender, ENB,
         // ReShade or Engine Fixes becomes a real, orderable, per-profile mod
         // instead of files copied into the game by hand. The second mount is
-        // skipped only when both this list and root Overwrite are empty.
+        // skipped only when this list and root Overwrite are empty and no game
+        // copy is used.
         root_layers,
-        root_base_bind: Some((game.install_path.clone(), inst.base_root_dir())),
+        root_base_bind: bases.root_base_bind,
         // ONE Overwrite, as in MO2: game-root writes go to its `Root/` subdir.
         root_overwrite: Some(
             runtime_root
@@ -661,7 +746,7 @@ pub(crate) fn run_through_view(
                 .unwrap_or_else(|| inst.root_overwrite_dir()),
         ),
         root_readonly_overwrite: runtime_root.as_ref().map(|_| inst.root_overwrite_dir()),
-        root_base: None,
+        root_base: bases.root_base,
     };
     // Taken immediately before the run so the capture below can tell what THIS
     // run produced from what was already in the Overwrite.
@@ -669,7 +754,7 @@ pub(crate) fn run_through_view(
         .tool_name
         .map(|name| {
             let plugins: Vec<_> = inst
-                .plugin_list(&game.data_path, game_id, None)
+                .plugin_list(&files.data, game_id, None)
                 .into_iter()
                 .flat_map(|list| {
                     list.plugins
@@ -1029,6 +1114,11 @@ pub(crate) fn forced_dll_overrides(
         .map(|m| m.path)
         .collect();
     roots.push(inst.overwrite_dir());
+    // A game copy is the bottom of the root union, so its own wrapper DLLs load.
+    let files = crate::stock_game::game_files(game, inst);
+    if files.copy.is_some() {
+        roots.push(files.root);
+    }
 
     // A wrapper DLL sits at the mod's top level when the mod is Data-relative, and
     // in its `Root/` when the mod targets the game install root - which is where
@@ -1312,13 +1402,13 @@ mod extender_tests {
             .to_string_lossy()
             .into_owned();
         let mut command = vec![launcher.clone(), "--config=SkyrimSELauncher.exe".into()];
-        swap_script_extender("skyrimse", &game, &instance, &mut command);
+        swap_script_extender("skyrimse", &game, &game, &instance, &mut command);
         assert_eq!(Path::new(&command[0]), game.join("skse64_loader.exe"));
         assert_eq!(command[1], "--config=SkyrimSELauncher.exe");
         entry.enabled = false;
         instance.save_modlist(&[entry]).unwrap();
         command[0] = launcher.clone();
-        swap_script_extender("skyrimse", &game, &instance, &mut command);
+        swap_script_extender("skyrimse", &game, &game, &instance, &mut command);
         assert_eq!(command[0], launcher);
         std::fs::create_dir_all(instance.root_overwrite_dir()).unwrap();
         std::fs::write(
@@ -1326,8 +1416,101 @@ mod extender_tests {
             b"loader",
         )
         .unwrap();
-        swap_script_extender("skyrimse", &game, &instance, &mut command);
+        swap_script_extender("skyrimse", &game, &game, &instance, &mut command);
         assert_eq!(Path::new(&command[0]), game.join("skse64_loader.exe"));
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn copy_fixture(tag: &str) -> (PathBuf, DetectedGame, Instance) {
+        let t = std::env::temp_dir().join(format!("eidos-copy-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&t);
+        std::fs::create_dir_all(t.join("game")).unwrap();
+        let inst = Instance::portable(t.join("i"));
+        inst.create().unwrap();
+        let game = DetectedGame {
+            def: eidos_games::GameDef::for_id("skyrimse").unwrap(),
+            install_path: t.join("game"),
+            data_path: t.join("game/Data"),
+            compatdata: None,
+            source: Default::default(),
+            steam_name: String::new(),
+        };
+        (t, game, inst)
+    }
+
+    #[test]
+    fn union_bases_without_a_copy_are_todays() {
+        let (t, game, inst) = copy_fixture("bases-store");
+        let files = GameFiles::new(&game.install_path, &game.data_path, &inst.root, None);
+        let b = union_bases(&game, &files, &inst);
+        assert_eq!(b.base_bind, Some((game.data_path.clone(), inst.base_dir())));
+        assert_eq!(
+            b.root_base_bind,
+            Some((game.install_path.clone(), inst.base_root_dir()))
+        );
+        assert_eq!(b.root_base, None);
+        std::fs::remove_dir_all(t).unwrap();
+    }
+
+    #[test]
+    fn union_bases_with_a_copy_read_the_copy_and_mount_on_the_install() {
+        let (t, game, inst) = copy_fixture("bases-copy");
+        let files = GameFiles::new(
+            &game.install_path,
+            &game.data_path,
+            &inst.root,
+            Some("Stock Game"),
+        );
+        let b = union_bases(&game, &files, &inst);
+        assert_eq!(
+            b.base_bind,
+            Some((inst.root.join("Stock Game/Data"), inst.base_dir()))
+        );
+        assert_eq!(
+            b.root_base_bind,
+            Some((game.install_path.clone(), inst.base_root_dir()))
+        );
+        assert_eq!(b.root_base, Some(inst.root.join("Stock Game")));
+        std::fs::remove_dir_all(t).unwrap();
+    }
+
+    #[test]
+    fn steam_launcher_missing_from_the_copy_is_named() {
+        let cmd: Vec<String> = ["/p/proton", "waitforexitandrun", "/g/SkyrimSELauncher.exe"]
+            .map(String::from)
+            .into();
+        assert_eq!(
+            first_missing_exe(&cmd, Path::new("/g"), |rel| rel == "SkyrimSE.exe").as_deref(),
+            Some("SkyrimSELauncher.exe")
+        );
+        assert_eq!(first_missing_exe(&cmd, Path::new("/g"), |_| true), None);
+        // Any case of `.exe`, a subfolder, and nothing outside the install.
+        let cmd: Vec<String> = ["/gx/a.exe", "/g/bin64/Game.EXE", "/g/readme.txt"]
+            .map(String::from)
+            .into();
+        assert_eq!(
+            first_missing_exe(&cmd, Path::new("/g"), |_| false).as_deref(),
+            Some("bin64/Game.EXE")
+        );
+    }
+
+    #[test]
+    fn the_loader_in_a_copy_is_swapped_in_at_the_install_path() {
+        let (t, _, inst) = copy_fixture("swap");
+        std::fs::create_dir_all(inst.root.join("Stock Game")).unwrap();
+        std::fs::write(inst.root.join("Stock Game/skse64_loader.exe"), b"loader").unwrap();
+        let mut cmd = vec![t.join("game/SkyrimSELauncher.exe").display().to_string()];
+        swap_script_extender(
+            "skyrimse",
+            &t.join("game"),
+            &inst.root.join("Stock Game"),
+            &inst,
+            &mut cmd,
+        );
+        assert_eq!(
+            cmd[0],
+            t.join("game/skse64_loader.exe").display().to_string()
+        );
+        std::fs::remove_dir_all(t).unwrap();
     }
 }

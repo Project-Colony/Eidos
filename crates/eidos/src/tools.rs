@@ -482,9 +482,11 @@ pub(crate) fn cmd_tool(args: &[String]) {
             let store_started =
                 store_started_in(std::env::vars_os().filter_map(|(k, _)| k.into_string().ok()));
             if hands_off_to_store(runs_game, store_started) {
+                let files = crate::stock_game::game_files(&game, &inst);
                 let loader_found = game.def.script_extender.as_ref().is_none_or(|se| {
                     eidos_instance::root_executable(
                         &game.install_path,
+                        &files.root,
                         &inst.root_layers(),
                         &inst.root_overwrite_dir(),
                         se.loader,

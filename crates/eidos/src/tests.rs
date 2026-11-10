@@ -65,6 +65,43 @@ fn a_wrapper_dll_is_found_in_a_mods_root_folder() {
     );
 }
 
+/// With a game copy the store install is never read, so a wrapper DLL in the
+/// store install's root is not forced, and one in the copy's root is.
+#[test]
+fn a_wrapper_dll_in_the_copy_root_is_forced_native_and_the_store_root_is_not_scanned() {
+    let t = Tmp::new("copy-shadow");
+    let inst = eidos_instance::Instance::portable(t.0.join("instance"));
+    inst.create().unwrap();
+    inst.ensure_manifest("skyrimse", eidos_instance::InstanceKind::Portable)
+        .unwrap();
+    let game = eidos_games::DetectedGame {
+        def: eidos_games::GameDef::for_id("skyrimse").unwrap(),
+        source: eidos_games::GameSource::External {
+            store: eidos_games::Store::Gog,
+            app_id: "synthetic".into(),
+            prefix: Some(t.0.join("prefix")),
+            heroic: true,
+            runner: None,
+        },
+        install_path: t.0.join("game"),
+        data_path: t.0.join("game/Data"),
+        compatdata: None,
+        steam_name: String::new(),
+    };
+    t.touch("game/d3d11.dll");
+    let store = forced_dll_overrides(&game, &inst, &[], true).map(|kv| kv.1);
+    assert!(
+        !store.as_deref().unwrap_or_default().contains("d3d11"),
+        "{store:?}"
+    );
+    t.touch("instance/Stock Game/SkyrimSE.exe");
+    t.touch("instance/Stock Game/d3d11.dll");
+    inst.edit_manifest(|m| m.base_game = Some("Stock Game".into()))
+        .unwrap();
+    let copy = forced_dll_overrides(&game, &inst, &[], true).unwrap();
+    assert!(copy.1.contains("d3d11=n,b"), "{}", copy.1);
+}
+
 /// The Steam Cloud sync must be idempotent (fs::copy stamps the destination
 /// with a NEWER mtime, so the second run finds nothing to do), must rescue a
 /// prefix save the profile never saw before overwriting its fixed name, and

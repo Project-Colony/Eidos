@@ -341,7 +341,9 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
     }
 
     // ENB + Community Shaders both injecting into D3D11.
-    if let (Some(game), Some(inst)) = (selected_game(app), app.created.as_ref()) {
+    if let (Some(game), Some(inst), Some(files)) =
+        (selected_game(app), app.created.as_ref(), game_files(app))
+    {
         let mods = app
             .mods
             .iter()
@@ -415,7 +417,7 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
             .filter(|m| m.is_active())
             .map(|m| m.path)
             .collect();
-        if eidos_gamefeatures::enb_cs_conflict(&game.install_path, &cs_roots) {
+        if eidos_gamefeatures::enb_cs_conflict(&files.root, &cs_roots) {
             out.push(Diagnostic {
                 level: DiagLevel::Advice,
                 title: t("diag_enb_cs").to_string(),

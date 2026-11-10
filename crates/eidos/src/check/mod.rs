@@ -5,6 +5,7 @@
 pub mod bodyslide;
 pub mod crash;
 pub mod extender;
+pub mod game_files;
 pub mod graphics;
 pub mod launch_option;
 pub mod load_order;
@@ -88,6 +89,9 @@ pub const CODES: &[&str] = &[
     "windows_filesystem",
     "bodyslide_data_path",
     "overwrite_root_data",
+    "game_files_missing",
+    "game_files_not_a_copy",
+    "game_files_root_mode",
 ];
 
 /// The instance's enabled mods, highest priority first. Unmanaged rows (DLC,
@@ -159,6 +163,11 @@ pub fn host_findings(
     out.extend(bodyslide::bodyslide_findings(&bodyslide::bodyslide_facts(
         game, inst, mods,
     )));
+    out.extend(game_files::findings(
+        game,
+        inst,
+        &crate::stock_game::game_files(game, inst),
+    ));
     out
 }
 
