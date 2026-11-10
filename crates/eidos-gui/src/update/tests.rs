@@ -6486,6 +6486,22 @@ fn rebuild_prefix_waits_for_a_tracked_run() {
 }
 
 #[test]
+fn a_run_note_is_prepended_and_no_note_keeps_the_status() {
+    let mut app = nav_app(&[]);
+    app.status = Some("Could not start BodySlide.".into());
+    launch::prepend_status(&mut app, None);
+    assert_eq!(app.status.as_deref(), Some("Could not start BodySlide."));
+    launch::prepend_status(&mut app, Some("Check the data path.".into()));
+    assert_eq!(
+        app.status.as_deref(),
+        Some("Check the data path. Could not start BodySlide.")
+    );
+    app.status = None;
+    launch::prepend_status(&mut app, Some("Check the data path.".into()));
+    assert_eq!(app.status, None);
+}
+
+#[test]
 fn backup_stamp_is_utc_and_sortable() {
     assert_eq!(launch::backup_stamp(1_793_448_000), "20261031-120000");
 }

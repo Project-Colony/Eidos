@@ -15,6 +15,14 @@ fn picks_the_game(app: &App, title: &str) -> bool {
         .is_some_and(|t| game_executables(game).launches_the_game(&t.exe))
 }
 
+/// Puts `note` in front of the status `start_run` set. No note keeps the
+/// status as it is: a launch failure must still be said.
+pub(super) fn prepend_status(app: &mut App, note: Option<String>) {
+    if let Some(note) = note {
+        app.status = app.status.take().map(|s| format!("{note} {s}"));
+    }
+}
+
 /// Run in a window no store opened (A28): ask the store that owns the copy to
 /// start the game, or say what to set first. Returns the status to show.
 fn hand_off(app: &App) -> String {
@@ -153,9 +161,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     let cmd = tool_command(&arg, &title, !app.launch_command.is_empty());
                     let note = crate::health::bodyslide_run_note(app, &title);
                     start_run(app, title, cmd);
-                    if let (Some(note), Some(s)) = (note, app.status.take()) {
-                        app.status = Some(format!("{note} {s}"));
-                    }
+                    prepend_status(app, note);
                 } else {
                     app.status = Some(t("status_create_or_open_instance").to_string());
                 }
@@ -215,13 +221,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     se_warning,
                     extender_note,
                     both_active.then(|| t("status_enb_and_cs").to_string()),
-                ]
-                .into_iter()
-                .flatten()
-                {
-                    if let Some(s) = app.status.take() {
-                        app.status = Some(format!("{note} {s}"));
-                    }
+                ] {
+                    prepend_status(app, note);
                 }
             } else {
                 app.status = Some(t("status_create_or_open_instance").to_string());
