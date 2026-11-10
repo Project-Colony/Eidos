@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=3c1c9a598adcf33acbf8489fda3b3333709f133d -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=934a486c32ef664673b79db2d9a5beb6917f5a30 -->
 
 # Eidos 사용하기
 
@@ -140,7 +140,8 @@ Steam Cloud 내려받기, Eidos 없이 한 실행 - 프로필의 세이브가 �
 보이지 않습니다. 그것을 지우는 것은 아무것도 없습니다: 실행이 그 세이브의 이름을
 실행 로그(창에서 실행했다면 인스턴스의 `logs/run-*.log`, Steam에서 실행했다면
 Steam의 콘솔)에 적는데, 그 파일 묶음이 바뀔 때마다 한 번씩입니다. 그것으로
-플레이하려면 그 세이브와 코세이브를 프로필의 `saves/` 폴더에 복사하세요.
+플레이하려면 Saves 탭에서 Import를 누르세요. Import는 그 세이브를 코세이브와
+함께 프로필로 복사하며, 프로필의 세이브를 교체하지 않습니다.
 
 ### 마지막 정상 실행 이후 바뀐 내용
 

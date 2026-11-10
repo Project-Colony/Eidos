@@ -158,7 +158,8 @@ Eidos - a Steam Cloud download from a Steam Deck, a launch without Eidos - stays
 hidden while the profile's saves are mounted. Nothing deletes it: the launch
 names it in the run's log (the instance's `logs/run-*.log` for a window launch,
 Steam's console for a Steam launch), once each time that set of files changes.
-To play it, copy it and its co-save into the profile's `saves/` folder.
+To play it, press Import on the Saves tab. Import copies it with its co-save
+into the profile and never replaces a profile save.
 
 ### What changed since the last good run
 

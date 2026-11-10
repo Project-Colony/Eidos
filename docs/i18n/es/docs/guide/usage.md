@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=3c1c9a598adcf33acbf8489fda3b3333709f133d -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=934a486c32ef664673b79db2d9a5beb6917f5a30 -->
 
 # Usar Eidos
 
@@ -162,8 +162,9 @@ Eidos - queda oculta mientras las partidas del perfil están montadas. Nada la
 borra: el lanzamiento la nombra en el registro de la ejecución (el
 `logs/run-*.log` de la instancia para un lanzamiento desde la ventana, la consola
 de Steam para un lanzamiento desde Steam), una vez cada vez que cambia ese
-conjunto de ficheros. Para jugarla, cópiala junto con su co-save a la carpeta
-`saves/` del perfil.
+conjunto de ficheros. Para jugarla, pulsa Import en la pestaña Saves.
+Import la copia con su co-save al perfil y nunca reemplaza una partida del
+perfil.
 
 ### Qué cambió desde la última ejecución buena
 

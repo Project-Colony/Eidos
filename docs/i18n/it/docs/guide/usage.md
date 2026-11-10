@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=3c1c9a598adcf33acbf8489fda3b3333709f133d -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=934a486c32ef664673b79db2d9a5beb6917f5a30 -->
 
 # Usare Eidos
 
@@ -163,8 +163,9 @@ Eidos - un download di Steam Cloud da uno Steam Deck, un avvio senza Eidos -
 resta nascosto finché i salvataggi del profilo sono montati. Niente lo cancella:
 l'avvio lo nomina nel log dell'esecuzione (il `logs/run-*.log` dell'istanza per
 un avvio dalla finestra, la console di Steam per un avvio da Steam), una volta
-ogni volta che quell'insieme di file cambia. Per giocarlo, copialo insieme al
-suo co-save nella cartella `saves/` del profilo.
+ogni volta che quell'insieme di file cambia. Per giocarlo, premi Import nella scheda Saves.
+Import lo copia con il suo co-save nel profilo e non sostituisce mai un
+salvataggio del profilo.
 
 ### Cosa è cambiato dall'ultima esecuzione riuscita
 

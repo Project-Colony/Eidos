@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=3c1c9a598adcf33acbf8489fda3b3333709f133d -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=934a486c32ef664673b79db2d9a5beb6917f5a30 -->
 
 # Eidos gebruiken
 
@@ -159,7 +159,8 @@ verborgen zolang de saves van het profiel gekoppeld zijn. Niets verwijdert hem:
 de start benoemt hem in het log van de run (de `logs/run-*.log` van de instantie
 bij een start vanuit het venster, de console van Steam bij een start via Steam),
 één keer telkens wanneer die verzameling bestanden verandert. Om hem te spelen,
-kopieer je hem en zijn co-save naar de map `saves/` van het profiel.
+druk je op Import in het tabblad Saves. Import kopieert hem met zijn co-save
+naar het profiel en vervangt nooit een save van het profiel.
 
 ### Wat er veranderd is sinds de laatste goede run
 

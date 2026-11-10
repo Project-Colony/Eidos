@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=3c1c9a598adcf33acbf8489fda3b3333709f133d -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=934a486c32ef664673b79db2d9a5beb6917f5a30 -->
 
 # 使用 Eidos
 
@@ -113,8 +113,8 @@ Add separator、Remove,以及把 Overwrite 变成一个模组,都会在动 `mods
 在那次首次复制之后、没经过 Eidos 就落进前缀的存档 - 从 Steam Deck 来的一次 Steam Cloud
 下载、一次不经 Eidos 的启动 - 在配置档的存档挂载期间是看不见的。没有什么会删掉它:启动
 时会在这次运行的日志里点出它的名字(从窗口启动是实例的 `logs/run-*.log`,从 Steam 启动
-则是 Steam 的控制台),每当这组文件发生变化就点一次。要玩它,把它连同它的 co-save 一起
-复制进配置档的 `saves/` 文件夹。
+则是 Steam 的控制台),每当这组文件发生变化就点一次。要玩它,在 Saves 选项卡上按 Import。Import 会把它连同它的 co-save 一起
+复制进配置档,不会替换配置档里的任何存档。
 
 ### 自上次正常运行以来的变化
 

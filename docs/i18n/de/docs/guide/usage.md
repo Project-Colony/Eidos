@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=3c1c9a598adcf33acbf8489fda3b3333709f133d -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=934a486c32ef664673b79db2d9a5beb6917f5a30 -->
 
 # Eidos verwenden
 
@@ -165,7 +165,8 @@ bleibt verborgen, solange die Spielstände des Profils gemountet sind. Nichts
 löscht ihn: der Start nennt ihn im Log des Laufs (`logs/run-*.log` der Instanz
 bei einem Start aus dem Fenster, die Konsole von Steam bei einem Steam-Start),
 jeweils einmal, wenn sich dieser Satz von Dateien ändert. Um ihn zu spielen,
-kopieren Sie ihn und seinen Co-Save in den `saves/`-Ordner des Profils.
+drücken Sie Import im Saves-Tab. Import kopiert ihn mit seinem Co-Save ins
+Profil und ersetzt nie einen Spielstand des Profils.
 
 ### Was sich seit dem letzten guten Start geändert hat
 

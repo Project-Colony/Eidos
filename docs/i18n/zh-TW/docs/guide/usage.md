@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=3c1c9a598adcf33acbf8489fda3b3333709f133d -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=934a486c32ef664673b79db2d9a5beb6917f5a30 -->
 
 # 使用 Eidos
 
@@ -117,7 +117,8 @@ Overwrite 變成模組,都會在動到 `mods/` 之前先檢查,所以一次被�
 Steam Cloud 下載、一次沒有透過 Eidos 的啟動 - 在設定檔的存檔掛載著的時候會一直被
 遮住。沒有任何東西會刪掉它:啟動時會在這次執行的日誌裡指名它(從視窗啟動是實例的
 `logs/run-*.log`,從 Steam 啟動則是 Steam 的主控台),那組檔案每變動一次就提一次。
-要玩它,就把它連同它的 co-save 一起複製到設定檔的 `saves/` 資料夾裡。
+要玩它,就在 Saves 分頁按下 Import。Import 會把它連同它的 co-save 一起
+複製到設定檔裡,不會取代設定檔裡的任何存檔。
 
 ### 自上次正常執行以來的變化
 

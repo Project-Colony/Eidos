@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=3c1c9a598adcf33acbf8489fda3b3333709f133d -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=934a486c32ef664673b79db2d9a5beb6917f5a30 -->
 
 # Używanie Eidos
 
@@ -157,8 +157,9 @@ pobranie ze Steam Cloud zapisu ze Steam Decka, uruchomienie bez Eidos - pozostaj
 ukryty, dopóki zapisy profilu są zamontowane. Nic go nie usuwa: uruchomienie
 wymienia go z nazwy w logu przebiegu (`logs/run-*.log` instancji przy
 uruchomieniu z okna, konsola Steama przy uruchomieniu ze Steama), jeden raz przy
-każdej zmianie tego zestawu plików. Żeby w niego zagrać, skopiuj go razem z
-towarzyszącym mu plikiem co-save do folderu `saves/` profilu.
+każdej zmianie tego zestawu plików. Żeby w niego zagrać, kliknij Import w zakładce
+Saves. Import kopiuje go razem z plikiem co-save do profilu i nigdy nie
+zastępuje zapisu profilu.
 
 ### Co się zmieniło od ostatniego udanego uruchomienia
 

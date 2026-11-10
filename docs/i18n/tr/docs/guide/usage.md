@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=3c1c9a598adcf33acbf8489fda3b3333709f133d -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=934a486c32ef664673b79db2d9a5beb6917f5a30 -->
 
 # Eidos kullanımı
 
@@ -157,8 +157,9 @@ Deck'ten gelen bir Steam Cloud indirmesi, Eidos olmadan yapılan bir başlatma -
 profilin kayıtları bağlıyken gizli kalır. Hiçbir şey onu silmez: başlatma, o
 dosya kümesi her değiştiğinde bir kez, onu çalıştırmanın günlüğünde adlandırır
 (pencereden bir başlatma için örneğin `logs/run-*.log` dosyası, Steam'den bir
-başlatma için Steam'in konsolu). Onu oynamak için kaydı ve ona eşlik eden
-co-save dosyasını profilin `saves/` klasörüne kopyalayın.
+başlatma için Steam'in konsolu). Onu oynamak için Saves sekmesinde Import'a
+basın. Import onu co-save dosyasıyla birlikte profile kopyalar ve profildeki
+hiçbir kaydı değiştirmez.
 
 ### Son iyi çalıştırmadan beri neyin değiştiği
 

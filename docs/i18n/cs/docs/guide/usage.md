@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=3c1c9a598adcf33acbf8489fda3b3333709f133d -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=934a486c32ef664673b79db2d9a5beb6917f5a30 -->
 
 # Používání Eidosu
 
@@ -149,7 +149,8 @@ Eidosem - stažení ze Steam Cloud ze Steam Decku, spuštění bez Eidosu - zůs
 skrytý, dokud jsou savy profilu připojené. Nic ho nemaže: spuštění ho jmenuje
 v logu běhu (`logs/run-*.log` dané instance při spuštění z okna, konzole Steamu
 při spuštění ze Steamu), a to jednou pokaždé, když se ta sada souborů změní.
-Chcete-li ho hrát, zkopírujte jej i s jeho co-savem do složky `saves/` profilu.
+Chcete-li ho hrát, stiskněte Import na kartě Saves. Import ho zkopíruje i s jeho
+co-savem do profilu a žádný sav profilu nenahradí.
 
 ### Co se změnilo od posledního úspěšného spuštění
 

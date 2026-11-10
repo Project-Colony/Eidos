@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=3c1c9a598adcf33acbf8489fda3b3333709f133d -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=934a486c32ef664673b79db2d9a5beb6917f5a30 -->
 
 # Utiliser Eidos
 
@@ -168,8 +168,9 @@ Eidos - reste cachée tant que les sauvegardes du profil sont montées. Rien ne 
 supprime : le lancement la nomme dans le log de l'exécution (le
 `logs/run-*.log` de l'instance pour un lancement depuis la fenêtre, la console
 de Steam pour un lancement par Steam), une fois à chaque changement de cet
-ensemble de fichiers. Pour y jouer, copiez-la avec son co-save dans le dossier
-`saves/` du profil.
+ensemble de fichiers. Pour y jouer, appuyez sur Importer dans l'onglet
+Sauvegardes. Importer la copie avec son co-save dans le profil et ne remplace
+jamais une sauvegarde du profil.
 
 ### Ce qui a changé depuis le dernier bon lancement
 
