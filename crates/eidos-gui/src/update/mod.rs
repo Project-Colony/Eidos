@@ -1167,6 +1167,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         if !matches!(message, Message::ClearOverwrite) {
             app.confirm_clear = false;
         }
+        if !matches!(message, Message::StopRun) {
+            app.confirm_stop = false;
+        }
         if !matches!(
             message,
             Message::DeleteSave(_) | Message::ConfirmDeleteSave(_)
@@ -1399,6 +1402,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::Run
         | Message::PollRunning
         | Message::ForceUnlock
+        | Message::StopRun
         | Message::CloseLootReport
         | Message::CopyLootReport
         | Message::ChangeGame

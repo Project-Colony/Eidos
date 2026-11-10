@@ -5752,7 +5752,7 @@ fn a_run_eidos_refused_says_why_in_the_status_bar() {
 }
 
 #[test]
-fn a_crashed_game_names_its_log_unless_eidos_refused_the_launch() {
+fn a_crashed_game_names_its_log_only_after_this_run_recorded_its_start() {
     let (mut app, root) = list_app(&["Keep"]);
     let compat = root.join("compatdata");
     let skse =
@@ -5761,36 +5761,64 @@ fn a_crashed_game_names_its_log_unless_eidos_refused_the_launch() {
     let log = skse.join("crash-2026-11-09-21-30-00.log");
     fs::write(&log, "Unhandled exception \"EXCEPTION_ACCESS_VIOLATION\"\n").unwrap();
     app.games[0].compatdata = Some(compat);
-    let started = std::time::SystemTime::now()
+    let inst = app.created.clone().unwrap();
+    // The previous session's record: that run crashed and wrote the log above.
+    let earlier = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs()
         - 60;
-    app.created
-        .as_ref()
-        .unwrap()
-        .record_launch_start(&Default::default(), started)
+    inst.record_launch_start(&Default::default(), earlier)
         .unwrap();
 
-    for (script, crashed) in [
-        ("exit 0", true),
+    // (script, records its start, stopped, expected status)
+    for (script, records, stop, expected) in [
+        // Refused before recording: the refusal, not the old crash.
         (
             "echo 'WARN  eidos: refusing to launch: in use' >&2; exit 1",
             false,
+            false,
+            "refusing to launch",
+        ),
+        // Failed before recording without a refusal line: the exit error.
+        (
+            "echo 'Cannot prepare this instance' >&2; exit 1",
+            false,
+            false,
+            "exited with an error",
+        ),
+        // Recorded its start, then a crash log appeared: the crash.
+        ("exit 0", true, false, "crashed"),
+        // The user stopped it: stopped, whatever log the stop left.
+        (
+            "trap 'kill $!; exit 1' TERM; sleep 30 & wait",
+            true,
+            true,
+            "was stopped",
         ),
     ] {
         let mut cmd = std::process::Command::new("/bin/sh");
         cmd.arg("-c").arg(script);
         start_run(&mut app, "Skyrim".into(), cmd);
         app.running.as_mut().unwrap().game = true;
+        if records {
+            let started = app.running.as_ref().unwrap().started;
+            inst.record_launch_start(&Default::default(), started)
+                .unwrap();
+            fs::write(&log, "Unhandled exception \"EXCEPTION_ACCESS_VIOLATION\"\n").unwrap();
+        }
+        if stop {
+            let _ = update_inner(&mut app, Message::StopRun);
+            let _ = update_inner(&mut app, Message::StopRun);
+        }
         finish_tracked_run(&mut app);
         let status = app.status.clone().unwrap_or_default();
+        assert!(status.contains(expected), "{expected}: {status}");
         assert_eq!(
             status.contains(&log.display().to_string()),
-            crashed,
+            expected == "crashed",
             "{status}"
         );
-        assert_eq!(status.contains("refusing to launch"), !crashed, "{status}");
     }
     let _ = fs::remove_dir_all(root);
 }
@@ -5967,4 +5995,63 @@ fn a_second_extract_of_the_same_archive_starts_nothing_until_the_first_ends() {
     assert!(app.extracting_archives.is_empty());
     assert_eq!(update_inner(&mut app, click()).units(), 1);
     fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn stop_takes_two_presses_then_ends_the_run() {
+    let (mut app, root) = list_app(&["Keep"]);
+    let mut cmd = std::process::Command::new("sleep");
+    cmd.arg("30");
+    start_run(&mut app, "Game".into(), cmd);
+    let pid = app.running.as_ref().unwrap().pid as libc::pid_t;
+    let _ = update_inner(&mut app, Message::StopRun);
+    assert!(app.confirm_stop);
+    assert_eq!(unsafe { libc::kill(pid, 0) }, 0, "one press kills nothing");
+    let _ = update_inner(&mut app, Message::StopRun);
+    finish_tracked_run(&mut app);
+    assert_eq!(
+        app.status.as_deref(),
+        Some(tf("status_run_stopped", &[("title", &"Game")]).as_str())
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_stopped_run_says_stopped_whatever_its_exit_code() {
+    let (mut app, root) = list_app(&["Keep"]);
+    let mut cmd = std::process::Command::new("sh");
+    cmd.args(["-c", "trap 'kill $!; exit 1' TERM; sleep 30 & wait"]); // exits 1 on SIGTERM
+    start_run(&mut app, "Game".into(), cmd);
+    let _ = update_inner(&mut app, Message::StopRun);
+    let _ = update_inner(&mut app, Message::StopRun);
+    finish_tracked_run(&mut app);
+    assert_eq!(
+        app.status.as_deref(),
+        Some(tf("status_run_stopped", &[("title", &"Game")]).as_str())
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn any_other_action_disarms_stop_and_a_prereqs_run_cannot_be_stopped() {
+    let (mut app, root) = list_app(&["Keep"]);
+    let mut cmd = std::process::Command::new("sleep");
+    cmd.arg("30");
+    start_run(&mut app, "Game".into(), cmd);
+    let pid = app.running.as_ref().unwrap().pid as libc::pid_t;
+    let _ = update_inner(&mut app, Message::StopRun);
+    assert!(app.confirm_stop);
+    let _ = update_inner(&mut app, Message::SelectTab(Tab::Data));
+    assert!(!app.confirm_stop);
+    app.running.as_mut().unwrap().stoppable = false;
+    let _ = update_inner(&mut app, Message::StopRun);
+    let _ = update_inner(&mut app, Message::StopRun);
+    assert_eq!(
+        unsafe { libc::kill(pid, 0) },
+        0,
+        "a prerequisite install is never signalled"
+    );
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    finish_tracked_run(&mut app);
+    let _ = fs::remove_dir_all(root);
 }

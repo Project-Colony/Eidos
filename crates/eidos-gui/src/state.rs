@@ -299,6 +299,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         tab: Tab::Data,
         status: None,
         confirm_clear: false,
+        confirm_stop: false,
         overwrite_to_mod: None,
         send_priority: None,
         send_separator: None,
@@ -1217,6 +1218,10 @@ pub(crate) fn start_run_with_log(
             cmd.stderr(std::process::Stdio::from(f));
         }
     }
+    // Before the spawn, so the child's own launch record can never predate it.
+    let started = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
     let child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -1245,6 +1250,9 @@ pub(crate) fn start_run_with_log(
         log,
         lock,
         game: false,
+        stoppable: true,
+        stopped: false,
+        started,
     });
     app.status = Some(if lock {
         tf("status_running_locked", &[("title", &title)])
@@ -1331,8 +1339,10 @@ pub(crate) fn finish_run(app: &mut App) {
             };
         }
     }
-    let mut refused = false;
-    app.status = Some(if failed {
+    app.status = Some(if run.stopped {
+        // The user ended it; the log footer above still records the exit code.
+        tf("status_run_stopped", &[("title", &run.title)])
+    } else if failed {
         match &run.log {
             // When `eidos` itself refused (the instance in use, a list it cannot
             // trust), that sentence IS the answer; "see the log" alone left the
@@ -1341,17 +1351,14 @@ pub(crate) fn finish_run(app: &mut App) {
                 .ok()
                 .and_then(|b| refusal_line(&String::from_utf8_lossy(&b)))
             {
-                Some(reason) => {
-                    refused = true;
-                    tf(
-                        "status_exited_refused",
-                        &[
-                            ("title", &run.title),
-                            ("reason", &reason),
-                            ("log", &p.display()),
-                        ],
-                    )
-                }
+                Some(reason) => tf(
+                    "status_exited_refused",
+                    &[
+                        ("title", &run.title),
+                        ("reason", &reason),
+                        ("log", &p.display()),
+                    ],
+                ),
                 None => tf(
                     "status_exited_error_log",
                     &[("title", &run.title), ("log", &p.display())],
@@ -1363,8 +1370,17 @@ pub(crate) fn finish_run(app: &mut App) {
         tf("status_exited", &[("title", &run.title)])
     });
     // A crash can still exit 0 under Proton; the crash log is the better answer.
-    // A refused launch never started the game, so its crash log is an older one.
-    if run.game && !refused {
+    // Only when this run recorded its start: one that failed or was refused
+    // before that would name the previous session's log. A stopped run is no
+    // crash news, even if the stop made the game write a log.
+    if run.game
+        && !run.stopped
+        && app
+            .created
+            .as_ref()
+            .and_then(|i| i.launch_record().started)
+            .is_some_and(|s| s >= run.started)
+    {
         if let (Some(game), Some(inst)) = (selected_game(app), app.created.as_ref()) {
             let mods = eidos::check::active_mods(inst);
             if let Some(f) = eidos::check::crash::crash_findings(game, inst, &mods).first() {

@@ -67,7 +67,11 @@ pub(crate) fn right_pane<'a>(app: &App) -> Element<'a, Message> {
                 .padding(8),
         )
         .push(Space::new().width(Length::Fill))
-        .push(
+        // While a run Stop can end is tracked, Run would only say it is still
+        // running, so the button ends it instead.
+        .push(if app.running.as_ref().is_some_and(|r| r.stoppable) {
+            stop_button(app.confirm_stop, 15, [10, 10])
+        } else {
             button(
                 Row::new()
                     .spacing(6)
@@ -76,8 +80,9 @@ pub(crate) fn right_pane<'a>(app: &App) -> Element<'a, Message> {
             )
             .padding(10)
             .on_press(Message::Run)
-            .style(button::primary),
-        );
+            .style(button::primary)
+            .into()
+        });
 
     // The tab in force, which is not always `app.tab`: see `effective_tab`.
     let tab = effective_tab(app);
@@ -625,7 +630,7 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         .on_right_press(Message::Noop)
         .on_scroll(|_| Message::Noop)
         .interaction(iced::mouse::Interaction::NotAllowed);
-        let dialog = container(running_lock_card(run)).center(Length::Fill);
+        let dialog = container(running_lock_card(run, app.confirm_stop)).center(Length::Fill);
         layers = layers.push(scrim).push(dialog);
     }
 

@@ -145,6 +145,29 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(tf("status_unlocked", &[("title", &title)]));
             }
         }
+        Message::StopRun => {
+            // Two presses: the first arms, the disarm block in `update_inner`
+            // cancels it on any other action. SIGTERM, not SIGKILL: the `eidos`
+            // child ends its programs itself and then captures and unmounts.
+            let Some(r) = app.running.as_mut().filter(|r| r.stoppable) else {
+                return Task::none();
+            };
+            let title = r.title.clone();
+            if app.confirm_stop {
+                // Once `done` is set the wait thread has reaped the child and
+                // its pid may belong to another process.
+                if !r.done.load(std::sync::atomic::Ordering::SeqCst) {
+                    // SAFETY: kill(2) takes no pointer; the pid is our unreaped child.
+                    unsafe { libc::kill(r.pid as libc::pid_t, libc::SIGTERM) };
+                }
+                r.stopped = true;
+                app.confirm_stop = false;
+                app.status = Some(tf("status_stopping", &[("title", &title)]));
+            } else {
+                app.confirm_stop = true;
+                app.status = Some(tf("status_stop_armed", &[("title", &title)]));
+            }
+        }
         Message::CloseLootReport => {
             app.loot_report = None;
         }
@@ -211,6 +234,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         // No lock overlay: its text is about a game in the merged
                         // view, and it would hide the status naming the log.
                         r.lock = false;
+                        // `eidos prereqs` has no SIGTERM handler: Stop would
+                        // kill winetricks mid-write in the prefix.
+                        r.stoppable = false;
                         app.status =
                             Some(tf("status_installing_prereqs", &[("log", &log.display())]));
                     }

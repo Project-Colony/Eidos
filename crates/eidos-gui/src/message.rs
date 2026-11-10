@@ -650,6 +650,9 @@ pub(crate) enum Message {
     /// The user clicked Unlock: stop waiting and re-enable the UI, but leave the
     /// game running (MO2's force-unlock never kills the process).
     ForceUnlock,
+    /// Stop: the first press arms it, the second sends the `eidos` child SIGTERM,
+    /// which ends its programs and still captures the session.
+    StopRun,
     /// Dismiss the transient status-bar message (the small x next to it).
     ClearStatus,
     // ---- MO2's targeted "Send to" actions (the day-to-day way load orders get

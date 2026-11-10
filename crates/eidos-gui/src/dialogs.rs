@@ -516,8 +516,18 @@ pub(crate) fn cap_warning_banner<'a>() -> Element<'a, Message> {
 
 /// MO2's run-lock overlay card: the GUI is locked while the launched application
 /// runs. Shows what is running and offers Unlock (which stops waiting but leaves
-/// the game running - MO2's force-unlock never kills the process).
-pub(crate) fn running_lock_card<'a>(run: &RunningState) -> Element<'a, Message> {
+/// the game running) and, for a run `eidos` can end cleanly, Stop (two presses,
+/// `armed` after the first).
+pub(crate) fn running_lock_card<'a>(run: &RunningState, armed: bool) -> Element<'a, Message> {
+    let mut buttons = Row::new().spacing(10).push(
+        button(text(t("lock_unlock")).size(sz(13)))
+            .padding([6, 22])
+            .on_press(Message::ForceUnlock)
+            .style(button::primary),
+    );
+    if run.stoppable {
+        buttons = buttons.push(stop_button(armed, 13, [6, 22]));
+    }
     let card = Column::new()
         .spacing(10)
         .align_x(iced::alignment::Horizontal::Center)
@@ -531,17 +541,26 @@ pub(crate) fn running_lock_card<'a>(run: &RunningState) -> Element<'a, Message> 
         )
         .push(text(t("lock_body")).size(sz(11)))
         .push(Space::new().height(Length::Fixed(6.0)))
-        .push(
-            button(text(t("lock_unlock")).size(sz(13)))
-                .padding([6, 22])
-                .on_press(Message::ForceUnlock)
-                .style(button::primary),
-        )
+        .push(buttons)
         .push(text(t("lock_unlock_note")).size(sz(10)).color(text_muted()));
     container(card)
         .max_width(470.0)
         .padding(20)
         .style(card_style)
+        .into()
+}
+
+/// Stop, or "Stop now" once armed: the lock card's and the main screen's.
+pub(crate) fn stop_button<'a>(armed: bool, size: u16, padding: [u16; 2]) -> Element<'a, Message> {
+    let label = if armed {
+        t("run_stop_confirm")
+    } else {
+        t("run_stop")
+    };
+    button(text(label).size(sz(size)))
+        .padding(padding)
+        .on_press(Message::StopRun)
+        .style(button::danger)
         .into()
 }
 
