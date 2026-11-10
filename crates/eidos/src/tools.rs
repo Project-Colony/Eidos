@@ -106,6 +106,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
              \x20 eidos tool <game-id>                       list tools\n\
              \x20 eidos tool <game-id> add <title> <exe> [args...]\n\
              \x20 eidos tool <game-id> rm <title>\n\
+             \x20 eidos tool <game-id> import-mo2 [--write]\n\
              \x20 eidos tool <game-id> run <title> [--print] [-- <extra args>...]"
         );
         exit(if asked_help { 0 } else { 2 });
@@ -206,6 +207,38 @@ pub(crate) fn cmd_tool(args: &[String]) {
             }
             let _ = inst.save_tools(&user);
             println!("Removed '{title}'.");
+        }
+        Some("import-mo2") => {
+            let Some(path) = inst.foreign_mo2_ini() else {
+                eidos_log::warn!(
+                    "No ModOrganizer.ini from Mod Organizer 2 in {}.",
+                    inst.root.display()
+                );
+                exit(1);
+            };
+            let ini = match std::fs::read(&path) {
+                Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+                Err(e) => {
+                    eidos_log::warn!("could not read {}: {e}", path.display());
+                    exit(1);
+                }
+            };
+            let found = eidos_instance::mo2_executables(&ini, &inst.root, game_executables(&game));
+            let user = inst.tools();
+            let (added, report) = mo2_import_plan(&found, &user);
+            print!("{report}");
+            if !args[2..].iter().any(|a| a == "--write") {
+                println!("Nothing written. Add them: eidos tool {id} import-mo2 --write");
+                return;
+            }
+            let n = added.len();
+            match inst.save_tools(&[user, added].concat()) {
+                Ok(()) => println!("Added {n} tool(s) to tools.ini."),
+                Err(e) => {
+                    eidos_log::warn!("could not save tools.ini: {e}");
+                    exit(1);
+                }
+            }
         }
         Some("run") => {
             let Some(title) = args.get(2) else {
@@ -565,10 +598,52 @@ pub(crate) fn cmd_tool(args: &[String]) {
             );
         }
         Some(other) => {
-            eidos_log::warn!("unknown tool subcommand '{other}' (list | add | rm | run)");
+            eidos_log::warn!(
+                "unknown tool subcommand '{other}' (list | add | rm | run | import-mo2)"
+            );
             exit(2);
         }
     }
+}
+
+/// The tools an MO2 import adds, and the report that lists each entry. A title
+/// the user already has, or one added earlier in the same import, is skipped
+/// (ignoring case): an import never replaces a tool.
+fn mo2_import_plan(
+    found: &[eidos_instance::Mo2Executable],
+    user: &[eidos_instance::Tool],
+) -> (Vec<eidos_instance::Tool>, String) {
+    use eidos_instance::Mo2Skip;
+    let mut added: Vec<eidos_instance::Tool> = Vec::new();
+    let mut report = String::new();
+    for entry in found {
+        let title = &entry.title;
+        let line = match &entry.result {
+            Err(Mo2Skip::Unplaced(binary)) => {
+                format!("  skip  {title}  {binary} is not under this list's folder")
+            }
+            Err(Mo2Skip::NotFound(binary)) => format!("  skip  {title}  {binary} was not found"),
+            Ok(tool)
+                if user
+                    .iter()
+                    .chain(&added)
+                    .any(|t| t.title.eq_ignore_ascii_case(&tool.title)) =>
+            {
+                format!("  skip  {title}  a tool named {title} already exists")
+            }
+            Ok(tool) => {
+                let command = std::iter::once(tool.exe.display().to_string())
+                    .chain(tool.args.iter().cloned())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                added.push(tool.clone());
+                format!("  add   {title}  {command}")
+            }
+        };
+        report.push_str(&line);
+        report.push('\n');
+    }
+    (added, report)
 }
 
 /// What `eidos tool run --print` shows: the command, and every variable the run
@@ -986,5 +1061,38 @@ mod env_fact_tests {
             (k == "LD_PRELOAD").then(|| "/b/libx.so".to_string())
         });
         assert_eq!(get(&env, "LD_PRELOAD"), None);
+    }
+}
+
+#[cfg(test)]
+mod import_mo2_tests {
+    use super::*;
+    use eidos_instance::{Mo2Executable, Tool};
+
+    #[test]
+    fn an_import_never_replaces_a_tool_title() {
+        let tool = |t: &str| Tool {
+            title: t.into(),
+            exe: format!("/t/{t}.exe").into(),
+            ..Default::default()
+        };
+        let ok = |t: &str| Mo2Executable {
+            title: t.into(),
+            binary: format!("Z:/t/{t}.exe"),
+            arguments: String::new(),
+            result: Ok(tool(t)),
+        };
+        let (added, report) = mo2_import_plan(
+            &[ok("SSEEdit"), ok("Other"), ok("Other")],
+            &[tool("SSEEdit")],
+        );
+        assert_eq!(
+            added.iter().map(|t| t.title.as_str()).collect::<Vec<_>>(),
+            ["Other"]
+        );
+        assert!(
+            report.contains("a tool named SSEEdit already exists"),
+            "{report}"
+        );
     }
 }

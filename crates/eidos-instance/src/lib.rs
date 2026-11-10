@@ -43,7 +43,7 @@ pub use export::{csv_quote, fmt_mtime, mod_list_csv, Column, ExportScope};
 pub use launch_record::{GameBuild, LaunchRecord};
 pub use manifest::Manifest;
 pub use meta::ModMeta;
-pub use mo2_ini::Mo2Ini;
+pub use mo2_ini::{mo2_executables, Mo2Executable, Mo2Ini, Mo2Skip};
 pub use mod_backup::{backup_mod, reserve_mod_backup};
 pub use profile::{
     cosave_siblings, format_stamp, is_save_data, is_save_listing, read_text_lossy, untweak_ini,
