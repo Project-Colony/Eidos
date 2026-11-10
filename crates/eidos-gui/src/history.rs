@@ -60,10 +60,6 @@ impl History {
         Self::step(&mut self.redo, &mut self.undo, &mut self.mods)
     }
 
-    pub(crate) fn clear(&mut self) {
-        *self = Self::default();
-    }
-
     /// Take the newest step of `from`, and push the state it replaces onto `to`
     /// so the opposite command can bring it back.
     fn step(

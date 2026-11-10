@@ -6489,6 +6489,12 @@ fn undo_refuses_after_mods_were_added_removed_or_renamed() {
     assert!(app.status.as_deref().unwrap().contains("Cannot undo"));
     let _ = update(&mut app, Message::Undo);
     assert!(app.status.as_deref().unwrap().contains("Nothing to undo"));
+    // The refusal said the history was cleared, so the next change is recorded.
+    let _ = update(&mut app, Message::ToggleMod(0));
+    assert!(app.mods[0].enabled);
+    let _ = update(&mut app, Message::Undo);
+    assert!(app.status.as_deref().unwrap().contains("Undid"));
+    assert!(!app.mods[0].enabled);
 }
 
 #[test]

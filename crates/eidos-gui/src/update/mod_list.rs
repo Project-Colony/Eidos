@@ -1792,14 +1792,17 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
 /// Put the mod list back to `state`, an undo or redo step. Only order and
 /// enabled flags are restored: a step taken before a mod was added, removed or
 /// renamed no longer matches the folders on disk, so it is refused and the
-/// history dropped.
+/// history restarts from the list as it is.
 fn apply_mods_step(app: &mut App, state: crate::history::ModsState, undo: bool) {
     let mut want: Vec<&str> = state.iter().map(|(n, _)| n.as_str()).collect();
     let mut have: Vec<&str> = app.mods.iter().map(|m| m.name.as_str()).collect();
     want.sort_unstable();
     have.sort_unstable();
     if want != have {
-        app.history.borrow_mut().clear();
+        // `step` already moved the baseline to the stale state; the list on
+        // screen still matches disk, so later edits are recorded from it.
+        let now = crate::history::mods_state(&app.mods);
+        app.history.borrow_mut().reset(now);
         app.status = Some(t("status_undo_list_changed").to_string());
         return;
     }
