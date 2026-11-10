@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=f0691af21e1c6f78e20f42b440dc4cf9e4328a67 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=b5edc34c215538169c79791bdca9a79b41d45e15 -->
 
 # Eidos verwenden
 
@@ -267,9 +267,7 @@ führen Sie den Befehl noch einmal aus: nach diesen Mitgliedern wird bei jedem
 Lauf in `downloads/` gesucht, sodass die Collection in dem Maße fertig wird, wie
 Sie sie beliefern.
 
-Noch nicht angewendet und im Bericht benannt statt übergangen: **Binärpatches**,
-**Datei-Überschreibungen** und Mitglieder, deren Dateien im Archiv der Collection
-selbst mitreisen (`bundle`). Mitglieder, die die Collection von Ihnen von Hand
+Angewendet, wie die Collection es beschreibt: **Binärpatches** (jeder wird gegen seine aufgezeichnete CRC geprüft), **Datei-Überschreibungen** (die genannten Dateien werden wie in MO2 mit `.mohidden` ausgeblendet) und Mitglieder, deren Dateien im Archiv der Collection selbst mitreisen (`bundle`). Mitglieder, die die Collection von Ihnen von Hand
 geholt haben will (`browse`, `manual`), tragen die eigenen Anweisungen des Autors
 bis in den Bericht. Ein Mitglied, dessen Name schon eine Ihrer Mods ist, wird
 neben ihr unter einem freien Namen installiert, nie über sie, und der Bericht

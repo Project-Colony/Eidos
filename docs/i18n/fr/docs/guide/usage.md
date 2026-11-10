@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=f0691af21e1c6f78e20f42b440dc4cf9e4328a67 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=b5edc34c215538169c79791bdca9a79b41d45e15 -->
 
 # Utiliser Eidos
 
@@ -269,9 +269,7 @@ site et relancez la commande : ces membres sont cherchés dans `downloads/` à
 chaque exécution, si bien que la collection s'achève à mesure que vous la
 fournissez.
 
-Pas encore appliqués, et nommés dans le rapport plutôt que passés sous silence :
-les **patchs binaires**, les **surcharges de fichiers**, et les membres dont les
-fichiers voyagent à l'intérieur de l'archive de la collection (`bundle`). Les
+Appliqués comme la collection les décrit : les **patchs binaires** (chacun est vérifié par rapport au CRC enregistré), les **surcharges de fichiers** (les fichiers nommés sont masqués avec `.mohidden`, comme le fait MO2) et les membres dont les fichiers voyagent à l'intérieur de l'archive de la collection (`bundle`). Les
 membres que la collection attend que vous récupériez à la main (`browse`,
 `manual`) transmettent jusque dans le rapport les instructions de l'auteur
 lui-même. Un membre dont le nom est déjà celui d'un de vos mods est installé à

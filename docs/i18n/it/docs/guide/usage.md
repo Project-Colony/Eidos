@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=f0691af21e1c6f78e20f42b440dc4cf9e4328a67 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=b5edc34c215538169c79791bdca9a79b41d45e15 -->
 
 # Usare Eidos
 
@@ -262,9 +262,7 @@ pulsante del sito ed esegui di nuovo il comando: quei membri vengono cercati in
 `downloads/` a ogni esecuzione, così la collezione si completa man mano che li
 fornisci.
 
-Non ancora applicate, e nominate nel rapporto invece che passate sotto silenzio:
-le **patch binarie**, le **sovrascritture di file** e i membri i cui file
-viaggiano dentro l'archivio della collezione (`bundle`). I membri che la
+Applicati come li descrive la collezione: le **patch binarie** (ognuna verificata con il CRC registrato), le **sovrascritture di file** (i file indicati vengono nascosti con `.mohidden`, come fa MO2) e i membri i cui file viaggiano dentro l'archivio della collezione (`bundle`). I membri che la
 collezione si aspetta che tu scarichi a mano (`browse`, `manual`) portano fino
 al rapporto le istruzioni dell'autore stesso. Un membro il cui nome è già una
 tua mod viene installato accanto a essa con un nome libero, mai sopra di essa, e

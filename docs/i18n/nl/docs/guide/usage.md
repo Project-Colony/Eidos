@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=f0691af21e1c6f78e20f42b440dc4cf9e4328a67 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=b5edc34c215538169c79791bdca9a79b41d45e15 -->
 
 # Eidos gebruiken
 
@@ -256,9 +256,7 @@ voorbij. Haal ze op via de knop van de site en draai de opdracht opnieuw: er
 wordt bij elke run in `downloads/` naar die leden gezocht, zodat de collectie
 afgemaakt wordt naarmate jij ze aanlevert.
 
-Nog niet toegepast, en in het verslag benoemd in plaats van overgeslagen:
-**binaire patches**, **bestandsoverrides**, en leden waarvan de bestanden binnen
-het collectiearchief meereizen (`bundle`). Leden die de collectie je met de hand
+Toegepast zoals de collectie het beschrijft: **binaire patches** (elk gecontroleerd tegen de vastgelegde CRC), **bestandsoverrides** (de genoemde bestanden worden met `.mohidden` verborgen, zoals MO2 doet) en leden waarvan de bestanden binnen het collectiearchief meereizen (`bundle`). Leden die de collectie je met de hand
 laat ophalen (`browse`, `manual`) dragen de eigen instructies van de auteur door
 tot in het verslag. Een lid waarvan de naam al een mod van jou is, wordt ernaast
 geïnstalleerd onder een vrije naam, nooit eroverheen, en het verslag zegt welke.

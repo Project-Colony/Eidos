@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=f0691af21e1c6f78e20f42b440dc4cf9e4328a67 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=b5edc34c215538169c79791bdca9a79b41d45e15 -->
 
 # Usar Eidos
 
@@ -257,9 +257,7 @@ que valga para saltársela. Consíguelos con el botón del sitio y vuelve a ejec
 la orden: esos miembros se buscan en `downloads/` en cada ejecución, así que la
 colección se termina a medida que tú la vas surtiendo.
 
-Todavía no se aplican, y se nombran en el informe en vez de pasarse por alto: los
-**parches binarios**, las **sobrescrituras de ficheros** y los miembros cuyos
-ficheros viajan dentro del archivo de la colección (`bundle`). Los miembros que la
+Se aplican como la colección los describe: los **parches binarios** (cada uno se comprueba con su CRC registrado), las **sobrescrituras de ficheros** (los ficheros indicados se ocultan con `.mohidden`, como hace MO2) y los miembros cuyos ficheros viajan dentro del archivo de la colección (`bundle`). Los miembros que la
 colección espera que consigas a mano (`browse`, `manual`) llevan las propias
 instrucciones del autor hasta el informe. Un miembro cuyo nombre ya es un mod tuyo
 se instala al lado, con un nombre libre, nunca encima, y el informe dice cuál.

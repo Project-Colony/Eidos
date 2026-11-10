@@ -2195,10 +2195,11 @@ pub(crate) fn game_manages_plugins(app: &App) -> bool {
 
 /// Whether this game has plugins AT ALL, managed by Eidos or not.
 ///
-/// Wider than [`game_manages_plugins`]: Oblivion and Morrowind have `.esp` files
-/// and a load order, Eidos just does not write it for them. Advice about plugins
-/// is worth giving there and meaningless for a game with no plugin system, which
-/// is the distinction these two predicates exist to keep apart.
+/// Wider than [`game_manages_plugins`] only for a descriptor that declares a load
+/// order but has no `GameSpec`; no built-in game is one today (Oblivion and
+/// Morrowind have a `GameSpec` and are managed). Advice about plugins is worth
+/// giving there and meaningless for a game with no plugin system, which is the
+/// distinction these two predicates exist to keep apart.
 pub(crate) fn game_has_plugins(app: &App) -> bool {
     selected_game(app).is_some_and(|g| g.def.load_order != eidos_games::LoadOrder::None)
 }

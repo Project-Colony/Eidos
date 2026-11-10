@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=f0691af21e1c6f78e20f42b440dc4cf9e4328a67 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=b5edc34c215538169c79791bdca9a79b41d45e15 -->
 
 # Używanie Eidos
 
@@ -253,9 +253,7 @@ obejdzie. Pobierz ich przyciskiem w serwisie i uruchom polecenie ponownie: tych
 członków szuka się w `downloads/` przy każdym uruchomieniu, więc kolekcja domyka
 się w miarę, jak ich dostarczasz.
 
-Jeszcze niestosowane, a wymienione z nazwy w raporcie zamiast pominięte:
-**poprawki binarne**, **nadpisania plików** oraz członkowie, których pliki
-podróżują wewnątrz archiwum kolekcji (`bundle`). Członkowie, których kolekcja
+Stosowane tak, jak opisuje je kolekcja: **poprawki binarne** (każda sprawdzana względem zapisanego CRC), **nadpisania plików** (wskazane pliki są ukrywane przez `.mohidden`, tak jak robi to MO2) oraz członkowie, których pliki podróżują wewnątrz archiwum kolekcji (`bundle`). Członkowie, których kolekcja
 każe pobrać ręcznie (`browse`, `manual`), niosą własne instrukcje autora aż do
 raportu. Członek, którego nazwę nosi już któryś z twoich modów, instaluje się
 obok niego pod wolną nazwą, nigdy na niego, a raport mówi, kogo to dotyczy.

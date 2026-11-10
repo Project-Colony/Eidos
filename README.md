@@ -153,8 +153,9 @@ generator receipts, including their limits.
 (F4SE swapped in automatically, archive invalidation, asterisk load order, LOOT,
 `.fos` saves) - see [guide/fallout4.md](docs/guide/fallout4.md). Wired per the shared game descriptor and
 looking for testers: Skyrim LE, Skyrim VR, Enderal SE, Fallout 3, Fallout NV,
-Fallout 4 (+ VR), Starfield, Oblivion and Morrowind (the last two mount and
-manage mods; their timestamp-ordered plugin lists are not managed yet).
+Fallout 4 (+ VR), Starfield, Oblivion and Morrowind (their load order is the
+plugin files' dates: Eidos keeps one order per profile and shows those dates
+inside the mount, without changing the files on disk).
 
 Adding a family is one descriptor row:
 [internals/adding-games.md](docs/internals/adding-games.md).

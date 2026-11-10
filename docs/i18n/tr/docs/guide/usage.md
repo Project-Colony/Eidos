@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=f0691af21e1c6f78e20f42b440dc4cf9e4328a67 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=b5edc34c215538169c79791bdca9a79b41d45e15 -->
 
 # Eidos kullanımı
 
@@ -251,9 +251,7 @@ kuralıdır ve ne kadar yeniden denerseniz deneyin aşılmaz. Onları sitenin
 düğmesiyle getirin ve komutu yeniden çalıştırın: o üyeler her koşuda
 `downloads/` içinde aranır, yani koleksiyon siz sağladıkça tamamlanır.
 
-Henüz uygulanmayan ve göz ardı edilmek yerine raporda adı geçenler: **ikili
-yamalar**, **dosya geçersiz kılmaları** ve dosyaları koleksiyon arşivinin içinde
-gelen üyeler (`bundle`). Koleksiyonun elle getirmenizi beklediği üyeler
+Koleksiyonun tarif ettiği gibi uygulanır: **ikili yamalar** (her biri kayıtlı CRC ile denetlenir), **dosya geçersiz kılmaları** (adı geçen dosyalar MO2'nin yaptığı gibi `.mohidden` ile gizlenir) ve dosyaları koleksiyon arşivinin içinde gelen üyeler (`bundle`). Koleksiyonun elle getirmenizi beklediği üyeler
 (`browse`, `manual`), yazarın kendi yönergelerini rapora taşır. Adı zaten sizin
 bir modunuzun adı olan bir üye, onun üzerine değil, yanına, boşta bir adla
 kurulur ve rapor hangisi olduğunu söyler.

@@ -248,9 +248,10 @@ rule, and no amount of retrying gets past it. Fetch them through the site's
 button and run the command again: those members are looked for in `downloads/`
 on every run, so the collection finishes as you supply it.
 
-Not applied yet, and named in the report rather than passed over: **binary
-patches**, **file overrides**, and members whose files travel inside the
-collection archive (`bundle`). Members the collection expects you to fetch by
+Applied as the collection describes: **binary patches** (each checked against
+its recorded CRC), **file overrides** (the named files are hidden with
+`.mohidden`, as MO2 does) and members whose files travel inside the collection
+archive (`bundle`). Members the collection expects you to fetch by
 hand (`browse`, `manual`) carry the author's own instructions through to the
 report. A member whose name is already a mod of yours is installed beside it
 under a free name, never over it, and the report says which.

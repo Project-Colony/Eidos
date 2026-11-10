@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=bf2a3d995d27b69444b8e0497adb217856e87ce8 -->
+<!-- eidos-i18n: source=README.md sha=24a826cf58aaf1ab0e91bef4d7acfb7ebb818ed3 -->
 
 <div align="center">
 
@@ -152,8 +152,7 @@ extender каже про справді завантажене.
 початку до кінця (F4SE підставляється автоматично, інвалідація архівів, порядок
 завантаження із зірочкою, LOOT, збереження `.fos`) - див. [guide/fallout4.uk.md](docs/guide/fallout4.md). Під'єднані через спільний дескриптор гри й
 шукають тестувальників: Skyrim LE, Skyrim VR, Enderal SE, Fallout 3, Fallout NV,
-Fallout 4 (+ VR), Starfield, Oblivion і Morrowind (останні дві монтують і керують
-модами; їхні впорядковані за часовими мітками списки плагінів поки не керовані).
+Fallout 4 (+ VR), Starfield, Oblivion і Morrowind (їхній порядок завантаження задають дати файлів плагінів: Eidos тримає один порядок на профіль і показує ці дати всередині монтування, не змінюючи файли на диску).
 
 Додати сімейство - це один рядок дескриптора:
 [internals/adding-games.md](../../internals/adding-games.md).

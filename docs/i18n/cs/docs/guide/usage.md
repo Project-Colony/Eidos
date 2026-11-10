@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=f0691af21e1c6f78e20f42b440dc4cf9e4328a67 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=b5edc34c215538169c79791bdca9a79b41d45e15 -->
 
 # Používání Eidosu
 
@@ -240,9 +240,7 @@ pravidlo Nexusu a žádné množství opakovaných pokusů se přes ně nedostan
 Stáhněte je tlačítkem na webu a spusťte příkaz znovu: tito členové se při každém
 běhu hledají v `downloads/`, takže se kolekce dokončuje tak, jak ji dodáváte.
 
-Zatím se nepoužijí a ve zprávě se jmenují, místo aby se mlčky přešly: **binární
-patche**, **přepisy souborů** a členové, jejichž soubory cestují uvnitř archivu
-kolekce (`bundle`). U členů, u kterých kolekce čeká, že si je stáhnete ručně
+Použije se tak, jak kolekce popisuje: **binární patche** (každý se ověří podle zaznamenaného CRC), **přepisy souborů** (pojmenované soubory se skryjí pomocí `.mohidden`, stejně jako v MO2) a členové, jejichž soubory cestují uvnitř archivu kolekce (`bundle`). U členů, u kterých kolekce čeká, že si je stáhnete ručně
 (`browse`, `manual`), se do zprávy přenesou vlastní pokyny autora. Člen, jehož
 název už patří některému z vašich módů, se nainstaluje vedle něj pod volným
 názvem, nikdy přes něj, a zpráva řekne, o který jde.

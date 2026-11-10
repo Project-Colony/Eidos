@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=bf2a3d995d27b69444b8e0497adb217856e87ce8 -->
+<!-- eidos-i18n: source=README.md sha=24a826cf58aaf1ab0e91bef4d7acfb7ebb818ed3 -->
 
 <div align="center">
 
@@ -158,9 +158,7 @@ aangesloten (F4SE wordt automatisch in de plaats gezet, archiefinvalidatie,
 laadvolgorde met asterisken, LOOT, `.fos`-saves) - zie
 [guide/fallout4.md](docs/guide/fallout4.md). Aangesloten volgens de
 gedeelde speldescriptor en op zoek naar testers: Skyrim LE, Skyrim VR, Enderal
-SE, Fallout 3, Fallout NV, Fallout 4 (+ VR), Starfield, Oblivion en Morrowind
-(die laatste twee koppelen en beheren mods; hun op tijdstempel geordende
-pluginlijsten worden nog niet beheerd).
+SE, Fallout 3, Fallout NV, Fallout 4 (+ VR), Starfield, Oblivion en Morrowind (hun laadvolgorde zijn de datums van de pluginbestanden: Eidos houdt één volgorde per profiel bij en toont die datums binnen de mount, zonder de bestanden op schijf te wijzigen).
 
 Een familie toevoegen is één descriptorregel:
 [internals/adding-games.md](../../internals/adding-games.md).

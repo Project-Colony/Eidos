@@ -314,7 +314,7 @@ echo "  $bindir/eidos games          # what Eidos can see on this machine"
 echo "  $bindir/eidos-gui            # the GUI"
 echo
 echo "Steam launch option for a game (absolute path: Steam does not read your PATH):"
-echo "  WINEDLLOVERRIDES=\"d3dcompiler_47=n\" $bindir/eidos-gui %command%"
+echo "  $bindir/eidos-gui %command%"
 echo
 echo "Re-run this script after every upgrade. A rebuilt binary is a new file and"
 echo "does not inherit an optional capability; use --cap again only if needed."
