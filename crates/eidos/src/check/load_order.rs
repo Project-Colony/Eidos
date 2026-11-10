@@ -116,7 +116,9 @@ pub fn starfield_findings(list: &eidos_plugins::PluginList) -> Vec<Finding> {
     let invalid: Vec<&str> = on
         .iter()
         .filter(|p| {
-            p.is_blueprint != (has_blueprint_prefix(&p.name) && ends_with_ci(&p.name, ".esm"))
+            let prefix = has_blueprint_prefix(&p.name);
+            (p.is_blueprint && !(prefix && ends_with_ci(&p.name, ".esm")))
+                || (!p.is_blueprint && prefix)
         })
         .map(|p| p.name.as_str())
         .collect();
@@ -294,6 +296,7 @@ mod tests {
                 sf("BlueprintShips-B.esp", true, false, true),
                 sf("Ships-C.esm", true, true, true),
                 sf("BlueprintShips-D.esm", false, true, true),
+                sf("BlueprintShips-E.esp", false, false, true),
             ],
             ..Default::default()
         };
@@ -304,7 +307,7 @@ mod tests {
         assert_eq!(bad.level, Level::Problem);
         assert_eq!(
             bad.arg("plugins"),
-            Some("BlueprintShips-B.esp, Ships-C.esm, BlueprintShips-D.esm")
+            Some("BlueprintShips-B.esp, Ships-C.esm, BlueprintShips-D.esm, BlueprintShips-E.esp")
         );
     }
     #[test]
