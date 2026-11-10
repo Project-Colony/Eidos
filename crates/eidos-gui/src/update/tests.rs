@@ -7829,6 +7829,28 @@ fn add_tool_from_data_opens_the_editor_prefilled_and_writes_nothing() {
 }
 
 #[test]
+fn save_tree_writes_every_winner_with_its_mod_and_reports_the_count() {
+    let (mut app, root) = data_app(&[("textures/a.dds", "mod"), ("meta.ini", "[General]")], &[]);
+    let out = root.join("tree.txt");
+    let task = update_inner(&mut app, Message::DataSaveTreeTo(Some(out.clone())));
+    installers::tests::drive(&mut app, task);
+    let text = fs::read_to_string(&out).unwrap();
+    let lines: Vec<&str> = text.lines().skip(1).collect();
+    assert_eq!(lines, ["Skyrim.esm\t[skyrimse]", "textures/a.dds\tAAA"]);
+    assert_eq!(
+        app.status.as_deref(),
+        Some(
+            tf(
+                "status_data_tree_saved",
+                &[("n", &2), ("path", &out.display())]
+            )
+            .as_str()
+        )
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn a_saved_tree_answer_disarms_nothing() {
     let app = nav_app(&[]);
     assert!(is_ambient(

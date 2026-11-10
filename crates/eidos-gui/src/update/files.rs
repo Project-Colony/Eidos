@@ -201,8 +201,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             );
             return Task::perform(
                 crate::background_work::run(move || {
-                    let stack = eidos_core::LayerStack::new_unindexed(layers, overwrite)
-                        .hiding_mod_metadata();
+                    // Indexed: a whole-tree walk unindexed costs dirs x layers x
+                    // depth directory reads (see `data_stack`).
+                    let stack =
+                        eidos_core::LayerStack::new(layers, overwrite).hiding_mod_metadata();
                     let body = crate::view::merged_tree_text(&stack, &sources);
                     let text = format!("{}{body}", eidos_log::redact(&header));
                     std::fs::write(&path, &text)
