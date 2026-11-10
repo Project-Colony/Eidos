@@ -3139,6 +3139,8 @@ mod tests {
             names.sort();
             assert_eq!(names, ["Skyrim.esm", "a.esp"]);
             assert!(stack.resolve_read("meta.ini").is_none());
+            // The walk has its own guard, past the index.
+            assert!(stack.resolve_read_walk("meta.ini").is_none());
             assert!(stack.resolve_read("ROOT/skse64_loader.exe").is_none());
             assert!(stack.list_dir("Root").is_empty());
             assert!(!stack.needs_copy_up("readme.txt"));
@@ -3176,6 +3178,13 @@ mod tests {
             .list_dir("Root")
             .iter()
             .any(|(n, _)| n == "enblocal.ini"));
+        // A mod's own Root/ stays out, under the Overwrite's Root/ too.
+        assert!(stack.resolve_read("Root/skse64_loader.exe").is_none());
+        assert!(stack.resolve_read("ROOT/Skse64_Loader.exe").is_none());
+        assert!(!stack
+            .list_dir("root")
+            .iter()
+            .any(|(n, _)| n.eq_ignore_ascii_case("skse64_loader.exe")));
     }
 
     #[test]

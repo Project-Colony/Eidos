@@ -1891,11 +1891,15 @@ mod tests {
         let dir = tmp_dir();
         let junk = dir.join("junk.skse");
         fs::write(&junk, b"not a save").unwrap();
-        let [s1, s2, s3, s4] = [0; 4].map(|_| Build::new().write());
-        let got = newest_saves([junk, s1.clone(), s2.clone(), s3.clone(), s4], 3);
+        let saves = [0; 4].map(|_| Build::new().write());
+        let got = newest_saves([junk].into_iter().chain(saves.clone()), 3);
+        // `write` puts each save in the temp dir itself, outside `dir`.
+        for s in &saves {
+            let _ = fs::remove_file(s);
+        }
         assert_eq!(
             got.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>(),
-            [s1, s2, s3]
+            saves[..3]
         );
         assert!(got[0].1.all_plugins().any(|p| p == "MyMod.esp"));
         let _ = fs::remove_dir_all(&dir);
