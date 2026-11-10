@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1d62e34566cf1855eda40becbf2626b490ad7dd0 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
 
 # Používání Eidosu
 
@@ -154,7 +154,8 @@ Eidosem - stažení ze Steam Cloud ze Steam Decku, spuštění bez Eidosu - zůs
 skrytý, dokud jsou savy profilu připojené. Nic ho nemaže: spuštění ho jmenuje
 v logu běhu (`logs/run-*.log` dané instance při spuštění z okna, konzole Steamu
 při spuštění ze Steamu), a to jednou pokaždé, když se ta sada souborů změní.
-Chcete-li ho hrát, zkopírujte jej i s jeho co-savem do složky `saves/` profilu.
+Chcete-li ho hrát, stiskněte Import na kartě Saves. Import ho zkopíruje i s jeho
+co-savem do profilu a žádný sav profilu nenahradí.
 
 ### Co se změnilo od posledního úspěšného spuštění
 
@@ -512,6 +513,18 @@ konci běhu hry nebo nástroje, při přepnutí profilu a když seznam změní j
 proces Eidos. Instalace, přejmenování nebo odebrání modu mění složky na disku,
 takže vrácení za takový krok je odmítnuto.
 
+### Filtrování seznamu
+
+Tlačítko Filters otevře jeden řádek pro každé kritérium: aktivní, v konfliktu,
+dostupná aktualizace, bez kategorie, doporučené na Nexusu (endorsed), sledované
+(tracked), s Nexus id, se skrytými soubory, bez platných herních dat, pro jinou
+hru, s poznámkami, a jeden řádek pro každý druh obsahu (pluginy, archivy BSA
+nebo BA2, textury, meshe, skripty, pluginy script extenderu, soubory rozhraní,
+zvuk, FaceGen). Kliknutí přepíná řádek dokola mezi vypnuto, „only" a „except".
+Řádek nahoře přepíná mezi módy, které splňují všechna zapnutá kritéria, a módy,
+které splňují aspoň jedno z nich. Pole pro název a seznam kategorií výsledek
+vždy dále zužují. Řádek se skrytými soubory se dívá jen na zapnuté módy.
+
 ### Co vám seznam o módu řekne
 
 Dva poradní příznaky, oba glyf s vysvětlením po najetí myší. **No valid game
@@ -564,6 +577,12 @@ prohlížeči). Jeho záhlaví počítá zapnuté pluginy v každém indexovém 
 čas - a porovná seznam pluginů zapečený uvnitř s vaším současným, s tlačítkem, které
 zapne módy, jež sav potřebuje, protože pojmenovat je a nechat to na vás je ta
 nudná polovina.
+
+Když najedete na plugin, zobrazí se, odkud pochází, jeho autor, verze hlavičky a formuláře, prvních 300 znaků popisu, jeho master soubory a po řazení LOOT také zprávy z LOOT. Na Skyrimu, Skyrimu SE, Skyrimu VR a Enderalu SE hra čte také INI pojmenovaný podle načteného pluginu; sloupec INI tyto pluginy označuje a kliknutí otevře soubor jen pro čtení.
+
+Řádek `.exe` na kartě Data má tlačítko Add tool, které otevře editor Executables s vyplněným souborem (nic se neuloží, dokud nestisknete Save), a tlačítko Run, které soubor jednou spustí ve sloučeném pohledu jako registrovaný nástroj. Save tree zapíše celý sloučený strom Data do textového souboru, jeden řádek na soubor s modem, který jej poskytuje, bez vaší domovské složky a uživatelského jména, pro hlášení chyby.
+
+Savy, které Steam Cloud stáhne z jiného zařízení nebo které zapíše spuštění bez Eidosu, skončí ve vlastní složce savů hry, kterou savy profilu po dobu běhu hry překrývají. Karta Saves je spočítá na řádku pod svým nadpisem a Import zkopíruje každý z nich i s jeho co-savem do profilu. Sav, jehož jméno už profil používá, se importuje jako `orphan-<time>-<name>`; nic v profilu se nenahradí.
 
 „Information..." otevře dialog konkrétního módu: obecné, konflikty, strom
 souborů, úpravy INI, poznámky. Ze stromu souborů (a ze stromu Data) lze

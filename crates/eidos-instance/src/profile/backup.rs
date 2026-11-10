@@ -47,6 +47,10 @@ pub enum BackupKind {
     /// Backed up and restored TOGETHER: they describe one state between them,
     /// and restoring half of it produces an order the game never had.
     LoadOrder,
+    /// The game's INI files (`GameDef::ini_files`). Unlike the two lists, a
+    /// restore point holds the INIs that exist: a profile often has no Custom
+    /// INI.
+    Inis(&'static [&'static str]),
 }
 
 impl BackupKind {
@@ -54,6 +58,7 @@ impl BackupKind {
         match self {
             BackupKind::ModList => "mod list",
             BackupKind::LoadOrder => "load order",
+            BackupKind::Inis(_) => "INIs",
         }
     }
 }
@@ -114,6 +119,7 @@ impl Profile {
         match kind {
             BackupKind::ModList => &["modlist.txt"],
             BackupKind::LoadOrder => &["plugins.txt", "loadorder.txt"],
+            BackupKind::Inis(files) => files,
         }
     }
 
@@ -121,7 +127,7 @@ impl Profile {
     fn live_dir(&self, kind: BackupKind) -> PathBuf {
         match kind {
             BackupKind::ModList => self.dir(),
-            BackupKind::LoadOrder => self.plugins_state_dir(),
+            BackupKind::LoadOrder | BackupKind::Inis(_) => self.plugins_state_dir(),
         }
     }
 
@@ -130,6 +136,9 @@ impl Profile {
     /// `Plugins.txt`, and reading the exact-case path would silently back up
     /// nothing.
     fn backup_live(&self, kind: BackupKind) -> Vec<PathBuf> {
+        if let BackupKind::Inis(files) = kind {
+            return files.iter().map(|n| self.ini_path(n)).collect();
+        }
         let dir = self.live_dir(kind);
         Self::backup_slots(kind)
             .iter()
@@ -156,7 +165,21 @@ impl Profile {
         // restore points, so writing a partial one produces a success message
         // for something that will never appear in the list - which is exactly
         // how a safety net becomes a lie.
-        let live = self.backup_live(kind);
+        let mut live = self.backup_live(kind);
+        let mut sources = self.backup_sources(kind);
+        if let BackupKind::Inis(_) = kind {
+            let keep: Vec<bool> = live.iter().map(|p| p.is_file()).collect();
+            let mut k = keep.iter();
+            live.retain(|_| *k.next().unwrap());
+            let mut k = keep.iter();
+            sources.retain(|_| *k.next().unwrap());
+            if live.is_empty() {
+                return Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "there is no INI to back up yet",
+                ));
+            }
+        }
         if let Some(missing) = live.iter().find(|p| !p.is_file()) {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
@@ -177,13 +200,30 @@ impl Profile {
         fs::create_dir_all(self.backups_dir())?;
         let stamp = self.free_stamp(kind);
         let mut files = Vec::new();
-        for (bytes, slot) in staged.iter().zip(self.backup_sources(kind)) {
+        for (bytes, slot) in staged.iter().zip(sources) {
             let dst = stamped_path(&slot, stamp);
             write_atomic(&dst, bytes)?;
             files.push(dst);
         }
         self.prune_backups(kind);
         Ok(Backup { stamp, files })
+    }
+
+    /// A restore point of the INIs before a tool that rewrites them runs.
+    /// `Ok(None)` for any other tool, or when the profile holds no INI yet.
+    pub fn ini_restore_point(
+        &self,
+        tool_title: &str,
+        ini_files: &'static [&'static str],
+    ) -> io::Result<Option<Backup>> {
+        if !crate::edits_inis(tool_title) {
+            return Ok(None);
+        }
+        match self.create_backup(BackupKind::Inis(ini_files)) {
+            Ok(b) => Ok(Some(b)),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e),
+        }
     }
 
     /// A stamp no restore point of `kind` is already using.
@@ -211,10 +251,25 @@ impl Profile {
         let Some(first) = sources.first() else {
             return Vec::new();
         };
-        let mut out: Vec<Backup> = stamps_for(first)
+        let any = matches!(kind, BackupKind::Inis(_));
+        let mut stamps = if any {
+            let mut all: Vec<u64> = sources.iter().flat_map(|s| stamps_for(s)).collect();
+            all.sort_unstable();
+            all.dedup();
+            all
+        } else {
+            stamps_for(first)
+        };
+        stamps.reverse();
+        let mut out: Vec<Backup> = stamps
             .into_iter()
             .filter_map(|stamp| {
-                let files: Vec<PathBuf> = sources.iter().map(|s| stamped_path(s, stamp)).collect();
+                let mut files: Vec<PathBuf> =
+                    sources.iter().map(|s| stamped_path(s, stamp)).collect();
+                if any {
+                    files.retain(|f| f.is_file());
+                    return (!files.is_empty()).then_some(Backup { stamp, files });
+                }
                 files
                     .iter()
                     .all(|f| f.is_file())
@@ -229,9 +284,24 @@ impl Profile {
     /// restoring is itself a destructive edit, and the user who picks the wrong
     /// timestamp must be able to walk back out of it.
     pub fn restore_backup(&self, kind: BackupKind, stamp: u64) -> io::Result<()> {
-        let slots = Self::backup_slots(kind);
+        let mut slots: Vec<&'static str> = Self::backup_slots(kind).to_vec();
         let sources = self.backup_sources(kind);
-        let stamped: Vec<PathBuf> = sources.iter().map(|s| stamped_path(s, stamp)).collect();
+        let mut stamped: Vec<PathBuf> = sources.iter().map(|s| stamped_path(s, stamp)).collect();
+        if let BackupKind::Inis(_) = kind {
+            // An INI the stamp does not hold is left as it is.
+            // shortcut: an INI created after the restore point stays; deleting it needs an arming confirmation, add one if users ask
+            let held: Vec<bool> = stamped.iter().map(|p| p.is_file()).collect();
+            let mut k = held.iter();
+            stamped.retain(|_| *k.next().unwrap());
+            let mut k = held.iter();
+            slots.retain(|_| *k.next().unwrap());
+            if stamped.is_empty() {
+                return Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "that backup holds no INI",
+                ));
+            }
+        }
         if let Some(missing) = stamped.iter().find(|p| !p.is_file()) {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
@@ -263,6 +333,7 @@ impl Profile {
         }
         let dir = self.live_dir(kind);
         fs::create_dir_all(&dir)?;
+        fs::create_dir_all(self.dir())?;
         // Keep what is being replaced, in memory, so a failure part-way through
         // a pair can be undone. plugins.txt and loadorder.txt describe ONE
         // state: leaving one restored and one not is the split this whole
@@ -271,7 +342,11 @@ impl Profile {
         for (bytes, slot) in staged.iter().zip(slots) {
             // Through canonical_path, like every other writer: it collapses the
             // case variants the game leaves behind instead of adding one more.
-            let target = eidos_plugins::canonical_path(&dir, slot);
+            let target = if let BackupKind::Inis(_) = kind {
+                self.ini_path(slot)
+            } else {
+                eidos_plugins::canonical_path(&dir, slot)
+            };
             undo.push((target.clone(), fs::read(&target).ok()));
             if let Err(e) = write_atomic(&target, bytes) {
                 for (path, before) in undo.iter().rev().skip(1) {
@@ -377,6 +452,82 @@ mod tests {
 
     fn cleanup(p: &Profile) {
         let _ = fs::remove_dir_all(&p.instance_root);
+    }
+
+    #[test]
+    fn only_ini_tools_take_an_ini_restore_point() {
+        let prof = profile();
+        const FILES: &[&str] = &["Skyrim.ini", "SkyrimPrefs.ini"];
+        assert_eq!(
+            prof.ini_restore_point("BethINI Pie", FILES).unwrap(),
+            None,
+            "nothing to keep yet"
+        );
+        fs::write(prof.ini_path("Skyrim.ini"), "x").unwrap();
+        let kept = prof
+            .ini_restore_point("BethINI Pie", FILES)
+            .unwrap()
+            .expect("kept before BethINI");
+        for _ in 0..30 {
+            assert_eq!(
+                prof.ini_restore_point("SSEEdit QuickAutoClean", FILES)
+                    .unwrap(),
+                None
+            );
+        }
+        assert_eq!(
+            prof.backups(BackupKind::Inis(FILES)),
+            vec![kept],
+            "a clean queue rotates nothing out"
+        );
+        assert!(crate::edits_inis("bethini") && !crate::edits_inis("Bodyslide x64"));
+        cleanup(&prof);
+    }
+
+    #[test]
+    fn ini_restore_point_keeps_the_inis_that_exist_and_puts_them_back() {
+        let prof = profile();
+        const FILES: &[&str] = &["Skyrim.ini", "SkyrimPrefs.ini", "SkyrimCustom.ini"];
+        fs::write(prof.ini_path("Skyrim.ini"), "[General]\nsLanguage=FRENCH\n").unwrap();
+        fs::write(
+            prof.ini_path("SkyrimPrefs.ini"),
+            "[Display]\niSize W=2560\n",
+        )
+        .unwrap();
+        let b = prof.create_backup(BackupKind::Inis(FILES)).unwrap();
+        assert_eq!(b.files.len(), 2, "no Custom INI to copy");
+        assert_eq!(prof.backups(BackupKind::Inis(FILES)), vec![b.clone()]);
+        fs::write(prof.ini_path("Skyrim.ini"), "").unwrap();
+        fs::write(prof.ini_path("SkyrimPrefs.ini"), "[Display]\niSize W=800\n").unwrap();
+        prof.restore_backup(BackupKind::Inis(FILES), b.stamp)
+            .unwrap();
+        assert_eq!(
+            fs::read_to_string(prof.ini_path("Skyrim.ini")).unwrap(),
+            "[General]\nsLanguage=FRENCH\n"
+        );
+        assert_eq!(
+            fs::read_to_string(prof.ini_path("SkyrimPrefs.ini")).unwrap(),
+            "[Display]\niSize W=2560\n"
+        );
+        assert_eq!(
+            prof.backups(BackupKind::Inis(FILES)).len(),
+            2,
+            "the replaced state was kept first"
+        );
+        // The list kinds keep their all-or-nothing rule: half a load order is refused.
+        fs::remove_file(prof.loadorder_txt_path()).unwrap();
+        assert!(prof.create_backup(BackupKind::LoadOrder).is_err());
+        cleanup(&prof);
+    }
+
+    #[test]
+    fn an_ini_restore_point_needs_at_least_one_ini() {
+        let prof = profile();
+        let err = prof
+            .create_backup(BackupKind::Inis(&["Skyrim.ini"]))
+            .unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+        cleanup(&prof);
     }
 
     #[test]

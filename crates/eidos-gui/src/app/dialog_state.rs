@@ -277,6 +277,8 @@ pub(crate) enum PickerChoice {
 pub(crate) struct BackupsDialogState {
     pub(crate) mods: Vec<eidos_instance::Backup>,
     pub(crate) order: Vec<eidos_instance::Backup>,
+    /// The game's INI names and their restore points; `Some` when the game has INIs.
+    pub(crate) inis: Option<(&'static [&'static str], Vec<eidos_instance::Backup>)>,
 }
 
 /// The Categories dialog. Two modes in one card: assigning categories to the

@@ -106,6 +106,12 @@ impl GameSpec {
         })
     }
 
+    /// Skyrim reads `<plugin>.ini` beside a loaded plugin; the other engines are
+    /// not known to.
+    pub fn loads_plugin_inis(&self) -> bool {
+        matches!(self.esplugin_id, GameId::Skyrim | GameId::SkyrimSE)
+    }
+
     fn light_supported(&self) -> bool {
         self.esplugin_id.supports_light_plugins()
     }
@@ -151,6 +157,12 @@ pub struct Plugin {
     pub header_error: Option<String>,
     /// TES4 record form version (distinct from the HEDR plugin version).
     pub form_version: Option<u16>,
+    /// TES4 CNAM (or the TES3 HEDR author field); `None` when absent or empty.
+    pub author: Option<String>,
+    /// TES4 SNAM (or the TES3 HEDR description); `None` when absent or empty.
+    pub description: Option<String>,
+    /// HEDR version number.
+    pub header_version: Option<f32>,
     pub is_blueprint: bool,
     pub is_update: bool,
     /// MAST subrecords: the plugins this one depends on.
@@ -159,6 +171,10 @@ pub struct Plugin {
     pub priority: i32,
     /// Game-visible mod index (`00`, `FE:001`, `FD:00`); `None` when disabled.
     pub index: Option<String>,
+    /// The merged Data root's `<stem>.ini` for this plugin, on an engine that
+    /// loads one. `discover` leaves it `None`; the caller that knows the union
+    /// fills it.
+    pub ini: Option<PathBuf>,
 }
 
 impl Plugin {
@@ -464,6 +480,9 @@ impl PluginList {
                     p.is_dummy = is_dummy;
                     p.header_error = header_error;
                     p.form_version = header.form_version;
+                    p.author = header.author;
+                    p.description = header.description;
+                    p.header_version = header.header_version;
                     p.is_blueprint = header.is_blueprint;
                     p.is_update = header.is_update;
                     p.masters = masters;
@@ -491,11 +510,15 @@ impl PluginList {
                         is_dummy,
                         header_error,
                         form_version: header.form_version,
+                        author: header.author,
+                        description: header.description,
+                        header_version: header.header_version,
                         is_blueprint: header.is_blueprint,
                         is_update: header.is_update,
                         masters,
                         priority: -1,
                         index: None,
+                        ini: None,
                     });
                 }
             }
@@ -1215,6 +1238,9 @@ struct Header {
     is_blueprint: bool,
     is_update: bool,
     form_version: Option<u16>,
+    author: Option<String>,
+    description: Option<String>,
+    header_version: Option<f32>,
     masters: Vec<String>,
 }
 
@@ -1249,8 +1275,69 @@ fn parse_header(path: &Path, game_id: GameId) -> Result<Header, String> {
         is_update: p.is_update_plugin(),
         form_version: (!matches!(game_id, GameId::Morrowind | GameId::Oblivion))
             .then(|| u16::from_le_bytes([bytes[20], bytes[21]])),
+        author: read_author(path, game_id),
+        description: p
+            .description()
+            .ok()
+            .flatten()
+            .map(|d| d.trim().to_string())
+            .filter(|d| !d.is_empty()),
+        header_version: p.header_version(),
         masters,
     })
+}
+
+fn cut_cp1252(raw: &[u8]) -> Option<String> {
+    let raw = raw.split(|&b| b == 0).next().unwrap_or_default();
+    let (text, _, _) = encoding_rs::WINDOWS_1252.decode(raw);
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_string())
+}
+
+/// esplugin has no author accessor, so read it from the record: the first `CNAM`
+/// of the TES4 record, or bytes 8..40 of the TES3 `HEDR` data.
+fn read_author(path: &Path, game_id: GameId) -> Option<String> {
+    use std::io::Read;
+    let morrowind = matches!(game_id, GameId::Morrowind);
+    let head = if morrowind {
+        16
+    } else if matches!(game_id, GameId::Oblivion) {
+        20
+    } else {
+        24
+    };
+    let mut f = std::fs::File::open(path).ok()?;
+    let mut h = vec![0u8; head];
+    f.read_exact(&mut h).ok()?;
+    let size = u32::from_le_bytes(h[4..8].try_into().ok()?) as u64;
+    let mut data = Vec::new();
+    f.take(size).read_to_end(&mut data).ok()?;
+    if morrowind {
+        let mut at = 0;
+        while at + 8 <= data.len() {
+            let len = u32::from_le_bytes(data[at + 4..at + 8].try_into().ok()?) as usize;
+            let body = data.get(at + 8..at + 8 + len)?;
+            if &data[at..at + 4] == b"HEDR" {
+                return body.get(8..40).and_then(cut_cp1252);
+            }
+            at += 8 + len;
+        }
+        return None;
+    }
+    let mut at = 0;
+    while at + 6 <= data.len() {
+        let kind = &data[at..at + 4];
+        if kind == b"XXXX" {
+            return None;
+        }
+        let len = u16::from_le_bytes([data[at + 4], data[at + 5]]) as usize;
+        let body = data.get(at + 6..at + 6 + len)?;
+        if kind == b"CNAM" {
+            return cut_cp1252(body);
+        }
+        at += 6 + len;
+    }
+    None
 }
 
 /// Copy the plugin at `src` to `dest` with the game's light flag set in its TES4
@@ -1449,6 +1536,24 @@ pub fn dependents_of(reqs: &[ModRequirement], mods: &[&str]) -> Vec<String> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn only_the_skyrim_engines_load_plugin_inis() {
+        for id in ["skyrim", "skyrimse", "skyrimvr", "enderalse"] {
+            assert!(GameSpec::for_id(id).unwrap().loads_plugin_inis(), "{id}");
+        }
+        for id in [
+            "fallout4",
+            "fallout4vr",
+            "starfield",
+            "oblivion",
+            "falloutnv",
+            "fallout3",
+            "morrowind",
+        ] {
+            assert!(!GameSpec::for_id(id).unwrap().loads_plugin_inis(), "{id}");
+        }
+    }
+
     fn p(name: &str, masters: &[&str]) -> Plugin {
         let lower = name.to_ascii_lowercase();
         Plugin {
@@ -1463,11 +1568,15 @@ mod tests {
             is_dummy: false,
             header_error: None,
             form_version: None,
+            author: None,
+            description: None,
+            header_version: None,
             is_blueprint: false,
             is_update: false,
             masters: masters.iter().map(|s| s.to_string()).collect(),
             priority: -1,
             index: None,
+            ini: None,
         }
     }
 
@@ -1602,6 +1711,72 @@ mod tests {
             .diagnostics(&spec)
             .iter()
             .any(|d| d.code == "plugin_capacity" && d.plugin == "M256.esm"));
+    }
+
+    #[test]
+    fn header_details_decode_cp1252_and_keep_the_whole_description() {
+        let dir = std::env::temp_dir().join(format!("eidos-header-details-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Patch.esp");
+        let sub = |out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]| {
+            out.extend_from_slice(kind);
+            out.extend_from_slice(&(data.len() as u16).to_le_bytes());
+            out.extend_from_slice(data);
+        };
+        let mut bytes = vec![0u8; 24];
+        bytes[..4].copy_from_slice(b"TES4");
+        bytes[20..22].copy_from_slice(&44u16.to_le_bytes());
+        let mut hedr = 1.71f32.to_le_bytes().to_vec();
+        hedr.extend_from_slice(&[0u8; 8]);
+        sub(&mut bytes, b"HEDR", &hedr);
+        sub(&mut bytes, b"CNAM", b"Zo\xEB\0");
+        sub(&mut bytes, b"SNAM", b"Line one\r\nLine two\0");
+        let len = (bytes.len() - 24) as u32;
+        bytes[4..8].copy_from_slice(&len.to_le_bytes());
+        std::fs::write(&path, &bytes).unwrap();
+        let h = parse_header(&path, GameId::SkyrimSE).unwrap();
+        assert_eq!(h.author.as_deref(), Some("Zo\u{eb}"));
+        assert_eq!(h.description.as_deref(), Some("Line one\r\nLine two"));
+        assert!(h.header_version.is_some_and(|v| (v - 1.71).abs() < 1e-6));
+        assert_eq!(h.form_version, Some(44));
+        // No CNAM, no SNAM: None, never an empty string.
+        let bare = &bytes[..24 + 6 + hedr.len()];
+        let mut bare = bare.to_vec();
+        bare[4..8].copy_from_slice(&((6 + hedr.len()) as u32).to_le_bytes());
+        std::fs::write(&path, &bare).unwrap();
+        let h = parse_header(&path, GameId::SkyrimSE).unwrap();
+        assert_eq!((h.author, h.description), (None, None));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn morrowind_author_and_description_come_from_hedr() {
+        let dir = std::env::temp_dir().join(format!("eidos-tes3-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Morrowind.esm");
+        let field = |text: &str, len: usize| {
+            let mut v = text.as_bytes().to_vec();
+            v.resize(len, 0);
+            v
+        };
+        let mut hedr = 1.3f32.to_le_bytes().to_vec();
+        hedr.extend_from_slice(&1u32.to_le_bytes());
+        hedr.extend(field("Bethesda Softworks", 32));
+        hedr.extend(field("The main data file", 256));
+        hedr.extend_from_slice(&0u32.to_le_bytes());
+        let mut bytes = b"TES3".to_vec();
+        bytes.extend_from_slice(&((8 + hedr.len()) as u32).to_le_bytes());
+        bytes.extend_from_slice(&[0u8; 8]);
+        bytes.extend_from_slice(b"HEDR");
+        bytes.extend_from_slice(&(hedr.len() as u32).to_le_bytes());
+        bytes.extend(hedr);
+        std::fs::write(&path, &bytes).unwrap();
+        let h = parse_header(&path, GameId::Morrowind).unwrap();
+        assert_eq!(h.author.as_deref(), Some("Bethesda Softworks"));
+        assert_eq!(h.description.as_deref(), Some("The main data file"));
+        assert!(h.header_version.is_some_and(|v| (v - 1.3).abs() < 1e-6));
+        assert_eq!(h.form_version, None);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

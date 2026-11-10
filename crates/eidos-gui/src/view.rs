@@ -397,6 +397,39 @@ pub(crate) fn data_source(sources: &DataSources, real: &Path) -> String {
         .unwrap_or_default()
 }
 
+/// One line per FILE of the merged union, `<path>\t<source>`, depth first in
+/// `list_dir_typed` order, for a bug report: the whole text goes through
+/// `eidos_log::redact`, so a home folder in a mod name is scrubbed, not dropped.
+pub(crate) fn merged_tree_text(stack: &eidos_core::LayerStack, sources: &DataSources) -> String {
+    fn walk(
+        stack: &eidos_core::LayerStack,
+        sources: &DataSources,
+        dir: &str,
+        depth: usize,
+        out: &mut String,
+    ) {
+        // Same cap as `data_tree_rows`: a symlink loop must not recurse forever.
+        if depth > 32 {
+            return;
+        }
+        for (name, real, ftype) in stack.list_dir_typed(dir) {
+            let rel = if dir.is_empty() {
+                name
+            } else {
+                format!("{dir}/{name}")
+            };
+            if ftype.map(|t| t.is_dir()).unwrap_or_else(|| real.is_dir()) {
+                walk(stack, sources, &rel, depth + 1, out);
+            } else {
+                out.push_str(&format!("{rel}\t{}\n", data_source(sources, &real)));
+            }
+        }
+    }
+    let mut out = String::new();
+    walk(stack, sources, "", 0, &mut out);
+    eidos_log::redact(&out).into_owned()
+}
+
 /// The entries of ONE directory of the merged view (`dir` relative to `Data`,
 /// `""` for the root): each name, the source providing it, whether it is a
 /// folder, and the real path behind it.
@@ -2221,8 +2254,28 @@ pub(crate) fn filter_pane<'a>(app: &App) -> Element<'a, Message> {
                     .on_press(Message::ClearFilters),
             ),
     );
+    // Always drawn, one line in either mode, so the rows below never move.
+    col = col.push(
+        button(
+            text(t(if app.filters.match_any {
+                "view_filters_match_any"
+            } else {
+                "view_filters_match_all"
+            }))
+            .size(sz(11)),
+        )
+        .width(Length::Fill)
+        .padding([2, 6])
+        .style(button::text)
+        .on_press(Message::ToggleFilterMatch),
+    );
+    let mut rows = Column::new().spacing(2);
     for (label, state, field) in app.filters.rows() {
-        col = col.push(
+        // The state rows end where the content rows (Archives onwards) start.
+        if field == FilterField::Archives {
+            rows = rows.push(menu_sep());
+        }
+        rows = rows.push(
             button(
                 Row::new()
                     .spacing(6)
@@ -2243,6 +2296,9 @@ pub(crate) fn filter_pane<'a>(app: &App) -> Element<'a, Message> {
             .on_press(Message::CycleFilter(field)),
         );
     }
+    // Twenty rows outgrow a small window. An embedded scrollbar takes its own
+    // width instead of covering the "only" and "except" labels.
+    col = col.push(container(scrollable(rows).spacing(2)).max_height(scaled(440.0)));
     // Wrapped in a mouse_area that SWALLOWS the press. iced's Stack dispatches
     // top-down and stops only when a widget captures the event; a bare container
     // never captures, so every click landing on the card's own padding, on the
@@ -2747,6 +2803,60 @@ pub(crate) fn menu_frame<'a>(content: Element<'a, Message>) -> Element<'a, Messa
 mod tests {
     use super::*;
     use crate::test_support::*;
+
+    #[test]
+    fn saved_tree_lists_each_winner_with_its_source_redacted() {
+        let home = std::env::var("HOME").unwrap();
+        let dir = std::env::temp_dir().join(format!("eidos-tree-{}", std::process::id()));
+        let (game, modroot, ow) = (
+            dir.join("game"),
+            dir.join("mods/AAA"),
+            dir.join("overwrite"),
+        );
+        for (p, body) in [
+            (game.join("Skyrim.esm"), "v"),
+            (modroot.join("textures/a.dds"), "mod"),
+            (modroot.join("textures/b.dds"), "only the mod"),
+            (modroot.join("meta.ini"), "[General]"),
+            (modroot.join("fomod/ModuleConfig.xml"), "<x/>"),
+            (ow.join("textures/a.dds"), "ow"),
+        ] {
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(p, body).unwrap();
+        }
+        let stack =
+            eidos_core::LayerStack::new_unindexed(vec![modroot.clone(), game.clone()], ow.clone())
+                .hiding_mod_metadata();
+        let mut sources = DataSources::new();
+        sources.insert(ow, "Overwrite".into());
+        sources.insert(modroot, format!("{home}/AAA"));
+        sources.insert(game, "[skyrimse]".into());
+        let text = merged_tree_text(&stack, &sources);
+        let lines: Vec<&str> = text.lines().collect();
+        assert!(lines.contains(&"Skyrim.esm\t[skyrimse]"));
+        assert!(
+            lines.contains(&"textures/a.dds\tOverwrite"),
+            "the winner, once: {lines:?}"
+        );
+        assert_eq!(
+            lines
+                .iter()
+                .filter(|l| l.starts_with("textures/a.dds"))
+                .count(),
+            1
+        );
+        assert!(!text.contains("meta.ini") && !text.contains("fomod/"));
+        let b = lines
+            .iter()
+            .find(|l| l.starts_with("textures/b.dds\t"))
+            .expect("a line for the mod's own file");
+        assert!(
+            b.ends_with("AAA") && !b.contains(&home),
+            "redacted, not dropped: {b}"
+        );
+        assert!(!text.contains(&home), "{text}");
+        fs::remove_dir_all(dir).unwrap();
+    }
 
     fn sorted(v: &[&str]) -> Vec<String> {
         let mut o: Vec<String> = v.iter().map(|s| s.to_string()).collect();

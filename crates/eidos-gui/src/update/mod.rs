@@ -1132,6 +1132,7 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         | Message::CollectionRevisionsChecked(..)
         | Message::RequirementFilePicked { .. }
         | Message::ArchiveExportFinished(..)
+        | Message::DataTreeSaved(..)
         | Message::ArchiveExtracted(..)
         | Message::CollectionInstallChecked { .. }
         // And the hover-to-expand timer, which fires only while a drag rests on
@@ -1345,6 +1346,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::SetSeparatorColor(..)
         | Message::ToggleCollapse(..)
         | Message::CycleFilter(..)
+        | Message::ToggleFilterMatch
         | Message::ToggleFilterPane
         | Message::ClearFilters
         | Message::ModIgnoreUpdate(..)
@@ -1448,6 +1450,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         m @ (Message::ToolPicked(..)
         | Message::Run
         | Message::RunTool(..)
+        | Message::DataRunExe(..)
         | Message::PlayAnyway
         | Message::ClosePlayPrompt
         | Message::PollRunning
@@ -1471,6 +1474,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::DataExpandAll
         | Message::DataCollapseAll
         | Message::DataReveal(..)
+        | Message::DataSaveTree
+        | Message::DataSaveTreeTo(..)
+        | Message::DataTreeSaved(..)
         | Message::OverwriteToggleDir(..)
         | Message::ToggleFileHidden(..)
         | Message::ToggleIniTweak(..)
@@ -1535,6 +1541,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::CloseExecutablesDialog
         | Message::SelectExecutableTool(..)
         | Message::AddExecutableTool
+        | Message::DataAddTool(..)
         | Message::DeleteExecutableTool
         | Message::MoveExecutableUp
         | Message::MoveExecutableDown
@@ -1673,6 +1680,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::SavesTick
         | Message::SavesDeleteSelected
         | Message::SavesCopyToProfile(..)
+        | Message::SavesImportHidden
         | Message::SelectSave(..)
         | Message::FixSaveMods
         | Message::EnableMissingMasters
@@ -1951,6 +1959,7 @@ pub(crate) fn open_instance(app: &mut App, inst: Instance) {
     // old instance.
     app.plugins = None;
     app.saves = Vec::new();
+    app.hidden_saves = Vec::new();
     app.confirm_delete_save = None;
     app.downloads = Vec::new();
     app.confirm_delete_download = None;

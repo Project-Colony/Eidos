@@ -769,6 +769,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // selection, the focus and the drag hold.
             forget_hidden_rows(app);
         }
+        Message::ToggleFilterMatch => {
+            app.filters.match_any = !app.filters.match_any;
+            forget_hidden_rows(app);
+        }
         Message::ToggleFilterPane => {
             // Closing needs no measurement; opening does.
             if app.filters_open {

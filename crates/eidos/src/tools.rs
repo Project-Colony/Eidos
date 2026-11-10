@@ -119,8 +119,9 @@ fn game_entry_handoff(
 }
 
 /// `eidos tool <game-id> [list | add <title> <exe> [args...] | rm <title> |
-/// run <title> [--print] [--output-mod <mod>] [-- extra...]]` - manage and run tools (xEdit, FNIS,
-/// BodySlide) through the merged view, inside the game's Proton prefix.
+/// run <title>|--exe <path> [--print] [--output-mod <mod>] [--profile <name>] [-- extra...]]` -
+/// manage and run tools (xEdit, FNIS, BodySlide) through the merged view, inside the game's
+/// Proton prefix.
 /// A command uses the projected path, while existence and provenance use its
 /// real backing file. Root-only tools do not exist in the game directory yet.
 fn tool_executable(
@@ -224,6 +225,17 @@ fn select_profile(inst: &Instance, name: &str) -> std::io::Result<()> {
     inst.set_active_profile(name)
 }
 
+/// `args` starts at `run`: the path of `run --exe <path>`, `None` for a run by title,
+/// `Err` when `--exe` has no path.
+fn exe_target(args: &[String]) -> Option<Result<PathBuf, String>> {
+    (args.get(1).map(String::as_str) == Some("--exe")).then(|| {
+        args.get(2)
+            .filter(|p| !p.starts_with("--"))
+            .map(PathBuf::from)
+            .ok_or_else(|| "--exe needs the path of an executable".to_string())
+    })
+}
+
 pub(crate) fn cmd_tool(args: &[String]) {
     // `--help` is a request for this text, not a game id to look up.
     let asked_help = args.first().is_some_and(|a| a == "--help" || a == "-h");
@@ -234,7 +246,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
              \x20 eidos tool <game-id> add <title> <exe> [args...]\n\
              \x20 eidos tool <game-id> rm <title>\n\
              \x20 eidos tool <game-id> import-mo2 [--write]\n\
-             \x20 eidos tool <game-id> run <title> [--print] [--output-mod <mod>] [--profile <name>] [-- <extra args>...]"
+             \x20 eidos tool <game-id> run <title>|--exe <path> [--print] [--output-mod <mod>] [--profile <name>] [-- <extra args>...]"
         );
         exit(if asked_help { 0 } else { 2 });
     };
@@ -309,6 +321,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 // Seed known tools' runtime prereqs (BodySlide -> d3dx, Synthesis ->
                 // dotnet...); the user can edit tools.ini to override.
                 prereqs: eidos_instance::default_prereqs(title),
+                output_mod: eidos_instance::default_output_mod(title),
                 // Set through the GUI's Executables editor, or by hand.
                 ..Default::default()
             });
@@ -368,18 +381,28 @@ pub(crate) fn cmd_tool(args: &[String]) {
             }
         }
         Some("run") => {
+            let by_exe = exe_target(&args[1..]);
+            if let Some(Err(e)) = &by_exe {
+                eidos_log::warn!("eidos tool: {e}");
+                exit(2);
+            }
             let Some(title) = args.get(2) else {
                 eidos_log::info!(
-                    "usage: eidos tool {id} run <title> [--print] [--output-mod <mod>] [--profile <name>] [-- <extra args>...]"
+                    "usage: eidos tool {id} run <title>|--exe <path> [--print] [--output-mod <mod>] [--profile <name>] [-- <extra args>...]"
                 );
                 exit(2);
+            };
+            let flag_args = if by_exe.is_some() {
+                &args[2..]
+            } else {
+                &args[1..]
             };
             let RunFlags {
                 print: print_only,
                 output_mod: output_flag,
                 profile,
                 extra,
-            } = match run_flags(&args[1..]) {
+            } = match run_flags(flag_args) {
                 Ok(v) => v,
                 Err(e) => {
                     eidos_log::warn!("eidos tool: {e}");
@@ -395,28 +418,40 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 }
             }
 
-            // A user tool wins `merge_tools` over a default with the same title,
-            // so look there first: the defaults are detected by walking the game,
-            // the Root layers and the whole mods pool, wasted for a user tool.
-            let user = inst.tools();
-            let named = |t: &eidos_instance::Tool| t.title.eq_ignore_ascii_case(title);
-            let tool = match user.iter().find(|t| named(t)) {
-                Some(tool) => Some(tool.clone()),
-                None => eidos_instance::merge_tools(user, default_tools_for(&game, Some(&inst)))
-                    .into_iter()
-                    .find(|t| named(t)),
+            let (tool, utility) = if let Some(Ok(path)) = by_exe {
+                // Never a registered tool nor a utility: the file is run as given.
+                (
+                    eidos_instance::tool_for_exe(&path, game.def.known_tools),
+                    false,
+                )
+            } else {
+                // A user tool wins `merge_tools` over a default with the same title,
+                // so look there first: the defaults are detected by walking the game,
+                // the Root layers and the whole mods pool, wasted for a user tool.
+                let user = inst.tools();
+                let named = |t: &eidos_instance::Tool| t.title.eq_ignore_ascii_case(title);
+                let tool = match user.iter().find(|t| named(t)) {
+                    Some(tool) => Some(tool.clone()),
+                    None => {
+                        eidos_instance::merge_tools(user, default_tools_for(&game, Some(&inst)))
+                            .into_iter()
+                            .find(|t| named(t))
+                    }
+                };
+                // Wine's own programs in the game's prefix, when no tool has the title.
+                let listed = tool.is_some();
+                let tool = tool.or_else(|| {
+                    game.prefix()
+                        .and_then(|p| eidos_instance::prefix_tool(&p, title))
+                });
+                let utility = !listed && tool.is_some();
+                let Some(tool) = tool else {
+                    eidos_log::info!("No tool named '{title}'. List them: eidos tool {id}");
+                    exit(1);
+                };
+                (tool, utility)
             };
-            // Wine's own programs in the game's prefix, when no tool has the title.
-            let listed = tool.is_some();
-            let tool = tool.or_else(|| {
-                game.prefix()
-                    .and_then(|p| eidos_instance::prefix_tool(&p, title))
-            });
-            let utility = !listed && tool.is_some();
-            let Some(tool) = tool else {
-                eidos_log::info!("No tool named '{title}'. List them: eidos tool {id}");
-                exit(1);
-            };
+            let title = &tool.title;
             let Some((source_exe, exe)) =
                 tool_executable(&inst, &game.install_path, &game.data_path, &tool.exe)
             else {
@@ -989,6 +1024,34 @@ fn apply_tool_env_facts(
 #[cfg(test)]
 mod root_tool_tests {
     use super::*;
+
+    #[test]
+    fn a_run_by_exe_takes_the_path_then_its_flags() {
+        let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let args = v(&[
+            "run",
+            "--exe",
+            "/m/FNIS/GenerateFNISforUsers.exe",
+            "--print",
+            "--",
+            "-v",
+        ]);
+        assert_eq!(
+            exe_target(&args),
+            Some(Ok(PathBuf::from("/m/FNIS/GenerateFNISforUsers.exe")))
+        );
+        assert_eq!(
+            run_flags(&args[1..]),
+            Ok(RunFlags {
+                print: true,
+                output_mod: None,
+                profile: None,
+                extra: v(&["-v"]),
+            })
+        );
+        assert!(matches!(exe_target(&v(&["run", "--exe"])), Some(Err(_))));
+        assert_eq!(exe_target(&v(&["run", "FNIS"])), None);
+    }
 
     #[test]
     fn run_flags_read_print_output_mod_and_profile_before_the_separator() {

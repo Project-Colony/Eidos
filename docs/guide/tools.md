@@ -21,6 +21,8 @@ file name, in:
 - the **tools folder** you set in Preferences (General -> Tools), for the
   directory shared between instances - `/mnt/Games/Tools` and the like.
 
+The usual generators are found the same way, each on the games it supports: Pandora, Nemesis, FNIS, BodySlide, DynDOLOD, TexGen, xLODGen and Synthesis.
+
 The list is per game, so a Skyrim instance is never offered Fallout's editor.
 The search stops four levels down, because a mod pool is hundreds of thousands
 of files and this runs every time the tool list is built, and it does not follow
@@ -61,6 +63,7 @@ eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse                       # list what is registered
 eidos tool skyrimse run BodySlide         # run it through the merged view
 eidos tool skyrimse run BodySlide --print # show the command without running it
+eidos tool skyrimse run --exe "<path>/GenerateFNISforUsers.exe"   # run an exe once, without registering it
 eidos tool skyrimse run "SSEEdit QuickAutoClean" --output-mod "Cleaned plugins" -- -qac -autoexit -autoload Dawnguard.esm
 ```
 
@@ -117,6 +120,8 @@ instead:
 ```
 Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 ```
+
+Pandora, Nemesis, FNIS, BodySlide and Synthesis arrive with a capture mod already set: `Pandora Output`, `Nemesis Output`, `FNIS Output`, `BodySlide Output` and `Synthesis Output`. DynDOLOD, TexGen and xLODGen arrive without one, because they write to the output folder you give them.
 
 The mod is created if it does not exist. Only the files THIS run produced move;
 anything that was already in the Overwrite stays there, so two tools with capture
@@ -459,6 +464,10 @@ container has been tested yet.
 `eidos tool <instance> run <title> --print` shows the final command and every
 variable the run sets on top of the inherited environment, these lines
 included.
+
+## BethINI Pie
+
+Eidos does not ship BethINI Pie. Put the release you downloaded from its Nexus page in this instance's `mods/` or in your tools folder, and `Bethini.exe` appears in the tool list. Run through Eidos, it edits the profile's copy of the game INIs. Before each run Eidos keeps a copy of those INIs; **Backups -> INIs** puts one back. An INI that did not exist when the copy was taken is left as it is.
 
 ## A tool's own settings are still its own
 

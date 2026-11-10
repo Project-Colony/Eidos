@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1d62e34566cf1855eda40becbf2626b490ad7dd0 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
 
 # Eidos kullanımı
 
@@ -162,8 +162,9 @@ Deck'ten gelen bir Steam Cloud indirmesi, Eidos olmadan yapılan bir başlatma -
 profilin kayıtları bağlıyken gizli kalır. Hiçbir şey onu silmez: başlatma, o
 dosya kümesi her değiştiğinde bir kez, onu çalıştırmanın günlüğünde adlandırır
 (pencereden bir başlatma için örneğin `logs/run-*.log` dosyası, Steam'den bir
-başlatma için Steam'in konsolu). Onu oynamak için kaydı ve ona eşlik eden
-co-save dosyasını profilin `saves/` klasörüne kopyalayın.
+başlatma için Steam'in konsolu). Onu oynamak için Saves sekmesinde Import'a
+basın. Import onu co-save dosyasıyla birlikte profile kopyalar ve profildeki
+hiçbir kaydı değiştirmez.
 
 ### Son iyi çalıştırmadan beri neyin değiştiği
 
@@ -534,6 +535,19 @@ başka bir Eidos süreci listeyi değiştirdiğinde unutur. Bir modu kurmak, yen
 adlandırmak ya da kaldırmak diskteki klasörleri değiştirir, bu yüzden bunlardan
 birinin ötesine geçen bir geri alma reddedilir.
 
+### Listeyi süzmek
+
+Filters düğmesi her ölçüt için bir satır açar: etkin, çakışmalı, güncelleme var,
+kategorisiz, Nexus'ta beğenilmiş (endorsed), takip edilen (tracked), Nexus
+id'si olan, gizli dosyası olan, geçerli oyun verisi olmayan, başka bir oyun
+için, notu olan ve her içerik türü için bir satır (eklentiler, BSA veya BA2
+arşivleri, dokular, mesh'ler, betikler, script extender eklentileri, arayüz
+dosyaları, ses, FaceGen). Her tıklama satırı bir sonraki duruma geçirir: kapalı,
+"only", "except" ve yeniden kapalı. En üstteki satır, açık ölçütlerin hepsini
+karşılayan modlarla en az birini karşılayan modlar arasında geçiş yapar. Ad
+kutusu ve kategori listesi sonucu her zaman daha da daraltır. Gizli dosyalar
+satırı yalnızca etkin modlara bakar.
+
 ### Listenin bir mod hakkında söyledikleri
 
 İki uyarı bayrağı; ikisi de üzerine gelince açıklaması çıkan birer simge. **No
@@ -589,6 +603,12 @@ açıklar. **Overwrite**, oyunun yazdığını tek adımda gerçek bir moda dön
 süresi - ve içine gömülü eklenti listesini geçerli listenizle karşılaştırır;
 gerektirdiği modları etkinleştiren bir düğmeyle birlikte, çünkü onları adlandırıp
 gerisini size bırakmak işin sıkıcı yarısıdır.
+
+Bir eklentinin üzerine gelince kaynağı, yazarı, başlık ve form sürümü, açıklamasının ilk 300 karakteri, master dosyaları ve LOOT sıralamasından sonra LOOT iletileri görünür. Skyrim, Skyrim SE, Skyrim VR ve Enderal SE'de oyun, yüklenen bir eklentinin adını taşıyan bir INI dosyasını da okur; INI sütunu bu eklentileri işaretler ve tıklamak dosyayı salt okunur açar.
+
+Data sekmesindeki bir `.exe` satırında Add tool ve Run bulunur. Add tool, Executables düzenleyicisini o dosya doldurulmuş olarak açar (Save'e basana kadar hiçbir şey kaydedilmez). Run, dosyayı kayıtlı bir araç gibi birleşik görünüm üzerinden bir kez çalıştırır. Save tree, birleştirilmiş Data ağacının tamamını bir metin dosyasına yazar; her dosya için bir satır ve dosyayı sağlayan mod yer alır, ana klasörünüz ve kullanıcı adınız çıkarılır, hata raporu içindir.
+
+Steam Cloud'un başka bir cihazdan indirdiği ya da Eidos olmadan yapılan bir başlatmanın yazdığı kayıtlar, oyunun kendi kayıt klasörüne iner; oyun çalışırken profilin kayıtları bu klasörün üzerini örter. Saves sekmesi bunları başlığının altındaki satırda sayar, Import da her birini co-save dosyasıyla birlikte profile kopyalar. Adını profilin zaten kullandığı bir kayıt `orphan-<time>-<name>` olarak içe aktarılır; profildeki hiçbir şey değiştirilmez.
 
 "Information...", mod başına bir iletişim kutusu açar: genel, çakışmalar, dosya
 ağacı, INI ayarlamaları, notlar. Dosya ağacından (ve Data ağacından) herhangi bir

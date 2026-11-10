@@ -499,11 +499,15 @@ mod tests {
             is_dummy: false,
             header_error: None,
             form_version: None,
+            author: None,
+            description: None,
+            header_version: None,
             is_blueprint: false,
             is_update: false,
             masters: Vec::new(),
             priority: -1,
             index: None,
+            ini: None,
         }
     }
 
@@ -752,11 +756,15 @@ mod tests {
             is_dummy: false,
             header_error: None,
             form_version: None,
+            author: None,
+            description: None,
+            header_version: None,
             is_blueprint: false,
             is_update: false,
             masters: vec![],
             priority: 0,
             index: None,
+            ini: None,
         });
         list.write_load_order(&dir, &spec).unwrap();
         let variants: Vec<String> = fs::read_dir(&dir)
@@ -809,11 +817,15 @@ mod tests {
                 is_dummy: false,
                 header_error: None,
                 form_version: None,
+                author: None,
+                description: None,
+                header_version: None,
                 is_blueprint: false,
                 is_update: false,
                 masters: vec![],
                 priority: 0,
                 index: None,
+                ini: None,
             }],
             implicit: Default::default(),
             locked: Default::default(),

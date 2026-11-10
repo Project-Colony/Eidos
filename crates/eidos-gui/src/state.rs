@@ -74,6 +74,7 @@ pub(crate) fn refresh_meta_cache(app: &mut App) {
                 content_tags: eidos_install::classify_content_dir(&path).tags(),
                 update: meta.update_available(),
                 endorsed: meta.endorsed(),
+                tracked: meta.tracked(),
                 color: meta.color(),
                 notes: meta.notes(),
                 nexus_gone: meta.nexus_available() == Some(false),
@@ -455,6 +456,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         view_menu_open: false,
         about_open: false,
         saves: Vec::new(),
+        hidden_saves: Vec::new(),
         confirm_delete_save: None,
         selected_save: None,
         save_info: None,
@@ -816,9 +818,14 @@ pub(crate) fn plugin_origin_row(app: &App, row: usize) -> Option<usize> {
 /// Read both lists' restore points for the Backups dialog, newest first.
 pub(crate) fn load_backups(app: &App) -> Option<BackupsDialogState> {
     let prof = app.created.as_ref()?.active();
+    let inis = selected_game(app)
+        .map(|g| g.def.ini_files)
+        .filter(|f| !f.is_empty())
+        .map(|f| (f, prof.backups(eidos_instance::BackupKind::Inis(f))));
     Some(BackupsDialogState {
         mods: prof.backups(eidos_instance::BackupKind::ModList),
         order: prof.backups(eidos_instance::BackupKind::LoadOrder),
+        inis,
     })
 }
 
@@ -884,6 +891,24 @@ pub(crate) fn tool_command(
 ) -> std::process::Command {
     let mut cmd = eidos_command();
     cmd.arg("tool").arg(inst_arg).arg("run").arg(title);
+    if store_started {
+        cmd.env(eidos::STORE_STARTED_VAR, "1");
+    }
+    cmd
+}
+
+/// Run one executable once, by path, as `eidos tool <id> run --exe <path>`.
+pub(crate) fn exe_tool_command(
+    inst_arg: &str,
+    exe: &Path,
+    store_started: bool,
+) -> std::process::Command {
+    let mut cmd = eidos_command();
+    cmd.arg("tool")
+        .arg(inst_arg)
+        .arg("run")
+        .arg("--exe")
+        .arg(exe);
     if store_started {
         cmd.env(eidos::STORE_STARTED_VAR, "1");
     }
@@ -2386,68 +2411,102 @@ impl Criterion {
     }
 }
 
-/// Which state filters the mod list is applying. All of them combine with AND,
-/// and with the name box and the category dropdown.
+/// Which state filters the mod list is applying. They combine with AND, or with
+/// OR when `match_any` is set; the name box and the category dropdown narrow
+/// the result with AND either way.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct ModFilters {
-    pub active: Criterion,
-    pub conflicted: Criterion,
-    pub update: Criterion,
-    pub plugins: Criterion,
-    pub uncategorised: Criterion,
+    /// Indexed by `FilterField as usize`.
+    criteria: [Criterion; 20],
+    pub(crate) match_any: bool,
 }
 
 impl ModFilters {
     /// Every criterion, as (label, current setting, the message that cycles it).
     /// One list so the panel and the count cannot drift apart.
-    pub(crate) fn rows(self) -> [(&'static str, Criterion, FilterField); 5] {
-        [
-            (t("filter_active"), self.active, FilterField::Active),
-            (
-                t("filter_conflicted"),
-                self.conflicted,
-                FilterField::Conflicted,
-            ),
-            (t("filter_update"), self.update, FilterField::Update),
-            (t("filter_plugins"), self.plugins, FilterField::Plugins),
-            (
-                t("filter_no_category"),
-                self.uncategorised,
-                FilterField::Uncategorised,
-            ),
-        ]
+    pub(crate) fn rows(self) -> [(&'static str, Criterion, FilterField); 20] {
+        FilterField::ALL.map(|f| (f.label(), self.get(f), f))
     }
 
     pub(crate) fn get(self, f: FilterField) -> Criterion {
-        match f {
-            FilterField::Active => self.active,
-            FilterField::Conflicted => self.conflicted,
-            FilterField::Update => self.update,
-            FilterField::Plugins => self.plugins,
-            FilterField::Uncategorised => self.uncategorised,
-        }
+        self.criteria[f as usize]
     }
 
     pub(crate) fn set(&mut self, f: FilterField, c: Criterion) {
-        match f {
-            FilterField::Active => self.active = c,
-            FilterField::Conflicted => self.conflicted = c,
-            FilterField::Update => self.update = c,
-            FilterField::Plugins => self.plugins = c,
-            FilterField::Uncategorised => self.uncategorised = c,
-        }
+        self.criteria[f as usize] = c;
     }
 
     /// How many criteria are actually filtering, for the button's badge.
     pub(crate) fn active_count(self) -> usize {
-        self.rows()
+        self.criteria
             .iter()
-            .filter(|(_, c, _)| *c != Criterion::Off)
+            .filter(|c| **c != Criterion::Off)
             .count()
     }
 
     pub(crate) fn any(self) -> bool {
         self.active_count() > 0
+    }
+
+    /// Whether a row survives the criteria that are on, given its answer to
+    /// each. With none on, every row does.
+    pub(crate) fn keeps(self, has: impl Fn(FilterField) -> bool) -> bool {
+        if !self.any() {
+            return true;
+        }
+        let mut on = FilterField::ALL
+            .into_iter()
+            .filter(|&f| self.get(f) != Criterion::Off)
+            .map(|f| self.get(f).keeps(has(f)));
+        if self.match_any {
+            on.any(|k| k)
+        } else {
+            on.all(|k| k)
+        }
+    }
+}
+
+/// This row's answer to one filter criterion. Each answer is read from what the
+/// list already computes; a row with no `RowMeta` (game content) answers false
+/// to every meta field.
+pub(crate) fn row_has(
+    app: &App,
+    row: usize,
+    m: &ModEntry,
+    meta: Option<&RowMeta>,
+    f: FilterField,
+) -> bool {
+    let tag = |c| meta.is_some_and(|r| r.content_tags.contains(c));
+    match f {
+        FilterField::Active => m.enabled,
+        FilterField::Conflicted => mod_has_conflict(app, row),
+        FilterField::Update => meta.is_some_and(|r| r.update),
+        FilterField::Endorsed => meta.is_some_and(|r| r.endorsed),
+        FilterField::Tracked => meta.is_some_and(|r| r.tracked),
+        FilterField::InvalidData => meta.is_some_and(|r| r.invalid_data),
+        FilterField::Uncategorised => meta.is_none_or(|r| r.category_id.is_none()),
+        // `mod_id()` already turns a `modid=0` into `None`.
+        FilterField::NexusId => meta.is_some_and(|r| r.mod_id.is_some()),
+        // shortcut: the conflict map holds enabled mods only, so a disabled mod never matches; read the mod's tree if users ask
+        FilterField::HiddenFiles => app
+            .conflicts
+            .as_ref()
+            .and_then(|c| c.mod_conflicts((row + 1) as u32))
+            .is_some_and(|c| c.has_hidden),
+        FilterField::OtherGame => meta.is_some_and(|r| r.other_game.is_some()),
+        FilterField::Notes => meta
+            .and_then(|r| r.notes.as_deref())
+            .is_some_and(|n| !n.trim().is_empty()),
+        // The letters of `ContentFlags::tags`.
+        FilterField::Plugins => tag('P'),
+        FilterField::Archives => tag('A'),
+        FilterField::Textures => tag('T'),
+        FilterField::Meshes => tag('M'),
+        FilterField::Scripts => tag('S'),
+        FilterField::Extender => tag('K'),
+        FilterField::Interface => tag('I'),
+        FilterField::Sound => tag('U'),
+        FilterField::FaceGen => tag('F'),
     }
 }
 
@@ -2491,16 +2550,7 @@ pub(crate) fn mod_row_visibility(
         if !by_category {
             return false;
         }
-        let f = app.filters;
-        // Each answer is read from what the list already computes - the whole
-        // point of the pane is that none of this needs new bookkeeping.
-        f.active.keeps(m.enabled)
-            && f.conflicted.keeps(mod_has_conflict(app, i))
-            && f.update.keeps(meta.is_some_and(|r| r.update))
-            && f.plugins
-                .keeps(meta.is_some_and(|r| r.content_tags.contains('P')))
-            && f.uncategorised
-                .keeps(meta.is_none_or(|r| r.category_id.is_none()))
+        app.filters.keeps(|f| row_has(app, i, m, meta, f))
     })
 }
 
@@ -3370,6 +3420,7 @@ pub(crate) fn switch_to_profile(app: &mut App, name: &str) -> bool {
     bump_views(app);
     // Saves are per-profile; drop the cache so the Saves tab reloads.
     app.saves = Vec::new();
+    app.hidden_saves = Vec::new();
     app.confirm_delete_save = None;
     // The LOOT badges were computed against the OLD profile's load order.
     app.loot_meta = None;
@@ -4348,15 +4399,130 @@ mod tests {
     fn the_active_filter_keeps_only_what_it_says() {
         let mut app = nav_app(&["On", "Off"]);
         app.mods[1].enabled = false;
-        app.filters.active = Criterion::Require;
+        app.filters.set(FilterField::Active, Criterion::Require);
         let vis = mod_row_visibility(&app, None);
         assert_eq!(vis, vec![true, false], "only the enabled one");
-        app.filters.active = Criterion::Exclude;
+        app.filters.set(FilterField::Active, Criterion::Exclude);
         let vis = mod_row_visibility(&app, None);
         assert_eq!(
             vis,
             vec![false, true],
             "and the inverse is the other question"
+        );
+    }
+
+    #[test]
+    fn filter_fields_are_listed_in_declaration_order() {
+        for (i, f) in FilterField::ALL.iter().enumerate() {
+            assert_eq!(*f as usize, i, "{f:?}");
+        }
+    }
+
+    #[test]
+    fn each_new_criterion_reads_its_own_answer() {
+        use FilterField::*;
+        let mut app = nav_app(&["Plain", "Rich"]);
+        app.meta_cache.insert(
+            "Rich".into(),
+            RowMeta {
+                endorsed: true,
+                tracked: true,
+                mod_id: Some(42),
+                invalid_data: true,
+                other_game: Some("Fallout4".into()),
+                notes: Some("check the patch".into()),
+                content_tags: "A T M S K I U F".into(),
+                ..Default::default()
+            },
+        );
+        let mut mods = std::collections::HashMap::new();
+        mods.insert(
+            2u32,
+            eidos_conflicts::ModConflicts {
+                has_hidden: true,
+                ..Default::default()
+            },
+        );
+        app.conflicts = Some(eidos_conflicts::ConflictMap {
+            mods,
+            ..Default::default()
+        });
+        for f in [
+            Endorsed,
+            Tracked,
+            NexusId,
+            HiddenFiles,
+            InvalidData,
+            OtherGame,
+            Notes,
+            Archives,
+            Textures,
+            Meshes,
+            Scripts,
+            Extender,
+            Interface,
+            Sound,
+            FaceGen,
+        ] {
+            app.filters = ModFilters::default();
+            app.filters.set(f, Criterion::Require);
+            assert_eq!(
+                mod_row_visibility(&app, None),
+                vec![false, true],
+                "{f:?} only"
+            );
+            app.filters.set(f, Criterion::Exclude);
+            assert_eq!(
+                mod_row_visibility(&app, None),
+                vec![true, false],
+                "{f:?} except"
+            );
+        }
+        app.meta_cache.get_mut("Rich").unwrap().notes = Some("   ".into());
+        app.filters = ModFilters::default();
+        app.filters.set(Notes, Criterion::Require);
+        assert_eq!(
+            mod_row_visibility(&app, None),
+            vec![false, false],
+            "a blank note is no note"
+        );
+    }
+
+    #[test]
+    fn match_any_keeps_a_row_that_meets_one_criterion_and_still_obeys_the_name_box() {
+        let mut app = nav_app(&["Armour On", "Armour Off", "Weather Off"]);
+        app.mods[1].enabled = false;
+        app.mods[2].enabled = false;
+        app.meta_cache.insert(
+            "Armour Off".into(),
+            RowMeta {
+                content_tags: "P".into(),
+                ..Default::default()
+            },
+        );
+        app.filters.set(FilterField::Active, Criterion::Require);
+        app.filters.set(FilterField::Plugins, Criterion::Exclude);
+        assert_eq!(
+            mod_row_visibility(&app, None),
+            vec![true, false, false],
+            "all: enabled and no plugins"
+        );
+        app.filters.match_any = true;
+        assert_eq!(
+            mod_row_visibility(&app, None),
+            vec![true, false, true],
+            "any: enabled or no plugins"
+        );
+        assert_eq!(
+            app.filters.active_count(),
+            2,
+            "the badge counts criteria, not the mode"
+        );
+        app.search = "armour".into();
+        assert_eq!(
+            mod_row_visibility(&app, None),
+            vec![true, false, false],
+            "the name box still narrows"
         );
     }
 
@@ -4367,7 +4533,7 @@ mod tests {
         let mut app = nav_app(&["Armour Pack", "Armour Patch", "Weather"]);
         app.mods[1].enabled = false;
         app.search = "armour".to_string();
-        app.filters.active = Criterion::Require;
+        app.filters.set(FilterField::Active, Criterion::Require);
         let vis = mod_row_visibility(&app, None);
         assert_eq!(vis, vec![true, false, false], "name AND state: {vis:?}");
     }
@@ -4378,7 +4544,7 @@ mod tests {
         // keep holding once state filters can empty a group.
         let mut app = nav_app(&["Group_separator", "Inside"]);
         app.mods[1].enabled = false;
-        app.filters.active = Criterion::Require;
+        app.filters.set(FilterField::Active, Criterion::Require);
         let vis = mod_row_visibility(&app, None);
         assert_eq!(vis, vec![false, false], "the header goes with its only mod");
         app.mods[1].enabled = true;
@@ -4767,7 +4933,7 @@ mod tests {
         // in silence.
         let mut app = nav_app(&["a", "b"]);
         assert!(!is_filtering(&app));
-        app.filters.update = Criterion::Require;
+        app.filters.set(FilterField::Update, Criterion::Require);
         assert!(is_filtering(&app), "a criterion alone counts as filtering");
         app.filters = ModFilters::default();
         app.search = "a".to_string();
@@ -4959,6 +5125,30 @@ mod tests {
 #[cfg(test)]
 mod cli_lookup_tests {
     use super::*;
+
+    #[test]
+    fn run_once_hands_the_exe_path_to_the_cli() {
+        let cmd = exe_tool_command(
+            "skyrimse",
+            Path::new("/m/FNIS/GenerateFNISforUsers.exe"),
+            false,
+        );
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            args[args.len() - 5..],
+            [
+                "tool",
+                "skyrimse",
+                "run",
+                "--exe",
+                "/m/FNIS/GenerateFNISforUsers.exe"
+            ]
+        );
+        assert!(cmd.get_envs().all(|(k, _)| k != eidos::STORE_STARTED_VAR));
+    }
 
     /// A Colony install is one file with no `eidos` beside it: every child the
     /// window starts must then carry the marker, or that file would open a

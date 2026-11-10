@@ -47,6 +47,10 @@ pub(crate) enum Message {
     Run,
     /// Run the tool with this title as configured now; the picker is unchanged.
     RunTool(String),
+    /// Data tab: open the Executables editor with this `.exe` filled in; nothing is saved.
+    DataAddTool(PathBuf),
+    /// Data tab: run this `.exe` once through the merged view, without registering it.
+    DataRunExe(PathBuf),
     Refresh,
     OpenFolder(PathBuf),
     ClearOverwrite,
@@ -357,6 +361,8 @@ pub(crate) enum Message {
     IdentifiedDownload(Result<String, String>),
     /// Cycle one filter criterion: off -> require -> exclude.
     CycleFilter(FilterField),
+    /// Switch the criteria between matching all of them and matching any.
+    ToggleFilterMatch,
     ToggleFilterPane,
     ClearFilters,
     ShowBackupsDialog,
@@ -598,6 +604,11 @@ pub(crate) enum Message {
     DataCollapseAll,
     /// Open a file manager on the real file behind a Data row.
     DataReveal(PathBuf),
+    /// Ask where to save the merged Data tree as a text file.
+    DataSaveTree,
+    DataSaveTreeTo(Option<PathBuf>),
+    /// The worker's answer: file count and path, or the error.
+    DataTreeSaved(Result<(usize, PathBuf), String>),
     /// Re-scan the downloads directory + reload each archive's `.meta` status.
     RefreshDownloads,
     /// Delete a downloaded archive and its `.meta` sidecar (two-click confirm).
@@ -806,6 +817,9 @@ pub(crate) enum Message {
     SavesCopyToProfile(String),
     /// Re-scan the saves directory (the tick, while the tab is open).
     SavesTick,
+    /// Copy the prefix saves the profile does not hold into it, never replacing
+    /// one of its saves.
+    SavesImportHidden,
     /// Push every Overwrite file back to the mod that already provides that path
     /// (MO2's "Sync to Mods"). Two clicks: the first arms.
     OverwriteSyncToMods,

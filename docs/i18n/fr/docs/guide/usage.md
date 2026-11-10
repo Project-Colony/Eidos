@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1d62e34566cf1855eda40becbf2626b490ad7dd0 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
 
 # Utiliser Eidos
 
@@ -173,8 +173,9 @@ Eidos - reste cachée tant que les sauvegardes du profil sont montées. Rien ne 
 supprime : le lancement la nomme dans le log de l'exécution (le
 `logs/run-*.log` de l'instance pour un lancement depuis la fenêtre, la console
 de Steam pour un lancement par Steam), une fois à chaque changement de cet
-ensemble de fichiers. Pour y jouer, copiez-la avec son co-save dans le dossier
-`saves/` du profil.
+ensemble de fichiers. Pour y jouer, appuyez sur Importer dans l'onglet
+Sauvegardes. Le bouton Importer la copie avec son co-save dans le profil et ne
+remplace jamais une sauvegarde du profil.
 
 ### Ce qui a changé depuis le dernier bon lancement
 
@@ -578,6 +579,20 @@ au changement de profil et quand un autre processus Eidos modifie la liste.
 Installer, renommer ou supprimer un mod change les dossiers sur le disque : une
 annulation qui remonte avant l'une de ces opérations est refusée.
 
+### Filtrer la liste
+
+Le bouton Filters ouvre une ligne par critère : actif, en conflit, mise à jour
+disponible, sans catégorie, recommandé sur Nexus (endorsed), suivi (tracked),
+avec un id Nexus, avec des fichiers masqués, sans données de jeu valides, pour
+un autre jeu, avec des notes, et une ligne par type de contenu (plugins,
+archives BSA ou BA2, textures, maillages, scripts, plugins de script extender,
+fichiers d'interface, sons, FaceGen). Chaque clic fait passer une ligne à
+l'état suivant : désactivée, « only », « except », puis de nouveau désactivée.
+La ligne du haut bascule entre les mods qui remplissent tous les critères
+choisis et ceux qui en remplissent au moins un. Le champ de filtre par nom et
+la liste des catégories restreignent toujours le résultat en plus. La ligne des
+fichiers masqués ne regarde que les mods activés.
+
 ### Ce que la liste vous dit d'un mod
 
 Deux drapeaux consultatifs, chacun un glyphe avec l'explication au survol. **No
@@ -638,6 +653,12 @@ un vrai mod en une seule étape. **Saves** analyse l'en-tête de chaque sauvegar
 - personnage, niveau, lieu, temps de jeu - et compare la liste de plugins qui y
 est gravée à la vôtre, avec un bouton qui active les mods dont elle a besoin,
 parce que les nommer et vous laisser faire le reste, c'est la moitié ennuyeuse.
+
+Au survol d'un plugin s'affichent son origine, son auteur, sa version d'en-tête et de formulaire, les 300 premiers caractères de sa description, ses masters et, après un tri LOOT, les messages de LOOT. Sur Skyrim, Skyrim SE, Skyrim VR et Enderal SE, le jeu lit aussi un INI portant le nom d'un plugin chargé ; la colonne INI marque ces plugins, et un clic ouvre le fichier en lecture seule.
+
+Une ligne `.exe` de l'onglet Data propose Ajouter, qui ouvre l'éditeur d'exécutables avec ce fichier déjà rempli (rien n'est enregistré avant d'appuyer sur Save), et Lancer, qui le lance une fois à travers la vue fusionnée, comme un outil enregistré. Enregistrer l'arbre écrit tout l'arbre Data fusionné dans un fichier texte, une ligne par fichier avec le mod qui le fournit, sans votre dossier personnel ni votre nom d'utilisateur, pour un rapport de bogue.
+
+Les sauvegardes que Steam Cloud télécharge depuis un autre appareil, ou qu'écrit un lancement sans Eidos, arrivent dans le dossier de sauvegardes du jeu, que les sauvegardes du profil recouvrent pendant que le jeu tourne. L'onglet Sauvegardes les compte sur la ligne sous son titre, et Importer copie chacune avec son co-save dans le profil. Une sauvegarde dont le profil utilise déjà le nom est importée sous `orphan-<time>-<name>` ; rien n'est remplacé dans le profil.
 
 « Information... » ouvre une boîte de dialogue par mod : général, conflits,
 arborescence des fichiers, INI tweaks, notes. Depuis l'arborescence (et depuis

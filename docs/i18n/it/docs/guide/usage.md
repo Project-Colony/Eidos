@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1d62e34566cf1855eda40becbf2626b490ad7dd0 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
 
 # Usare Eidos
 
@@ -168,8 +168,9 @@ Eidos - un download di Steam Cloud da uno Steam Deck, un avvio senza Eidos -
 resta nascosto finché i salvataggi del profilo sono montati. Niente lo cancella:
 l'avvio lo nomina nel log dell'esecuzione (il `logs/run-*.log` dell'istanza per
 un avvio dalla finestra, la console di Steam per un avvio da Steam), una volta
-ogni volta che quell'insieme di file cambia. Per giocarlo, copialo insieme al
-suo co-save nella cartella `saves/` del profilo.
+ogni volta che quell'insieme di file cambia. Per giocarlo, premi Import nella scheda Saves.
+Import lo copia con il suo co-save nel profilo e non sostituisce mai un
+salvataggio del profilo.
 
 ### Cosa è cambiato dall'ultima esecuzione riuscita
 
@@ -566,6 +567,20 @@ modifica la lista. Installare, rinominare o rimuovere un mod cambia le cartelle
 sul disco, quindi un annullamento che va oltre una di queste operazioni viene
 rifiutato.
 
+### Filtrare l'elenco
+
+Il pulsante Filters apre una riga per criterio: attiva, in conflitto,
+aggiornamento disponibile, senza categoria, approvata su Nexus (endorsed),
+seguita (tracked), con un id Nexus, con file nascosti, senza dati di gioco
+validi, per un altro gioco, con note, e una riga per tipo di contenuto (plugin,
+archivi BSA o BA2, texture, mesh, script, plugin dello script extender, file
+dell'interfaccia, suoni, FaceGen). Ogni clic porta la riga allo stato
+successivo: spenta, "only", "except" e di nuovo spenta. La riga in alto passa
+dalle mod che soddisfano tutti i criteri accesi a quelle che ne soddisfano
+almeno uno. La casella del nome e l'elenco delle categorie restringono sempre
+ulteriormente il risultato. La riga dei file nascosti guarda solo le mod
+attive.
+
 ### Cosa l'elenco ti dice di una mod
 
 Due segnalazioni informative, entrambe un glifo con la spiegazione al passaggio
@@ -623,6 +638,12 @@ ogni salvataggio - personaggio, livello, luogo, tempo di gioco - e confronta
 l'elenco di plugin cotto dentro con quello attuale, con un pulsante che attiva
 le mod che gli servono, perché nominarle e lasciare il resto a te è la metà
 noiosa.
+
+Passando il mouse su un plugin si vedono la sua origine, l'autore, la versione dell'intestazione e del modulo, i primi 300 caratteri della descrizione, i suoi master e, dopo un ordinamento con LOOT, i messaggi di LOOT. In Skyrim, Skyrim SE, Skyrim VR ed Enderal SE il gioco legge anche un INI con il nome di un plugin caricato; la colonna INI segna quei plugin e un clic apre il file in sola lettura.
+
+Una riga `.exe` in Data ha Add tool, che apre l'editor Executables con quel file già inserito (nulla viene salvato finché non premi Save), e Run, che lo avvia una volta attraverso la vista unita come uno strumento registrato. Save tree scrive l'intero albero Data unito in un file di testo, una riga per file con la mod che lo fornisce, senza la cartella home e il nome utente, per una segnalazione di bug.
+
+I salvataggi che Steam Cloud scarica da un altro dispositivo, o che un avvio senza Eidos scrive, finiscono nella cartella dei salvataggi del gioco, che i salvataggi del profilo coprono mentre il gioco è in esecuzione. La scheda Saves li conta sulla riga sotto il suo titolo, e Import copia ciascuno con il suo co-save nel profilo. Un salvataggio il cui nome il profilo usa già viene importato come `orphan-<time>-<name>`; nel profilo non viene sostituito nulla.
 
 "Information..." apre una finestra per mod: generale, conflitti, albero dei
 file, modifiche agli INI, note. Dall'albero dei file (e dall'albero Data)

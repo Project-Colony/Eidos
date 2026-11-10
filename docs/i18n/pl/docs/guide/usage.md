@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1d62e34566cf1855eda40becbf2626b490ad7dd0 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
 
 # Używanie Eidos
 
@@ -162,8 +162,9 @@ pobranie ze Steam Cloud zapisu ze Steam Decka, uruchomienie bez Eidos - pozostaj
 ukryty, dopóki zapisy profilu są zamontowane. Nic go nie usuwa: uruchomienie
 wymienia go z nazwy w logu przebiegu (`logs/run-*.log` instancji przy
 uruchomieniu z okna, konsola Steama przy uruchomieniu ze Steama), jeden raz przy
-każdej zmianie tego zestawu plików. Żeby w niego zagrać, skopiuj go razem z
-towarzyszącym mu plikiem co-save do folderu `saves/` profilu.
+każdej zmianie tego zestawu plików. Żeby w niego zagrać, kliknij Import w zakładce
+Saves. Import kopiuje go razem z plikiem co-save do profilu i nigdy nie
+zastępuje zapisu profilu.
 
 ### Co się zmieniło od ostatniego udanego uruchomienia
 
@@ -539,6 +540,19 @@ F5, po zakończeniu uruchomienia gry lub narzędzia, po zmianie profilu i gdy in
 proces Eidos zmieni listę. Instalacja, zmiana nazwy lub usunięcie moda zmienia
 foldery na dysku, więc cofnięcie poza taki krok zostaje odrzucone.
 
+### Filtrowanie listy
+
+Przycisk Filters otwiera jeden wiersz na kryterium: aktywne, w konflikcie,
+dostępna aktualizacja, bez kategorii, polecone na Nexusie (endorsed),
+obserwowane (tracked), z id Nexusa, z ukrytymi plikami, bez prawidłowych danych
+gry, dla innej gry, z notatkami, oraz jeden wiersz na rodzaj zawartości
+(wtyczki, archiwa BSA lub BA2, tekstury, siatki, skrypty, wtyczki script
+extendera, pliki interfejsu, dźwięk, FaceGen). Każde kliknięcie przestawia
+wiersz dalej: wyłączone, „only", „except" i znowu wyłączone. Górny wiersz
+przełącza między modami, które spełniają wszystkie włączone kryteria, a modami,
+które spełniają choć jedno. Pole nazwy i lista kategorii zawsze dodatkowo
+zawężają wynik. Wiersz ukrytych plików patrzy tylko na włączone mody.
+
 ### Co lista mówi ci o modzie
 
 Dwie flagi doradcze, obie w postaci znaku z wyjaśnieniem po najechaniu. **No
@@ -593,6 +607,12 @@ gra zapisała, w prawdziwy mod jednym krokiem. **Saves** rozbiera nagłówek ka�
 zapisu - postać, poziom, lokacja, czas gry - i porównuje wpieczoną w niego listę
 wtyczek z twoją bieżącą, wraz z przyciskiem włączającym mody, których potrzebuje,
 bo nazwanie ich i zostawienie cię z tym to ta nudna połowa.
+
+Po najechaniu na wtyczkę widać, skąd pochodzi, jej autora, wersję nagłówka i formularza, pierwsze 300 znaków opisu, jej mastery oraz, po sortowaniu LOOT, komunikaty LOOT. W Skyrimie, Skyrimie SE, Skyrimie VR i Enderalu SE gra czyta też plik INI nazwany jak załadowana wtyczka; kolumna INI oznacza takie wtyczki, a kliknięcie otwiera ten plik tylko do odczytu.
+
+Wiersz `.exe` w zakładce Data ma przyciski Add tool, który otwiera edytor Executables z już wypełnionym plikiem (nic nie jest zapisywane do czasu kliknięcia Save), oraz Run, który uruchamia plik jednorazowo przez połączony widok, jak zarejestrowane narzędzie. Save tree zapisuje całe scalone drzewo Data do pliku tekstowego, po jednej linii na plik wraz z modem, który go dostarcza, bez folderu domowego i nazwy użytkownika, na potrzeby zgłoszenia błędu.
+
+Zapisy, które Steam Cloud pobiera z innego urządzenia albo które zapisuje uruchomienie bez Eidos, trafiają do własnego folderu zapisów gry, który zapisy profilu przykrywają, dopóki gra działa. Zakładka Saves liczy je w wierszu pod swoim nagłówkiem, a Import kopiuje każdy z nich razem z plikiem co-save do profilu. Zapis, którego nazwy profil już używa, jest importowany jako `orphan-<time>-<name>`; nic w profilu nie zostaje zastąpione.
 
 „Information..." otwiera okno dla pojedynczego moda: ogólne, konflikty, drzewo
 plików, poprawki INI, notatki. Z drzewa plików (i z drzewa Data) każdy plik można

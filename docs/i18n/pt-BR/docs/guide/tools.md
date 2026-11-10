@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=7f872c8fb702f4417931831cc14a48ffb9d9e30b -->
 
 # Ferramentas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -21,6 +21,8 @@ nome do arquivo, em:
 - a **pasta de ferramentas** que você define em Preferences (General -> Tools),
   para o diretório compartilhado entre instâncias - `/mnt/Games/Tools`
   e afins.
+
+Os geradores mais comuns são encontrados do mesmo jeito, cada um nos jogos que suporta: Pandora, Nemesis, FNIS, BodySlide, DynDOLOD, TexGen, xLODGen e Synthesis.
 
 `PGPatcher.exe` e encontrado da mesma forma nos jogos Creation Engine, e chega com um argumento sem o qual nao consegue funcionar - veja [abaixo](#por-que-o-pgpatcher-precisa-de---ignore-mo2vfscheck).
 
@@ -67,6 +69,7 @@ eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse                       # listar o que está registrado
 eidos tool skyrimse run BodySlide         # rodar através da visão combinada
 eidos tool skyrimse run BodySlide --print # mostrar o comando sem executá-lo
+eidos tool skyrimse run --exe "<path>/GenerateFNISforUsers.exe"   # executar um exe uma vez, sem registrá-lo
 eidos tool skyrimse run "SSEEdit QuickAutoClean" --output-mod "Cleaned plugins" -- -qac -autoexit -autoload Dawnguard.esm
 ```
 
@@ -125,6 +128,8 @@ para aquele mod:
 ```
 Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 ```
+
+Pandora, Nemesis, FNIS, BodySlide e Synthesis já vêm com um mod de captura definido: `Pandora Output`, `Nemesis Output`, `FNIS Output`, `BodySlide Output` e `Synthesis Output`. DynDOLOD, TexGen e xLODGen vêm sem ele, porque gravam na pasta de saída que você indicar.
 
 O mod é criado se não existir. Só os arquivos que ESTA execução produziu se
 movem; qualquer coisa que já estava no Overwrite fica lá, então duas ferramentas
@@ -484,6 +489,10 @@ ferramenta dentro do contêiner foi testada ainda.
 `eidos tool <instance> run <title> --print` mostra o comando final e cada
 variável que a execução define por cima do ambiente herdado, incluindo essas
 linhas.
+
+## BethINI Pie
+
+O Eidos não inclui o BethINI Pie. Coloque a versão baixada da página dele no Nexus em `mods/` desta instância ou na sua pasta de ferramentas, e `Bethini.exe` aparece na lista de ferramentas. Executado pelo Eidos, ele edita a cópia dos INI do jogo que pertence ao perfil. Antes de cada execução o Eidos guarda uma cópia desses INI; **Backups -> INIs** restaura uma delas. Um INI que não existia quando a cópia foi feita fica como está.
 
 ## As configurações da própria ferramenta continuam sendo dela
 

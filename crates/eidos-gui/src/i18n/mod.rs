@@ -31,7 +31,26 @@ fn table(locale: Locale) -> &'static HashMap<&'static str, &'static str> {
 
 /// The string for `key` in the active locale.
 pub(crate) fn t(key: &str) -> &'static str {
+    #[cfg(test)]
+    if let Some(locale) = TEST_LOCALE.get() {
+        return t_in(locale, key);
+    }
     t_in(colony_ui::i18n::locale(), key)
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_LOCALE: std::cell::Cell<Option<Locale>> = const { std::cell::Cell::new(None) };
+}
+
+/// Build `f` with `locale` on this test thread only: the process-wide locale
+/// would translate the strings tests on other threads assert on (see [`apply`]).
+#[cfg(test)]
+pub(crate) fn with_locale<R>(locale: Locale, f: impl FnOnce() -> R) -> R {
+    TEST_LOCALE.set(Some(locale));
+    let out = f();
+    TEST_LOCALE.set(None);
+    out
 }
 
 /// The string for `key` in `locale`.

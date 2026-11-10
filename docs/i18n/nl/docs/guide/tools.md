@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=7f872c8fb702f4417931831cc14a48ffb9d9e30b -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -19,6 +19,8 @@ voor waarschuwt. Eidos zoekt ernaar, op bestandsnaam, in:
 - **de `mods/` van deze instantie**, waar MO2-gebruikers hun tools installeren;
 - de **tools folder** die je in Preferences instelt (General -> Tools), voor de
   map die tussen instanties gedeeld wordt - `/mnt/Games/Tools` en dergelijke.
+
+De gangbare generatoren worden op dezelfde manier gevonden, elk bij de spellen die het ondersteunt: Pandora, Nemesis, FNIS, BodySlide, DynDOLOD, TexGen, xLODGen en Synthesis.
 
 `PGPatcher.exe` wordt op dezelfde manier gevonden bij de Creation Engine-spellen, en komt met een argument waarzonder het niet kan werken - zie [hieronder](#waarom-pgpatcher---ignore-mo2vfscheck-nodig-heeft).
 
@@ -67,6 +69,7 @@ eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse                       # list what is registered
 eidos tool skyrimse run BodySlide         # run it through the merged view
 eidos tool skyrimse run BodySlide --print # show the command without running it
+eidos tool skyrimse run --exe "<path>/GenerateFNISforUsers.exe"   # een exe eenmalig starten, zonder te registreren
 eidos tool skyrimse run "SSEEdit QuickAutoClean" --output-mod "Cleaned plugins" -- -qac -autoexit -autoload Dawnguard.esm
 ```
 
@@ -125,6 +128,8 @@ gaat in plaats daarvan naar die mod:
 ```
 Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 ```
+
+Pandora, Nemesis, FNIS, BodySlide en Synthesis komen met een al ingestelde opvangmod: `Pandora Output`, `Nemesis Output`, `FNIS Output`, `BodySlide Output` en `Synthesis Output`. DynDOLOD, TexGen en xLODGen komen zonder, omdat ze naar de uitvoermap schrijven die je opgeeft.
 
 De mod wordt aangemaakt als hij niet bestaat. Alleen de bestanden die DEZE draai
 voortbracht verhuizen; wat al in de Overwrite stond blijft daar, zodat twee tools
@@ -489,6 +494,10 @@ is. Een toolrun in de container is nog niet getest.
 `eidos tool <instance> run <title> --print` toont het uiteindelijke commando en
 elke variabele die de draai boven op de geërfde omgeving zet, deze regels
 inbegrepen.
+
+## BethINI Pie
+
+Eidos levert BethINI Pie niet mee. Zet de versie die u van de Nexus-pagina hebt gedownload in `mods/` van deze instantie of in uw toolsmap, dan verschijnt `Bethini.exe` in de toollijst. Via Eidos gestart bewerkt het de kopie van de spel-INI's in het profiel. Voor elke start bewaart Eidos een kopie van die INI's; **Backups -> INIs** zet er een terug. Een INI die er bij het maken van de kopie nog niet was, blijft zoals hij is.
 
 ## De eigen instellingen van een tool blijven de zijne
 

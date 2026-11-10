@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=7f872c8fb702f4417931831cc14a48ffb9d9e30b -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -17,6 +17,8 @@ LOOT 一直在警告的 dirty edits 所对应的按钮。Eidos 按文件名在�
 - **本实例的 `mods/`**,MO2 用户就是把工具装在那里;
 - 你在偏好设置里指定的**工具文件夹**(General -> Tools),用于实例之间共享的
   那个目录 - 诸如 `/mnt/Games/Tools`。
+
+常用的生成器也用同样的方式查找，各自只在其支持的游戏中出现：Pandora、Nemesis、FNIS、BodySlide、DynDOLOD、TexGen、xLODGen 和 Synthesis。
 
 `PGPatcher.exe` 在 Creation Engine 系列游戏中以同样的方式被找到，并且带着一个缺了就无法工作的参数 - 见[下文](#为什么-pgpatcher-需要---ignore-mo2vfscheck)。
 
@@ -43,6 +45,7 @@ eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse                       # 列出已注册的东西
 eidos tool skyrimse run BodySlide         # 穿过合并视图运行它
 eidos tool skyrimse run BodySlide --print # 只显示命令,不运行
+eidos tool skyrimse run --exe "<path>/GenerateFNISforUsers.exe"   # 运行一次 exe,不注册
 eidos tool skyrimse run "SSEEdit QuickAutoClean" --output-mod "Cleaned plugins" -- -qac -autoexit -autoload Dawnguard.esm
 ```
 
@@ -96,6 +99,8 @@ eidos tool /path/to/list import-mo2 --write   # 添加
 ```
 Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 ```
+
+Pandora、Nemesis、FNIS、BodySlide 和 Synthesis 添加时已设好捕获 mod：`Pandora Output`、`Nemesis Output`、`FNIS Output`、`BodySlide Output` 和 `Synthesis Output`。DynDOLOD、TexGen 和 xLODGen 没有预设，因为它们写入你指定的输出文件夹。
 
 模组不存在就会被创建。只有这次运行产生的文件会被移走;原本已经在 Overwrite
 里的东西留在原处,所以两个都设了捕获目标的工具不会偷走彼此的输出。什么都没写
@@ -390,6 +395,10 @@ Windows 程序,要写它在游戏 `Data` 文件夹下的路径,合并视图就�
 
 `eidos tool <instance> run <title> --print` 会显示最终的命令,以及这次运行在继承的
 环境之上设置的每一个变量,包括这些行。
+
+## BethINI Pie
+
+Eidos 不附带 BethINI Pie。把从它的 Nexus 页面下载的版本放进此实例的 `mods/` 或你的工具文件夹，`Bethini.exe` 就会出现在工具列表中。通过 Eidos 运行时，它编辑的是配置文件自己的游戏 INI 副本。每次运行前，Eidos 会保留这些 INI 的一份副本；**Backups -> INIs** 可以还原其中一份。副本生成时尚不存在的 INI 保持原样。
 
 ## 工具自己的设置终归是它自己的
 

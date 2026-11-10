@@ -1185,6 +1185,249 @@ fn the_disable_confirmation_never_moves_the_mod_rows() {
     );
 }
 
+/// The match toggle sits in its own full-width row above the criteria, so
+/// switching it changes only its own text.
+#[test]
+fn the_match_toggle_never_moves_the_filter_rows() {
+    let _look = crate::test_support::look_lock();
+    let mut app = crate::test_support::nav_app(&["A"]);
+    let mut renderer = renderer();
+    let before = label(
+        crate::view::filter_pane(&app),
+        &mut renderer,
+        t("filter_active"),
+        0,
+    );
+    let plugins = label(
+        crate::view::filter_pane(&app),
+        &mut renderer,
+        t("filter_plugins"),
+        0,
+    );
+    app.filters.match_any = true;
+    assert_eq!(
+        label(
+            crate::view::filter_pane(&app),
+            &mut renderer,
+            t("filter_active"),
+            0
+        ),
+        before
+    );
+    assert_eq!(
+        label(
+            crate::view::filter_pane(&app),
+            &mut renderer,
+            t("filter_plugins"),
+            0
+        ),
+        plugins
+    );
+}
+
+#[test]
+fn a_plugin_ini_marker_never_moves_the_plugin_rows() {
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    // The fixture is an Oblivion instance, an engine without the column.
+    app.games[0].def = eidos_games::GameDef::for_id("skyrimse").unwrap();
+    let mut list = eidos_plugins::PluginList::default();
+    for name in ["Alpha.esp", "Beta.esp"] {
+        list.plugins
+            .push(crate::test_support::plugin_row(name, "Alpha"));
+    }
+    app.plugins = Some(list);
+    let mut renderer = renderer();
+    let panel = |app: &App| crate::modinfo::plugins_panel(app);
+    let inis = |app: &App, r: &mut iced::Renderer| {
+        positions(panel(app), r)
+            .labels
+            .iter()
+            .filter(|(s, _)| s == "INI")
+            .count()
+    };
+    let beta = label(panel(&app), &mut renderer, "Beta.esp", 0);
+    let loot = label(panel(&app), &mut renderer, "LOOT", 0);
+    assert_eq!(inis(&app, &mut renderer), 1, "the column header only");
+    app.plugins.as_mut().unwrap().plugins[0].ini = Some(PathBuf::from("/m/Alpha/Alpha.ini"));
+    assert_eq!(label(panel(&app), &mut renderer, "Beta.esp", 0), beta);
+    assert_eq!(label(panel(&app), &mut renderer, "LOOT", 0), loot);
+    assert_eq!(
+        inis(&app, &mut renderer),
+        2,
+        "the header and Alpha's marker"
+    );
+}
+
+#[test]
+fn exe_actions_keep_the_data_columns_aligned() {
+    let _look = crate::test_support::look_lock();
+    let (app, _root) =
+        crate::test_support::data_app(&[("notes.txt", "12345"), ("Tool.exe", "MZ345")], &[]);
+    let mut renderer = renderer();
+    let drawn = positions(crate::modinfo::data_panel(&app), &mut renderer).labels;
+    assert!(drawn.iter().any(|(s, _)| s == t("data_add_tool")));
+    let sizes: Vec<_> = drawn
+        .iter()
+        .filter(|(s, _)| *s == crate::modinfo::format_size(5))
+        .map(|(_, r)| r.center().x)
+        .collect();
+    assert_eq!(sizes.len(), 2);
+    assert_eq!(
+        sizes[0], sizes[1],
+        "the Size column does not move on an exe row"
+    );
+}
+
+/// French has the longest action labels. A mod-owned exe row holds Reveal, Add
+/// tool, Run and Hide, a mod's file Reveal, View and Hide, a game file Reveal and
+/// View. Checked at every text size that rounds differently: the default, the
+/// smallest (Small x Small), Small, where `sz(10)` rounds 8.5 up to 9, and the
+/// largest (Large x XLarge).
+#[test]
+fn french_data_actions_fit_their_cell_on_one_line() {
+    use colony_ui::i18n::Locale;
+    use colony_ui::typography::{FontSize, TextSize};
+    let _look = crate::test_support::look_lock();
+    let (app, _root) =
+        crate::test_support::data_app(&[("notes.txt", "12345"), ("Tool.exe", "MZ345")], &[]);
+    let mut renderer = renderer();
+    let fr = |key| crate::i18n::t_in(Locale::Fr, key);
+    for (font, text) in [
+        (FontSize::Default, TextSize::Default),
+        (FontSize::Small, TextSize::Small),
+        (FontSize::Small, TextSize::Default),
+        (FontSize::Large, TextSize::XLarge),
+    ] {
+        let mut look = crate::preferences::UiPreferences::default();
+        look.standard.font_size = font;
+        look.standard.text_size_a11y = text;
+        look.standard.apply();
+        let panel = crate::i18n::with_locale(Locale::Fr, || crate::modinfo::data_panel(&app));
+        let drawn = positions(panel, &mut renderer).labels;
+        // The header's empty label after Modified spans the action column.
+        let at = drawn
+            .iter()
+            .position(|(s, _)| s == fr("col_modified"))
+            .unwrap_or_else(|| panic!("no header: {drawn:?}"));
+        let cell = drawn[at + 1].1;
+        let line = drawn
+            .iter()
+            .find(|(s, _)| s == "notes.txt")
+            .map(|(_, r)| r.height)
+            .unwrap();
+        for (key, rows) in [
+            ("preview_reveal", 3),
+            ("data_add_tool", 1),
+            ("data_run_exe", 1),
+            ("info_view", 2),
+            ("info_hide", 2),
+        ] {
+            let found: Vec<_> = drawn.iter().filter(|(s, _)| s == fr(key)).collect();
+            assert_eq!(found.len(), rows, "{font:?} x {text:?} {key}: {drawn:?}");
+            // A label the cell cannot hold is clipped, not pushed out: compare it
+            // with the same text drawn on its own.
+            let alone = positions(
+                crate::theme::text(fr(key)).size(colony_ui::sz(10)).into(),
+                &mut renderer,
+            )
+            .labels[0]
+                .1
+                .width;
+            for (s, r) in found {
+                assert!(
+                    (r.width - alone).abs() < 0.5
+                        && r.x >= cell.x
+                        && r.x + r.width <= cell.x + cell.width,
+                    "{font:?} x {text:?}: {s} leaves the cell {cell:?}: {r:?}"
+                );
+                assert!(r.height <= line, "{font:?} x {text:?}: {s} wraps: {r:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn an_ini_restore_point_never_moves_the_other_columns() {
+    let _look = crate::test_support::look_lock();
+    let mut state = BackupsDialogState {
+        mods: Vec::new(),
+        order: Vec::new(),
+        inis: Some((&["Skyrim.ini"], Vec::new())),
+    };
+    let mut renderer = renderer();
+    let heading = label(
+        crate::dialogs::backups_dialog(&state),
+        &mut renderer,
+        t("backups_load_order"),
+        0,
+    );
+    state.inis.as_mut().unwrap().1.push(eidos_instance::Backup {
+        stamp: 1_787_580_000,
+        files: Vec::new(),
+    });
+    assert_eq!(
+        label(
+            crate::dialogs::backups_dialog(&state),
+            &mut renderer,
+            t("backups_load_order"),
+            0
+        ),
+        heading
+    );
+}
+
+#[test]
+fn the_hidden_saves_notice_never_moves_the_save_rows() {
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    app.saves = vec![eidos_instance::SaveEntry {
+        filename: "Save1.ess".into(),
+        path: PathBuf::from("/p/Save1.ess"),
+        size: 10,
+        mtime: std::time::UNIX_EPOCH,
+    }];
+    let mut renderer = renderer();
+    let row = label(
+        crate::modinfo::saves_panel(&app),
+        &mut renderer,
+        "Save1.ess",
+        0,
+    );
+    app.hidden_saves = vec!["Deck.ess".into()];
+    assert_eq!(
+        label(
+            crate::modinfo::saves_panel(&app),
+            &mut renderer,
+            "Save1.ess",
+            0
+        ),
+        row
+    );
+    assert!(positions(crate::modinfo::saves_panel(&app), &mut renderer)
+        .labels
+        .iter()
+        .any(|(s, _)| s == t("saves_import")));
+    // A list narrower than the one-line notice (the 0.6 split with a save
+    // selected) still leaves the Import button its own width.
+    let narrow = container(crate::modinfo::saves_panel(&app)).width(Length::Fixed(400.0));
+    let labels = positions(narrow.into(), &mut renderer).labels;
+    let (_, import) = labels
+        .iter()
+        .find(|(s, _)| s == t("saves_import"))
+        .unwrap_or_else(|| panic!("Missing Import: {labels:?}"));
+    assert!(
+        import.width > 0.0 && import.x + import.width <= 400.0,
+        "Import squeezed out: {labels:?}"
+    );
+    assert!(
+        labels
+            .iter()
+            .any(|(s, r)| s.ends_with("saves") && r.width > 0.0),
+        "saves folder squeezed out: {labels:?}"
+    );
+}
+
 /// The release link arrives from a worker after the window is up. It sits after
 /// Help, where nothing follows it, so no menu item or mod row moves.
 #[test]

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=7f872c8fb702f4417931831cc14a48ffb9d9e30b -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -19,6 +19,8 @@ düzenlemelerin düğmesidir. Eidos onları dosya adına göre şuralarda arar:
 - MO2 kullanıcılarının araçları kurduğu yer olan **bu örneğin `mods/`** dizini;
 - örnekler arasında paylaşılan dizin için Tercihler'de belirlediğiniz **araçlar
   klasörü** (General -> Tools) - `/mnt/Games/Tools` ve benzerleri.
+
+Yaygın üreticiler de aynı yolla bulunur, her biri desteklediği oyunlarda: Pandora, Nemesis, FNIS, BodySlide, DynDOLOD, TexGen, xLODGen ve Synthesis.
 
 `PGPatcher.exe` Creation Engine oyunlarinda ayni sekilde bulunur ve onsuz calisamayacagi bir argumanla gelir - bkz. [asagisi](#pgpatcher-neden---ignore-mo2vfscheck-ister).
 
@@ -66,6 +68,7 @@ eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse                       # kayıtlı olanları listele
 eidos tool skyrimse run BodySlide         # birleşik görünüm üzerinden çalıştır
 eidos tool skyrimse run BodySlide --print # komutu çalıştırmadan göster
+eidos tool skyrimse run --exe "<path>/GenerateFNISforUsers.exe"   # bir exe dosyasını kaydetmeden bir kez çalıştır
 eidos tool skyrimse run "SSEEdit QuickAutoClean" --output-mod "Cleaned plugins" -- -qac -autoexit -autoload Dawnguard.esm
 ```
 
@@ -123,6 +126,8 @@ Executables düzenleyicisinde **Capture output into** ayarını verin; bu
 ```
 Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 ```
+
+Pandora, Nemesis, FNIS, BodySlide ve Synthesis, yakalama modu hazır ayarlı gelir: `Pandora Output`, `Nemesis Output`, `FNIS Output`, `BodySlide Output` ve `Synthesis Output`. DynDOLOD, TexGen ve xLODGen ise vermeniz gereken çıktı klasörüne yazdıkları için bu ayar olmadan gelir.
 
 Mod yoksa oluşturulur. Yalnızca BU çalıştırmanın ürettiği dosyalar taşınır;
 Overwrite'ta zaten bulunan ne varsa orada kalır, böylece yakalama hedefi olan
@@ -485,6 +490,10 @@ kullanılamaz. Kapsayıcı içinde bir araç çalıştırması henüz denenmedi.
 
 `eidos tool <instance> run <title> --print`, son komutu ve çalıştırmanın
 devralınan ortamın üzerine ayarladığı her değişkeni, bu satırlar dahil, gösterir.
+
+## BethINI Pie
+
+Eidos BethINI Pie'ı birlikte getirmez. Nexus sayfasından indirdiğiniz sürümü bu örneğin `mods/` klasörüne ya da araç klasörünüze koyun; `Bethini.exe` araç listesinde görünür. Eidos üzerinden çalıştırıldığında profilin oyun INI kopyasını düzenler. Her çalıştırmadan önce Eidos bu INI'lerin bir kopyasını saklar; **Backups -> INIs** birini geri yükler. Kopya alındığında var olmayan bir INI olduğu gibi bırakılır.
 
 ## Bir aracın kendi ayarları yine kendisinindir
 

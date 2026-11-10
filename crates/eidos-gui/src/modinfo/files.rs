@@ -15,7 +15,11 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
     // Column widths declared once so the header and the rows cannot drift apart.
     const C_SIZE: f32 = 72.0;
     const C_DATE: f32 = 96.0;
-    const C_ACTION: f32 = 116.0;
+    // Fits Reveal, Add tool, Run and Hide in French, the longest locale: 29
+    // characters of the monospace UI font (0.6 x the size) plus 49 px of padding
+    // and spacing that do not scale. `sz(10)` rounds, so the tightest text size is
+    // Small (0.85, size 9): 29 x 5.4 + 49 = 205.6 px, 242 before scaling.
+    const C_ACTION: f32 = 244.0;
 
     let controls = Row::new()
         .spacing(6)
@@ -38,7 +42,8 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
                 .on_press(Message::DataToggleConflictsOnly),
         )
         .push(tool_btn(t("data_expand_all"), Message::DataExpandAll))
-        .push(tool_btn(t("data_collapse_all"), Message::DataCollapseAll));
+        .push(tool_btn(t("data_collapse_all"), Message::DataCollapseAll))
+        .push(tool_btn(t("data_save_tree"), Message::DataSaveTree));
 
     let header = Row::new()
         .spacing(6)
@@ -141,7 +146,22 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
                 .on_press(Message::DataReveal(r.row.real.clone()))
                 .style(button::secondary),
         );
-        if !r.row.is_dir {
+        let is_exe = !r.row.is_dir && r.row.name.to_ascii_lowercase().ends_with(".exe");
+        if is_exe {
+            action = action
+                .push(
+                    button(text(t("data_add_tool")).size(sz(10)))
+                        .padding([1, 5])
+                        .on_press(Message::DataAddTool(r.row.real.clone()))
+                        .style(button::secondary),
+                )
+                .push(
+                    button(text(t("data_run_exe")).size(sz(10)))
+                        .padding([1, 5])
+                        .on_press(Message::DataRunExe(r.row.real.clone()))
+                        .style(button::secondary),
+                );
+        } else if !r.row.is_dir {
             action = action.push(
                 button(text(t("info_view")).size(sz(10)))
                     .padding([1, 5])

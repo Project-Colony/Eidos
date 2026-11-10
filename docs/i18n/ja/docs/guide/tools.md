@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=7f872c8fb702f4417931831cc14a48ffb9d9e30b -->
 
 # ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -19,6 +19,8 @@ Fallout 4 なら `FO4Edit.exe`、Skyrim SE なら `SSEEdit.exe`、初代なら
 - **このインスタンスの `mods/`**。MO2 の利用者がツールを入れる場所です;
 - 環境設定で指定した**ツールフォルダ**(General -> Tools)。インスタンス間で
   共有するディレクトリ - `/mnt/Games/Tools` のようなもののためです。
+
+よく使われるジェネレーターも同じ方法で見つかります。それぞれ対応するゲームでのみ対象になります。対象は Pandora、Nemesis、FNIS、BodySlide、DynDOLOD、TexGen、xLODGen、Synthesis です。
 
 `PGPatcher.exe` も Creation Engine 系のゲームで同じように見つかり、これがないと動作できない引数とともに登録されます - [下記](#pgpatcher-に---ignore-mo2vfscheck-が要る理由)を参照。
 
@@ -46,6 +48,7 @@ eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse                       # list what is registered
 eidos tool skyrimse run BodySlide         # run it through the merged view
 eidos tool skyrimse run BodySlide --print # show the command without running it
+eidos tool skyrimse run --exe "<path>/GenerateFNISforUsers.exe"   # exe を登録せずに一度だけ実行する
 eidos tool skyrimse run "SSEEdit QuickAutoClean" --output-mod "Cleaned plugins" -- -qac -autoexit -autoload Dawnguard.esm
 ```
 
@@ -103,6 +106,8 @@ Executables のエディタで **Capture output into** を設定すると、そ�
 ```
 Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 ```
+
+Pandora、Nemesis、FNIS、BodySlide、Synthesis には、取り込み先の mod があらかじめ設定されます。`Pandora Output`、`Nemesis Output`、`FNIS Output`、`BodySlide Output`、`Synthesis Output` です。DynDOLOD、TexGen、xLODGen は、指定した出力フォルダーに書き込むため、設定されません。
 
 MOD が無ければ作られます。動くのはこの実行が生んだファイルだけで、すでに
 Overwrite にあったものはそのまま残ります。だから取り込み先を持つ二つのツールが
@@ -432,6 +437,10 @@ Heroic の設定がありません。
 
 `eidos tool <instance> run <title> --print` は、最終的なコマンドと、実行が継承した
 環境の上に設定する変数すべてを、これらの行も含めて表示します。
+
+## BethINI Pie
+
+Eidos は BethINI Pie を同梱しません。Nexus のページからダウンロードしたものを、このインスタンスの `mods/` かツール用フォルダに置くと、ツール一覧に `Bethini.exe` が現れます。Eidos 経由で実行すると、プロファイルが持つゲーム INI のコピーを編集します。実行のたびに Eidos はその INI のコピーを残し、**Backups -> INIs** で元に戻せます。コピーを取った時点で存在しなかった INI には手を付けません。
 
 ## ツール自身の設定は、やはりツール自身のもの
 

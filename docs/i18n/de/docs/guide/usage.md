@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1d62e34566cf1855eda40becbf2626b490ad7dd0 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
 
 # Eidos verwenden
 
@@ -170,7 +170,8 @@ bleibt verborgen, solange die Spielstände des Profils gemountet sind. Nichts
 löscht ihn: der Start nennt ihn im Log des Laufs (`logs/run-*.log` der Instanz
 bei einem Start aus dem Fenster, die Konsole von Steam bei einem Steam-Start),
 jeweils einmal, wenn sich dieser Satz von Dateien ändert. Um ihn zu spielen,
-kopieren Sie ihn und seinen Co-Save in den `saves/`-Ordner des Profils.
+drücken Sie Import im Saves-Tab. Import kopiert ihn mit seinem Co-Save ins
+Profil und ersetzt nie einen Spielstand des Profils.
 
 ### Was sich seit dem letzten guten Start geändert hat
 
@@ -579,6 +580,20 @@ Tool-Laufs, beim Profilwechsel und wenn ein anderer Eidos-Prozess die Liste
 der Festplatte, daher wird ein Rückgängigmachen über einen solchen Schritt hinaus
 abgelehnt.
 
+### Die Liste filtern
+
+Der Knopf Filters öffnet eine Zeile je Kriterium: aktiv, im Konflikt, Update
+verfügbar, ohne Kategorie, auf Nexus empfohlen (endorsed), verfolgt (tracked),
+mit Nexus-ID, mit versteckten Dateien, ohne gültige Spieldaten, für ein anderes
+Spiel, mit Notizen, und eine Zeile je Art von Inhalt (Plugins, BSA- oder
+BA2-Archive, Texturen, Meshes, Skripte, Script-Extender-Plugins,
+Interface-Dateien, Sound, FaceGen). Ein Klick schaltet eine Zeile reihum
+zwischen aus, "only" und "except". Die oberste Zeile wechselt zwischen Mods,
+die alle eingeschalteten Kriterien erfüllen, und Mods, die mindestens eines
+davon erfüllen. Das Namensfeld und die Kategorienliste schränken das Ergebnis
+immer zusätzlich ein. Die Zeile für versteckte Dateien sieht nur aktivierte
+Mods an.
+
 ### Was die Liste Ihnen über eine Mod sagt
 
 Zwei beratende Kennzeichen, beide ein Glyph mit der Erklärung beim Überfahren.
@@ -636,6 +651,12 @@ geschrieben hat. **Saves** liest den Kopf jedes Spielstands - Charakter, Stufe,
 Ort, Spielzeit - und vergleicht die darin eingebackene Plugin-Liste mit Ihrer
 aktuellen, mit einem Knopf, der die benötigten Mods aktiviert, denn sie zu
 benennen und Sie damit sitzenzulassen ist die langweilige Hälfte.
+
+Beim Überfahren eines Plugins erscheinen seine Herkunft, sein Autor, die Header- und die Formularversion, die ersten 300 Zeichen der Beschreibung, seine Master und nach einer LOOT-Sortierung die Meldungen von LOOT. Bei Skyrim, Skyrim SE, Skyrim VR und Enderal SE liest das Spiel zusätzlich eine INI, die nach einem geladenen Plugin benannt ist; die Spalte INI markiert diese Plugins, und ein Klick öffnet die Datei schreibgeschützt.
+
+Eine `.exe`-Zeile im Data-Tab hat Add tool, das den Executables-Editor mit dieser Datei vorausgefüllt öffnet (gespeichert wird erst mit Save), und Run, das die Datei einmal durch die zusammengeführte Ansicht startet, wie ein registriertes Tool. Save tree schreibt den gesamten zusammengeführten Data-Baum in eine Textdatei, eine Zeile pro Datei mit dem Mod, der sie liefert, ohne Ihren Home-Ordner und Benutzernamen, für einen Fehlerbericht.
+
+Spielstände, die Steam Cloud von einem anderen Gerät herunterlädt oder die ein Start ohne Eidos schreibt, landen im eigenen Speicherordner des Spiels, den die Spielstände des Profils überdecken, solange das Spiel läuft. Der Saves-Tab zählt sie in der Zeile unter seiner Überschrift, und Import kopiert jeden mit seinem Co-Save ins Profil. Ein Spielstand, dessen Namen das Profil schon verwendet, wird als `orphan-<time>-<name>` importiert; im Profil wird nichts ersetzt.
 
 "Information..." öffnet einen Dialog je Mod: Allgemeines, Konflikte, Dateibaum,
 INI-Anpassungen, Notizen. Aus dem Dateibaum (und aus dem Data-Baum) kann jede

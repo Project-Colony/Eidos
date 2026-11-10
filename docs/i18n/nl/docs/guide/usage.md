@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1d62e34566cf1855eda40becbf2626b490ad7dd0 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
 
 # Eidos gebruiken
 
@@ -164,7 +164,8 @@ verborgen zolang de saves van het profiel gekoppeld zijn. Niets verwijdert hem:
 de start benoemt hem in het log van de run (de `logs/run-*.log` van de instantie
 bij een start vanuit het venster, de console van Steam bij een start via Steam),
 één keer telkens wanneer die verzameling bestanden verandert. Om hem te spelen,
-kopieer je hem en zijn co-save naar de map `saves/` van het profiel.
+druk je op Import in het tabblad Saves. Import kopieert hem met zijn co-save
+naar het profiel en vervangt nooit een save van het profiel.
 
 ### Wat er veranderd is sinds de laatste goede run
 
@@ -550,6 +551,19 @@ toolrun, bij een profielwissel en wanneer een ander Eidos-proces de lijst wijzig
 Een mod installeren, hernoemen of verwijderen verandert de mappen op schijf, dus
 ongedaan maken voorbij zo'n stap wordt geweigerd.
 
+### De lijst filteren
+
+De knop Filters opent een regel per criterium: actief, in conflict, update
+beschikbaar, geen categorie, op Nexus aanbevolen (endorsed), gevolgd (tracked),
+met een Nexus-id, met verborgen bestanden, geen geldige speldata, voor een
+ander spel, met notities, en een regel per soort inhoud (plugins, BSA- of
+BA2-archieven, textures, meshes, scripts, plugins van de script extender,
+interfacebestanden, geluid, FaceGen). Elke klik zet een regel een stap verder:
+uit, "only", "except" en weer uit. De bovenste regel wisselt tussen mods die
+aan alle aangezette criteria voldoen en mods die aan minstens één voldoen. Het
+naamvak en de categorielijst beperken het resultaat altijd nog verder. De regel
+voor verborgen bestanden kijkt alleen naar ingeschakelde mods.
+
 ### Wat de lijst je over een mod vertelt
 
 Twee adviserende vlaggen, allebei een teken met de uitleg bij het zweven. **No
@@ -607,6 +621,12 @@ openen). De kop telt de ingeschakelde plugins per indexruimte tegen de limiet va
 en vergelijkt de erin gebakken pluginlijst met je huidige, met een knop die de
 mods inschakelt die ze nodig heeft, want ze benoemen en het verder aan jou laten
 is de saaie helft.
+
+Als u over een plugin beweegt, ziet u waar die vandaan komt, de auteur, de header- en formulierversie, de eerste 300 tekens van de beschrijving, de masters en, na een LOOT-sortering, de berichten van LOOT. Bij Skyrim, Skyrim SE, Skyrim VR en Enderal SE leest het spel ook een INI die naar een geladen plugin is genoemd; de kolom INI markeert die plugins en een klik opent dat bestand alleen-lezen.
+
+Een `.exe`-rij in Data heeft Add tool, dat de Executables-editor opent met dat bestand al ingevuld (er wordt niets opgeslagen tot je op Save drukt), en Run, dat het bestand één keer start via de samengevoegde weergave, zoals een geregistreerde tool. Save tree schrijft de hele samengevoegde Data-boom naar een tekstbestand, één regel per bestand met de mod die het levert, zonder uw thuismap en gebruikersnaam, voor een bugmelding.
+
+Saves die Steam Cloud van een ander apparaat downloadt, of die een start zonder Eidos schrijft, komen in de eigen savemap van het spel terecht, die de saves van het profiel afdekken zolang het spel draait. Het tabblad Saves telt ze op de regel onder de kop, en Import kopieert elke save met zijn co-save naar het profiel. Een save waarvan het profiel de naam al gebruikt, wordt geïmporteerd als `orphan-<time>-<name>`; niets in het profiel wordt vervangen.
 
 "Information..." opent een dialoog per mod: algemeen, conflicten, bestandsboom,
 INI-tweaks, notities. Vanuit de bestandsboom (en vanuit de Data-boom) kan elk

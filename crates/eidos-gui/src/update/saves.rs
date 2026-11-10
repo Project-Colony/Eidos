@@ -24,6 +24,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // Compare a fingerprint, do NOT reload. Reloading twice a second
             // would rebuild the list under the user's hands - dropping the
             // selection and closing the details pane every tick.
+            // shortcut: only the profile's saves folder is fingerprinted, so a
+            // save Steam Cloud drops into the prefix while this tab is open is
+            // counted at the next reload (Refresh, a change in the profile's
+            // saves, a run); add the prefix Saves folder if users miss one.
             let now = saves_fingerprint(app);
             if now != app.saves_fingerprint {
                 // Everything the user has aimed at, by PATH: a new autosave
@@ -183,6 +187,38 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     &[("n", &n), ("failed", &f), ("example", &failed[0])],
                 ),
             });
+        }
+        Message::SavesImportHidden => {
+            let Some(inst) = app.created.clone() else {
+                return Task::none();
+            };
+            let Some(prefix) = selected_game(app).and_then(|g| g.saves_path()) else {
+                return Task::none();
+            };
+            let lock = match inst.try_lock("the Eidos window") {
+                Ok(l) => l,
+                Err(e) => {
+                    app.status = Some(tf("status_saves_import_busy", &[("error", &e)]));
+                    return Task::none();
+                }
+            };
+            app.status = Some(
+                match inst
+                    .active()
+                    .import_prefix_saves(&prefix, &app.hidden_saves)
+                {
+                    Ok(done) => tf(
+                        "status_saves_imported",
+                        &[
+                            ("n", &(done.copied + done.renamed)),
+                            ("renamed", &done.renamed),
+                        ],
+                    ),
+                    Err(e) => tf("status_saves_import_failed", &[("error", &e)]),
+                },
+            );
+            drop(lock);
+            load_saves(app);
         }
         Message::SelectSave(i) => {
             // Clicking the open row closes the pane, so the list can go full width.

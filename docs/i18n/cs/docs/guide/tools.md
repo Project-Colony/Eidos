@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=7f872c8fb702f4417931831cc14a48ffb9d9e30b -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -19,6 +19,8 @@ edits, na které LOOT pořád upozorňuje. Eidos je hledá podle názvu souboru 
 - **`mods/` této instance**, kam si nástroje instalují uživatelé MO2;
 - **tools folder**, který nastavíte v Preferences (General -> Tools), pro
   adresář sdílený mezi instancemi - `/mnt/Games/Tools` a podobně.
+
+Obvyklé generátory se najdou stejným způsobem, každý u her, které podporuje: Pandora, Nemesis, FNIS, BodySlide, DynDOLOD, TexGen, xLODGen a Synthesis.
 
 `PGPatcher.exe` se stejnym zpusobem najde u her na Creation Engine a prichazi s argumentem, bez ktereho nemuze pracovat - viz [nize](#proc-pgpatcher-potrebuje---ignore-mo2vfscheck).
 
@@ -64,6 +66,7 @@ eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse                       # vypsat, co je zaregistrováno
 eidos tool skyrimse run BodySlide         # spustit ho skrz sloučený pohled
 eidos tool skyrimse run BodySlide --print # ukázat příkaz bez spuštění
+eidos tool skyrimse run --exe "<path>/GenerateFNISforUsers.exe"   # spustí exe jednou, bez registrace
 eidos tool skyrimse run "SSEEdit QuickAutoClean" --output-mod "Cleaned plugins" -- -qac -autoexit -autoload Dawnguard.esm
 ```
 
@@ -120,6 +123,8 @@ toho do zvoleného módu:
 ```
 Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 ```
+
+Pandora, Nemesis, FNIS, BodySlide a Synthesis přijdou s už nastaveným cílovým modem: `Pandora Output`, `Nemesis Output`, `FNIS Output`, `BodySlide Output` a `Synthesis Output`. DynDOLOD, TexGen a xLODGen přijdou bez něj, protože zapisují do výstupní složky, kterou jim zadáte.
 
 Mód se vytvoří, pokud neexistuje. Přesunou se jen soubory, které vyrobil TENTO
 běh; cokoli už v Overwrite bylo, tam zůstane, takže dva nástroje s cílem pro
@@ -464,6 +469,10 @@ kontejneru zatím nebyl testován.
 
 `eidos tool <instance> run <title> --print` ukáže výsledný příkaz a každou
 proměnnou, kterou běh nastaví nad zděděné prostředí, včetně těchto řádků.
+
+## BethINI Pie
+
+Eidos BethINI Pie nedodává. Vydání stažené ze stránky na Nexusu dejte do složky `mods/` této instance nebo do složky s nástroji a `Bethini.exe` se objeví v seznamu nástrojů. Spuštěný přes Eidos upravuje kopii herních INI v profilu. Před každým spuštěním Eidos tyto INI zálohuje; **Backups -> INIs** vrátí jednu z kopií. INI, které v okamžiku zálohy neexistovalo, zůstane tak, jak je.
 
 ## Vlastní nastavení nástroje zůstává jeho
 

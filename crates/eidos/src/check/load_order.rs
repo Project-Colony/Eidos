@@ -257,11 +257,15 @@ mod tests {
             is_dummy: false,
             header_error: None,
             form_version: None,
+            author: None,
+            description: None,
+            header_version: None,
             is_blueprint: blueprint,
             is_update: false,
             masters: Vec::new(),
             priority: 0,
             index: None,
+            ini: None,
         }
     }
     use eidos_plugins::PluginList;

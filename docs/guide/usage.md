@@ -165,7 +165,8 @@ Eidos - a Steam Cloud download from a Steam Deck, a launch without Eidos - stays
 hidden while the profile's saves are mounted. Nothing deletes it: the launch
 names it in the run's log (the instance's `logs/run-*.log` for a window launch,
 Steam's console for a Steam launch), once each time that set of files changes.
-To play it, copy it and its co-save into the profile's `saves/` folder.
+To play it, press Import on the Saves tab. Import copies it with its co-save
+into the profile and never replaces a profile save.
 
 ### What changed since the last good run
 
@@ -531,6 +532,18 @@ end of a game or tool run, on a profile switch and when another Eidos process
 changes the list. Installing, renaming or removing a mod changes the folders on
 disk, so an undo past one of those is refused.
 
+### Filtering the list
+
+The Filters button opens one row per criterion: active, conflicted, update
+available, no category, endorsed, tracked, has a Nexus id, has hidden files, no
+valid game data, for another game, has notes, and one row per kind of content
+(plugins, BSA or BA2 archives, textures, meshes, scripts, script extender
+plugins, interface files, sound, FaceGen). A click cycles a row through off,
+only and except. The row at the top switches between matching all of the
+criteria that are on and matching any of them. The name box and the category
+list always narrow the result further. The hidden files row looks at enabled
+mods only.
+
 ### What the list tells you about a mod
 
 Two advisory flags, both a glyph with the explanation on hover. **No valid game
@@ -586,6 +599,12 @@ into a real mod in one step. **Saves** parses each save's header - character,
 level, location, playtime - and diffs the plugin list baked into it against your
 current one, with a button that enables the mods it needs, because naming them
 and leaving you to it is the boring half.
+
+Hovering a plugin shows where it comes from, its author, its header and form version, the first 300 characters of its description, its masters and, after a LOOT sort, LOOT's messages. On Skyrim, Skyrim SE, Skyrim VR and Enderal SE the game also reads an INI named after a loaded plugin; the INI column marks those plugins, and a click opens that file read-only.
+
+An `.exe` row in Data has Add tool, which opens the Executables editor with that file filled in (nothing is saved until you press Save), and Run, which runs it once through the merged view like a registered tool. Save tree writes the whole merged Data tree to a text file, one line per file with the mod that provides it, with your home folder and user name removed, for a bug report.
+
+Saves that Steam Cloud downloads from another device, or that a launch without Eidos writes, land in the game's own save folder, which the profile's saves cover while the game runs. The Saves tab counts them on the line under its heading, and Import copies each one with its co-save into the profile. A save whose name the profile already uses is imported as `orphan-<time>-<name>`; nothing in the profile is replaced.
 
 "Information..." opens a per-mod dialog: general, conflicts, filetree, INI
 tweaks, notes. From the filetree (and from the Data tree) any file can be

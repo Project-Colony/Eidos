@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=7f872c8fb702f4417931831cc14a48ffb9d9e30b -->
 
 # 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -19,6 +19,8 @@ Eidos를 통해 실행된 도구는 게임 자신의 Proton 프리픽스 안에�
 - **이 인스턴스의 `mods/`** - MO2 사용자가 도구를 설치하는 곳입니다;
 - Preferences에서 지정한 **tools folder** (General -> Tools), 인스턴스끼리 공유하는
   디렉터리용 - `/mnt/Games/Tools` 같은 것.
+
+자주 쓰는 생성기도 같은 방식으로 찾습니다. 각각 지원하는 게임에서만 대상이 됩니다. 대상은 Pandora, Nemesis, FNIS, BodySlide, DynDOLOD, TexGen, xLODGen, Synthesis입니다.
 
 `PGPatcher.exe`도 Creation Engine 게임에서 같은 방식으로 발견되며, 없으면 동작할 수 없는 인자와 함께 등록됩니다 - [아래](#pgpatcher에---ignore-mo2vfscheck가-필요한-이유) 참조.
 
@@ -46,6 +48,7 @@ eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse                       # list what is registered
 eidos tool skyrimse run BodySlide         # run it through the merged view
 eidos tool skyrimse run BodySlide --print # show the command without running it
+eidos tool skyrimse run --exe "<path>/GenerateFNISforUsers.exe"   # exe를 등록하지 않고 한 번만 실행
 eidos tool skyrimse run "SSEEdit QuickAutoClean" --output-mod "Cleaned plugins" -- -qac -autoexit -autoload Dawnguard.esm
 ```
 
@@ -102,6 +105,8 @@ Executables 편집기에서 **Capture output into**를 지정하면 이번 실�
 ```
 Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 ```
+
+Pandora, Nemesis, FNIS, BodySlide, Synthesis는 캡처 모드가 미리 지정된 채로 추가됩니다. `Pandora Output`, `Nemesis Output`, `FNIS Output`, `BodySlide Output`, `Synthesis Output`입니다. DynDOLOD, TexGen, xLODGen은 사용자가 지정한 출력 폴더에 기록하므로 지정되지 않습니다.
 
 모드가 없으면 만들어집니다. 이번 실행이 만들어낸 파일만 옮겨집니다; 이미
 Overwrite에 있던 것은 그대로 남으므로, 캡처 대상이 있는 도구 둘이 서로의 출력을
@@ -431,6 +436,10 @@ prereqs`는 계속 호스트에서 winetricks를 실행하고, `runner=native` �
 
 `eidos tool <instance> run <title> --print`는 최종 명령과, 실행이 상속된 환경
 위에 설정하는 모든 변수를 이 줄들까지 포함해 보여 줍니다.
+
+## BethINI Pie
+
+Eidos는 BethINI Pie를 포함하지 않습니다. Nexus 페이지에서 받은 파일을 이 인스턴스의 `mods/` 또는 도구 폴더에 넣으면 도구 목록에 `Bethini.exe`가 나타납니다. Eidos를 통해 실행하면 프로필이 가진 게임 INI 사본을 수정합니다. 실행할 때마다 Eidos가 그 INI의 사본을 보관하며, **Backups -> INIs**에서 하나를 되돌릴 수 있습니다. 사본을 만들 때 없었던 INI는 그대로 둡니다.
 
 ## 도구 자신의 설정은 여전히 그 도구의 몫
 

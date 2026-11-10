@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=7f872c8fb702f4417931831cc14a48ffb9d9e30b -->
 
 # Інструменти: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -19,6 +19,8 @@
 - **`mods/` цього екземпляра**, куди інструменти встановлюють користувачі MO2;
 - **теці інструментів**, яку ви задали в Preferences (General -> Tools),
   для каталогу, спільного між екземплярами - `/mnt/Games/Tools` і подібних.
+
+Поширені генератори знаходяться так само, кожен для ігор, які він підтримує: Pandora, Nemesis, FNIS, BodySlide, DynDOLOD, TexGen, xLODGen і Synthesis.
 
 `PGPatcher.exe` знаходиться так само в іграх на Creation Engine і приходить з аргументом, без якого не може працювати - див. [нижче](#чому-pgpatcher-потребує---ignore-mo2vfscheck).
 
@@ -65,6 +67,7 @@ eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse                       # list what is registered
 eidos tool skyrimse run BodySlide         # run it through the merged view
 eidos tool skyrimse run BodySlide --print # show the command without running it
+eidos tool skyrimse run --exe "<path>/GenerateFNISforUsers.exe"   # запустити exe один раз, не реєструючи його
 eidos tool skyrimse run "SSEEdit QuickAutoClean" --output-mod "Cleaned plugins" -- -qac -autoexit -autoload Dawnguard.esm
 ```
 
@@ -122,6 +125,8 @@ into** у редакторі Executables, і вивід цього запуск�
 ```
 Tools -> Executables -> (ваш інструмент) -> Capture output into: FNIS Output
 ```
+
+Pandora, Nemesis, FNIS, BodySlide і Synthesis з'являються з уже заданим модом для перехоплення: `Pandora Output`, `Nemesis Output`, `FNIS Output`, `BodySlide Output` і `Synthesis Output`. DynDOLOD, TexGen і xLODGen з'являються без нього, бо пишуть у вихідну теку, яку ви їм вкажете.
 
 Мод створюється, якщо його немає. Переміщуються лише файли, які створив ЦЕЙ
 запуск; усе, що вже було в Overwrite, там і лишається, тож два інструменти з
@@ -475,6 +480,10 @@ Proton, встановлений у `/usr/share/steam/compatibilitytools.d`, і�
 
 `eidos tool <instance> run <title> --print` показує остаточну команду і кожну
 змінну, яку запуск задає поверх успадкованого середовища, разом із цими рядками.
+
+## BethINI Pie
+
+Eidos не постачає BethINI Pie. Покладіть завантажену зі сторінки на Nexus версію в `mods/` цього екземпляра або у вашу теку інструментів, і `Bethini.exe` з'явиться в списку інструментів. Запущений через Eidos, він змінює копію INI-файлів гри, що належить профілю. Перед кожним запуском Eidos зберігає копію цих INI; **Backups -> INIs** повертає одну з них. INI, якого не було під час копіювання, лишається як є.
 
 ## Власні налаштування інструмента лишаються його власними
 

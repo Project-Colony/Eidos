@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=7f872c8fb702f4417931831cc14a48ffb9d9e30b -->
 
 # Narzędzia: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -19,6 +19,8 @@ edycji, przed którymi LOOT wciąż ostrzega. Eidos szuka ich, po nazwie pliku, 
 - **`mods/` tej instancji**, czyli tam, gdzie użytkownicy MO2 instalują narzędzia;
 - **folderze narzędzi** ustawionym w Preferences (General -> Tools), dla
   katalogu współdzielonego między instancjami - `/mnt/Games/Tools` i podobnych.
+
+Popularne generatory są znajdowane w ten sam sposób, każdy dla gier, które obsługuje: Pandora, Nemesis, FNIS, BodySlide, DynDOLOD, TexGen, xLODGen i Synthesis.
 
 `PGPatcher.exe` jest znajdowany tak samo w grach na Creation Engine i przychodzi z argumentem, bez ktorego nie zadziala - zobacz [ponizej](#dlaczego-pgpatcher-potrzebuje---ignore-mo2vfscheck).
 
@@ -65,6 +67,7 @@ eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse                       # wypisać, co jest zarejestrowane
 eidos tool skyrimse run BodySlide         # uruchomić przez scalony widok
 eidos tool skyrimse run BodySlide --print # pokazać polecenie bez uruchamiania
+eidos tool skyrimse run --exe "<path>/GenerateFNISforUsers.exe"   # uruchom exe jednorazowo, bez rejestrowania
 eidos tool skyrimse run "SSEEdit QuickAutoClean" --output-mod "Cleaned plugins" -- -qac -autoexit -autoload Dawnguard.esm
 ```
 
@@ -123,6 +126,8 @@ tego do tamtego moda:
 ```
 Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 ```
+
+Pandora, Nemesis, FNIS, BodySlide i Synthesis trafiają na listę z ustawionym już modem przechwytującym: `Pandora Output`, `Nemesis Output`, `FNIS Output`, `BodySlide Output` i `Synthesis Output`. DynDOLOD, TexGen i xLODGen trafiają bez niego, bo zapisują do folderu wyjściowego, który im podasz.
 
 Mod jest tworzony, jeśli nie istnieje. Przenoszone są tylko pliki wytworzone
 przez TO uruchomienie; cokolwiek już było w Overwrite, tam zostaje, więc dwa
@@ -478,6 +483,10 @@ narzędzia w kontenerze nie było jeszcze testowane.
 `eidos tool <instance> run <title> --print` pokazuje końcowe polecenie i każdą
 zmienną, którą uruchomienie ustawia ponad odziedziczonym środowiskiem, łącznie
 z tymi wierszami.
+
+## BethINI Pie
+
+Eidos nie dołącza BethINI Pie. Wersję pobraną ze strony na Nexusie umieść w `mods/` tej instancji lub w folderze narzędzi, a `Bethini.exe` pojawi się na liście narzędzi. Uruchomiony przez Eidos edytuje kopię plików INI gry należącą do profilu. Przed każdym uruchomieniem Eidos zachowuje kopię tych INI; **Backups -> INIs** przywraca jedną z nich. INI, którego nie było w chwili kopiowania, zostaje bez zmian.
 
 ## Własne ustawienia narzędzia pozostają jego własne
 

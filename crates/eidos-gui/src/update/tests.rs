@@ -788,13 +788,26 @@ fn a_criterion_cycles_off_only_except_and_back() {
     // Three settings, not two: "only conflicted" and "everything except
     // conflicted" are both questions people ask.
     let mut app = nav_app(&["a"]);
-    assert_eq!(app.filters.active, Criterion::Off);
+    assert_eq!(app.filters.get(FilterField::Active), Criterion::Off);
     let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Active));
-    assert_eq!(app.filters.active, Criterion::Require);
+    assert_eq!(app.filters.get(FilterField::Active), Criterion::Require);
     let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Active));
-    assert_eq!(app.filters.active, Criterion::Exclude);
+    assert_eq!(app.filters.get(FilterField::Active), Criterion::Exclude);
     let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Active));
-    assert_eq!(app.filters.active, Criterion::Off, "back to not filtering");
+    assert_eq!(
+        app.filters.get(FilterField::Active),
+        Criterion::Off,
+        "back to not filtering"
+    );
+}
+
+#[test]
+fn the_match_toggle_flips_and_clear_resets_it() {
+    let mut app = nav_app(&["A"]);
+    let _ = update_inner(&mut app, Message::ToggleFilterMatch);
+    assert!(app.filters.match_any);
+    let _ = update_inner(&mut app, Message::ClearFilters);
+    assert!(!app.filters.match_any);
 }
 
 #[test]
@@ -838,7 +851,7 @@ fn a_filter_never_leaves_the_keyboard_aimed_at_a_row_it_hid() {
 
     let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Active));
     let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Active));
-    assert_eq!(app.filters.active, Criterion::Exclude);
+    assert_eq!(app.filters.get(FilterField::Active), Criterion::Exclude);
     assert_eq!(
         mod_row_visibility(&app, None),
         vec![true, false],
@@ -5283,8 +5296,8 @@ fn the_button_says_how_many_criteria_are_narrowing_the_list() {
     // A list that looks short must always say why.
     let mut app = nav_app(&["a"]);
     assert_eq!(app.filters.active_count(), 0);
-    app.filters.active = Criterion::Require;
-    app.filters.update = Criterion::Exclude;
+    app.filters.set(FilterField::Active, Criterion::Require);
+    app.filters.set(FilterField::Update, Criterion::Exclude);
     assert_eq!(app.filters.active_count(), 2);
     let _ = update_inner(&mut app, Message::ClearFilters);
     assert_eq!(app.filters.active_count(), 0, "Clear really clears");
@@ -5454,6 +5467,35 @@ fn opening_the_origin_of_a_vanilla_plugin_says_so_instead_of_doing_nothing() {
             .contains("game's own Data"),
         "{:?}",
         app.status
+    );
+}
+
+#[test]
+fn the_backups_dialog_offers_ini_restore_points_for_a_game_with_inis() {
+    use eidos_instance::BackupKind;
+    let (mut app, _root) = list_app(&["A"]);
+    let prof = app.created.as_ref().unwrap().active();
+    fs::create_dir_all(prof.dir()).unwrap();
+    fs::write(prof.ini_path("Skyrim.ini"), "a").unwrap();
+    let _ = update_inner(&mut app, Message::ShowBackupsDialog);
+    let (files, list) = app
+        .backups
+        .as_ref()
+        .unwrap()
+        .inis
+        .clone()
+        .expect("Skyrim SE has INIs");
+    assert!(list.is_empty());
+    let _ = update_inner(&mut app, Message::CreateBackup(BackupKind::Inis(files)));
+    let stamp = app.backups.as_ref().unwrap().inis.as_ref().unwrap().1[0].stamp;
+    fs::write(prof.ini_path("Skyrim.ini"), "b").unwrap();
+    let _ = update_inner(
+        &mut app,
+        Message::RestoreBackup(BackupKind::Inis(files), stamp),
+    );
+    assert_eq!(
+        fs::read_to_string(prof.ini_path("Skyrim.ini")).unwrap(),
+        "a"
     );
 }
 
@@ -7944,6 +7986,73 @@ mod cleaning {
     }
 }
 
+#[test]
+fn typing_a_generator_title_seeds_its_capture_mod_only_while_empty() {
+    let (mut app, _root) = list_app(&["A"]);
+    let _ = update_inner(&mut app, Message::ShowExecutablesDialog);
+    let _ = update_inner(&mut app, Message::AddExecutableTool);
+    let _ = update_inner(&mut app, Message::ToolTitleChanged("Nemesis".into()));
+    assert_eq!(
+        app.executables.as_ref().unwrap().output_mod,
+        "Nemesis Output"
+    );
+    let _ = update_inner(&mut app, Message::ToolOutputModChanged("Mine".into()));
+    let _ = update_inner(&mut app, Message::ToolTitleChanged("Nemesis 2".into()));
+    assert_eq!(app.executables.as_ref().unwrap().output_mod, "Mine");
+}
+
+#[test]
+fn add_tool_from_data_opens_the_editor_prefilled_and_writes_nothing() {
+    let (mut app, root) = list_app(&["FNIS"]);
+    let exe = root.join("mods/FNIS/tools/GenerateFNIS_for_Users/GenerateFNISforUsers.exe");
+    let _ = update_inner(&mut app, Message::DataAddTool(exe.clone()));
+    let st = app.executables.as_ref().expect("the editor is open");
+    let i = st.selected.unwrap();
+    assert_eq!(i, st.user_len - 1, "a user entry, ahead of the defaults");
+    assert_eq!(
+        (st.title.as_str(), st.exe.as_str(), st.output_mod.as_str()),
+        ("FNIS", exe.to_str().unwrap(), "FNIS Output")
+    );
+    assert!(!app
+        .created
+        .as_ref()
+        .unwrap()
+        .root
+        .join("tools.ini")
+        .exists());
+}
+
+#[test]
+fn save_tree_writes_every_winner_with_its_mod_and_reports_the_count() {
+    let (mut app, root) = data_app(&[("textures/a.dds", "mod"), ("meta.ini", "[General]")], &[]);
+    let out = root.join("tree.txt");
+    let task = update_inner(&mut app, Message::DataSaveTreeTo(Some(out.clone())));
+    installers::tests::drive(&mut app, task);
+    let text = fs::read_to_string(&out).unwrap();
+    let lines: Vec<&str> = text.lines().skip(1).collect();
+    assert_eq!(lines, ["Skyrim.esm\t[skyrimse]", "textures/a.dds\tAAA"]);
+    assert_eq!(
+        app.status.as_deref(),
+        Some(
+            tf(
+                "status_data_tree_saved",
+                &[("n", &2), ("path", &out.display())]
+            )
+            .as_str()
+        )
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_saved_tree_answer_disarms_nothing() {
+    let app = nav_app(&[]);
+    assert!(is_ambient(
+        &app,
+        &Message::DataTreeSaved(Err("disk full".into()))
+    ));
+}
+
 /// A scratch app with auto-install on and a window that started a minute ago.
 fn auto_install_app() -> (App, PathBuf, PathBuf) {
     let (mut app, root) = collection_app_with(&[("Mod", 42, "")], &[], &[]);
@@ -8127,6 +8236,42 @@ fn a_release_answer_disarms_no_confirmation() {
         &app,
         &Message::EidosReleaseChecked(Ok("99.0.0".into()))
     ));
+}
+
+#[test]
+fn the_hidden_saves_tooltip_starts_with_the_whole_notice() {
+    let hidden: Vec<String> = (0..12).map(|i| format!("Deck{i}.ess")).collect();
+    let tip = crate::modinfo::hidden_saves_tip(&hidden);
+    let lines: Vec<&str> = tip.lines().collect();
+    assert_eq!(lines[0], tf("saves_hidden_notice", &[("n", &12)]));
+    assert_eq!(lines[1..11], hidden[..10]);
+    assert_eq!(lines[11], tf("plugins_and_more", &[("n", &2)]));
+    assert_eq!(lines.len(), 12);
+}
+
+#[test]
+fn importing_hidden_saves_copies_them_into_the_profile_and_clears_the_notice() {
+    let (mut app, root) = list_app(&[]);
+    app.games[0].compatdata = Some(root.join("compatdata"));
+    let prefix = app.games[0].saves_path().unwrap();
+    let saves = app.created.as_ref().unwrap().active().saves_dir();
+    let stamp = |path: &std::path::Path, secs: u64| {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, b"save").unwrap();
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs))
+            .unwrap();
+    };
+    stamp(&saves.join(".seeded"), 1_700_000_000);
+    stamp(&prefix.join("Deck.ess"), 1_700_000_100);
+    crate::modinfo::load_saves(&mut app);
+    assert_eq!(app.hidden_saves, vec!["Deck.ess".to_string()]);
+    let _ = update_inner(&mut app, Message::SavesImportHidden);
+    assert!(app.hidden_saves.is_empty());
+    assert!(app.saves.iter().any(|s| s.filename == "Deck.ess"));
 }
 
 #[test]

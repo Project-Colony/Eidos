@@ -47,8 +47,9 @@ pub use meta::{same_version, ModMeta, PluginSource};
 pub use mo2_ini::{mo2_executables, Mo2Executable, Mo2Ini, Mo2Skip};
 pub use mod_backup::{backup_mod, reserve_mod_backup};
 pub use profile::{
-    cosave_siblings, format_stamp, is_save_data, is_save_listing, read_text_lossy, untweak_ini,
-    write_text, Backup, BackupKind, ListTrust, Profile, SaveEntry, TweakedKey,
+    cosave_siblings, format_stamp, instance_sync_keys, is_save_data, is_save_listing,
+    read_text_lossy, save_sync_key, untweak_ini, write_text, Backup, BackupKind, ListTrust,
+    Profile, SaveEntry, SavesImport, TweakedKey,
 };
 pub use provenance::{
     GeneratedInput, GeneratedOutput, GeneratedReceipt, GeneratedRun, ToolExecutable,
@@ -57,10 +58,10 @@ pub use registry::{registry_path, InstanceRef, Registry};
 pub use sessions::{SessionMod, SessionRecord, KEEP_SESSIONS};
 pub use settings::Settings;
 pub use tools::{
-    default_args, default_prereqs, default_tools, default_tools_in, default_tools_in_view,
-    is_mod_folder_name, merge_tools, prefix_tool, read_tools, root_executable,
-    root_executable_source, tool_search_roots, write_tools, GameExecutables, Runner, Tool,
-    PREFIX_TOOLS,
+    default_args, default_output_mod, default_prereqs, default_tools, default_tools_in,
+    default_tools_in_view, edits_inis, is_mod_folder_name, merge_tools, prefix_tool, read_tools,
+    root_executable, root_executable_source, tool_for_exe, tool_search_roots, write_tools,
+    GameExecutables, Runner, Tool, PREFIX_TOOLS,
 };
 
 /// Where an instance is stored.

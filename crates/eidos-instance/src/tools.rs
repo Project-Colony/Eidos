@@ -380,13 +380,7 @@ fn find_known_tools(roots: &[PathBuf], known: &[(&str, &str)]) -> Vec<Tool> {
                 .position(|(exe, _)| exe.eq_ignore_ascii_case(&name))
             {
                 let (_, title) = want.remove(pos);
-                out.push(Tool {
-                    prereqs: default_prereqs(&title),
-                    args: default_args(&title),
-                    title,
-                    exe: e.path(),
-                    ..Default::default()
-                });
+                out.push(seeded_tool(title, e.path()));
                 if want.is_empty() {
                     return;
                 }
@@ -414,14 +408,32 @@ fn find_known_tools(roots: &[PathBuf], known: &[(&str, &str)]) -> Vec<Tool> {
     out
 }
 
-fn push_tool(v: &mut Vec<Tool>, title: String, exe: &str) {
-    v.push(Tool {
+fn seeded_tool(title: String, exe: PathBuf) -> Tool {
+    Tool {
         prereqs: default_prereqs(&title),
         args: default_args(&title),
+        output_mod: default_output_mod(&title),
         title,
-        exe: PathBuf::from(exe),
+        exe,
         ..Default::default()
-    });
+    }
+}
+
+/// A tool for one executable picked by path: titled by the `known` recipe row
+/// whose exe matches the file name (ASCII case-insensitive), else by the file stem.
+pub fn tool_for_exe(exe: &Path, known: &[(&str, &str)]) -> Tool {
+    let name = exe.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+    let title = known
+        .iter()
+        .find(|(e, _)| e.eq_ignore_ascii_case(name))
+        .map(|(_, t)| (*t).to_string())
+        .or_else(|| exe.file_stem().map(|s| s.to_string_lossy().into_owned()))
+        .unwrap_or_default();
+    seeded_tool(title, exe.to_path_buf())
+}
+
+fn push_tool(v: &mut Vec<Tool>, title: String, exe: &str) {
+    v.push(seeded_tool(title, PathBuf::from(exe)));
 }
 
 /// The default tool list for a game, auto-detected by file existence in `install`
@@ -586,6 +598,29 @@ pub fn default_args(title: &str) -> Vec<String> {
     args.iter().map(|s| s.to_string()).collect()
 }
 
+/// The capture mod a generator's output goes to by default, by title. Seeds only
+/// a tool Eidos creates; a `tools.ini` entry wins. DynDOLOD, TexGen and xLODGen
+/// write to their own output folder, so they get none.
+pub fn default_output_mod(title: &str) -> Option<String> {
+    let t = title.to_ascii_lowercase();
+    [
+        ("pandora", "Pandora Output"),
+        ("nemesis", "Nemesis Output"),
+        ("fnis", "FNIS Output"),
+        ("bodyslide", "BodySlide Output"),
+        ("synthesis", "Synthesis Output"),
+    ]
+    .iter()
+    .find(|(k, _)| t.contains(k))
+    .map(|(_, m)| m.to_string())
+}
+
+/// Whether a tool rewrites the game INIs, by title. Eidos keeps a restore point
+/// of the profile INIs before running one.
+pub fn edits_inis(title: &str) -> bool {
+    title.to_ascii_lowercase().contains("bethini")
+}
+
 /// The known runtime prerequisites for a well-known modding tool, by title (so a
 /// freshly-added SSEEdit/Synthesis/BodySlide gets the right verbs without the user
 /// typing them; a user-declared `prereqs=` in tools.ini always wins). Verbs match
@@ -626,8 +661,77 @@ pub fn default_prereqs(title: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn an_exe_becomes_a_tool_named_by_its_recipe_or_its_stem() {
+        let known: &[(&str, &str)] = &[("GenerateFNISforUsers.exe", "FNIS")];
+        let t = tool_for_exe(
+            Path::new("/m/FNIS/tools/GenerateFNIS_for_Users/generatefnisforusers.EXE"),
+            known,
+        );
+        assert_eq!(
+            (t.title.as_str(), t.output_mod.as_deref()),
+            ("FNIS", Some("FNIS Output"))
+        );
+        assert_eq!(t.prereqs, ["dotnet48"]);
+        let t = tool_for_exe(Path::new("/m/X/Some Patcher.exe"), known);
+        assert_eq!((t.title.as_str(), t.output_mod), ("Some Patcher", None));
+        assert_eq!(t.exe, Path::new("/m/X/Some Patcher.exe"));
+    }
+
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn generators_are_found_with_their_runtime_and_capture_mod() {
+        let dir = tmp_dir();
+        let mods = dir.join("mods");
+        for rel in [
+            "FNIS/tools/GenerateFNIS_for_Users/GenerateFNISforUsers.exe",
+            "Nemesis/Nemesis_Engine/Nemesis Unlimited Behavior Engine.exe",
+            "DynDOLOD/DynDOLODx64.exe",
+        ] {
+            let p = mods.join(rel);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(&p, b"MZ").unwrap();
+        }
+        let known: &[(&str, &str)] = &[
+            ("GenerateFNISforUsers.exe", "FNIS"),
+            ("Nemesis Unlimited Behavior Engine.exe", "Nemesis"),
+            ("DynDOLODx64.exe", "DynDOLOD"),
+        ];
+        let execs = GameExecutables {
+            game_name: "",
+            launcher: None,
+            binary: None,
+            script_extender: None,
+            known_tools: known,
+        };
+        let found = default_tools_in(execs, &dir.join("game"), &[], &[mods]);
+        let by = |t: &str| found.iter().find(|x| x.title == t).unwrap();
+        assert_eq!(by("FNIS").prereqs, vec!["dotnet48".to_string()]);
+        assert_eq!(by("FNIS").output_mod.as_deref(), Some("FNIS Output"));
+        assert_eq!(by("Nemesis").output_mod.as_deref(), Some("Nemesis Output"));
+        assert_eq!(by("DynDOLOD").output_mod, None);
+        assert!(by("DynDOLOD").args.is_empty());
+    }
+
+    #[test]
+    fn default_output_mod_names_each_generators_capture_mod() {
+        for (title, want) in [
+            ("Pandora", Some("Pandora Output")),
+            ("Nemesis", Some("Nemesis Output")),
+            ("FNIS", Some("FNIS Output")),
+            ("GenerateFNISforUsers", Some("FNIS Output")),
+            ("BodySlide x64", Some("BodySlide Output")),
+            ("Synthesis", Some("Synthesis Output")),
+            ("DynDOLOD", None),
+            ("TexGen", None),
+            ("xLODGen", None),
+            ("SSEEdit", None),
+        ] {
+            assert_eq!(default_output_mod(title).as_deref(), want, "{title}");
+        }
+    }
 
     static N: AtomicUsize = AtomicUsize::new(0);
 
