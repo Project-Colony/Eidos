@@ -952,6 +952,11 @@ fn walk_apply(app: &mut App, step: WalkStep) -> Task<Message> {
                     .count()
             });
             app.status = Some(tf("collection_walk_done", &[("n", &n)]));
+            crate::notify::when_away(
+                app,
+                t("notify_downloads_done"),
+                app.status.as_deref().unwrap_or(""),
+            );
             Task::none()
         }
     }

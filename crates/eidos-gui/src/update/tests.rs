@@ -7884,6 +7884,60 @@ fn a_finished_tool_run_notifies_only_while_the_window_is_away() {
     let _ = fs::remove_dir_all(root);
 }
 
+/// A free account's walk lands one file at a time, so no row is Downloading
+/// between two of them: only the walk's end may notify, and only once.
+#[test]
+fn a_collection_walk_notifies_once_when_it_ends() {
+    let rev = captured_revision();
+    let (mod_id, want) = (rev.mods[2].mod_id, rev.mods[2].file_id);
+    let (mut app, root) = collection_app(&[], &[]);
+    app.collection = Some(CollectionState {
+        install_check: None,
+        runtime: None,
+        link: String::new(),
+        revision: Some(rev),
+        states: Vec::new(),
+        loading: false,
+        error: None,
+        confirm_fetch: false,
+        asked: HashSet::new(),
+        walk: Some(CollectionWalk {
+            queue: vec![2],
+            at: 0,
+            seen: HashSet::new(),
+        }),
+    });
+    app.prefs.notify_when_away = true;
+    app.focused = false;
+    let _ = crate::notify::take_sent();
+    let dl = app.created.as_ref().unwrap().downloads_dir();
+    // Each file is seen arriving on one tick and landed on the next.
+    let mut land = |name: &str, file_id: u64| {
+        let part = dl.join(format!("{name}.unfinished"));
+        fs::write(&part, b"x").unwrap();
+        fs::write(
+            dl.join(format!("{name}.meta")),
+            format!("[General]\ngameName=SkyrimSE\nmodID={mod_id}\nfileID={file_id}\n"),
+        )
+        .unwrap();
+        let _ = update_inner(&mut app, Message::DownloadTick);
+        fs::rename(&part, dl.join(name)).unwrap();
+        let _ = update_inner(&mut app, Message::DownloadTick);
+        crate::notify::take_sent()
+    };
+
+    assert!(
+        land("newest.7z", want + 1).is_empty(),
+        "the walk still runs"
+    );
+    let sent = land("pinned.7z", want);
+    assert!(app.collection.as_ref().unwrap().walk.is_none());
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].0, t("notify_downloads_done"));
+    assert_eq!(Some(sent[0].1.as_str()), app.status.as_deref());
+    let _ = fs::remove_dir_all(&root);
+}
+
 #[test]
 fn a_focus_change_disarms_nothing() {
     let app = nav_app(&[]);

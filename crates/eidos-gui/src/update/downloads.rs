@@ -83,7 +83,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             let before = states(app);
             load_downloads(app);
-            if crate::notify::downloads_finished(&before, &states(app)) {
+            // A collection walk lands its files one at a time, so every landing
+            // would look like the last; its Done step sends the one notification.
+            let walking = app.collection.as_ref().is_some_and(|c| c.walk.is_some());
+            if !walking && crate::notify::downloads_finished(&before, &states(app)) {
                 crate::notify::when_away(app, t("notify_downloads_done"), "");
             }
             // A resume that FAILED has to say so. The child is also reaped here:
