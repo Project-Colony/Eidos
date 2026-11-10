@@ -24,6 +24,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // Compare a fingerprint, do NOT reload. Reloading twice a second
             // would rebuild the list under the user's hands - dropping the
             // selection and closing the details pane every tick.
+            // shortcut: only the profile's saves folder is fingerprinted, so a
+            // save Steam Cloud drops into the prefix while this tab is open is
+            // counted at the next reload (Refresh, a change in the profile's
+            // saves, a run); add the prefix Saves folder if users miss one.
             let now = saves_fingerprint(app);
             if now != app.saves_fingerprint {
                 // Everything the user has aimed at, by PATH: a new autosave
