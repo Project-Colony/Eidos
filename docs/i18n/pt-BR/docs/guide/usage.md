@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=a8f80ad631af33e4aa35960ec9a2d9147ebc26e3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=039b6ffd055eabf9e9c4c8978bbc3e47ad68e45c -->
 
 # Usar o Eidos
 
@@ -167,6 +167,20 @@ copia com o co-save dele para o perfil e nunca substitui um save do perfil.
 ### O que mudou desde a última execução boa
 
 Cada execução por `eidos play` ou `eidos tool run`, iniciada pela janela, por um terminal ou pela Steam, grava um registro em `<instance>/logs/sessions/`: o perfil, cada mod ativado com sua versão e os ids de arquivo da Nexus, a ordem dos plugins, uma soma de verificação de cada INI do perfil, a versão do executável do jogo, a versão do Eidos, o código de saída e os saves criados pela execução. Os 50 mais recentes são mantidos, e `logs/` fica fora de uma instância empacotada. `eidos sessions <instance> diff` compara a última execução do jogo que terminou com código 0 com o estado atual; `diff <id>` escolhe outro registro da lista. O Eidos ainda não detecta travamentos aqui, e um jogo que travou no Proton ainda pode sair com código 0: se a execução escolhida for uma dessas, indique uma anterior com `diff <id>`.
+
+### Execuções de teste
+
+O botão Test run, ao lado de Run, inicia o jogo como o Run faz, mas tudo o que o jogo grava vai para `<instance>/test-run/` em vez do seu perfil, do Overwrite e do prefixo: saves novos e alterados, mudanças de INI, `plugins.txt`, arquivos gravados em Data ou na pasta do jogo, e os logs em `Documents/My Games/<game>`. Você pode testar com os mods do perfil, sem nenhum mod ou só com os mods selecionados na lista mais os mods de cujos plugins eles precisam como masters.
+
+Quando o jogo fecha, o Eidos lista esses arquivos em cinco grupos (saves, mudanças de INI, estado dos plugins, saída do Overwrite, logs) e pergunta se você quer manter ou descartar cada um. Manter os saves nunca apaga um save do perfil, nem um que o jogo apagou durante a execução. Descartar qualquer coisa pede um segundo clique. Se o Eidos ou o computador parar durante uma execução de teste, os arquivos ficam em `test-run/` e a lista abre na próxima vez que você abrir a instância ou apertar F5.
+
+Quando a janela não foi iniciada pela loja do jogo, o Test run passa o jogo para essa loja (Steam, Heroic ou Legendary), como o Run faz, e a execução que a loja inicia é a execução de teste. Uma execução de teste só cobre as pastas listadas acima: as outras gravações do jogo, como o registro do Wine, vão para onde sempre vão. Saves de uma execução de teste só chegam ao Steam Cloud depois que você os mantém e joga uma execução normal.
+
+### Encontrar o mod por trás de um problema
+
+O botão Find the mod behind a problem em Diagnostics procura o mod que causa um problema que você consegue reproduzir, como um travamento num lugar específico. Cada passo é uma execução de teste com metade dos suspeitos restantes, os masters de que eles precisam e os mods que você mantém sempre ativos (os mods selecionados na lista quando você começa e o mod que fornece o script extender). Depois de cada execução você responde se o problema aconteceu; Not sure divide os suspeitos de outro jeito e Run it again repete o passo. Responder, ou apertar Run it again, descarta os arquivos que o passo gravou, depois de um segundo clique. Para manter alguns, aperte antes See the files: ele abre a mesma lista que aparece depois de uma execução de teste. Quando o jogo travou e um crash logger gravou um log, ou o jogo saiu com um código de erro, o Eidos marca Yes como a resposta provável. 200 suspeitos levam cerca de 8 execuções.
+
+A busca fica salva em `<instance>/bisect.json`, então você pode fechar o Eidos entre os passos. Stop the search a descarta depois de um segundo clique. O resultado nomeia o mod, ou o conjunto de mods que precisam dos masters uns dos outros, e fica guardado em `<instance>/logs/bisect-<time>.txt`. Mods gerados (uma saída do Nemesis ou do DynDOLOD, um Bashed Patch) são construídos para a lista completa e podem falhar com metade dela: mantenha-os sempre ativos ou deixe-os desligados durante toda a busca.
 
 ### Nenhum passo privilegiado é preciso
 

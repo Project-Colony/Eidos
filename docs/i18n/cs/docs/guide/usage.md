@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=a8f80ad631af33e4aa35960ec9a2d9147ebc26e3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=039b6ffd055eabf9e9c4c8978bbc3e47ad68e45c -->
 
 # Používání Eidosu
 
@@ -160,6 +160,20 @@ co-savem do profilu a žádný sav profilu nenahradí.
 ### Co se změnilo od posledního úspěšného spuštění
 
 Každé spuštění přes `eidos play` nebo `eidos tool run`, z okna, terminálu nebo Steamu, zapíše záznam do `<instance>/logs/sessions/`: profil, každý zapnutý mod s verzí a ID souborů z Nexusu, pořadí pluginů, kontrolní součet každého INI profilu, verzi spustitelného souboru hry, verzi Eidos, návratový kód a uložené hry, které spuštění vytvořilo. Uchovává se 50 nejnovějších a `logs/` se do zabalené instance nedostane. `eidos sessions <instance> diff` porovná poslední spuštění hry s kódem 0 se současným stavem; `diff <id>` vybere jiný záznam ze seznamu. Eidos tu zatím pády nepozná a hra, která spadla pod Protonem, může skončit kódem 0 i tak: pokud vybrané spuštění patří mezi ně, zadejte dřívější přes `diff <id>`.
+
+### Testovací spuštění
+
+Tlačítko Test run vedle Run spustí hru stejně jako Run, ale vše, co hra zapíše, jde do `<instance>/test-run/` místo do vašeho profilu, do Overwrite a do prefixu: nové a změněné savy, změny INI, `plugins.txt`, soubory zapsané do Data nebo do složky hry a logy v `Documents/My Games/<game>`. Testovat můžete s mody profilu, úplně bez modů, nebo jen s mody vybranými v seznamu a s mody, jejichž pluginy potřebují jako mastery.
+
+Když hra skončí, Eidos ty soubory ukáže v pěti skupinách (savy, změny INI, stav pluginů, výstup do Overwrite, logy) a u každé se zeptá, zda ji ponechat, nebo zahodit. Ponechání savů nikdy nesmaže sav z profilu, ani ten, který hra během běhu smazala. Zahození čehokoli vyžaduje druhé stisknutí. Pokud se Eidos nebo počítač během testovacího spuštění zastaví, soubory zůstanou v `test-run/` a seznam se otevře, až příště otevřete instanci nebo stisknete F5.
+
+Když okno nespustil obchod hry, Test run předá hru tomuto obchodu (Steam, Heroic nebo Legendary), stejně jako Run, a spuštění, které provede obchod, je testovací spuštění. Testovací spuštění pokrývá jen výše uvedené složky: ostatní zápisy hry, například do registru Wine, jdou tam, kam vždy. Savy z testovacího spuštění se do Steam Cloud dostanou až poté, co je ponecháte a zahrajete si normální spuštění.
+
+### Jak najít mod, který způsobuje problém
+
+Tlačítko Find the mod behind a problem v Diagnostics hledá mod, který způsobuje problém, jenž umíte zopakovat, například pád na určitém místě. Každý krok je testovací spuštění s polovinou zbývajících podezřelých, mastery, které potřebují, a mody, které necháváte vždy zapnuté (mody vybrané v seznamu při startu hledání a mod, který dodává script extender). Po každém spuštění odpovíte, zda se problém objevil; Not sure rozdělí podezřelé jinak a Run it again krok zopakuje. Odpověď nebo Run it again zahodí soubory, které krok zapsal, po druhém stisknutí. Chcete-li některé z nich ponechat, stiskněte nejdřív See the files: otevře se stejný seznam jako po testovacím spuštění. Když hra spadla a crash logger zapsal log, nebo hra skončila chybovým kódem, Eidos označí Yes jako pravděpodobnou odpověď. 200 podezřelých zabere asi 8 spuštění.
+
+Hledání se ukládá do `<instance>/bisect.json`, takže mezi kroky můžete Eidos zavřít. Stop the search ho po druhém stisknutí zahodí. Výsledek jmenuje mod, nebo sadu modů, které potřebují mastery jedna druhé, a uchová se v `<instance>/logs/bisect-<time>.txt`. Generované mody (výstup Nemesis nebo DynDOLOD, Bashed Patch) jsou sestavené pro celý seznam a s jeho polovinou mohou selhat: nechte je vždy zapnuté, nebo je nechte vypnuté po celé hledání.
 
 ### Žádný privilegovaný krok
 

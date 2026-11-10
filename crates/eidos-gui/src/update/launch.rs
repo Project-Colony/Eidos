@@ -5,7 +5,7 @@ use super::*;
 
 /// True when the Run list entry `title` starts the game: the script-extender
 /// loader, the vanilla launcher or the game binary.
-fn picks_the_game(app: &App, title: &str) -> bool {
+pub(crate) fn picks_the_game(app: &App, title: &str) -> bool {
     let Some(game) = selected_game(app) else {
         return false;
     };

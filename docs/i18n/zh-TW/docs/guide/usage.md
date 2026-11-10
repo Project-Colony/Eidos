@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=a8f80ad631af33e4aa35960ec9a2d9147ebc26e3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=039b6ffd055eabf9e9c4c8978bbc3e47ad68e45c -->
 
 # 使用 Eidos
 
@@ -128,6 +128,20 @@ Steam Cloud 下載、一次沒有透過 Eidos 的啟動 - 在設定檔的存檔�
 ### 自上次正常執行以來的變化
 
 無論從視窗、終端機還是 Steam 啟動，每次透過 `eidos play` 或 `eidos tool run` 的執行都會在 `<instance>/logs/sessions/` 寫入一筆記錄：設定檔、每個啟用的 mod 及其版本和 Nexus 檔案 ID、外掛順序、每個設定檔 INI 的檢查碼、遊戲執行檔的版本、Eidos 版本、結束碼，以及這次執行建立的存檔。保留最新的 50 筆，`logs/` 不會進入打包的執行個體。`eidos sessions <instance> diff` 會把最近一次以結束碼 0 結束的遊戲執行與目前狀態比較；`diff <id>` 從清單中選另一筆記錄。Eidos 目前不偵測當機，在 Proton 下當機的遊戲仍可能以結束碼 0 結束：若選中的執行屬於這種情況，請用 `diff <id>` 指定更早的一筆。
+
+### 測試執行
+
+Run 旁邊的 Test run 按鈕會像 Run 一樣啟動遊戲，但遊戲寫下的一切都會進入 `<instance>/test-run/`，而不是你的設定檔、Overwrite 和前綴：新的和改過的存檔、INI 變更、`plugins.txt`、寫進 Data 或遊戲資料夾的檔案，以及 `Documents/My Games/<game>` 裡的日誌。你可以用設定檔的模組測試，也可以不帶任何模組，或者只用清單裡選取的模組，加上提供它們外掛所需 master 的模組。
+
+遊戲結束後，Eidos 會把這些檔案分成五組列出（存檔、INI 變更、外掛狀態、Overwrite 輸出、日誌），並逐組問你要保留還是丟棄。保留存檔絕不會從設定檔刪掉任何存檔，即使是遊戲在執行中刪掉的那個。丟棄任何東西都要再按一次。如果 Eidos 或電腦在測試執行期間停下，檔案會留在 `test-run/` 裡，下次你開啟這個實例或按 F5 時清單就會開啟。
+
+如果視窗不是由遊戲的商店啟動的，Test run 會像 Run 一樣把遊戲交給那個商店（Steam、Heroic 或 Legendary），商店啟動的那次執行就是測試執行。測試執行只涵蓋上面列出的資料夾：遊戲的其他寫入，例如 Wine 登錄檔，照常寫到原處。測試執行的存檔要等你保留它們、再玩一次一般執行之後，才會進入 Steam Cloud。
+
+### 找出造成問題的模組
+
+Diagnostics 裡的 Find the mod behind a problem 按鈕會尋找造成某個可重現問題的模組，例如在某個地點當機。每一步都是一次測試執行，帶上剩下嫌疑模組的一半、它們需要的 master，以及你一直開著的模組（開始時在清單中選取的模組，和提供 script extender 的模組）。每次執行後，你回答問題是否出現；Not sure 會換一種方式分割嫌疑模組，Run it again 會重做這一步。回答或按 Run it again 會在再按一次後丟棄這一步寫下的檔案。想保留其中一部分，先按 See the files：它會開啟與測試執行之後相同的清單。如果遊戲當機且某個 crash logger 寫了日誌，或者遊戲以錯誤碼結束，Eidos 會把 Yes 標為可能的回答。200 個嫌疑模組大約需要 8 次執行。
+
+搜尋保存在 `<instance>/bisect.json` 裡，所以你可以在兩步之間關閉 Eidos。Stop the search 在再按一次後放棄這次搜尋。結果會指出那個模組，或一組彼此需要對方 master 的模組，並保存在 `<instance>/logs/bisect-<time>.txt`。產生的模組（Nemesis 或 DynDOLOD 的輸出、Bashed Patch）是為完整清單建置的，只用一半時可能出錯：讓它們一直開著，或在整個搜尋期間都關著。
 
 ### 不需要任何特權步驟
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=a8f80ad631af33e4aa35960ec9a2d9147ebc26e3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=039b6ffd055eabf9e9c4c8978bbc3e47ad68e45c -->
 
 # Eidos kullanımı
 
@@ -169,6 +169,20 @@ hiçbir kaydı değiştirmez.
 ### Son iyi çalıştırmadan beri neyin değiştiği
 
 `eidos play` veya `eidos tool run` ile yapılan her çalıştırma, pencereden, terminalden ya da Steam'den başlasın, `<instance>/logs/sessions/` altına bir kayıt yazar: profil, etkin her mod ile sürümü ve Nexus dosya kimlikleri, eklenti sırası, her profil INI dosyasının sağlama toplamı, oyun yürütülebilir dosyasının sürümü, Eidos sürümü, çıkış kodu ve çalıştırmanın oluşturduğu kayıtlar. En yeni 50 kayıt tutulur ve `logs/` paketlenen bir örneğe girmez. `eidos sessions <instance> diff`, çıkış kodu 0 ile biten en yeni oyun çalıştırmasını mevcut durumla karşılaştırır; `diff <id>` listeden başka bir kaydı seçer. Eidos burada henüz çökmeleri algılamaz ve Proton altında çöken bir oyun yine de 0 koduyla çıkabilir: seçilen çalıştırma böyleyse `diff <id>` ile daha eskisini belirtin.
+
+### Test çalıştırmaları
+
+Run'ın yanındaki Test run düğmesi oyunu Run gibi başlatır, ama oyunun yazdığı her şey profiliniz, Overwrite ve önek yerine `<instance>/test-run/` içine gider: yeni ve değişen kayıtlar, INI değişiklikleri, `plugins.txt`, Data'ya ya da oyun klasörüne yazılan dosyalar ve `Documents/My Games/<game>` içindeki günlükler. Profilin modlarıyla, hiç mod olmadan ya da yalnızca listede seçili modlar ve bunların eklentilerinin master olarak gerektirdiği modlarla test edebilirsiniz.
+
+Oyun kapandığında Eidos bu dosyaları beş grupta listeler (kayıtlar, INI değişiklikleri, eklenti durumu, Overwrite çıktısı, günlükler) ve her birini tutmak mı yoksa atmak mı istediğinizi sorar. Kayıtları tutmak profilden hiçbir kaydı silmez, oyunun çalıştırma sırasında sildiği bir kaydı bile. Herhangi bir şeyi atmak ikinci bir basış ister. Eidos ya da bilgisayar bir test çalıştırması sırasında durursa dosyalar `test-run/` içinde kalır ve liste, örneği bir sonraki açışınızda ya da F5'e bastığınızda açılır.
+
+Pencere oyunun mağazası tarafından başlatılmadıysa Test run, Run'ın yaptığı gibi oyunu o mağazaya (Steam, Heroic ya da Legendary) devreder ve mağazanın başlattığı çalıştırma test çalıştırması olur. Bir test çalıştırması yalnızca yukarıda sayılan klasörleri kapsar: oyunun Wine kayıt defteri gibi başka yerlere yazdıkları her zamanki yerlerine gider. Bir test çalıştırmasından gelen kayıtlar Steam Cloud'a ancak onları tuttuktan ve normal bir çalıştırma oynadıktan sonra ulaşır.
+
+### Bir sorunun arkasındaki modu bulmak
+
+Diagnostics'teki Find the mod behind a problem düğmesi, yeniden üretebildiğiniz bir sorunun, örneğin belirli bir yerdeki bir çökmenin nedeni olan modu arar. Her adım, kalan şüphelilerin yarısı, bunların gerektirdiği master'lar ve her zaman açık tuttuğunuz modlarla (başlarken listede seçili olan modlar ve script extender'ı sağlayan mod) yapılan bir test çalıştırmasıdır. Her çalıştırmadan sonra sorunun olup olmadığını yanıtlarsınız; Not sure şüphelileri başka türlü böler, Run it again ise adımı yineler. Bir yanıt ya da Run it again, adımın yazdığı dosyaları ikinci bir basıştan sonra atar. Bazılarını tutmak için önce See the files'a basın: bir test çalıştırmasından sonraki listenin aynısını açar. Oyun çöktüyse ve bir crash logger günlük yazdıysa ya da oyun bir hata koduyla çıktıysa Eidos, Yes'i olası yanıt olarak işaretler. 200 şüpheli yaklaşık 8 çalıştırma sürer.
+
+Arama `<instance>/bisect.json` içinde saklanır, bu yüzden adımlar arasında Eidos'u kapatabilirsiniz. Stop the search ikinci bir basıştan sonra aramayı bırakır. Sonuç, modu ya da birbirinin master'larına ihtiyaç duyan mod kümesini adlandırır ve `<instance>/logs/bisect-<time>.txt` içinde saklanır. Üretilmiş modlar (bir Nemesis ya da DynDOLOD çıktısı, bir Bashed Patch) tam liste için oluşturulur ve listenin yarısıyla bozulabilir: onları her zaman açık tutun ya da tüm arama boyunca kapalı bırakın.
 
 ### Ayrıcalıklı adım gerekmez
 

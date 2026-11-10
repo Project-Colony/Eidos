@@ -59,6 +59,8 @@ fn main() {
     let spec = LaunchSpec {
         readonly_data_binds: vec![],
         root_readonly_overwrite: None,
+        readonly_overwrite: None,
+        union_views: vec![],
         plugin_timestamps: None,
         layers,
         overwrite,

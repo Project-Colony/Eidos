@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=a8f80ad631af33e4aa35960ec9a2d9147ebc26e3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=039b6ffd055eabf9e9c4c8978bbc3e47ad68e45c -->
 
 # Usar Eidos
 
@@ -174,6 +174,20 @@ perfil.
 ### Qué cambió desde la última ejecución buena
 
 Cada ejecución con `eidos play` o `eidos tool run`, lanzada desde la ventana, una terminal o Steam, escribe un registro en `<instance>/logs/sessions/`: el perfil, cada mod activado con su versión y sus ids de archivo de Nexus, el orden de los plugins, una suma de comprobación de cada INI del perfil, la versión del ejecutable del juego, la versión de Eidos, el código de salida y las partidas guardadas que creó la ejecución. Se conservan los 50 más recientes, y `logs/` no entra en una instancia empaquetada. `eidos sessions <instance> diff` compara la última ejecución del juego que terminó con código 0 con el estado actual; `diff <id>` elige otro registro de la lista. Eidos aún no detecta cierres inesperados aquí, y un juego que falló bajo Proton puede terminar igualmente con código 0: si la ejecución elegida es una de esas, indique una anterior con `diff <id>`.
+
+### Ejecuciones de prueba
+
+El botón Test run, junto a Run, inicia el juego igual que Run, pero todo lo que el juego escribe va a `<instance>/test-run/` en lugar de a tu perfil, al Overwrite y al prefijo: partidas nuevas y modificadas, cambios de INI, `plugins.txt`, ficheros escritos en Data o en la carpeta del juego, y los registros de `Documents/My Games/<game>`. Puedes probar con los mods del perfil, sin ningún mod, o solo con los mods seleccionados en la lista más los mods cuyos plugins necesitan como masters.
+
+Cuando el juego se cierra, Eidos muestra esos ficheros en cinco grupos (partidas, cambios de INI, estado de los plugins, salida del Overwrite, registros) y te pide que conserves o descartes cada uno. Conservar las partidas nunca borra una partida del perfil, ni siquiera una que el juego borró durante la ejecución. Descartar cualquier cosa pide una segunda pulsación. Si Eidos o el ordenador se detienen durante una ejecución de prueba, los ficheros se quedan en `test-run/` y la lista se abre la próxima vez que abras la instancia o pulses F5.
+
+Cuando la ventana no la inició la tienda del juego, Test run pasa el juego a esa tienda (Steam, Heroic o Legendary), como hace Run, y la ejecución que inicia la tienda es la ejecución de prueba. Una ejecución de prueba solo cubre las carpetas de arriba: las demás escrituras del juego, como el registro de Wine, van adonde van siempre. Las partidas de una ejecución de prueba llegan a Steam Cloud solo después de que las conserves y juegues una ejecución normal.
+
+### Encontrar el mod detrás de un problema
+
+El botón Find the mod behind a problem de Diagnostics busca el mod que causa un problema que puedes reproducir, como un cierre inesperado en un lugar concreto. Cada paso es una ejecución de prueba con la mitad de los sospechosos que quedan, los masters que necesitan y los mods que mantienes siempre activos (los mods seleccionados en la lista al empezar y el mod que aporta el script extender). Tras cada ejecución respondes si el problema ocurrió; Not sure reparte los sospechosos de otra forma y Run it again repite el paso. Responder, o pulsar Run it again, descarta los ficheros que escribió el paso, tras una segunda pulsación. Para conservar algunos, pulsa antes See the files: abre la misma lista que tras una ejecución de prueba. Si el juego se cerró de golpe y un crash logger escribió un registro, o si el juego terminó con un código de error, Eidos marca Yes como la respuesta probable. 200 sospechosos llevan unas 8 ejecuciones.
+
+La búsqueda se guarda en `<instance>/bisect.json`, así que puedes cerrar Eidos entre pasos. Stop the search la descarta tras una segunda pulsación. El resultado nombra el mod, o el conjunto de mods que necesitan los masters unos de otros, y se guarda en `<instance>/logs/bisect-<time>.txt`. Los mods generados (una salida de Nemesis o DynDOLOD, un Bashed Patch) se construyen para la lista completa y pueden fallar con la mitad: mantenlos siempre activos o déjalos desactivados durante toda la búsqueda.
 
 ### No hace falta ningún paso privilegiado
 

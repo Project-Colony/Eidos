@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=a8f80ad631af33e4aa35960ec9a2d9147ebc26e3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=039b6ffd055eabf9e9c4c8978bbc3e47ad68e45c -->
 
 # 使用 Eidos
 
@@ -124,6 +124,20 @@ Add separator、Remove,以及把 Overwrite 变成一个模组,都会在动 `mods
 ### 自上次正常运行以来的变化
 
 无论从窗口、终端还是 Steam 启动，每次通过 `eidos play` 或 `eidos tool run` 的运行都会在 `<instance>/logs/sessions/` 写一条记录：配置文件、每个启用的 mod 及其版本和 Nexus 文件 ID、插件顺序、每个配置文件 INI 的校验和、游戏可执行文件的版本、Eidos 版本、退出码，以及这次运行创建的存档。保留最新的 50 条，`logs/` 不会进入打包的实例。`eidos sessions <instance> diff` 把最近一次以退出码 0 结束的游戏运行与当前状态比较；`diff <id>` 从列表中选另一条记录。Eidos 目前不检测崩溃，在 Proton 下崩溃的游戏仍可能以退出码 0 结束：如果选中的运行属于这种情况，请用 `diff <id>` 指定更早的一条。
+
+### 测试运行
+
+Run 旁边的 Test run 按钮像 Run 一样启动游戏，但游戏写下的一切都进入 `<instance>/test-run/`，而不是你的配置档、Overwrite 和前缀：新的和改过的存档、INI 改动、`plugins.txt`、写进 Data 或游戏文件夹的文件，以及 `Documents/My Games/<game>` 里的日志。你可以用配置档的模组测试，也可以不带任何模组，或者只用列表里选中的模组，加上提供它们插件所需 master 的模组。
+
+游戏退出后，Eidos 把这些文件分成五组列出（存档、INI 改动、插件状态、Overwrite 输出、日志），并逐组问你保留还是丢弃。保留存档绝不会从配置档删掉任何存档，哪怕是游戏在运行中删掉的那个。丢弃任何东西都要再按一次。如果 Eidos 或电脑在测试运行期间停下，文件会留在 `test-run/` 里，下次你打开这个实例或按 F5 时列表就会打开。
+
+如果窗口不是由游戏的商店启动的，Test run 会像 Run 一样把游戏交给那个商店（Steam、Heroic 或 Legendary），商店启动的那次运行就是测试运行。测试运行只覆盖上面列出的文件夹：游戏的其他写入，比如 Wine 注册表，照常写到原处。测试运行的存档要等你保留它们、再玩一次普通运行之后，才会进入 Steam Cloud。
+
+### 找出造成问题的模组
+
+Diagnostics 里的 Find the mod behind a problem 按钮会寻找造成某个可重现问题的模组，比如在某个地点崩溃。每一步都是一次测试运行，带上剩余嫌疑模组的一半、它们需要的 master，以及你始终开启的模组（开始时在列表中选中的模组，和提供脚本扩展器的模组）。每次运行后，你回答问题是否出现；Not sure 会换一种方式拆分嫌疑模组，Run it again 会重做这一步。回答或按 Run it again 会在再按一次后丢弃这一步写下的文件。想保留其中一部分，先按 See the files：它会打开与测试运行之后相同的列表。如果游戏崩溃且某个 crash logger 写了日志，或者游戏以错误码退出，Eidos 会把 Yes 标为可能的回答。200 个嫌疑模组大约需要 8 次运行。
+
+搜索保存在 `<instance>/bisect.json` 里，所以你可以在两步之间关闭 Eidos。Stop the search 在再按一次后放弃这次搜索。结果会指出那个模组，或者一组彼此需要对方 master 的模组，并保存在 `<instance>/logs/bisect-<time>.txt`。生成的模组（Nemesis 或 DynDOLOD 的输出、Bashed Patch）是为完整列表构建的，只用一半时可能出错：让它们始终开启，或者在整个搜索期间都关着。
 
 ### 不需要任何特权步骤
 

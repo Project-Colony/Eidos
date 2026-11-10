@@ -1247,7 +1247,12 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
         .spacing(8)
         .push(text(t("diag_tab")).size(sz(13)))
         .push(text(summary).size(sz(12)))
-        .push(tool_btn(t("diag_copy_report"), Message::CopyHealthReport));
+        .push(
+            Row::new()
+                .spacing(6)
+                .push(tool_btn(t("diag_copy_report"), Message::CopyHealthReport))
+                .push(tool_btn(t("diag_bisect"), Message::OpenBisect)),
+        );
     // Built from App state at each view, so its slot follows a clean as it runs.
     if let Some(card) = dirty_card(app) {
         col = col.push(dirty_plugins_card(&card));

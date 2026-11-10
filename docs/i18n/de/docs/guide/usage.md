@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=a8f80ad631af33e4aa35960ec9a2d9147ebc26e3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=039b6ffd055eabf9e9c4c8978bbc3e47ad68e45c -->
 
 # Eidos verwenden
 
@@ -176,6 +176,20 @@ Profil und ersetzt nie einen Spielstand des Profils.
 ### Was sich seit dem letzten guten Start geändert hat
 
 Jeder Start über `eidos play` oder `eidos tool run`, ob aus dem Fenster, einem Terminal oder Steam, schreibt einen Eintrag nach `<instance>/logs/sessions/`: das Profil, jede aktive Mod mit Version und Nexus-Datei-IDs, die Plugin-Reihenfolge, eine Prüfsumme jeder Profil-INI, die Version der Spiel-Exe, die Eidos-Version, den Exit-Code und die Spielstände, die der Start angelegt hat. Die 50 neuesten bleiben erhalten, und `logs/` kommt nicht in eine gepackte Instanz. `eidos sessions <instance> diff` vergleicht den neuesten Spielstart mit Exit-Code 0 mit dem aktuellen Stand; `diff <id>` wählt einen anderen Eintrag aus der Liste. Eidos erkennt hier noch keine Abstürze, und ein unter Proton abgestürztes Spiel kann trotzdem mit Code 0 enden: Gehört der gewählte Start dazu, nennen Sie mit `diff <id>` einen früheren.
+
+### Testläufe
+
+Die Schaltfläche Test run neben Run startet das Spiel wie Run, aber alles, was das Spiel schreibt, landet in `<instance>/test-run/` statt in Ihrem Profil, im Overwrite und im Präfix: neue und geänderte Spielstände, INI-Änderungen, `plugins.txt`, Dateien, die in Data oder in den Spielordner geschrieben werden, und die Logs in `Documents/My Games/<game>`. Sie können mit den Mods des Profils testen, ganz ohne Mod oder nur mit den in der Liste ausgewählten Mods und den Mods, deren Plugins sie als Master brauchen.
+
+Wenn das Spiel endet, zeigt Eidos diese Dateien in fünf Gruppen (Spielstände, INI-Änderungen, Plugin-Zustand, Overwrite-Ausgabe, Logs) und fragt bei jeder Gruppe, ob Sie sie behalten oder verwerfen. Das Behalten der Spielstände löscht nie einen Spielstand aus dem Profil, auch keinen, den das Spiel während des Laufs gelöscht hat. Etwas zu verwerfen braucht einen zweiten Klick. Hält Eidos oder der Rechner während eines Testlaufs an, bleiben die Dateien in `test-run/`, und die Liste öffnet sich, sobald Sie die Instanz das nächste Mal öffnen oder F5 drücken.
+
+Wurde das Fenster nicht vom Store des Spiels gestartet, übergibt Test run das Spiel an diesen Store (Steam, Heroic oder Legendary), wie Run es tut, und der Lauf, den der Store startet, ist der Testlauf. Ein Testlauf deckt nur die oben genannten Ordner ab: andere Schreibzugriffe des Spiels, etwa in die Wine-Registry, gehen dorthin, wo sie immer hingehen. Spielstände aus einem Testlauf erreichen Steam Cloud erst, nachdem Sie sie behalten und einen normalen Lauf gespielt haben.
+
+### Die Mod hinter einem Problem finden
+
+Die Schaltfläche Find the mod behind a problem in Diagnostics sucht die Mod, die ein Problem verursacht, das Sie nachstellen können, etwa einen Absturz an einer bestimmten Stelle. Jeder Schritt ist ein Testlauf mit der Hälfte der verbleibenden Verdächtigen, den Mastern, die sie brauchen, und den Mods, die Sie immer aktiv lassen (die beim Start in der Liste ausgewählten Mods und die Mod, die den Script Extender liefert). Nach jedem Lauf beantworten Sie, ob das Problem aufgetreten ist; Not sure teilt die Verdächtigen anders auf, und Run it again wiederholt den Schritt. Eine Antwort oder Run it again verwirft die Dateien, die der Schritt geschrieben hat, nach einem zweiten Klick. Um einige davon zu behalten, drücken Sie zuerst See the files: Es öffnet dieselbe Liste wie nach einem Testlauf. Ist das Spiel abgestürzt und hat ein Crash-Logger ein Log geschrieben, oder endete das Spiel mit einem Fehlercode, markiert Eidos Yes als wahrscheinliche Antwort. 200 Verdächtige brauchen etwa 8 Läufe.
+
+Die Suche wird in `<instance>/bisect.json` gespeichert, Sie können Eidos also zwischen den Schritten schließen. Stop the search verwirft sie nach einem zweiten Klick. Das Ergebnis nennt die Mod oder die Gruppe von Mods, die gegenseitig ihre Master brauchen, und wird in `<instance>/logs/bisect-<time>.txt` aufbewahrt. Generierte Mods (eine Nemesis- oder DynDOLOD-Ausgabe, ein Bashed Patch) sind für die vollständige Liste gebaut und können mit der Hälfte davon scheitern: Lassen Sie sie immer aktiv oder während der ganzen Suche aus.
 
 ### Kein privilegierter Schritt nötig
 

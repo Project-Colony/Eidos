@@ -8612,3 +8612,902 @@ fn the_ini_editor_opens_launch_env_for_every_game_and_names_ignored_lines() {
     assert_eq!(app.ini_editor.as_ref().unwrap().files, ["launch-env.ini"]);
     let _ = fs::remove_dir_all(root);
 }
+
+#[test]
+fn test_start_writes_the_request_then_runs_like_run() {
+    let (mut app, root) = list_app(&["Keep"]);
+    let _ = update_inner(&mut app, Message::OpenTestRun);
+    let _ = update_inner(&mut app, Message::TestChoose(TestChoice::Vanilla));
+    let _ = update_inner(&mut app, Message::TestStart);
+    let run = app.created.as_ref().unwrap().test_run().unwrap();
+    assert_eq!(
+        (run.game.as_str(), run.mods.clone(), run.started),
+        ("skyrimse", Some(vec![]), None)
+    );
+    assert!(
+        app.running.is_none(),
+        "no launch command and no prefix: Run only sets its hint"
+    );
+    assert!(app
+        .status
+        .as_deref()
+        .unwrap()
+        .starts_with(t("status_test_prefix")));
+    assert!(app.test_dialog.is_none());
+    let _ = update_inner(&mut app, Message::OpenTestRun);
+    assert_eq!(
+        app.test_state.as_ref().map(|s| s.1),
+        Some(eidos_instance::TestState::Requested),
+        "the press reads the state the dialog shows"
+    );
+    assert!(app.test_dialog.is_some());
+    let _ = update_inner(&mut app, Message::TestCancelRequest);
+    assert!(app.created.as_ref().unwrap().test_run().is_none());
+    assert!(
+        app.test_state.is_none(),
+        "cancel refreshes what the dialog shows"
+    );
+    assert!(
+        app.test_dialog.is_none(),
+        "closed: the taller choices layout never replaces the waiting one under the pointer"
+    );
+    assert_eq!(app.status.as_deref(), Some(t("status_test_cancelled")));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_switched_off_selection_is_neither_tested_nor_pinned() {
+    let (mut app, root) = list_app(&["A", "B", "C"]);
+    app.mods[1].enabled = false;
+    app.selected_mods = [1].into_iter().collect();
+    assert!(
+        active_selection(&app).is_empty(),
+        "Only the selected mods counts none"
+    );
+    assert_eq!(test_mods(&app, TestChoice::Selected), Some(vec![]));
+    assert!(bisect_pinned(&app).is_empty());
+    // The focused row alone, the mod just switched off as the suspect.
+    app.selected_mods.clear();
+    app.selected_mod = Some(1);
+    assert!(bisect_pinned(&app).is_empty());
+    app.selected_mods = [0, 1].into_iter().collect();
+    assert_eq!(active_selection(&app), [0]);
+    assert_eq!(bisect_pinned(&app), ["A"]);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn only_selected_needs_a_selection_and_adds_masters() {
+    let (mut app, root) = list_app(&["Base", "Patch"]);
+    let mut patch = plugin_row("Patch.esp", "Patch");
+    patch.masters = vec!["Base.esm".into()];
+    app.plugins = Some(PluginList {
+        plugins: vec![plugin_row("Base.esm", "Base"), patch],
+        ..Default::default()
+    });
+    assert_eq!(test_mods(&app, TestChoice::Selected), Some(vec![]));
+    app.selected_mods = [1].into_iter().collect();
+    assert_eq!(
+        test_mods(&app, TestChoice::Selected),
+        Some(vec!["Base".into(), "Patch".into()])
+    );
+    assert_eq!(test_mods(&app, TestChoice::Profile), None);
+    assert_eq!(test_mods(&app, TestChoice::Vanilla), Some(vec![]));
+    let _ = fs::remove_dir_all(root);
+}
+
+/// A TES4 record holding `subrecords`, each `(type, data)`.
+fn tes4_with(subrecords: &[(&[u8; 4], &[u8])]) -> Vec<u8> {
+    let mut body = Vec::new();
+    for (kind, data) in subrecords {
+        body.extend_from_slice(*kind);
+        body.extend_from_slice(&(data.len() as u16).to_le_bytes());
+        body.extend_from_slice(data);
+    }
+    let mut b = tes4_header(0);
+    b[4..8].copy_from_slice(&(body.len() as u32).to_le_bytes());
+    b.extend(body);
+    b
+}
+
+#[test]
+fn masters_are_found_when_the_plugins_tab_was_never_opened() {
+    let (mut app, root) = list_app(&["Base", "Patch"]);
+    fs::write(root.join("mods/Base/Base.esm"), tes4_header(0x1)).unwrap();
+    fs::write(
+        root.join("mods/Patch/Patch.esp"),
+        tes4_with(&[
+            (b"HEDR", &[0u8; 12]),
+            (b"MAST", b"Base.esm\0"),
+            (b"DATA", &[0u8; 8]),
+        ]),
+    )
+    .unwrap();
+    app.tab = Tab::Diagnostics;
+    assert!(app.plugins.is_none());
+    app.selected_mods = [1].into_iter().collect();
+    assert_eq!(
+        test_mods(&app, TestChoice::Selected),
+        Some(vec!["Base".into(), "Patch".into()])
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+/// A test run of profile `Default` that ended with code 0, having written one
+/// save and one Data file.
+fn ended_test_app() -> (App, PathBuf) {
+    let (app, root) = list_app(&["Keep"]);
+    let inst = app.created.clone().unwrap();
+    inst.request_test_run(&eidos_instance::TestRun {
+        profile: "Default".into(),
+        game: "skyrimse".into(),
+        requested: 1,
+        ..Default::default()
+    })
+    .unwrap();
+    inst.begin_test_run(&inst.profile("Default"), "skyrimse", &[], None, false, 2)
+        .unwrap()
+        .unwrap();
+    let saves = inst.test_run_profile().saves_dir();
+    fs::create_dir_all(&saves).unwrap();
+    fs::write(saves.join("new.ess"), "new").unwrap();
+    fs::write(inst.test_data_upper().join("out.txt"), "out").unwrap();
+    inst.end_test_run(Some(0), 3).unwrap();
+    (app, root)
+}
+
+#[test]
+fn a_finished_test_run_opens_the_review_and_apply_needs_every_group_decided() {
+    use eidos_instance::TestGroup;
+    let (mut app, root) = ended_test_app();
+    load_test_state(&mut app, true);
+    assert_eq!(app.test_review.as_ref().unwrap().writes.saves, ["new.ess"]);
+    let _ = update_inner(&mut app, Message::ReviewApply);
+    assert_eq!(
+        app.test_review.as_ref().unwrap().line.as_deref(),
+        Some(t("review_choose_all"))
+    );
+    let _ = update_inner(&mut app, Message::ReviewChoose(TestGroup::Saves, true));
+    let _ = update_inner(&mut app, Message::ReviewChoose(TestGroup::Output, true));
+    let _ = update_inner(&mut app, Message::ReviewApply);
+    assert!(
+        app.test_review.is_none(),
+        "keeping everything deletes nothing, one press"
+    );
+    assert_eq!(app.status.as_deref(), Some(t("status_test_closed")));
+    let inst = app.created.as_ref().unwrap();
+    assert!(inst
+        .profile("Default")
+        .saves_dir()
+        .join("new.ess")
+        .is_file());
+    assert!(inst.overwrite_dir().join("out.txt").is_file() && inst.test_run().is_none());
+    assert!(
+        app.test_state.is_none(),
+        "closing refreshes the cached state"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn throwing_away_takes_two_presses_and_any_other_action_disarms() {
+    use eidos_instance::TestGroup;
+    let (mut app, root) = ended_test_app();
+    load_test_state(&mut app, true);
+    let _ = update_inner(&mut app, Message::ReviewChoose(TestGroup::Saves, false));
+    let _ = update_inner(&mut app, Message::ReviewChoose(TestGroup::Output, true));
+    let _ = update_inner(&mut app, Message::ReviewApply);
+    let review = app.test_review.as_ref().unwrap();
+    assert!(review.armed);
+    assert_eq!(
+        review.line.as_deref(),
+        Some(tf("review_armed_line", &[("n", &1)]).as_str())
+    );
+    let _ = update_inner(&mut app, Message::SelectTab(Tab::Data));
+    assert!(!app.test_review.as_ref().unwrap().armed);
+    let _ = update_inner(&mut app, Message::ReviewApply);
+    let _ = update_inner(&mut app, Message::ReviewApply);
+    assert!(app.test_review.is_none());
+    assert!(!app
+        .created
+        .as_ref()
+        .unwrap()
+        .profile("Default")
+        .saves_dir()
+        .join("new.ess")
+        .exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn decide_later_closes_the_review_and_the_test_run_button_reopens_it() {
+    let (mut app, root) = ended_test_app();
+    load_test_state(&mut app, true);
+    let _ = update_inner(&mut app, Message::ReviewLater);
+    assert!(app.test_review.is_none());
+    assert!(app.created.as_ref().unwrap().test_run().is_some());
+    let _ = update_inner(&mut app, Message::OpenTestRun);
+    assert!(app.test_review.is_some() && app.test_dialog.is_none());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_test_run_that_wrote_nothing_closes_on_one_press() {
+    let (mut app, root) = list_app(&["Keep"]);
+    let inst = app.created.clone().unwrap();
+    inst.request_test_run(&eidos_instance::TestRun {
+        profile: "Default".into(),
+        game: "skyrimse".into(),
+        requested: 1,
+        ..Default::default()
+    })
+    .unwrap();
+    inst.begin_test_run(&inst.profile("Default"), "skyrimse", &[], None, false, 2)
+        .unwrap();
+    inst.end_test_run(Some(0), 3).unwrap();
+    load_test_state(&mut app, true);
+    let _ = update_inner(&mut app, Message::ReviewApply);
+    assert!(app.test_review.is_none() && inst.test_run().is_none());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn an_unfinished_test_run_opens_the_review_on_open() {
+    // Both ways a window opens an instance: the switcher, and a window
+    // starting up on the last-used one (or the one a store opened).
+    for starting in [false, true] {
+        let (mut app, root) = ended_test_app();
+        // The manifest without `ended`, as a killed `eidos play` leaves it.
+        let inst = app.created.clone().unwrap();
+        let mut run = inst.test_run().unwrap();
+        run.ended = None;
+        run.exit = None;
+        fs::write(
+            inst.test_run_dir().join("test-run.json"),
+            serde_json::to_vec(&run).unwrap(),
+        )
+        .unwrap();
+        if starting {
+            let i = app.selected.unwrap();
+            open_existing(&mut app, i, inst);
+        } else {
+            open_instance(&mut app, inst);
+        }
+        let review = app.test_review.as_ref().expect("no review on open");
+        assert_eq!((review.run.exit, review.run.ended.is_some()), (None, true));
+        assert_eq!(review.writes.saves, ["new.ess"]);
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
+#[test]
+fn the_test_run_button_sees_a_run_that_ended_in_another_window() {
+    let (mut app, root) = list_app(&["Keep"]);
+    let inst = app.created.clone().unwrap();
+    inst.request_test_run(&eidos_instance::TestRun {
+        profile: "Default".into(),
+        game: "skyrimse".into(),
+        requested: 1,
+        ..Default::default()
+    })
+    .unwrap();
+    load_test_state(&mut app, false);
+    assert_eq!(
+        app.test_state.as_ref().unwrap().1,
+        eidos_instance::TestState::Requested
+    );
+    // The window Steam opened ran it: this window's cache was not told.
+    inst.begin_test_run(&inst.profile("Default"), "skyrimse", &[], None, false, 2)
+        .unwrap();
+    inst.end_test_run(Some(0), 3).unwrap();
+    let _ = update_inner(&mut app, Message::OpenTestRun);
+    assert!(app.test_review.is_some() && app.test_dialog.is_none());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn the_end_of_the_test_run_opens_the_review_and_a_stop_still_says_stopped() {
+    // (stopped, the test run began during this run)
+    for (stop, during) in [(false, true), (true, true), (false, false)] {
+        let (mut app, root) = list_app(&["Keep"]);
+        let inst = app.created.clone().unwrap();
+        inst.request_test_run(&eidos_instance::TestRun {
+            profile: "Default".into(),
+            game: "skyrimse".into(),
+            requested: 1,
+            ..Default::default()
+        })
+        .unwrap();
+        let mut cmd = std::process::Command::new("sleep");
+        cmd.arg(if stop { "30" } else { "0" });
+        start_run(&mut app, "Game".into(), cmd);
+        let run = app.running.as_mut().unwrap();
+        run.game = true;
+        let begun = if during { run.started } else { 1 };
+        inst.begin_test_run(
+            &inst.profile("Default"),
+            "skyrimse",
+            &[],
+            None,
+            false,
+            begun,
+        )
+        .unwrap();
+        inst.end_test_run(Some(0), begun).unwrap();
+        if stop {
+            let _ = update_inner(&mut app, Message::StopRun);
+            let _ = update_inner(&mut app, Message::StopRun);
+        }
+        finish_tracked_run(&mut app);
+        let said = app.status.clone().unwrap();
+        match (stop, during) {
+            (true, _) => assert_eq!(said, tf("status_run_stopped", &[("title", &"Game")])),
+            (false, true) => assert_eq!(said, t("status_test_ended")),
+            (false, false) => assert_ne!(said, t("status_test_ended"), "a normal run ended"),
+        }
+        assert!(
+            app.test_review.is_some(),
+            "{stop} {during}: the review opens"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
+#[test]
+fn starting_a_search_pins_the_selection_and_the_extender_mod() {
+    let (mut app, root) = list_app(&["SKSE", "A", "B", "C"]);
+    let loader = root.join("mods/SKSE/Root/skse64_loader.exe");
+    fs::create_dir_all(loader.parent().unwrap()).unwrap();
+    fs::write(&loader, "loader").unwrap();
+    app.created
+        .as_ref()
+        .unwrap()
+        .save_modlist(&app.mods)
+        .unwrap();
+    app.selected_mods = [1].into_iter().collect();
+    let _ = update_inner(&mut app, Message::OpenBisect);
+    assert!(app.bisect_open);
+    assert_eq!(bisect_stage(&app), BisectStage::Setup);
+    let _ = update_inner(&mut app, Message::BisectStart);
+    let b = app.created.as_ref().unwrap().read_bisect().unwrap();
+    assert_eq!(
+        b.pinned,
+        ["A", "SKSE"],
+        "the selection in display order, then the extender's mod"
+    );
+    assert_eq!(b.candidates, ["B", "C"]);
+    assert_eq!(app.bisect.as_ref(), Some(&b));
+    let _ = update_inner(&mut app, Message::BisectHide);
+    assert!(!app.bisect_open && app.created.as_ref().unwrap().read_bisect() == Some(b));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn run_step_requests_a_bisect_test_run_with_the_split() {
+    use eidos_instance::BisectStep;
+    let (mut app, root) = list_app(&["A", "B", "C", "D"]);
+    let _ = update_inner(&mut app, Message::OpenBisect);
+    let _ = update_inner(&mut app, Message::BisectStart);
+    assert_eq!(bisect_stage(&app), BisectStage::Ready);
+    let _ = update_inner(&mut app, Message::BisectRunStep);
+    let inst = app.created.as_ref().unwrap();
+    let run = inst.test_run().unwrap();
+    assert!(run.bisect);
+    assert_eq!(run.mods, Some(vec!["A".into(), "B".into()]));
+    assert_eq!(
+        inst.read_bisect().unwrap().steps,
+        [BisectStep {
+            tested: vec!["A".into(), "B".into()],
+            answer: None
+        }]
+    );
+    assert!(
+        app.running.is_none(),
+        "no launch command: Run only sets its hint"
+    );
+    assert!(app
+        .status
+        .as_deref()
+        .unwrap()
+        .starts_with(t("status_test_prefix")));
+    assert_eq!(bisect_stage(&app), BisectStage::Running);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_refused_step_request_leaves_the_search_as_it_was() {
+    let (mut app, root) = list_app(&["A", "B", "C", "D"]);
+    let _ = update_inner(&mut app, Message::OpenBisect);
+    let _ = update_inner(&mut app, Message::BisectStart);
+    let before = app.created.as_ref().unwrap().read_bisect();
+    // A tool run (or a freeze) holds the instance lock; the lock is
+    // re-entrant on one thread, so another thread holds it.
+    let holder = app.created.clone().unwrap();
+    let (held_tx, held) = std::sync::mpsc::channel();
+    let (release, release_rx) = std::sync::mpsc::channel::<()>();
+    let tool = std::thread::spawn(move || {
+        let _lock = holder.try_lock("a tool run").unwrap();
+        held_tx.send(()).unwrap();
+        let _ = release_rx.recv();
+    });
+    held.recv().unwrap();
+    let _ = update_inner(&mut app, Message::BisectRunStep);
+    drop(release);
+    tool.join().unwrap();
+    let inst = app.created.as_ref().unwrap();
+    assert!(inst.test_run().is_none());
+    assert_eq!(
+        inst.read_bisect(),
+        before,
+        "no step for a run that never started"
+    );
+    assert!(app
+        .status
+        .as_deref()
+        .unwrap()
+        .starts_with(&t("status_test_failed").replace("{error}", "")));
+    assert_eq!(bisect_stage(&app), BisectStage::Ready);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn run_step_waits_for_the_review_of_a_normal_test_run() {
+    let (mut app, root) = ended_test_app();
+    let inst = app.created.clone().unwrap();
+    inst.write_bisect(&eidos_instance::Bisect::new(
+        "Default",
+        vec![],
+        vec!["Keep".into(), "Other".into()],
+        1,
+    ))
+    .unwrap();
+    load_test_state(&mut app, true);
+    assert!(
+        app.test_review.is_some() && !app.bisect_open,
+        "a normal run opens its review"
+    );
+    app.test_review = None;
+    let _ = update_inner(&mut app, Message::OpenBisect);
+    let _ = update_inner(&mut app, Message::BisectRunStep);
+    assert_eq!(app.status.as_deref(), Some(t("status_bisect_review_first")));
+    assert!(app.test_review.is_some());
+    assert!(inst.read_bisect().unwrap().steps.is_empty());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_search_resumes_after_the_window_reopens() {
+    use eidos_instance::{Bisect, TestRun};
+    let (mut app, root) = list_app(&["A", "B", "C", "D"]);
+    let inst = app.created.clone().unwrap();
+    // Saved with every mod on: `open_instance` reads the list back from disk.
+    inst.save_modlist(&app.mods).unwrap();
+    let mut b = Bisect::new(
+        "Default",
+        vec![],
+        ["A", "B", "C", "D"].map(String::from).to_vec(),
+        1,
+    );
+    b.begin_step(vec!["A".into(), "B".into()]);
+    inst.write_bisect(&b).unwrap();
+    // The step's test run ended while no window was open.
+    inst.request_test_run(&TestRun {
+        profile: "Default".into(),
+        game: "skyrimse".into(),
+        mods: Some(vec!["A".into(), "B".into()]),
+        bisect: true,
+        requested: 1,
+        ..Default::default()
+    })
+    .unwrap();
+    inst.begin_test_run(&inst.profile("Default"), "skyrimse", &[], None, false, 2)
+        .unwrap();
+    inst.end_test_run(Some(0), 3).unwrap();
+    app.bisect = None;
+    open_instance(&mut app, inst);
+    assert!(app.bisect_open && app.test_review.is_none());
+    assert_eq!(app.bisect.as_ref(), Some(&b));
+    assert_eq!(bisect_stage(&app), BisectStage::Answer);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_search_of_another_profile_offers_no_step() {
+    let (mut app, root) = list_app(&["A", "B"]);
+    let inst = app.created.clone().unwrap();
+    inst.write_bisect(&eidos_instance::Bisect::new(
+        "Other",
+        vec![],
+        vec!["A".into(), "B".into()],
+        1,
+    ))
+    .unwrap();
+    load_test_state(&mut app, true);
+    let _ = update_inner(&mut app, Message::OpenBisect);
+    assert_eq!(bisect_stage(&app), BisectStage::OtherProfile);
+    let _ = update_inner(&mut app, Message::BisectRunStep);
+    assert!(inst.test_run().is_none());
+    let _ = fs::remove_dir_all(root);
+}
+
+/// Task 88's resume fixture: four mods, step 1 tested A and B, and its test run
+/// ended with code 0 after writing one save in the working copy. With `crash`,
+/// the run also left an SKSE crash log.
+fn answer_app(crash: bool) -> (App, PathBuf) {
+    use eidos_instance::{Bisect, TestRun};
+    let (mut app, root) = list_app(&["A", "B", "C", "D"]);
+    let inst = app.created.clone().unwrap();
+    let mut b = Bisect::new(
+        "Default",
+        vec![],
+        ["A", "B", "C", "D"].map(String::from).to_vec(),
+        1,
+    );
+    b.begin_step(vec!["A".into(), "B".into()]);
+    inst.write_bisect(&b).unwrap();
+    inst.request_test_run(&TestRun {
+        profile: "Default".into(),
+        game: "skyrimse".into(),
+        mods: Some(vec!["A".into(), "B".into()]),
+        bisect: true,
+        requested: 1,
+        ..Default::default()
+    })
+    .unwrap();
+    inst.begin_test_run(&inst.profile("Default"), "skyrimse", &[], None, false, 2)
+        .unwrap();
+    let saves = inst.test_run_profile().saves_dir();
+    fs::create_dir_all(&saves).unwrap();
+    fs::write(saves.join("quick.ess"), "save").unwrap();
+    if crash {
+        let skse = inst.test_docs_upper().join("SKSE");
+        fs::create_dir_all(&skse).unwrap();
+        fs::write(skse.join("crash-1.log"), "crash").unwrap();
+    }
+    inst.end_test_run(Some(0), 3).unwrap();
+    load_test_state(&mut app, true);
+    (app, root)
+}
+
+#[test]
+fn a_crashed_step_prefills_bad_and_a_stop_exit_does_not() {
+    let (app, root) = answer_app(true);
+    assert!(matches!(bisect_hint(&app), Some(BisectHint::Crash(_))));
+    assert!(matches!(app.bisect_step.0, Some(BisectHint::Crash(_))));
+    let (mut stopped, root2) = answer_app(false);
+    let inst = stopped.created.clone().unwrap();
+    for (exit, hint) in [
+        (Some(143), None),
+        (Some(137), None),
+        (Some(1), Some(BisectHint::Exit(1))),
+        (Some(0), None),
+    ] {
+        let mut run = inst.test_run().unwrap();
+        run.exit = exit;
+        fs::write(
+            inst.test_run_dir().join("test-run.json"),
+            serde_json::to_vec(&run).unwrap(),
+        )
+        .unwrap();
+        load_test_state(&mut stopped, false);
+        assert_eq!(bisect_hint(&stopped), hint, "{exit:?}");
+    }
+    let _ = (fs::remove_dir_all(root), fs::remove_dir_all(root2));
+}
+
+#[test]
+fn answering_throws_away_after_two_presses_and_moves_on() {
+    use eidos_instance::Answer;
+    let (mut app, root) = answer_app(false);
+    assert_eq!(bisect_stage(&app), BisectStage::Answer);
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Bad));
+    assert_eq!(app.bisect_armed, Some(BisectArm::Answer(Answer::Bad)));
+    assert!(
+        app.created.as_ref().unwrap().test_run().is_some(),
+        "one press deletes nothing"
+    );
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Bad));
+    let inst = app.created.as_ref().unwrap();
+    assert!(inst.test_run().is_none());
+    assert_eq!(inst.read_bisect().unwrap().candidates, ["A", "B"]);
+    assert_eq!(bisect_stage(&app), BisectStage::Ready);
+    assert_eq!(app.bisect_armed, None);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn another_answer_or_action_rearms_instead_of_deleting() {
+    use eidos_instance::Answer;
+    let (mut app, root) = answer_app(false);
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Bad));
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Good));
+    assert_eq!(app.bisect_armed, Some(BisectArm::Answer(Answer::Good)));
+    let _ = update_inner(&mut app, Message::SelectTab(Tab::Data));
+    assert_eq!(app.bisect_armed, None, "any other action disarms");
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Good));
+    let inst = app.created.as_ref().unwrap();
+    assert!(inst.test_run().is_some());
+    assert_eq!(inst.read_bisect().unwrap().steps[0].answer, None);
+    let _ = fs::remove_dir_all(root);
+
+    // An answer that needs no confirmation still disarms an armed Stop.
+    let (mut app, root) = answer_app(false);
+    let _ = update_inner(&mut app, Message::BisectReview);
+    let _ = update_inner(
+        &mut app,
+        Message::ReviewChoose(eidos_instance::TestGroup::Saves, true),
+    );
+    let _ = update_inner(&mut app, Message::ReviewApply);
+    assert!(app.created.as_ref().unwrap().test_run().is_none());
+    let _ = update_inner(&mut app, Message::BisectStop);
+    assert_eq!(app.bisect_armed, Some(BisectArm::Stop));
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Bad));
+    assert_eq!(bisect_stage(&app), BisectStage::Ready);
+    assert_eq!(app.bisect_armed, None);
+    let _ = update_inner(&mut app, Message::BisectStop);
+    assert!(app.created.as_ref().unwrap().read_bisect().is_some());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_failed_throw_away_records_no_answer() {
+    use eidos_instance::Answer;
+    let (mut app, root) = answer_app(false);
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Bad));
+    // Another process holds the instance lock: the lock is re-entrant on one
+    // thread, so another thread holds it.
+    let holder = app.created.clone().unwrap();
+    let (held_tx, held) = std::sync::mpsc::channel();
+    let (release, release_rx) = std::sync::mpsc::channel::<()>();
+    let other = std::thread::spawn(move || {
+        let _lock = holder.try_lock("a tool run").unwrap();
+        held_tx.send(()).unwrap();
+        let _ = release_rx.recv();
+    });
+    held.recv().unwrap();
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Bad));
+    drop(release);
+    other.join().unwrap();
+    let inst = app.created.as_ref().unwrap();
+    assert!(inst.test_run().is_some());
+    assert_eq!(inst.read_bisect().unwrap().steps[0].answer, None);
+    assert!(app
+        .bisect_line
+        .as_deref()
+        .unwrap()
+        .starts_with(t("review_failed").split("{error}").next().unwrap()));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn repeat_runs_the_same_set_again() {
+    let (mut app, root) = answer_app(false);
+    let _ = update_inner(&mut app, Message::BisectRepeat);
+    assert_eq!(app.bisect_armed, Some(BisectArm::Repeat));
+    assert!(app
+        .created
+        .as_ref()
+        .unwrap()
+        .test_run()
+        .unwrap()
+        .started
+        .is_some());
+    let _ = update_inner(&mut app, Message::BisectRepeat);
+    let inst = app.created.as_ref().unwrap();
+    let run = inst.test_run().unwrap();
+    assert_eq!(
+        (run.mods.clone(), run.started, run.bisect),
+        (Some(vec!["A".into(), "B".into()]), None, true)
+    );
+    assert_eq!(
+        inst.read_bisect().unwrap().steps.len(),
+        1,
+        "the step stays unanswered"
+    );
+    assert_eq!(bisect_stage(&app), BisectStage::Running);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn the_steps_review_leaves_the_answer_with_nothing_to_throw_away() {
+    use eidos_instance::{Answer, TestGroup};
+    let (mut app, root) = answer_app(false);
+    assert_eq!(app.bisect_step.1, 1);
+    let _ = update_inner(&mut app, Message::BisectReview);
+    let _ = update_inner(&mut app, Message::ReviewChoose(TestGroup::Saves, true));
+    let _ = update_inner(&mut app, Message::ReviewApply);
+    assert!(app.test_review.is_none() && app.bisect_open);
+    assert_eq!(bisect_stage(&app), BisectStage::Answer);
+    assert_eq!(app.bisect_step.1, 0);
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Good));
+    let inst = app.created.as_ref().unwrap();
+    assert_eq!(inst.read_bisect().unwrap().candidates, ["C", "D"]);
+    assert!(inst
+        .profile("Default")
+        .saves_dir()
+        .join("quick.ess")
+        .is_file());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn stop_takes_two_presses_and_leaves_a_waiting_test_run_for_review() {
+    let (mut app, root) = answer_app(false);
+    let _ = update_inner(&mut app, Message::BisectStop);
+    assert_eq!(app.bisect_armed, Some(BisectArm::Stop));
+    assert!(app.created.as_ref().unwrap().read_bisect().is_some());
+    let _ = update_inner(&mut app, Message::BisectStop);
+    let inst = app.created.as_ref().unwrap();
+    assert!(inst.read_bisect().is_none() && inst.test_run().is_some());
+    assert!(!app.bisect_open && app.bisect.is_none());
+    assert!(app.test_review.is_some(), "the waiting run's review opens");
+    let log = fs::read_dir(inst.root.join("logs"))
+        .unwrap()
+        .flatten()
+        .find(|e| e.file_name().to_string_lossy().starts_with("bisect-"))
+        .unwrap()
+        .path();
+    assert_eq!(
+        fs::read_to_string(log).unwrap(),
+        "step 1: A, B -> no answer\nStopped with 4 suspects left: A, B, C, D\n"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn stop_drops_a_step_request_no_game_began() {
+    let (mut app, root) = list_app(&["A", "B", "C", "D"]);
+    let _ = update_inner(&mut app, Message::OpenBisect);
+    let _ = update_inner(&mut app, Message::BisectStart);
+    let _ = update_inner(&mut app, Message::BisectRunStep);
+    assert!(app.created.as_ref().unwrap().test_run().is_some());
+    let _ = update_inner(&mut app, Message::BisectStop);
+    let _ = update_inner(&mut app, Message::BisectStop);
+    let inst = app.created.as_ref().unwrap();
+    assert!(inst.read_bisect().is_none());
+    assert!(inst.test_run().is_none(), "the next Run is a normal run");
+    assert_eq!(app.status.as_deref(), Some(t("status_test_cancelled")));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_stale_window_reads_the_search_again_before_it_acts() {
+    use eidos_instance::Answer;
+    let (mut app, root) = answer_app(false);
+    let inst = app.created.clone().unwrap();
+    // The window the store opened answered step 1: the step's run went and the
+    // search moved on. This window still holds step 1 unanswered.
+    inst.finish_test_run(&[]).unwrap();
+    let mut moved = inst.read_bisect().unwrap();
+    moved.answer(Answer::Good);
+    inst.write_bisect(&moved).unwrap();
+    assert_eq!(bisect_stage(&app), BisectStage::Answer, "the stale view");
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Bad));
+    assert_eq!(
+        inst.read_bisect().as_ref(),
+        Some(&moved),
+        "no second answer over the other window's"
+    );
+    assert_eq!(bisect_stage(&app), BisectStage::Ready);
+    app.bisect = None;
+    let _ = update_inner(&mut app, Message::OpenBisect);
+    assert_eq!(app.bisect.as_ref(), Some(&moved));
+    // A search another window started is shown, never replaced.
+    app.bisect = None;
+    let _ = update_inner(&mut app, Message::BisectStart);
+    assert_eq!(app.bisect.as_ref(), Some(&moved));
+    assert_eq!(inst.read_bisect(), Some(moved));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_refused_step_says_why_and_keeps_waiting_for_its_game() {
+    use eidos_instance::{Bisect, TestRun, TestState};
+    let (mut app, root) = list_app(&["A", "B", "C", "D"]);
+    let inst = app.created.clone().unwrap();
+    let mut b = Bisect::new(
+        "Default",
+        vec![],
+        ["A", "B", "C", "D"].map(String::from).to_vec(),
+        1,
+    );
+    b.begin_step(vec!["A".into(), "B".into()]);
+    inst.write_bisect(&b).unwrap();
+    app.bisect = Some(b);
+    app.bisect_universe = bisect_universe(&app);
+    inst.request_test_run(&TestRun {
+        profile: "Default".into(),
+        game: "skyrimse".into(),
+        mods: Some(vec!["A".into(), "B".into()]),
+        bisect: true,
+        requested: 1,
+        ..Default::default()
+    })
+    .unwrap();
+    let mut cmd = std::process::Command::new("sh");
+    cmd.args([
+        "-c",
+        "echo 'WARN  eidos: refusing to launch: INI preparation failed: boom'; exit 1",
+    ]);
+    start_run(&mut app, "Game".into(), cmd);
+    app.running.as_mut().unwrap().game = true;
+    // What `eidos play` leaves when it refuses after making the working copy.
+    inst.prepare_test_run(&inst.profile("Default"), "skyrimse", &[], None, false)
+        .unwrap()
+        .unwrap();
+    finish_tracked_run(&mut app);
+    let said = app.status.clone().unwrap();
+    assert!(
+        said.contains("eidos: refusing to launch: INI preparation failed: boom"),
+        "{said}"
+    );
+    assert_eq!(
+        app.test_state.as_ref().map(|s| s.1),
+        Some(TestState::Requested)
+    );
+    assert!(app.test_review.is_none());
+    assert_eq!(
+        bisect_stage(&app),
+        BisectStage::Running,
+        "no answer for a game that never started"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn the_result_names_the_culprit_and_close_keeps_a_log() {
+    use eidos_instance::Answer;
+    let (mut app, root) = answer_app(false);
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Bad));
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Bad));
+    // step 2 on the candidates {A, B} tests ["A"]; its run writes nothing
+    let _ = update_inner(&mut app, Message::BisectRunStep);
+    let inst = app.created.clone().unwrap();
+    assert_eq!(inst.test_run().unwrap().mods, Some(vec!["A".into()]));
+    inst.begin_test_run(&inst.profile("Default"), "skyrimse", &[], None, false, 5)
+        .unwrap();
+    inst.end_test_run(Some(0), 6).unwrap();
+    load_test_state(&mut app, true);
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Bad));
+    assert_eq!(
+        bisect_stage(&app),
+        BisectStage::Result,
+        "nothing written, so one press answers"
+    );
+    let _ = update_inner(&mut app, Message::BisectClose);
+    assert!(inst.read_bisect().is_none() && !app.bisect_open);
+    let log = fs::read_dir(inst.root.join("logs"))
+        .unwrap()
+        .flatten()
+        .find(|e| e.file_name().to_string_lossy().starts_with("bisect-"))
+        .unwrap()
+        .path();
+    assert_eq!(
+        fs::read_to_string(log).unwrap(),
+        "step 1: A, B -> Bad\nstep 2: A -> Bad\nFound: A\n"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn the_result_lines_say_how_sure_the_search_is() {
+    use eidos_instance::BisectResult;
+    let en = |k: &str| crate::i18n::t_in(colony_ui::i18n::Locale::En, k);
+    let found = |mods: &[&str], confirmed| BisectResult::Found {
+        mods: mods.iter().map(|m| m.to_string()).collect(),
+        confirmed,
+    };
+    assert_eq!(bisect_result_lines(&found(&["A"], true), en), ["Found: A"]);
+    assert_eq!(
+        bisect_result_lines(&found(&["P", "Q"], false), en),
+        [
+            "Found: P, Q",
+            en("bisect_result_unconfirmed"),
+            en("bisect_result_set")
+        ]
+    );
+    assert_eq!(
+        bisect_result_lines(&BisectResult::NoneLeft, en),
+        [en("bisect_result_none")]
+    );
+}

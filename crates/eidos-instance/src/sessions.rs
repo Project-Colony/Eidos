@@ -25,6 +25,8 @@ pub struct SessionRecord {
     pub profile: String,
     /// `None` for a game run.
     pub tool: Option<String>,
+    /// A test run (A36): `profile` names the real profile it copied.
+    pub test: bool,
     pub game_version: Option<String>,
     /// Enabled managed mods, in mod-list order.
     pub mods: Vec<SessionMod>,
