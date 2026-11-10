@@ -83,10 +83,12 @@ mod account;
 pub mod collections;
 mod files;
 pub mod oauth;
+mod page;
 pub mod release;
 mod requirements;
 pub use account::{sync_account_flags, AccountFlags};
 pub use files::*;
+pub use page::{plain_text, ModPage};
 pub use requirements::{Requirement, Requirements};
 
 /// A parsed `nxm://` mod-file link (MO2's `NXMUrl`).
@@ -1475,6 +1477,20 @@ impl Nexus {
         for chunk in ids.chunks(50) {
             let v = oauth::graphql(Some(token), &requirements::query_body(domain, chunk))?;
             out.extend(requirements::from_payload(&v, self.adult)?);
+        }
+        Ok(out)
+    }
+
+    /// A mod's Nexus page as plain text: the description, then the changelog
+    /// unless the page is hidden (Nexus GraphQL v2, two requests). Outside the
+    /// v1 budget, like [`Self::collection_revision`].
+    pub fn mod_page(&self, domain: &str, mod_id: u64) -> Result<ModPage, String> {
+        let Credential::Bearer(token) = &self.credential;
+        let v = oauth::graphql(Some(token), &page::description_body(domain, mod_id))?;
+        let (game_id, mut out) = page::description_from_payload(&v, self.adult)?;
+        if out.hidden.is_none() {
+            let v = oauth::graphql(Some(token), &page::changelog_body(game_id, mod_id))?;
+            out.changelog = page::changelog_from_payload(&v)?;
         }
         Ok(out)
     }
