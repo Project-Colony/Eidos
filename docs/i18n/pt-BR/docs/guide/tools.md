@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=93d6bf3a31d486148b77351bb6ee42e4b62ac19e -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f8b463b3dac51b3fef63df81c7c89fd12096d721 -->
 
 # Ferramentas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -475,6 +475,10 @@ ferramenta dentro do contêiner foi testada ainda.
 `eidos tool <instance> run <title> --print` mostra o comando final e cada
 variável que a execução define por cima do ambiente herdado, incluindo essas
 linhas.
+
+## BethINI Pie
+
+O Eidos não inclui o BethINI Pie. Coloque a versão baixada da página dele no Nexus em `mods/` desta instância ou na sua pasta de ferramentas, e `Bethini.exe` aparece na lista de ferramentas. Executado pelo Eidos, ele edita a cópia dos INI do jogo que pertence ao perfil. Antes de cada execução o Eidos guarda uma cópia desses INI; **Backups -> INIs** restaura uma delas. Um INI que não existia quando a cópia foi feita fica como está.
 
 ## As configurações da própria ferramenta continuam sendo dela
 

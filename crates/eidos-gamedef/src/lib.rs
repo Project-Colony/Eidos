@@ -567,12 +567,40 @@ mod tests {
                 "DynDOLODx64.exe",
                 "TexGenx64.exe",
                 "xLODGenx64.exe",
-                "Synthesis.exe"
+                "Synthesis.exe",
+                "Bethini.exe"
             ]
         );
-        assert_eq!(tools("oblivion").last(), Some(&"xLODGenx64.exe"));
+        assert_eq!(tools("oblivion").last(), Some(&"Bethini.exe"));
         assert_eq!(tools("stardewvalley"), ["StardewModdingAPI.exe"]);
         assert!(tools("morrowind").is_empty());
+    }
+
+    #[test]
+    fn bethini_is_found_on_the_games_it_edits() {
+        for id in [
+            "skyrim",
+            "skyrimse",
+            "skyrimvr",
+            "enderalse",
+            "fallout3",
+            "falloutnv",
+            "fallout4",
+            "fallout4vr",
+            "oblivion",
+            "starfield",
+        ] {
+            let g = GameDef::for_id(id).unwrap();
+            assert!(
+                g.known_tools.contains(&("Bethini.exe", "BethINI Pie")),
+                "{id}"
+            );
+        }
+        assert!(!GameDef::for_id("stardewvalley")
+            .unwrap()
+            .known_tools
+            .iter()
+            .any(|(e, _)| *e == "Bethini.exe"));
     }
 
     #[test]

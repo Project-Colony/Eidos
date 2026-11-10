@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=93d6bf3a31d486148b77351bb6ee42e4b62ac19e -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f8b463b3dac51b3fef63df81c7c89fd12096d721 -->
 
 # Інструменти: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -466,6 +466,10 @@ Proton, встановлений у `/usr/share/steam/compatibilitytools.d`, і�
 
 `eidos tool <instance> run <title> --print` показує остаточну команду і кожну
 змінну, яку запуск задає поверх успадкованого середовища, разом із цими рядками.
+
+## BethINI Pie
+
+Eidos не постачає BethINI Pie. Покладіть завантажену зі сторінки на Nexus версію в `mods/` цього екземпляра або у вашу теку інструментів, і `Bethini.exe` з'явиться в списку інструментів. Запущений через Eidos, він змінює копію INI-файлів гри, що належить профілю. Перед кожним запуском Eidos зберігає копію цих INI; **Backups -> INIs** повертає одну з них. INI, якого не було під час копіювання, лишається як є.
 
 ## Власні налаштування інструмента лишаються його власними
 

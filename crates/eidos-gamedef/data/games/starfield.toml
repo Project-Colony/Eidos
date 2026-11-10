@@ -26,3 +26,7 @@ title = "SF1Edit QuickAutoClean"
 [[known_tools]]
 exe = "PGPatcher.exe"
 title = "PGPatcher"
+
+[[known_tools]]
+exe = "Bethini.exe"
+title = "BethINI Pie"

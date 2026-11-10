@@ -451,6 +451,10 @@ container has been tested yet.
 variable the run sets on top of the inherited environment, these lines
 included.
 
+## BethINI Pie
+
+Eidos does not ship BethINI Pie. Put the release you downloaded from its Nexus page in this instance's `mods/` or in your tools folder, and `Bethini.exe` appears in the tool list. Run through Eidos, it edits the profile's copy of the game INIs. Before each run Eidos keeps a copy of those INIs; **Backups -> INIs** puts one back. An INI that did not exist when the copy was taken is left as it is.
+
 ## A tool's own settings are still its own
 
 Eidos puts a tool in the right place with the right DLLs. What the tool then

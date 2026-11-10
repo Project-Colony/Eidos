@@ -594,6 +594,12 @@ pub fn default_output_mod(title: &str) -> Option<String> {
     .map(|(_, m)| m.to_string())
 }
 
+/// Whether a tool rewrites the game INIs, by title. Eidos keeps a restore point
+/// of the profile INIs before running one.
+pub fn edits_inis(title: &str) -> bool {
+    title.to_ascii_lowercase().contains("bethini")
+}
+
 /// The known runtime prerequisites for a well-known modding tool, by title (so a
 /// freshly-added SSEEdit/Synthesis/BodySlide gets the right verbs without the user
 /// typing them; a user-declared `prereqs=` in tools.ini always wins). Verbs match

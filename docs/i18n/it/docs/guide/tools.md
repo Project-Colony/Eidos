@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=93d6bf3a31d486148b77351bb6ee42e4b62ac19e -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f8b463b3dac51b3fef63df81c7c89fd12096d721 -->
 
 # Strumenti: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -478,6 +478,10 @@ esecuzione di uno strumento nel contenitore è stata ancora provata.
 `eidos tool <instance> run <title> --print` mostra il comando finale e ogni
 variabile che l'esecuzione imposta sopra l'ambiente ereditato, comprese queste
 righe.
+
+## BethINI Pie
+
+Eidos non include BethINI Pie. Metti la versione scaricata dalla sua pagina Nexus in `mods/` di questa istanza o nella tua cartella degli strumenti, e `Bethini.exe` compare nell'elenco degli strumenti. Avviato tramite Eidos, modifica la copia degli INI del gioco che appartiene al profilo. Prima di ogni avvio Eidos conserva una copia di quegli INI; **Backups -> INIs** ne ripristina una. Un INI che non esisteva al momento della copia resta com'è.
 
 ## Le impostazioni di uno strumento restano affar suo
 

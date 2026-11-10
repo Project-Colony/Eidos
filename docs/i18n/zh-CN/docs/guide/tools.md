@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=93d6bf3a31d486148b77351bb6ee42e4b62ac19e -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f8b463b3dac51b3fef63df81c7c89fd12096d721 -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -382,6 +382,10 @@ Windows 程序,要写它在游戏 `Data` 文件夹下的路径,合并视图就�
 
 `eidos tool <instance> run <title> --print` 会显示最终的命令,以及这次运行在继承的
 环境之上设置的每一个变量,包括这些行。
+
+## BethINI Pie
+
+Eidos 不附带 BethINI Pie。把从它的 Nexus 页面下载的版本放进此实例的 `mods/` 或你的工具文件夹，`Bethini.exe` 就会出现在工具列表中。通过 Eidos 运行时，它编辑的是配置文件自己的游戏 INI 副本。每次运行前，Eidos 会保留这些 INI 的一份副本；**Backups -> INIs** 可以还原其中一份。副本生成时尚不存在的 INI 保持原样。
 
 ## 工具自己的设置终归是它自己的
 

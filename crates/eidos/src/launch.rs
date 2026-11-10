@@ -432,6 +432,20 @@ pub(crate) fn run_through_view(
         eidos_log::warn!("eidos: refusing to launch: INI preparation failed: {e}");
         exit(1)
     });
+    if let (Some(title), Some(p)) = (opts.tool_name, inis.as_ref()) {
+        match prof.ini_restore_point(title, p.ini_files) {
+            Ok(Some(_)) => {
+                eidos_log::info!("eidos: kept the profile INIs as a restore point before {title}")
+            }
+            Ok(None) => {}
+            Err(e) => {
+                eidos_log::warn!(
+                    "eidos: refusing to run {title}: the INIs could not be backed up first: {e}"
+                );
+                exit(1);
+            }
+        }
+    }
     let runtime_root = inis
         .as_ref()
         .filter(|p| p.root_mode)

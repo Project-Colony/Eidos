@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=93d6bf3a31d486148b77351bb6ee42e4b62ac19e -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f8b463b3dac51b3fef63df81c7c89fd12096d721 -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -476,6 +476,10 @@ kullanılamaz. Kapsayıcı içinde bir araç çalıştırması henüz denenmedi.
 
 `eidos tool <instance> run <title> --print`, son komutu ve çalıştırmanın
 devralınan ortamın üzerine ayarladığı her değişkeni, bu satırlar dahil, gösterir.
+
+## BethINI Pie
+
+Eidos BethINI Pie'ı birlikte getirmez. Nexus sayfasından indirdiğiniz sürümü bu örneğin `mods/` klasörüne ya da araç klasörünüze koyun; `Bethini.exe` araç listesinde görünür. Eidos üzerinden çalıştırıldığında profilin oyun INI kopyasını düzenler. Her çalıştırmadan önce Eidos bu INI'lerin bir kopyasını saklar; **Backups -> INIs** birini geri yükler. Kopya alındığında var olmayan bir INI olduğu gibi bırakılır.
 
 ## Bir aracın kendi ayarları yine kendisinindir
 

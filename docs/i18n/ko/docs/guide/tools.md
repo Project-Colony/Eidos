@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=93d6bf3a31d486148b77351bb6ee42e4b62ac19e -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f8b463b3dac51b3fef63df81c7c89fd12096d721 -->
 
 # 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -422,6 +422,10 @@ prereqs`는 계속 호스트에서 winetricks를 실행하고, `runner=native` �
 
 `eidos tool <instance> run <title> --print`는 최종 명령과, 실행이 상속된 환경
 위에 설정하는 모든 변수를 이 줄들까지 포함해 보여 줍니다.
+
+## BethINI Pie
+
+Eidos는 BethINI Pie를 포함하지 않습니다. Nexus 페이지에서 받은 파일을 이 인스턴스의 `mods/` 또는 도구 폴더에 넣으면 도구 목록에 `Bethini.exe`가 나타납니다. Eidos를 통해 실행하면 프로필이 가진 게임 INI 사본을 수정합니다. 실행할 때마다 Eidos가 그 INI의 사본을 보관하며, **Backups -> INIs**에서 하나를 되돌릴 수 있습니다. 사본을 만들 때 없었던 INI는 그대로 둡니다.
 
 ## 도구 자신의 설정은 여전히 그 도구의 몫
 

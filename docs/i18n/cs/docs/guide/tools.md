@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=93d6bf3a31d486148b77351bb6ee42e4b62ac19e -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f8b463b3dac51b3fef63df81c7c89fd12096d721 -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -455,6 +455,10 @@ kontejneru zatím nebyl testován.
 
 `eidos tool <instance> run <title> --print` ukáže výsledný příkaz a každou
 proměnnou, kterou běh nastaví nad zděděné prostředí, včetně těchto řádků.
+
+## BethINI Pie
+
+Eidos BethINI Pie nedodává. Vydání stažené ze stránky na Nexusu dejte do složky `mods/` této instance nebo do složky s nástroji a `Bethini.exe` se objeví v seznamu nástrojů. Spuštěný přes Eidos upravuje kopii herních INI v profilu. Před každým spuštěním Eidos tyto INI zálohuje; **Backups -> INIs** vrátí jednu z kopií. INI, které v okamžiku zálohy neexistovalo, zůstane tak, jak je.
 
 ## Vlastní nastavení nástroje zůstává jeho
 

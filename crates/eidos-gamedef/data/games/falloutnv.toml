@@ -39,3 +39,7 @@ title = "BodySlide"
 [[known_tools]]
 exe = "xLODGenx64.exe"
 title = "xLODGen"
+
+[[known_tools]]
+exe = "Bethini.exe"
+title = "BethINI Pie"

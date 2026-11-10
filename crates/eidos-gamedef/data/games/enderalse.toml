@@ -70,3 +70,7 @@ title = "xLODGen"
 [[known_tools]]
 exe = "Synthesis.exe"
 title = "Synthesis"
+
+[[known_tools]]
+exe = "Bethini.exe"
+title = "BethINI Pie"

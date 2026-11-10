@@ -209,6 +209,23 @@ impl Profile {
         Ok(Backup { stamp, files })
     }
 
+    /// A restore point of the INIs before a tool that rewrites them runs.
+    /// `Ok(None)` for any other tool, or when the profile holds no INI yet.
+    pub fn ini_restore_point(
+        &self,
+        tool_title: &str,
+        ini_files: &'static [&'static str],
+    ) -> io::Result<Option<Backup>> {
+        if !crate::edits_inis(tool_title) {
+            return Ok(None);
+        }
+        match self.create_backup(BackupKind::Inis(ini_files)) {
+            Ok(b) => Ok(Some(b)),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
     /// A stamp no restore point of `kind` is already using.
     ///
     /// Stamps are per-second and two backups in one second are ordinary - the
@@ -435,6 +452,36 @@ mod tests {
 
     fn cleanup(p: &Profile) {
         let _ = fs::remove_dir_all(&p.instance_root);
+    }
+
+    #[test]
+    fn only_ini_tools_take_an_ini_restore_point() {
+        let prof = profile();
+        const FILES: &[&str] = &["Skyrim.ini", "SkyrimPrefs.ini"];
+        assert_eq!(
+            prof.ini_restore_point("BethINI Pie", FILES).unwrap(),
+            None,
+            "nothing to keep yet"
+        );
+        fs::write(prof.ini_path("Skyrim.ini"), "x").unwrap();
+        let kept = prof
+            .ini_restore_point("BethINI Pie", FILES)
+            .unwrap()
+            .expect("kept before BethINI");
+        for _ in 0..30 {
+            assert_eq!(
+                prof.ini_restore_point("SSEEdit QuickAutoClean", FILES)
+                    .unwrap(),
+                None
+            );
+        }
+        assert_eq!(
+            prof.backups(BackupKind::Inis(FILES)),
+            vec![kept],
+            "a clean queue rotates nothing out"
+        );
+        assert!(crate::edits_inis("bethini") && !crate::edits_inis("Bodyslide x64"));
+        cleanup(&prof);
     }
 
     #[test]

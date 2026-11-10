@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=93d6bf3a31d486148b77351bb6ee42e4b62ac19e -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f8b463b3dac51b3fef63df81c7c89fd12096d721 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -480,6 +480,10 @@ is. Een toolrun in de container is nog niet getest.
 `eidos tool <instance> run <title> --print` toont het uiteindelijke commando en
 elke variabele die de draai boven op de geërfde omgeving zet, deze regels
 inbegrepen.
+
+## BethINI Pie
+
+Eidos levert BethINI Pie niet mee. Zet de versie die u van de Nexus-pagina hebt gedownload in `mods/` van deze instantie of in uw toolsmap, dan verschijnt `Bethini.exe` in de toollijst. Via Eidos gestart bewerkt het de kopie van de spel-INI's in het profiel. Voor elke start bewaart Eidos een kopie van die INI's; **Backups -> INIs** zet er een terug. Een INI die er bij het maken van de kopie nog niet was, blijft zoals hij is.
 
 ## De eigen instellingen van een tool blijven de zijne
 

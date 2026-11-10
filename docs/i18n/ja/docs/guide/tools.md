@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=93d6bf3a31d486148b77351bb6ee42e4b62ac19e -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f8b463b3dac51b3fef63df81c7c89fd12096d721 -->
 
 # ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -422,6 +422,10 @@ Heroic の設定がありません。
 
 `eidos tool <instance> run <title> --print` は、最終的なコマンドと、実行が継承した
 環境の上に設定する変数すべてを、これらの行も含めて表示します。
+
+## BethINI Pie
+
+Eidos は BethINI Pie を同梱しません。Nexus のページからダウンロードしたものを、このインスタンスの `mods/` かツール用フォルダに置くと、ツール一覧に `Bethini.exe` が現れます。Eidos 経由で実行すると、プロファイルが持つゲーム INI のコピーを編集します。実行のたびに Eidos はその INI のコピーを残し、**Backups -> INIs** で元に戻せます。コピーを取った時点で存在しなかった INI には手を付けません。
 
 ## ツール自身の設定は、やはりツール自身のもの
 
