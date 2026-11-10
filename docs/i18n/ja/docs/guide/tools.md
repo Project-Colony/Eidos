@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=bc1c18f7029d1b12bcae46d861626848edfafb5a -->
 
 # ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -95,6 +95,12 @@ Overwrite にあったものはそのまま残ります。だから取り込み�
 
 対象の MOD が無効なら、出力は書かれますがゲームからは見えず、ツールは次の実行で
 同じファイルを作り直すことになります。Eidos はその場合に警告します。
+
+### 出力が古くなったとき
+
+Eidos は、ツールの出力をどの MOD、プラグインの順序、プロファイル、実行ファイルから作ったかを記録します。そのどれかが変わると Diagnostics タブが知らせ、カードには現在の設定でツールを実行する **Run <tool> again** ボタンが出ます。
+
+古い出力でゲームが壊れるジェネレーター(Pandora や Nemesis など)には、`tools.ini` のそのエントリーに `check_before_play=1` を足すか、Executables ダイアログで **Ask before playing when its output is out of date** を有効にします。すると Run は先に確認します。ツールを実行するか、そのまま遊ぶかです。そのまま遊ぶ選択は、MOD、プラグイン、プロファイルがまた変わるか、ウィンドウを閉じるまで覚えられます。Eidos がツールを自分で起動することはありません。
 
 ## ツールに要る DLL は、その名前で決まる
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=bc1c18f7029d1b12bcae46d861626848edfafb5a -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -86,6 +86,12 @@ Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 
 如果目標模組是停用的,輸出仍然會寫出去,但遊戲看不到,於是工具下次執行時又會
 重新產生同樣的檔案。遇到這種情況 Eidos 會提出警告。
+
+### 輸出過期時
+
+Eidos 會記錄工具的輸出是由哪些模組、外掛順序、設定檔和執行檔產生的。其中任何一項改變,Diagnostics 分頁都會提示,卡片上還有一個 **Run <tool> again** 按鈕,依目前設定重新執行該工具。
+
+對於輸出過期就會弄壞遊戲的產生器(例如 Pandora 或 Nemesis),可以在 `tools.ini` 裡它的項目下加上 `check_before_play=1`,或在 Executables 對話框中為它開啟 **Ask before playing when its output is out of date**。之後 Run 會先詢問:執行該工具,還是照常遊玩。選擇照常遊玩後,會記住到模組、外掛或設定檔再次改變,或視窗關閉為止。Eidos 從不自己啟動該工具。
 
 ## 工具需要哪些 DLL,是由它的「名字」決定的
 

@@ -10,7 +10,15 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         Message::ToolPicked(choice) => {
             app.tool_choice = (choice != run_game_label()).then_some(choice);
         }
+        Message::PlayAnyway => {
+            if let Some(p) = app.play_prompt.take() {
+                app.play_anyway.push(p.key);
+                return handle(app, Message::Run);
+            }
+        }
+        Message::ClosePlayPrompt => app.play_prompt = None,
         Message::RunTool(title) => {
+            app.play_prompt = None;
             let previous = app.tool_choice.replace(title);
             let task = handle(app, Message::Run);
             app.tool_choice = previous;
@@ -52,6 +60,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 } else {
                     app.status = Some(t("status_create_or_open_instance").to_string());
                 }
+            } else if let Some(prompt) = play_prompt_for(app) {
+                // Only the game gets here (a tool run took the branch above).
+                app.play_prompt = Some(prompt);
             } else if selected_game(app).is_some_and(|g| !g.is_steam())
                 && app.launch_command.is_empty()
             {

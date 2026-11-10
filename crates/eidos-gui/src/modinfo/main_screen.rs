@@ -634,6 +634,23 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         layers = layers.push(scrim).push(dialog);
     }
 
+    // Run found a flagged generator's output out of date. Same scrim as the lock,
+    // but a click outside closes it.
+    if let Some(prompt) = &app.play_prompt {
+        let scrim = mouse_area(
+            container(Space::new().width(Length::Fill).height(Length::Fill)).style(|_| {
+                container::Style {
+                    background: Some(shade(0.55).into()),
+                    ..Default::default()
+                }
+            }),
+        )
+        .on_press(Message::ClosePlayPrompt);
+        let dialog = container(mouse_area(play_prompt_card(prompt)).on_press(Message::Noop))
+            .center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
+    }
+
     layers.into()
 }
 

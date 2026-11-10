@@ -95,6 +95,12 @@ If the target mod is disabled, the output is still written but the game will not
 see it, so the tool would regenerate the same files on the next run. Eidos warns
 when that is the case.
 
+### When its output is out of date
+
+Eidos records which mods, plugin order, profile and executable a tool's output was made from. When one of them changes, the Diagnostics tab says so, and the card has a **Run <tool> again** button that runs the tool as it is configured now.
+
+For a generator whose stale output breaks the game, such as Pandora or Nemesis, add `check_before_play=1` to its entry in `tools.ini`, or turn on **Ask before playing when its output is out of date** for it in the Executables dialog. Run then asks first: run the tool, or play anyway. Play anyway is remembered until the mods, plugins or profile change again, or until the window closes. Eidos never starts the tool by itself.
+
 ## The DLLs a tool needs are chosen by its NAME
 
 This is the surprising part, so it is worth stating plainly: **the title you give

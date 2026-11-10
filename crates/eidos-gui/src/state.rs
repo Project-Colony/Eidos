@@ -300,6 +300,8 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         status: None,
         confirm_clear: false,
         confirm_stop: false,
+        play_prompt: None,
+        play_anyway: Vec::new(),
         confirm_rebuild_prefix: false,
         overwrite_to_mod: None,
         send_priority: None,

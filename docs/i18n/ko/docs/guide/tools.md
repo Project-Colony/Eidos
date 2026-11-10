@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=bc1c18f7029d1b12bcae46d861626848edfafb5a -->
 
 # 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -94,6 +94,12 @@ MO2는 앞쪽 방식입니다. 쓰기 계층을 모드로 향하게 하면 실�
 대상 모드가 비활성화되어 있으면 출력은 그래도 쓰이지만 게임은 그것을 보지
 못하므로, 도구는 다음 실행 때 같은 파일을 다시 만들어내게 됩니다. Eidos는 그런
 경우 경고합니다.
+
+### 출력이 오래되었을 때
+
+Eidos는 도구의 출력이 어떤 모드, 플러그인 순서, 프로필, 실행 파일로 만들어졌는지 기록합니다. 그중 하나가 바뀌면 Diagnostics 탭이 알려 주고, 카드에는 도구를 현재 설정대로 실행하는 **Run <tool> again** 버튼이 나옵니다.
+
+오래된 출력이 게임을 망가뜨리는 생성기(Pandora, Nemesis 등)는 `tools.ini`의 해당 항목에 `check_before_play=1`을 추가하거나, Executables 대화상자에서 **Ask before playing when its output is out of date**를 켜세요. 그러면 Run이 먼저 묻습니다. 도구를 실행할지, 그대로 플레이할지입니다. 그대로 플레이를 고르면 모드, 플러그인, 프로필이 다시 바뀌거나 창이 닫힐 때까지 기억됩니다. Eidos가 도구를 스스로 시작하는 일은 없습니다.
 
 ## 도구에 필요한 DLL은 그 이름으로 정해집니다
 

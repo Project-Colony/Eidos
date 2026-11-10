@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=bc1c18f7029d1b12bcae46d861626848edfafb5a -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -99,6 +99,12 @@ schrijven. De capture bereikt dezelfde eindtoestand zonder allebei.
 Is de doelmod uitgeschakeld, dan wordt de uitvoer wel geschreven maar het spel
 ziet hem niet, zodat de tool bij de volgende draai dezelfde bestanden opnieuw zou
 aanmaken. Eidos waarschuwt wanneer dat zo is.
+
+### Als de uitvoer verouderd is
+
+Eidos legt vast uit welke mods, welke pluginvolgorde, welk profiel en welk uitvoerbaar bestand de uitvoer van een tool is gemaakt. Verandert een van die dingen, dan meldt het tabblad Diagnostics dat, en de kaart heeft een knop **Run <tool> again** die de tool met de huidige instellingen start.
+
+Voor een generator waarvan verouderde uitvoer het spel kapotmaakt, zoals Pandora of Nemesis, zet u `check_before_play=1` bij zijn vermelding in `tools.ini`, of schakelt u in het dialoogvenster Executables **Ask before playing when its output is out of date** in. Run vraagt dan eerst: de tool starten of toch spelen. Toch spelen wordt onthouden tot de mods, plugins of het profiel opnieuw veranderen, of tot het venster sluit. Eidos start de tool nooit zelf.
 
 ## De DLL's die een tool nodig heeft worden gekozen op zijn NAAM
 

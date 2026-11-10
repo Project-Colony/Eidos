@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=bc1c18f7029d1b12bcae46d861626848edfafb5a -->
 
 # Outils : xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -108,6 +108,12 @@ atteint le même état final sans ni l'un ni l'autre.
 Si le mod cible est désactivé, la sortie est quand même écrite mais le jeu ne la
 verra pas, si bien que l'outil régénérerait les mêmes fichiers à l'exécution
 suivante. Eidos prévient quand c'est le cas.
+
+### Quand sa sortie n'est plus à jour
+
+Eidos note à partir de quels mods, de quel ordre des plugins, de quel profil et de quel exécutable la sortie d'un outil a été produite. Quand l'un d'eux change, l'onglet Diagnostics le signale, et la carte propose un bouton **Run <tool> again** qui relance l'outil avec sa configuration actuelle.
+
+Pour un générateur dont la sortie périmée casse le jeu, comme Pandora ou Nemesis, ajoutez `check_before_play=1` à son entrée dans `tools.ini`, ou activez **Demander avant de jouer si sa sortie n'est plus à jour** dans la fenêtre Exécutables. Lancer le jeu demande alors d'abord : lancer l'outil, ou jouer quand même. Le choix de jouer quand même est retenu jusqu'à ce que les mods, les plugins ou le profil changent de nouveau, ou que la fenêtre se ferme. Eidos ne lance jamais l'outil de lui-même.
 
 ## Les DLL dont un outil a besoin sont choisies par son NOM
 

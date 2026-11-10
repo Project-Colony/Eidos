@@ -48,6 +48,10 @@ pub struct Tool {
     pub hidden: bool,
     /// Sort this entry to the top of the picker.
     pub pinned: bool,
+    /// Ask before playing when this generator's recorded output is out of date
+    /// (`check_before_play=1`). Off by default: a stale Pandora or Nemesis output
+    /// breaks the game, a stale xEdit report does not.
+    pub check_before_play: bool,
     /// Variables for this tool's runs only, from `env=NAME=value` lines in file
     /// order. Applied after everything Eidos sets, so they win.
     pub env: Vec<(String, String)>,
@@ -147,6 +151,9 @@ pub fn read_tools(path: &Path) -> Vec<Tool> {
             "app_id" => tool.app_id = v.trim().parse::<u32>().ok().filter(|&n| n != 0),
             "hidden" => tool.hidden = matches!(v.trim(), "true" | "1" | "yes" | "on"),
             "pinned" => tool.pinned = matches!(v.trim(), "true" | "1" | "yes" | "on"),
+            "check_before_play" => {
+                tool.check_before_play = matches!(v.trim(), "true" | "1" | "yes" | "on")
+            }
             // `env=NAME=value`, one line per variable. A name no shell could
             // export is dropped here, before it reaches a launch environment.
             "env" => {
@@ -242,6 +249,9 @@ pub fn write_tools(path: &Path, tools: &[Tool]) -> io::Result<()> {
         }
         if t.pinned {
             s.push_str("pinned=true\n");
+        }
+        if t.check_before_play {
+            s.push_str("check_before_play=1\n");
         }
         for (k, v) in &t.env {
             s.push_str(&format!("env={k}={v}\n"));
@@ -831,6 +841,7 @@ mod tests {
                 app_id: Some(1946160),
                 hidden: false,
                 pinned: true,
+                check_before_play: true,
                 // In file order, and a value may itself hold `=`.
                 env: vec![
                     ("PROTON_LOG".into(), "1".into()),
@@ -849,6 +860,7 @@ mod tests {
                 app_id: None,
                 hidden: true,
                 pinned: false,
+                check_before_play: false,
                 env: Vec::new(),
                 runner: Runner::Native,
                 slr: false,
@@ -856,6 +868,26 @@ mod tests {
         ];
         write_tools(&p, &tools).unwrap();
         assert_eq!(read_tools(&p), tools);
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn check_before_play_is_read_and_written_only_when_set() {
+        let p = tmp();
+        fs::write(&p, "[Tool/P]\nexe=/x/p.exe\ncheck_before_play=1\n").unwrap();
+        assert!(read_tools(&p)[0].check_before_play);
+        write_tools(
+            &p,
+            &[Tool {
+                title: "Q".into(),
+                exe: "/x/q.exe".into(),
+                ..Default::default()
+            }],
+        )
+        .unwrap();
+        assert!(!fs::read_to_string(&p)
+            .unwrap()
+            .contains("check_before_play"));
         let _ = fs::remove_file(&p);
     }
 

@@ -139,6 +139,13 @@ pub(crate) type CachedDataStack = (
     std::rc::Rc<view::DataSources>,
 );
 
+/// The generator Run is asking about, and the drift state it is asking for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PlayPrompt {
+    pub(crate) tool: String,
+    pub(crate) key: (String, u64),
+}
+
 pub(crate) struct App {
     pub(crate) installer: Option<installers::Wizard>,
     pub(crate) mod_picker: u64,
@@ -192,6 +199,12 @@ pub(crate) struct App {
     pub(crate) confirm_clear: bool,
     /// Two-click guard for Stop, which ends the tracked run.
     pub(crate) confirm_stop: bool,
+    /// Run is waiting on "Run first / Play anyway": a flagged generator's output
+    /// is out of date.
+    pub(crate) play_prompt: Option<PlayPrompt>,
+    /// Drift states the user chose to play with, for this window only:
+    /// `(receipt id, hash of the inputs)`. Never saved.
+    pub(crate) play_anyway: Vec<(String, u64)>,
     /// Two-click guard for Rebuild prefix, which renames the game's prefix aside.
     pub(crate) confirm_rebuild_prefix: bool,
     /// The in-progress "create mod from Overwrite" name, if that prompt is open.

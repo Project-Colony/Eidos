@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=bc1c18f7029d1b12bcae46d861626848edfafb5a -->
 
 # Strumenti: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -100,6 +100,12 @@ stesso stato finale senza né l'uno né l'altro.
 Se la mod di destinazione è disattivata, l'output viene comunque scritto ma il
 gioco non lo vedrà, quindi lo strumento rigenererebbe gli stessi file alla
 prossima esecuzione. Eidos avvisa quando è così.
+
+### Quando il suo output non è aggiornato
+
+Eidos registra da quali mod, ordine dei plugin, profilo ed eseguibile è stato prodotto l'output di uno strumento. Quando uno di questi cambia, la scheda Diagnostics lo segnala e la card ha un pulsante **Run <tool> again** che esegue lo strumento con la configurazione attuale.
+
+Per un generatore il cui output non aggiornato rompe il gioco, come Pandora o Nemesis, aggiungete `check_before_play=1` alla sua voce in `tools.ini`, oppure attivate **Ask before playing when its output is out of date** nella finestra Executables. Run chiede allora prima: eseguire lo strumento o giocare comunque. La scelta di giocare comunque vale finché mod, plugin o profilo non cambiano di nuovo, o finché la finestra non si chiude. Eidos non avvia mai lo strumento da solo.
 
 ## Le DLL di cui uno strumento ha bisogno sono scelte dal suo NOME
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=bc1c18f7029d1b12bcae46d861626848edfafb5a -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -102,6 +102,12 @@ ohne beides.
 Ist der Ziel-Mod deaktiviert, wird die Ausgabe zwar geschrieben, aber das Spiel
 sieht sie nicht, das Tool würde also beim nächsten Lauf dieselben Dateien neu
 erzeugen. Eidos warnt, wenn das der Fall ist.
+
+### Wenn seine Ausgabe veraltet ist
+
+Eidos merkt sich, aus welchen Mods, welcher Plugin-Reihenfolge, welchem Profil und welcher Programmdatei die Ausgabe eines Tools entstanden ist. Ändert sich eines davon, meldet das der Reiter Diagnostics, und die Karte hat einen Knopf **Run <tool> again**, der das Tool mit der jetzigen Konfiguration startet.
+
+Für einen Generator, dessen veraltete Ausgabe das Spiel kaputtmacht, etwa Pandora oder Nemesis, tragen Sie `check_before_play=1` in seinen Eintrag in `tools.ini` ein oder schalten im Dialog Executables **Ask before playing when its output is out of date** ein. Run fragt dann zuerst: das Tool starten oder trotzdem spielen. Die Entscheidung, trotzdem zu spielen, gilt, bis sich Mods, Plugins oder Profil wieder ändern oder das Fenster geschlossen wird. Eidos startet das Tool nie von selbst.
 
 ## Die DLLs, die ein Tool braucht, werden über seinen NAMEN gewählt
 

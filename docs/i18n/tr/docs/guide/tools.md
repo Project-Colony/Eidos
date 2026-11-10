@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=bc1c18f7029d1b12bcae46d861626848edfafb5a -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -98,6 +98,12 @@ Yakalama, ikisi de olmadan aynı son duruma varır.
 Hedef mod devre dışıysa çıktı yine yazılır ama oyun onu görmez, dolayısıyla araç
 bir sonraki çalıştırmada aynı dosyaları yeniden üretir. Eidos durum böyleyken
 uyarır.
+
+### Çıktısı güncelliğini yitirdiğinde
+
+Eidos, bir aracın çıktısının hangi modlardan, hangi eklenti sırasından, hangi profilden ve hangi çalıştırılabilir dosyadan üretildiğini kaydeder. Bunlardan biri değişirse Diagnostics sekmesi bunu bildirir; kartta aracı şimdiki ayarlarıyla çalıştıran bir **Run <tool> again** düğmesi bulunur.
+
+Güncel olmayan çıktısı oyunu bozan bir üretici için, örneğin Pandora veya Nemesis, `tools.ini` içindeki girdisine `check_before_play=1` ekleyin ya da Executables penceresinde **Ask before playing when its output is out of date** seçeneğini açın. Run bu durumda önce sorar: aracı çalıştır ya da yine de oyna. Yine de oyna seçimi, modlar, eklentiler veya profil yeniden değişene ya da pencere kapanana kadar hatırlanır. Eidos aracı kendiliğinden hiç başlatmaz.
 
 ## Bir aracın gereksindiği DLL'ler ADINA göre seçilir
 

@@ -524,7 +524,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 // precedence over the default of the same title, so the tool
                 // itself still comes from the default.
                 for d in &state.merged[state.user_len..] {
-                    if (d.hidden || d.pinned)
+                    if (d.hidden || d.pinned || d.check_before_play)
                         && !user_tools
                             .iter()
                             .any(|t| t.title.eq_ignore_ascii_case(&d.title))
@@ -564,6 +564,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             if let Some(state) = app.executables.as_mut() {
                 if let Some(t) = state.selected.and_then(|i| state.merged.get_mut(i)) {
                     t.hidden = !t.hidden;
+                }
+            }
+        }
+        Message::ExecToggleCheckBeforePlay => {
+            if let Some(state) = app.executables.as_mut() {
+                if let Some(t) = state.selected.and_then(|i| state.merged.get_mut(i)) {
+                    t.check_before_play = !t.check_before_play;
                 }
             }
         }

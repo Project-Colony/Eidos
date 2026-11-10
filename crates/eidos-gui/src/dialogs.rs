@@ -550,6 +550,44 @@ pub(crate) fn running_lock_card<'a>(run: &RunningState, armed: bool) -> Element<
         .into()
 }
 
+/// Run found a flagged generator's output out of date: run it first, play
+/// anyway, or cancel. Eidos never starts the tool by itself.
+pub(crate) fn play_prompt_card<'a>(prompt: &PlayPrompt) -> Element<'a, Message> {
+    let tool = &prompt.tool;
+    let buttons = Row::new()
+        .spacing(10)
+        .push(
+            button(text(tf("play_prompt_run_first", &[("tool", tool)])).size(sz(13)))
+                .padding([6, 22])
+                .on_press(Message::RunTool(prompt.tool.clone()))
+                .style(button::primary),
+        )
+        .push(
+            button(text(t("play_prompt_play_anyway")).size(sz(13)))
+                .padding([6, 22])
+                .on_press(Message::PlayAnyway)
+                .style(button::secondary),
+        )
+        .push(
+            button(text(t("common_cancel")).size(sz(13)))
+                .padding([6, 22])
+                .on_press(Message::ClosePlayPrompt)
+                .style(button::secondary),
+        );
+    let card = Column::new()
+        .spacing(10)
+        .align_x(iced::alignment::Horizontal::Center)
+        .push(text(tf("play_prompt_title", &[("tool", tool)])).size(sz(18)))
+        .push(text(tf("play_prompt_body", &[("tool", tool)])).size(sz(12)))
+        .push(Space::new().height(Length::Fixed(6.0)))
+        .push(buttons);
+    container(card)
+        .max_width(470.0)
+        .padding(20)
+        .style(card_style)
+        .into()
+}
+
 /// Stop, or "Stop now" once armed: the lock card's and the main screen's.
 pub(crate) fn stop_button<'a>(armed: bool, size: u16, padding: [u16; 2]) -> Element<'a, Message> {
     let label = if armed {
@@ -1098,6 +1136,7 @@ impl std::fmt::Display for CategoryChoice {
 fn tool_flags_row<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
     let sel = state.selected.and_then(|i| state.merged.get(i));
     let (hidden, pinned) = sel.map(|t| (t.hidden, t.pinned)).unwrap_or((false, false));
+    let check = sel.is_some_and(|t| t.check_before_play);
     Row::new()
         .spacing(8)
         .align_y(iced::Alignment::Center)
@@ -1127,6 +1166,16 @@ fn tool_flags_row<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
                 button::secondary
             })
             .on_press(Message::ExecToggleHidden),
+        )
+        .push(
+            button(text(t("exe_check_before_play")).size(sz(11)))
+                .padding([4, 10])
+                .style(if check {
+                    button::primary
+                } else {
+                    button::secondary
+                })
+                .on_press(Message::ExecToggleCheckBeforePlay),
         )
         .push(
             button(text(t("exe_desktop_shortcut")).size(sz(11)))

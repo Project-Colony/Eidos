@@ -6133,3 +6133,56 @@ fn rebuild_prefix_waits_for_a_tracked_run() {
 fn backup_stamp_is_utc_and_sortable() {
     assert_eq!(launch::backup_stamp(1_793_448_000), "20261031-120000");
 }
+
+#[test]
+fn a_flagged_generator_asks_before_play_once_per_drift_state() {
+    let (mut app, root) = data_app(&[("meshes/test.nif", "mesh")], &[]);
+    let inst = app.created.as_ref().unwrap();
+    let plugins = crate::modinfo::compute_plugins(&app)
+        .unwrap()
+        .plugins
+        .into_iter()
+        .map(|p| (p.name, p.enabled))
+        .collect::<Vec<_>>();
+    let run = inst
+        .begin_tool_run("Gen", None, &["Gen.exe".into()], &plugins)
+        .unwrap();
+    fs::write(inst.overwrite_dir().join("Patch.esp"), b"generated").unwrap();
+    inst.finish_tool_run(run).unwrap();
+    let touch = |app: &App, files: &[(u64, u64)]| {
+        let inst = app.created.as_ref().unwrap();
+        let mut meta = inst.mod_meta("AAA");
+        meta.set_installed_files(files);
+        meta.write(&inst.meta_path("AAA")).unwrap();
+    };
+    touch(&app, &[(12, 34)]);
+    let mut gen = eidos_instance::Tool {
+        title: "Gen".into(),
+        exe: "Gen.exe".into(),
+        ..Default::default()
+    };
+    app.tools = vec![gen.clone()];
+    let _ = update_inner(&mut app, Message::Run);
+    assert!(app.play_prompt.is_none(), "an unflagged tool never prompts");
+    gen.check_before_play = true;
+    app.tools = vec![gen];
+    let _ = update_inner(&mut app, Message::Run);
+    assert_eq!(
+        app.play_prompt.as_ref().map(|p| p.tool.as_str()),
+        Some("Gen")
+    );
+    assert!(app.running.is_none());
+    let _ = update_inner(&mut app, Message::PlayAnyway);
+    assert!(app.play_prompt.is_none());
+    let _ = update_inner(&mut app, Message::Run);
+    assert!(
+        app.play_prompt.is_none(),
+        "same drift state: not asked again"
+    );
+    touch(&app, &[(12, 35)]);
+    let _ = update_inner(&mut app, Message::Run);
+    assert!(app.play_prompt.is_some(), "a new drift state asks again");
+    let _ = update_inner(&mut app, Message::ClosePlayPrompt);
+    assert!(app.play_prompt.is_none());
+    let _ = fs::remove_dir_all(root);
+}

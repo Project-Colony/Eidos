@@ -148,6 +148,10 @@ pub(crate) enum Message {
     ExecAppIdChanged(String),
     ToolArgsAction(iced::widget::text_editor::Action),
     ExecToggleHidden,
+    ExecToggleCheckBeforePlay,
+    /// Play although a flagged generator's output is out of date; close the prompt.
+    PlayAnyway,
+    ClosePlayPrompt,
     ExecTogglePinned,
     ExecMakeShortcut,
     /// Copy a mod's folder aside as `<name>_backup`, before editing it.

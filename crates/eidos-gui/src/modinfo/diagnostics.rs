@@ -458,11 +458,7 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         match inst.generated_outputs() {
             Ok(outputs) => {
                 for (owner, output) in outputs {
-                    if owner.as_ref().is_some_and(|owner| {
-                        !app.mods
-                            .iter()
-                            .any(|m| m.is_active() && m.name.eq_ignore_ascii_case(owner))
-                    }) {
+                    if !output_owner_is_active(app, owner.as_deref()) {
                         continue;
                     }
                     let Some(active_plugins) = active_plugins.as_ref() else {
@@ -873,4 +869,69 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
 /// file-drop events exist in the type system and never fire.
 pub(crate) fn on_wayland() -> bool {
     std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty())
+}
+
+/// Overwrite, or a mod that is enabled: an output of a disabled mod is not in the
+/// game's view, so it is neither checked nor asked about.
+fn output_owner_is_active(app: &App, owner: Option<&str>) -> bool {
+    owner.is_none_or(|owner| {
+        app.mods
+            .iter()
+            .any(|m| m.is_active() && m.name.eq_ignore_ascii_case(owner))
+    })
+}
+
+/// Generated outputs in the game's view whose recorded inputs no longer match,
+/// as the Diagnostics card and the play prompt both need them.
+pub(crate) fn stale_outputs(
+    app: &App,
+    inst: &Instance,
+    plugins: &[(String, bool)],
+) -> Vec<(Option<String>, eidos_instance::GeneratedOutput)> {
+    inst.generated_outputs()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(owner, _)| output_owner_is_active(app, owner.as_deref()))
+        .filter(|(_, output)| inst.generated_input_drift(&output.receipt, plugins))
+        .collect()
+}
+
+/// The first flagged generator whose output is out of date and not yet waved
+/// through for this exact input state. Unknown plugins give `None`: the Health
+/// card already says the inputs are unverified.
+pub(crate) fn play_prompt_for(app: &App) -> Option<PlayPrompt> {
+    let inst = app.created.as_ref()?;
+    if !app.tools.iter().any(|t| t.check_before_play) {
+        return None;
+    }
+    let computed;
+    let list = match app.plugins.as_ref() {
+        Some(list) => Some(list),
+        None => {
+            computed = compute_plugins(app);
+            computed.as_ref()
+        }
+    };
+    let plugins = match list {
+        Some(list) => list
+            .plugins
+            .iter()
+            .map(|p| (p.name.clone(), p.enabled))
+            .collect::<Vec<_>>(),
+        None if !game_has_plugins(app) => Vec::new(),
+        None => return None,
+    };
+    let state = inst.generated_input_state(&plugins);
+    stale_outputs(app, inst, &plugins)
+        .into_iter()
+        .find_map(|(_, output)| {
+            let tool = app.tools.iter().find(|t| {
+                t.check_before_play && t.title.eq_ignore_ascii_case(&output.receipt.tool)
+            })?;
+            let key = (output.receipt.id, state);
+            (!app.play_anyway.contains(&key)).then(|| PlayPrompt {
+                tool: tool.title.clone(),
+                key,
+            })
+        })
 }

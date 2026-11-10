@@ -1404,6 +1404,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         m @ (Message::ToolPicked(..)
         | Message::Run
         | Message::RunTool(..)
+        | Message::PlayAnyway
+        | Message::ClosePlayPrompt
         | Message::PollRunning
         | Message::ForceUnlock
         | Message::StopRun
@@ -1502,6 +1504,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::ToolArgsAction(..)
         | Message::ExecAppIdChanged(..)
         | Message::ExecToggleHidden
+        | Message::ExecToggleCheckBeforePlay
         | Message::ExecTogglePinned
         | Message::ExecMakeShortcut) => tools::handle(app, m),
         m @ (Message::TogglePreferences

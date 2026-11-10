@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=bc1c18f7029d1b12bcae46d861626848edfafb5a -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -86,6 +86,12 @@ Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 
 如果目标模组是禁用的,输出照样会写出去,但游戏看不到它,于是工具在下一次运行时
 会重新生成同样的文件。遇到这种情况 Eidos 会警告。
+
+### 输出过期时
+
+Eidos 会记录工具的输出是由哪些模组、插件顺序、配置档和可执行文件生成的。其中任何一项改变,Diagnostics 标签页都会提示,卡片上还有一个 **Run <tool> again** 按钮,按当前设置重新运行该工具。
+
+对于输出过期就会弄坏游戏的生成器(例如 Pandora 或 Nemesis),可以在 `tools.ini` 里它的条目下加上 `check_before_play=1`,或在 Executables 对话框中为它打开 **Ask before playing when its output is out of date**。之后 Run 会先询问:运行该工具,还是照常游玩。选择照常游玩后,会记住到模组、插件或配置档再次改变,或窗口关闭为止。Eidos 从不自己启动该工具。
 
 ## 一个工具需要哪些 DLL,由它的名字决定
 

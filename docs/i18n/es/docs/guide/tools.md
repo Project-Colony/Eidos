@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=bc1c18f7029d1b12bcae46d861626848edfafb5a -->
 
 # Herramientas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -104,6 +104,12 @@ de las dos cosas.
 Si el mod de destino está desactivado, la salida se escribe igualmente pero el
 juego no la verá, así que la herramienta regeneraría los mismos archivos en la
 siguiente ejecución. Eidos avisa cuando es el caso.
+
+### Cuando su salida está desactualizada
+
+Eidos anota con qué mods, orden de plugins, perfil y ejecutable se generó la salida de una herramienta. Cuando uno de ellos cambia, la pestaña Diagnostics lo indica, y la tarjeta trae un botón **Run <tool> again** que ejecuta la herramienta con su configuración actual.
+
+Para un generador cuya salida desactualizada rompe el juego, como Pandora o Nemesis, añada `check_before_play=1` a su entrada en `tools.ini`, o active **Ask before playing when its output is out of date** en el diálogo Executables. Run pregunta entonces primero: ejecutar la herramienta o jugar de todos modos. Jugar de todos modos se recuerda hasta que los mods, los plugins o el perfil vuelvan a cambiar, o hasta que se cierre la ventana. Eidos nunca inicia la herramienta por sí mismo.
 
 ## Las DLL que necesita una herramienta se eligen por su NOMBRE
 

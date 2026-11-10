@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=bc1c18f7029d1b12bcae46d861626848edfafb5a -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -95,6 +95,12 @@ dosáhne stejného koncového stavu bez jednoho i druhého.
 
 Pokud je cílový mód vypnutý, výstup se zapíše, ale hra ho neuvidí, takže by
 nástroj při dalším běhu vygeneroval tytéž soubory znovu. Eidos na to upozorní.
+
+### Když je její výstup zastaralý
+
+Eidos si zaznamenává, z jakých modů, pořadí pluginů, profilu a spustitelného souboru vznikl výstup nástroje. Když se něco z toho změní, upozorní na to karta Diagnostics a karta má tlačítko **Run <tool> again**, které nástroj spustí s jeho současným nastavením.
+
+U generátoru, jehož zastaralý výstup rozbije hru, třeba Pandory nebo Nemesis, přidejte k jeho záznamu v `tools.ini` řádek `check_before_play=1`, nebo v dialogu Executables zapněte **Ask before playing when its output is out of date**. Run se pak nejdřív zeptá: spustit nástroj, nebo přesto hrát. Volba hrát přesto platí, dokud se mody, pluginy nebo profil znovu nezmění, nebo dokud se okno nezavře. Eidos nástroj nikdy nespouští sám.
 
 ## DLL, které nástroj potřebuje, se vybírají podle jeho NÁZVU
 
