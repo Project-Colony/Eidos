@@ -753,15 +753,19 @@ pub(crate) fn file_menu_card<'a>(app: &App) -> Element<'a, Message> {
             // meant to be painted BEHIND text, and used as text it came out at
             // 1.33:1 on the card - a blank row rather than a greyed one, which
             // is the opposite of the "the absence is legible" this exists for.
-            None => container(menu_label(label))
-                .width(Length::Fill)
-                .padding([4, 8])
-                .style(|_t: &Theme| container::Style {
-                    text_color: Some(pal().text_dimmer),
-                    ..Default::default()
-                })
-                .into(),
+            None => dimmed(label),
         }
+    }
+    /// A row that cannot be used now, drawn in place rather than left out.
+    fn dimmed<'a>(label: &'a str) -> Element<'a, Message> {
+        container(menu_label(label))
+            .width(Length::Fill)
+            .padding([4, 8])
+            .style(|_t: &Theme| container::Style {
+                text_color: Some(pal().text_dimmer),
+                ..Default::default()
+            })
+            .into()
     }
 
     let inst = app.created.as_ref();
@@ -774,7 +778,8 @@ pub(crate) fn file_menu_card<'a>(app: &App) -> Element<'a, Message> {
         Some(eidos_plugins::documents_my_games_dir(&prefix, &spec))
     });
 
-    let col = Column::new()
+    let prefix = game.and_then(|g| g.prefix());
+    let mut col = Column::new()
         .spacing(1)
         .push(entry(
             t("menu_instance_folder"),
@@ -813,6 +818,29 @@ pub(crate) fn file_menu_card<'a>(app: &App) -> Element<'a, Message> {
             false,
         ))
         .push(entry(t("menu_game_inis"), prefix_inis, false))
+        .push(menu_sep())
+        .push(entry(
+            t("menu_prefix_drive_c"),
+            prefix.as_ref().map(|p| p.join("drive_c")),
+            false,
+        ));
+    for (key, title) in [
+        ("menu_prefix_winecfg", "winecfg"),
+        ("menu_prefix_regedit", "regedit"),
+        ("menu_prefix_explorer", "explorer"),
+        ("menu_prefix_uninstaller", "uninstaller"),
+    ] {
+        let ready = inst.is_some()
+            && prefix
+                .as_deref()
+                .is_some_and(|p| eidos_instance::prefix_tool(p, title).is_some());
+        col = col.push(if ready {
+            menu_item_owned(t(key).to_string(), Message::RunTool(title.to_string()))
+        } else {
+            dimmed(t(key))
+        });
+    }
+    let col = col
         .push(menu_sep())
         .push(menu_item_owned(
             t("menu_open_collection").to_string(),

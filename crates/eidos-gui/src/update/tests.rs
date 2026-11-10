@@ -6030,6 +6030,78 @@ fn the_hand_off_pick_is_taken_once() {
 }
 
 #[test]
+fn a_direct_start_needs_a_store_window_the_preference_and_no_override() {
+    let (mut app, root) = list_app(&[]);
+    // The game's own executable, so these two reach their guards; past them,
+    // the fixture's diag_no_prefix would set status_direct_start_held.
+    app.launch_command = vec![app.games[0]
+        .install_path
+        .join("SkyrimSE.exe")
+        .display()
+        .to_string()];
+    assert!(!start_directly(&mut app, false), "preference off");
+    app.prefs.start_game_directly = true;
+    assert!(!start_directly(&mut app, true), "EIDOS_WINDOW=1");
+    app.launch_command.clear();
+    assert!(
+        !start_directly(&mut app, false),
+        "no store opened this window"
+    );
+    // The nxm handler opens a window with arguments too, and they name no game.
+    app.launch_command = vec![
+        "--collection".into(),
+        "nxm://skyrimspecialedition/collections/x".into(),
+    ];
+    assert!(!start_directly(&mut app, false), "a collection link");
+    assert!(app.running.is_none());
+    assert!(
+        app.status.is_none(),
+        "nothing to explain when it was never asked"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_direct_start_waits_for_the_window_on_a_health_problem() {
+    let (mut app, root) = list_app(&[]);
+    // The store's command names the game's own executable.
+    app.launch_command = vec![app.games[0]
+        .install_path
+        .join("SkyrimSE.exe")
+        .display()
+        .to_string()];
+    app.prefs.start_game_directly = true;
+    // Fixture check, before the call that would otherwise press Run: list_app's
+    // Steam copy has no compatdata, so Health holds diag_no_prefix.
+    app.diag_dirty = true;
+    refresh_diagnostics(&mut app);
+    assert!(app.diag.iter().any(|d| d.level == DiagLevel::Problem));
+    assert!(!start_directly(&mut app, false));
+    assert!(app.running.is_none());
+    assert_eq!(
+        app.status.as_deref(),
+        Some(
+            tf(
+                "status_direct_start_held",
+                &[("game", &"Skyrim Special Edition")]
+            )
+            .as_str()
+        )
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn the_direct_run_exits_with_the_childs_code() {
+    let (mut app, root) = list_app(&[]);
+    let mut cmd = std::process::Command::new("sh");
+    cmd.args(["-c", "exit 3"]);
+    start_run(&mut app, "Game".into(), cmd);
+    assert_eq!(wait_direct_run(&app), 3);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn setup_prereqs_is_refused_while_a_run_is_tracked() {
     // winetricks and the running game share one prefix.
     let (mut app, root) = list_app(&["Keep"]);
@@ -6070,6 +6142,30 @@ fn health_fix_is_refused_while_a_game_runs() {
     assert!(app.status.as_deref().unwrap().contains("Skyrim"));
     assert!(!prefs_path.exists());
     app.running.take();
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn the_test_file_fix_edits_the_profile_copy() {
+    let (mut app, root) = list_app(&["Keep"]);
+    app.games[0].def = eidos_games::GameDef::for_id("fallout4").unwrap();
+    let ini = app
+        .created
+        .as_ref()
+        .unwrap()
+        .active()
+        .ini_path("Fallout4Custom.ini");
+    fs::create_dir_all(ini.parent().unwrap()).unwrap();
+    fs::write(&ini, "[General]\nsTestFile1=T.esp\nsLanguage=en\n").unwrap();
+    let _ = update_inner(&mut app, Message::HealthFix("stestfile_present"));
+    assert_eq!(
+        fs::read_to_string(&ini).unwrap(),
+        "[General]\nsLanguage=en\n"
+    );
+    assert_eq!(
+        app.status.as_deref(),
+        Some(tf("status_fix_applied", &[("path", &ini.display())]).as_str())
+    );
     let _ = fs::remove_dir_all(root);
 }
 
@@ -6541,6 +6637,22 @@ fn rebuild_prefix_waits_for_a_tracked_run() {
     );
     app.running.take();
     let _ = fs::remove_dir_all(t);
+}
+
+#[test]
+fn a_run_note_is_prepended_and_no_note_keeps_the_status() {
+    let mut app = nav_app(&[]);
+    app.status = Some("Could not start BodySlide.".into());
+    launch::prepend_status(&mut app, None);
+    assert_eq!(app.status.as_deref(), Some("Could not start BodySlide."));
+    launch::prepend_status(&mut app, Some("Check the data path.".into()));
+    assert_eq!(
+        app.status.as_deref(),
+        Some("Check the data path. Could not start BodySlide.")
+    );
+    app.status = None;
+    launch::prepend_status(&mut app, Some("Check the data path.".into()));
+    assert_eq!(app.status, None);
 }
 
 #[test]
@@ -7982,4 +8094,184 @@ fn a_release_answer_disarms_no_confirmation() {
         &app,
         &Message::EidosReleaseChecked(Ok("99.0.0".into()))
     ));
+}
+
+#[test]
+fn a_profile_shortcut_without_a_game_entry_says_so() {
+    let (mut app, root) = list_app(&[]);
+    app.tools.clear();
+    let _ = update_inner(&mut app, Message::ProfileDesktopShortcut("Default".into()));
+    assert_eq!(
+        app.status.as_deref(),
+        Some(
+            tf(
+                "status_profile_shortcut_no_game",
+                &[("game", &"Skyrim Special Edition")]
+            )
+            .as_str()
+        )
+    );
+    assert!(app.profile_menu.is_none());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_finished_tool_run_notifies_only_while_the_window_is_away() {
+    let (mut app, root) = list_app(&[]);
+    let _ = crate::notify::take_sent();
+    let run = |app: &mut App, notify: bool, focused: bool, game: bool| {
+        app.prefs.notify_when_away = notify;
+        app.focused = focused;
+        start_run(
+            app,
+            "xEdit".into(),
+            std::process::Command::new("/bin/false"),
+        );
+        let r = app.running.as_mut().expect("the run started");
+        r.game = game;
+        let done = r.done.clone();
+        for _ in 0..50 {
+            if done.load(std::sync::atomic::Ordering::SeqCst) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        let _ = update_inner(app, Message::PollRunning);
+        crate::notify::take_sent()
+    };
+    let sent = run(&mut app, true, false, false);
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].0, "xEdit");
+    assert_eq!(Some(sent[0].1.as_str()), app.status.as_deref());
+    assert!(
+        run(&mut app, true, true, false).is_empty(),
+        "the window has focus"
+    );
+    assert!(
+        run(&mut app, false, false, false).is_empty(),
+        "the preference is off"
+    );
+    assert!(
+        run(&mut app, true, false, true).is_empty(),
+        "the game is not a long job"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+/// A free account's walk lands one file at a time, so no row is Downloading
+/// between two of them: only the walk's end may notify, and only once.
+#[test]
+fn a_collection_walk_notifies_once_when_it_ends() {
+    let rev = captured_revision();
+    let (mod_id, want) = (rev.mods[2].mod_id, rev.mods[2].file_id);
+    let (mut app, root) = collection_app(&[], &[]);
+    app.collection = Some(CollectionState {
+        install_check: None,
+        runtime: None,
+        link: String::new(),
+        revision: Some(rev),
+        states: Vec::new(),
+        loading: false,
+        error: None,
+        confirm_fetch: false,
+        asked: HashSet::new(),
+        walk: Some(CollectionWalk {
+            queue: vec![2],
+            at: 0,
+            seen: HashSet::new(),
+        }),
+    });
+    app.prefs.notify_when_away = true;
+    app.focused = false;
+    let _ = crate::notify::take_sent();
+    let dl = app.created.as_ref().unwrap().downloads_dir();
+    // Each file is seen arriving on one tick and landed on the next.
+    let mut land = |name: &str, file_id: u64| {
+        let part = dl.join(format!("{name}.unfinished"));
+        fs::write(&part, b"x").unwrap();
+        fs::write(
+            dl.join(format!("{name}.meta")),
+            format!("[General]\ngameName=SkyrimSE\nmodID={mod_id}\nfileID={file_id}\n"),
+        )
+        .unwrap();
+        let _ = update_inner(&mut app, Message::DownloadTick);
+        fs::rename(&part, dl.join(name)).unwrap();
+        let _ = update_inner(&mut app, Message::DownloadTick);
+        crate::notify::take_sent()
+    };
+
+    assert!(
+        land("newest.7z", want + 1).is_empty(),
+        "the walk still runs"
+    );
+    let sent = land("pinned.7z", want);
+    assert!(app.collection.as_ref().unwrap().walk.is_none());
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].0, t("notify_downloads_done"));
+    assert_eq!(Some(sent[0].1.as_str()), app.status.as_deref());
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// The tick stops while the window has focus outside the Downloads tab, so a
+/// download that ends then must not be announced once the window goes away.
+#[test]
+fn a_download_that_ended_while_the_window_had_focus_sends_nothing() {
+    let (mut app, root) = list_app(&[]);
+    app.prefs.notify_when_away = true;
+    let _ = crate::notify::take_sent();
+    let dl = app.created.as_ref().unwrap().downloads_dir();
+    fs::create_dir_all(&dl).unwrap();
+    let arrive = |name: &str| {
+        fs::write(dl.join(format!("{name}.unfinished")), b"x").unwrap();
+        fs::write(
+            dl.join(format!("{name}.meta")),
+            "[General]\ngameName=SkyrimSE\nmodID=1\nfileID=2\n",
+        )
+        .unwrap();
+    };
+    let land = |name: &str| {
+        fs::rename(dl.join(format!("{name}.unfinished")), dl.join(name)).unwrap();
+    };
+
+    // Clicked in the browser: the window is away, the tick sees the arrival.
+    arrive("a.7z");
+    let _ = update_inner(&mut app, Message::WindowFocused(false));
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert_eq!(app.downloads[0].state, DownloadState::Downloading);
+    // Back in Eidos on the Mods tab: no tick runs, and the download ends.
+    let _ = update_inner(&mut app, Message::WindowFocused(true));
+    land("a.7z");
+    let _ = update_inner(&mut app, Message::WindowFocused(false));
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(crate::notify::take_sent().is_empty(), "old news");
+
+    // One that ends while the window is away still notifies.
+    arrive("b.7z");
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    land("b.7z");
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert_eq!(crate::notify::take_sent().len(), 1);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_focus_change_disarms_nothing() {
+    let app = nav_app(&[]);
+    assert!(is_ambient(&app, &Message::WindowFocused(false)));
+    assert!(is_ambient(&app, &Message::WindowFocused(true)));
+}
+
+#[test]
+fn move_mod_below_acts_by_name_and_ignores_a_stale_card() {
+    let (mut app, root) = list_app(&["Patch", "Other", "Master"]);
+    let mv = |a: &str, b: &str| Message::MoveModBelow {
+        folder: a.into(),
+        below: b.into(),
+    };
+    let _ = update_inner(&mut app, mv("Patch", "Master"));
+    assert_eq!(names(&app.mods), ["Other", "Master", "Patch"]);
+    let _ = update_inner(&mut app, mv("Patch", "Master"));
+    let _ = update_inner(&mut app, mv("Gone", "Other"));
+    assert_eq!(names(&app.mods), ["Other", "Master", "Patch"]);
+    let _ = fs::remove_dir_all(root);
 }

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
 
 # ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -310,6 +310,12 @@ Eidos が自分のファイルを書くのは何かを起動するときだけ�
 PGPatcher は、プロファイルに有効な MOD が一つもないときと、出力フォルダーが
 有効な MOD のフォルダーであるときに、MO2 の下と同じくエラーで停止します。
 
+## ゲームのプレフィックスで動く Wine 自身のプログラム
+
+File メニューは、ゲームのプレフィックスで Wine のプログラムを 4 つ実行します。winecfg、regedit、Wine のファイルエクスプローラー、アンインストーラーです。他のツールと同じように、ゲームのツールを動かす Proton または Wine のビルドで、Mod をマウントした状態で起動し、ウィンドウは終了を待ちます。**Prefix drive_c** は、プレフィックスの `C:` ドライブをファイルマネージャーで開きます。プレフィックスにそのプログラムがない間は行が灰色になります。ストアが初めてゲームを起動すると揃います。
+
+Eidos が自分でレジストリに書く値は 1 つだけで、`HKLM\Software\Bethesda Softworks\<game>` にあるゲームの `installed path` です。ツールを実行するたびに、値が誤っていれば書き直します。regedit でこの値を変えても、次のツール実行で元に戻ります。
+
 ## プレフィックスの中のゲームパス
 
 Windows のツールは `HKLM\Software\Bethesda Softworks\<game>` の
@@ -345,6 +351,15 @@ Windows のツールは `HKLM\Software\Bethesda Softworks\<game>` の
 ない場合、このコマンドは何も起動せず、何を設定するかを表示します。
 ショートカットはメッセージを出さないので、同じコマンドをターミナルで実行して
 読んでください。
+
+プロファイルごとに、ゲーム用のショートカットを持てます。プロファイルを右クリック
+して **Desktop shortcut** を選ぶと、そのエントリは
+`eidos tool <instance> run "<game>" --profile <name>` を実行します。このコマンド
+はウィンドウでプロファイルを選んだときと同じくそのプロファイルをアクティブにし、
+そのあとストアにゲームの起動を頼みます。ストアが開く Eidos のウィンドウにはその
+プロファイルが表示されます。`--profile` はどの `eidos tool ... run` でも使え、
+ツールが起動する前にプロファイルを選択します。
+`--print` と一緒なら何も選択しません。
 
 ## それ自体が Steam のアプリであるツール
 
@@ -431,6 +446,8 @@ Eidos はツールを正しい場所に、正しい DLL とともに置きます
 探さない場所に 1439 個のメッシュを書きます。Eidos はそれを受け止め -
 インストール先ではなく `Overwrite/Root/` に着地します - しかしゲームから
 見れば、体型が作られていないこと以外に何もおかしくありません。
+
+Eidos はこれを確認します。BodySlide または Outfit Studio を実行する前に、優先される `CalienteTools/BodySlide/Config.xml` の `GameDataPath` か `OutputDataPath` が実行中にゲームの `Data` フォルダに通じていないと、ステータス行が警告し、Health タブには設定すべき値を添えた同じカードが表示されます。`S:` のパスは、Eidos がツール用に `S:` を割り当てるとおり、Steam ライブラリのフォルダとして読みます。インスタンスの `mods/` フォルダ内の `OutputDataPath` は、出力 MOD 用として受け入れます。`Overwrite/Root/` に `meshes` または `textures` フォルダがある場合も、Health にカードが表示されます。
 
 ツールの出力は Overwrite に属します。実行が取っておく価値のあるものを生んだら、
 **Overwrite -> Create mod...** でそれを普通の MOD に変えられます。他と同じ

@@ -16,6 +16,7 @@ eidos import skyrimse <mo2-profile>  # adopt an existing MO2 profile's order + p
 eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
+eidos shell skyrimse              # a shell in the merged view, writes land in Overwrite
 eidos check skyrimse              # Health checks without the window (--json for scripts)
 eidos sessions skyrimse           # the recorded game and tool runs, newest first
 eidos sessions skyrimse diff      # what changed since the last run that exited with code 0
@@ -42,8 +43,14 @@ open, or a game it does not detect.
 `eidos check <instance> --json` prints one JSON object instead. Its top-level
 fields are `eidos` (the version), `game`, `instance`, `system` (`proton`,
 `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`,
-`fusermount3`) and `findings`. Each finding is a `code`, a `level` (`problem` or
-`advice`) and its `args`; the Diagnostics tab shows the sentence for each code.
+`fusermount3`, `max_map_count`, `open_files_hard`) and `findings`.
+`max_map_count` and `open_files_hard` are numbers, or `null` when Eidos could
+not read them. Each finding is a `code`, a `level` (`problem` or `advice`) and
+its `args`; the Diagnostics tab shows the sentence for each code.
+
+### A shell in the merged view
+
+`eidos shell <instance>` starts your `$SHELL` (or `/bin/sh`) in the game's folder as the game would see it: every enabled mod mounted over `Data`, Root mods over the game root, and everything written there landing in the Overwrite. `eidos shell <instance> -- <command>` runs one command instead, for example `eidos shell skyrimse -- ls Data/meshes` or a native tool such as NifSkope. The run holds the instance lock like a game session, so the window cannot save changes until you exit, and it is recorded in `eidos sessions` under the name `shell`, never as a game launch. Ctrl+C on a command stops the run the way Stop does: Eidos ends the command, captures the session and unmounts. In the interactive shell Ctrl+C belongs to the shell, as usual; type `exit` to end the run.
 
 ### Instances: global and portable
 
@@ -461,9 +468,11 @@ come first, as in every Colony program, then Mod list, Nexus and About. Every
 change applies and saves at once; there is no Save button.
 
 - **General**: the game Eidos opens, the window size, the interface language,
-  the tools folder and how a game is run. The window speaks English and French;
-  **System** follows `LC_ALL`, `LC_MESSAGES` or `LANG`, and the change applies
-  at once. The `eidos` command line always answers in English.
+  the tools folder, how a game is run, and whether a desktop notification says
+  when a long job ends while the window is in the background. The window speaks
+  English and French; **System** follows `LC_ALL`, `LC_MESSAGES` or `LANG`, and
+  the change applies at once. The `eidos` command line always answers in
+  English.
 - **Appearance**: the theme (25 families, 57 palettes, Eidos's parchment by
   default), the accent colour, the text size, effects and a live preview.
 - **Accessibility**: high contrast, a dyslexia-friendly font, reduced motion and
@@ -741,6 +750,14 @@ binary's absolute path (Steam doesn't see `~/.cargo/bin` on PATH):
 Eidos opens on the game's instance - the one you last used, so a portable
 instance is found again just like the global one; click Run to launch it
 through the merged view.
+
+With **Start the game at once when a store opens Eidos** on (Preferences,
+General, Running a game), Eidos skips that click: it checks Health and starts
+the game without showing its window. The window opens as usual when Health
+lists a problem, when the mod list needs attention, or when a tool set to run
+before playing has an out-of-date output. To get the window for one launch, put
+`EIDOS_WINDOW=1` before the command:
+`EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Outside Steam, Run does not start the game through Proton or Wine itself. It
 asks the store that owns the copy to start it, and the store starts Eidos:

@@ -58,8 +58,9 @@ pub use sessions::{SessionMod, SessionRecord, KEEP_SESSIONS};
 pub use settings::Settings;
 pub use tools::{
     default_args, default_prereqs, default_tools, default_tools_in, default_tools_in_view,
-    is_mod_folder_name, merge_tools, read_tools, root_executable, root_executable_source,
-    tool_search_roots, write_tools, GameExecutables, Runner, Tool,
+    is_mod_folder_name, merge_tools, prefix_tool, read_tools, root_executable,
+    root_executable_source, tool_search_roots, write_tools, GameExecutables, Runner, Tool,
+    PREFIX_TOOLS,
 };
 
 /// Where an instance is stored.

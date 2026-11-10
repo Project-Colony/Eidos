@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=dcc5ac23a71da786415a389b9c6a1e2b062cb25c -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1d62e34566cf1855eda40becbf2626b490ad7dd0 -->
 
 # 使用 Eidos
 
@@ -17,6 +17,7 @@ eidos import skyrimse <mo2-profile>  # adopt an existing MO2 profile's order + p
 eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
+eidos shell skyrimse              # 在合併檢視裡開一個 shell,寫入的內容進入 Overwrite
 eidos check skyrimse              # 不開視窗跑健康檢查(腳本用 --json)
 eidos sessions skyrimse           # 依由新到舊列出已記錄的遊戲與工具執行
 eidos sessions skyrimse diff      # 顯示自上次以結束碼 0 結束的執行以來的變化
@@ -33,7 +34,11 @@ eidos unpack backup.eidos <folder>   # put it back on the other machine
 
 `eidos check <instance>` 不開啟視窗就執行 **Diagnostics** 分頁裡的前綴、外掛、缺少的 master 與 script extender 檢查,因此可以透過 SSH 或在 Game Mode 下執行,結果也能放進錯誤回報。它先印出與 **Copy report** 相同的系統資訊行,再為每項發現印出一行,家目錄顯示為 `~`,登入名稱顯示為 `<user>`。沒有發現問題時結束碼為 0(只有建議仍為 0),至少發現一個問題時為 1,Eidos 無法檢查時為 2:參數錯誤、無法開啟的實例,或偵測不到的遊戲。
 
-`eidos check <instance> --json` 改為印出一個 JSON 物件。最上層欄位是 `eidos`(版本)、`game`、`instance`、`system`(`proton`、`flatpak_steam`、`passthrough`、`session`、`distro`、`kernel`、`dev_fuse`、`fusermount3`)與 `findings`。每項發現由 `code`、`level`(`problem` 或 `advice`)和它的 `args` 組成;Diagnostics 分頁會顯示每個代碼對應的句子。
+`eidos check <instance> --json` 改為印出一個 JSON 物件。最上層欄位是 `eidos`(版本)、`game`、`instance`、`system`(`proton`、`flatpak_steam`、`passthrough`、`session`、`distro`、`kernel`、`dev_fuse`、`fusermount3`、`max_map_count`、`open_files_hard`)與 `findings`。`max_map_count` 與 `open_files_hard` 是數字,Eidos 無法讀取時為 `null`。每項發現由 `code`、`level`(`problem` 或 `advice`)和它的 `args` 組成;Diagnostics 分頁會顯示每個代碼對應的句子。
+
+### 合併檢視中的 shell
+
+`eidos shell <instance>` 在遊戲所見的遊戲資料夾裡啟動你的 `$SHELL`(沒有就用 `/bin/sh`):每個已啟用的模組掛載在 `Data` 之上,Root 模組掛載在遊戲根目錄之上,寫到那裡的一切都進入 Overwrite。`eidos shell <instance> -- <command>` 則只執行一條指令,例如 `eidos shell skyrimse -- ls Data/meshes`,或 NifSkope 這類原生工具。這次執行像遊戲工作階段一樣持有實例鎖,所以在你結束之前視窗無法儲存變更,它在 `eidos sessions` 中以 `shell` 為名記錄,絕不算作一次遊戲啟動。對指令按 Ctrl+C 會像 Stop 一樣停止執行:Eidos 結束該指令、收集工作階段並卸載。在互動式 shell 中,Ctrl+C 照常屬於 shell;輸入 `exit` 結束執行。
 
 ### 實例:全域與可攜
 
@@ -363,8 +368,9 @@ Data / Plugins / Conflicts / Overwrite / Saves / Downloads / Diagnostics 分頁,
 返回。最前面是 General、Appearance 與 Accessibility,和每個 Colony 程式一樣,接著是
 Mod list、Nexus 與 About。每項變更都會立即套用並儲存;沒有儲存按鈕。
 
-- **General**:Eidos 開啟的遊戲、視窗大小、介面語言、工具資料夾,以及遊戲的執行
-  方式。視窗介面支援英文與法文;**System** 會依循 `LC_ALL`、`LC_MESSAGES` 或
+- **General**:Eidos 開啟的遊戲、視窗大小、介面語言、工具資料夾、遊戲的執行方式,
+  以及視窗在背景時是否以桌面通知告知長時間工作結束。
+  視窗介面支援英文與法文;**System** 會依循 `LC_ALL`、`LC_MESSAGES` 或
   `LANG`,變更立即生效。`eidos` 命令列一律以英文回應。
 - **Appearance**:主題(25 個系列、57 套配色,預設為 Eidos 的羊皮紙)、強調色、
   文字大小、效果,以及即時預覽。
@@ -571,6 +577,8 @@ PATH 上的 `~/.cargo/bin`):
 
 Eidos 會在該遊戲的實例上開啟 - 你上次用的那一個,所以可攜實例和全域實例一樣會被再
 找到;點 Run 就會穿過合併檢視啟動它。
+
+開啟 **Start the game at once when a store opens Eidos**(Preferences、General、Running a game)後,Eidos 會省掉這次點擊:它先檢查 Health,再不顯示視窗直接啟動遊戲。Health 列出問題、模組清單需要處理,或設為在遊戲前執行的工具輸出已過期時,視窗照常開啟。想在某一次啟動時看到視窗,就在命令前加上 `EIDOS_WINDOW=1`:`EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`。
 
 在 Steam 之外,Run 不會自己用 Proton 或 Wine 啟動遊戲。它請擁有這份副本的商店來啟動,再由商店啟動 Eidos:
 

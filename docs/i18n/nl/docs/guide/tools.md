@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -356,6 +356,12 @@ zijn eigen profiel.
 PGPatcher stopt met een fout als het profiel geen ingeschakelde mod heeft, en
 als zijn uitvoermap de map van een ingeschakelde mod is, net als onder MO2.
 
+## De eigen programma's van Wine in het prefix van het spel
+
+Het menu Bestand start vier programma's van Wine in het prefix van het spel: winecfg, regedit, de bestandsverkenner van Wine en het verwijderprogramma. Ze starten zoals elk hulpmiddel, met de Proton- of Wine-build die de hulpmiddelen van het spel draait, met de mods gemount, en het venster wacht erop. **Prefix drive_c** opent het station `C:` van het prefix in uw bestandsbeheerder. Een rij blijft grijs tot het prefix dat programma heeft, wat gebeurt wanneer de winkel het spel voor het eerst start.
+
+Eidos schrijft zelf één registerwaarde, het `installed path` van het spel onder `HKLM\Software\Bethesda Softworks\<game>`, voor elke run van een hulpmiddel als die onjuist is. Een wijziging daarin via regedit wordt bij de volgende run teruggezet.
+
 ## Het spelpad in het prefix
 
 Windows-tools vinden hun spel door
@@ -394,6 +400,14 @@ vraagt ze de winkel het spel te starten, zoals Run doet in een venster dat geen
 winkel heeft geopend. Ontbreekt de instelling in de winkel, dan start de
 opdracht niets en toont ze wat je moet instellen. Een snelkoppeling toont geen
 melding, dus draai dezelfde opdracht in een terminal om die te lezen.
+
+Een profiel kan een eigen snelkoppeling voor het spel hebben. Klik met de
+rechtermuisknop op het profiel en kies **Desktop shortcut**: de snelkoppeling
+draait `eidos tool <instance> run "<game>" --profile <name>`, dat dat profiel
+het actieve maakt, net als het kiezen ervan in het venster, en vraagt de winkel
+daarna het spel te starten. Het Eidos-venster dat de winkel opent, toont dat
+profiel. `--profile` werkt met elke `eidos tool ... run` en kiest het profiel
+voordat de tool start; met `--print` kiest het niets.
 
 ## Een tool die zijn eigen Steam-app is
 
@@ -489,6 +503,16 @@ processed successfully" en schrijft 1439 meshes daar waar het spel er nooit naar
 zal kijken. Eidos vangt ze op - ze landen in `Overwrite/Root/` en niet in je
 installatie - maar vanuit het spel gezien is er niets mis behalve dat je lichamen
 niet gebouwd zijn.
+
+Eidos controleert dit voor je. Vóór het starten van BodySlide of Outfit Studio
+waarschuwt de statusregel wanneer `GameDataPath` of `OutputDataPath` in de
+winnende `CalienteTools/BodySlide/Config.xml` tijdens het draaien niet naar de
+`Data`-map van het spel leidt, en het tabblad Health toont dezelfde kaart met de
+waarde die je moet instellen. Een `S:`-pad wordt gelezen zoals Eidos `S:` voor
+een tool koppelt: aan de map van de Steam-bibliotheek. Een `OutputDataPath` in
+de map `mods/` van de instantie, voor een uitvoermod, wordt geaccepteerd. Health
+toont ook een kaart wanneer `Overwrite/Root/` een map `meshes` of `textures`
+bevat.
 
 Uitvoer van tools hoort in de Overwrite. Wanneer een draai iets oplevert dat het
 bewaren waard is, maakt **Overwrite -> Create mod...** er een gewone mod van die

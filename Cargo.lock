@@ -1113,6 +1113,7 @@ dependencies = [
  "eidos-plugins",
  "eidos-sevenzip",
  "eidos-transfer",
+ "roxmltree 0.21.2",
  "serde",
  "serde_json",
 ]
@@ -1259,6 +1260,7 @@ dependencies = [
  "serde_json",
  "smol",
  "tempfile",
+ "zbus",
 ]
 
 [[package]]

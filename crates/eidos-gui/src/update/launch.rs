@@ -15,6 +15,14 @@ fn picks_the_game(app: &App, title: &str) -> bool {
         .is_some_and(|t| game_executables(game).launches_the_game(&t.exe))
 }
 
+/// Puts `note` in front of the status `start_run` set. No note keeps the
+/// status as it is: a launch failure must still be said.
+pub(super) fn prepend_status(app: &mut App, note: Option<String>) {
+    if let Some(note) = note {
+        app.status = app.status.take().map(|s| format!("{note} {s}"));
+    }
+}
+
 /// Run in a window no store opened (A28): ask the store that owns the copy to
 /// start the game, or say what to set first. Returns the status to show.
 fn hand_off(app: &App) -> String {
@@ -93,6 +101,45 @@ fn hand_off(app: &App) -> String {
     }
 }
 
+/// A store opened this window with the game's command and the user asked for
+/// no window (A30): check Health, then press Run as the window would. True
+/// when a run started; false leaves the window to open, with the reason in
+/// the status or the prompt when there is one.
+pub(crate) fn start_directly(app: &mut App, force_window: bool) -> bool {
+    // The command must name this window's game: `eidos-gui --collection <link>`
+    // from the nxm handler also arrives with arguments.
+    let named_by_store =
+        app.selected.is_some() && identify_game(&app.games, &app.launch_command) == app.selected;
+    if !named_by_store || !app.prefs.start_game_directly || force_window {
+        return false;
+    }
+    app.diag_dirty = true;
+    refresh_diagnostics(app);
+    if app.diag.iter().any(|d| d.level == DiagLevel::Problem) {
+        let game = selected_game(app).map_or("", |g| g.def.name);
+        app.status = Some(tf("status_direct_start_held", &[("game", &game)]));
+        return false;
+    }
+    let _ = handle(app, Message::Run);
+    app.running.is_some()
+}
+
+/// Block until the run [`start_directly`] started ends, and give its exit code:
+/// `128 + signal` when a signal ended it, 1 when nothing is known.
+pub(crate) fn wait_direct_run(app: &App) -> i32 {
+    use std::os::unix::process::ExitStatusExt;
+    let Some(run) = &app.running else {
+        return 1;
+    };
+    while !run.done.load(std::sync::atomic::Ordering::SeqCst) {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let status = run.outcome.lock().ok().and_then(|s| *s);
+    status
+        .and_then(|s| s.code().or_else(|| s.signal().map(|n| 128 + n)))
+        .unwrap_or(1)
+}
+
 /// The `update` arms for this group. [`update_inner`] routes only these
 /// messages here.
 pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
@@ -151,7 +198,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 // The owned arg ends the immutable borrow before `start_run`.
                 if let Some(arg) = instance_arg(app) {
                     let cmd = tool_command(&arg, &title, !app.launch_command.is_empty());
+                    let note = crate::health::bodyslide_run_note(app, &title);
                     start_run(app, title, cmd);
+                    prepend_status(app, note);
                 } else {
                     app.status = Some(t("status_create_or_open_instance").to_string());
                 }
@@ -211,13 +260,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     se_warning,
                     extender_note,
                     both_active.then(|| t("status_enb_and_cs").to_string()),
-                ]
-                .into_iter()
-                .flatten()
-                {
-                    if let Some(s) = app.status.take() {
-                        app.status = Some(format!("{note} {s}"));
-                    }
+                ] {
+                    prepend_status(app, note);
                 }
             } else {
                 app.status = Some(t("status_create_or_open_instance").to_string());

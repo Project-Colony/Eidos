@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
 
 # Ferramentas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -354,6 +354,12 @@ ali o próprio perfil.
 O PGPatcher para com um erro quando o perfil não tem nenhum mod ativado e quando
 a pasta de saída é a pasta de um mod ativado, como faz no MO2.
 
+## Os programas próprios do Wine no prefixo do jogo
+
+O menu Arquivo executa quatro programas do Wine no prefixo do jogo: winecfg, regedit, o explorador de arquivos do Wine e o desinstalador. Eles iniciam como qualquer ferramenta, com a versão do Proton ou do Wine que executa as ferramentas do jogo, com os mods montados, e a janela espera por eles. **Prefix drive_c** abre a unidade `C:` do prefixo no seu gerenciador de arquivos. Uma linha fica esmaecida até o prefixo ter esse programa, o que acontece na primeira vez que a loja inicia o jogo.
+
+O Eidos escreve por conta própria um único valor do registro, o `installed path` do jogo em `HKLM\Software\Bethesda Softworks\<game>`, antes de cada execução de ferramenta quando ele está errado. Uma alteração feita nele no regedit é refeita na próxima execução.
+
 ## O caminho do jogo no prefixo
 
 Ferramentas de Windows acham o jogo lendo
@@ -390,6 +396,14 @@ digitado num terminal, ele pede à loja que inicie o jogo, como o Run faz numa
 janela que nenhuma loja abriu. Quando a configuração da loja está faltando, o
 comando não inicia nada e mostra o que definir. Um atalho não mostra mensagem
 nenhuma, então rode o mesmo comando num terminal para lê-la.
+
+Um perfil pode ter seu próprio atalho para o jogo. Clique com o botão direito no
+perfil e escolha **Desktop shortcut**: o atalho roda
+`eidos tool <instance> run "<game>" --profile <name>`, que torna esse perfil o
+ativo, como escolhê-lo na janela, e depois pede à loja que inicie o jogo. A
+janela do Eidos que a loja abre mostra esse perfil. `--profile` funciona com
+qualquer `eidos tool ... run` e seleciona o perfil antes de a ferramenta
+iniciar; com `--print`, não seleciona nada.
 
 ## Uma ferramenta que é um app Steam à parte
 
@@ -484,6 +498,15 @@ sets processed successfully" e escreve 1439 malhas onde o jogo nunca vai
 procurá-las. O Eidos as pega - elas caem em `Overwrite/Root/` em vez da sua
 instalação - mas nada está errado do ponto de vista do jogo, exceto que os seus
 corpos não estão construídos.
+
+O Eidos confere isso para você. Antes de uma execução do BodySlide ou do Outfit
+Studio, a linha de status avisa quando `GameDataPath` ou `OutputDataPath` no
+`CalienteTools/BodySlide/Config.xml` que vence não leva à pasta `Data` do jogo
+durante a execução, e a aba Health mostra o mesmo cartão com o valor a definir.
+Um caminho em `S:` é lido do jeito que o Eidos mapeia `S:` para uma ferramenta,
+para a pasta da biblioteca da Steam. Um `OutputDataPath` dentro da pasta `mods/`
+da instância, para um mod de saída, é aceito. A aba Health também mostra um
+cartão quando `Overwrite/Root/` contém uma pasta `meshes` ou `textures`.
 
 A saída de ferramenta pertence ao Overwrite. Quando uma execução produz algo que
 vale guardar, **Overwrite -> Create mod...** a transforma num mod comum, que

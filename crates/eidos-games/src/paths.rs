@@ -10,6 +10,23 @@ fn invalid(message: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message.into())
 }
 
+/// Where Wine drive `drive` (a lowercase ASCII letter) points in `prefix`: the
+/// `dosdevices/<d>:` link canonicalized, else `drive_c` for c and `/` for z.
+/// Ok(None) for an unmapped letter.
+pub fn wine_drive_root(prefix: &Path, drive: u8) -> io::Result<Option<PathBuf>> {
+    let mapped = prefix
+        .join("dosdevices")
+        .join(format!("{}:", drive as char));
+    if fs::symlink_metadata(&mapped).is_ok() {
+        return mapped.canonicalize().map(Some);
+    }
+    Ok(match drive {
+        b'c' => Some(prefix.join("drive_c")),
+        b'z' => Some(PathBuf::from("/")),
+        _ => None,
+    })
+}
+
 impl DetectedGame {
     /// Morrowind's own plugin declares gameDirectory()/Saves, independent of
     /// Wine: ModOrganizer2/modorganizer-game_morrowind, gamemorrowind.cpp:67-75.
@@ -151,18 +168,8 @@ impl DetectedGame {
             let prefix = self
                 .prefix()
                 .ok_or_else(|| invalid("Windows UserDataFolder has no selected Wine prefix"))?;
-            let mapped = prefix
-                .join("dosdevices")
-                .join(format!("{}:", drive as char));
-            let base = if fs::symlink_metadata(&mapped).is_ok() {
-                mapped.canonicalize()?
-            } else {
-                match drive {
-                    b'c' => prefix.join("drive_c"),
-                    b'z' => PathBuf::from("/"),
-                    _ => return Err(invalid("Unmapped Wine drive in UserDataFolder")),
-                }
-            };
+            let base = wine_drive_root(&prefix, drive)?
+                .ok_or_else(|| invalid("Unmapped Wine drive in UserDataFolder"))?;
             let relative = value[3..].replace('\\', "/");
             if relative.is_empty() {
                 return Ok(base);
@@ -348,6 +355,29 @@ mod tests {
             runner: None,
         };
         assert_eq!(game.saves_path(), Some(f.0.join("game/Saves")));
+    }
+
+    #[test]
+    fn wine_drive_root_follows_dosdevices_and_falls_back_for_c_and_z() {
+        let f = Fixture::new();
+        let pfx = f.0.join("pfx");
+        let disk = f.0.join("disk");
+        fs::create_dir_all(pfx.join("dosdevices")).unwrap();
+        fs::create_dir_all(&disk).unwrap();
+        std::os::unix::fs::symlink(&disk, pfx.join("dosdevices/d:")).unwrap();
+        assert_eq!(
+            wine_drive_root(&pfx, b'd').unwrap(),
+            Some(disk.canonicalize().unwrap())
+        );
+        assert_eq!(
+            wine_drive_root(&pfx, b'c').unwrap(),
+            Some(pfx.join("drive_c"))
+        );
+        assert_eq!(
+            wine_drive_root(&pfx, b'z').unwrap(),
+            Some(PathBuf::from("/"))
+        );
+        assert_eq!(wine_drive_root(&pfx, b'q').unwrap(), None);
     }
 
     #[test]

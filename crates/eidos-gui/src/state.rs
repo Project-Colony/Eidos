@@ -497,6 +497,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         profile_copy: None,
         profile_delete_confirm: None,
         running: None,
+        focused: true,
         clean_queue: Default::default(),
         cleaning: None,
         cap_missing: !eidos_launch::binary_has_cap_sys_admin(&find_eidos_binary().0),
@@ -1244,13 +1245,34 @@ pub(crate) fn build_preview(path: &Path) -> Preview {
 /// `~/.local/share/applications`, not the desktop: that is where a launcher
 /// belongs on a freedesktop system, and it is what makes the entry appear in the
 /// application menu and in a search.
+///
+/// With `profile`, the entry adds `--profile <name>`, which makes that profile
+/// the active one before the run, and gets a file of its own.
 pub(crate) fn write_desktop_entry(
     inst: &Instance,
     game_id: &str,
     tool: &eidos_instance::Tool,
+    profile: Option<&str>,
 ) -> std::io::Result<PathBuf> {
-    let dir = eidos_paths::desktop_entries_dir();
-    std::fs::create_dir_all(&dir)?;
+    write_desktop_entry_in(
+        &eidos_paths::desktop_entries_dir(),
+        inst,
+        game_id,
+        tool,
+        profile,
+    )
+}
+
+/// [`write_desktop_entry`] into `dir`, so a test writes into a temp dir and
+/// never touches `XDG_DATA_HOME`.
+pub(crate) fn write_desktop_entry_in(
+    dir: &Path,
+    inst: &Instance,
+    game_id: &str,
+    tool: &eidos_instance::Tool,
+    profile: Option<&str>,
+) -> std::io::Result<PathBuf> {
+    std::fs::create_dir_all(dir)?;
     // The instance by PATH when it is portable, by id when it is the global one
     // - the same two spellings `eidos tool` itself accepts.
     let target = if inst.root == Instance::global(game_id).root {
@@ -1290,6 +1312,15 @@ pub(crate) fn write_desktop_entry(
         h2 ^= u64::from(*b);
         h2 = h2.wrapping_mul(0x100000001b3);
     }
+    // A profile continues the hash after a separator byte, so each profile gets
+    // its own file and a shortcut without one keeps the 1.23.0 name.
+    let profile = profile.map(clean);
+    if let Some(p) = &profile {
+        for b in std::iter::once(0).chain(p.bytes()) {
+            h2 ^= u64::from(b);
+            h2 = h2.wrapping_mul(0x100000001b3);
+        }
+    }
     let path = dir.join(format!(
         "eidos-{}-{}{:08x}.desktop",
         clean(game_id),
@@ -1322,12 +1353,24 @@ pub(crate) fn write_desktop_entry(
     if let Some(marker) = marker {
         exec = format!("{exec} {marker}");
     }
+    let (name, comment, exec_tail) = match &profile {
+        None => (
+            title.clone(),
+            format!("Run {title} through Eidos, in the {game_id} instance"),
+            String::new(),
+        ),
+        Some(p) => (
+            format!("{title} ({p})"),
+            format!("Start {title} with the {p} profile through its store, with Eidos"),
+            format!(" --profile {}", q(p)),
+        ),
+    };
     let body = format!(
         "[Desktop Entry]\n\
          Type=Application\n\
-         Name={title}\n\
-         Comment=Run {title} through Eidos, in the {game_id} instance\n\
-         Exec={exec} tool {} run {}\n\
+         Name={name}\n\
+         Comment={comment}\n\
+         Exec={exec} tool {} run {}{exec_tail}\n\
          Terminal=false\n\
          Categories=Game;Utility;\n\
          StartupNotify=false\n",
@@ -1619,6 +1662,7 @@ pub(crate) fn finish_run(app: &mut App) {
         app.status = Some(t("status_app_exited").to_string());
         return;
     };
+    let (game, stopped, title) = (run.game, run.stopped, run.title.clone());
     let status = run.outcome.lock().ok().and_then(|s| *s);
     let failed = status.map(|st| !st.success()).unwrap_or(false);
     // Record how it ended in the log itself. The status bar says it too, but the
@@ -1717,6 +1761,11 @@ pub(crate) fn finish_run(app: &mut App) {
             (Some(a), Some(b)) => Some(format!("{a} {b}")),
             (a, b) => b.or(a),
         };
+    }
+    // A QuickAutoClean queue that went on to its next plugin is running again,
+    // so the queue sends one notification, after its last plugin.
+    if !game && !stopped && app.running.is_none() {
+        crate::notify::when_away(app, &title, app.status.as_deref().unwrap_or(""));
     }
 }
 
@@ -4427,22 +4476,17 @@ mod tests {
         let root = temp_portable("skyrimse");
         let inst = Instance::portable(root.join("Eidos Skyrim"));
         inst.create().unwrap();
-        let home = root.join("fakehome");
-        fs::create_dir_all(&home).unwrap();
-        // The entry must land where the DESKTOP looks, not in the Colony tree.
-        let prev = std::env::var_os("XDG_DATA_HOME");
-        // SAFETY: single-threaded here, and restored below.
-        unsafe { std::env::set_var("XDG_DATA_HOME", &home) };
+        let apps = root.join("applications");
 
         let tool = Tool {
             title: "SSEEdit".to_string(),
             exe: PathBuf::from("/x/SSEEdit.exe"),
             ..Default::default()
         };
-        let path = write_desktop_entry(&inst, "skyrimse", &tool).unwrap();
+        let path = write_desktop_entry_in(&apps, &inst, "skyrimse", &tool, None).unwrap();
         let body = fs::read_to_string(&path).unwrap();
 
-        assert!(path.starts_with(home.join("applications")));
+        assert!(path.starts_with(&apps));
         assert!(body.starts_with("[Desktop Entry]"));
         // A portable instance with a space in its path is ordinary, and unquoted
         // it would reach `eidos tool` as two arguments.
@@ -4456,12 +4500,40 @@ mod tests {
         );
         assert!(body.contains("tool "), "{body}");
         assert!(body.contains("run \"SSEEdit\""), "{body}");
+        let _ = fs::remove_dir_all(&root);
+    }
 
-        match prev {
-            // SAFETY: as above.
-            Some(v) => unsafe { std::env::set_var("XDG_DATA_HOME", v) },
-            None => unsafe { std::env::remove_var("XDG_DATA_HOME") },
-        }
+    #[test]
+    fn a_profile_shortcut_passes_the_profile_as_one_argument() {
+        use eidos_instance::Tool;
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.join("Eidos Skyrim"));
+        inst.create().unwrap();
+        let apps = root.join("applications");
+
+        let game = Tool {
+            title: "Skyrim Special Edition".into(),
+            exe: "SkyrimSE.exe".into(),
+            ..Default::default()
+        };
+        let write = |profile| write_desktop_entry_in(&apps, &inst, "skyrimse", &game, profile);
+        let p = write(Some("Survival 100%")).unwrap();
+        let body = fs::read_to_string(&p).unwrap();
+        assert!(
+            body.contains("Name=Skyrim Special Edition (Survival 100%)\n"),
+            "{body}"
+        );
+        assert!(
+            body.contains(" run \"Skyrim Special Edition\" --profile \"Survival 100%%\"\n"),
+            "{body}"
+        );
+        let other = write(Some("Other")).unwrap();
+        let plain = write(None).unwrap();
+        assert!(
+            p != other && p != plain && other != plain,
+            "one file per profile"
+        );
+        assert!(!fs::read_to_string(&plain).unwrap().contains("--profile"));
         let _ = fs::remove_dir_all(&root);
     }
 

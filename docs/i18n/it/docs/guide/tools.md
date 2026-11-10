@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
 
 # Strumenti: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -355,6 +355,12 @@ PGPatcher si ferma con un errore quando il profilo non ha alcun mod attivo e
 quando la sua cartella di output è la cartella di un mod attivo, come fa sotto
 MO2.
 
+## I programmi di Wine nel prefisso del gioco
+
+Il menu File avvia quattro programmi di Wine nel prefisso del gioco: winecfg, regedit, il gestore file di Wine e il programma di disinstallazione. Partono come qualsiasi strumento, con la versione di Proton o Wine che esegue gli strumenti del gioco, con le mod montate, e la finestra li aspetta. **Prefix drive_c** apre l'unità `C:` del prefisso nel gestore file. Una riga resta grigia finché il prefisso non ha quel programma, cosa che accade la prima volta che lo store avvia il gioco.
+
+Eidos scrive da solo un unico valore del registro, l'`installed path` del gioco sotto `HKLM\Software\Bethesda Softworks\<game>`, prima di ogni esecuzione di uno strumento quando è errato. Una modifica fatta in regedit viene rimessa a posto alla successiva esecuzione.
+
 ## Il percorso del gioco nel prefisso
 
 Gli strumenti Windows trovano il proprio gioco leggendo
@@ -392,6 +398,14 @@ chiede allo store di avviare il gioco, come fa Run in una finestra che nessuno
 store ha aperto. Quando manca l'impostazione dello store, il comando non avvia
 nulla e stampa cosa impostare. Un collegamento non mostra alcun messaggio,
 quindi esegui lo stesso comando in un terminale per leggerlo.
+
+Un profilo può avere un suo collegamento per il gioco. Fai clic destro sul
+profilo e scegli **Desktop shortcut**: la voce esegue
+`eidos tool <instance> run "<game>" --profile <name>`, che rende attivo quel
+profilo, come quando lo scegli nella finestra, e poi chiede allo store di
+avviare il gioco. La finestra di Eidos che lo store apre mostra quel profilo.
+`--profile` funziona con qualsiasi `eidos tool ... run` e seleziona il profilo
+prima che lo strumento parta; con `--print` non seleziona niente.
 
 ## Uno strumento che è un'app Steam a sé
 
@@ -487,6 +501,16 @@ in blocco riporta "All sets processed successfully" e scrive 1439 mesh dove il
 gioco non le cercherà mai. Eidos le intercetta - atterrano in `Overwrite/Root/`
 invece che nella tua installazione - ma dal punto di vista del gioco non c'è
 niente di sbagliato, tranne che i tuoi corpi non sono costruiti.
+
+Eidos lo controlla per te. Prima di un'esecuzione di BodySlide o di Outfit
+Studio, la riga di stato avvisa quando `GameDataPath` o `OutputDataPath` nel
+`CalienteTools/BodySlide/Config.xml` vincente non porta alla cartella `Data` del
+gioco durante l'esecuzione, e la scheda Health mostra lo stesso avviso con il
+valore da impostare. Un percorso su `S:` viene letto come Eidos mappa `S:` per
+uno strumento, cioè sulla cartella della libreria di Steam. Un `OutputDataPath`
+dentro la cartella `mods/` dell'istanza, per una mod di output, è accettato.
+Health mostra anche un avviso quando `Overwrite/Root/` contiene una cartella
+`meshes` o `textures`.
 
 L'output degli strumenti sta di casa nell'Overwrite. Quando un'esecuzione produce
 qualcosa che vale la pena tenere, **Overwrite -> Create mod...** lo trasforma in

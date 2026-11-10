@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=dcc5ac23a71da786415a389b9c6a1e2b062cb25c -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1d62e34566cf1855eda40becbf2626b490ad7dd0 -->
 
 # Eidos の使い方
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # 既存の MO2 プロファイルの順序
 eidos sort skyrimse               # プラグインのロード順を LOOT で並べ替える
 eidos play skyrimse               # 何がマウントされるかを表示する
 eidos play skyrimse -- <command>  # MOD をゲームに重ねた状態で <command> を実行する
+eidos shell skyrimse              # 統合ビューでシェルを開く。書き込みは Overwrite に入る
 eidos check skyrimse              # ウィンドウなしで健全性チェック(スクリプト向けに --json)
 eidos sessions skyrimse           # 記録されたゲームとツールの実行を新しい順に表示
 eidos sessions skyrimse diff      # 終了コード 0 で終わった直近の実行から何が変わったかを表示
@@ -34,7 +35,11 @@ eidos unpack backup.eidos <folder>   # 向こうのマシンで元に戻す
 
 `eidos check <instance>` は、ウィンドウを開かずに、**Diagnostics** タブにあるプレフィックス、プラグイン、欠けたマスター、スクリプトエクステンダのチェックを実行します。SSH 越しや Game Mode でも動かせ、バグ報告にも貼れます。**Copy report** と同じシステム情報の行を出力し、続いて検出ごとに 1 行を出力します。ホームフォルダは `~`、ログイン名は `<user>` に置き換えて表示します。終了コードは、問題が見つからなければ 0(助言だけなら 0 のまま)、問題が 1 つ以上見つかれば 1、Eidos がチェックできなかったとき(引数の誤り、開けないインスタンス、検出できないゲーム)は 2 です。
 
-`eidos check <instance> --json` は代わりに JSON オブジェクトを 1 つ出力します。最上位のフィールドは `eidos`(バージョン)、`game`、`instance`、`system`(`proton`、`flatpak_steam`、`passthrough`、`session`、`distro`、`kernel`、`dev_fuse`、`fusermount3`)、`findings` です。各検出は `code`、`level`(`problem` または `advice`)、その `args` からなり、各コードの説明文は Diagnostics タブに表示されます。
+`eidos check <instance> --json` は代わりに JSON オブジェクトを 1 つ出力します。最上位のフィールドは `eidos`(バージョン)、`game`、`instance`、`system`(`proton`、`flatpak_steam`、`passthrough`、`session`、`distro`、`kernel`、`dev_fuse`、`fusermount3`、`max_map_count`、`open_files_hard`)、`findings` です。`max_map_count` と `open_files_hard` は数値で、Eidos が読み取れなかったときは `null` です。各検出は `code`、`level`(`problem` または `advice`)、その `args` からなり、各コードの説明文は Diagnostics タブに表示されます。
+
+### 統合ビューでのシェル
+
+`eidos shell <instance>` は、ゲームから見える状態のゲームフォルダで `$SHELL`(なければ `/bin/sh`)を起動します。有効な MOD はすべて `Data` に重ねられ、Root MOD はゲームのルートに重ねられ、そこへ書き込まれたものはすべて Overwrite に入ります。`eidos shell <instance> -- <command>` は代わりにコマンドを 1 つだけ実行します。たとえば `eidos shell skyrimse -- ls Data/meshes` や、NifSkope のようなネイティブツールです。この実行はゲームのセッションと同じくインスタンスのロックを保持するので、終了するまでウィンドウは変更を保存できず、`eidos sessions` には `shell` という名前で記録され、ゲームの起動としては記録されません。コマンド実行中の Ctrl+C は Stop と同じように実行を止めます。Eidos がコマンドを終了させ、セッションを回収し、アンマウントします。対話シェルでは Ctrl+C は通常どおりシェルのものです。実行を終えるには `exit` と入力します。
 
 ### インスタンス: グローバルとポータブル
 
@@ -428,7 +433,9 @@ Diagnostics のタブと、実行対象を選べる Run ボタン。
 保存されます。Save ボタンはありません。
 
 - **General**: Eidos が開くゲーム、ウィンドウの大きさ、インターフェースの言語、
-  ツールフォルダ、ゲームの実行方法。ウィンドウは英語とフランス語に対応しています。
+  ツールフォルダ、ゲームの実行方法、
+  ウィンドウが背面にある間に長い処理が終わったときデスクトップ通知で知らせるかどうか。
+  ウィンドウは英語とフランス語に対応しています。
   **System** は `LC_ALL`、`LC_MESSAGES`、`LANG` に従い、変更はその場で
   反映されます。`eidos` のコマンドラインは常に英語で応答します。
 - **Appearance**: テーマ(25 のファミリ、57 のパレット、既定は Eidos の羊皮紙)、
@@ -684,6 +691,8 @@ GUI からゲームを起動するには、そのゲームの Steam 起動オプ
 Eidos はそのゲームのインスタンスで開きます - 最後に使ったものなので、ポータブル
 インスタンスもグローバルと同じように見つかります。Run を押せば統合ビュー越しに
 起動します。
+
+**Start the game at once when a store opens Eidos** をオンにすると (Preferences、General、Running a game)、Eidos はこのクリックを省きます。Health を確認し、ウィンドウを表示せずにゲームを起動します。Health が問題を挙げたとき、MOD リストに対応が必要なとき、プレイ前に実行するよう設定したツールの出力が古いときは、いつもどおりウィンドウが開きます。1 回の起動だけウィンドウを出したい場合は、コマンドの前に `EIDOS_WINDOW=1` を付けます (`EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`)。
 
 Steam の外では、Run は Proton や Wine でゲームを自分で起動しません。そのコピーを持つストアに起動を頼み、ストアが Eidos を起動します。
 

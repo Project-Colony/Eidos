@@ -64,6 +64,7 @@ smol = "2.0.2"
 tempfile = "3.27.0"
 toml = "1.2.1"
 ureq = "3.5.1"
+zbus = { version = "5.19.0", default-features = false, features = ["async-io"] }
 
 [profile.release]
 # The Colony release profile (design/releases.md in Project-Colony-Resources,

@@ -454,7 +454,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             if job.finished.is_some() || !job.done.load(std::sync::atomic::Ordering::SeqCst) {
                 return Task::none();
             }
-            let (kind, target) = (job.kind, job.target.clone());
+            let (kind, target, title) = (job.kind, job.target.clone(), job.title.clone());
             let mut result = job
                 .outcome
                 .lock()
@@ -484,6 +484,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.meta_cache.clear();
                 refresh_meta_cache(app);
             }
+            let said = match &result {
+                Ok(s) | Err(s) => s.lines().next().unwrap_or(""),
+            };
+            crate::notify::when_away(app, &title, said);
             // Set LAST: `open_unpacked` calls `open_instance`, which resets a
             // great deal of the window, and the card has to survive it.
             if let Some(j) = app.transfer_job.as_mut() {

@@ -1259,3 +1259,68 @@ fn the_eidos_release_link_never_moves_the_menu_or_the_mod_rows() {
         "the link runs to the window edge on one line: {link:?}, Help {help:?}"
     );
 }
+
+/// The profile menu's Desktop shortcut row is drawn whether or not a Run list
+/// entry starts the game, so Delete below it never moves.
+#[test]
+fn the_profile_menu_keeps_the_shortcut_row_in_place() {
+    let _look = crate::test_support::look_lock();
+    let (mut app, root) = crate::test_support::list_app(&[]);
+    app.tools = vec![eidos_instance::Tool {
+        title: "Skyrim Special Edition".into(),
+        exe: "SkyrimSE.exe".into(),
+        ..Default::default()
+    }];
+    let mut renderer = renderer();
+    let menu = |app: &App| crate::modinfo::profile_menu_card(app, "Default");
+    let row = label(menu(&app), &mut renderer, t("exe_desktop_shortcut"), 0);
+    let delete = label(menu(&app), &mut renderer, t("common_delete"), 0);
+    app.tools.clear(); // no game entry: the row stays, the click explains
+    assert_eq!(
+        label(menu(&app), &mut renderer, t("exe_desktop_shortcut"), 0),
+        row
+    );
+    assert_eq!(
+        label(menu(&app), &mut renderer, t("common_delete"), 0),
+        delete
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn the_prefix_rows_keep_their_place_without_a_prefix() {
+    let _look = crate::test_support::look_lock();
+    let (mut with, root_with) = crate::test_support::list_app(&[]);
+    let (without, root_without) = crate::test_support::list_app(&[]);
+    let windows = root_with.join("compat/pfx/drive_c/windows");
+    fs::create_dir_all(windows.join("system32")).unwrap();
+    for f in [
+        "system32/winecfg.exe",
+        "system32/uninstaller.exe",
+        "regedit.exe",
+        "explorer.exe",
+    ] {
+        fs::write(windows.join(f), b"").unwrap();
+    }
+    with.games[0].compatdata = Some(root_with.join("compat"));
+    let mut renderer = renderer();
+    for key in [
+        "menu_prefix_drive_c",
+        "menu_prefix_winecfg",
+        "menu_prefix_regedit",
+        "menu_prefix_explorer",
+        "menu_prefix_uninstaller",
+        "menu_logs_folder",
+    ] {
+        let a = label(crate::view::file_menu_card(&with), &mut renderer, t(key), 0);
+        let b = label(
+            crate::view::file_menu_card(&without),
+            &mut renderer,
+            t(key),
+            0,
+        );
+        assert!((a.y - b.y).abs() < 0.5, "{key} moved: {a:?} against {b:?}");
+    }
+    let _ = fs::remove_dir_all(root_with);
+    let _ = fs::remove_dir_all(root_without);
+}

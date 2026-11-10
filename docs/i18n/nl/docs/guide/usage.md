@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=dcc5ac23a71da786415a389b9c6a1e2b062cb25c -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=1d62e34566cf1855eda40becbf2626b490ad7dd0 -->
 
 # Eidos gebruiken
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # de volgorde + pluginstatus van een bestaa
 eidos sort skyrimse               # de laadvolgorde van de plugins met LOOT sorteren
 eidos play skyrimse               # tonen wat er gekoppeld zou worden
 eidos play skyrimse -- <command>  # <command> draaien met de mods over het spel gekoppeld
+eidos shell skyrimse              # een shell in de samengevoegde weergave, schrijfacties komen in Overwrite
 eidos check skyrimse              # gezondheidscontroles zonder het venster (--json voor scripts)
 eidos sessions skyrimse           # de vastgelegde spel- en toolruns, nieuwste eerst
 eidos sessions skyrimse diff      # wat er veranderd is sinds de laatste run die met code 0 eindigde
@@ -34,7 +35,11 @@ het geheel compleet; draai `eidos` zonder argumenten voor de volledige lijst.
 
 `eidos check <instance>` draait de controles op prefix, plugins, ontbrekende masters en script extender uit het tabblad **Diagnostics** zonder het venster te openen, zodat ze via SSH of in Game Mode kunnen draaien en in een bugrapport terechtkomen. Het drukt dezelfde systeemregels af als **Copy report**, daarna één regel per bevinding, met je thuismap getoond als `~` en je inlognaam als `<user>`. De exitcode is 0 als er geen probleem is gevonden (alleen adviezen geven nog steeds 0), 1 als er minstens één probleem is gevonden, en 2 als Eidos niet kon controleren: verkeerde argumenten, een instantie die het niet kan openen, of een spel dat het niet detecteert.
 
-`eidos check <instance> --json` drukt in plaats daarvan één JSON-object af. De velden op het hoogste niveau zijn `eidos` (de versie), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`) en `findings`. Elke bevinding is een `code`, een `level` (`problem` of `advice`) en zijn `args`; het tabblad Diagnostics toont de zin bij elke code.
+`eidos check <instance> --json` drukt in plaats daarvan één JSON-object af. De velden op het hoogste niveau zijn `eidos` (de versie), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`, `max_map_count`, `open_files_hard`) en `findings`. `max_map_count` en `open_files_hard` zijn getallen, of `null` als Eidos ze niet kon lezen. Elke bevinding is een `code`, een `level` (`problem` of `advice`) en zijn `args`; het tabblad Diagnostics toont de zin bij elke code.
+
+### Een shell in de samengevoegde weergave
+
+`eidos shell <instance>` start je `$SHELL` (of `/bin/sh`) in de spelmap zoals het spel die zou zien: elke ingeschakelde mod over `Data` gekoppeld, Root-mods over de spelroot, en alles wat daar wordt geschreven komt in de Overwrite terecht. `eidos shell <instance> -- <command>` voert in plaats daarvan één commando uit, bijvoorbeeld `eidos shell skyrimse -- ls Data/meshes` of een native tool zoals NifSkope. De run houdt het instantieslot vast zoals een spelsessie, dus het venster kan geen wijzigingen opslaan tot je afsluit, en hij staat in `eidos sessions` onder de naam `shell`, nooit als spelstart. Ctrl+C bij een commando stopt de run zoals Stop: Eidos beëindigt het commando, legt de sessie vast en ontkoppelt. In de interactieve shell blijft Ctrl+C van de shell, zoals gewoonlijk; typ `exit` om de run te beëindigen.
 
 ### Instanties: globaal en draagbaar
 
@@ -483,7 +488,9 @@ Mod list, Nexus en About. Elke wijziging wordt meteen toegepast en opgeslagen; e
 is geen Save-knop.
 
 - **General**: het spel dat Eidos opent, de venstergrootte, de taal van de
-  interface, de tools folder en hoe een spel gestart wordt. Het venster spreekt
+  interface, de tools folder, hoe een spel gestart wordt, en of een
+  bureaubladmelding laat weten wanneer een lange taak eindigt terwijl het venster
+  op de achtergrond staat. Het venster spreekt
   Engels en Frans; **System** volgt `LC_ALL`, `LC_MESSAGES` of `LANG`, en de
   wijziging gaat meteen in. De opdrachtregel `eidos` antwoordt altijd in het Engels.
 - **Appearance**: het thema (25 families, 57 paletten, standaard het perkament
@@ -766,6 +773,8 @@ PATH):
 Eidos opent op de instantie van dat spel - de laatst gebruikte, dus een draagbare
 instantie wordt net zo goed teruggevonden als de globale; klik op Run om het door
 de samengevoegde weergave te starten.
+
+Met **Start the game at once when a store opens Eidos** aan (Preferences, General, Running a game) slaat Eidos die klik over: het controleert Health en start het spel zonder zijn venster te tonen. Het venster opent zoals gewoonlijk wanneer Health een probleem meldt, wanneer de modlijst aandacht nodig heeft of wanneer een tool die vóór het spelen moet draaien een verouderde uitvoer heeft. Wil je het venster voor één start, zet dan `EIDOS_WINDOW=1` voor het commando: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Buiten Steam start Run het spel niet zelf via Proton of Wine. Het vraagt de
 winkel die de kopie bezit om het te starten, en de winkel start Eidos:
