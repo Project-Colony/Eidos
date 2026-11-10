@@ -174,8 +174,8 @@ supprime : le lancement la nomme dans le log de l'exécution (le
 `logs/run-*.log` de l'instance pour un lancement depuis la fenêtre, la console
 de Steam pour un lancement par Steam), une fois à chaque changement de cet
 ensemble de fichiers. Pour y jouer, appuyez sur Importer dans l'onglet
-Sauvegardes. Importer la copie avec son co-save dans le profil et ne remplace
-jamais une sauvegarde du profil.
+Sauvegardes. Le bouton Importer la copie avec son co-save dans le profil et ne
+remplace jamais une sauvegarde du profil.
 
 ### Ce qui a changé depuis le dernier bon lancement
 
