@@ -185,7 +185,7 @@ pub fn launch_handoff(
 
 /// Shell-style words: single quotes literal, double quotes with `\` escapes,
 /// backslash outside quotes.
-fn shell_words(s: &str) -> Vec<String> {
+pub(crate) fn shell_words(s: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut cur = String::new();
     let mut in_word = false;

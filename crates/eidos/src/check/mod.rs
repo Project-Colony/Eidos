@@ -292,10 +292,44 @@ pub struct ReportFacts {
     pub fusermount3: bool,
     pub max_map_count: Option<u64>,
     pub open_files_hard: Option<u64>,
+    /// [`launch_env_summary`] of the instance's active profile, else `none`.
+    pub launch_env: String,
 }
 
-/// Read the facts off the running host and the selected game.
-pub fn report_facts(home: &Path, game: Option<&DetectedGame>, cap_missing: bool) -> ReportFacts {
+/// The report's line for a profile's `launch-env.ini`: variable names and the
+/// program each wrapper starts. Never a value: a variable can hold a token.
+pub fn launch_env_summary(l: &eidos_instance::LaunchEnv) -> String {
+    let names: Vec<&str> = l.env.iter().map(|(k, _)| k.as_str()).collect();
+    let programs: Vec<String> = l
+        .wrappers
+        .iter()
+        .filter_map(|w| launch_option::shell_words(w).into_iter().next())
+        .map(|first| match Path::new(&first).file_name() {
+            Some(n) => n.to_string_lossy().into_owned(),
+            None => first,
+        })
+        .collect();
+    let mut parts = Vec::new();
+    if !names.is_empty() {
+        parts.push(format!("env {}", names.join(", ")));
+    }
+    if !programs.is_empty() {
+        parts.push(format!("wrappers {}", programs.join(", ")));
+    }
+    if parts.is_empty() {
+        "none".into()
+    } else {
+        parts.join("; ")
+    }
+}
+
+/// Read the facts off the running host, the selected game and its instance.
+pub fn report_facts(
+    home: &Path,
+    game: Option<&DetectedGame>,
+    inst: Option<&Instance>,
+    cap_missing: bool,
+) -> ReportFacts {
     let run = game.and_then(|g| {
         let cd = g.compatdata.as_ref()?;
         eidos_games::proton_command(home, g.def.steam_app_id, cd, &g.install_path)
@@ -337,6 +371,10 @@ pub fn report_facts(home: &Path, game: Option<&DetectedGame>, cap_missing: bool)
         fusermount3,
         max_map_count: system::read_max_map_count(),
         open_files_hard: system::read_open_files_hard(),
+        launch_env: inst.map_or_else(
+            || "none".into(),
+            |i| launch_env_summary(&i.active().launch_env()),
+        ),
     }
 }
 
@@ -374,6 +412,7 @@ pub fn report_header(f: &ReportFacts) -> Vec<String> {
         ),
         format!("Passthrough: {passthrough}"),
         format!("Session: {}", f.session),
+        format!("Profile launch: {}", f.launch_env),
         format!("Distro: {}", f.distro),
         format!("Kernel: {}", f.kernel),
         format!("vm.max_map_count: {}", or_unknown(f.max_map_count)),
@@ -419,7 +458,7 @@ pub(crate) fn cmd_check(args: &[String]) {
     let home = eidos_games::home();
     let findings = check_findings(&home, &game, &target.game_id, &target.inst);
     let cap_missing = !eidos_launch::binary_has_cap_sys_admin(&crate::this_exe().0);
-    let facts = report_facts(&home, Some(&game), cap_missing);
+    let facts = report_facts(&home, Some(&game), Some(&target.inst), cap_missing);
     if json {
         println!("{}", to_json(&facts, &target.inst.root, &findings));
     } else {
@@ -617,7 +656,35 @@ mod tests {
             fusermount3: true,
             max_map_count: Some(65530),
             open_files_hard: None,
+            launch_env: "none".into(),
         }
+    }
+
+    #[test]
+    fn the_report_names_profile_variables_and_wrappers_without_values() {
+        let l = eidos_instance::LaunchEnv {
+            env: vec![
+                ("DXVK_HUD".into(), "fps".into()),
+                ("TOKEN".into(), "secret".into()),
+            ],
+            wrappers: vec![
+                "/usr/bin/gamemoderun".into(),
+                "gamescope -W 1280 -- %command%".into(),
+            ],
+        };
+        assert_eq!(
+            launch_env_summary(&l),
+            "env DXVK_HUD, TOKEN; wrappers gamemoderun, gamescope"
+        );
+        assert_eq!(launch_env_summary(&Default::default()), "none");
+        let header = report_header(&ReportFacts {
+            launch_env: "none".into(),
+            ..report()
+        });
+        assert!(
+            header.contains(&"Profile launch: none".to_string()),
+            "{header:?}"
+        );
     }
 
     #[test]

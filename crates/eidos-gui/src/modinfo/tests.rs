@@ -909,6 +909,7 @@ fn health_report_redacts_home_paths() {
         fusermount3: true,
         max_map_count: Some(1048576),
         open_files_hard: Some(524288),
+        launch_env: "env DXVK_HUD; wrappers gamemoderun".into(),
     };
     let checks = [Diagnostic {
         level: DiagLevel::Problem,
@@ -921,6 +922,10 @@ fn health_report_redacts_home_paths() {
     assert!(r.contains("- [problem] Cannot read ~/mods"), "{r}");
     assert!(r.contains("Proton: GE-Proton11-1"));
     assert!(r.contains("Flatpak Steam: unknown"), "{r}");
+    assert!(
+        r.contains("Profile launch: env DXVK_HUD; wrappers gamemoderun"),
+        "{r}"
+    );
     assert!(
         r.contains("vm.max_map_count: 1048576") && r.contains("Open files (hard limit): 524288"),
         "{r}"

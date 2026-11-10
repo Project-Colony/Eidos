@@ -154,6 +154,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let facts = eidos::check::report_facts(
                 &home(),
                 crate::state::selected_game(app),
+                app.created.as_ref(),
                 app.cap_missing,
             );
             let text = health_report(&facts, &app.diag);
