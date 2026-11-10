@@ -697,7 +697,7 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         }
     }
 
-    for (row, plugin) in stale_copies(app) {
+    for (row, plugin) in stale_copies(app, files.as_ref().map(|f| f.data.as_path())) {
         out.push(Diagnostic {
             level: DiagLevel::Problem,
             title: tf("diag_stale_copy", &[("plugin", &plugin)]),
@@ -1139,10 +1139,9 @@ pub(crate) fn script_extender_diagnostic(game: &DetectedGame) -> Option<Diagnost
 
 /// Generated plugin copies whose source file changed since the copy was made:
 /// `(row of the mod holding the copy, plugin name)`. The source is the file of
-/// that name in the nearest enabled mod below the copy, else the game's Data
-/// folder. Only stats, no reads.
-pub(crate) fn stale_copies(app: &App) -> Vec<(usize, String)> {
-    let data = selected_game(app).map(|g| &g.data_path);
+/// that name in the nearest enabled mod below the copy, else `game_data`, the
+/// Data folder of the game files the instance runs. Only stats, no reads.
+pub(crate) fn stale_copies(app: &App, game_data: Option<&Path>) -> Vec<(usize, String)> {
     let mut out = Vec::new();
     for (row, m) in app.mods.iter().enumerate().filter(|(_, m)| m.enabled) {
         let Some(sources) = app.meta_cache.get(&m.name).map(|r| &r.plugin_sources) else {
@@ -1158,7 +1157,7 @@ pub(crate) fn stale_copies(app: &App) -> Vec<(usize, String)> {
                 .rev()
                 .filter(|b| b.enabled)
                 .map(|b| b.path.join(&src.name))
-                .chain(data.map(|d| d.join(&src.name)))
+                .chain(game_data.map(|d| d.join(&src.name)))
                 .find(|p| p.exists());
             let current = now.and_then(|p| eidos_instance::PluginSource::of(&src.name, &p));
             if current.as_ref() != Some(src) {

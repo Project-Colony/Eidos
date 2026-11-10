@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=507d35472d3f92ae0cc2794d3bc9d399565fd8ea -->
 
 # Eidos kullanımı
 
@@ -22,6 +22,7 @@ eidos shell skyrimse              # birleşik görünümde bir kabuk, yazılanla
 eidos check skyrimse              # pencere olmadan sağlık denetimleri (betikler için --json)
 eidos sessions skyrimse           # kaydedilmiş oyun ve araç çalıştırmaları, en yeni başta
 eidos sessions skyrimse diff      # çıkış kodu 0 ile biten son çalıştırmadan beri neyin değiştiği
+eidos stock-game skyrimse         # örneğin kullandığı oyun dosyaları; dondurun veya değiştirin
 eidos collection skyrimse <link>  # bir Nexus koleksiyonunu yazarının kurduğu gibi kur
 eidos nexus update skyrimse --apply  # sizinkilerin yerini alan Nexus dosyalarını kur
 eidos pack skyrimse backup.eidos  # bütün örnek tek bir dosyada, başka yere taşımak için
@@ -116,7 +117,21 @@ katmanına iner; oyun kurulumu ve her mod kaynağı bayt bayt dokunulmamış kal
 
 Eidos'ta Wabbajack yükleyicisi yoktur. Listeyi Eidos dışında CLF3 veya Jackify ile kurun, ardından sihirbazda kurulum klasörünü taşınabilir örnek olarak seçin. Eidos klasörü MO2'nin düzeniyle okur: `mods/`, `profiles/<ad>/modlist.txt` ve eklenti listeleri. Yükleyicinin yazdığı `ModOrganizer.ini` dosyasını korur ve hiçbir zaman üzerine yazmaz, böylece listenin kendi çalıştırılabilir dosyaları kayıtlı kalır.
 
-Birçok liste, oyunun değiştirilmiş bir kopyasını içeren bir `Stock Game` veya `Game Root` klasörü ekler ve MO2 oyunu oradan başlatır. Eidos Steam kurulumunu başlatır ve başka bir oyun klasörü için ayarı yoktur. Sihirbaz böyle bir klasör bulursa bunu özet ekranında bildirir ve başka bir şey yapmaz: listenin oraya koyduklarını kendiniz bir modun `Root/` klasörüne taşıyın. CLF3, BSA ve DDS dosyalarını kendi araçlarıyla yeniden oluşturur; bu yüzden sonuç bir Wabbajack kurulumundan farklı olabilir ve liste yazarları bunu desteklemez.
+Birçok liste, oyunun değiştirilmiş bir kopyasını içeren bir `Stock Game` veya `Game Root` klasörü ekler ve MO2 oyunu oradan başlatır. Sihirbaz veya `eidos init` bir liste klasörünü ilk kez benimsediğinde örnek de oyunu bu klasörden başlatır; oyun yine Steam veya oyunun sahibi olan mağaza üzerinden başlar, bu yüzden hiçbir şeyi taşımak gerekmez. Eidos klasörü listenin `ModOrganizer.ini` dosyasındaki `gamePath` değerinden ya da bu iki addan bulur. Eidos'un daha eski bir sürümüyle benimsenmiş bir örnek, siz değiştirene kadar mağaza kurulumunu kullanmaya devam eder (bir sonraki bölüme bakın). CLF3, BSA ve DDS dosyalarını kendi araçlarıyla yeniden oluşturur; bu yüzden sonuç bir Wabbajack kurulumundan farklı olabilir ve liste yazarları bunu desteklemez.
+
+### Oyun dosyaları: mağaza kurulumu veya bir kopya
+
+Varsayılan olarak oyun mağaza kurulumundan, yani Steam, Heroic veya Legendary'nin onu tuttuğu klasörden çalışır. Bunun yerine bir örnek, bu klasörün örnek içindeki bir kopyasından çalışabilir. Modlar kopyanın üstüne oturur ve mağaza kurulumu yalnızca Eidos'un sonucu bağladığı yer olur. Oyunu yine mağaza başlatır, bu yüzden Steam katmanını (overlay), gölgelendirici önbelleğini ve bulut kayıtlarını korur.
+
+Diagnostics sekmesinin en üstündeki Game files kartı, örneğin hangi dosyaları çalıştırdığını gösterir ve bunlar arasında geçiş yapar. `eidos stock-game <instance>` aynısını terminalden yapar: `use <folder>`, `store`, `freeze` ve `delete --yes`.
+
+**Freeze this version** mağaza kurulumunu `<instance>/Stock Game` içine kopyalar ve oyunu oradan çalıştırır; böylece bir mağaza güncellemesi artık script extender eklentilerini bozmaz: güncelleme kopyayı değil, mağaza kurulumunu değiştirir. İlk basış boyutu ve dosya sisteminin bununla ne yapacağını gösterir, ikinci basış kopyalar. btrfs ve XFS üzerinde kopya mağazanın bloklarını paylaşır (reflink) ve mağaza bir dosyayı değiştirene kadar neredeyse hiç yer kaplamaz. ext4 üzerinde ya da oyun ile örnek farklı dosya sistemlerindeyken, oyun klasörü kadar büyük tam bir kopyadır. Steam oyunu meşgul veya güncelleniyor olarak bildirdiği sürece ve örneğin bir oyunu ya da aracı çalıştığı sürece Eidos reddeder. Stop veya bir hata `Stock Game.eidos-tmp` klasörünü bırakır; kart onu silmeyi önerir ve bu klasör hiçbir zaman kullanılmaz.
+
+Kopya, kopyalamadan sonra mağazanın oyun klasörüne eklediği, değiştirdiği veya sildiği her dosyayı gizler: yeni Creation Club dosyaları, yeni bir çalıştırılabilir dosya, yeni DLL'ler. Oyun, eklenti listesi, LOOT ve Health denetimleri hep kopyayı okur. Oyun klasörünün dışında olanları gizlemez: bir güncelleme bir sonraki başlatmada Proton önekine yine çalışma zamanları kurabilir ve Steam oyunu başka bir Proton'a geçirebilir.
+
+**Return to the store version** ikinci basıştan sonra kopyayı bir sonraki başlatmadan çıkarır. Kopya diskte kalır ve **Delete the copy** onu yine ikinci basıştan sonra siler. Eidos bir listenin kendi `Stock Game` veya `Game Root` klasörünü asla silmez. Kopya klasörü kaybolursa başlatmalar reddedilir ve Diagnostics klasörün adını verir; böylece mağaza sürümü hiçbir zaman habersizce çalışmaz.
+
+Morrowind ile `bUseMyGamesDirectory=0` olan Oblivion, eklenti listelerini oyun klasöründe tutar ve Eidos onları henüz bir kopyadan çalıştırmaz.
 
 ### Mod listesi
 
@@ -382,6 +397,8 @@ paketler, `eidos pack --dry-run` ise yazılıp yazılmayacaklarını söyler.
 | `.base/`, `.base-root/` | Oyunun kendi dosyalarının bir oturum boyunca saklandığı boş bağlama noktaları. |
 | Yarım yazılmış dosyalar | Duraklatılmış bir indirme (`*.unfinished`), yolda olan atomik bir yazma (`*.eidos-tmp*`). |
 | Sembolik bağlar | 7-Zip birini izler ve neyi gösteriyorsa onu kopyalardı; mutlak bir bağ için bu, yedeğinizin içine yabancı bir ağaç çekmek demektir. Onun yerine bildirilirler ve yedek eksik sayılır: başka bir sürücüyü gösteren sembolik bağ olan bir `mods/` ya da `downloads/` pakete GİRMEZ. Sembolik bağ olan bir `downloads/` dizinini bilerek dışarıda bırakıp yedek almak için `--no-downloads` verin (ya da pencerede *Include downloads/* işaretini kaldırın); kasıtlı bir dışlama eksik sayılmaz. |
+
+Örnekteki bir oyun kopyası (`Stock Game`) diğer klasörler gibi paketlenir; bu yüzden dondurulmuş bir örneğin yedeği yaklaşık oyunun boyutu kadar büyür. Bitmemiş bir kopya (`Stock Game.eidos-tmp`) dışarıda bırakılır.
 
 Bunların her biri, nedeniyle birlikte arşivin kökündeki `eidos-backup.ini`
 dosyasına girer - yani "burada ne yok" sorusunun yanıtı bir tahmin değil,

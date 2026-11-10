@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=507d35472d3f92ae0cc2794d3bc9d399565fd8ea -->
 
 # Eidos gebruiken
 
@@ -22,6 +22,7 @@ eidos shell skyrimse              # een shell in de samengevoegde weergave, schr
 eidos check skyrimse              # gezondheidscontroles zonder het venster (--json voor scripts)
 eidos sessions skyrimse           # de vastgelegde spel- en toolruns, nieuwste eerst
 eidos sessions skyrimse diff      # wat er veranderd is sinds de laatste run die met code 0 eindigde
+eidos stock-game skyrimse         # welke spelbestanden de instantie gebruikt; bevriezen of wisselen
 eidos collection skyrimse <link>  # een Nexus-collectie installeren zoals de auteur haar gebouwd heeft
 eidos nexus update skyrimse --apply  # de Nexus-bestanden installeren die de jouwe vervingen
 eidos pack skyrimse backup.eidos  # de hele instantie in één bestand, om ze elders heen te verhuizen
@@ -116,7 +117,21 @@ byte voor byte ongerept.
 
 Eidos heeft geen Wabbajack-installatieprogramma. Installeer de lijst met CLF3 of Jackify, buiten Eidos, en kies de installatiemap in de wizard als draagbare instantie. Eidos leest de map in de indeling van MO2: `mods/`, `profiles/<naam>/modlist.txt` en de pluginlijsten. Het `ModOrganizer.ini` dat het installatieprogramma schreef blijft staan en wordt nooit overschreven, zodat de eigen programma's van de lijst geregistreerd blijven.
 
-Veel lijsten voegen een map `Stock Game` of `Game Root` toe met een aangepaste kopie van het spel, en MO2 start het spel vandaar. Eidos start de Steam-installatie en heeft geen instelling voor een andere spelmap. Vindt de wizard zo'n map, dan meldt hij dat op het overzichtsscherm en doet verder niets: verplaats zelf wat de lijst daar heeft neergezet naar de map `Root/` van een mod. CLF3 bouwt BSA- en DDS-bestanden opnieuw op met eigen hulpmiddelen, dus het resultaat kan afwijken van een Wabbajack-installatie, en lijstauteurs ondersteunen het niet.
+Veel lijsten voegen een map `Stock Game` of `Game Root` toe met een aangepaste kopie van het spel, en MO2 start het spel vandaar. Neemt de wizard of `eidos init` een lijstmap voor het eerst over, dan start ook de instantie het spel vanuit die map, nog steeds via Steam of de winkel die het spel bezit, dus hoeft er niets verplaatst te worden. Eidos vindt de map via de `gamePath` in de `ModOrganizer.ini` van de lijst, of aan die twee namen. Een instantie die met een eerdere Eidos is overgenomen, houdt de winkelinstallatie tot je overschakelt (zie de volgende sectie). CLF3 bouwt BSA- en DDS-bestanden opnieuw op met eigen hulpmiddelen, dus het resultaat kan afwijken van een Wabbajack-installatie, en lijstauteurs ondersteunen het niet.
+
+### Spelbestanden: de winkelinstallatie of een kopie
+
+Standaard draait het spel vanuit zijn winkelinstallatie, de map waarin Steam, Heroic of Legendary het bewaart. Een instantie kan in plaats daarvan draaien vanuit een kopie van die map in de instantie. De mods liggen boven op de kopie, en de winkelinstallatie is alleen nog de plek waar Eidos het resultaat mount. De winkel start het spel nog steeds, dus Steam houdt zijn overlay, zijn shadercache en zijn cloudsaves.
+
+De kaart Game files bovenaan het tabblad Diagnostics toont welke bestanden de instantie gebruikt en wisselt tussen beide. `eidos stock-game <instance>` doet hetzelfde vanuit een terminal: `use <folder>`, `store`, `freeze` en `delete --yes`.
+
+**Freeze this version** kopieert de winkelinstallatie naar `<instance>/Stock Game` en start het spel daarvandaan, zodat een winkelupdate geen script-extender-plugins meer breekt: de update wijzigt de winkelinstallatie, niet de kopie. De eerste klik toont de grootte en wat het bestandssysteem ermee doet, de tweede kopieert. Op btrfs en XFS deelt de kopie de blokken van de winkel (reflink) en neemt ze bijna geen ruimte in tot de winkel een bestand wijzigt. Op ext4, of als het spel en de instantie op verschillende bestandssystemen staan, is het een volledige kopie, even groot als de spelmap. Eidos weigert zolang Steam het spel als bezig of aan het bijwerken meldt, en zolang een spel of tool van de instantie draait. Stop, of een fout, laat `Stock Game.eidos-tmp` achter, dat de kaart aanbiedt te verwijderen; die map wordt nooit gebruikt.
+
+Een kopie verbergt elk bestand dat de winkel na het kopiëren in de spelmap toevoegt, wijzigt of verwijdert: nieuwe Creation Club-bestanden, een nieuw uitvoerbaar bestand, nieuwe DLL's. Het spel, de pluginlijst, LOOT en de Health-controles lezen allemaal de kopie. Wat buiten de spelmap gebeurt, verbergt ze niet: een update kan bij de volgende start nog steeds runtimes in het Proton-prefix installeren, en Steam kan het spel naar een andere Proton overzetten.
+
+**Return to the store version** haalt de kopie na een tweede klik uit de volgende start. De kopie blijft op schijf staan, en **Delete the copy** verwijdert haar, ook na een tweede klik. Eidos verwijdert nooit de eigen map `Stock Game` of `Game Root` van een lijst. Verdwijnt de map van de kopie, dan worden starts geweigerd en noemt Diagnostics de map, zodat de winkelversie nooit onverwacht draait.
+
+Morrowind, en Oblivion met `bUseMyGamesDirectory=0`, houden hun pluginlijst in de spelmap, en Eidos start ze nog niet vanuit een kopie.
 
 ### De modlijst
 
@@ -392,6 +407,8 @@ de herstelgegevens niet gebruikt zijn. `--no-recovery` packt zonder, en
 | `.base/`, `.base-root/` | Lege koppelpunten waar de eigen bestanden van het spel tijdens een sessie gestald worden. |
 | Halfgeschreven bestanden | Een gepauzeerde download (`*.unfinished`), een atomaire schrijfactie onderweg (`*.eidos-tmp*`). |
 | Symbolische links | 7-Zip zou er een volgen en kopiëren waar hij naar wijst, wat bij een absolute link betekent dat er een vreemde boom je back-up in getrokken wordt. Ze worden in plaats daarvan gemeld, en de back-up telt als onvolledig: een `mods/` of `downloads/` die naar een andere schijf gelinkt is, wordt NIET ingepakt. Wil je bewust een back-up maken zonder een gelinkte `downloads/`, geef dan `--no-downloads` mee (of vink *Include downloads/* uit in het venster); een bewuste uitsluiting telt niet als ontbrekend. |
+
+Een spelkopie in de instantie (`Stock Game`) wordt ingepakt zoals elke andere map, dus de back-up van een bevroren instantie is ongeveer de omvang van het spel groter. Een onvoltooide kopie (`Stock Game.eidos-tmp`) blijft erbuiten.
 
 Elk van deze belandt in `eidos-backup.ini` in de wortel van het archief, met de
 reden erbij - dus het antwoord op "wat zit hier niet in" is `cat`, geen gok.

@@ -7607,6 +7607,11 @@ mod cleaning {
         assert!(!scratch.exists());
     }
 
+    /// The Data folder `diagnostics` hands to `stale_copies`.
+    fn game_data(app: &App) -> Option<PathBuf> {
+        crate::state::game_files(app).map(|f| f.data)
+    }
+
     #[test]
     fn a_copy_whose_source_changed_is_reported_with_a_hide_action() {
         let (mut app, root) = list_app(&["Base", "Cleaned plugins"]);
@@ -7619,9 +7624,12 @@ mod cleaning {
         .unwrap();
         invalidate_meta(&mut app, "Cleaned plugins");
         refresh_meta_cache(&mut app);
-        assert!(stale_copies(&app).is_empty());
+        assert!(stale_copies(&app, game_data(&app).as_deref()).is_empty());
         fs::write(&src, b"updated source").unwrap();
-        assert_eq!(stale_copies(&app), [(1, "Dirty.esp".to_string())]);
+        assert_eq!(
+            stale_copies(&app, game_data(&app).as_deref()),
+            [(1, "Dirty.esp".to_string())]
+        );
         let card = diagnostics(&app)
             .into_iter()
             .find(|d| d.title == tf("diag_stale_copy", &[("plugin", &"Dirty.esp")]))
@@ -7632,7 +7640,36 @@ mod cleaning {
         crate::view::set_hidden(&root.join("mods/Cleaned plugins/Dirty.esp"), true).unwrap();
         invalidate_meta(&mut app, "Cleaned plugins");
         refresh_meta_cache(&mut app);
-        assert!(stale_copies(&app).is_empty());
+        assert!(stale_copies(&app, game_data(&app).as_deref()).is_empty());
+    }
+
+    #[test]
+    fn a_copy_of_a_game_plugin_is_checked_against_the_game_copy() {
+        let (mut app, root) = stock_game_app();
+        let store = app.games[0].data_path.join("Dirty.esp");
+        let in_copy = root.join("Stock Game/Data/Dirty.esp");
+        fs::write(&store, b"store").unwrap();
+        fs::write(&in_copy, b"copy").unwrap();
+        fs::write(root.join("mods/Keep/Dirty.esp"), b"clean").unwrap();
+        let inst = app.created.as_ref().unwrap();
+        inst.edit_manifest(|m| m.base_game = Some("Stock Game".into()))
+            .unwrap();
+        edit_mod_meta(inst, "Keep", |m| {
+            m.set_plugin_source(PluginSource::of("Dirty.esp", &in_copy).unwrap())
+        })
+        .unwrap();
+        invalidate_meta(&mut app, "Keep");
+        refresh_meta_cache(&mut app);
+        let data = game_data(&app);
+        assert!(stale_copies(&app, data.as_deref()).is_empty());
+        // A store update changes the install, which the game no longer reads.
+        fs::write(&store, b"store update").unwrap();
+        assert!(stale_copies(&app, data.as_deref()).is_empty());
+        fs::write(&in_copy, b"copy changed").unwrap();
+        assert_eq!(
+            stale_copies(&app, data.as_deref()),
+            [(0, "Dirty.esp".to_string())]
+        );
     }
 
     #[test]

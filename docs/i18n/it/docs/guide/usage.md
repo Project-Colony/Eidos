@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=507d35472d3f92ae0cc2794d3bc9d399565fd8ea -->
 
 # Usare Eidos
 
@@ -23,6 +23,7 @@ eidos shell skyrimse              # una shell nella vista unita, le scritture fi
 eidos check skyrimse              # controlli di salute senza la finestra (--json per gli script)
 eidos sessions skyrimse           # le esecuzioni registrate di gioco e strumenti, dalla più recente
 eidos sessions skyrimse diff      # cosa è cambiato dall'ultima esecuzione terminata con codice 0
+eidos stock-game skyrimse         # quali file di gioco usa l'istanza; congelarli o cambiarli
 eidos collection skyrimse <link>  # installare una collezione di Nexus come l'ha costruita il suo autore
 eidos nexus update skyrimse --apply  # installare i file di Nexus che hanno sostituito i tuoi
 eidos pack skyrimse backup.eidos  # l'intera istanza in un solo file, per spostarla altrove
@@ -120,7 +121,21 @@ intatte byte per byte.
 
 Eidos non ha un installer Wabbajack. Installa la lista con CLF3 o Jackify, fuori da Eidos, poi scegli la cartella di installazione come istanza portatile nella procedura guidata. Eidos legge la cartella con la struttura di MO2: `mods/`, `profiles/<nome>/modlist.txt` e le liste dei plugin. Conserva il `ModOrganizer.ini` scritto dall'installer e non lo sovrascrive mai, quindi gli eseguibili propri della lista restano registrati.
 
-Molte liste aggiungono una cartella `Stock Game` o `Game Root` che contiene una copia modificata del gioco, e MO2 avvia il gioco da lì. Eidos avvia l'installazione Steam e non ha impostazioni per un'altra cartella di gioco. Quando la procedura trova una cartella simile lo segnala nella schermata di riepilogo e non fa altro: sposta tu stesso ciò che la lista vi ha messo nella cartella `Root/` di una mod. CLF3 ricostruisce i file BSA e DDS con i propri strumenti, quindi il risultato può differire da un'installazione Wabbajack, e gli autori delle liste non lo supportano.
+Molte liste aggiungono una cartella `Stock Game` o `Game Root` che contiene una copia modificata del gioco, e MO2 avvia il gioco da lì. Quando la procedura guidata o `eidos init` adotta per la prima volta la cartella di una lista, anche l'istanza avvia il gioco da quella cartella, sempre tramite Steam o lo store a cui appartiene il gioco, quindi non c'è niente da spostare. Eidos trova la cartella dal `gamePath` nel `ModOrganizer.ini` della lista, oppure da quei due nomi. Un'istanza adottata con una versione precedente di Eidos tiene l'installazione dello store finché non la cambi (vedi la sezione successiva). CLF3 ricostruisce i file BSA e DDS con i propri strumenti, quindi il risultato può differire da un'installazione Wabbajack, e gli autori delle liste non lo supportano.
+
+### File di gioco: l'installazione dello store o una copia
+
+Di norma il gioco gira dalla sua installazione dello store, la cartella in cui Steam, Heroic o Legendary lo tiene. Un'istanza può invece girare da una copia di quella cartella dentro l'istanza. Le mod stanno sopra la copia, e l'installazione dello store è solo il punto in cui Eidos monta il risultato. È sempre lo store ad avviare il gioco, quindi Steam mantiene il suo overlay, la sua cache degli shader e i salvataggi nel cloud.
+
+Il riquadro Game files in cima alla scheda Diagnostics mostra quali file usa l'istanza e passa dall'uno all'altro. `eidos stock-game <instance>` fa lo stesso da terminale: `use <folder>`, `store`, `freeze` e `delete --yes`.
+
+**Freeze this version** copia l'installazione dello store in `<instance>/Stock Game` e avvia il gioco da lì, così un aggiornamento dello store non rompe più i plugin dello script extender: l'aggiornamento cambia l'installazione dello store, non la copia. Il primo clic mostra la dimensione e cosa ne fa il filesystem, il secondo copia. Su btrfs e XFS la copia condivide i blocchi dello store (reflink) e non occupa quasi spazio finché lo store non cambia un file. Su ext4, o quando il gioco e l'istanza sono su filesystem diversi, è una copia completa grande quanto la cartella del gioco. Eidos rifiuta finché Steam segnala il gioco occupato o in aggiornamento, e finché gira un gioco o uno strumento dell'istanza. Stop, o un errore, lascia `Stock Game.eidos-tmp`, che il riquadro propone di eliminare; quella cartella non viene mai usata.
+
+Una copia nasconde ogni file che lo store aggiunge, cambia o rimuove nella cartella del gioco dopo che la copia è stata fatta: nuovi file Creation Club, un nuovo eseguibile, nuove DLL. Il gioco, l'elenco dei plugin, LOOT e i controlli di Health leggono tutti la copia. Non nasconde ciò che succede fuori dalla cartella del gioco: un aggiornamento può ancora installare runtime nel prefisso Proton al prossimo avvio, e Steam può passare il gioco a un altro Proton.
+
+**Return to the store version** toglie la copia dal prossimo avvio dopo un secondo clic. La copia resta sul disco, e **Delete the copy** la rimuove, sempre dopo un secondo clic. Eidos non elimina mai la cartella `Stock Game` o `Game Root` di una lista. Se la cartella della copia sparisce, gli avvii vengono rifiutati e Diagnostics nomina la cartella, così la versione dello store non parte mai a sorpresa.
+
+Morrowind, e Oblivion con `bUseMyGamesDirectory=0`, tengono il loro elenco dei plugin nella cartella del gioco, ed Eidos non li avvia ancora da una copia.
 
 ### L'elenco delle mod
 
@@ -401,6 +416,8 @@ verranno scritti.
 | `.base/`, `.base-root/` | Punti di mount vuoti dove i file del gioco stesso vengono messi da parte durante una sessione. |
 | File scritti a metà | Un download in pausa (`*.unfinished`), una scrittura atomica ancora in corso (`*.eidos-tmp*`). |
 | Collegamenti simbolici | 7-Zip ne seguirebbe uno e copierebbe quello a cui punta, cosa che per un link assoluto significa tirarsi dentro la copia un albero estraneo. Vengono invece segnalati, e la copia conta come incompleta: un `mods/` o un `downloads/` collegato a un altro disco NON viene impacchettato. Per fare apposta una copia senza un `downloads/` collegato, passa `--no-downloads` (o togli la spunta a *Include downloads/* nella finestra); un'esclusione deliberata non conta come mancante. |
+
+Una copia del gioco nell'istanza (`Stock Game`) viene impacchettata come qualsiasi altra cartella, quindi il backup di un'istanza congelata è più grande di circa la dimensione del gioco. Una copia non finita (`Stock Game.eidos-tmp`) resta fuori.
 
 Ognuna di queste voci finisce in `eidos-backup.ini` alla radice dell'archivio,
 con la sua ragione - così la risposta a "cosa non c'è qui dentro" è `cat`, non
