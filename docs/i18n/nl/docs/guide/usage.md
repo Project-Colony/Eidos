@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6cb461a699ad08a043eb07cf3a74e53a26fd4fdd -->
 
 # Eidos gebruiken
 
@@ -725,6 +725,8 @@ werkthread, met dezelfde voortgangsbalk die de Pack- en Unpack-taken gebruiken,
 en de balk wordt het verslag zodra de run klaar is. Alles hierboven over wat er
 toegepast wordt en wat er alleen benoemd wordt, geldt hier woord voor woord: het
 venster en `eidos collection` zijn één motor met twee front-ends.
+
+Zonder link opent **File -> Open a Nexus collection...** op het tabblad **Browse**. Dat toont de collecties die voor het spel van de geopende instantie zijn gepubliceerd, 20 tegelijk, op meeste downloads, laatste update of nieuwste, en het zoekveld beperkt de lijst tot collecties waarvan de naam of tekst overeenkomt. Elke rij geeft de auteur, de nieuwste revisie, het aantal mods, de downloads en een datum. **View** opent de nieuwste revisie van die collectie op het tabblad **Link**, net als het plakken van haar link. Collecties die als inhoud voor volwassenen zijn gemarkeerd, worden weggelaten tenzij uw Nexus-account inhoud voor volwassenen toont, collecties zonder classificatie worden altijd weggelaten, en de regel onder de lijst telt beide. Bladeren vereist een aangemeld Nexus-account, net als de rest van het paneel.
 
 Een collectie kan alleen tegen **haar eigen spel** gelezen worden. Open een
 Skyrim-collectie met een Fallout 4-instantie geladen en het weigert met naam en

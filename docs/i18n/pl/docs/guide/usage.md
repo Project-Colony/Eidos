@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6cb461a699ad08a043eb07cf3a74e53a26fd4fdd -->
 
 # Używanie Eidos
 
@@ -707,6 +707,8 @@ wątku roboczym, z tym samym paskiem postępu, którego używają pakowanie i
 rozpakowanie, a pasek na koniec staje się raportem. Wszystko powyżej o tym, co
 jest stosowane, a co tylko nazwane, obowiązuje tu co do słowa: okno i
 `eidos collection` to jeden silnik z dwoma interfejsami.
+
+Bez odnośnika **File -> Open a Nexus collection...** otwiera się na karcie **Browse**. Wypisuje ona kolekcje opublikowane dla gry otwartej instancji, po 20 naraz, według największej liczby pobrań, ostatniej aktualizacji albo od najnowszych, a pole wyszukiwania zawęża listę do kolekcji, których nazwa lub tekst pasuje. Każdy wiersz podaje autora, najnowszą rewizję, liczbę modów, liczbę pobrań i datę. **View** otwiera najnowszą rewizję tej kolekcji na karcie **Link**, tak samo jak wklejenie jej odnośnika. Kolekcje oznaczone jako treści dla dorosłych są pomijane, chyba że twoje konto Nexusa pokazuje treści dla dorosłych, kolekcje bez oceny są pomijane zawsze, a wiersz pod listą liczy jedne i drugie. Przeglądanie wymaga zalogowanego konta Nexusa, tak jak reszta panelu.
 
 Kolekcję da się odczytać tylko wobec **jej własnej gry**. Otwórz kolekcję do
 Skyrima przy wczytanej instancji Fallouta 4, a odmówi z nazwy, zamiast zestawiać

@@ -662,25 +662,24 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         // ---- Nexus collections ------------------------------------------------
         Message::ShowCollection(link) => {
             app.file_menu_open = false;
+            let browse = link.trim().is_empty();
             app.collection = Some(CollectionState {
-                install_check: None,
-                runtime: None,
                 link,
-                revision: None,
-                states: Vec::new(),
-                loading: false,
-                error: None,
-                confirm_fetch: false,
-                asked: std::collections::HashSet::new(),
-                walk: None,
+                pane: if browse {
+                    CollectionPane::Browse
+                } else {
+                    CollectionPane::Link
+                },
+                ..Default::default()
             });
-            if app
-                .collection
-                .as_ref()
-                .is_some_and(|c| !c.link.trim().is_empty())
-            {
-                return update(app, Message::CollectionFetch);
-            }
+            return update(
+                app,
+                if browse {
+                    Message::CollectionBrowseSearch
+                } else {
+                    Message::CollectionFetch
+                },
+            );
         }
         Message::CloseCollection => app.collection = None,
         Message::CollectionLinkChanged(t) => {
@@ -780,6 +779,98 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // Joined against the instance HERE rather than in the view: the view
             // runs every frame and this reads every mod's meta.ini once.
             recompute_collection_states(app);
+        }
+        Message::CollectionPaneSelected(pane) => {
+            let Some(c) = &mut app.collection else {
+                return Task::none();
+            };
+            c.pane = pane;
+            if pane == CollectionPane::Browse && c.browse.result.is_none() && !c.browse.loading {
+                return update(app, Message::CollectionBrowseSearch);
+            }
+        }
+        Message::CollectionBrowseQueryChanged(query) => {
+            app.typing = true;
+            if let Some(c) = &mut app.collection {
+                c.browse.query = query;
+                // The answer for the old query will be dropped, so the button
+                // has to come back.
+                c.browse.loading = false;
+            }
+        }
+        Message::CollectionBrowseSortChanged(sort) => {
+            if let Some(c) = &mut app.collection {
+                c.browse.sort = sort;
+            }
+            return update(app, Message::CollectionBrowseSearch);
+        }
+        Message::CollectionBrowseSearch => {
+            let instance = app.created.as_ref().map(|i| i.root.clone());
+            // The domain CollectionFetch checks a link against.
+            let domain = selected_game(app).map(|g| g.def.nexus_game);
+            let Some(c) = &mut app.collection else {
+                return Task::none();
+            };
+            let (Some(instance), Some(domain)) = (instance, domain) else {
+                c.browse.result = Some(Err(t("status_open_instance_first").to_string()));
+                return Task::none();
+            };
+            if !eidos_nexus::Nexus::have_credentials() {
+                c.browse.result = Some(Err(t("status_connect_nexus_first_short").to_string()));
+                return Task::none();
+            }
+            c.browse.loading = true;
+            let (query, sort) = (c.browse.query.clone(), c.browse.sort);
+            let asked = query.clone();
+            return Task::perform(
+                smol::unblock(move || {
+                    eidos_nexus::Nexus::connect()?.search_collections(domain, &asked, sort)
+                }),
+                move |result| Message::CollectionBrowseFetched {
+                    instance: instance.clone(),
+                    query: query.clone(),
+                    sort,
+                    result,
+                },
+            );
+        }
+        Message::CollectionBrowseFetched {
+            instance,
+            query,
+            sort,
+            result,
+        } => {
+            if app.created.as_ref().is_none_or(|i| i.root != instance) {
+                return Task::none();
+            }
+            let Some(c) = &mut app.collection else {
+                return Task::none();
+            };
+            if c.browse.query != query || c.browse.sort != sort {
+                return Task::none();
+            }
+            c.browse.loading = false;
+            c.browse.result = Some(result);
+        }
+        Message::CollectionBrowsePick(i) => {
+            let domain = selected_game(app).map(|g| g.def.nexus_game);
+            let Some(c) = &mut app.collection else {
+                return Task::none();
+            };
+            let tile = c
+                .browse
+                .result
+                .as_ref()
+                .and_then(|r| r.as_ref().ok()?.tiles.get(i));
+            let (Some(tile), Some(domain)) = (tile, domain) else {
+                return Task::none();
+            };
+            c.link = browse_link(domain, &tile.slug);
+            c.pane = CollectionPane::Link;
+            c.install_check = None;
+            c.runtime = None;
+            c.error = None;
+            return update(app, Message::CollectionFetch);
         }
         Message::CollectionOpenMod(i) => {
             let Some(c) = app.collection.as_ref() else {

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6cb461a699ad08a043eb07cf3a74e53a26fd4fdd -->
 
 # Eidos kullanımı
 
@@ -704,6 +704,8 @@ parçacığında koşturur; bitirdiğinde çubuk raporun kendisi olur. Yukarıda
 uygulandığı ve neyin yalnızca adının geçtiği üzerine söylenen her şey burada da
 kelimesi kelimesine geçerlidir: pencere ile `eidos collection`, iki ön yüzü olan
 tek bir motordur.
+
+Bağlantı olmadan **File -> Open a Nexus collection...**, **Browse** sekmesinde açılır. Bu sekme, açık örneğin oyunu için yayımlanmış koleksiyonları 20'şer 20'şer, en çok indirilene, son güncellemeye ya da en yeniye göre listeler; arama kutusu listeyi adı ya da metni eşleşen koleksiyonlara daraltır. Her satır yazarı, en son revizyonu, mod sayısını, indirme sayısını ve bir tarihi verir. **View**, o koleksiyonun en son revizyonunu **Link** sekmesinde açar; bağlantısını yapıştırmakla aynıdır. Yetişkin olarak işaretli koleksiyonlar, Nexus hesabınız yetişkin içeriği göstermiyorsa dışarıda bırakılır, derecelendirmesi olmayan koleksiyonlar her zaman dışarıda bırakılır ve listenin altındaki satır ikisini de sayar. Göz atmak için, panelin geri kalanında olduğu gibi, oturum açılmış bir Nexus hesabı gerekir.
 
 Bir koleksiyon yalnızca **kendi oyununa** karşı okunabilir. Yüklü bir Fallout 4
 örneğiyle bir Skyrim koleksiyonu açın; üyeleri yanlış mod listesiyle

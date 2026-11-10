@@ -1356,6 +1356,7 @@ fn a_collection_member_is_matched_against_what_the_instance_already_has() {
         confirm_fetch: false,
         asked: std::collections::HashSet::new(),
         walk: None,
+        ..Default::default()
     });
     recompute_collection_states(&mut app);
 
@@ -1399,6 +1400,7 @@ fn the_join_does_not_claim_more_than_it_knows() {
             confirm_fetch: false,
             asked: std::collections::HashSet::new(),
             walk: None,
+            ..Default::default()
         });
         recompute_collection_states(app);
         app.collection.as_ref().unwrap().states.clone()
@@ -1587,6 +1589,7 @@ fn collection_matching_uses_every_exact_merged_source_and_rejects_same_version_f
         confirm_fetch: false,
         asked: HashSet::new(),
         walk: None,
+        ..Default::default()
     });
     recompute_collection_states(&mut app);
     assert_eq!(
@@ -1683,6 +1686,7 @@ fn fetching_the_missing_members_takes_two_clicks() {
         confirm_fetch: false,
         asked: std::collections::HashSet::new(),
         walk: None,
+        ..Default::default()
     });
     recompute_collection_states(&mut app);
     assert!(
@@ -1729,6 +1733,7 @@ fn a_member_already_asked_for_is_not_asked_for_twice() {
         // pane would spawn the same transfers again on the next click.
         asked: all.into_iter().collect(),
         walk: None,
+        ..Default::default()
     });
     recompute_collection_states(&mut app);
 
@@ -1827,6 +1832,7 @@ fn the_walk_names_a_wrong_file_then_offers_the_install_when_the_last_one_lands()
             at: 0,
             seen: HashSet::new(),
         }),
+        ..Default::default()
     });
     let dl = app.created.as_ref().unwrap().downloads_dir();
     let land = |name: &str, file_id: u64| {
@@ -1857,6 +1863,105 @@ fn the_walk_names_a_wrong_file_then_offers_the_install_when_the_last_one_lands()
     assert!(app.collection.as_ref().unwrap().walk.is_none());
     assert_eq!(app.status, Some(tf("collection_walk_done", &[("n", &1)])));
     let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn an_empty_link_opens_browse_and_a_link_opens_the_collection() {
+    let mut app = nav_app(&[]);
+    let _ = update_inner(&mut app, Message::ShowCollection(String::new()));
+    let c = app.collection.as_ref().unwrap();
+    assert_eq!(c.pane, CollectionPane::Browse);
+    assert!(!c.browse.loading, "no instance, no request");
+    assert_eq!(
+        c.browse.result.as_ref().unwrap().as_ref().unwrap_err(),
+        t("status_open_instance_first")
+    );
+    let link = "nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest".to_string();
+    let _ = update_inner(&mut app, Message::ShowCollection(link));
+    assert_eq!(app.collection.as_ref().unwrap().pane, CollectionPane::Link);
+}
+
+#[test]
+fn picking_a_tile_loads_it_through_the_link_path() {
+    let (mut app, root) = collection_app(&[], &[]);
+    let _ = update_inner(&mut app, Message::ShowCollection(String::new()));
+    app.collection.as_mut().unwrap().browse.result =
+        Some(Ok(eidos_nexus::collections::CollectionSearch {
+            tiles: vec![browse_tile("abc123")],
+            total: 1,
+            hidden: 0,
+        }));
+    let _ = update_inner(&mut app, Message::CollectionBrowsePick(7));
+    assert_eq!(
+        app.collection.as_ref().unwrap().pane,
+        CollectionPane::Browse,
+        "out of range does nothing"
+    );
+    let _ = update_inner(&mut app, Message::CollectionBrowsePick(0));
+    let c = app.collection.as_ref().unwrap();
+    assert_eq!(c.pane, CollectionPane::Link);
+    assert_eq!(
+        c.link,
+        "nxm://skyrimspecialedition/collections/abc123/revisions/latest"
+    );
+    // CollectionFetch ran past the link parse and the game guard.
+    assert!(
+        c.loading || c.error.as_deref() == Some(t("status_connect_nexus_first_short")),
+        "{:?}",
+        c.error
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_browse_answer_for_another_query_sort_or_instance_is_dropped() {
+    use eidos_nexus::collections::{CollectionSearch, CollectionSort};
+    let (mut app, root) = collection_app(&[], &[]);
+    let _ = update_inner(&mut app, Message::ShowCollection(String::new()));
+    app.collection.as_mut().unwrap().browse.result = None;
+    let reply = |instance: PathBuf, query: &str, sort| Message::CollectionBrowseFetched {
+        instance,
+        query: query.into(),
+        sort,
+        result: Ok(CollectionSearch {
+            tiles: vec![browse_tile("abc123")],
+            total: 1,
+            hidden: 0,
+        }),
+    };
+    let _ = update_inner(
+        &mut app,
+        reply(root.join("other"), "", CollectionSort::Downloads),
+    );
+    let _ = update_inner(
+        &mut app,
+        reply(root.clone(), "cities", CollectionSort::Downloads),
+    );
+    let _ = update_inner(&mut app, reply(root.clone(), "", CollectionSort::Updated));
+    assert!(app.collection.as_ref().unwrap().browse.result.is_none());
+    let _ = update_inner(&mut app, reply(root.clone(), "", CollectionSort::Downloads));
+    assert!(
+        matches!(&app.collection.as_ref().unwrap().browse.result, Some(Ok(s)) if s.tiles.len() == 1)
+    );
+    assert!(is_ambient(
+        &app,
+        &reply(root.clone(), "", CollectionSort::Downloads)
+    ));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn typing_a_query_releases_a_search_in_flight() {
+    let mut app = nav_app(&[]);
+    let _ = update_inner(&mut app, Message::ShowCollection(String::new()));
+    app.collection.as_mut().unwrap().browse.loading = true;
+    let _ = update_inner(
+        &mut app,
+        Message::CollectionBrowseQueryChanged("cit".into()),
+    );
+    let c = app.collection.as_ref().unwrap();
+    assert!(!c.browse.loading);
+    assert_eq!(c.browse.query, "cit");
 }
 
 #[test]
@@ -4424,6 +4529,7 @@ fn collection_runtime_mismatch_requires_a_current_explicit_continuation() {
         confirm_fetch: false,
         asked: Default::default(),
         walk: None,
+        ..Default::default()
     });
     let mismatch = eidos_collections::recipe::RuntimeCheck::Mismatch {
         observed: "1.7.104.0".into(),
@@ -8358,6 +8464,7 @@ fn a_collection_walk_notifies_once_when_it_ends() {
             at: 0,
             seen: HashSet::new(),
         }),
+        ..Default::default()
     });
     app.prefs.notify_when_away = true;
     app.focused = false;

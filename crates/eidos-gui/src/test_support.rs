@@ -40,6 +40,20 @@ pub(crate) fn mods(names: &[&str]) -> Vec<ModEntry> {
         .collect()
 }
 
+/// One collection of a Browse result.
+pub(crate) fn browse_tile(slug: &str) -> eidos_nexus::collections::CollectionTile {
+    eidos_nexus::collections::CollectionTile {
+        slug: slug.into(),
+        name: format!("Tile {slug}"),
+        author: "Someone".into(),
+        revision: 1,
+        mod_count: 3,
+        downloads: 10,
+        updated: "2026-01-01".into(),
+        created: "2026-01-01".into(),
+    }
+}
+
 /// A plugin row for the menu tests: name plus the mod that ships it.
 pub(crate) fn plugin_row(name: &str, origin: &str) -> eidos_plugins::Plugin {
     eidos_plugins::Plugin {

@@ -703,6 +703,8 @@ becomes the report when it finishes. Everything above about what is applied and
 what is only named applies here word for word: the window and `eidos collection`
 are one engine with two front ends.
 
+With no link, **File -> Open a Nexus collection...** opens on the **Browse** tab. It lists the collections published for the open instance's game, 20 at a time, by most downloads, latest update or newest, and the search box narrows the list to collections whose name or text matches. Each row gives the author, the latest revision, the number of mods, the downloads and a date. **View** opens that collection's latest revision on the **Link** tab, the same as pasting its link. Collections marked adult are left out unless your Nexus account shows adult content, collections with no rating are always left out, and the line under the list counts both. Browsing needs a signed-in Nexus account, like the rest of the pane.
+
 A collection can only be read against **its own game**. Open a Skyrim collection
 with a Fallout 4 instance loaded and it refuses by name rather than joining the
 members against the wrong mod list, where every "installed" and every "missing"

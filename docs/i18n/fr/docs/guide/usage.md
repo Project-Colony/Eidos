@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6cb461a699ad08a043eb07cf3a74e53a26fd4fdd -->
 
 # Utiliser Eidos
 
@@ -763,6 +763,8 @@ d'empaquetage et de dépaquetage, et la barre devient le rapport quand il a fini
 Tout ce qui est dit plus haut sur ce qui est appliqué et ce qui est seulement
 nommé vaut ici mot pour mot : la fenêtre et `eidos collection` sont un seul
 moteur avec deux façades.
+
+Sans lien, **Fichier -> Ouvrir une collection Nexus...** s'ouvre sur l'onglet **Parcourir**. Il liste les collections publiées pour le jeu de l'instance ouverte, 20 à la fois, par nombre de téléchargements, dernière mise à jour ou date de création, et le champ de recherche réduit la liste aux collections dont le nom ou le texte correspond. Chaque ligne donne l'auteur, la dernière révision, le nombre de mods, les téléchargements et une date. **Voir** ouvre la dernière révision de cette collection dans l'onglet **Lien**, comme si vous colliez son lien. Les collections marquées adultes sont écartées sauf si votre compte Nexus affiche le contenu adulte, les collections sans note le sont toujours, et la ligne sous la liste compte les deux. L'onglet **Parcourir** demande un compte Nexus connecté, comme le reste du volet.
 
 Une collection ne peut être lue que contre **son propre jeu**. Ouvrez une
 collection Skyrim avec une instance Fallout 4 chargée et il refuse en nommant le

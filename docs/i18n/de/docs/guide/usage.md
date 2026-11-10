@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6cb461a699ad08a043eb07cf3a74e53a26fd4fdd -->
 
 # Eidos verwenden
 
@@ -760,6 +760,8 @@ Fortschrittsbalken, den das Packen und das Auspacken benutzen, und der Balken
 wird zum Bericht, wenn er fertig ist. Alles oben Gesagte darüber, was angewendet
 wird und was nur benannt, gilt hier Wort für Wort: das Fenster und
 `eidos collection` sind eine Engine mit zwei Frontends.
+
+Ohne Link öffnet sich **File -> Open a Nexus collection...** auf dem Tab **Browse**. Er listet die Collections, die für das Spiel der geöffneten Instanz veröffentlicht sind, 20 auf einmal, nach den meisten Downloads, der letzten Aktualisierung oder den neuesten, und das Suchfeld grenzt die Liste auf Collections ein, deren Name oder Text passt. Jede Zeile nennt den Autor, die neueste Revision, die Zahl der Mods, die Downloads und ein Datum. **View** öffnet die neueste Revision dieser Collection auf dem Tab **Link**, genau wie das Einfügen ihres Links. Als Erwachseneninhalt markierte Collections werden ausgelassen, sofern Ihr Nexus-Konto keine Erwachseneninhalte anzeigt, Collections ohne Einstufung werden immer ausgelassen, und die Zeile unter der Liste zählt beide. Zum Durchsuchen brauchen Sie ein angemeldetes Nexus-Konto, wie für den Rest des Bereichs.
 
 Eine Collection kann nur gegen **ihr eigenes Spiel** gelesen werden. Öffnen Sie
 eine Skyrim-Collection bei geladener Fallout-4-Instanz, und sie lehnt namentlich

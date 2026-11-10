@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6cb461a699ad08a043eb07cf3a74e53a26fd4fdd -->
 
 # Používání Eidosu
 
@@ -675,6 +675,8 @@ se stejným ukazatelem průběhu, jaký používají úlohy pack a unpack, a z u
 se po dokončení stane zpráva. Všechno výše o tom, co se použije a co se jen
 pojmenuje, platí i tady slovo od slova: okno a `eidos collection` jsou jeden
 motor se dvěma rozhraními.
+
+Bez odkazu se **File -> Open a Nexus collection...** otevře na kartě **Browse**. Ta vypíše kolekce zveřejněné pro hru otevřené instance, po 20, seřazené podle počtu stažení, poslední aktualizace nebo od nejnovějších, a vyhledávací pole zúží seznam na kolekce, jejichž název nebo text odpovídá. Každý řádek uvádí autora, nejnovější revizi, počet modů, počet stažení a datum. **View** otevře nejnovější revizi dané kolekce na kartě **Link**, stejně jako vložení jejího odkazu. Kolekce označené jako obsah pro dospělé se vynechají, pokud váš účet Nexus obsah pro dospělé nezobrazuje, kolekce bez hodnocení se vynechají vždy a řádek pod seznamem počítá obojí. Procházení vyžaduje přihlášený účet Nexus, stejně jako zbytek panelu.
 
 Kolekci lze číst jen proti **její vlastní hře**. Otevřete kolekci pro Skyrim
 s načtenou instancí Fallout 4 a Eidos ji jmenovitě odmítne, místo aby členy

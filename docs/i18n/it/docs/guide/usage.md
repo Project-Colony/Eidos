@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6cb461a699ad08a043eb07cf3a74e53a26fd4fdd -->
 
 # Usare Eidos
 
@@ -743,6 +743,8 @@ l'impacchettamento e lo spacchettamento, e alla fine la barra diventa il
 rapporto. Tutto quello che c'è scritto sopra su cosa viene applicato e cosa
 viene solo nominato vale qui parola per parola: la finestra ed
 `eidos collection` sono un solo motore con due interfacce.
+
+Senza un link, **File -> Open a Nexus collection...** si apre sulla scheda **Browse**. Elenca le collezioni pubblicate per il gioco dell'istanza aperta, 20 alla volta, per numero di download, ultimo aggiornamento o più recenti, e la casella di ricerca restringe l'elenco alle collezioni il cui nome o testo corrisponde. Ogni riga indica l'autore, l'ultima revisione, il numero di mod, i download e una data. **View** apre l'ultima revisione di quella collezione sulla scheda **Link**, come incollarne il link. Le collezioni contrassegnate per adulti vengono escluse a meno che il tuo account Nexus mostri i contenuti per adulti, quelle senza classificazione vengono escluse sempre, e la riga sotto l'elenco le conta entrambe. Per sfogliare serve un account Nexus connesso, come per il resto del pannello.
 
 Una collezione può essere letta solo contro **il proprio gioco**. Apri una
 collezione di Skyrim con un'istanza Fallout 4 caricata e rifiuta dicendone il

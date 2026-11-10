@@ -1567,3 +1567,41 @@ fn the_prefix_rows_keep_their_place_without_a_prefix() {
     let _ = fs::remove_dir_all(root_with);
     let _ = fs::remove_dir_all(root_without);
 }
+
+/// The Browse list area and its footer keep one height whatever they hold,
+/// so the explainer under them never moves while results load or fail.
+#[test]
+fn the_browse_results_keep_one_height_while_loading_failing_and_listing() {
+    use eidos_nexus::collections::CollectionSearch;
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    let mut state = CollectionState {
+        pane: CollectionPane::Browse,
+        ..Default::default()
+    };
+    let mut y = |s: &CollectionState| {
+        label(
+            collection_dialog(s, false),
+            &mut renderer,
+            t("collection_explainer"),
+            0,
+        )
+        .y
+    };
+    state.browse.loading = true;
+    let loading = y(&state);
+    state.browse.loading = false;
+    state.browse.result = Some(Err("Nexus answered 500".into()));
+    assert_eq!(y(&state), loading, "error");
+    state.browse.result = Some(Ok(CollectionSearch::default()));
+    assert_eq!(y(&state), loading, "empty");
+    let tiles = (0..20)
+        .map(|i| crate::test_support::browse_tile(&format!("s{i:05}")))
+        .collect();
+    state.browse.result = Some(Ok(CollectionSearch {
+        tiles,
+        total: 4933,
+        hidden: 3,
+    }));
+    assert_eq!(y(&state), loading, "twenty tiles and a hidden count");
+}

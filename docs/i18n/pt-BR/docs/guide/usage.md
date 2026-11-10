@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6cb461a699ad08a043eb07cf3a74e53a26fd4fdd -->
 
 # Usar o Eidos
 
@@ -709,6 +709,8 @@ thread de trabalho, com a mesma barra de progresso que os trabalhos de pack e
 unpack usam, e a barra vira o relatório quando termina. Tudo o que está acima
 sobre o que é aplicado e o que é só nomeado vale aqui palavra por palavra: a
 janela e o `eidos collection` são um motor só com duas interfaces.
+
+Sem link, **File -> Open a Nexus collection...** abre na aba **Browse**. Ela lista as coleções publicadas para o jogo da instância aberta, 20 por vez, por mais downloads, última atualização ou mais recentes, e a caixa de busca restringe a lista às coleções cujo nome ou texto corresponde. Cada linha traz o autor, a última revisão, o número de mods, os downloads e uma data. **View** abre a última revisão dessa coleção na aba **Link**, o mesmo que colar o link dela. Coleções marcadas como adultas ficam de fora, a menos que sua conta do Nexus mostre conteúdo adulto, coleções sem classificação ficam sempre de fora, e a linha abaixo da lista conta as duas. Navegar exige uma conta do Nexus conectada, como o resto do painel.
 
 Uma coleção só pode ser lida contra **o próprio jogo dela**. Abra uma coleção de
 Skyrim com uma instância de Fallout 4 carregada e ele recusa dizendo o nome, em

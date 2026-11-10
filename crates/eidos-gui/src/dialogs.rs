@@ -2153,6 +2153,130 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
         .into()
 }
 
+/// Height of the Browse list area, whatever it holds.
+pub(crate) const BROWSE_LIST_H: f32 = 320.0;
+/// Height of the one line under the Browse list.
+pub(crate) const BROWSE_FOOT_H: f32 = 18.0;
+
+/// The Browse pane: the search row, the sort row, then a list area and a footer
+/// of fixed heights, so the explainer under them never moves.
+fn collection_browse<'a>(b: &CollectionBrowse) -> Column<'a, Message> {
+    use eidos_nexus::collections::CollectionSort;
+    let search = Row::new()
+        .spacing(6)
+        .align_y(iced::Alignment::Center)
+        .push(
+            text_input(t("collection_browse_placeholder"), &b.query)
+                .on_input(Message::CollectionBrowseQueryChanged)
+                .on_submit(Message::CollectionBrowseSearch)
+                .padding(5)
+                .size(sz(12)),
+        )
+        .push(
+            button(text(t("collection_browse_search")).size(sz(12)))
+                .padding([4, 12])
+                .style(button::primary)
+                .on_press_maybe((!b.loading).then_some(Message::CollectionBrowseSearch)),
+        );
+    let mut sorts = Row::new().spacing(6);
+    for (key, sort) in [
+        ("collection_sort_downloads", CollectionSort::Downloads),
+        ("collection_sort_updated", CollectionSort::Updated),
+        ("collection_sort_created", CollectionSort::Created),
+    ] {
+        sorts = sorts.push(
+            button(text(t(key)).size(sz(11)))
+                .padding([3, 10])
+                .style(if b.sort == sort {
+                    button::primary
+                } else {
+                    button::secondary
+                })
+                .on_press(Message::CollectionBrowseSortChanged(sort)),
+        );
+    }
+    let line = |s: String| -> Element<'a, Message> { text(s).size(sz(12)).into() };
+    let mut footer = String::new();
+    let list = match &b.result {
+        _ if b.loading => line(t("collection_browse_loading").to_string()),
+        Some(Err(e)) => text(tf("collection_browse_failed", &[("error", e)]))
+            .size(sz(12))
+            .color(conflict_loses_fg())
+            .into(),
+        Some(Ok(page)) => {
+            footer = tf(
+                "collection_browse_footer",
+                &[("shown", &page.tiles.len()), ("total", &page.total)],
+            );
+            if page.hidden > 0 {
+                footer.push_str(&tf("collection_browse_hidden", &[("n", &page.hidden)]));
+            }
+            if page.tiles.is_empty() {
+                line(t("collection_browse_empty").to_string())
+            } else {
+                let mut rows = Column::new().spacing(1);
+                for (i, tile) in page.tiles.iter().enumerate() {
+                    let date = if b.sort == CollectionSort::Created {
+                        &tile.created
+                    } else {
+                        &tile.updated
+                    };
+                    let facts = tf(
+                        "collection_browse_facts",
+                        &[
+                            ("author", &tile.author),
+                            ("revision", &tile.revision),
+                            ("mods", &tile.mod_count),
+                            ("downloads", &tile.downloads),
+                            ("date", date),
+                        ],
+                    );
+                    let row = Row::new()
+                        .spacing(8)
+                        .align_y(iced::Alignment::Center)
+                        .push(
+                            Column::new()
+                                .width(Length::Fill)
+                                .push(text(tile.name.clone()).size(sz(12)))
+                                .push(text(facts).size(sz(11)).color(text_muted())),
+                        )
+                        .push(
+                            button(text(t("collection_browse_view")).size(sz(10)))
+                                .padding([2, 8])
+                                .style(button::text)
+                                .on_press(Message::CollectionBrowsePick(i)),
+                        );
+                    rows = rows.push(striped(container(row).padding(3).into(), i % 2 == 0));
+                }
+                scrollable(rows).height(Length::Fill).into()
+            }
+        }
+        None => line(String::new()),
+    };
+    Column::new()
+        .spacing(10)
+        .push(search)
+        .push(sorts)
+        .push(
+            container(list)
+                .width(Length::Fill)
+                .height(Length::Fixed(scaled(BROWSE_LIST_H))),
+        )
+        // shortcut: the card is 720 px at every text size, so above the default
+        // size this line is cut at its right edge; widen the card if users ask.
+        .push(
+            container(
+                text(footer)
+                    .size(sz(10))
+                    .color(text_muted())
+                    .wrapping(iced::widget::text::Wrapping::None),
+            )
+            .width(Length::Fill)
+            .height(Length::Fixed(scaled(BROWSE_FOOT_H)))
+            .clip(true),
+        )
+}
+
 /// `free`: a signed-in account without premium, which Nexus lets download only
 /// through each file page's own button.
 pub(crate) fn collection_dialog<'a>(state: &CollectionState, free: bool) -> Element<'a, Message> {
@@ -2194,13 +2318,35 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState, free: bool) -> Elem
             .on_press_maybe((!state.loading).then_some(Message::CollectionFetch)),
         );
 
-    let mut card = Column::new().spacing(10).push(header).push(field);
+    let pane = |key, pane| {
+        button(text(t(key)).size(sz(12)))
+            .padding([4, 12])
+            .style(if state.pane == pane {
+                button::primary
+            } else {
+                button::secondary
+            })
+            .on_press(Message::CollectionPaneSelected(pane))
+    };
+    let panes = Row::new()
+        .spacing(6)
+        .push(pane("collection_pane_browse", CollectionPane::Browse))
+        .push(pane("collection_pane_link", CollectionPane::Link));
+    let mut card = Column::new().spacing(10).push(header).push(panes);
 
-    if let Some(e) = &state.error {
+    // The Link pane's error and revision stay in the state while Browse shows.
+    let link_pane = state.pane == CollectionPane::Link;
+    card = if link_pane {
+        card.push(field)
+    } else {
+        card.push(collection_browse(&state.browse))
+    };
+
+    if let Some(e) = state.error.as_ref().filter(|_| link_pane) {
         card = card.push(text(e.clone()).size(sz(12)).color(conflict_loses_fg()));
     }
 
-    if let Some(rev) = &state.revision {
+    if let Some(rev) = state.revision.as_ref().filter(|_| link_pane) {
         if !rev.visible() {
             // The gate answered. Say which rule, not "no".
             let why = rev.hidden.map(|h| h.message()).unwrap_or("");
