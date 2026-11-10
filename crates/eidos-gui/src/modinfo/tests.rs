@@ -907,6 +907,8 @@ fn health_report_redacts_home_paths() {
         kernel: "7.2.0".into(),
         dev_fuse: true,
         fusermount3: true,
+        max_map_count: Some(1048576),
+        open_files_hard: Some(524288),
     };
     let checks = [Diagnostic {
         level: DiagLevel::Problem,
@@ -919,6 +921,10 @@ fn health_report_redacts_home_paths() {
     assert!(r.contains("- [problem] Cannot read ~/mods"), "{r}");
     assert!(r.contains("Proton: GE-Proton11-1"));
     assert!(r.contains("Flatpak Steam: unknown"), "{r}");
+    assert!(
+        r.contains("vm.max_map_count: 1048576") && r.contains("Open files (hard limit): 524288"),
+        "{r}"
+    );
 }
 
 #[test]

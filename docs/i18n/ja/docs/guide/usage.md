@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=b64d28c8573bb396699a2cd48c4a7a8f0b3c1d4e -->
 
 # Eidos の使い方
 
@@ -34,7 +34,7 @@ eidos unpack backup.eidos <folder>   # 向こうのマシンで元に戻す
 
 `eidos check <instance>` は、ウィンドウを開かずに、**Diagnostics** タブにあるプレフィックス、プラグイン、欠けたマスター、スクリプトエクステンダのチェックを実行します。SSH 越しや Game Mode でも動かせ、バグ報告にも貼れます。**Copy report** と同じシステム情報の行を出力し、続いて検出ごとに 1 行を出力します。ホームフォルダは `~`、ログイン名は `<user>` に置き換えて表示します。終了コードは、問題が見つからなければ 0(助言だけなら 0 のまま)、問題が 1 つ以上見つかれば 1、Eidos がチェックできなかったとき(引数の誤り、開けないインスタンス、検出できないゲーム)は 2 です。
 
-`eidos check <instance> --json` は代わりに JSON オブジェクトを 1 つ出力します。最上位のフィールドは `eidos`(バージョン)、`game`、`instance`、`system`(`proton`、`flatpak_steam`、`passthrough`、`session`、`distro`、`kernel`、`dev_fuse`、`fusermount3`)、`findings` です。各検出は `code`、`level`(`problem` または `advice`)、その `args` からなり、各コードの説明文は Diagnostics タブに表示されます。
+`eidos check <instance> --json` は代わりに JSON オブジェクトを 1 つ出力します。最上位のフィールドは `eidos`(バージョン)、`game`、`instance`、`system`(`proton`、`flatpak_steam`、`passthrough`、`session`、`distro`、`kernel`、`dev_fuse`、`fusermount3`、`max_map_count`、`open_files_hard`)、`findings` です。`max_map_count` と `open_files_hard` は数値で、Eidos が読み取れなかったときは `null` です。各検出は `code`、`level`(`problem` または `advice`)、その `args` からなり、各コードの説明文は Diagnostics タブに表示されます。
 
 ### インスタンス: グローバルとポータブル
 

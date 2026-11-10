@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=b64d28c8573bb396699a2cd48c4a7a8f0b3c1d4e -->
 
 # 使用 Eidos
 
@@ -33,7 +33,7 @@ eidos unpack backup.eidos <folder>   # 在另一台机器上把它放回去
 
 `eidos check <instance>` 不打开窗口就运行 **Diagnostics** 标签页里的前缀、插件、缺失 master 和脚本扩展器检查,所以可以通过 SSH 或在 Game Mode 下运行,结果也能放进 bug 报告。它先打印与 **Copy report** 相同的系统信息行,再为每条发现打印一行,主目录显示为 `~`,登录名显示为 `<user>`。没有发现问题时退出码为 0(只有建议仍为 0),至少发现一个问题时为 1,Eidos 无法检查时为 2:参数错误、无法打开的实例,或检测不到的游戏。
 
-`eidos check <instance> --json` 改为打印一个 JSON 对象。顶层字段为 `eidos`(版本)、`game`、`instance`、`system`(`proton`、`flatpak_steam`、`passthrough`、`session`、`distro`、`kernel`、`dev_fuse`、`fusermount3`)和 `findings`。每条发现由 `code`、`level`(`problem` 或 `advice`)和它的 `args` 组成;Diagnostics 标签页显示每个代码对应的句子。
+`eidos check <instance> --json` 改为打印一个 JSON 对象。顶层字段为 `eidos`(版本)、`game`、`instance`、`system`(`proton`、`flatpak_steam`、`passthrough`、`session`、`distro`、`kernel`、`dev_fuse`、`fusermount3`、`max_map_count`、`open_files_hard`)和 `findings`。`max_map_count` 和 `open_files_hard` 是数字,Eidos 无法读取时为 `null`。每条发现由 `code`、`level`(`problem` 或 `advice`)和它的 `args` 组成;Diagnostics 标签页显示每个代码对应的句子。
 
 ### 实例:全局与便携
 
