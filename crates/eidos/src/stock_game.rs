@@ -413,6 +413,180 @@ fn copy_file(src: &Path, dst: &Path, meta: &fs::Metadata, reflink: bool) -> io::
     file.set_permissions(meta.permissions())
 }
 
+/// The refusals a freeze checks before it locks anything: a copy in the way,
+/// a game that keeps its plugin list in the game folder, Steam writing the game.
+fn refuse_freeze(game: &DetectedGame, inst: &Instance) -> Result<(), String> {
+    let f = facts(game, inst);
+    let i = shell_word(&inst.root.to_string_lossy());
+    if let Some(folder) = &f.list_folder {
+        let hint = if f.files.copy.as_ref() == Some(folder) {
+            String::new()
+        } else {
+            format!(
+                " `eidos stock-game {i} use {}` runs it.",
+                shell_word(folder)
+            )
+        };
+        return Err(format!(
+            "{} holds the list's own game copy '{folder}', so Eidos does not make another one.{hint}",
+            inst.root.display()
+        ));
+    }
+    if let Some(copy) = &f.files.copy {
+        return Err(format!(
+            "The instance already runs the copy '{copy}'. To freeze the store version, \
+             return to it first with `eidos stock-game {i} store`."
+        ));
+    }
+    if let Some(folder) = &f.frozen {
+        return Err(format!(
+            "{} already holds a frozen copy. `eidos stock-game {i} use {}` runs it, and \
+             `eidos stock-game {i} delete --yes` removes it.",
+            inst.root.join(folder).display(),
+            shell_word(folder)
+        ));
+    }
+    if f.unfinished {
+        return Err(format!(
+            "{} holds an unfinished copy from an earlier freeze. \
+             `eidos stock-game {i} delete --yes` removes it.",
+            unfinished_path(inst).display()
+        ));
+    }
+    if !supported(game, &game.install_path) {
+        return Err(format!(
+            "{} keeps its plugin list in the game folder, so it cannot run from a copy",
+            game.def.name
+        ));
+    }
+    // shortcut: no update state is read for Heroic or Legendary copies, read Heroic's gamesConfig/legendary installed.json when a user hits a mixed copy
+    if matches!(game.source, eidos_games::GameSource::Steam) {
+        // 4 = fully installed, 2 = an update queued; any other bit means Steam is writing.
+        let busy = eidos_games::steam_state_flags(&game.install_path, game.def.steam_app_id)
+            .filter(|f| f & 4 == 0 || f & !(4 | 2) != 0);
+        if let Some(flags) = busy {
+            return Err(format!(
+                "Steam reports the game as busy or not fully installed (StateFlags {flags}); \
+                 wait for Steam to finish"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The sentence for a plan that does not [`FreezePlan::fits`].
+fn no_space(plan: &FreezePlan) -> String {
+    format!(
+        "Not enough space: the copy needs {} and {} is free in {}",
+        eidos_transfer::human_bytes(plan.bytes),
+        eidos_transfer::human_bytes(plan.free.unwrap_or(0)),
+        plan.to.parent().unwrap_or(&plan.to).display()
+    )
+}
+
+/// Copy the store install into the instance's [`FROZEN_COPY`] and run the game
+/// from it. The copy goes to [`unfinished_path`] first and is renamed once it
+/// is complete and Steam's build id did not change meanwhile; a stop, a failure
+/// or a build change leaves only that unfinished folder and the manifest as it
+/// was. Each refusal is a sentence, with nothing written.
+pub fn freeze(
+    game: &DetectedGame,
+    inst: &Instance,
+    stop: &dyn Fn() -> bool,
+) -> Result<FreezePlan, String> {
+    refuse_freeze(game, inst)?;
+    let _lock = inst
+        .try_lock("copying the game files")
+        .map_err(|e| e.to_string())?;
+    let install = &game.install_path;
+    let plan = freeze_plan(install, inst)
+        .map_err(|e| format!("Could not measure {}: {e}", install.display()))?;
+    if !plan.fits() {
+        return Err(no_space(&plan));
+    }
+    let tmp = unfinished_path(inst);
+    let unfinished = |why: String| {
+        format!(
+            "{why}; the unfinished copy is at {}, and `eidos stock-game {} delete --yes` removes it.",
+            tmp.display(),
+            shell_word(&inst.root.to_string_lossy())
+        )
+    };
+    let app_id = game.def.steam_app_id;
+    let before = eidos_games::steam_build_id(install, app_id);
+    eidos_log::info!(
+        "Copying {} in {} files from {} to {}",
+        eidos_transfer::human_bytes(plan.bytes),
+        plan.files,
+        install.display(),
+        tmp.display()
+    );
+    if let Err(e) = copy_tree(install, &tmp, plan.kind == CopyKind::Reflink, stop) {
+        let why = match e.kind() {
+            io::ErrorKind::Interrupted => "The copy was stopped".to_owned(),
+            _ => format!("The copy failed: {e}"),
+        };
+        return Err(if tmp.exists() { unfinished(why) } else { why });
+    }
+    let after = eidos_games::steam_build_id(install, app_id);
+    if let Some(b) = before.as_deref().filter(|b| after.as_deref() != Some(*b)) {
+        return Err(unfinished(format!(
+            "Steam changed the game from build {b} to {} while copying",
+            after.as_deref().unwrap_or("unknown")
+        )));
+    }
+    fs::rename(&tmp, &plan.to)
+        .map_err(|e| unfinished(format!("Could not move the copy into place: {e}")))?;
+    inst.edit_manifest(|m| {
+        m.base_game = Some(FROZEN_COPY.into());
+        m.frozen_copy = Some(FROZEN_COPY.into());
+    })
+    .map_err(|e| {
+        format!(
+            "The copy is at {}, but the instance manifest could not record it: {e}",
+            plan.to.display()
+        )
+    })?;
+    Ok(plan)
+}
+
+/// Delete the copy a freeze made and any unfinished one, never anything else
+/// (a list's own game copy stays). Refused while the frozen copy runs. The
+/// paths removed.
+pub fn delete_copy(inst: &Instance) -> Result<Vec<PathBuf>, String> {
+    let _lock = inst
+        .try_lock("deleting the game copy")
+        .map_err(|e| e.to_string())?;
+    let (base, frozen) = inst
+        .read_manifest()
+        .map(|m| (m.base_game, m.frozen_copy))
+        .unwrap_or_default();
+    if let Some(f) = frozen.as_ref().filter(|f| base.as_ref() == Some(*f)) {
+        return Err(format!(
+            "The instance runs the frozen copy '{f}'; return to the store version first \
+             with `eidos stock-game {} store`.",
+            shell_word(&inst.root.to_string_lossy())
+        ));
+    }
+    let mut removed = Vec::new();
+    for path in frozen
+        .iter()
+        .map(|f| inst.root.join(f))
+        .chain([unfinished_path(inst)])
+    {
+        if fs::symlink_metadata(&path).is_ok() {
+            fs::remove_dir_all(&path)
+                .map_err(|e| format!("Could not delete {}: {e}", path.display()))?;
+            removed.push(path);
+        }
+    }
+    if frozen.is_some() {
+        inst.edit_manifest(|m| m.frozen_copy = None)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(removed)
+}
+
 const USAGE: &str =
     "usage: eidos stock-game <instance> [use <folder> | store | freeze [--yes] | delete --yes]";
 
@@ -428,13 +602,30 @@ fn shell_word(s: &str) -> String {
     }
 }
 
-/// `eidos stock-game <instance> [use <folder> | store]`.
+/// What `eidos stock-game` was asked to do, besides `delete --yes`.
+enum Verb<'a> {
+    Show,
+    /// `use <folder>` (Some) or `store` (None).
+    Set(Option<&'a str>),
+    /// `freeze`, which only prints the plan without `--yes`.
+    Freeze {
+        yes: bool,
+    },
+}
+
+/// `eidos stock-game <instance> [use <folder> | store | freeze [--yes] | delete --yes]`.
 pub(crate) fn cmd_stock_game(args: &[String]) {
-    // `freeze` and `delete` print the usage until they are implemented.
-    let (arg, change) = match args {
-        [arg] => (arg, None),
-        [arg, verb, folder] if verb == "use" => (arg, Some(Some(folder.as_str()))),
-        [arg, verb] if verb == "store" => (arg, Some(None)),
+    let words: Vec<&str> = args.iter().map(String::as_str).collect();
+    // Deleting needs no game: the copy can outlive the store install.
+    if let [arg, "delete", "--yes"] = words[..] {
+        return delete_command(&crate::resolve::resolve(arg).inst);
+    }
+    let (arg, verb) = match words[..] {
+        [arg] => (arg, Verb::Show),
+        [arg, "use", folder] => (arg, Verb::Set(Some(folder))),
+        [arg, "store"] => (arg, Verb::Set(None)),
+        [arg, "freeze"] => (arg, Verb::Freeze { yes: false }),
+        [arg, "freeze", "--yes"] => (arg, Verb::Freeze { yes: true }),
         _ => {
             eidos_log::info!("{USAGE}");
             exit(2);
@@ -449,9 +640,10 @@ pub(crate) fn cmd_stock_game(args: &[String]) {
         exit(1);
     };
     let inst = &target.inst;
-    let Some(folder) = change else {
-        print_facts(arg, &game, inst);
-        return;
+    let folder = match verb {
+        Verb::Show => return print_facts(arg, &game, inst),
+        Verb::Freeze { yes } => return freeze_command(&game, inst, yes),
+        Verb::Set(folder) => folder,
     };
     let before = game_files(&game, inst).copy;
     if let Err(reason) = set_base(&game, inst, folder) {
@@ -467,6 +659,74 @@ pub(crate) fn cmd_stock_game(args: &[String]) {
         }
         (None, None) => println!("The next launch runs the store install."),
     }
+}
+
+/// `delete --yes`: each path removed, or the refusal with exit 1.
+fn delete_command(inst: &Instance) {
+    match delete_copy(inst) {
+        Ok(removed) if removed.is_empty() => {
+            println!("There is no game copy made by Eidos to delete.")
+        }
+        Ok(removed) => removed
+            .iter()
+            .for_each(|p| println!("Deleted {}", p.display())),
+        Err(reason) => {
+            eidos_log::info!("eidos: {reason}");
+            exit(1);
+        }
+    }
+}
+
+/// `freeze`: the plan, or with `yes` the copy. A refusal exits 1.
+fn freeze_command(game: &DetectedGame, inst: &Instance, yes: bool) {
+    let refuse = |reason: String| -> ! {
+        eidos_log::info!("eidos: {reason}");
+        exit(1);
+    };
+    if yes {
+        eidos_launch::install_stop_handler();
+        match freeze(game, inst, &eidos_launch::stop_requested) {
+            Ok(plan) => println!(
+                "Frozen: {} now runs from {}.",
+                game.def.name,
+                plan.to.display()
+            ),
+            Err(reason) => refuse(reason),
+        }
+        return;
+    }
+    // The same refusals as with --yes, so the plan is never one that cannot run.
+    if let Err(reason) = refuse_freeze(game, inst) {
+        refuse(reason);
+    }
+    let plan = freeze_plan(&game.install_path, inst).unwrap_or_else(|e| {
+        refuse(format!(
+            "Could not measure {}: {e}",
+            game.install_path.display()
+        ))
+    });
+    let size = eidos_transfer::human_bytes(plan.bytes);
+    let room = match plan.free {
+        Some(free) => format!("{size} of {} free", eidos_transfer::human_bytes(free)),
+        None => format!("{size}, free space unknown"),
+    };
+    let fs = plan.fs.unwrap_or("this filesystem");
+    println!("from: {}", plan.from.display());
+    println!("to: {}", plan.to.display());
+    println!("size: {size} in {} files", plan.files);
+    match plan.kind {
+        CopyKind::Reflink => println!(
+            "copy: shared blocks on {fs} (reflink); almost no space is used until the store changes a file"
+        ),
+        CopyKind::Full => println!("copy: full copy, {fs} cannot share blocks ({room})"),
+        CopyKind::OtherFilesystem => println!(
+            "copy: full copy, the game and the instance are on different filesystems ({room})"
+        ),
+    }
+    if !plan.fits() {
+        refuse(no_space(&plan));
+    }
+    println!("Run again with --yes to copy.");
 }
 
 fn print_facts(arg: &str, game: &DetectedGame, inst: &Instance) {
@@ -515,6 +775,14 @@ fn print_facts(arg: &str, game: &DetectedGame, inst: &Instance) {
     }
     if active.is_some() {
         commands.push(format!("eidos stock-game {arg} store"));
+    }
+    // What `refuse_freeze` checks first, short of reading Steam's state.
+    let nothing_in_the_way = active.is_none() && f.list_folder.is_none() && f.frozen.is_none();
+    if f.supported && nothing_in_the_way && !f.unfinished {
+        commands.push(format!("eidos stock-game {arg} freeze"));
+    }
+    if frozen.is_some() || f.unfinished {
+        commands.push(format!("eidos stock-game {arg} delete --yes"));
     }
     if !commands.is_empty() {
         println!("commands:");
@@ -797,6 +1065,123 @@ mod tests {
             ..p
         }
         .fits());
+        let _ = fs::remove_dir_all(t);
+    }
+
+    /// `<lib>/steamapps/appmanifest_489830.acf` with `buildid` and `StateFlags`.
+    fn write_acf(lib: &Path, build: &str, flags: &str) {
+        fs::write(
+            lib.join("steamapps/appmanifest_489830.acf"),
+            format!("\"AppState\"\n{{\n\t\"buildid\"\t\t\"{build}\"\n\t\"StateFlags\"\t\t\"{flags}\"\n}}\n"),
+        )
+        .unwrap();
+    }
+
+    /// Skyrim SE in a Steam library at `t/lib` (build 1, fully installed), an
+    /// instance at `t/i`, and the library folder.
+    fn steam_freeze(t: &Path) -> (DetectedGame, Instance, PathBuf) {
+        let lib = t.join("lib");
+        let install = lib.join("steamapps/common/Game");
+        game_tree(&install);
+        write_acf(&lib, "1", "4");
+        (game("skyrimse", install), copy_instance(t), lib)
+    }
+
+    #[test]
+    fn a_finished_freeze_runs_the_copy_and_leaves_the_install_alone() {
+        let t = temp("freeze");
+        let (game, inst, _) = steam_freeze(&t);
+        let plan = freeze(&game, &inst, &|| false).unwrap();
+        assert_eq!(plan.to, inst.root.join("Stock Game"));
+        let m = inst.read_manifest().unwrap();
+        assert_eq!(
+            (m.base_game.as_deref(), m.frozen_copy.as_deref()),
+            (Some("Stock Game"), Some("Stock Game"))
+        );
+        assert!(inst.root.join("Stock Game/Data/Skyrim.esm").is_file());
+        assert!(!unfinished_path(&inst).exists());
+        assert_eq!(tree_size(&game.install_path).unwrap().1, 2);
+        let _ = fs::remove_dir_all(t);
+    }
+
+    #[test]
+    fn freeze_refuses_while_steam_updates_the_game() {
+        let t = temp("freeze-busy");
+        let (game, inst, lib) = steam_freeze(&t);
+        write_acf(&lib, "1", "1026");
+        assert!(freeze(&game, &inst, &|| false)
+            .unwrap_err()
+            .contains("StateFlags 1026"));
+        assert!(!inst.root.join("Stock Game").exists() && !unfinished_path(&inst).exists());
+        // 6 = installed and an update queued: Steam is not writing, the copy runs.
+        write_acf(&lib, "1", "6");
+        freeze(&game, &inst, &|| false).unwrap();
+        let _ = fs::remove_dir_all(t);
+    }
+
+    #[test]
+    fn a_build_change_during_the_copy_keeps_it_unfinished() {
+        let t = temp("freeze-build");
+        let (game, inst, lib) = steam_freeze(&t);
+        let err = freeze(&game, &inst, &|| {
+            write_acf(&lib, "2", "4");
+            false
+        })
+        .unwrap_err();
+        assert!(err.contains("build 1 to 2"), "{err}");
+        assert!(unfinished_path(&inst).is_dir() && !inst.root.join("Stock Game").exists());
+        assert_eq!(inst.read_manifest().unwrap().base_game, None);
+        let _ = fs::remove_dir_all(t);
+    }
+
+    #[test]
+    fn a_stopped_freeze_leaves_only_the_unfinished_folder() {
+        let t = temp("freeze-stop");
+        let (game, inst, _) = steam_freeze(&t);
+        let err = freeze(&game, &inst, &|| true).unwrap_err();
+        assert!(
+            err.contains("stopped") && err.contains("delete --yes"),
+            "{err}"
+        );
+        assert!(unfinished_path(&inst).is_dir() && !inst.root.join("Stock Game").exists());
+        assert_eq!(inst.read_manifest().unwrap().base_game, None);
+        let _ = fs::remove_dir_all(t);
+    }
+
+    #[test]
+    fn freeze_refuses_while_an_unfinished_copy_exists() {
+        let t = temp("freeze-unfinished");
+        let (game, inst, _) = steam_freeze(&t);
+        fs::create_dir_all(unfinished_path(&inst)).unwrap();
+        assert!(freeze(&game, &inst, &|| false)
+            .unwrap_err()
+            .contains("delete --yes"));
+        fs::remove_dir(unfinished_path(&inst)).unwrap();
+        fs::create_dir_all(inst.root.join("Game Root")).unwrap();
+        assert!(freeze(&game, &inst, &|| false)
+            .unwrap_err()
+            .contains("'Game Root'"));
+        assert!(!inst.root.join("Stock Game").exists() && !unfinished_path(&inst).exists());
+        let _ = fs::remove_dir_all(t);
+    }
+
+    #[test]
+    fn delete_removes_only_the_copy_eidos_made_and_never_the_active_one() {
+        let t = temp("delete");
+        let (game, inst, _) = steam_freeze(&t);
+        freeze(&game, &inst, &|| false).unwrap();
+        fs::create_dir_all(inst.root.join("Game Root")).unwrap(); // a list's folder
+        assert!(delete_copy(&inst).unwrap_err().contains("store version"));
+        set_base(&game, &inst, None).unwrap();
+        fs::create_dir_all(unfinished_path(&inst)).unwrap();
+        assert_eq!(
+            delete_copy(&inst).unwrap(),
+            [inst.root.join("Stock Game"), unfinished_path(&inst)]
+        );
+        assert!(inst.root.join("Game Root").is_dir());
+        assert!(game.install_path.join("Data/Skyrim.esm").is_file());
+        assert_eq!(inst.read_manifest().unwrap().frozen_copy, None);
+        assert_eq!(delete_copy(&inst).unwrap(), Vec::<PathBuf>::new());
         let _ = fs::remove_dir_all(t);
     }
 

@@ -300,7 +300,7 @@ fn usage() -> ! {
          \x20 eidos import <instance> <mo2-profile> take over an MO2 profile's mod order + plugin state\n\
          \x20 eidos check <instance> [--json]    Health checks without the window (exit 1 on a problem)\n\
          \x20 eidos sessions <instance> [diff [<id>]]  list recorded runs / show what changed since one\n\
-         \x20 eidos stock-game <instance> [...] show or switch the game files the instance runs\n\
+         \x20 eidos stock-game <instance> [...] show, switch or freeze the game files the instance runs\n\
          \x20 eidos --version                   print the version\n\
          \n\
          <instance> is a game id (skyrimse - the central instance) or the path of a\n\
