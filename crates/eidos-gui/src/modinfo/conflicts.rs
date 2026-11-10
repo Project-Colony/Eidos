@@ -47,7 +47,7 @@ pub(crate) fn conflict_layers(app: &App) -> Option<Vec<Layer>> {
     layers.push(Layer {
         origin: 0,
         name: format!("[{}]", game.def.id),
-        root: game.data_path.clone(),
+        root: game_files(app).map_or_else(|| game.data_path.clone(), |f| f.data),
     });
     Some(layers)
 }

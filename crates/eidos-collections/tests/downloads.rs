@@ -38,6 +38,7 @@ fn a_direct_member_preserves_unrelated_downloads_and_partials() {
         nexus: &nexus,
         inst: &inst,
         game: &game,
+        exclusion_roots: (&game.install_path, &game.data_path),
         game_id: def.id.into(),
         say: &mut say,
         collection_domain: def.nexus_game.into(),

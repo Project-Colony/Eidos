@@ -22,7 +22,7 @@ pub(crate) fn prepare_omod_shaders(
         return Ok(None);
     }
     let mut layers = prof.load_order();
-    layers.push(game.data_path.clone());
+    layers.push(crate::stock_game::game_files(game, inst).data);
     eidos_gamefeatures::omod_shaders::prepare(layers, inst.overwrite_dir(), &prof.dir(), cancel)
 }
 
@@ -31,10 +31,11 @@ fn runtime_diagnostics(
     inst: &Instance,
 ) -> Vec<eidos_gamefeatures::preflight::PreflightDiagnostic> {
     let mods = crate::check::active_mods(inst);
+    let files = crate::stock_game::game_files(game, inst);
     eidos_gamefeatures::preflight::scan_extender_plugins(
         game.def,
-        &game.data_path,
-        &game.install_path,
+        &files.data,
+        &files.root,
         &mods,
         &inst.overwrite_dir(),
     )
@@ -149,7 +150,8 @@ pub(crate) fn prepare_plugins(
 
     // The shared merged view preserves profile order, enabled state and pins,
     // and removes plugins hidden by the launcher's whiteouts.
-    let list = inst.plugin_list_for_profile(&game.data_path, id, Some(&state_dir), prof)?;
+    let files = crate::stock_game::game_files(game, inst);
+    let list = inst.plugin_list_for_profile(&files.data, id, Some(&state_dir), prof)?;
 
     for message in plugin_diagnostic_messages(&list, &spec) {
         eidos_log::warn!("eidos play: {message}");
@@ -251,7 +253,12 @@ pub(crate) fn recover_timestamp_order(
         ));
     }
     let mut list = inst
-        .plugin_list_for_profile(&game.data_path, id, None, prof)
+        .plugin_list_for_profile(
+            &crate::stock_game::game_files(game, inst).data,
+            id,
+            None,
+            prof,
+        )
         .ok_or_else(|| std::io::Error::other("No plugin list for timestamp capture"))?;
     if !times.is_empty() && list.plugins.is_empty() {
         return Err(std::io::Error::other(
@@ -276,7 +283,12 @@ pub(crate) fn prepare_plugin_timestamps(
         return Ok(None);
     }
     let list = inst
-        .plugin_list_for_profile(&game.data_path, id, None, prof)
+        .plugin_list_for_profile(
+            &crate::stock_game::game_files(game, inst).data,
+            id,
+            None,
+            prof,
+        )
         .ok_or_else(|| std::io::Error::other("No plugin list for timestamp projection"))?;
     Ok(Some(eidos_launch::PluginTimestamps {
         times: list.virtual_mtimes(&spec)?,
@@ -286,10 +298,12 @@ pub(crate) fn prepare_plugin_timestamps(
 
 /// Seed the profile's INIs from the prefix (the game folder in root mode), then,
 /// when the main INI is still missing and the game is not in root mode, from the
-/// game folder's `<name>_Default.ini`. The prefix and the game folder are only read.
+/// game files' `<name>_Default.ini` (a game copy's when the instance runs one).
+/// The prefix and the game folder are only read.
 pub(crate) fn seed_profile_inis(
     id: &str,
     game: &DetectedGame,
+    inst: &Instance,
     prof: &eidos_instance::Profile,
 ) -> std::io::Result<()> {
     let Some(spec) = game.plugin_spec() else {
@@ -311,7 +325,8 @@ pub(crate) fn seed_profile_inis(
     };
     prof.seed_inis(&source, ini_files)?;
     if !root_mode {
-        if let Some(from) = prof.seed_default_ini(&game.install_path, ini_files[0])? {
+        let files = crate::stock_game::game_files(game, inst);
+        if let Some(from) = prof.seed_default_ini(&files.root, ini_files[0])? {
             eprintln!(
                 "eidos play: profile '{}' and the prefix had no {}; copied {} from the game folder",
                 prof.name,
@@ -354,7 +369,7 @@ pub(crate) fn prepare_inis(
     } else {
         source.clone()
     };
-    seed_profile_inis(id, game, prof)?;
+    seed_profile_inis(id, game, inst, prof)?;
     if root_mode {
         std::fs::create_dir_all(&docs)?;
         // A prior launcher may have atomically replaced or removed a case variant.
@@ -750,7 +765,7 @@ mod rescue_tests {
         .unwrap();
         let fresh = inst.profile("Fresh");
         fs::create_dir_all(fresh.dir()).unwrap();
-        seed_profile_inis("skyrimse", &game, &fresh).unwrap();
+        seed_profile_inis("skyrimse", &game, &inst, &fresh).unwrap();
         assert_eq!(
             fs::read_to_string(fresh.ini_path("Skyrim.ini")).unwrap(),
             "[General]\nsLanguage=ENGLISH\n"
@@ -767,7 +782,7 @@ mod rescue_tests {
         fs::write(docs.join("Skyrim.ini"), "[General]\nsLanguage=FRENCH\n").unwrap();
         let adopted = inst.profile("Adopted");
         fs::create_dir_all(adopted.dir()).unwrap();
-        seed_profile_inis("skyrimse", &game, &adopted).unwrap();
+        seed_profile_inis("skyrimse", &game, &inst, &adopted).unwrap();
         assert_eq!(
             fs::read_to_string(adopted.ini_path("Skyrim.ini")).unwrap(),
             "[General]\nsLanguage=FRENCH\n"
@@ -775,6 +790,27 @@ mod rescue_tests {
         assert!(
             !game.install_path.join("Skyrim.ini").exists(),
             "the game folder is never written"
+        );
+        // With a game copy and no default in the store install, the copy's default
+        // seeds a fresh profile.
+        fs::remove_file(game.install_path.join("Skyrim_Default.ini")).unwrap();
+        fs::remove_file(docs.join("Skyrim.ini")).unwrap();
+        fs::create_dir_all(inst.root.join("Stock Game/Data")).unwrap();
+        fs::write(
+            inst.root.join("Stock Game/Skyrim_Default.ini"),
+            "[General]\nsLanguage=GERMAN\n",
+        )
+        .unwrap();
+        inst.ensure_manifest("skyrimse", eidos_instance::InstanceKind::Portable)
+            .unwrap();
+        inst.edit_manifest(|m| m.base_game = Some("Stock Game".into()))
+            .unwrap();
+        let copied = inst.profile("Copied");
+        fs::create_dir_all(copied.dir()).unwrap();
+        seed_profile_inis("skyrimse", &game, &inst, &copied).unwrap();
+        assert_eq!(
+            fs::read_to_string(copied.ini_path("Skyrim.ini")).unwrap(),
+            "[General]\nsLanguage=GERMAN\n"
         );
         fs::remove_dir_all(root).unwrap();
     }
@@ -846,6 +882,45 @@ mod rescue_tests {
         }
         header.extend(body);
         fs::write(path, header).unwrap();
+    }
+
+    #[test]
+    fn a_plugin_only_in_the_store_install_is_not_listed_with_a_copy() {
+        let root = std::env::temp_dir().join(format!("eidos-copy-plugins-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        // Not a Steam copy, so host_findings reads no Steam file under the real HOME.
+        let game = DetectedGame {
+            def: eidos_games::GameDef::for_id("skyrimse").unwrap(),
+            source: eidos_games::GameSource::External {
+                store: eidos_games::Store::Gog,
+                app_id: "synthetic".into(),
+                prefix: Some(root.join("prefix")),
+                heroic: true,
+                runner: None,
+            },
+            install_path: root.join("game"),
+            data_path: root.join("game/Data"),
+            compatdata: None,
+            steam_name: String::new(),
+        };
+        fs::create_dir_all(root.join("prefix")).unwrap();
+        fs::create_dir_all(&game.data_path).unwrap();
+        engine_plugin(&game.data_path.join("StoreOnly.esp"), false);
+        let inst = Instance::portable(root.join("i"));
+        inst.create().unwrap();
+        inst.ensure_manifest("skyrimse", eidos_instance::InstanceKind::Portable)
+            .unwrap();
+        fs::create_dir_all(inst.root.join("Stock Game/Data")).unwrap();
+        fs::write(inst.root.join("Stock Game/SkyrimSE.exe"), b"game").unwrap();
+        engine_plugin(&inst.root.join("Stock Game/Data/CopyOnly.esp"), false);
+        inst.edit_manifest(|m| m.base_game = Some("Stock Game".into()))
+            .unwrap();
+        prepare_plugins("skyrimse", &game, &inst, &inst.active(), true);
+        let txt =
+            fs::read_to_string(inst.active().plugins_state_dir().join("plugins.txt")).unwrap();
+        assert!(txt.contains("CopyOnly.esp"), "{txt}");
+        assert!(!txt.contains("StoreOnly.esp"), "{txt}");
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

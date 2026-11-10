@@ -93,6 +93,13 @@ impl Instance {
             })
     }
 
+    /// The `gamePath` of the foreign `ModOrganizer.ini`, decoded: the game
+    /// folder the list was set up with, in Windows form.
+    pub fn foreign_mo2_game_path(&self) -> Option<String> {
+        let text = fs::read(self.foreign_mo2_ini()?).ok()?;
+        ini_field(&String::from_utf8_lossy(&text), "gamePath")
+    }
+
     fn mo2_ini_text(
         &self,
         game_name: &str,
@@ -310,6 +317,16 @@ fn mo2_path(value: &str, root: &Path) -> Option<PathBuf> {
         return Some(linux);
     }
     rebase(path, root).or(Some(linux))
+}
+
+/// A Wine `Z:` path, written with `\` or `/`, as the Linux path it names.
+/// Any other drive maps to no Linux path without guessing, so it gives None.
+pub fn wine_path_to_unix(value: &str) -> Option<PathBuf> {
+    let value = value.replace('\\', "/");
+    let path = drive_path(&value)?;
+    value[..1]
+        .eq_ignore_ascii_case("z")
+        .then(|| PathBuf::from(path))
 }
 
 /// What follows `X:` in a value that starts with a drive letter and a `/`.
@@ -696,5 +713,36 @@ size=5
             "gamePath=@ByteArray(Z:\\\\mnt\\\\Jeux\\\\SteamLibrary\\\\steamapps\\\\common\\\\Skyrim Special Edition)\n"
         ));
         assert!(text.contains("mod_directory=Z:\\\\mnt\\\\Jeux\\\\Eidos-Skyrim\\\\mods\n"));
+    }
+
+    #[test]
+    fn only_z_drive_paths_map_to_linux_paths() {
+        assert_eq!(
+            wine_path_to_unix("Z:\\home\\a b\\Stock Game"),
+            Some(PathBuf::from("/home/a b/Stock Game"))
+        );
+        assert_eq!(wine_path_to_unix("z:/x/y"), Some(PathBuf::from("/x/y")));
+        assert_eq!(wine_path_to_unix("C:\\Games\\Skyrim"), None);
+        assert_eq!(wine_path_to_unix(""), None);
+    }
+
+    #[test]
+    fn the_game_path_of_a_foreign_ini_is_read_and_an_eidos_one_is_ignored() {
+        let inst = Instance::portable(temp("gamepath"));
+        fs::create_dir_all(&inst.root).unwrap();
+        assert_eq!(inst.foreign_mo2_game_path(), None);
+        fs::write(
+            inst.root.join("modorganizer.ini"),
+            "[General]\r\ngamePath=@ByteArray(C:\\\\Lists\\\\Tuxborn\\\\Stock Folder)\r\n",
+        )
+        .unwrap();
+        assert_eq!(
+            inst.foreign_mo2_game_path().as_deref(),
+            Some("C:\\Lists\\Tuxborn\\Stock Folder")
+        );
+        fs::remove_file(inst.root.join("modorganizer.ini")).unwrap();
+        inst.write_mo2_ini("Skyrim Special Edition", Path::new("/g"), "Default")
+            .unwrap();
+        assert_eq!(inst.foreign_mo2_game_path(), None);
     }
 }

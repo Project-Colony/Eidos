@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=d9e26a15d52ab549773ed61d97c7ecf36fea8342 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=aaff8588275e2b036c2a1c344c01509a4c9d0f00 -->
 
 # Eidos 사용하기
 
@@ -22,6 +22,7 @@ eidos shell skyrimse              # 병합된 뷰에서 셸 실행, 쓰기는 Ov
 eidos check skyrimse              # 창 없이 상태 검사 (스크립트용 --json)
 eidos sessions skyrimse           # 기록된 게임과 도구 실행을 최신순으로
 eidos sessions skyrimse diff      # 종료 코드 0으로 끝난 마지막 실행 이후 바뀐 내용
+eidos stock-game skyrimse         # 인스턴스가 실행하는 게임 파일; 고정하거나 전환
 eidos collection skyrimse <link>  # Nexus 컬렉션을 제작자가 만든 그대로 설치하기
 eidos nexus update skyrimse --apply  # 내 파일을 대체한 Nexus 파일을 설치하기
 eidos pack skyrimse backup.eidos  # 인스턴스 전체를 파일 하나로, 다른 곳으로 옮기려고
@@ -103,7 +104,21 @@ Eidos는 예전 위치를 계속 쓰고 다음 실행 때 다시 시도합니다
 
 Eidos에는 Wabbajack 설치 프로그램이 없습니다. Eidos 밖에서 CLF3 또는 Jackify로 목록을 설치한 다음, 마법사에서 설치 폴더를 휴대용 인스턴스로 선택하세요. Eidos는 폴더를 MO2 구조로 읽습니다: `mods/`, `profiles/<이름>/modlist.txt`, 플러그인 목록입니다. 설치 프로그램이 쓴 `ModOrganizer.ini`는 그대로 두며 덮어쓰지 않으므로 목록 자체의 실행 파일 등록은 유지됩니다.
 
-많은 목록이 수정된 게임 사본을 담은 `Stock Game` 또는 `Game Root` 폴더를 추가하고, MO2는 그곳에서 게임을 실행합니다. Eidos는 Steam 설치본을 실행하며 다른 게임 폴더를 지정하는 설정이 없습니다. 마법사는 이런 폴더를 발견하면 요약 화면에 알리기만 하고 다른 일은 하지 않습니다. 목록이 그곳에 넣은 파일은 직접 어떤 모드의 `Root/` 폴더로 옮기세요. CLF3는 BSA와 DDS 파일을 자체 도구로 다시 만들기 때문에 결과가 Wabbajack 설치와 다를 수 있으며, 목록 제작자도 이를 지원하지 않습니다.
+많은 목록이 수정된 게임 사본을 담은 `Stock Game` 또는 `Game Root` 폴더를 추가하고, MO2는 그곳에서 게임을 실행합니다. 마법사나 `eidos init`이 목록 폴더를 처음 받아들이면 인스턴스도 그 폴더에서 게임을 실행하며, 시작은 여전히 Steam이나 게임을 소유한 스토어를 거치므로 아무것도 옮길 필요가 없습니다. Eidos는 목록의 `ModOrganizer.ini`에 있는 `gamePath`로, 또는 이 두 이름으로 폴더를 찾습니다. 이전 버전의 Eidos로 받아들인 인스턴스는 직접 전환할 때까지 스토어 설치본을 그대로 씁니다(다음 절 참고). CLF3는 BSA와 DDS 파일을 자체 도구로 다시 만들기 때문에 결과가 Wabbajack 설치와 다를 수 있으며, 목록 제작자도 이를 지원하지 않습니다.
+
+### 게임 파일: 스토어 설치본 또는 사본
+
+기본적으로 게임은 스토어 설치본, 즉 Steam, Heroic 또는 Legendary가 게임을 보관하는 폴더에서 실행됩니다. 대신 인스턴스 안에 둔 그 폴더의 사본에서 실행할 수도 있습니다. 모드는 사본 위에 놓이고, 스토어 설치본은 Eidos가 결과를 마운트하는 자리일 뿐입니다. 게임은 여전히 스토어가 시작하므로 Steam은 오버레이, 셰이더 캐시, 클라우드 저장을 그대로 유지합니다.
+
+Diagnostics 탭 맨 위의 Game files 카드는 인스턴스가 어떤 파일을 실행하는지 보여 주고 둘 사이를 전환합니다. `eidos stock-game <instance>`는 터미널에서 같은 일을 합니다: `use <folder>`, `store`, `freeze`, `delete --yes`.
+
+**Freeze this version**은 스토어 설치본을 `<instance>/Stock Game`으로 복사하고 그곳에서 게임을 실행합니다. 스토어 업데이트는 사본이 아니라 스토어 설치본을 바꾸므로, 업데이트가 더 이상 스크립트 익스텐더 플러그인을 망가뜨리지 않습니다. 첫 번째 누르기는 크기와 파일 시스템이 이를 어떻게 처리하는지 보여 주고, 두 번째 누르기에서 복사합니다. btrfs와 XFS에서는 사본이 스토어와 블록을 공유하며(reflink), 스토어가 파일을 바꾸기 전까지 공간을 거의 차지하지 않습니다. ext4에서나 게임과 인스턴스가 서로 다른 파일 시스템에 있을 때는 게임 폴더만큼 큰 전체 사본이 됩니다. Steam이 게임을 사용 중이거나 업데이트 중이라고 보고하는 동안, 그리고 인스턴스의 게임이나 도구가 실행 중인 동안에는 Eidos가 거부합니다. Stop이나 실패 뒤에는 `Stock Game.eidos-tmp`가 남으며, 카드가 이를 삭제하도록 제안합니다. 이 폴더는 절대 쓰이지 않습니다.
+
+사본은 만든 뒤에 스토어가 게임 폴더에서 추가, 변경, 삭제하는 모든 파일을 가립니다: 새 Creation Club 파일, 새 실행 파일, 새 DLL. 게임, 플러그인 목록, LOOT, Health 검사는 모두 사본을 읽습니다. 게임 폴더 밖에서 일어나는 일은 가리지 못합니다: 업데이트가 다음 실행 때 Proton 프리픽스에 런타임을 설치할 수 있고, Steam이 게임을 다른 Proton으로 바꿀 수도 있습니다.
+
+**Return to the store version**은 두 번째 누르기 후에 다음 실행에서 사본을 뺍니다. 사본은 디스크에 남고, **Delete the copy**가 이를 지우며, 이것도 두 번째 누르기가 필요합니다. Eidos는 목록 자체의 `Stock Game`이나 `Game Root` 폴더를 절대 지우지 않습니다. 사본 폴더가 없어지면 실행이 거부되고 Diagnostics가 그 폴더 이름을 알려 주므로, 스토어 버전이 모르는 사이에 실행되는 일은 없습니다.
+
+Morrowind와 `bUseMyGamesDirectory=0`인 Oblivion은 플러그인 목록을 게임 폴더에 두므로, Eidos는 아직 이 게임들을 사본에서 실행하지 않습니다.
 
 ### 모드 목록
 
@@ -354,6 +369,8 @@ Ubuntu에서는 `sudo apt install par2`, Fedora에서는
 | `.base/`, `.base-root/` | 세션 동안 게임 자신의 파일이 치워져 있는 빈 마운트 지점입니다. |
 | 쓰다 만 파일 | 멈춰 둔 내려받기(`*.unfinished`), 진행 중인 원자적 쓰기(`*.eidos-tmp*`). |
 | 심볼릭 링크 | 7-Zip은 링크를 따라가 그것이 가리키는 것을 복사할 텐데, 절대 링크라면 남의 트리를 백업 안으로 끌어들인다는 뜻입니다. 대신 보고만 하고, 백업은 불완전한 것으로 칩니다: 다른 드라이브로 링크된 `mods/`나 `downloads/`는 패킹되지 **않습니다**. 링크된 `downloads/` 없이 일부러 백업하려면 `--no-downloads`를 주세요(또는 창에서 *Include downloads/*의 체크를 해제하세요); 의도적인 제외는 빠진 것으로 치지 않습니다. |
+
+인스턴스 안의 게임 사본(`Stock Game`)은 다른 폴더처럼 pack되므로, 고정한 인스턴스의 백업은 대략 게임 크기만큼 커집니다. 완성되지 않은 사본(`Stock Game.eidos-tmp`)은 빠집니다.
 
 이들 하나하나가 그 이유와 함께 압축 파일 루트의 `eidos-backup.ini`에 들어갑니다 -
 그래서 "여기 뭐가 안 들어 있지?"에 대한 답은 짐작이 아니라 `cat`입니다. 같은

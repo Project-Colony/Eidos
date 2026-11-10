@@ -447,33 +447,36 @@ pub fn default_tools(execs: GameExecutables, install: &Path) -> Vec<Tool> {
 }
 
 /// Resolve an automatic executable in the same root union used at launch.
-/// Root layers are highest priority first; the returned path is inside the game
-/// install, where the root union projects the selected file during the run.
+/// Root layers are highest priority first, over `files_root` (the bottom of the
+/// root stack, `GameFiles::root`); the returned path is inside the game
+/// `install`, where the root union projects the selected file during the run.
 pub fn root_executable(
     install: &Path,
+    files_root: &Path,
     root_layers: &[PathBuf],
     root_overwrite: &Path,
     executable: &str,
 ) -> Option<PathBuf> {
-    root_executable_source(install, root_layers, root_overwrite, executable)
+    root_executable_source(files_root, root_layers, root_overwrite, executable)
         .map(|real| install.join(real.file_name().unwrap()))
 }
 
 /// The real backing file for a root executable, for validation and fingerprints
-/// before the launch mount projects it onto the game install.
+/// before the launch mount projects it onto the game install. `files_root` is
+/// the bottom of the root stack (`GameFiles::root`).
 ///
 /// Unindexed: the stack answers this one path and is dropped. `eidos tool run`
 /// passes every enabled mod here for a tool that lives in a mod, and an index
 /// would walk all their files first, only for the mount to walk them again.
 /// Unindexed, one lookup costs at most a stat and a root listing per layer.
 pub fn root_executable_source(
-    install: &Path,
+    files_root: &Path,
     root_layers: &[PathBuf],
     root_overwrite: &Path,
     executable: &str,
 ) -> Option<PathBuf> {
     let mut layers = root_layers.to_vec();
-    layers.push(install.to_path_buf());
+    layers.push(files_root.to_path_buf());
     eidos_core::LayerStack::new_unindexed(layers, root_overwrite.to_path_buf())
         .resolve_read(executable)
         .filter(|path| path.is_file())
@@ -486,20 +489,22 @@ pub fn root_executable_source(
 /// mount, but at launch the root union projects those same files onto the game
 /// directory, so `skse64_loader.exe` resolves there for real. Without this a
 /// Root-provided script extender would never appear as a tool at all.
+/// `files_root` is the bottom of the root stack (`GameFiles::root`).
 pub fn default_tools_in(
     execs: GameExecutables,
-    install: &Path,
+    files_root: &Path,
     root_layers: &[PathBuf],
     extra_roots: &[PathBuf],
 ) -> Vec<Tool> {
-    default_tools_in_view(execs, install, root_layers, extra_roots, None)
+    default_tools_in_view(execs, files_root, root_layers, extra_roots, None)
 }
 
 /// Detect root executables against the active view, including root Overwrite
 /// and its deletion markers. Known external tools still use the search roots.
+/// `files_root` is the bottom of the root stack (`GameFiles::root`).
 pub fn default_tools_in_view(
     execs: GameExecutables,
-    install: &Path,
+    files_root: &Path,
     root_layers: &[PathBuf],
     extra_roots: &[PathBuf],
     root_overwrite: Option<&Path>,
@@ -511,12 +516,14 @@ pub fn default_tools_in_view(
     let search: Vec<PathBuf> = root_overwrite
         .into_iter()
         .map(Path::to_path_buf)
-        .chain(std::iter::once(install.to_path_buf()))
+        .chain(std::iter::once(files_root.to_path_buf()))
         .chain(root_layers.iter().cloned())
         .chain(extra_roots.iter().cloned())
         .collect();
     let visible = |exe: &str| match root_overwrite {
-        Some(overwrite) => root_executable_source(install, root_layers, overwrite, exe).is_some(),
+        Some(overwrite) => {
+            root_executable_source(files_root, root_layers, overwrite, exe).is_some()
+        }
         None => search.iter().any(|dir| dir.join(exe).is_file()),
     };
     let mut v = Vec::new();
@@ -785,19 +792,25 @@ mod tests {
             fs::create_dir_all(path).unwrap();
         }
         let loader = "skse64_loader.exe";
-        assert!(root_executable(&game, &[], &overwrite, loader).is_none());
+        assert!(root_executable(&game, &game, &[], &overwrite, loader).is_none());
         fs::write(root.join(loader), b"mod loader").unwrap();
         assert_eq!(
-            root_executable(&game, std::slice::from_ref(&root), &overwrite, loader),
+            root_executable(
+                &game,
+                &game,
+                std::slice::from_ref(&root),
+                &overwrite,
+                loader
+            ),
             Some(game.join(loader))
         );
         assert!(
-            root_executable(&game, &[], &overwrite, loader).is_none(),
+            root_executable(&game, &game, &[], &overwrite, loader).is_none(),
             "disabled mod"
         );
         fs::write(overwrite.join(loader), b"overwrite loader").unwrap();
         assert_eq!(
-            root_executable(&game, &[], &overwrite, loader),
+            root_executable(&game, &game, &[], &overwrite, loader),
             Some(game.join(loader))
         );
         fs::remove_file(overwrite.join(loader)).unwrap();
@@ -807,16 +820,33 @@ mod tests {
         )
         .unwrap();
         assert!(
-            root_executable(&game, std::slice::from_ref(&root), &overwrite, loader).is_none(),
+            root_executable(
+                &game,
+                &game,
+                std::slice::from_ref(&root),
+                &overwrite,
+                loader
+            )
+            .is_none(),
             "whiteout"
         );
         fs::remove_file(overwrite.join(format!("{}{loader}", eidos_core::WHITEOUT_PREFIX)))
             .unwrap();
         fs::create_dir(overwrite.join(loader)).unwrap();
         assert!(
-            root_executable(&game, &[root], &overwrite, loader).is_none(),
+            root_executable(&game, &game, &[root], &overwrite, loader).is_none(),
             "directory shadows loader"
         );
+        // A game copy: the loader lives only in the copy and is projected onto the install.
+        let copy = dir.join("Stock Game");
+        fs::create_dir_all(&copy).unwrap();
+        fs::write(copy.join(loader), b"copy loader").unwrap();
+        let empty = dir.join("empty-overwrite");
+        assert_eq!(
+            root_executable(&game, &copy, &[], &empty, loader),
+            Some(game.join(loader))
+        );
+        assert!(root_executable(&game, &game, &[], &empty, loader).is_none());
         fs::remove_dir_all(dir).unwrap();
     }
 

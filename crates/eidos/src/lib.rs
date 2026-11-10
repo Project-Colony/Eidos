@@ -27,6 +27,7 @@ mod prereqs;
 mod resolve;
 mod sessions;
 mod sort;
+pub mod stock_game;
 mod test_run;
 #[cfg(test)]
 mod tests;
@@ -300,6 +301,7 @@ fn usage() -> ! {
          \x20 eidos import <instance> <mo2-profile> take over an MO2 profile's mod order + plugin state\n\
          \x20 eidos check <instance> [--json]    Health checks without the window (exit 1 on a problem)\n\
          \x20 eidos sessions <instance> [diff [<id>]]  list recorded runs / show what changed since one\n\
+         \x20 eidos stock-game <instance> [...] show, switch or freeze the game files the instance runs\n\
          \x20 eidos --version                   print the version\n\
          \n\
          <instance> is a game id (skyrimse - the central instance) or the path of a\n\
@@ -429,6 +431,7 @@ pub fn run(mut args: Vec<String>) {
         Some("import") => cmd_import(&args[1..]),
         Some("check") => check::cmd_check(&args[1..]),
         Some("sessions") => sessions::cmd_sessions(&args[1..]),
+        Some("stock-game") => stock_game::cmd_stock_game(&args[1..]),
         _ => usage(),
     }
 }

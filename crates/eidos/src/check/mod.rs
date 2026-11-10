@@ -7,6 +7,7 @@ pub mod collections;
 pub mod crash;
 pub mod display;
 pub mod extender;
+pub mod game_files;
 pub mod graphics;
 pub mod launch_option;
 pub mod load_order;
@@ -90,6 +91,10 @@ pub const CODES: &[&str] = &[
     "windows_filesystem",
     "bodyslide_data_path",
     "overwrite_root_data",
+    "game_files_missing",
+    "game_files_not_a_copy",
+    "game_files_root_mode",
+    "mo2_ini_game_path",
     "collection_order_broken",
 ];
 
@@ -112,12 +117,13 @@ pub fn host_findings(
     mods: &[(String, PathBuf)],
 ) -> Vec<Finding> {
     let overwrite = inst.overwrite_dir();
+    let files = crate::stock_game::game_files(game, inst);
     let mut out = load_order::test_file_findings(game.def, &inst.active());
     out.extend(
         eidos_gamefeatures::preflight::extender_facts(
             game.def,
-            &game.data_path,
-            &game.install_path,
+            &files.data,
+            &files.root,
             mods,
             &overwrite,
         )
@@ -127,7 +133,7 @@ pub fn host_findings(
     out.extend(extender::game_update_findings(
         game.def.name,
         inst.launch_record().last_good.as_ref(),
-        &extender::current_build(game, mods, &overwrite),
+        &extender::current_build(game, &files, mods, &overwrite),
     ));
     let this_exe = std::env::current_exe().ok();
     let mut options = None;
@@ -162,6 +168,15 @@ pub fn host_findings(
     out.extend(bodyslide::bodyslide_findings(&bodyslide::bodyslide_facts(
         game, inst, mods,
     )));
+    out.extend(game_files::findings(game, inst, &files));
+    if let (Some(ini), Some(found)) = (inst.foreign_mo2_ini(), inst.foreign_mo2_game_path()) {
+        out.extend(game_files::mo2_game_path_finding(
+            &ini,
+            &found,
+            &files.root,
+            &game.install_path,
+        ));
+    }
     out
 }
 
@@ -490,7 +505,8 @@ fn check_findings(
     let mut out = prefix_facts(game)
         .map(|f| prefix_findings(&f))
         .unwrap_or_default();
-    let list = inst.plugin_list(&game.data_path, game_id, None);
+    let files = crate::stock_game::game_files(game, inst);
+    let list = inst.plugin_list(&files.data, game_id, None);
     if let (Some(list), Some(spec)) = (list, eidos_plugins::GameSpec::for_id(game_id)) {
         let mut unverified = 0;
         for d in list.diagnostics(&spec) {
@@ -536,21 +552,10 @@ fn check_findings(
     out.extend(host_findings(home, game, inst, &mods));
     out.extend(collections::collection_order_findings(&inst.root, &mods));
     let overwrite = inst.overwrite_dir();
-    let preflight = scan_extender_plugins(
-        game.def,
-        &game.data_path,
-        &game.install_path,
-        &mods,
-        &overwrite,
-    )
-    .into_iter()
-    .chain(scan_fontconfig(
-        game.def,
-        &game.data_path,
-        &mods,
-        &overwrite,
-    ))
-    .chain(scan_compressed_audio(game.def, &mods, &overwrite));
+    let preflight = scan_extender_plugins(game.def, &files.data, &files.root, &mods, &overwrite)
+        .into_iter()
+        .chain(scan_fontconfig(game.def, &files.data, &mods, &overwrite))
+        .chain(scan_compressed_audio(game.def, &mods, &overwrite));
     out.extend(preflight.map(|d| Finding {
         code: d.code,
         level: if d.severity == DiagnosticSeverity::Error {

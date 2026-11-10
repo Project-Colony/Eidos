@@ -27,6 +27,7 @@ use std::time::SystemTime;
 mod bisect;
 mod categories;
 mod export;
+mod game_files;
 mod launch_record;
 mod manifest;
 mod meta;
@@ -45,10 +46,11 @@ pub use categories::{
     format_categories, parse_all, parse_primary, Category, CategoryFactory, NexusCategory,
 };
 pub use export::{csv_quote, fmt_mtime, mod_list_csv, Column, ExportScope};
+pub use game_files::{is_copy_folder_name, GameFiles};
 pub use launch_record::{GameBuild, LaunchRecord};
 pub use manifest::Manifest;
 pub use meta::{same_version, ModMeta, PluginSource};
-pub use mo2_ini::{mo2_executables, Mo2Executable, Mo2Ini, Mo2Skip};
+pub use mo2_ini::{mo2_executables, wine_path_to_unix, Mo2Executable, Mo2Ini, Mo2Skip};
 pub use mod_backup::{backup_mod, reserve_mod_backup};
 pub use profile::{
     cosave_siblings, format_stamp, instance_sync_keys, is_save_data, is_save_listing,
@@ -564,6 +566,26 @@ impl Instance {
         Manifest::read(&self.manifest_path())
     }
 
+    /// Change the existing manifest and write it back (`NotFound` when there is
+    /// none). The caller holds the instance lock.
+    pub fn edit_manifest(&self, f: impl FnOnce(&mut Manifest)) -> std::io::Result<()> {
+        let mut manifest = Manifest::read_checked(&self.manifest_path())?.ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "the instance manifest is missing",
+            )
+        })?;
+        f(&mut manifest);
+        manifest.write(&self.manifest_path())
+    }
+
+    /// The game files this instance reads: its game copy when the manifest names
+    /// one, else the store install (`install`, `data`).
+    pub fn game_files(&self, install: &Path, data: &Path) -> GameFiles {
+        let copy = self.read_manifest().and_then(|m| m.base_game);
+        GameFiles::new(install, data, &self.root, copy.as_deref())
+    }
+
     /// Write the instance manifest if it is missing (so we don't churn one that
     /// already exists, e.g. on every launch).
     pub fn ensure_manifest(&self, game_id: &str, kind: InstanceKind) -> std::io::Result<()> {
@@ -627,17 +649,33 @@ impl Instance {
         canon(root).starts_with(canon(install))
     }
 
-    /// The name of a `Stock Game` or `Game Root` folder directly inside `root`
-    /// (matched without regard to case), the layout Wabbajack lists install a
-    /// patched copy of the game into. Eidos launches the Steam install, so the
-    /// files in such a folder have to become a `Root/` mod by hand.
+    /// The folder directly inside `root` that holds a Wabbajack list's copy of
+    /// the game: the one the last component of a foreign `ModOrganizer.ini`'s
+    /// `gamePath` names, else a `Stock Game` or `Game Root` folder. Names are
+    /// matched without regard to case.
     pub fn stock_game_folder(root: &Path) -> Option<String> {
-        fs::read_dir(root)
+        let dirs: Vec<String> = fs::read_dir(root)
             .ok()?
             .flatten()
             .filter(|e| e.path().is_dir())
             .map(|e| e.file_name().to_string_lossy().into_owned())
-            .find(|n| n.eq_ignore_ascii_case("Stock Game") || n.eq_ignore_ascii_case("Game Root"))
+            .collect();
+        // Built directly: `portable` may redirect a moved global instance.
+        let game_path = Instance {
+            root: root.to_path_buf(),
+        }
+        .foreign_mo2_game_path();
+        let named = game_path
+            .as_deref()
+            .and_then(|p| p.rsplit(['\\', '/']).find(|c| !c.is_empty()));
+        named
+            .and_then(|want| dirs.iter().find(|n| n.eq_ignore_ascii_case(want)))
+            .or_else(|| {
+                dirs.iter().find(|n| {
+                    n.eq_ignore_ascii_case("Stock Game") || n.eq_ignore_ascii_case("Game Root")
+                })
+            })
+            .cloned()
     }
 
     /// Open an existing folder as an instance, requiring it to be
@@ -1246,14 +1284,7 @@ impl Instance {
                 "select an existing profile with a safe name",
             ));
         }
-        let mut manifest = Manifest::read_checked(&self.manifest_path())?.ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "the instance manifest is missing",
-            )
-        })?;
-        manifest.selected_profile = Some(name.to_string());
-        manifest.write(&self.manifest_path())
+        self.edit_manifest(|m| m.selected_profile = Some(name.to_string()))
     }
 
     /// The active [`Profile`].
@@ -1945,6 +1976,60 @@ mod tests {
             Some("GAME ROOT")
         );
         assert_eq!(Instance::stock_game_folder(&inst.root.join("nope")), None);
+    }
+
+    #[test]
+    fn stock_game_folder_prefers_the_folder_named_by_a_foreign_game_path() {
+        let inst = tmp_instance();
+        let root = inst.root.clone();
+        fs::create_dir(root.join("Stock Folder")).unwrap();
+        fs::create_dir(root.join("Game Root")).unwrap();
+        let game_path = |p: &str| {
+            let ini = format!("[General]\r\ngamePath=@ByteArray({p})\r\n");
+            fs::write(root.join("modorganizer.ini"), ini).unwrap();
+        };
+        game_path("C:\\\\Lists\\\\Tuxborn\\\\Stock Folder");
+        assert_eq!(
+            Instance::stock_game_folder(&root).as_deref(),
+            Some("Stock Folder")
+        );
+        // Any case, either separator, a trailing one.
+        game_path("Z:/home/lin/Tuxborn/STOCK FOLDER/");
+        assert_eq!(
+            Instance::stock_game_folder(&root).as_deref(),
+            Some("Stock Folder")
+        );
+        game_path("C:\\\\Lists\\\\Tuxborn\\\\Missing");
+        assert_eq!(
+            Instance::stock_game_folder(&root).as_deref(),
+            Some("Game Root")
+        );
+    }
+
+    #[test]
+    fn instance_game_files_follow_the_manifest() {
+        let inst = tmp_instance();
+        inst.ensure_manifest("skyrimse", InstanceKind::Portable)
+            .unwrap();
+        inst.edit_manifest(|m| m.base_game = Some("Game Root".into()))
+            .unwrap();
+        let f = inst.game_files(Path::new("/g"), Path::new("/g/Data"));
+        assert_eq!(
+            (f.root, f.copy.as_deref()),
+            (inst.root.join("Game Root"), Some("Game Root"))
+        );
+        let bare = tmp_instance();
+        assert_eq!(
+            bare.game_files(Path::new("/g"), Path::new("/g/Data")).copy,
+            None
+        );
+        assert_eq!(
+            bare.edit_manifest(|m| m.base_game = None)
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::NotFound
+        );
+        assert!(!bare.manifest_path().exists());
     }
 
     #[test]

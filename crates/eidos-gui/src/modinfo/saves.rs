@@ -536,7 +536,9 @@ pub(crate) fn provider_scan<'a>(
             path: o,
         });
     }
-    let data = selected_game(app).map(|g| g.data_path.clone());
+    let data = game_files(app)
+        .map(|f| f.data)
+        .or_else(|| selected_game(app).map(|g| g.data_path.clone()));
     if let Some(d) = data.as_deref() {
         mods.push(eidos_gamefeatures::ModFolder {
             name: t("saves_game_data"),

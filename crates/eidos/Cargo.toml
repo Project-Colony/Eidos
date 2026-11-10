@@ -38,3 +38,5 @@ eidos-sevenzip = { path = "../eidos-sevenzip" }
 eidos-nexus = { path = "../eidos-nexus" }
 # BodySlide's Config.xml, for the A49 data path check.
 roxmltree.workspace = true
+# FICLONE and statfs, for copying the game into an instance.
+libc.workspace = true

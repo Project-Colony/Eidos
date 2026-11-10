@@ -30,9 +30,11 @@ fn hand_off(app: &App) -> String {
     let (Some(game), Some(inst)) = (selected_game(app), &app.created) else {
         return t("status_create_or_open_instance").to_string();
     };
+    let files = eidos::stock_game::game_files(game, inst);
     let loader_found = game.def.script_extender.as_ref().is_none_or(|se| {
         eidos_instance::root_executable(
             &game.install_path,
+            &files.root,
             &inst.root_layers(),
             &inst.root_overwrite_dir(),
             se.loader,
@@ -250,7 +252,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 // starts it through its Eidos setting, and when that setting is
                 // missing the status says what to set and where.
                 app.status = Some(hand_off(app));
-            } else if let (Some(game), Some(inst)) = (selected_game(app), &app.created) {
+            } else if let (Some(game), Some(inst), Some(files)) =
+                (selected_game(app), &app.created, game_files(app))
+            {
                 let id = game.def.id;
                 let game_name = game.def.name.to_string();
                 // Soft advisory if an ENB (game root) and Community Shaders (an
@@ -263,21 +267,26 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     .filter(|m| m.is_active())
                     .map(|m| m.path)
                     .collect();
-                let both_active =
-                    eidos_gamefeatures::enb_cs_conflict(&game.install_path, &cs_roots);
+                let both_active = eidos_gamefeatures::enb_cs_conflict(&files.root, &cs_roots);
                 // How the child names the instance: the portable folder when one
                 // is open, the game id otherwise.
                 let inst_arg = instance_arg(app).unwrap_or_else(|| id.to_string());
                 // `game`/`inst` are no longer used below; their borrows end here so
                 // `start_run` can take `&mut app`.
-                let (cmd, se_warning) =
-                    play_command(id, &inst_arg, &game.install_path, inst, &app.launch_command);
+                let (cmd, se_warning) = play_command(
+                    id,
+                    &inst_arg,
+                    &game.install_path,
+                    &files.root,
+                    inst,
+                    &app.launch_command,
+                );
                 // A loader whose runtime DLL for this game version is missing
                 // stops at startup; the loader-missing case has its own note.
                 let extender_note = eidos_gamefeatures::preflight::extender_facts(
                     game.def,
-                    &game.data_path,
-                    &game.install_path,
+                    &files.data,
+                    &files.root,
                     &eidos::check::active_mods(inst),
                     &inst.overwrite_dir(),
                 )

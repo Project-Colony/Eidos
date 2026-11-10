@@ -128,7 +128,8 @@ fn display_tweaks(
     if !matches!(game.def.id, "skyrimse" | "enderalse") {
         return None;
     }
-    let winner = merged_data(&game.data_path, mods, &inst.overwrite_dir()).resolve(TWEAKS_INI)?;
+    let data = crate::stock_game::game_files(game, inst).data;
+    let winner = merged_data(&data, mods, &inst.overwrite_dir()).resolve(TWEAKS_INI)?;
     let (text, _) = read_text_lossy(&winner)?;
     ["Resolution", "Fullscreen", "Borderless"]
         .iter()
@@ -169,7 +170,7 @@ pub fn apply_display(
     let ini = prefs_ini(game.def.id)
         .ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, "no Display keys known"))?;
     let profile = inst.active();
-    crate::prepare::seed_profile_inis(game.def.id, game, &profile)?;
+    crate::prepare::seed_profile_inis(game.def.id, game, inst, &profile)?;
     let prefs = profile.ini_path(ini);
     let (full, borderless) = match d.mode {
         WindowMode::Fullscreen => ("1", "0"),
@@ -412,5 +413,27 @@ mod tests {
             .unwrap(),
             "[Render]\nFullscreen=true\nBorderless=false\n"
         );
+    }
+
+    #[test]
+    fn with_a_game_copy_the_display_tweaks_winner_comes_from_the_copy() {
+        let (game, inst, _docs) = steam_skyrim();
+        let ini = "SKSE/Plugins/SSEDisplayTweaks.ini";
+        let put = |data: &Path| {
+            fs::create_dir_all(data.join("SKSE/Plugins")).unwrap();
+            fs::write(data.join(ini), "[Render]\nBorderless=true\n").unwrap();
+        };
+        put(&game.data_path);
+        fs::create_dir_all(inst.root.join("Stock Game/Data")).unwrap();
+        inst.ensure_manifest("skyrimse", eidos_instance::InstanceKind::Portable)
+            .unwrap();
+        inst.edit_manifest(|m| m.base_game = Some("Stock Game".into()))
+            .unwrap();
+        assert!(
+            !display_facts(&game, &inst, &[], &tmp()).unwrap().tweaks,
+            "the store install's file is not read"
+        );
+        put(&inst.root.join("Stock Game/Data"));
+        assert!(display_facts(&game, &inst, &[], &tmp()).unwrap().tweaks);
     }
 }

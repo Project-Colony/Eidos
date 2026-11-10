@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use eidos_gamefeatures::preflight::{merged_root, runtime_version, ExtenderFacts};
 use eidos_games::DetectedGame;
-use eidos_instance::GameBuild;
+use eidos_instance::{GameBuild, GameFiles};
 
 use super::{Finding, Level};
 
@@ -43,20 +43,21 @@ pub fn extender_findings(f: &ExtenderFacts) -> Vec<Finding> {
     out
 }
 
-/// The game's executable version (the winning `Root/` copy counts) and, for a
-/// Steam copy, Steam's build id.
+/// The game's executable version in the game files the instance runs (the
+/// winning `Root/` copy counts) and, for a Steam install run without a copy,
+/// Steam's build id: the store's build id says nothing about a copy.
 pub fn current_build(
     game: &DetectedGame,
+    files: &GameFiles,
     mods: &[(String, PathBuf)],
     overwrite: &Path,
 ) -> GameBuild {
     let binary = game.def.game_binary;
     let runtime = (!binary.is_empty())
-        .then(|| runtime_version(&merged_root(&game.install_path, mods, overwrite), binary).ok())
+        .then(|| runtime_version(&merged_root(&files.root, mods, overwrite), binary).ok())
         .flatten()
         .map(|v| v.to_string());
-    let build_id = game
-        .is_steam()
+    let build_id = (game.is_steam() && files.copy.is_none())
         .then(|| eidos_games::steam_build_id(&game.install_path, game.def.steam_app_id))
         .flatten();
     GameBuild { runtime, build_id }
@@ -145,6 +146,48 @@ mod tests {
             game_update_findings("x", Some(&a), &c)[0].arg("from"),
             Some("unknown")
         );
+    }
+
+    #[test]
+    fn current_build_ignores_the_store_build_id_with_a_copy() {
+        let t = std::env::temp_dir().join(format!("eidos-build-copy-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&t);
+        let steamapps = t.join("lib/steamapps");
+        let install = steamapps.join("common/Skyrim Special Edition");
+        std::fs::create_dir_all(&install).unwrap();
+        std::fs::write(
+            steamapps.join("appmanifest_489830.acf"),
+            "\"AppState\"\n{\n\t\"appid\"\t\t\"489830\"\n\t\"buildid\"\t\t\"15012345\"\n}\n",
+        )
+        .unwrap();
+        let def = eidos_games::GameDef::for_id("skyrimse").unwrap();
+        let game = DetectedGame {
+            def,
+            data_path: install.join(def.data_dir),
+            install_path: install,
+            compatdata: None,
+            source: eidos_games::GameSource::Steam,
+            steam_name: String::new(),
+        };
+        let inst = eidos_instance::Instance::portable(t.join("i"));
+        let store = GameFiles::new(&game.install_path, &game.data_path, &inst.root, None);
+        assert_eq!(
+            current_build(&game, &store, &[], &inst.overwrite_dir())
+                .build_id
+                .as_deref(),
+            Some("15012345")
+        );
+        let copy = GameFiles::new(
+            &game.install_path,
+            &game.data_path,
+            &inst.root,
+            Some("Stock Game"),
+        );
+        assert_eq!(
+            current_build(&game, &copy, &[], &inst.overwrite_dir()).build_id,
+            None
+        );
+        let _ = std::fs::remove_dir_all(t);
     }
 
     #[test]

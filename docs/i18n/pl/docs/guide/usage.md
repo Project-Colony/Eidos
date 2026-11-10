@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=d9e26a15d52ab549773ed61d97c7ecf36fea8342 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=aaff8588275e2b036c2a1c344c01509a4c9d0f00 -->
 
 # Używanie Eidos
 
@@ -22,6 +22,7 @@ eidos shell skyrimse              # powłoka w scalonym widoku, zapisy trafiają
 eidos check skyrimse              # kontrole kondycji bez okna (--json dla skryptów)
 eidos sessions skyrimse           # zapisane uruchomienia gry i narzędzi, od najnowszego
 eidos sessions skyrimse diff      # co się zmieniło od ostatniego uruchomienia zakończonego kodem 0
+eidos stock-game skyrimse         # z których plików gry korzysta instancja; zamroź je albo przełącz
 eidos collection skyrimse <link>  # zainstalować kolekcję Nexusa tak, jak zbudował ją jej autor
 eidos nexus update skyrimse --apply  # zainstalować pliki z Nexusa, które zastąpiły twoje
 eidos pack skyrimse backup.eidos  # cała instancja w jednym pliku, żeby przenieść ją gdzie indziej
@@ -117,7 +118,21 @@ instalacja gry i każde źródło moda pozostają nietknięte co do bajtu.
 
 Eidos nie ma instalatora Wabbajack. Zainstaluj listę za pomocą CLF3 lub Jackify, poza Eidos, a potem wskaż folder instalacji jako instancję przenośną w kreatorze. Eidos czyta folder w układzie MO2: `mods/`, `profiles/<nazwa>/modlist.txt` i listy pluginów. Zachowuje plik `ModOrganizer.ini` zapisany przez instalator i nigdy go nie nadpisuje, więc własne programy listy pozostają zarejestrowane.
 
-Wiele list dodaje folder `Stock Game` lub `Game Root` z zmodyfikowaną kopią gry, a MO2 uruchamia grę stamtąd. Eidos uruchamia instalację ze Steama i nie ma ustawienia dla innego folderu gry. Gdy kreator znajdzie taki folder, informuje o tym na ekranie podsumowania i nic więcej nie robi: pliki, które lista tam umieściła, przenieś samodzielnie do folderu `Root/` wybranego moda. CLF3 odbudowuje pliki BSA i DDS własnymi narzędziami, więc wynik może się różnić od instalacji Wabbajack, a autorzy list go nie wspierają.
+Wiele list dodaje folder `Stock Game` lub `Game Root` ze zmodyfikowaną kopią gry, a MO2 uruchamia grę stamtąd. Gdy kreator albo `eidos init` po raz pierwszy przejmuje folder listy, instancja też uruchamia grę z tego folderu, nadal przez Steama lub sklep, do którego należy gra, więc nic nie trzeba przenosić. Eidos znajduje folder po `gamePath` w pliku `ModOrganizer.ini` listy albo po tych dwóch nazwach. Instancja przejęta wcześniejszą wersją Eidos zostaje przy instalacji ze sklepu, dopóki jej nie przełączysz (zob. następną sekcję). CLF3 odbudowuje pliki BSA i DDS własnymi narzędziami, więc wynik może się różnić od instalacji Wabbajack, a autorzy list go nie wspierają.
+
+### Pliki gry: instalacja ze sklepu albo kopia
+
+Domyślnie gra działa ze swojej instalacji ze sklepu, czyli z folderu, w którym trzyma ją Steam, Heroic lub Legendary. Instancja może zamiast tego działać z kopii tego folderu umieszczonej w instancji. Mody leżą na kopii, a instalacja ze sklepu jest tylko miejscem, w którym Eidos montuje wynik. Grę nadal uruchamia sklep, więc Steam zachowuje swoją nakładkę, pamięć podręczną shaderów i zapisy w chmurze.
+
+Karta Game files na górze karty Diagnostics pokazuje, z których plików korzysta instancja, i przełącza między nimi. `eidos stock-game <instance>` robi to samo z terminala: `use <folder>`, `store`, `freeze` i `delete --yes`.
+
+**Freeze this version** kopiuje instalację ze sklepu do `<instance>/Stock Game` i uruchamia grę z kopii, więc aktualizacja ze sklepu nie psuje już pluginów script extendera: aktualizacja zmienia instalację ze sklepu, a nie kopię. Pierwsze kliknięcie pokazuje rozmiar i to, co zrobi z nim system plików, a drugie kopiuje. Na btrfs i XFS kopia współdzieli bloki ze sklepem (reflink) i prawie nie zajmuje miejsca, dopóki sklep nie zmieni jakiegoś pliku. Na ext4, albo gdy gra i instancja leżą na różnych systemach plików, jest to pełna kopia o rozmiarze folderu gry. Eidos odmawia, dopóki Steam zgłasza grę jako zajętą lub aktualizowaną i dopóki działa gra lub narzędzie instancji. Stop albo błąd zostawia `Stock Game.eidos-tmp`, który karta proponuje usunąć; ten folder nigdy nie jest używany.
+
+Kopia ukrywa każdy plik, który sklep doda, zmieni lub usunie w folderze gry po zrobieniu kopii: nowe pliki Creation Club, nowy plik wykonywalny, nowe biblioteki DLL. Gra, lista pluginów, LOOT i testy Health czytają kopię. Kopia nie ukrywa tego, co dzieje się poza folderem gry: aktualizacja nadal może przy następnym uruchomieniu zainstalować biblioteki uruchomieniowe w prefiksie Protona, a Steam może przełączyć grę na inny Proton.
+
+**Return to the store version** po drugim kliknięciu wyłącza kopię z następnego uruchomienia. Kopia zostaje na dysku, a **Delete the copy** ją usuwa, również po drugim kliknięciu. Eidos nigdy nie usuwa własnego folderu `Stock Game` ani `Game Root` listy. Gdy folder kopii zniknie, uruchomienia są odrzucane, a Diagnostics podaje nazwę folderu, więc wersja ze sklepu nigdy nie uruchomi się niespodziewanie.
+
+Morrowind oraz Oblivion z `bUseMyGamesDirectory=0` trzymają listę pluginów w folderze gry, a Eidos nie uruchamia ich jeszcze z kopii.
 
 ### Lista modów
 
@@ -400,6 +415,8 @@ zapisane.
 | `.base/`, `.base-root/` | Puste punkty montowania, w których na czas sesji odkładane są własne pliki gry. |
 | Pliki zapisane w połowie | Wstrzymane pobieranie (`*.unfinished`), atomowy zapis w locie (`*.eidos-tmp*`). |
 | Dowiązania symboliczne | 7-Zip poszedłby za takim i skopiował to, na co ono wskazuje, co przy dowiązaniu bezwzględnym znaczy wciągnięcie obcego drzewa do twojej kopii. Zamiast tego są zgłaszane, a kopia liczy się jako niekompletna: `mods/` albo `downloads/` dowiązany do innego dysku NIE zostaje spakowany. Żeby celowo zrobić kopię bez dowiązanego `downloads/`, podaj `--no-downloads` (albo odznacz *Include downloads/* w oknie); celowe wykluczenie nie liczy się jako brak. |
+
+Kopia gry w instancji (`Stock Game`) jest pakowana jak każdy inny folder, więc kopia zapasowa zamrożonej instancji jest większa mniej więcej o rozmiar gry. Niedokończona kopia (`Stock Game.eidos-tmp`) jest pomijana.
 
 Każda z tych rzeczy trafia do `eidos-backup.ini` w katalogu głównym archiwum,
 wraz ze swoim powodem - więc odpowiedzią na pytanie „czego tu nie ma" jest

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=d9e26a15d52ab549773ed61d97c7ecf36fea8342 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=aaff8588275e2b036c2a1c344c01509a4c9d0f00 -->
 
 # Eidos verwenden
 
@@ -22,6 +22,7 @@ eidos shell skyrimse              # eine Shell in der zusammengeführten Ansicht
 eidos check skyrimse              # Zustandsprüfungen ohne Fenster (--json für Skripte)
 eidos sessions skyrimse           # die aufgezeichneten Spiel- und Tool-Starts, neueste zuerst
 eidos sessions skyrimse diff      # was sich seit dem letzten Start mit Exit-Code 0 geändert hat
+eidos stock-game skyrimse         # welche Spieldateien die Instanz nutzt; einfrieren oder wechseln
 eidos collection skyrimse <link>  # eine Nexus-Collection so installieren, wie ihr Autor sie gebaut hat
 eidos nexus update skyrimse --apply  # die Nexus-Dateien installieren, die Ihre ersetzt haben
 eidos pack skyrimse backup.eidos  # die ganze Instanz in einer Datei, um sie woandershin mitzunehmen
@@ -121,7 +122,21 @@ bleiben Byte für Byte unberührt.
 
 Eidos hat keinen Wabbajack-Installer. Installieren Sie die Liste mit CLF3 oder Jackify außerhalb von Eidos und wählen Sie den Installationsordner im Assistenten als portable Instanz. Eidos liest den Ordner so, wie MO2 ihn anlegt: `mods/`, `profiles/<Name>/modlist.txt` und die Plugin-Listen. Die vom Installer geschriebene `ModOrganizer.ini` bleibt erhalten und wird nie überschrieben, sodass die eigenen Programme der Liste registriert bleiben.
 
-Viele Listen legen einen Ordner `Stock Game` oder `Game Root` an, der eine angepasste Kopie des Spiels enthält, und MO2 startet das Spiel von dort. Eidos startet die Steam-Installation und hat keine Einstellung für einen anderen Spielordner. Findet der Assistent so einen Ordner, weist er auf der Übersichtsseite darauf hin und tut sonst nichts: Verschieben Sie, was die Liste dort abgelegt hat, selbst in den `Root/`-Ordner eines Mods. CLF3 baut BSA- und DDS-Dateien mit eigenen Werkzeugen neu, deshalb kann das Ergebnis von einer Wabbajack-Installation abweichen, und die Listenautoren unterstützen es nicht.
+Viele Listen legen einen Ordner `Stock Game` oder `Game Root` an, der eine angepasste Kopie des Spiels enthält, und MO2 startet das Spiel von dort. Übernimmt der Assistent oder `eidos init` einen Listenordner zum ersten Mal, startet auch die Instanz das Spiel aus diesem Ordner, weiterhin über Steam oder den Store, dem das Spiel gehört, sodass nichts verschoben werden muss. Eidos findet den Ordner über den `gamePath` in der `ModOrganizer.ini` der Liste oder an diesen beiden Namen. Eine Instanz, die mit einer früheren Eidos-Version übernommen wurde, behält die Store-Installation, bis Sie umschalten (siehe nächster Abschnitt). CLF3 baut BSA- und DDS-Dateien mit eigenen Werkzeugen neu, deshalb kann das Ergebnis von einer Wabbajack-Installation abweichen, und die Listenautoren unterstützen es nicht.
+
+### Spieldateien: die Store-Installation oder eine Kopie
+
+Standardmäßig läuft das Spiel aus seiner Store-Installation, dem Ordner, in dem Steam, Heroic oder Legendary es ablegt. Eine Instanz kann stattdessen aus einer Kopie dieses Ordners innerhalb der Instanz laufen. Die Mods liegen über der Kopie, und die Store-Installation ist nur noch der Ort, an dem Eidos das Ergebnis einhängt. Der Store startet das Spiel weiterhin, daher behält Steam sein Overlay, seinen Shader-Cache und seine Cloud-Spielstände.
+
+Die Karte Game files oben im Tab Diagnostics zeigt, welche Dateien die Instanz nutzt, und schaltet zwischen ihnen um. `eidos stock-game <instance>` macht dasselbe im Terminal: `use <folder>`, `store`, `freeze` und `delete --yes`.
+
+**Freeze this version** kopiert die Store-Installation nach `<instance>/Stock Game` und startet das Spiel von dort, sodass ein Store-Update keine Script-Extender-Plugins mehr bricht: Das Update ändert die Store-Installation, nicht die Kopie. Der erste Klick zeigt die Größe und was das Dateisystem damit macht, der zweite kopiert. Auf btrfs und XFS teilt sich die Kopie die Blöcke mit dem Store (Reflink) und belegt fast keinen Platz, bis der Store eine Datei ändert. Auf ext4, oder wenn Spiel und Instanz auf verschiedenen Dateisystemen liegen, ist es eine vollständige Kopie, so groß wie der Spielordner. Eidos lehnt ab, solange Steam das Spiel als beschäftigt oder in Aktualisierung meldet und solange ein Spiel oder Tool der Instanz läuft. Stop oder ein Fehler hinterlässt `Stock Game.eidos-tmp`, das die Karte zum Löschen anbietet; dieser Ordner wird nie benutzt.
+
+Eine Kopie verbirgt jede Datei, die der Store nach dem Kopieren im Spielordner hinzufügt, ändert oder entfernt: neue Creation-Club-Dateien, eine neue ausführbare Datei, neue DLLs. Das Spiel, die Plugin-Liste, LOOT und die Health-Prüfungen lesen alle die Kopie. Was außerhalb des Spielordners passiert, verbirgt sie nicht: Ein Update kann beim nächsten Start weiterhin Laufzeitbibliotheken in das Proton-Präfix installieren, und Steam kann das Spiel auf ein anderes Proton umstellen.
+
+**Return to the store version** nimmt die Kopie nach einem zweiten Klick aus dem nächsten Start. Die Kopie bleibt auf der Platte, und **Delete the copy** entfernt sie, ebenfalls nach einem zweiten Klick. Eidos löscht nie den eigenen Ordner `Stock Game` oder `Game Root` einer Liste. Fehlt der Ordner der Kopie, werden Starts abgelehnt und Diagnostics nennt den Ordner, sodass nie unerwartet die Store-Version läuft.
+
+Morrowind sowie Oblivion mit `bUseMyGamesDirectory=0` halten ihre Plugin-Liste im Spielordner, und Eidos startet sie noch nicht aus einer Kopie.
 
 ### Die Mod-Liste
 
@@ -425,6 +440,8 @@ und `eidos pack --dry-run` sagt, ob sie geschrieben werden.
 | `.base/`, `.base-root/` | Leere Mountpunkte, an denen die eigenen Dateien des Spiels während einer Sitzung verstaut werden. |
 | Halb geschriebene Dateien | Ein angehaltener Download (`*.unfinished`), ein atomares Schreiben im Flug (`*.eidos-tmp*`). |
 | Symbolische Links | 7-Zip würde einem folgen und kopieren, worauf er zeigt, was bei einem absoluten Link heißt, einen fremden Baum in Ihre Sicherung zu ziehen. Sie werden stattdessen gemeldet, und die Sicherung gilt als unvollständig: ein auf ein anderes Laufwerk verlinktes `mods/` oder `downloads/` wird NICHT gepackt. Um bewusst ohne ein verlinktes `downloads/` zu sichern, geben Sie `--no-downloads` an (oder entfernen Sie im Fenster den Haken bei *Include downloads/*); ein bewusstes Weglassen zählt nicht als fehlend. |
+
+Eine Spielkopie in der Instanz (`Stock Game`) wird wie jeder andere Ordner gepackt, daher ist das Backup einer eingefrorenen Instanz etwa um die Größe des Spiels größer. Eine unfertige Kopie (`Stock Game.eidos-tmp`) bleibt draußen.
 
 Jeder dieser Punkte landet mit seinem Grund in der `eidos-backup.ini` in der
 Wurzel des Archivs - die Antwort auf "was ist hier nicht drin" ist also `cat` und

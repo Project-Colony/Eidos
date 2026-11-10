@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=d9e26a15d52ab549773ed61d97c7ecf36fea8342 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=aaff8588275e2b036c2a1c344c01509a4c9d0f00 -->
 
 # Používání Eidosu
 
@@ -22,6 +22,7 @@ eidos shell skyrimse              # shell ve sloučeném pohledu, zápisy skonč
 eidos check skyrimse              # kontroly zdraví bez okna (--json pro skripty)
 eidos sessions skyrimse           # zaznamenaná spuštění hry a nástrojů, nejnovější první
 eidos sessions skyrimse diff      # co se změnilo od posledního spuštění, které skončilo kódem 0
+eidos stock-game skyrimse         # které herní soubory instance používá; zmrazit je nebo přepnout
 eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
 eidos nexus update skyrimse --apply  # install the Nexus files that replaced yours
 eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
@@ -111,7 +112,21 @@ zůstanou bajt po bajtu nedotčené.
 
 Eidos nemá instalátor Wabbajack. Nainstalujte seznam pomocí CLF3 nebo Jackify mimo Eidos a v průvodci zvolte instalační složku jako přenosnou instanci. Eidos čte složku v uspořádání MO2: `mods/`, `profiles/<název>/modlist.txt` a seznamy pluginů. Soubor `ModOrganizer.ini`, který zapsal instalátor, ponechá a nikdy ho nepřepíše, takže programy samotného seznamu zůstanou zaregistrované.
 
-Mnoho seznamů přidává složku `Stock Game` nebo `Game Root` s upravenou kopií hry a MO2 spouští hru odtud. Eidos spouští instalaci ze Steamu a nemá nastavení pro jinou složku hry. Když průvodce takovou složku najde, upozorní na to na přehledové obrazovce a nedělá nic dalšího: soubory, které tam seznam uložil, přesuňte sami do složky `Root/` některého modu. CLF3 znovu vytváří soubory BSA a DDS vlastními nástroji, takže výsledek se může lišit od instalace Wabbajack a autoři seznamů ho nepodporují.
+Mnoho seznamů přidává složku `Stock Game` nebo `Game Root` s upravenou kopií hry a MO2 spouští hru odtud. Když průvodce nebo `eidos init` převezme složku seznamu poprvé, instance spouští hru také z této složky, stále přes Steam nebo obchod, kterému hra patří, takže není třeba nic přesouvat. Eidos složku najde podle `gamePath` v souboru `ModOrganizer.ini` seznamu, nebo podle těch dvou názvů. Instance převzatá starší verzí Eidos zůstává u instalace z obchodu, dokud ji nepřepnete (viz další oddíl). CLF3 znovu vytváří soubory BSA a DDS vlastními nástroji, takže výsledek se může lišit od instalace Wabbajack a autoři seznamů ho nepodporují.
+
+### Herní soubory: instalace z obchodu, nebo kopie
+
+Ve výchozím stavu hra běží ze své instalace z obchodu, tedy ze složky, ve které ji má Steam, Heroic nebo Legendary. Instance může místo toho běžet z kopie této složky uvnitř instance. Módy leží nad kopií a instalace z obchodu je jen místo, kam Eidos výsledek připojí. Hru dál spouští obchod, takže Steam si ponechá overlay, mezipaměť shaderů i uložené pozice v cloudu.
+
+Karta Game files nahoře na kartě Diagnostics ukazuje, které soubory instance používá, a přepíná mezi nimi. `eidos stock-game <instance>` dělá totéž z terminálu: `use <folder>`, `store`, `freeze` a `delete --yes`.
+
+**Freeze this version** zkopíruje instalaci z obchodu do `<instance>/Stock Game` a spouští hru z ní, takže aktualizace z obchodu už nerozbije pluginy script extenderu: aktualizace změní instalaci z obchodu, ne kopii. První stisk ukáže velikost a to, co s ní udělá souborový systém, druhý kopíruje. Na btrfs a XFS kopie sdílí bloky s obchodem (reflink) a nezabírá téměř žádné místo, dokud obchod nezmění nějaký soubor. Na ext4, nebo když jsou hra a instance na různých souborových systémech, jde o plnou kopii velkou jako složka hry. Eidos odmítne, dokud Steam hlásí hru jako zaneprázdněnou nebo aktualizovanou a dokud běží hra nebo nástroj instance. Stop nebo chyba zanechá `Stock Game.eidos-tmp`, kterou karta nabídne ke smazání; tato složka se nikdy nepoužije.
+
+Kopie skryje každý soubor, který obchod po vytvoření kopie ve složce hry přidá, změní nebo odstraní: nové soubory Creation Clubu, nový spustitelný soubor, nové DLL. Hra, seznam pluginů, LOOT i kontroly Health čtou kopii. Neskryje to, co se děje mimo složku hry: aktualizace může při dalším spuštění dál instalovat runtime knihovny do prefixu Protonu a Steam může hru přepnout na jiný Proton.
+
+**Return to the store version** po druhém stisku vyřadí kopii z dalšího spuštění. Kopie zůstane na disku a **Delete the copy** ji odstraní, opět po druhém stisku. Eidos nikdy nesmaže vlastní složku `Stock Game` nebo `Game Root` seznamu. Když složka kopie zmizí, spuštění se odmítají a Diagnostics složku pojmenuje, takže verze z obchodu se nikdy nespustí nečekaně.
+
+Morrowind a Oblivion s `bUseMyGamesDirectory=0` mají seznam pluginů ve složce hry a Eidos je zatím z kopie nespouští.
 
 ### Seznam módů
 
@@ -380,6 +395,8 @@ rozbalení to oznámí. Na stroji bez par2 rozbalení i tak proběhne, s varová
 | `.base/`, `.base-root/` | Prázdné body připojení, kam se během relace odkládají vlastní soubory hry. |
 | Napůl zapsané soubory | Pozastavené stahování (`*.unfinished`), probíhající atomický zápis (`*.eidos-tmp*`). |
 | Symbolické odkazy | 7-Zip by je následoval a zkopíroval to, na co ukazují, což u absolutního odkazu znamená vtáhnout do zálohy cizí strom. Místo toho se nahlásí a záloha se počítá jako neúplná: složka `mods/` nebo `downloads/` napojená odkazem na jiný disk se NEZABALÍ. Chcete-li záměrně zálohovat bez odkazované složky `downloads/`, předejte `--no-downloads` (nebo v okně zrušte zaškrtnutí *Include downloads/*); záměrné vynechání se jako chybějící nepočítá. |
+
+Kopie hry v instanci (`Stock Game`) se zabalí jako každá jiná složka, takže záloha zmrazené instance je zhruba o velikost hry větší. Nedokončená kopie (`Stock Game.eidos-tmp`) se vynechá.
 
 Každá z těchto věcí je i se svým důvodem zapsaná v `eidos-backup.ini` v kořeni
 archivu - takže odpovědí na otázku „co tady není" je `cat`, ne dohad. Tentýž

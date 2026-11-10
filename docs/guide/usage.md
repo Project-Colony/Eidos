@@ -20,6 +20,7 @@ eidos shell skyrimse              # a shell in the merged view, writes land in O
 eidos check skyrimse              # Health checks without the window (--json for scripts)
 eidos sessions skyrimse           # the recorded game and tool runs, newest first
 eidos sessions skyrimse diff      # what changed since the last run that exited with code 0
+eidos stock-game skyrimse         # which game files the instance runs; freeze or switch them
 eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
 eidos nexus update skyrimse --apply  # install the Nexus files that replaced yours
 eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
@@ -122,7 +123,21 @@ mod source stay byte-for-byte pristine.
 
 Eidos has no Wabbajack installer. Install the list with CLF3 or Jackify, outside Eidos, then pick the install folder as a portable instance in the wizard. Eidos reads the folder as MO2 lays it out: `mods/`, `profiles/<name>/modlist.txt` and the plugin lists. It keeps the `ModOrganizer.ini` the installer wrote and never overwrites it, so the list's own executables stay registered.
 
-Many lists add a `Stock Game` or `Game Root` folder that holds a patched copy of the game, and MO2 launches the game from there. Eidos launches the Steam install and has no setting for another game folder. When the wizard finds such a folder it says so on the review screen and does nothing else: move what the list put there into a mod's `Root/` folder yourself. CLF3 rebuilds BSA and DDS files with its own tools, so the result can differ from a Wabbajack install, and list authors do not support it.
+Many lists add a `Stock Game` or `Game Root` folder that holds a patched copy of the game, and MO2 runs the game from there. When the wizard or `eidos init` adopts a list folder for the first time, the instance runs the game from that folder too, still started through Steam or the store that owns the game, so nothing has to be moved. Eidos finds the folder from the `gamePath` in the list's `ModOrganizer.ini`, or by those two names. An instance adopted with an earlier Eidos keeps the store install until you switch it (see the next section). CLF3 rebuilds BSA and DDS files with its own tools, so the result can differ from a Wabbajack install, and list authors do not support it.
+
+### Game files: the store install or a copy
+
+By default the game runs from its store install, the folder Steam, Heroic or Legendary keeps it in. An instance can run from a copy of that folder inside the instance instead. The mods sit on top of the copy, and the store install is only the place where Eidos mounts the result. The store still starts the game, so Steam keeps its overlay, its shader cache and its cloud saves.
+
+The Game files card at the top of the Diagnostics tab shows which files the instance runs and switches between them. `eidos stock-game <instance>` does the same from a terminal: `use <folder>`, `store`, `freeze` and `delete --yes`.
+
+**Freeze this version** copies the store install into `<instance>/Stock Game` and runs the game from it, so a store update no longer breaks script extender plugins: the update changes the store install, not the copy. The first press shows the size and what the filesystem does with it, and the second press copies. On btrfs and XFS the copy shares the store's blocks (reflink) and takes almost no space until the store changes a file. On ext4, or when the game and the instance are on different filesystems, it is a full copy as large as the game folder. Eidos refuses while Steam reports the game busy or updating, and while a game or tool of the instance runs. Stop, or a failure, leaves `Stock Game.eidos-tmp`, which the card offers to delete; it is never used.
+
+A copy hides every file the store adds, changes or removes in the game folder after the copy was made: new Creation Club files, a new executable, new DLLs. The game, the plugin list, LOOT and the Health checks all read the copy. It does not hide what happens outside the game folder: an update can still install runtimes into the Proton prefix at the next launch, and Steam can switch the game to another Proton.
+
+**Return to the store version** takes the copy out of the next launch after a second press. The copy stays on disk, and **Delete the copy** removes it, again after a second press. Eidos never deletes a list's own `Stock Game` or `Game Root` folder. If the copy folder goes missing, launches are refused and Diagnostics names the folder, so the store version never runs by surprise.
+
+Morrowind, and Oblivion with `bUseMyGamesDirectory=0`, keep their plugin list in the game folder, and Eidos does not run them from a copy yet.
 
 ### The mod list
 
@@ -395,6 +410,8 @@ whether it will be written.
 | `.base/`, `.base-root/` | Empty mountpoints where the game's own files are stashed during a session. |
 | Half-written files | A paused download (`*.unfinished`), an atomic write in flight (`*.eidos-tmp*`). |
 | Symbolic links | 7-Zip would follow one and copy whatever it points at, which for an absolute link means pulling a foreign tree into your backup. They are reported instead, and the backup counts as incomplete: a `mods/` or `downloads/` linked to another drive is NOT packed. To back up without a linked `downloads/` on purpose, pass `--no-downloads` (or untick *Include downloads/* in the window); a deliberate exclusion does not count as missing. |
+
+A game copy in the instance (`Stock Game`) is packed like any other folder, so the backup of a frozen instance is about the size of the game larger. An unfinished copy (`Stock Game.eidos-tmp`) is left out.
 
 Every one of these goes into `eidos-backup.ini` at the root of the archive, with
 its reason - so the answer to "what is not in here" is `cat`, not a guess. The

@@ -201,6 +201,54 @@ fn finish_adopts_a_matching_portable_folder() {
 }
 
 #[test]
+fn the_wizard_adopts_a_new_list_folder_and_leaves_an_existing_instance_alone() {
+    let finish = |root: &Path| {
+        let mut app = app_for_game("skyrimse");
+        app.games[0].install_path = root.join("store");
+        app.screen = Screen::Summary;
+        app.kind = InstanceKind::Portable;
+        app.name = "List".into();
+        app.portable_path = root.display().to_string();
+        let _ = update_inner(&mut app, Message::Finish);
+        app
+    };
+    let game_in = |root: &Path, folder: &str| {
+        fs::create_dir_all(root.join(folder)).unwrap();
+        fs::write(root.join(folder).join("SkyrimSE.exe"), b"x").unwrap();
+    };
+    let fresh = std::env::temp_dir().join(format!("eidos-list-fresh-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&fresh);
+    game_in(&fresh, "Stock Game");
+    game_in(&fresh, "store");
+    let app = finish(&fresh);
+    assert_eq!(
+        Instance::portable(fresh.clone())
+            .read_manifest()
+            .unwrap()
+            .base_game
+            .as_deref(),
+        Some("Stock Game")
+    );
+    assert_eq!(
+        app.status.as_deref(),
+        Some(tf("status_adopted_stock_game", &[("folder", &"Stock Game")]).as_str())
+    );
+    let known = temp_portable("skyrimse");
+    game_in(&known, "Stock Game");
+    game_in(&known, "store");
+    let app = finish(&known);
+    assert!(app.created.is_some(), "the existing instance opens");
+    assert_eq!(
+        Instance::portable(known.clone())
+            .read_manifest()
+            .unwrap()
+            .base_game,
+        None
+    );
+    let _ = (fs::remove_dir_all(fresh), fs::remove_dir_all(known));
+}
+
+#[test]
 fn switching_instance_drops_the_previous_games_merged_view() {
     // The Data tab is memoised per directory against `view_generation`, so a
     // switch that does not bump it answers every already-listed directory out
@@ -6638,6 +6686,12 @@ fn the_refusal_line_is_eidos_s_own_and_only_its_first_line() {
             .as_deref(),
         Some("eidos prereqs: refusing to install: /x is in use by eidos play")
     );
+    // `eidos stock-game` says its refusals at INFO.
+    assert_eq!(
+        refusal_line("INFO  eidos: refusing to freeze: Steam reports the game as busy\n")
+            .as_deref(),
+        Some("eidos: refusing to freeze: Steam reports the game as busy")
+    );
 }
 
 #[test]
@@ -7777,6 +7831,11 @@ mod cleaning {
         assert!(!scratch.exists());
     }
 
+    /// The Data folder `diagnostics` hands to `stale_copies`.
+    fn game_data(app: &App) -> Option<PathBuf> {
+        crate::state::game_files(app).map(|f| f.data)
+    }
+
     #[test]
     fn a_copy_whose_source_changed_is_reported_with_a_hide_action() {
         let (mut app, root) = list_app(&["Base", "Cleaned plugins"]);
@@ -7789,9 +7848,12 @@ mod cleaning {
         .unwrap();
         invalidate_meta(&mut app, "Cleaned plugins");
         refresh_meta_cache(&mut app);
-        assert!(stale_copies(&app).is_empty());
+        assert!(stale_copies(&app, game_data(&app).as_deref()).is_empty());
         fs::write(&src, b"updated source").unwrap();
-        assert_eq!(stale_copies(&app), [(1, "Dirty.esp".to_string())]);
+        assert_eq!(
+            stale_copies(&app, game_data(&app).as_deref()),
+            [(1, "Dirty.esp".to_string())]
+        );
         let card = diagnostics(&app)
             .into_iter()
             .find(|d| d.title == tf("diag_stale_copy", &[("plugin", &"Dirty.esp")]))
@@ -7802,7 +7864,36 @@ mod cleaning {
         crate::view::set_hidden(&root.join("mods/Cleaned plugins/Dirty.esp"), true).unwrap();
         invalidate_meta(&mut app, "Cleaned plugins");
         refresh_meta_cache(&mut app);
-        assert!(stale_copies(&app).is_empty());
+        assert!(stale_copies(&app, game_data(&app).as_deref()).is_empty());
+    }
+
+    #[test]
+    fn a_copy_of_a_game_plugin_is_checked_against_the_game_copy() {
+        let (mut app, root) = stock_game_app();
+        let store = app.games[0].data_path.join("Dirty.esp");
+        let in_copy = root.join("Stock Game/Data/Dirty.esp");
+        fs::write(&store, b"store").unwrap();
+        fs::write(&in_copy, b"copy").unwrap();
+        fs::write(root.join("mods/Keep/Dirty.esp"), b"clean").unwrap();
+        let inst = app.created.as_ref().unwrap();
+        inst.edit_manifest(|m| m.base_game = Some("Stock Game".into()))
+            .unwrap();
+        edit_mod_meta(inst, "Keep", |m| {
+            m.set_plugin_source(PluginSource::of("Dirty.esp", &in_copy).unwrap())
+        })
+        .unwrap();
+        invalidate_meta(&mut app, "Keep");
+        refresh_meta_cache(&mut app);
+        let data = game_data(&app);
+        assert!(stale_copies(&app, data.as_deref()).is_empty());
+        // A store update changes the install, which the game no longer reads.
+        fs::write(&store, b"store update").unwrap();
+        assert!(stale_copies(&app, data.as_deref()).is_empty());
+        fs::write(&in_copy, b"copy changed").unwrap();
+        assert_eq!(
+            stale_copies(&app, data.as_deref()),
+            [(0, "Dirty.esp".to_string())]
+        );
     }
 
     #[test]
@@ -8671,6 +8762,212 @@ fn move_mod_below_acts_by_name_and_ignores_a_stale_card() {
     let _ = update_inner(&mut app, mv("Gone", "Other"));
     assert_eq!(names(&app.mods), ["Other", "Master", "Patch"]);
     let _ = fs::remove_dir_all(root);
+}
+
+/// The `base_game` the manifest records now.
+fn base_game(app: &App) -> Option<String> {
+    app.created
+        .as_ref()
+        .unwrap()
+        .read_manifest()
+        .unwrap()
+        .base_game
+}
+
+/// A list instance holding `Stock Game/SkyrimSE.exe` and `Stock Game/Data/copy only.esp`,
+/// its game installed in a temp dir.
+fn stock_game_app() -> (App, PathBuf) {
+    let (mut app, root) = list_app(&["Keep"]);
+    fs::create_dir_all(root.join("Stock Game/Data")).unwrap();
+    fs::write(root.join("Stock Game/SkyrimSE.exe"), b"x").unwrap();
+    fs::write(root.join("Stock Game/Data/copy only.esp"), b"x").unwrap();
+    let install = root.join("game");
+    fs::create_dir_all(install.join("Data")).unwrap();
+    app.games[0].data_path = install.join("Data");
+    app.games[0].install_path = install;
+    (app, root)
+}
+
+#[test]
+fn use_takes_one_press_and_return_to_the_store_takes_two() {
+    let (mut app, inst_root) = stock_game_app();
+    // Whether the conflict map's game layer holds the file only the copy has.
+    let copy_file_is_base = |app: &App| {
+        let map = app.conflicts.as_ref().expect("a conflict map");
+        map.files
+            .get("copy only.esp")
+            .is_some_and(|n| n.winner == eidos_conflicts::BASE_ORIGIN)
+    };
+    // The store install's Data walk is cached, as after any earlier view.
+    app.conflicts = compute_conflicts(&app);
+    assert!(!copy_file_is_base(&app));
+    let _ = update_inner(
+        &mut app,
+        Message::GameFiles(GameFilesAction::Use("Stock Game".into())),
+    );
+    assert_eq!(base_game(&app).as_deref(), Some("Stock Game"));
+    assert!(
+        copy_file_is_base(&app),
+        "the conflicts read the copy's Data"
+    );
+    assert_eq!(
+        app.status.as_deref(),
+        Some(tf("status_game_files_use_copy", &[("folder", &"Stock Game")]).as_str())
+    );
+    assert_eq!(
+        app.game_files_facts
+            .as_ref()
+            .and_then(|f| f.files.copy.as_deref()),
+        Some("Stock Game"),
+        "the card reads the new game files"
+    );
+    let _ = update_inner(&mut app, Message::GameFiles(GameFilesAction::Store));
+    assert_eq!(
+        (base_game(&app).as_deref(), app.confirm_game_files.clone()),
+        (Some("Stock Game"), Some(GameFilesAction::Store))
+    );
+    let _ = update_inner(&mut app, Message::GameFiles(GameFilesAction::Store));
+    assert_eq!(base_game(&app), None);
+    assert!(
+        !copy_file_is_base(&app),
+        "the conflicts read the store Data again"
+    );
+    assert_eq!(
+        app.status.as_deref(),
+        Some(tf("status_game_files_use_store", &[("folder", &"Stock Game")]).as_str())
+    );
+    assert!(
+        inst_root.join("Stock Game/SkyrimSE.exe").is_file(),
+        "returning keeps the copy"
+    );
+    let _ = fs::remove_dir_all(inst_root);
+}
+
+#[test]
+fn game_files_actions_wait_for_a_tracked_run_and_any_other_action_disarms() {
+    let (mut app, root) = stock_game_app();
+    let _ = update_inner(
+        &mut app,
+        Message::GameFiles(GameFilesAction::Use("Stock Game".into())),
+    );
+    let _ = update_inner(&mut app, Message::GameFiles(GameFilesAction::Store));
+    let _ = update_inner(&mut app, Message::SelectTab(Tab::Data));
+    assert_eq!(app.confirm_game_files, None);
+    let mut cmd = std::process::Command::new("sleep");
+    cmd.arg("30");
+    start_run(&mut app, "Game".into(), cmd);
+    let _ = update_inner(&mut app, Message::GameFiles(GameFilesAction::Store));
+    let _ = update_inner(&mut app, Message::GameFiles(GameFilesAction::Store));
+    assert_eq!(
+        app.status.as_deref(),
+        Some(tf("status_game_files_wait_run", &[("title", &"Game")]).as_str())
+    );
+    assert_eq!(
+        (base_game(&app).as_deref(), app.confirm_game_files.clone()),
+        (Some("Stock Game"), None),
+        "a tracked run blocks the switch"
+    );
+    let pid = app.running.as_ref().unwrap().pid as libc::pid_t;
+    assert_eq!(unsafe { libc::kill(pid, libc::SIGKILL) }, 0);
+    finish_tracked_run(&mut app);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn freeze_shows_the_plan_on_the_first_press_and_copies_nothing() {
+    let (mut app, inst_root) = list_app(&[]);
+    let install = inst_root.join("game");
+    fs::create_dir_all(install.join("Data")).unwrap();
+    fs::write(install.join("SkyrimSE.exe"), b"x").unwrap();
+    fs::write(install.join("Data/Skyrim.esm"), b"x").unwrap();
+    app.games[0].data_path = install.join("Data");
+    app.games[0].install_path = install;
+    let _ = update_inner(&mut app, Message::GameFiles(GameFilesAction::Freeze));
+    assert_eq!(app.confirm_game_files, Some(GameFilesAction::Freeze));
+    let s = app.status.clone().unwrap();
+    assert!(
+        s.contains(&inst_root.join("Stock Game").display().to_string()) && s.contains("(2 files)"),
+        "{s}"
+    );
+    assert!(!inst_root.join("Stock Game").exists() && app.running.is_none());
+    let _ = fs::remove_dir_all(inst_root);
+}
+
+#[test]
+fn a_full_copy_that_does_not_fit_is_refused_before_arming() {
+    use super::game_files::freeze_status;
+    use eidos::stock_game::{CopyKind, FreezePlan};
+    let p = FreezePlan {
+        from: "/g".into(),
+        to: "/i/Stock Game".into(),
+        bytes: 10 << 30,
+        files: 3,
+        kind: CopyKind::Full,
+        fs: Some("ext4"),
+        free: Some(1 << 30),
+    };
+    assert!(freeze_status(&p)
+        .unwrap_err()
+        .contains(&eidos_transfer::human_bytes(10 << 30)));
+    let reflink = freeze_status(&FreezePlan {
+        kind: CopyKind::Reflink,
+        fs: Some("btrfs"),
+        ..p
+    })
+    .unwrap();
+    assert!(
+        reflink.contains(&tf("freeze_how_reflink", &[("fs", &"btrfs")])),
+        "{reflink}"
+    );
+}
+
+#[test]
+fn the_freeze_and_delete_commands_run_the_cli_with_yes() {
+    use super::game_files::{delete_copy_command, freeze_command};
+    let args = |c: std::process::Command| {
+        c.get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+    };
+    assert!(args(freeze_command("/i")).ends_with(&[
+        "stock-game".into(),
+        "/i".into(),
+        "freeze".into(),
+        "--yes".into()
+    ]));
+    assert!(args(delete_copy_command("/i")).ends_with(&[
+        "stock-game".into(),
+        "/i".into(),
+        "delete".into(),
+        "--yes".into()
+    ]));
+}
+
+#[test]
+fn delete_the_copy_arms_with_its_path_and_size() {
+    let (mut app, inst_root) = list_app(&[]);
+    let inst = app.created.clone().unwrap();
+    inst.edit_manifest(|m| m.frozen_copy = Some("Stock Game".into()))
+        .unwrap();
+    fs::create_dir_all(inst_root.join("Stock Game")).unwrap();
+    fs::write(inst_root.join("Stock Game/SkyrimSE.exe"), b"x").unwrap();
+    let _ = update_inner(&mut app, Message::GameFiles(GameFilesAction::Delete));
+    assert_eq!(app.confirm_game_files, Some(GameFilesAction::Delete));
+    assert_eq!(
+        app.status.as_deref(),
+        Some(
+            tf(
+                "status_delete_copy_confirm",
+                &[
+                    ("path", &inst_root.join("Stock Game").display()),
+                    ("size", &"1 B")
+                ]
+            )
+            .as_str()
+        )
+    );
+    assert!(inst_root.join("Stock Game").is_dir() && app.running.is_none());
+    let _ = fs::remove_dir_all(inst_root);
 }
 
 /// A cached recipe and install state for `slug` revision 1: `members` are

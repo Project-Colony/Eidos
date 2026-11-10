@@ -83,6 +83,7 @@ print(json.dumps({'protocol':1,'request_id':r['request_id'],'outcome':o}))
         nexus: &nexus,
         inst: &inst,
         game: &game,
+        exclusion_roots: (&game.install_path, &game.data_path),
         game_id: "oblivion".into(),
         say: &mut say,
         collection_domain: "oblivion".into(),

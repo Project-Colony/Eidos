@@ -347,8 +347,9 @@ pub(crate) fn data_stack(
     let game = selected_game(app)?;
     // `load_order` is already highest-priority-first and already drops disabled
     // mods, separators and unmanaged rows - exactly what the mount is handed.
+    let data = inst.game_files(&game.install_path, &game.data_path).data;
     let mut layers = inst.load_order();
-    layers.push(game.data_path.clone());
+    layers.push(data.clone());
     let stack = std::rc::Rc::new(
         if want_index {
             eidos_core::LayerStack::new(layers, inst.overwrite_dir())
@@ -372,7 +373,7 @@ pub(crate) fn data_stack(
     {
         sources.insert(m.path.clone(), m.name.clone());
     }
-    sources.insert(game.data_path.clone(), format!("[{}]", game.def.id));
+    sources.insert(data, format!("[{}]", game.def.id));
     let sources = std::rc::Rc::new(sources);
     *app.data_stack.borrow_mut() = Some((gen, want_index, stack.clone(), sources.clone()));
     Some((stack, sources))

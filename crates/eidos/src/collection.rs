@@ -189,11 +189,16 @@ pub(crate) fn cmd_collection(args: &[String]) {
         }
     };
 
+    // The driver reads the game's files and never mounts or launches it.
+    let install = game;
+    let game =
+        crate::stock_game::files_view(&install, &crate::stock_game::game_files(&install, &inst));
     let mut say = |line: String| println!("  {line}");
     let mut hooks = driver::RealHooks {
         nexus: &nexus,
         inst: &inst,
         game: &game,
+        exclusion_roots: (&install.install_path, &install.data_path),
         game_id: target.game_id.clone(),
         payload_root: dir.clone(),
         allow_runtime_mismatch: args.iter().any(|arg| arg == "--allow-runtime-mismatch"),

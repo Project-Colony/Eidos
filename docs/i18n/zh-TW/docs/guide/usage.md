@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=d9e26a15d52ab549773ed61d97c7ecf36fea8342 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=aaff8588275e2b036c2a1c344c01509a4c9d0f00 -->
 
 # 使用 Eidos
 
@@ -21,6 +21,7 @@ eidos shell skyrimse              # 在合併檢視裡開一個 shell,寫入的�
 eidos check skyrimse              # 不開視窗跑健康檢查(腳本用 --json)
 eidos sessions skyrimse           # 依由新到舊列出已記錄的遊戲與工具執行
 eidos sessions skyrimse diff      # 顯示自上次以結束碼 0 結束的執行以來的變化
+eidos stock-game skyrimse         # 實例執行哪份遊戲檔案;凍結或切換
 eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
 eidos nexus update skyrimse --apply  # install the Nexus files that replaced yours
 eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
@@ -85,7 +86,21 @@ Steam 管 - 一次更新、一次「驗證檔案完整性」或一次解除安�
 
 Eidos 沒有 Wabbajack 安裝程式。請在 Eidos 之外用 CLF3 或 Jackify 安裝清單，然後在精靈中把安裝資料夾選為可攜式執行個體。Eidos 依 MO2 的配置讀取該資料夾：`mods/`、`profiles/<名稱>/modlist.txt` 和外掛清單。安裝程式寫入的 `ModOrganizer.ini` 會被保留，絕不會被覆寫，因此清單自帶的執行檔仍維持註冊。
 
-許多清單會加入一個 `Stock Game` 或 `Game Root` 資料夾，裡面是修改過的遊戲副本，MO2 從那裡啟動遊戲。Eidos 啟動的是 Steam 安裝，也沒有指向其他遊戲資料夾的設定。精靈發現這樣的資料夾時，只會在確認畫面提示，不會做其他事：請自行把清單放在那裡的檔案移到某個模組的 `Root/` 資料夾中。CLF3 用自己的工具重建 BSA 和 DDS 檔案，所以結果可能與 Wabbajack 安裝不同，清單作者也不提供支援。
+許多清單會加入一個 `Stock Game` 或 `Game Root` 資料夾，裡面是修改過的遊戲副本，MO2 從那裡啟動遊戲。精靈或 `eidos init` 第一次接管清單資料夾時，實例也從這個資料夾執行遊戲，仍然透過 Steam 或擁有該遊戲的商店啟動，所以什麼都不用搬動。Eidos 依清單 `ModOrganizer.ini` 裡的 `gamePath`，或依這兩個名稱找到該資料夾。用較早版本的 Eidos 接管的實例會繼續使用商店安裝，直到你切換為止（見下一節）。CLF3 用自己的工具重建 BSA 和 DDS 檔案，所以結果可能與 Wabbajack 安裝不同，清單作者也不提供支援。
+
+### 遊戲檔案:商店安裝還是副本
+
+預設情況下，遊戲從它的商店安裝執行，也就是 Steam、Heroic 或 Legendary 存放它的資料夾。實例也可以改為從放在實例內的該資料夾副本執行。模組疊在副本之上，商店安裝只是 Eidos 掛載結果的位置。遊戲仍由商店啟動，所以 Steam 保留它的覆蓋介面、著色器快取和雲端存檔。
+
+Diagnostics 分頁頂端的 Game files 卡片顯示實例執行的是哪份檔案，並在兩者之間切換。`eidos stock-game <instance>` 在終端機裡做同樣的事：`use <folder>`、`store`、`freeze` 和 `delete --yes`。
+
+**Freeze this version** 把商店安裝複製到 `<instance>/Stock Game`，並從那裡執行遊戲，這樣商店更新就不會再弄壞 script extender 外掛：更新改的是商店安裝，不是副本。第一次按下會顯示大小以及檔案系統會怎麼處理它，第二次按下才複製。在 btrfs 和 XFS 上，副本與商店共用資料區塊（reflink），在商店改動某個檔案之前幾乎不佔空間。在 ext4 上，或者遊戲和實例位於不同檔案系統時，它是一份和遊戲資料夾一樣大的完整副本。只要 Steam 回報遊戲正忙或正在更新，或者實例的遊戲或工具正在執行，Eidos 就會拒絕。Stop 或失敗會留下 `Stock Game.eidos-tmp`，卡片會提議刪除它；這個資料夾永遠不會被使用。
+
+副本會遮蔽商店在複製之後於遊戲資料夾新增、修改或刪除的每個檔案：新的 Creation Club 檔案、新的執行檔、新的 DLL。遊戲、外掛清單、LOOT 和 Health 檢查讀取的都是副本。它遮蔽不了遊戲資料夾之外發生的事：更新仍可能在下次啟動時向 Proton 前綴安裝執行階段程式庫，Steam 也可能把遊戲切換到另一個 Proton。
+
+**Return to the store version** 在第二次按下後把副本從下次啟動中移除。副本留在磁碟上，**Delete the copy** 會刪除它，同樣需要按第二次。Eidos 從不刪除清單自帶的 `Stock Game` 或 `Game Root` 資料夾。如果副本資料夾不見了，啟動會被拒絕，Diagnostics 會說出該資料夾的名稱，所以商店版本永遠不會在意料之外執行。
+
+Morrowind，以及 `bUseMyGamesDirectory=0` 的 Oblivion，會把外掛清單放在遊戲資料夾裡，Eidos 目前還不從副本執行它們。
 
 ### 模組清單
 
@@ -309,6 +324,8 @@ mesh 要花 1.4 倍的時間,解包材質要花 6.8 倍。
 | `.base/`、`.base-root/` | 空的掛載點,工作階段期間遊戲自己的檔案被暫存在這裡。 |
 | 寫到一半的檔案 | 暫停中的下載(`*.unfinished`)、進行到一半的原子寫入(`*.eidos-tmp*`)。 |
 | 符號連結 | 7-Zip 會跟著它走,把它指向的東西複製進來,而對一條絕對路徑的連結來說,那等於把一棵不相干的目錄樹拉進你的備份。改成回報它們,而且這份備份會被算作不完整:連結到另一顆硬碟的 `mods/` 或 `downloads/` **不會**被打包。如果你本來就打算不帶那個連結過去的 `downloads/` 來備份,就加上 `--no-downloads`(或在視窗裡取消勾選 *Include downloads/*);刻意的排除不算缺少。 |
+
+實例中的遊戲副本（`Stock Game`）和其他資料夾一樣會被打包，所以凍結實例的備份大約會多出一個遊戲的大小。未完成的副本（`Stock Game.eidos-tmp`）不會被打包。
 
 以上每一項都會連同它的原因寫進壓縮檔根目錄的 `eidos-backup.ini` - 所以「這裡面沒有
 哪些東西」的答案是一個 `cat`,而不是用猜的。同一個檔案也記下了實例原本住在哪裡、

@@ -328,6 +328,8 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         bisect_line: None,
         play_anyway: Vec::new(),
         confirm_rebuild_prefix: false,
+        game_files_facts: None,
+        confirm_game_files: None,
         overwrite_to_mod: None,
         send_priority: None,
         send_separator: None,
@@ -748,7 +750,7 @@ pub(crate) fn load_tools(app: &mut App) {
             inst.tools(),
             eidos_instance::default_tools_in_view(
                 game_executables(g),
-                &g.install_path,
+                &inst.game_files(&g.install_path, &g.data_path).root,
                 &app.created
                     .as_ref()
                     .map(|i| i.root_layers())
@@ -863,7 +865,7 @@ pub(crate) fn open_executables_dialog(app: &App) -> Option<ExecutablesDialogStat
         .unwrap_or_default();
     let defaults = eidos_instance::default_tools_in_view(
         game_executables(game),
-        &game.install_path,
+        &inst.game_files(&game.install_path, &game.data_path).root,
         &roots,
         &eidos_instance::tool_search_roots(None, None),
         Some(&inst.root_overwrite_dir()),
@@ -1195,10 +1197,11 @@ pub(crate) fn modlist_with_unmanaged(
     };
     // The order the engine imposes on its own content: the primary masters, then
     // whatever the `.ccc` lists. Anything else falls in after, alphabetically.
+    let files = inst.game_files(&game.install_path, &game.data_path);
     let mut engine_order: Vec<String> = spec.primary_plugins.clone();
-    engine_order.extend(eidos_plugins::implicit_plugins(&game.install_path));
+    engine_order.extend(eidos_plugins::implicit_plugins(&files.root));
     let managed: Vec<ModEntry> = listed.iter().filter(|m| !m.unmanaged).cloned().collect();
-    let real = inst.unmanaged_mods(&game.data_path, &engine_order, &managed);
+    let real = inst.unmanaged_mods(&files.data, &engine_order, &managed);
 
     // What the game actually ships, by name, so a listed row can be matched to it
     // and given the path this layer alone knows.
@@ -1244,6 +1247,7 @@ pub(crate) fn reload_mods(app: &mut App) {
         return;
     };
     let game = selected_game(app).cloned();
+    app.game_files_facts = game.as_ref().map(|g| eidos::stock_game::facts(g, &inst));
     // This replaces the list the selection indexes into, so it is carried
     // across by name; anything that disappeared is dropped rather than silently
     // re-pointed at whatever took its place.
@@ -1485,6 +1489,7 @@ pub(crate) fn play_command(
     game_id: &str,
     inst_arg: &str,
     install: &Path,
+    files_root: &Path,
     instance: &eidos_instance::Instance,
     command: &[String],
 ) -> (std::process::Command, Option<String>) {
@@ -1501,8 +1506,14 @@ pub(crate) fn play_command(
                 continue;
             }
             let picked = prefer.iter().find_map(|to| {
-                eidos_instance::root_executable(install, &root_layers, &root_overwrite, to)
-                    .map(|path| (*to, path.to_string_lossy().into_owned()))
+                eidos_instance::root_executable(
+                    install,
+                    files_root,
+                    &root_layers,
+                    &root_overwrite,
+                    to,
+                )
+                .map(|path| (*to, path.to_string_lossy().into_owned()))
             });
             match picked {
                 Some((to, candidate)) => {
@@ -1848,6 +1859,17 @@ pub(crate) fn refusal_line(log: &str) -> Option<String> {
 
 pub(crate) fn selected_game(app: &App) -> Option<&DetectedGame> {
     app.selected.and_then(|i| app.games.get(i))
+}
+
+/// The game files the open instance runs the selected game from. Reads the
+/// manifest, so it is not for a per-frame caller.
+pub(crate) fn game_files(app: &App) -> Option<eidos_instance::GameFiles> {
+    let g = selected_game(app)?;
+    Some(
+        app.created
+            .as_ref()?
+            .game_files(&g.install_path, &g.data_path),
+    )
 }
 
 /// The mod folder names currently selected in the mod list, lowercased for
@@ -3103,10 +3125,14 @@ pub(crate) fn addon_context(app: &App) -> eidos_addons::Context {
         values.insert("profile_dir".to_string(), prof.dir().display().to_string());
     }
     if let Some(g) = selected_game(app) {
+        let (root, data) = game_files(app).map_or_else(
+            || (g.install_path.clone(), g.data_path.clone()),
+            |f| (f.root, f.data),
+        );
         values.insert("game".to_string(), g.def.id.to_string());
         values.insert("game_name".to_string(), g.def.name.to_string());
-        values.insert("install".to_string(), g.install_path.display().to_string());
-        values.insert("data".to_string(), g.data_path.display().to_string());
+        values.insert("install".to_string(), root.display().to_string());
+        values.insert("data".to_string(), data.display().to_string());
     }
     eidos_addons::Context { values }
 }
@@ -3651,7 +3677,7 @@ mod tests {
             .find(|parent| !parent.as_os_str().is_empty())
             .unwrap_or_else(|| Path::new("."));
         let instance = eidos_instance::Instance::portable(install.join("test-instance"));
-        let (cmd, warning) = play_command(game_id, game_id, install, &instance, command);
+        let (cmd, warning) = play_command(game_id, game_id, install, install, &instance, command);
         let args: Vec<String> = cmd
             .get_args()
             .map(|a| a.to_string_lossy().into_owned())
@@ -3697,8 +3723,14 @@ mod tests {
         fs::write(entry.path.join("Root/skse64_loader.exe"), b"loader").unwrap();
         instance.save_modlist(&[entry]).unwrap();
         let command = vec![game.join("SkyrimSELauncher.exe").display().to_string()];
-        let (cmd, warning) =
-            play_command("skyrimse", "portable-fixture", &game, &instance, &command);
+        let (cmd, warning) = play_command(
+            "skyrimse",
+            "portable-fixture",
+            &game,
+            &game,
+            &instance,
+            &command,
+        );
         assert_eq!(warning, None);
         assert!(cmd
             .get_args()

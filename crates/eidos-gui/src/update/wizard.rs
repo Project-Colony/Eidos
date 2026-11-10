@@ -70,11 +70,15 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     ));
                 } else {
                     let kind = app.kind;
+                    // Only a folder Eidos has never opened runs from a list's
+                    // game copy: an existing instance keeps its game files.
+                    let fresh = inst.read_manifest().is_none();
                     match inst.create() {
                         Ok(()) => {
+                            let mut list_copy = None;
                             if let Some(id) = &game_id {
-                                let selection =
-                                    selected_game(app).expect("selected game").selection_id();
+                                let game = selected_game(app).expect("selected game");
+                                let selection = game.selection_id();
                                 let saved =
                                     inst.try_lock("selecting a game installation").and_then(
                                         |_lock| inst.ensure_installation(id, kind, &selection),
@@ -84,12 +88,19 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                                         Some(tf("wizard_identity_failed", &[("error", &e)]));
                                     return Task::none();
                                 }
+                                if fresh {
+                                    list_copy = eidos::stock_game::adopt_list_copy(game, &inst);
+                                }
                                 // Into the registry BEFORE opening: a portable
                                 // root that is never recorded is orphaned at
                                 // the next start - the original portable bug.
                                 remember_open(&inst, id);
                             }
                             open_instance(app, inst);
+                            if let Some(folder) = list_copy {
+                                app.status =
+                                    Some(tf("status_adopted_stock_game", &[("folder", &folder)]));
+                            }
                         }
                         Err(e) => app.error = Some(e.to_string()),
                     }

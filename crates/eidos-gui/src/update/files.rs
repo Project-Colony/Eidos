@@ -181,8 +181,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             };
             // Gathered here, as `data_stack` does, so the worker owns plain data.
+            let data = inst.game_files(&game.install_path, &game.data_path).data;
             let mut layers = inst.load_order();
-            layers.push(game.data_path.clone());
+            layers.push(data.clone());
             let overwrite = inst.overwrite_dir();
             let mut sources = crate::view::DataSources::new();
             sources.insert(overwrite.clone(), t("view_overwrite_source").to_string());
@@ -193,7 +194,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             {
                 sources.insert(m.path.clone(), m.name.clone());
             }
-            sources.insert(game.data_path.clone(), format!("[{}]", game.def.id));
+            sources.insert(data, format!("[{}]", game.def.id));
             let header = format!(
                 "# Eidos Data tree: {}, profile {}\n",
                 game.def.name,

@@ -1,8 +1,12 @@
 Microsoft Visual C++ 2015-2022 Redistributable: license terms
 
 These terms cover VC_redist.x86.exe and VC_redist.x64.exe in runtimes/,
-Microsoft's installers as Microsoft publishes them. Source:
-https://visualstudio.microsoft.com/license-terms/vs2022-cruntime/
+Microsoft's installers as Microsoft publishes them, unmodified. Eidos ships
+them so it can install the runtime into a game's Wine prefix without a
+download, and runs them there with /install /quiet /norestart.
 
-TODO(owner): paste the license terms from that page below this line before
-the release.
+They are licensed by Microsoft, not under Eidos's GPL-3.0-or-later. The
+license terms are published by Microsoft at:
+https://visualstudio.microsoft.com/license-terms/vs2022-cruntime/
+Each installer also carries the same terms and shows them when it is run
+without /quiet.

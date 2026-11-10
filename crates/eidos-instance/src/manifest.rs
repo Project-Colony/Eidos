@@ -23,6 +23,11 @@ pub struct Manifest {
     pub selected_profile: Option<String>,
     /// Exact store/install identity selected when this instance was created.
     pub installation: Option<String>,
+    /// The folder under the instance root the game runs from (`None` = the
+    /// store install).
+    pub base_game: Option<String>,
+    /// The folder Eidos made by freezing the game, the only copy it may delete.
+    pub frozen_copy: Option<String>,
 }
 
 impl Manifest {
@@ -33,6 +38,8 @@ impl Manifest {
             kind,
             selected_profile: None,
             installation: None,
+            base_game: None,
+            frozen_copy: None,
         }
     }
 
@@ -54,6 +61,8 @@ impl Manifest {
         let mut kind = InstanceKind::Global;
         let mut selected_profile = None;
         let mut installation = None;
+        let mut base_game = None;
+        let mut frozen_copy = None;
 
         for line in text.lines() {
             let line = line.trim();
@@ -76,6 +85,8 @@ impl Manifest {
                 }
                 "selected_profile" if !v.is_empty() => selected_profile = Some(v.to_string()),
                 "installation" if !v.is_empty() => installation = Some(v.to_string()),
+                "base_game" if !v.is_empty() => base_game = Some(copy_folder(v)?),
+                "frozen_copy" if !v.is_empty() => frozen_copy = Some(copy_folder(v)?),
                 _ => {}
             }
         }
@@ -90,6 +101,8 @@ impl Manifest {
             kind,
             selected_profile,
             installation,
+            base_game,
+            frozen_copy,
         }))
     }
 
@@ -118,10 +131,36 @@ impl Manifest {
             out.push_str(selection);
             out.push('\n');
         }
+        for (key, folder) in [
+            ("base_game", &self.base_game),
+            ("frozen_copy", &self.frozen_copy),
+        ] {
+            let Some(folder) = folder else { continue };
+            if !crate::is_copy_folder_name(folder) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "invalid game copy folder",
+                ));
+            }
+            out.push_str(&format!("{key}={folder}\n"));
+        }
         // Atomic replace (tmp + rename): a crash mid-write must never leave a torn
         // manifest - a manifest that fails to parse makes the whole instance look
         // uninitialised on the next start.
         crate::write_atomic(path, out.as_bytes())
+    }
+}
+
+/// A copy folder value read back from the manifest, refused unless it is one
+/// plain name: a hand-edited `../elsewhere` must not move the game files.
+fn copy_folder(v: &str) -> io::Result<String> {
+    if crate::is_copy_folder_name(v) {
+        Ok(v.to_string())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "instance manifest names an invalid game copy folder",
+        ))
     }
 }
 
@@ -178,6 +217,47 @@ mod tests {
         assert!(fs::read_to_string(&p)
             .unwrap()
             .contains("installation=[\"GOG:1711230643\",\"/games/Skyrim\"]"));
+        fs::remove_file(p).unwrap();
+    }
+
+    #[test]
+    fn game_copy_keys_round_trip_and_survive_a_profile_change() {
+        let p = tmp();
+        let mut m = Manifest::new("skyrimse", InstanceKind::Portable);
+        m.base_game = Some("Stock Game".into());
+        m.frozen_copy = Some("Stock Game".into());
+        m.write(&p).unwrap();
+        let mut back = Manifest::read_checked(&p).unwrap().unwrap();
+        assert_eq!(
+            (back.base_game.as_deref(), back.frozen_copy.as_deref()),
+            (Some("Stock Game"), Some("Stock Game"))
+        );
+        back.selected_profile = Some("Other".into());
+        back.write(&p).unwrap();
+        assert_eq!(
+            Manifest::read(&p).unwrap().base_game.as_deref(),
+            Some("Stock Game")
+        );
+        fs::remove_file(p).unwrap();
+    }
+
+    #[test]
+    fn a_copy_folder_must_be_one_plain_name() {
+        for bad in ["", ".", "..", "a/b", "../Stock Game", "/abs", "x\ny", " "] {
+            let mut m = Manifest::new("skyrimse", InstanceKind::Portable);
+            m.base_game = Some(bad.into());
+            assert_eq!(
+                m.write(&tmp()).unwrap_err().kind(),
+                io::ErrorKind::InvalidInput,
+                "{bad:?}"
+            );
+        }
+        let p = tmp();
+        fs::write(&p, "[eidos]\ngame_id=skyrimse\nbase_game=../outside\n").unwrap();
+        assert_eq!(
+            Manifest::read_checked(&p).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
         fs::remove_file(p).unwrap();
     }
 

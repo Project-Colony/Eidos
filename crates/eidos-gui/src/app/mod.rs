@@ -279,6 +279,11 @@ pub(crate) struct App {
     pub(crate) play_anyway: Vec<(String, u64)>,
     /// Two-click guard for Rebuild prefix, which renames the game's prefix aside.
     pub(crate) confirm_rebuild_prefix: bool,
+    /// The game files the open instance runs and the copies it holds, read by
+    /// `reload_mods` for the Game files card.
+    pub(crate) game_files_facts: Option<eidos::stock_game::GameFilesFacts>,
+    /// The Game files action the first press armed (Return to the store version).
+    pub(crate) confirm_game_files: Option<GameFilesAction>,
     /// The in-progress "create mod from Overwrite" name, if that prompt is open.
     pub(crate) overwrite_to_mod: Option<String>,
     /// An open "send to priority" editor: `(row, typed text)`.

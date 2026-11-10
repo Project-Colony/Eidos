@@ -565,6 +565,7 @@ fn actual_pe_runtime_evidence_gates_the_real_driver_before_member_mutation() {
         nexus: &nexus,
         inst: &inst,
         game: &game,
+        exclusion_roots: (&game.install_path, &game.data_path),
         game_id: def.id.into(),
         say: &mut say,
         collection_domain: def.nexus_game.into(),
@@ -712,4 +713,50 @@ fn an_unchanged_archive_is_not_hashed_twice_and_a_replaced_one_is() {
     fs::rename(&replacement, &archive).unwrap();
     let error = check_archive(&m, &archive, Some(&proof)).unwrap_err();
     assert!(error.contains("MD5 mismatch"), "{error}");
+}
+
+#[test]
+fn map_exclusions_stay_on_the_store_install_while_a_game_copy_is_active() {
+    use eidos_collections::{driver::RealHooks, install::Hooks, Collection};
+    let t = Temp::new();
+    let inst = eidos_instance::Instance::portable(t.0.join("instance"));
+    let def = eidos_games::catalog()
+        .iter()
+        .find(|g| g.id == "skyrimse")
+        .unwrap();
+    let (install, data) = (t.0.join("game"), t.0.join("game/Data"));
+    // What the driver gets with a copy: the game's paths moved to the copy.
+    let copy = eidos_games::DetectedGame {
+        source: Default::default(),
+        def,
+        install_path: inst.root.join("Stock Game"),
+        data_path: inst.root.join("Stock Game/Data"),
+        compatdata: None,
+        steam_name: "fixture".into(),
+    };
+    let mut c = Collection::default();
+    c.mods.push(Mod {
+        name: "Excludes a store file".into(),
+        file_overrides: vec![format!("Z:{}/Textures/a.dds", data.display()).replace('/', "\\")],
+        ..Default::default()
+    });
+    assert!(map_exclusions(&c.mods[0], &copy.install_path, &copy.data_path).is_err());
+    let nexus = eidos_nexus::Nexus::with_bearer("synthetic-unused");
+    let mut say = |_: String| {};
+    let mut hooks = RealHooks {
+        payload_root: t.0.clone(),
+        allow_runtime_mismatch: false,
+        checked_archive: None,
+        nexus: &nexus,
+        inst: &inst,
+        game: &copy,
+        exclusion_roots: (&install, &data),
+        game_id: def.id.into(),
+        say: &mut say,
+        collection_domain: def.nexus_game.into(),
+        owner: "test:1".into(),
+        renamed: vec![],
+        kept: vec![],
+    };
+    assert_eq!(hooks.validate_recipe(&c), Ok(()));
 }

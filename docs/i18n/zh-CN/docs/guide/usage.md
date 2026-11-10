@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=d9e26a15d52ab549773ed61d97c7ecf36fea8342 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=aaff8588275e2b036c2a1c344c01509a4c9d0f00 -->
 
 # 使用 Eidos
 
@@ -21,6 +21,7 @@ eidos shell skyrimse              # 在合并视图里开一个 shell,写入的�
 eidos check skyrimse              # 不开窗口跑健康检查(脚本用 --json)
 eidos sessions skyrimse           # 按从新到旧列出已记录的游戏和工具运行
 eidos sessions skyrimse diff      # 显示自上次以退出码 0 结束的运行以来的变化
+eidos stock-game skyrimse         # 实例运行哪份游戏文件;冻结或切换
 eidos collection skyrimse <link>  # 按作者构建它的方式安装一个 Nexus 合集
 eidos nexus update skyrimse --apply  # 安装取代了你那些文件的 Nexus 文件
 eidos pack skyrimse backup.eidos  # 整个实例装进一个文件,好搬到别处去
@@ -84,7 +85,21 @@ Steam 所有 - 一次更新、一次"验证文件完整性"或一次卸载都可
 
 Eidos 没有 Wabbajack 安装器。请在 Eidos 之外用 CLF3 或 Jackify 安装列表，然后在向导中把安装文件夹选为便携实例。Eidos 按 MO2 的布局读取该文件夹：`mods/`、`profiles/<名称>/modlist.txt` 和插件列表。安装器写入的 `ModOrganizer.ini` 会被保留，绝不会被覆盖，因此列表自带的可执行文件仍保持注册。
 
-许多列表会添加一个 `Stock Game` 或 `Game Root` 文件夹，里面是修改过的游戏副本，MO2 从那里启动游戏。Eidos 启动的是 Steam 安装，也没有指向其他游戏文件夹的设置。向导发现这样的文件夹时，只会在确认界面提示，不会做其他事：请自己把列表放在那里的文件移到某个模组的 `Root/` 文件夹中。CLF3 用自己的工具重建 BSA 和 DDS 文件，所以结果可能与 Wabbajack 安装不同，列表作者也不为其提供支持。
+许多列表会添加一个 `Stock Game` 或 `Game Root` 文件夹，里面是修改过的游戏副本，MO2 从那里启动游戏。向导或 `eidos init` 第一次接管列表文件夹时，实例也从这个文件夹运行游戏，仍然通过 Steam 或拥有该游戏的商店启动，所以什么都不用移动。Eidos 根据列表 `ModOrganizer.ini` 里的 `gamePath`，或按这两个名字找到该文件夹。用较早版本的 Eidos 接管的实例会继续使用商店安装，直到你切换为止（见下一节）。CLF3 用自己的工具重建 BSA 和 DDS 文件，所以结果可能与 Wabbajack 安装不同，列表作者也不为其提供支持。
+
+### 游戏文件:商店安装还是副本
+
+默认情况下，游戏从它的商店安装运行，也就是 Steam、Heroic 或 Legendary 存放它的文件夹。实例也可以改为从放在实例内的该文件夹副本运行。模组叠在副本之上，商店安装只是 Eidos 挂载结果的位置。游戏仍由商店启动，所以 Steam 保留它的覆盖层、着色器缓存和云存档。
+
+Diagnostics 标签页顶部的 Game files 卡片显示实例运行的是哪份文件，并在两者之间切换。`eidos stock-game <instance>` 在终端里做同样的事：`use <folder>`、`store`、`freeze` 和 `delete --yes`。
+
+**Freeze this version** 把商店安装复制到 `<instance>/Stock Game`，并从那里运行游戏，这样商店更新就不会再弄坏脚本扩展器插件：更新改的是商店安装，不是副本。第一次按下会显示大小以及文件系统会怎样处理它，第二次按下才复制。在 btrfs 和 XFS 上，副本与商店共享数据块（reflink），在商店改动某个文件之前几乎不占空间。在 ext4 上，或者游戏和实例位于不同文件系统时，它是一份与游戏文件夹一样大的完整副本。只要 Steam 报告游戏正忙或正在更新，或者实例的游戏或工具正在运行，Eidos 就会拒绝。Stop 或失败会留下 `Stock Game.eidos-tmp`，卡片会提出删除它；这个文件夹永远不会被使用。
+
+副本会屏蔽商店在复制之后向游戏文件夹添加、修改或删除的每个文件：新的 Creation Club 文件、新的可执行文件、新的 DLL。游戏、插件列表、LOOT 和 Health 检查读取的都是副本。它屏蔽不了游戏文件夹之外发生的事：更新仍可能在下次启动时向 Proton 前缀安装运行库，Steam 也可能把游戏切换到另一个 Proton。
+
+**Return to the store version** 在第二次按下后把副本从下次启动中移除。副本留在磁盘上，**Delete the copy** 会删除它，同样需要按第二次。Eidos 从不删除列表自带的 `Stock Game` 或 `Game Root` 文件夹。如果副本文件夹不见了，启动会被拒绝，Diagnostics 会说出该文件夹的名字，所以商店版本永远不会在意料之外运行。
+
+Morrowind，以及 `bUseMyGamesDirectory=0` 的 Oblivion，会把插件列表放在游戏文件夹里，Eidos 目前还不从副本运行它们。
 
 ### 模组列表
 
@@ -300,6 +315,8 @@ eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # 在另一台机器上
 | `.base/`、`.base-root/` | 空的挂载点,一次会话期间游戏自己的文件寄放在那里。 |
 | 写了一半的文件 | 一个暂停中的下载(`*.unfinished`),一次进行中的原子写入(`*.eidos-tmp*`)。 |
 | 符号链接 | 7-Zip 会跟着它走,把它指向的东西复制进来;对一条绝对链接来说,这意味着把一棵外部的目录树拽进你的备份里。它们改为被报告出来,而且这份备份算作不完整:一个链接到另一块盘上的 `mods/` 或 `downloads/` 根本不会被打包。要有意地不带一个链接过去的 `downloads/` 来做备份,就传 `--no-downloads`(或在窗口里取消勾选 *Include downloads/*);一次有意的排除不算缺失。 |
+
+实例中的游戏副本（`Stock Game`）和其他文件夹一样被打包，所以冻结实例的备份大约会大出一个游戏的体积。未完成的副本（`Stock Game.eidos-tmp`）不会被打包。
 
 这里的每一条,都会连同它的理由写进压缩包根目录的 `eidos-backup.ini` - 所以"这里面
 没有什么"的答案是 `cat`,不是猜。同一个文件还记下实例原本住在哪里、当时哪个配置档是

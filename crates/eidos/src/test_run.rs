@@ -97,6 +97,7 @@ pub(crate) fn test_mounts(
 pub(crate) fn retarget_loader(
     def: &GameDef,
     install: &Path,
+    files_root: &Path,
     root_layers: &[PathBuf],
     root_overwrite: &Path,
     command: &mut [String],
@@ -104,7 +105,9 @@ pub(crate) fn retarget_loader(
     let Some(se) = def.script_extender else {
         return;
     };
-    let resolve = |exe| eidos_instance::root_executable(install, root_layers, root_overwrite, exe);
+    let resolve = |exe| {
+        eidos_instance::root_executable(install, files_root, root_layers, root_overwrite, exe)
+    };
     let Some(target) = resolve(se.loader).or_else(|| resolve(def.game_binary)) else {
         return;
     };
@@ -188,14 +191,23 @@ mod tests {
         retarget_loader(
             def,
             &install,
+            &install,
             std::slice::from_ref(&skse),
             &t.join("ow-root"),
             &mut cmd,
         );
         assert_eq!(cmd[1], install.join("skse64_loader.exe").to_string_lossy());
-        retarget_loader(def, &install, &[], &t.join("ow-root"), &mut cmd);
+        retarget_loader(def, &install, &install, &[], &t.join("ow-root"), &mut cmd);
         assert_eq!(cmd[1], install.join("SkyrimSE.exe").to_string_lossy());
         assert_eq!(cmd[2], "-skipintro");
+        // A list's Stock Game holds the loader and no Root layer does: it resolves
+        // in the copy and runs from the install path, where the root union shows it.
+        let copy = t.join("Stock Game");
+        fs::create_dir_all(&copy).unwrap();
+        fs::write(copy.join("skse64_loader.exe"), b"MZ").unwrap();
+        cmd[1] = "/x/SkyrimSELauncher.exe".into();
+        retarget_loader(def, &install, &copy, &[], &t.join("ow-root"), &mut cmd);
+        assert_eq!(cmd[1], install.join("skse64_loader.exe").to_string_lossy());
         let _ = fs::remove_dir_all(t);
     }
 }

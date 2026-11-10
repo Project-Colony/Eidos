@@ -341,8 +341,12 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         out.extend(patch_order_checks(list, map));
     }
 
+    // Read once: it reads the manifest.
+    let files = game_files(app);
     // ENB + Community Shaders both injecting into D3D11.
-    if let (Some(game), Some(inst)) = (selected_game(app), app.created.as_ref()) {
+    if let (Some(game), Some(inst), Some(files)) =
+        (selected_game(app), app.created.as_ref(), files.as_ref())
+    {
         let mods = app
             .mods
             .iter()
@@ -357,8 +361,8 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         );
         for d in eidos_gamefeatures::preflight::scan_extender_plugins(
             game.def,
-            &game.data_path,
-            &game.install_path,
+            &files.data,
+            &files.root,
             &mods,
             &inst.overwrite_dir(),
         ) {
@@ -381,7 +385,7 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         }
         for d in eidos_gamefeatures::preflight::scan_fontconfig(
             game.def,
-            &game.data_path,
+            &files.data,
             &mods,
             &inst.overwrite_dir(),
         ) {
@@ -416,7 +420,7 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
             .filter(|m| m.is_active())
             .map(|m| m.path)
             .collect();
-        if eidos_gamefeatures::enb_cs_conflict(&game.install_path, &cs_roots) {
+        if eidos_gamefeatures::enb_cs_conflict(&files.root, &cs_roots) {
             out.push(Diagnostic {
                 level: DiagLevel::Advice,
                 title: t("diag_enb_cs").to_string(),
@@ -682,18 +686,19 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         }
         out.extend(orphan_archive_diagnostics(app, game.def.id));
         out.extend(script_extender_diagnostic(game));
-        if let (Some(se), Some(row), Some(map)) = (
+        if let (Some(se), Some(row), Some(map), Some(files)) = (
             game.def.script_extender.as_ref(),
             eidos_gamefeatures::preflight::extender(game.def.id),
             app.conflicts.as_ref(),
+            files.as_ref(),
         ) {
             let label = row.plugins_dir.split('/').next().unwrap_or_default();
-            let in_game = game.install_path.join(se.loader).is_file();
+            let in_game = files.root.join(se.loader).is_file();
             out.extend(extender_script_checks(map, se.loader, label, in_game));
         }
     }
 
-    for (row, plugin) in stale_copies(app) {
+    for (row, plugin) in stale_copies(app, files.as_ref().map(|f| f.data.as_path())) {
         out.push(Diagnostic {
             level: DiagLevel::Problem,
             title: tf("diag_stale_copy", &[("plugin", &plugin)]),
@@ -860,7 +865,7 @@ pub(crate) fn patch_order_checks(
 
 /// Mods whose loose Papyrus scripts beat the script extender's own copies.
 /// `extender`: the label from `extender(id).plugins_dir` up to its first '/'.
-/// `loader_in_game`: `game.install_path.join(loader).is_file()`, from the caller.
+/// `loader_in_game`: `files.root.join(loader).is_file()`, from the caller.
 /// Loose `.pex` only: `map.files` does not hold archive members.
 pub(crate) fn extender_script_checks(
     map: &eidos_conflicts::ConflictMap,
@@ -1173,10 +1178,9 @@ pub(crate) fn script_extender_diagnostic(game: &DetectedGame) -> Option<Diagnost
 
 /// Generated plugin copies whose source file changed since the copy was made:
 /// `(row of the mod holding the copy, plugin name)`. The source is the file of
-/// that name in the nearest enabled mod below the copy, else the game's Data
-/// folder. Only stats, no reads.
-pub(crate) fn stale_copies(app: &App) -> Vec<(usize, String)> {
-    let data = selected_game(app).map(|g| &g.data_path);
+/// that name in the nearest enabled mod below the copy, else `game_data`, the
+/// Data folder of the game files the instance runs. Only stats, no reads.
+pub(crate) fn stale_copies(app: &App, game_data: Option<&Path>) -> Vec<(usize, String)> {
     let mut out = Vec::new();
     for (row, m) in app.mods.iter().enumerate().filter(|(_, m)| m.enabled) {
         let Some(sources) = app.meta_cache.get(&m.name).map(|r| &r.plugin_sources) else {
@@ -1192,7 +1196,7 @@ pub(crate) fn stale_copies(app: &App) -> Vec<(usize, String)> {
                 .rev()
                 .filter(|b| b.enabled)
                 .map(|b| b.path.join(&src.name))
-                .chain(data.map(|d| d.join(&src.name)))
+                .chain(game_data.map(|d| d.join(&src.name)))
                 .find(|p| p.exists());
             let current = now.and_then(|p| eidos_instance::PluginSource::of(&src.name, &p));
             if current.as_ref() != Some(src) {
@@ -1291,6 +1295,10 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
                 .push(tool_btn(t("diag_copy_report"), Message::CopyHealthReport))
                 .push(tool_btn(t("diag_bisect"), Message::OpenBisect)),
         );
+    if let Some(f) = &app.game_files_facts {
+        let game = selected_game(app).map_or("", |g| g.def.name);
+        col = col.push(game_files_card_view(&game_files_card(f, game)));
+    }
     // Built from App state at each view, so its slot follows a clean as it runs.
     if let Some(card) = dirty_card(app) {
         col = col.push(dirty_plugins_card(&card));
@@ -1312,8 +1320,9 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
     scrollable(col).height(Length::Fill).into()
 }
 
-/// One Health card: the level tag, the title, the detail, and what goes under it.
-fn diag_card<'a>(
+/// One Health card: the level tag, the title, the detail (left out when empty),
+/// and what goes under it.
+pub(crate) fn diag_card<'a>(
     level: DiagLevel,
     title: String,
     detail: String,
@@ -1338,7 +1347,7 @@ fn diag_card<'a>(
                 )
                 .push(text(title).size(sz(12)).width(Length::Fill)),
         )
-        .push(text(detail).size(sz(10)).color(text_muted()))
+        .extend((!detail.is_empty()).then(|| text(detail).size(sz(10)).color(text_muted()).into()))
         .extend(foot);
     container(card)
         .padding([4, 6])
