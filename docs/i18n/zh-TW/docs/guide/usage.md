@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c05b0ecbbaa6d1901978bddc1de4c064a367f9ee -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=3aeca7667489ec40f76ca60dfbf22f1741b0a038 -->
 
 # 使用 Eidos
 
@@ -448,7 +448,7 @@ Downloads 分頁是一座壓縮檔**圖書館**,不是傳輸佇列。可以依�
 
 ### 模組更新
 
-Check for updates(工具列按鈕,或模組選單)會把每個已安裝的檔案,與 Nexus 上取代它的
+工具列右端的更新按鈕會把每個已安裝的檔案,與 Nexus 上取代它的
 檔案相比較。作者會把一次新上傳標記為某個舊檔案的後繼,Eidos 從模組 `meta.ini` 記錄的
 檔案 ID 出發,沿著這條鏈往下找。鏈上沒有後繼時,改為比較模組頁面的版本。
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c05b0ecbbaa6d1901978bddc1de4c064a367f9ee -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=3aeca7667489ec40f76ca60dfbf22f1741b0a038 -->
 
 # Eidos gebruiken
 
@@ -599,11 +599,11 @@ filter heb je gezegd welke je bedoelde.
 
 ### Mod-updates
 
-Check for updates (de knop in de werkbalk, of het modmenu) vergelijkt elk
-geïnstalleerd bestand met het bestand dat het op Nexus verving. Auteurs markeren
-een nieuwe upload als opvolger van een oudere, en Eidos volgt die keten vanaf
-het bestands-id dat de `meta.ini` van de mod vastlegt. Noemt de keten geen
-opvolger, dan wordt in plaats daarvan de versie van de modpagina vergeleken.
+De updateknop aan het rechtereinde van de werkbalk vergelijkt elk geïnstalleerd
+bestand met het bestand dat het op Nexus verving. Auteurs markeren een nieuwe
+upload als opvolger van een oudere, en Eidos volgt die keten vanaf het
+bestands-id dat de `meta.ini` van de mod vastlegt. Noemt de keten geen opvolger,
+dan wordt in plaats daarvan de versie van de modpagina vergeleken.
 
 Het tabblad **Nexus files** van "Information..." toont de bestanden van de mod
 op Nexus, nieuwste eerst, en markeert het bestand dat hier geïnstalleerd is en

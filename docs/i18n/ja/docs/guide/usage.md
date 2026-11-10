@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c05b0ecbbaa6d1901978bddc1de4c064a367f9ee -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=3aeca7667489ec40f76ca60dfbf22f1741b0a038 -->
 
 # Eidos の使い方
 
@@ -534,7 +534,7 @@ Downloads タブは転送の待ち行列ではなく、書庫の**書棚**です
 
 ### MOD の更新
 
-Check for updates(ツールバーのボタン、または MOD のメニュー)は、インストール済みの
+ツールバー右端の更新ボタンは、インストール済みの
 各ファイルを、Nexus でそれを置き換えたファイルと比べます。作者は新しいアップロードを
 古いものの後継として印を付け、Eidos は MOD の `meta.ini` が記録しているファイル ID
 からその連鎖をたどります。連鎖が後継を示さないときは、代わりに MOD ページの

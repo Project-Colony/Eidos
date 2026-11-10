@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c05b0ecbbaa6d1901978bddc1de4c064a367f9ee -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=3aeca7667489ec40f76ca60dfbf22f1741b0a038 -->
 
 # Používání Eidosu
 
@@ -558,11 +558,11 @@ jste řekli, které jste mysleli.
 
 ### Aktualizace módů
 
-Check for updates (tlačítko na panelu nástrojů nebo menu módu) porovná každý
-nainstalovaný soubor se souborem, který ho na Nexusu nahradil. Autoři označují
-nové nahrání jako nástupce staršího a Eidos jde po tomto řetězci od ID souboru,
-které zaznamenává `meta.ini` módu. Když řetězec žádného nástupce neuvádí,
-porovná se místo toho verze ze stránky módu.
+Tlačítko aktualizace na pravém konci panelu nástrojů porovná každý nainstalovaný
+soubor se souborem, který ho na Nexusu nahradil. Autoři označují nové nahrání
+jako nástupce staršího a Eidos jde po tomto řetězci od ID souboru, které
+zaznamenává `meta.ini` módu. Když řetězec žádného nástupce neuvádí, porovná se
+místo toho verze ze stránky módu.
 
 Karta **Nexus files** v „Information..." vypíše soubory módu na Nexusu,
 nejnovější první, a označí ten, který je nainstalovaný tady, a ten, který ho

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c05b0ecbbaa6d1901978bddc1de4c064a367f9ee -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=3aeca7667489ec40f76ca60dfbf22f1741b0a038 -->
 
 # 使用 Eidos
 
@@ -433,7 +433,7 @@ Downloads 标签页是一个压缩包**库**,不是传输队列。按名称过�
 
 ### 模组更新
 
-Check for updates(工具栏按钮,或模组菜单)会把每个已安装的文件与 Nexus 上取代它的
+工具栏右端的更新按钮会把每个已安装的文件与 Nexus 上取代它的
 文件相比较。作者会把一次新上传标记为某个旧文件的后继,Eidos 从模组 `meta.ini` 记录的
 文件 ID 出发沿这条链往下找。链上没有后继时,改为比较模组页面的版本。
 

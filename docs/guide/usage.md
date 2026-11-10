@@ -549,8 +549,8 @@ how you said which ones you meant.
 
 ### Mod updates
 
-Check for updates (the toolbar button, or the mod menu) compares each installed
-file with the file that replaced it on Nexus. Authors mark a new upload as the
+The update button at the right end of the toolbar compares each installed file
+with the file that replaced it on Nexus. Authors mark a new upload as the
 successor of an older one, and Eidos follows that chain from the file id the
 mod's `meta.ini` records. When the chain names no successor, the mod page's
 version is compared instead.

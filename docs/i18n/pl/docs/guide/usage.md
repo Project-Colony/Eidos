@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c05b0ecbbaa6d1901978bddc1de4c064a367f9ee -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=3aeca7667489ec40f76ca60dfbf22f1741b0a038 -->
 
 # Używanie Eidos
 
@@ -587,7 +587,7 @@ powiedziałeś, o które ci chodziło.
 
 ### Aktualizacje modów
 
-Check for updates (przycisk na pasku narzędzi albo menu moda) porównuje każdy
+Przycisk aktualizacji na prawym końcu paska narzędzi porównuje każdy
 zainstalowany plik z plikiem, który zastąpił go na Nexusie. Autorzy oznaczają
 nowy upload jako następcę starszego, a Eidos idzie tym łańcuchem od
 identyfikatora pliku zapisanego w `meta.ini` moda. Gdy łańcuch nie wskazuje

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c05b0ecbbaa6d1901978bddc1de4c064a367f9ee -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=3aeca7667489ec40f76ca60dfbf22f1741b0a038 -->
 
 # Utiliser Eidos
 
@@ -630,7 +630,7 @@ lesquelles vous vouliez dire.
 
 ### Mises à jour des mods
 
-Check for updates (le bouton de la barre d'outils, ou le menu du mod) compare
+Le bouton de mise à jour, à l'extrémité droite de la barre d'outils, compare
 chaque fichier installé au fichier qui l'a remplacé sur Nexus. Les auteurs
 marquent un nouvel envoi comme successeur d'un plus ancien, et Eidos suit cette
 chaîne depuis l'identifiant de fichier que note le `meta.ini` du mod. Quand la

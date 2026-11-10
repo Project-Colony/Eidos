@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c05b0ecbbaa6d1901978bddc1de4c064a367f9ee -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=3aeca7667489ec40f76ca60dfbf22f1741b0a038 -->
 
 # Usar Eidos
 
@@ -605,7 +605,7 @@ referías.
 
 ### Actualizaciones de mods
 
-Check for updates (el botón de la barra de herramientas, o el menú del mod)
+El botón de actualización del extremo derecho de la barra de herramientas
 compara cada archivo instalado con el archivo que lo reemplazó en Nexus. Los
 autores marcan una nueva subida como sucesora de otra anterior, y Eidos sigue
 esa cadena desde el identificador de archivo que registra el `meta.ini` del mod.

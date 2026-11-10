@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c05b0ecbbaa6d1901978bddc1de4c064a367f9ee -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=3aeca7667489ec40f76ca60dfbf22f1741b0a038 -->
 
 # Eidos verwenden
 
@@ -631,11 +631,11 @@ meinten.
 
 ### Mod-Updates
 
-Check for updates (der Knopf in der Werkzeugleiste oder das Mod-Menü) vergleicht
-jede installierte Datei mit der Datei, die sie auf Nexus ersetzt hat. Autoren
-markieren einen neuen Upload als Nachfolger eines älteren, und Eidos folgt
-dieser Kette ab der Datei-ID, die die `meta.ini` der Mod festhält. Nennt die
-Kette keinen Nachfolger, wird stattdessen die Version der Mod-Seite verglichen.
+Der Update-Knopf am rechten Ende der Werkzeugleiste vergleicht jede installierte
+Datei mit der Datei, die sie auf Nexus ersetzt hat. Autoren markieren einen
+neuen Upload als Nachfolger eines älteren, und Eidos folgt dieser Kette ab der
+Datei-ID, die die `meta.ini` der Mod festhält. Nennt die Kette keinen
+Nachfolger, wird stattdessen die Version der Mod-Seite verglichen.
 
 Der Reiter **Nexus files** von "Information..." listet die Dateien der Mod auf
 Nexus, die neueste zuerst, und markiert die hier installierte und die, die sie

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c05b0ecbbaa6d1901978bddc1de4c064a367f9ee -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=3aeca7667489ec40f76ca60dfbf22f1741b0a038 -->
 
 # Eidos 사용하기
 
@@ -523,7 +523,7 @@ Downloads 탭은 전송 대기열이 아니라 압축 파일 **서고**입니다
 
 ### 모드 업데이트
 
-Check for updates(도구 모음의 버튼, 또는 모드 메뉴)는 설치된 각 파일을 Nexus에서
+도구 모음 오른쪽 끝의 업데이트 버튼은 설치된 각 파일을 Nexus에서
 그것을 대체한 파일과 비교합니다. 제작자는 새 업로드를 이전 파일의 후속 파일로 표시하고,
 Eidos는 모드의 `meta.ini`에 기록된 파일 ID에서 시작해 그 사슬을 따라갑니다. 사슬이
 후속 파일을 가리키지 않으면 대신 모드 페이지의 버전을 비교합니다.

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c05b0ecbbaa6d1901978bddc1de4c064a367f9ee -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=3aeca7667489ec40f76ca60dfbf22f1741b0a038 -->
 
 # Eidos kullanımı
 
@@ -582,11 +582,11 @@ süzgeç, hangilerini kastettiğinizi söyleme biçiminizdir.
 
 ### Mod güncellemeleri
 
-Check for updates (araç çubuğundaki düğme ya da modun menüsü) kurulu her dosyayı
-Nexus'ta onun yerini alan dosyayla karşılaştırır. Yazarlar yeni bir yüklemeyi
-daha eskisinin ardılı olarak işaretler; Eidos bu zinciri, modun `meta.ini`
-dosyasının kaydettiği dosya kimliğinden başlayarak izler. Zincir hiçbir ardıl
-göstermiyorsa bunun yerine mod sayfasındaki sürüm karşılaştırılır.
+Araç çubuğunun sağ ucundaki güncelleme düğmesi kurulu her dosyayı Nexus'ta onun
+yerini alan dosyayla karşılaştırır. Yazarlar yeni bir yüklemeyi daha eskisinin
+ardılı olarak işaretler; Eidos bu zinciri, modun `meta.ini` dosyasının
+kaydettiği dosya kimliğinden başlayarak izler. Zincir hiçbir ardıl göstermiyorsa
+bunun yerine mod sayfasındaki sürüm karşılaştırılır.
 
 "Information..." içindeki **Nexus files** sekmesi modun Nexus'taki dosyalarını
 en yeniden başlayarak listeler; burada kurulu olanı ve onun yerini alanı

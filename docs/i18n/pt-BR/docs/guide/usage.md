@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c05b0ecbbaa6d1901978bddc1de4c064a367f9ee -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=3aeca7667489ec40f76ca60dfbf22f1741b0a038 -->
 
 # Usar o Eidos
 
@@ -588,12 +588,11 @@ estão **na tela**: o filtro é como você disse quais eram.
 
 ### Atualizações de mods
 
-Check for updates (o botão da barra de ferramentas, ou o menu do mod) compara
-cada arquivo instalado com o arquivo que o substituiu no Nexus. Os autores
-marcam um novo envio como sucessor de um mais antigo, e o Eidos segue essa
-cadeia a partir do id de arquivo que o `meta.ini` do mod registra. Quando a
-cadeia não aponta nenhum sucessor, a versão da página do mod é comparada no
-lugar.
+O botão de atualização na ponta direita da barra de ferramentas compara cada
+arquivo instalado com o arquivo que o substituiu no Nexus. Os autores marcam um
+novo envio como sucessor de um mais antigo, e o Eidos segue essa cadeia a partir
+do id de arquivo que o `meta.ini` do mod registra. Quando a cadeia não aponta
+nenhum sucessor, a versão da página do mod é comparada no lugar.
 
 A aba **Nexus files** de "Information..." lista os arquivos do mod no Nexus, do
 mais novo ao mais antigo, e marca o instalado aqui e o que o substitui. Essa
