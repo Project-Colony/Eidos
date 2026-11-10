@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=bb2eee28d0132a3916b2b4106f3e985018164993 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ef7908232d824a69c7729e37906969aa3a374b1b -->
 
 # Eidos gebruiken
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # de volgorde + pluginstatus van een bestaa
 eidos sort skyrimse               # de laadvolgorde van de plugins met LOOT sorteren
 eidos play skyrimse               # tonen wat er gekoppeld zou worden
 eidos play skyrimse -- <command>  # <command> draaien met de mods over het spel gekoppeld
+eidos shell skyrimse              # een shell in de samengevoegde weergave, schrijfacties komen in Overwrite
 eidos check skyrimse              # gezondheidscontroles zonder het venster (--json voor scripts)
 eidos sessions skyrimse           # de vastgelegde spel- en toolruns, nieuwste eerst
 eidos sessions skyrimse diff      # wat er veranderd is sinds de laatste run die met code 0 eindigde
@@ -35,6 +36,10 @@ het geheel compleet; draai `eidos` zonder argumenten voor de volledige lijst.
 `eidos check <instance>` draait de controles op prefix, plugins, ontbrekende masters en script extender uit het tabblad **Diagnostics** zonder het venster te openen, zodat ze via SSH of in Game Mode kunnen draaien en in een bugrapport terechtkomen. Het drukt dezelfde systeemregels af als **Copy report**, daarna één regel per bevinding, met je thuismap getoond als `~` en je inlognaam als `<user>`. De exitcode is 0 als er geen probleem is gevonden (alleen adviezen geven nog steeds 0), 1 als er minstens één probleem is gevonden, en 2 als Eidos niet kon controleren: verkeerde argumenten, een instantie die het niet kan openen, of een spel dat het niet detecteert.
 
 `eidos check <instance> --json` drukt in plaats daarvan één JSON-object af. De velden op het hoogste niveau zijn `eidos` (de versie), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`) en `findings`. Elke bevinding is een `code`, een `level` (`problem` of `advice`) en zijn `args`; het tabblad Diagnostics toont de zin bij elke code.
+
+### Een shell in de samengevoegde weergave
+
+`eidos shell <instance>` start je `$SHELL` (of `/bin/sh`) in de spelmap zoals het spel die zou zien: elke ingeschakelde mod over `Data` gekoppeld, Root-mods over de spelroot, en alles wat daar wordt geschreven komt in de Overwrite terecht. `eidos shell <instance> -- <command>` voert in plaats daarvan één commando uit, bijvoorbeeld `eidos shell skyrimse -- ls Data/meshes` of een native tool zoals NifSkope. De run houdt het instantieslot vast zoals een spelsessie, dus het venster kan geen wijzigingen opslaan tot je afsluit, en hij staat in `eidos sessions` onder de naam `shell`, nooit als spelstart. Ctrl+C bij een commando stopt de run zoals Stop: Eidos beëindigt het commando, legt de sessie vast en ontkoppelt.
 
 ### Instanties: globaal en draagbaar
 

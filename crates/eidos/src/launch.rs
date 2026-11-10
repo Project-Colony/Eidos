@@ -21,37 +21,7 @@ pub(crate) fn cmd_play(args: &[String]) {
         None => Vec::new(),
     };
 
-    let target = resolve(id);
-    let Some(game) = find_instance_game(&target) else {
-        eidos_log::info!(
-            "Game '{}' is not detected. Run `eidos games`.",
-            target.game_id
-        );
-        exit(1);
-    };
-    // The wizard and `eidos init` refuse to CREATE an instance inside the
-    // game's install; this is the same guard at the moment that actually
-    // hurts - mounting. A hand-made folder in there must not reach the union.
-    if Instance::root_inside_game(&target.inst.root, &game.install_path) {
-        eidos_log::warn!(
-            "eidos: this instance lives inside the game's own folder ({}).\n\
-             eidos: Eidos mounts over the game root, so the instance would sit inside\n\
-             eidos: its own mount target - refusing to mount. Move the folder out\n\
-             eidos: (a sibling of the game folder works) and open it again.",
-            target.inst.root.display()
-        );
-        exit(1);
-    }
-
-    let game_id = target.game_id;
-    let inst = target.inst;
-    if let Err(error) = inst
-        .create()
-        .and_then(|()| inst.ensure_manifest(&game_id, InstanceKind::Global))
-    {
-        eidos_log::warn!("Cannot prepare this instance: {error}");
-        exit(1);
-    }
+    let (game_id, game, inst) = open_for_run(id);
 
     if command.is_empty() {
         let layers = inst.load_order();
@@ -111,6 +81,96 @@ pub(crate) fn cmd_play(args: &[String]) {
         None,
         ToolOpts::default(),
     );
+}
+
+/// Resolve `id` to a detected game and a prepared instance, or exit like
+/// `eidos play` does.
+fn open_for_run(id: &str) -> (String, DetectedGame, Instance) {
+    let target = resolve(id);
+    let Some(game) = find_instance_game(&target) else {
+        eidos_log::info!(
+            "Game '{}' is not detected. Run `eidos games`.",
+            target.game_id
+        );
+        exit(1);
+    };
+    // The wizard and `eidos init` refuse to CREATE an instance inside the
+    // game's install; this is the same guard at the moment that actually
+    // hurts - mounting. A hand-made folder in there must not reach the union.
+    if Instance::root_inside_game(&target.inst.root, &game.install_path) {
+        eidos_log::warn!(
+            "eidos: this instance lives inside the game's own folder ({}).\n\
+             eidos: Eidos mounts over the game root, so the instance would sit inside\n\
+             eidos: its own mount target - refusing to mount. Move the folder out\n\
+             eidos: (a sibling of the game folder works) and open it again.",
+            target.inst.root.display()
+        );
+        exit(1);
+    }
+
+    let game_id = target.game_id;
+    let inst = target.inst;
+    if let Err(error) = inst
+        .create()
+        .and_then(|()| inst.ensure_manifest(&game_id, InstanceKind::Global))
+    {
+        eidos_log::warn!("Cannot prepare this instance: {error}");
+        exit(1);
+    }
+    (game_id, game, inst)
+}
+
+/// `eidos shell`: a shell, or one command, in the merged view. Nothing about a
+/// game launch: no script-extender swap, no "last used" record.
+pub(crate) fn cmd_shell(args: &[String]) {
+    let usage = || -> ! {
+        eidos_log::info!("usage: eidos shell <game-id-or-instance-path> [-- <command>...]");
+        exit(2);
+    };
+    let Some(id) = args.first() else { usage() };
+    let Some(command) = shell_command(&args[1..], std::env::var("SHELL").ok()) else {
+        usage()
+    };
+    let (game_id, game, inst) = open_for_run(id);
+    println!(
+        "eidos shell: {} sees this view; writes land in {}. Exit the shell to unmount.",
+        game.def.name,
+        inst.overwrite_dir().display()
+    );
+    run_through_view(
+        &game_id,
+        &game,
+        &inst,
+        command,
+        Vec::new(),
+        Some(game.install_path.clone()),
+        ToolOpts {
+            utility: Some("shell"),
+            ..Default::default()
+        },
+    );
+}
+
+/// The command `eidos shell` runs: `rest` is what follows the instance.
+fn shell_command(rest: &[String], shell: Option<String>) -> Option<Vec<String>> {
+    match rest.split_first() {
+        None => {}
+        Some((first, tail)) if first == "--" => {
+            if !tail.is_empty() {
+                return Some(tail.to_vec());
+            }
+        }
+        Some(_) => return None,
+    }
+    let shell = shell
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "/bin/sh".into());
+    Some(vec![shell])
+}
+
+/// Whether a run is the game itself: not a tool and not a utility run.
+pub(crate) fn records_game_launch(opts: &ToolOpts) -> bool {
+    opts.tool_name.is_none() && opts.utility.is_none()
 }
 
 /// Warn when the prefix's Visual C++ runtime is half Proton's and half someone
@@ -265,6 +325,9 @@ pub(crate) struct ToolOpts<'a> {
     /// Only tools produce generator receipts; ordinary game launches do not.
     pub tool_name: Option<&'a str>,
     pub executable: Option<&'a Path>,
+    /// A run that is neither the game nor a generator (`eidos shell`, a prefix
+    /// program); the session record carries this name as its tool.
+    pub utility: Option<&'a str>,
     /// The tool's own `env=` lines, applied last by [`run_env`] so they win.
     pub env: &'a [(String, String)],
 }
@@ -608,7 +671,7 @@ pub(crate) fn run_through_view(
             exit(1);
         }
     }
-    let game_run = opts.tool_name.is_none();
+    let game_run = records_game_launch(&opts);
     let started = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
@@ -622,7 +685,7 @@ pub(crate) fn run_through_view(
             eidos_log::warn!("eidos: could not record the game build: {e}");
         }
     }
-    let session = crate::sessions::begin(game, inst, &prof, opts.tool_name);
+    let session = crate::sessions::begin(game, inst, &prof, opts.tool_name.or(opts.utility));
     let result = launch(spec);
     crate::sessions::finish(session, &result, inst, &prof);
     // A crash under Proton can still exit 0; a crash log written since the start says otherwise.
@@ -1018,6 +1081,41 @@ fn steam_cloud_save_target(game: &DetectedGame, destination: &Path) -> bool {
 #[cfg(test)]
 mod extender_tests {
     use super::*;
+
+    #[test]
+    fn shell_runs_the_given_command_or_the_users_shell() {
+        let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let zsh = || Some("/bin/zsh".to_string());
+        assert_eq!(
+            shell_command(&v(&["--", "ls", "-la"]), zsh()),
+            Some(v(&["ls", "-la"]))
+        );
+        assert_eq!(shell_command(&v(&[]), zsh()), Some(v(&["/bin/zsh"])));
+        assert_eq!(shell_command(&v(&["--"]), zsh()), Some(v(&["/bin/zsh"])));
+        assert_eq!(shell_command(&v(&[]), None), Some(v(&["/bin/sh"])));
+        assert_eq!(
+            shell_command(&v(&[]), Some(String::new())),
+            Some(v(&["/bin/sh"]))
+        );
+        assert_eq!(
+            shell_command(&v(&["ls"]), zsh()),
+            None,
+            "a command needs --"
+        );
+    }
+
+    #[test]
+    fn a_utility_run_records_no_game_launch() {
+        assert!(records_game_launch(&ToolOpts::default()));
+        assert!(!records_game_launch(&ToolOpts {
+            tool_name: Some("xEdit"),
+            ..Default::default()
+        }));
+        assert!(!records_game_launch(&ToolOpts {
+            utility: Some("shell"),
+            ..Default::default()
+        }));
+    }
 
     #[test]
     fn tier_one_launch_dlls_use_the_selected_external_prefix() {

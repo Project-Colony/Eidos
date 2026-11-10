@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=bb2eee28d0132a3916b2b4106f3e985018164993 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ef7908232d824a69c7729e37906969aa3a374b1b -->
 
 # Eidos kullanımı
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # var olan bir MO2 profilinin sırasını +
 eidos sort skyrimse               # eklenti yükleme sırasını LOOT ile sırala
 eidos play skyrimse               # neyin bağlanacağını göster
 eidos play skyrimse -- <command>  # <command>'ı modlar oyunun üzerine bağlanmış halde çalıştır
+eidos shell skyrimse              # birleşik görünümde bir kabuk, yazılanlar Overwrite'a gider
 eidos check skyrimse              # pencere olmadan sağlık denetimleri (betikler için --json)
 eidos sessions skyrimse           # kaydedilmiş oyun ve araç çalıştırmaları, en yeni başta
 eidos sessions skyrimse diff      # çıkış kodu 0 ile biten son çalıştırmadan beri neyin değiştiği
@@ -35,6 +36,10 @@ takımı tamamlar; tam liste için `eidos`'u argümansız çalıştırın.
 `eidos check <instance>`, **Diagnostics** sekmesindeki prefix, eklenti, eksik master ve script extender denetimlerini pencereyi açmadan çalıştırır; böylece bunlar SSH üzerinden ya da Game Mode'da çalışabilir ve bir hata raporuna eklenebilir. **Copy report** ile aynı sistem satırlarını, ardından her bulgu için bir satır yazdırır; ev klasörünüz `~`, oturum adınız `<user>` olarak gösterilir. Çıkış kodu, hiçbir sorun bulunmadığında 0 (yalnızca öneriler yine 0 verir), en az bir sorun bulunduğunda 1, Eidos denetleyemediğinde 2'dir: yanlış argümanlar, açamadığı bir örnek ya da algılamadığı bir oyun.
 
 `eidos check <instance> --json` bunun yerine tek bir JSON nesnesi yazdırır. Üst düzey alanları `eidos` (sürüm), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`) ve `findings`'dir. Her bulgu bir `code`, bir `level` (`problem` ya da `advice`) ve kendi `args` alanından oluşur; Diagnostics sekmesi her kodun cümlesini gösterir.
+
+### Birleşik görünümde bir kabuk
+
+`eidos shell <instance>`, `$SHELL` kabuğunuzu (yoksa `/bin/sh`) oyunun göreceği haliyle oyun klasöründe başlatır: etkin her mod `Data` üzerine bağlanır, Root modları oyunun kök dizinine bağlanır ve oraya yazılan her şey Overwrite'a düşer. `eidos shell <instance> -- <command>` bunun yerine tek bir komut çalıştırır, örneğin `eidos shell skyrimse -- ls Data/meshes` ya da NifSkope gibi yerel bir araç. Çalıştırma, bir oyun oturumu gibi örnek kilidini tutar; bu yüzden siz çıkana kadar pencere değişiklik kaydedemez ve `eidos sessions` içinde `shell` adıyla görünür, hiçbir zaman oyun başlatması olarak değil. Bir komut sırasında Ctrl+C çalıştırmayı Stop gibi durdurur: Eidos komutu bitirir, oturumu yakalar ve bağlantıyı keser.
 
 ### Örnekler: global ve taşınabilir
 

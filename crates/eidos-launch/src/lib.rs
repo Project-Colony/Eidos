@@ -82,7 +82,7 @@ pub struct LaunchSpec {
     pub root_base_bind: Option<(PathBuf, PathBuf)>,
 }
 
-/// Set by the SIGTERM handler; read by [`launch`] and by the run's watcher.
+/// Set by the SIGTERM and SIGINT handler; read by [`launch`] and by the run's watcher.
 static STOP: AtomicBool = AtomicBool::new(false);
 
 /// How long the run's processes get between SIGTERM and SIGKILL.
@@ -93,18 +93,20 @@ extern "C" fn on_sigterm(_: libc::c_int) {
     STOP.store(true, Ordering::SeqCst);
 }
 
-/// Whether a stop request (SIGTERM) arrived. A run that ends after one is not a
+/// Whether a stop request (SIGTERM or Ctrl+C) arrived. A run that ends after one is not a
 /// clean launch, whatever its exit status.
 pub fn stop_requested() -> bool {
     STOP.load(Ordering::SeqCst)
 }
 
-/// Turn SIGTERM into a stop request for the run instead of an instant death.
+/// Turn SIGTERM and SIGINT into a stop request for the run instead of an instant death.
 ///
 /// Once it arrives, [`launch`] refuses to start anything, and a command already
 /// running has its whole process tree ended (SIGTERM, then SIGKILL after a grace
 /// period), so the caller's post-run captures still run and the union is
-/// unmounted only after every process of the run is gone.
+/// unmounted only after every process of the run is gone. Ctrl+C in a terminal
+/// ends the run like the window's Stop; an exec'd child gets the default
+/// disposition back, so programs inside the run still stop on Ctrl+C.
 pub fn install_stop_handler() {
     // SAFETY: a zeroed sigaction with an empty mask and a handler that only
     // stores to an atomic.
@@ -114,6 +116,7 @@ pub fn install_stop_handler() {
         action.sa_flags = libc::SA_RESTART;
         libc::sigemptyset(&mut action.sa_mask);
         libc::sigaction(libc::SIGTERM, &action, std::ptr::null_mut());
+        libc::sigaction(libc::SIGINT, &action, std::ptr::null_mut());
     }
 }
 

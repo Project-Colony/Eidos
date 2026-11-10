@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=bb2eee28d0132a3916b2b4106f3e985018164993 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ef7908232d824a69c7729e37906969aa3a374b1b -->
 
 # 使用 Eidos
 
@@ -17,6 +17,7 @@ eidos import skyrimse <mo2-profile>  # 接管已有 MO2 配置档的顺序与插
 eidos sort skyrimse               # 用 LOOT 排序插件加载顺序
 eidos play skyrimse               # 显示将会挂载什么
 eidos play skyrimse -- <command>  # 在模组盖住游戏的视图下运行 <command>
+eidos shell skyrimse              # 在合并视图里开一个 shell,写入的内容进入 Overwrite
 eidos check skyrimse              # 不开窗口跑健康检查(脚本用 --json)
 eidos sessions skyrimse           # 按从新到旧列出已记录的游戏和工具运行
 eidos sessions skyrimse diff      # 显示自上次以退出码 0 结束的运行以来的变化
@@ -34,6 +35,10 @@ eidos unpack backup.eidos <folder>   # 在另一台机器上把它放回去
 `eidos check <instance>` 不打开窗口就运行 **Diagnostics** 标签页里的前缀、插件、缺失 master 和脚本扩展器检查,所以可以通过 SSH 或在 Game Mode 下运行,结果也能放进 bug 报告。它先打印与 **Copy report** 相同的系统信息行,再为每条发现打印一行,主目录显示为 `~`,登录名显示为 `<user>`。没有发现问题时退出码为 0(只有建议仍为 0),至少发现一个问题时为 1,Eidos 无法检查时为 2:参数错误、无法打开的实例,或检测不到的游戏。
 
 `eidos check <instance> --json` 改为打印一个 JSON 对象。顶层字段为 `eidos`(版本)、`game`、`instance`、`system`(`proton`、`flatpak_steam`、`passthrough`、`session`、`distro`、`kernel`、`dev_fuse`、`fusermount3`)和 `findings`。每条发现由 `code`、`level`(`problem` 或 `advice`)和它的 `args` 组成;Diagnostics 标签页显示每个代码对应的句子。
+
+### 合并视图中的 shell
+
+`eidos shell <instance>` 在游戏所见的游戏文件夹里启动你的 `$SHELL`(没有就用 `/bin/sh`):每个已启用的模组挂载在 `Data` 之上,Root 模组挂载在游戏根目录之上,写到那里的一切都进入 Overwrite。`eidos shell <instance> -- <command>` 则只运行一条命令,例如 `eidos shell skyrimse -- ls Data/meshes`,或 NifSkope 这样的原生工具。这次运行像游戏会话一样持有实例锁,所以在你退出之前窗口无法保存更改,它在 `eidos sessions` 中以 `shell` 为名记录,绝不算作一次游戏启动。对命令按 Ctrl+C 会像 Stop 一样停止运行:Eidos 结束该命令、收集会话并卸载。
 
 ### 实例:全局与便携
 

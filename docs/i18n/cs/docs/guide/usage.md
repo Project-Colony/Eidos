@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=bb2eee28d0132a3916b2b4106f3e985018164993 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ef7908232d824a69c7729e37906969aa3a374b1b -->
 
 # Používání Eidosu
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # adopt an existing MO2 profile's order + p
 eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
+eidos shell skyrimse              # shell ve sloučeném pohledu, zápisy skončí v Overwrite
 eidos check skyrimse              # kontroly zdraví bez okna (--json pro skripty)
 eidos sessions skyrimse           # zaznamenaná spuštění hry a nástrojů, nejnovější první
 eidos sessions skyrimse diff      # co se změnilo od posledního spuštění, které skončilo kódem 0
@@ -35,6 +36,10 @@ doplňují; úplný seznam vypíše `eidos` bez argumentů.
 `eidos check <instance>` spustí kontroly prefixu, pluginů, chybějících masterů a script extenderu z karty **Diagnostics**, aniž by otevřel okno, takže mohou běžet přes SSH nebo v Game Mode a skončit v hlášení chyby. Vypíše stejné systémové řádky jako **Copy report** a pak jeden řádek na každé zjištění, s domovskou složkou zobrazenou jako `~` a přihlašovacím jménem jako `<user>`. Návratový kód je 0, když se nenašel žádný problém (samotné rady stále dávají 0), 1, když se našel aspoň jeden problém, a 2, když Eidos nemohl kontrolu provést: chybné argumenty, instance, kterou nedokáže otevřít, nebo hra, kterou nerozpozná.
 
 `eidos check <instance> --json` místo toho vypíše jeden objekt JSON. Jeho pole nejvyšší úrovně jsou `eidos` (verze), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`) a `findings`. Každé zjištění tvoří `code`, `level` (`problem` nebo `advice`) a jeho `args`; karta Diagnostics ukazuje větu ke každému kódu.
+
+### Shell ve sloučeném pohledu
+
+`eidos shell <instance>` spustí váš `$SHELL` (nebo `/bin/sh`) ve složce hry tak, jak by ji viděla hra: každý zapnutý mód připojený nad `Data`, módy Root nad kořenem hry a vše, co se tam zapíše, skončí v Overwrite. `eidos shell <instance> -- <command>` místo toho spustí jediný příkaz, například `eidos shell skyrimse -- ls Data/meshes` nebo nativní nástroj jako NifSkope. Běh drží zámek instance stejně jako herní relace, takže okno nemůže ukládat změny, dokud neskončíte, a v `eidos sessions` je zapsán pod názvem `shell`, nikdy jako spuštění hry. Ctrl+C u příkazu zastaví běh stejně jako Stop: Eidos příkaz ukončí, zachytí relaci a odpojí pohled.
 
 ### Instance: globální a přenosné
 

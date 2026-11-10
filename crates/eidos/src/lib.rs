@@ -4,6 +4,7 @@
 //!   eidos init <game-id> [folder]     create a modding instance (global, or portable at <folder>)
 //!   eidos play <instance>             show how to launch / what is mounted
 //!   eidos play <instance> -- <cmd...> run <cmd> with the mods mounted over the game
+//!   eidos shell <instance> [-- <cmd>] a shell (or <cmd>) in the merged view
 //!
 //! `<instance>` is a game id (the central instance) or a portable instance's
 //! folder - see `resolve.rs` for how the two are told apart.
@@ -281,6 +282,8 @@ fn usage() -> ! {
          \x20 eidos init <game-id> [folder]     create a modding instance (with a folder: portable, there)\n\
          \x20 eidos play <instance>             show what would be mounted\n\
          \x20 eidos play <instance> -- <cmd...> run <cmd> with mods mounted over the game\n\
+         \x20 eidos shell <instance> [-- <cmd>]  a shell (or <cmd>) in the merged view; writes land in Overwrite
+\
          \x20 eidos install <instance> <archive> install a downloaded mod archive (.7z/.zip/.rar)\n\
          \x20 eidos collection <instance> <link>  install a Nexus collection (--dry-run to look first)\n\
          \x20 eidos pack <instance> <file.eidos> write the whole instance into one file\n\
@@ -408,6 +411,7 @@ pub fn run(mut args: Vec<String>) {
             None => usage(),
         },
         Some("play") => cmd_play(&args[1..]),
+        Some("shell") => cmd_shell(&args[1..]),
         Some("install") => cmd_install(&args[1..]),
         Some("collection") => cmd_collection(&args[1..]),
         Some("pack") => cmd_pack(&args[1..]),

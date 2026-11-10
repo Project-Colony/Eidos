@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=bb2eee28d0132a3916b2b4106f3e985018164993 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ef7908232d824a69c7729e37906969aa3a374b1b -->
 
 # Usar Eidos
 
@@ -19,6 +19,7 @@ eidos import skyrimse <mo2-profile>  # adoptar el orden y el estado de plugins d
 eidos sort skyrimse               # ordenar la carga de plugins con LOOT
 eidos play skyrimse               # mostrar qué se montaría
 eidos play skyrimse -- <command>  # ejecutar <command> con los mods montados sobre el juego
+eidos shell skyrimse              # una shell en la vista combinada, lo escrito va al Overwrite
 eidos check skyrimse              # comprobaciones de salud sin la ventana (--json para scripts)
 eidos sessions skyrimse           # las ejecuciones registradas del juego y de herramientas, de la más reciente a la más antigua
 eidos sessions skyrimse diff      # qué cambió desde la última ejecución que terminó con código 0
@@ -36,6 +37,10 @@ completan el conjunto; ejecuta `eidos` sin argumentos para la lista completa.
 `eidos check <instance>` ejecuta las comprobaciones de prefijo, plugins, masters ausentes y script extender de la pestaña **Diagnostics** sin abrir la ventana, de modo que pueden ejecutarse por SSH o en el Game Mode y acabar en un informe de errores. Imprime las mismas líneas de sistema que **Copy report** y luego una línea por hallazgo, con tu carpeta personal mostrada como `~` y tu nombre de usuario como `<user>`. El código de salida es 0 cuando no se encontró ningún problema (los consejos solos siguen dando 0), 1 cuando se encontró al menos un problema y 2 cuando Eidos no pudo comprobar: argumentos incorrectos, una instancia que no puede abrir o un juego que no detecta.
 
 `eidos check <instance> --json` imprime en su lugar un único objeto JSON. Sus campos de nivel superior son `eidos` (la versión), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`) y `findings`. Cada hallazgo es un `code`, un `level` (`problem` o `advice`) y sus `args`; la pestaña Diagnostics muestra la frase de cada código.
+
+### Una shell en la vista combinada
+
+`eidos shell <instance>` abre tu `$SHELL` (o `/bin/sh`) en la carpeta del juego tal como la vería el juego: cada mod activo montado sobre `Data`, los mods Root sobre la raíz del juego, y todo lo que se escriba ahí va al Overwrite. `eidos shell <instance> -- <command>` ejecuta en su lugar un solo comando, por ejemplo `eidos shell skyrimse -- ls Data/meshes` o una herramienta nativa como NifSkope. La ejecución retiene el bloqueo de la instancia como una sesión de juego, así que la ventana no puede guardar cambios hasta que salgas, y queda registrada en `eidos sessions` con el nombre `shell`, nunca como un lanzamiento del juego. Ctrl+C en un comando detiene la ejecución como lo hace Stop: Eidos termina el comando, captura la sesión y desmonta.
 
 ### Instancias: globales y portátiles
 

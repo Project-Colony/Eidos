@@ -718,6 +718,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 // A game start is session output, not generated output: no receipt.
                 tool_name: (!runs_game).then_some(title),
                 executable: (!runs_game).then_some(&source_exe),
+                utility: None,
                 env: &tool.env,
             };
             if print_only {

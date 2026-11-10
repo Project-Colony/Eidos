@@ -16,6 +16,7 @@ eidos import skyrimse <mo2-profile>  # adopt an existing MO2 profile's order + p
 eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
+eidos shell skyrimse              # a shell in the merged view, writes land in Overwrite
 eidos check skyrimse              # Health checks without the window (--json for scripts)
 eidos sessions skyrimse           # the recorded game and tool runs, newest first
 eidos sessions skyrimse diff      # what changed since the last run that exited with code 0
@@ -44,6 +45,10 @@ fields are `eidos` (the version), `game`, `instance`, `system` (`proton`,
 `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`,
 `fusermount3`) and `findings`. Each finding is a `code`, a `level` (`problem` or
 `advice`) and its `args`; the Diagnostics tab shows the sentence for each code.
+
+### A shell in the merged view
+
+`eidos shell <instance>` starts your `$SHELL` (or `/bin/sh`) in the game's folder as the game would see it: every enabled mod mounted over `Data`, Root mods over the game root, and everything written there landing in the Overwrite. `eidos shell <instance> -- <command>` runs one command instead, for example `eidos shell skyrimse -- ls Data/meshes` or a native tool such as NifSkope. The run holds the instance lock like a game session, so the window cannot save changes until you exit, and it is recorded in `eidos sessions` under the name `shell`, never as a game launch. Ctrl+C on a command stops the run the way Stop does: Eidos ends the command, captures the session and unmounts.
 
 ### Instances: global and portable
 
