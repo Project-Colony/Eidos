@@ -40,7 +40,7 @@ vollständige Liste.
 
 ### Eine Shell in der zusammengeführten Ansicht
 
-`eidos shell <instance>` startet Ihre `$SHELL` (oder `/bin/sh`) im Spielordner, so wie das Spiel ihn sehen würde: jede aktivierte Mod über `Data` gemountet, Root-Mods über dem Spielstamm, und alles, was dort geschrieben wird, landet im Overwrite. `eidos shell <instance> -- <command>` führt stattdessen einen einzelnen Befehl aus, zum Beispiel `eidos shell skyrimse -- ls Data/meshes` oder ein natives Werkzeug wie NifSkope. Der Lauf hält die Instanzsperre wie eine Spielsitzung, das Fenster kann also bis zum Beenden keine Änderungen speichern, und er steht in `eidos sessions` unter dem Namen `shell`, nie als Spielstart. Strg+C bei einem Befehl beendet den Lauf wie Stop: Eidos beendet den Befehl, erfasst die Sitzung und hängt die Ansicht aus.
+`eidos shell <instance>` startet Ihre `$SHELL` (oder `/bin/sh`) im Spielordner, so wie das Spiel ihn sehen würde: jede aktivierte Mod über `Data` gemountet, Root-Mods über dem Spielstamm, und alles, was dort geschrieben wird, landet im Overwrite. `eidos shell <instance> -- <command>` führt stattdessen einen einzelnen Befehl aus, zum Beispiel `eidos shell skyrimse -- ls Data/meshes` oder ein natives Werkzeug wie NifSkope. Der Lauf hält die Instanzsperre wie eine Spielsitzung, das Fenster kann also bis zum Beenden keine Änderungen speichern, und er steht in `eidos sessions` unter dem Namen `shell`, nie als Spielstart. Strg+C bei einem Befehl beendet den Lauf wie Stop: Eidos beendet den Befehl, erfasst die Sitzung und hängt die Ansicht aus. In der interaktiven Shell gehört Strg+C wie gewohnt der Shell; geben Sie `exit` ein, um den Lauf zu beenden.
 
 ### Instanzen: global und portabel
 
