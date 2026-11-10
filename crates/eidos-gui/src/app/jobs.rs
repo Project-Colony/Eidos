@@ -175,4 +175,13 @@ pub(crate) struct RunningState {
     /// from `tool_choice` at exit: an unlocked run lets the user change that
     /// pick while it runs.
     pub(crate) game: bool,
+    /// Whether Stop may signal the child. Only `run_through_view` (`eidos play`,
+    /// `eidos tool`) turns SIGTERM into a clean stop; the prerequisite install
+    /// has no handler for it.
+    pub(crate) stoppable: bool,
+    /// Stop sent the SIGTERM: the run ends as stopped, whatever its exit code.
+    pub(crate) stopped: bool,
+    /// When the child was spawned, in seconds since the epoch. A launch record
+    /// older than this was written by an earlier run.
+    pub(crate) started: u64,
 }

@@ -305,6 +305,10 @@ pub(crate) fn run_through_view(
             }
         }
     };
+    // From here a SIGTERM (the window's Stop) ends the run, not this process: a stop
+    // during prepare lets it finish and `launch` then starts nothing, and either way
+    // the post-run captures below still run.
+    eidos_launch::install_stop_handler();
     if let Err(error) = crate::games::validate_selected_game(
         inst,
         game_id,
@@ -620,8 +624,10 @@ pub(crate) fn run_through_view(
     }
     let result = launch(spec);
     // A crash under Proton can still exit 0; a crash log written since the start says otherwise.
+    // A stopped run is never clean: Steam's wrapper chain may turn the SIGTERM into exit 0.
     if game_run
         && matches!(&result, Ok(s) if s.success())
+        && !eidos_launch::stop_requested()
         && !crate::check::crash::crashed_since(game, &inst.overwrite_dir(), started)
     {
         if let Err(e) = inst.record_good_launch() {

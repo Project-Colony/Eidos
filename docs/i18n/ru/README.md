@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=bf2a3d995d27b69444b8e0497adb217856e87ce8 -->
+<!-- eidos-i18n: source=README.md sha=24a826cf58aaf1ab0e91bef4d7acfb7ebb818ed3 -->
 
 <div align="center">
 
@@ -159,9 +159,7 @@ LOOT. Более старый Eidos держал всё это в `~/.config/eid
 загрузки со звёздочками, LOOT, сохранения `.fos`) - см.
 [guide/fallout4.md](docs/guide/fallout4.md). Подключены по общему
 дескриптору игры и ждут тестировщиков: Skyrim LE, Skyrim VR, Enderal SE,
-Fallout 3, Fallout NV, Fallout 4 (+ VR), Starfield, Oblivion и Morrowind
-(последние два монтируются и управляют модами; их списки плагинов,
-упорядоченные по меткам времени, пока не управляются).
+Fallout 3, Fallout NV, Fallout 4 (+ VR), Starfield, Oblivion и Morrowind (их порядок загрузки задают даты файлов плагинов: Eidos хранит один порядок на профиль и показывает эти даты внутри монтирования, не меняя файлы на диске).
 
 Добавить семейство - это одна строка дескриптора:
 [internals/adding-games.md](../../internals/adding-games.md).

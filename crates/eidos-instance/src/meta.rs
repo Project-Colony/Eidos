@@ -1063,7 +1063,7 @@ fn qt_items(raw: &str) -> Vec<String> {
 
 /// A raw value as one string, as QSettings reads it; a list comes back joined
 /// with ", ", the way QSettings writes one.
-fn qt_value(raw: &str) -> String {
+pub(crate) fn qt_value(raw: &str) -> String {
     qt_items(raw).join(", ")
 }
 

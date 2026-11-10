@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
 
 # Narzędzia: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -74,6 +74,19 @@ wymienia FNIS.
 Narzędzia w **wyłączonym** modzie nie da się przepisać, bo jego plików też nie ma
 w widoku. Eidos to mówi i uruchamia je z jego własnego folderu, zamiast udawać.
 
+## Narzędzia z listy Mod Organizer 2
+
+Lista Wabbajack albo inna instancja MO2 otwarta jako instancja Eidos zachowuje swój `ModOrganizer.ini`, a skonfigurowane tam pliki wykonywalne można skopiować do `tools.ini`:
+
+```sh
+eidos tool /path/to/list import-mo2           # pokazuje, co zostałoby dodane
+eidos tool /path/to/list import-mo2 --write   # dodaje je
+```
+
+W oknie okno Pliki wykonywalne ma przycisk **Importuj z ModOrganizer.ini**, z polem do odznaczenia przy każdym wpisie. Nic nie jest zapisywane, dopóki nie klikniesz Zapisz.
+
+Ścieżki na `Z:` są ścieżkami Linuksa i zostają bez zmian. Ścieżka na innej literze dysku jest przenoszona do folderu listy, jeśli zawiera nazwę tego folderu (`D:\Lists\MyList\tools\SSEEdit.exe` staje się `<list>/tools/SSEEdit.exe`), w pliku wykonywalnym, katalogu roboczym i argumentach. Loader rozszerzenia skryptów i plik gry stają się zwykłymi nazwami, więc uruchamiają się z folderu gry, na który Eidos nakłada widok, tak jak wpisy wbudowane. Wpisy wskazujące gdzie indziej (systemowy program Windows, narzędzie spoza listy) są pokazane jako pominięte, z powodem, a tytuł, który już jest w `tools.ini`, nigdy nie jest zastępowany.
+
 ## Kierowanie wyjścia narzędzia do własnego moda
 
 Generator - FNIS, Nemesis, BodySlide, DynDOLOD, Synthesis - zapisuje setki
@@ -100,6 +113,12 @@ końcowego bez jednego i drugiego.
 Jeśli docelowy mod jest wyłączony, wyjście i tak zostaje zapisane, ale gra go nie
 zobaczy, więc narzędzie wygenerowałoby te same pliki przy następnym uruchomieniu.
 Eidos ostrzega, gdy tak jest.
+
+### Gdy jego wynik jest nieaktualny
+
+Eidos zapisuje, z jakich modów, kolejności pluginów, profilu i pliku wykonywalnego powstał wynik narzędzia. Gdy któryś z nich się zmieni, mówi o tym karta Diagnostics, a na karcie jest przycisk **Run <tool> again**, który uruchamia narzędzie z obecną konfiguracją.
+
+Dla generatora, którego nieaktualny wynik psuje grę, jak Pandora czy Nemesis, dodaj `check_before_play=1` do jego wpisu w `tools.ini` albo włącz **Ask before playing when its output is out of date** w oknie Executables. Run pyta wtedy najpierw: uruchomić narzędzie czy grać mimo to. Wybór „grać mimo to” obowiązuje, dopóki mody, pluginy lub profil znów się nie zmienią albo okno się nie zamknie. Eidos nigdy nie uruchamia narzędzia samodzielnie.
 
 ## O tym, jakich DLL-i potrzebuje narzędzie, decyduje jego NAZWA
 
@@ -332,6 +351,15 @@ czyta. W oknie Executables:
 Ukrywanie i przypinanie dotyczą tego, jak się do narzędzia *dociera*, a nie tego,
 co ono uruchamia, więc stosują się do domyślnych wpisów gry tak samo jak do
 twoich własnych.
+
+Loader script extendera, launcher i plik wykonywalny gry nie mają przycisku
+Desktop shortcut. Uruchamiają grę, a gra zawsze startuje przez swój sklep, co
+robi już skrót samego sklepu. Skrót utworzony dla któregoś z nich w Eidos 1.22
+lub starszym dalej działa: podobnie jak `eidos tool <instance> run <title>`
+wpisane w terminalu prosi sklep o uruchomienie gry, tak samo jak Run w oknie,
+którego nie otworzył żaden sklep. Gdy brakuje ustawienia w sklepie, polecenie
+niczego nie uruchamia i wypisuje, co ustawić. Skrót nie pokazuje żadnego
+komunikatu, więc uruchom to samo polecenie w terminalu, żeby go przeczytać.
 
 ## Narzędzie, które jest własną aplikacją Steam
 

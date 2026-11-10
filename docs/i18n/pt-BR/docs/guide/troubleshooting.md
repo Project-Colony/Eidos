@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=cadcf569ba9dbf61fcde16e8cef0e9cbe719744c -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=55e68d8b6ee830b2d336ce1e96db32155a304c57 -->
 
 # Solução de problemas e diagnóstico
 
@@ -120,6 +120,36 @@ filhos combinados poupa no `readdir`.
 
 `EIDOS_NO_INDEX=1` força o percurso, para quando a diferença entre as duas respostas
 é justamente o que está sendo depurado.
+
+## Um jogo ou ferramenta que não fecha
+
+Enquanto um jogo ou ferramenta roda, o botão Run vira **Stop**, e o cartão de
+bloqueio também tem um botão Stop. Pressione-o duas vezes. O segundo toque
+encerra todos os programas que a execução iniciou: primeiro SIGTERM, depois
+SIGKILL após 10 segundos para o que sobrar. O que o jogo não tinha salvo se
+perde. Depois, o Eidos faz o mesmo que faz após qualquer saída: as mudanças de
+INI e de plugins voltam para o perfil, a saída das ferramentas é registrada e os
+mods são desmontados. **Unlock** é diferente: ele devolve a janela e deixa o
+programa rodando. Num terminal, `kill <pid>` no processo `eidos` (o pid está no
+cartão de bloqueio) faz o mesmo que Stop.
+
+## Qual Proton roda o jogo, e um prefixo quebrado
+
+A aba Diagnostics tem um cartão **Proton**: a versão que o Eidos e o Steam usam
+para o jogo, a configuração do próprio Steam e a versão que rodou o prefixo por
+último. Quando um Proton mais novo que o selecionado foi o último a preparar o
+prefixo, o cartão vira um conselho, porque um Proton mais antigo num prefixo
+mais novo pode redefinir os arquivos do Wine dele ou não iniciar. Escolha no
+Steam uma versão pelo menos tão nova, em Propriedades do jogo, Compatibilidade.
+
+**Rebuild prefix**, nesse cartão, é para um prefixo que não funciona mais.
+Pressione-o duas vezes. O Eidos não apaga nada: ele renomeia
+`steamapps/compatdata/<appid>` para `<appid>.eidos-backup-<date>-<time>` na
+mesma pasta, e o Steam cria um prefixo novo na próxima vez que você iniciar o
+jogo pelo Steam. Ele se recusa enquanto um jogo, uma ferramenta ou qualquer
+programa do Wine usa o prefixo. Saves e configurações guardados só no prefixo
+antigo ficam na pasta renomeada: copie de volta o que precisar e apague essa
+pasta você mesmo quando não a quiser mais.
 
 ## Problemas conhecidos
 

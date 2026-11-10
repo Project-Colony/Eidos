@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -74,6 +74,19 @@ Een tool in een **uitgeschakelde** mod kan niet herschreven worden, omdat zijn
 bestanden ook niet in de weergave zitten. Eidos zegt dat en draait hem vanuit
 zijn eigen map in plaats van te doen alsof.
 
+## Hulpmiddelen uit een Mod Organizer 2-lijst
+
+Een Wabbajack-lijst of een andere MO2-instantie die als Eidos-instantie is geopend, houdt zijn `ModOrganizer.ini`, en de uitvoerbare bestanden die daar staan kunnen naar `tools.ini` worden gekopieerd:
+
+```sh
+eidos tool /path/to/list import-mo2           # toont wat er zou worden toegevoegd
+eidos tool /path/to/list import-mo2 --write   # voegt ze toe
+```
+
+In het venster heeft het dialoogvenster Uitvoerbare bestanden **Importeren uit ModOrganizer.ini**, met per item een vakje om uit te zetten. Er wordt niets opgeslagen tot u op Opslaan drukt.
+
+Paden op `Z:` zijn Linux-paden en blijven zoals ze zijn. Een pad op een andere stationsletter gaat onder de map van de lijst als het die map noemt (`D:\Lists\MyList\tools\SSEEdit.exe` wordt `<list>/tools/SSEEdit.exe`), in het uitvoerbare bestand, de werkmap en de argumenten. De loader van de script extender en het spelbestand worden gewone namen, zodat ze starten vanuit de spelmap waarover Eidos de weergave legt, net als de ingebouwde items. Items die ergens anders heen wijzen (een Windows-systeemprogramma, een hulpmiddel buiten de lijst) staan als overgeslagen in de lijst, met de reden, en een titel die al in `tools.ini` staat wordt nooit vervangen.
+
 ## De uitvoer van een tool naar een eigen mod sturen
 
 Een generator - FNIS, Nemesis, BodySlide, DynDOLOD, Synthesis - schrijft honderden
@@ -99,6 +112,12 @@ schrijven. De capture bereikt dezelfde eindtoestand zonder allebei.
 Is de doelmod uitgeschakeld, dan wordt de uitvoer wel geschreven maar het spel
 ziet hem niet, zodat de tool bij de volgende draai dezelfde bestanden opnieuw zou
 aanmaken. Eidos waarschuwt wanneer dat zo is.
+
+### Als de uitvoer verouderd is
+
+Eidos legt vast uit welke mods, welke pluginvolgorde, welk profiel en welk uitvoerbaar bestand de uitvoer van een tool is gemaakt. Verandert een van die dingen, dan meldt het tabblad Diagnostics dat, en de kaart heeft een knop **Run <tool> again** die de tool met de huidige instellingen start.
+
+Voor een generator waarvan verouderde uitvoer het spel kapotmaakt, zoals Pandora of Nemesis, zet u `check_before_play=1` bij zijn vermelding in `tools.ini`, of schakelt u in het dialoogvenster Executables **Ask before playing when its output is out of date** in. Run vraagt dan eerst: de tool starten of toch spelen. Toch spelen wordt onthouden tot de mods, plugins of het profiel opnieuw veranderen, of tot het venster sluit. Eidos start de tool nooit zelf.
 
 ## De DLL's die een tool nodig heeft worden gekozen op zijn NAAM
 
@@ -337,6 +356,16 @@ een keuzelijst die niemand leest. In het Executables-venster:
 Verbergen en vastzetten gaan over hoe een tool *bereikt* wordt en niet over wat
 hij draait, dus ze gelden voor de standaardinstellingen per spel net zo goed als
 voor je eigen invoeren.
+
+De loader van de script extender, de launcher en het binaire bestand van het
+spel hebben geen knop Desktop shortcut. Ze starten het spel, en het spel start
+altijd via zijn winkel, wat de snelkoppeling van de winkel zelf al doet. Een
+snelkoppeling die je voor een ervan met Eidos 1.22 of ouder hebt gemaakt, blijft
+werken: net als `eidos tool <instance> run <title>` getypt in een terminal
+vraagt ze de winkel het spel te starten, zoals Run doet in een venster dat geen
+winkel heeft geopend. Ontbreekt de instelling in de winkel, dan start de
+opdracht niets en toont ze wat je moet instellen. Een snelkoppeling toont geen
+melding, dus draai dezelfde opdracht in een terminal om die te lezen.
 
 ## Een tool die zijn eigen Steam-app is
 

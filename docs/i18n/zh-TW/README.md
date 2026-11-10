@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=bf2a3d995d27b69444b8e0497adb217856e87ce8 -->
+<!-- eidos-i18n: source=README.md sha=24a826cf58aaf1ab0e91bef4d7acfb7ebb818ed3 -->
 
 <div align="center">
 
@@ -127,8 +127,7 @@ Steam AppID,並寫出一個 `.desktop` 捷徑,讓它完全不必打開 Eidos 就
 F4SE、封裝檔失效、星號載入順序、LOOT、`.fos` 存檔)- 見
 [guide/fallout4.md](docs/guide/fallout4.md)。依共用的遊戲描述符接好線、
 正在找測試者的有:Skyrim LE、Skyrim VR、Enderal SE、Fallout 3、Fallout NV、
-Fallout 4(+ VR)、Starfield、Oblivion 與 Morrowind(最後兩款會掛載並管理模組;
-它們以時間戳排序的外掛清單還沒有被管理)。
+Fallout 4(+ VR)、Starfield、Oblivion 與 Morrowind(它們的載入順序就是外掛檔案的日期:Eidos 每個設定檔保存一份順序,並在掛載內顯示這些日期,不改動磁碟上的檔案)。
 
 加一個家族就是一列描述符:
 [internals/adding-games.md](../../internals/adding-games.md)(英文)。

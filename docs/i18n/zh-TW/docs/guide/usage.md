@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=a52fda783776900495152e3b3a35c98d83d96d42 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=92ef50801ef60cd7ea02e2a2f2538c313e3aeca1 -->
 
 # 使用 Eidos
 
@@ -203,8 +203,7 @@ URL 一起回報,讓你自己去抓。那是 Nexus 的商業規則,重試再多�
 進來的是同一個模組的另一個檔案,面板會寫出兩個檔案 id,並繼續等待合集指定的那一個。
 選用成員不在其中,保留各自的 *Open* 按鈕。
 
-還沒有被套用,而且會在報告裡被指名、而不是被略過的:**二進位修補**、**檔案覆寫**,
-以及那些檔案隨著合集壓縮檔一起走的成員(`bundle`)。合集預期你親手去抓的成員
+依合集的描述套用:**二進位修補**(每個都依記錄的 CRC 校驗)、**檔案覆寫**(指定的檔案像 MO2 那樣用 `.mohidden` 隱藏),以及那些檔案隨著合集壓縮檔一起走的成員(`bundle`)。合集預期你親手去抓的成員
 (`browse`、`manual`)會把作者自己的說明一路帶進報告裡。名稱已經和你某個模組撞上
 的成員,會以一個沒被占用的名稱裝在它旁邊,絕不覆蓋它,而報告會說明是哪幾個。
 
@@ -541,8 +540,15 @@ PATH 上的 `~/.cargo/bin`):
 ```
 
 Eidos 會在該遊戲的實例上開啟 - 你上次用的那一個,所以可攜實例和全域實例一樣會被再
-找到;點 Run 就會穿過合併檢視啟動它。(如果你在 Steam 之外按下 Run 按鈕,它會顯示
-這一行,帶著執行中執行檔的真實路徑。)
+找到;點 Run 就會穿過合併檢視啟動它。
+
+在 Steam 之外,Run 不會自己用 Proton 或 Wine 啟動遊戲。它請擁有這份副本的商店來啟動,再由商店啟動 Eidos:
+
+- Steam:設好上面的啟動選項後,執行 `steam -applaunch <appid>`。Steam 沒開時會先啟動 Steam。
+- Heroic(GOG 或 Epic 副本,原生版或 Flatpak 版):當 Eidos 是 Heroic 裡該遊戲設定中的一個包裝器(wrapper),執行檔為 `eidos-gui` 的絕對路徑且不帶參數時,它會收到一個 `heroic://launch` 連結。Heroic 沒開時會先啟動 Heroic。
+- 單獨的 Legendary:當 `~/.config/legendary/config.ini` 在遊戲的 `[<app>]` 區段或 `[default]` 下有 `wrapper =` 加上 `eidos-gui` 的絕對路徑時,執行 `legendary launch <app>`。
+
+接著 Eidos 會在你上次用的實例上開啟第二個視窗,你在那裡點 Run。第一個視窗不會追蹤這次執行,所以玩完後在它裡面按 F5 重新載入清單。商店的設定缺少,或 script extender 的 loader 不在遊戲執行檔旁邊時,Run 什麼也不啟動,並顯示要在哪裡設定什麼,帶著執行中執行檔的真實路徑。
 
 Bethesda 那幾款作品的 Steam `%command%` 通常指向 `<Game>Launcher.exe`。Eidos 從不
 執行它:那個啟動器是一支獨立的設定程式,它會重新掃描 `Data` 並改寫 `plugins.txt`,

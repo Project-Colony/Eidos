@@ -7,6 +7,8 @@ use eidos_gamefeatures::RegistryOutcome;
 use eidos_games::{home, DetectedGame};
 use eidos_instance::{Instance, InstanceKind};
 
+use crate::check::launch_option::{launch_handoff, Handoff};
+
 use crate::*;
 
 /// Per-game default tools auto-detected in the game dir: the script extender, the
@@ -42,6 +44,71 @@ pub(crate) fn game_executables(game: &DetectedGame) -> eidos_instance::GameExecu
         binary: Some(game.def.game_binary),
         script_extender: game.def.script_extender.as_ref().map(|se| se.loader),
         known_tools: game.def.known_tools,
+    }
+}
+
+/// Variables a store sets on the process it starts. Steam exports the first two.
+/// Heroic exports the `HEROIC_*` pair for every wrapper command, Legendary games
+/// included (it launches them for Heroic, source `epic`). The bare `legendary`
+/// CLI exports no marker of its own, so a window it opened sets
+/// [`STORE_STARTED_VAR`] on the `eidos tool` child instead.
+const STORE_MARKERS: [&str; 5] = [
+    "SteamGameId",
+    "SteamAppId",
+    "HEROIC_APP_NAME",
+    "HEROIC_APP_RUNNER",
+    STORE_STARTED_VAR,
+];
+
+/// True when any variable name in `keys` is a store marker.
+fn store_started_in(keys: impl IntoIterator<Item = String>) -> bool {
+    keys.into_iter()
+        .any(|k| STORE_MARKERS.contains(&k.as_str()))
+}
+
+/// A game entry run from a plain shell (a desktop shortcut made with 1.22, say)
+/// goes to the store that owns the copy, as Run does in a window no store
+/// opened. Inside a store-started process it runs as before.
+fn hands_off_to_store(runs_game: bool, store_started: bool) -> bool {
+    runs_game && !store_started
+}
+
+/// What `tool run` does with [`launch_handoff`]'s answer: `Ok` holds the store
+/// command to spawn and the line to print, `Err` the line saying what to set.
+fn game_entry_handoff(
+    handoff: Handoff,
+    game: &str,
+    source: &str,
+) -> Result<(Vec<String>, String), String> {
+    match handoff {
+        Handoff::Start { store, argv } => Ok((
+            argv,
+            format!(
+                "eidos tool: {store} is starting {game} through its Eidos setting. If an \
+                 Eidos window opens, press Run there."
+            ),
+        )),
+        Handoff::SetSteamOption { line } => Err(format!(
+            "eidos tool: this entry starts {game}, which starts through Steam. Set the game's \
+             Steam launch option to:  {line}"
+        )),
+        Handoff::SetHeroicWrapper { exe, args } => Err(format!(
+            "eidos tool: Heroic does not start {game} through Eidos. In the game's settings in \
+             Heroic, add a wrapper with the executable {exe} and the arguments \"{args}\"."
+        )),
+        Handoff::SetLegendaryWrapper { file, app, wrapper } => Err(format!(
+            "eidos tool: Legendary does not start {game} through Eidos. Add this line under \
+             [{app}] in {}:  wrapper = {wrapper}",
+            file.display()
+        )),
+        Handoff::NoLoader { loader } => Err(format!(
+            "eidos tool: {loader} is not next to the game's executable in this instance, so \
+             {source} is not asked to start {game}. Install the script extender first."
+        )),
+        Handoff::ThroughStore => Err(format!(
+            "eidos tool: this entry starts {game}. Start it from {source}: Eidos cannot ask \
+             {source} to start this copy."
+        )),
     }
 }
 
@@ -106,6 +173,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
              \x20 eidos tool <game-id>                       list tools\n\
              \x20 eidos tool <game-id> add <title> <exe> [args...]\n\
              \x20 eidos tool <game-id> rm <title>\n\
+             \x20 eidos tool <game-id> import-mo2 [--write]\n\
              \x20 eidos tool <game-id> run <title> [--print] [-- <extra args>...]"
         );
         exit(if asked_help { 0 } else { 2 });
@@ -207,6 +275,38 @@ pub(crate) fn cmd_tool(args: &[String]) {
             let _ = inst.save_tools(&user);
             println!("Removed '{title}'.");
         }
+        Some("import-mo2") => {
+            let Some(path) = inst.foreign_mo2_ini() else {
+                eidos_log::warn!(
+                    "No ModOrganizer.ini from Mod Organizer 2 in {}.",
+                    inst.root.display()
+                );
+                exit(1);
+            };
+            let ini = match std::fs::read(&path) {
+                Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+                Err(e) => {
+                    eidos_log::warn!("could not read {}: {e}", path.display());
+                    exit(1);
+                }
+            };
+            let found = eidos_instance::mo2_executables(&ini, &inst.root, game_executables(&game));
+            let user = inst.tools();
+            let (added, report) = mo2_import_plan(&found, &user);
+            print!("{report}");
+            if !args[2..].iter().any(|a| a == "--write") {
+                println!("Nothing written. Add them: eidos tool {id} import-mo2 --write");
+                return;
+            }
+            let n = added.len();
+            match inst.save_tools(&[user, added].concat()) {
+                Ok(()) => println!("Added {n} tool(s) to tools.ini."),
+                Err(e) => {
+                    eidos_log::warn!("could not save tools.ini: {e}");
+                    exit(1);
+                }
+            }
+        }
         Some("run") => {
             let Some(title) = args.get(2) else {
                 eidos_log::info!(
@@ -266,6 +366,54 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 }
                 exe.clone()
             });
+            let runs_game = game_executables(&game).launches_the_game(&tool.exe);
+            let store_started =
+                store_started_in(std::env::vars_os().filter_map(|(k, _)| k.into_string().ok()));
+            if hands_off_to_store(runs_game, store_started) {
+                let loader_found = game.def.script_extender.as_ref().is_none_or(|se| {
+                    eidos_instance::root_executable(
+                        &game.install_path,
+                        &inst.root_layers(),
+                        &inst.root_overwrite_dir(),
+                        se.loader,
+                    )
+                    .is_some()
+                });
+                let search_path: Vec<PathBuf> = std::env::var_os("PATH")
+                    .map(|p| std::env::split_paths(&p).collect())
+                    .unwrap_or_default();
+                let handoff = launch_handoff(
+                    &game,
+                    loader_found,
+                    &crate::this_exe().0,
+                    &home(),
+                    &search_path,
+                );
+                let source = game.source_name();
+                match game_entry_handoff(handoff, game.def.name, source) {
+                    Ok((argv, _)) if print_only => println!("{}", argv.join(" ")),
+                    Ok((argv, line)) => {
+                        if let Err(e) = std::process::Command::new(&argv[0])
+                            .args(&argv[1..])
+                            .spawn()
+                        {
+                            eidos_log::warn!(
+                                "eidos tool: could not run {} ({e}). Start {} from {source} \
+                                 yourself.",
+                                argv[0],
+                                game.def.name
+                            );
+                            exit(1);
+                        }
+                        println!("{line}");
+                    }
+                    Err(hint) => {
+                        eidos_log::info!("{hint}");
+                        exit(1);
+                    }
+                }
+                return;
+            }
             // `runner=native` runs the executable itself: no Proton, no Steam
             // prefix, and none of the Proton-only steps below.
             let native = tool.runner == eidos_instance::Runner::Native;
@@ -496,11 +644,14 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 env.push(("SteamAppId".to_string(), id.to_string()));
                 env.push(("SteamGameId".to_string(), id.to_string()));
             }
+            // `tool_name: None` makes `run_through_view` treat this as a game run: it
+            // records the launch start, the clean launch and crash detection.
             let opts = crate::launch::ToolOpts {
                 prereqs: &prereqs,
                 output_mod: output_mod.as_deref(),
-                tool_name: Some(title),
-                executable: Some(&source_exe),
+                // A game start is session output, not generated output: no receipt.
+                tool_name: (!runs_game).then_some(title),
+                executable: (!runs_game).then_some(&source_exe),
                 env: &tool.env,
             };
             if print_only {
@@ -565,10 +716,52 @@ pub(crate) fn cmd_tool(args: &[String]) {
             );
         }
         Some(other) => {
-            eidos_log::warn!("unknown tool subcommand '{other}' (list | add | rm | run)");
+            eidos_log::warn!(
+                "unknown tool subcommand '{other}' (list | add | rm | run | import-mo2)"
+            );
             exit(2);
         }
     }
+}
+
+/// The tools an MO2 import adds, and the report that lists each entry. A title
+/// the user already has, or one added earlier in the same import, is skipped
+/// (ignoring case): an import never replaces a tool.
+fn mo2_import_plan(
+    found: &[eidos_instance::Mo2Executable],
+    user: &[eidos_instance::Tool],
+) -> (Vec<eidos_instance::Tool>, String) {
+    use eidos_instance::Mo2Skip;
+    let mut added: Vec<eidos_instance::Tool> = Vec::new();
+    let mut report = String::new();
+    for entry in found {
+        let title = &entry.title;
+        let line = match &entry.result {
+            Err(Mo2Skip::Unplaced(binary)) => {
+                format!("  skip  {title}  {binary} is not under this list's folder")
+            }
+            Err(Mo2Skip::NotFound(binary)) => format!("  skip  {title}  {binary} was not found"),
+            Ok(tool)
+                if user
+                    .iter()
+                    .chain(&added)
+                    .any(|t| t.title.eq_ignore_ascii_case(&tool.title)) =>
+            {
+                format!("  skip  {title}  a tool named {title} already exists")
+            }
+            Ok(tool) => {
+                let command = std::iter::once(tool.exe.display().to_string())
+                    .chain(tool.args.iter().cloned())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                added.push(tool.clone());
+                format!("  add   {title}  {command}")
+            }
+        };
+        report.push_str(&line);
+        report.push('\n');
+    }
+    (added, report)
 }
 
 /// What `eidos tool run --print` shows: the command, and every variable the run
@@ -715,6 +908,86 @@ fn apply_tool_env_facts(
 #[cfg(test)]
 mod root_tool_tests {
     use super::*;
+
+    #[test]
+    fn the_game_and_its_loader_are_not_generators() {
+        let execs = eidos_instance::GameExecutables {
+            game_name: "Skyrim Special Edition",
+            launcher: Some("SkyrimSELauncher.exe"),
+            binary: Some("SkyrimSE.exe"),
+            script_extender: Some("skse64_loader.exe"),
+            known_tools: &[],
+        };
+        assert!(execs.launches_the_game(Path::new("skse64_loader.exe")));
+        assert!(execs.launches_the_game(Path::new("/g/SKSE64_LOADER.EXE")));
+        assert!(execs.launches_the_game(Path::new("SkyrimSE.exe")));
+        assert!(execs.launches_the_game(Path::new("SkyrimSELauncher.exe")));
+        assert!(!execs.launches_the_game(Path::new("/t/SSEEdit.exe")));
+        assert!(!execs.launches_the_game(Path::new("/t/SkyrimSE.exe.bak")));
+    }
+
+    #[test]
+    fn store_markers_cover_steam_and_heroic() {
+        let k = |a: &[&str]| store_started_in(a.iter().map(|s| s.to_string()));
+        assert!(k(&["PATH", "SteamGameId"]));
+        assert!(k(&["SteamAppId"]));
+        assert!(k(&["HEROIC_APP_NAME", "HEROIC_APP_RUNNER"]));
+        assert!(k(&["HEROIC_APP_RUNNER"]));
+        // A window bare legendary opened: no store variable, only the window's own.
+        assert!(k(&["PATH", "EIDOS_STORE_STARTED"]));
+        assert!(!k(&["PATH", "HOME", "STEAM_COMPAT_DATA_PATH"]));
+    }
+
+    #[test]
+    fn a_game_entry_from_a_plain_shell_goes_through_the_store() {
+        assert!(hands_off_to_store(true, false));
+        assert!(
+            !hands_off_to_store(true, true),
+            "the %command% path runs as before"
+        );
+        assert!(
+            !hands_off_to_store(false, false),
+            "a real tool is not handed off"
+        );
+        let argv = vec!["steam".to_string(), "-applaunch".into(), "489830".into()];
+        let start = Handoff::Start {
+            store: "Steam",
+            argv: argv.clone(),
+        };
+        let (spawn, line) = game_entry_handoff(start, "Skyrim Special Edition", "Steam").unwrap();
+        assert_eq!(spawn, argv);
+        assert!(
+            line.contains("Steam is starting Skyrim Special Edition"),
+            "{line}"
+        );
+        let set = Handoff::SetSteamOption {
+            line: "/opt/eidos play skyrimse -- %command%".into(),
+        };
+        let hint = game_entry_handoff(set, "Skyrim Special Edition", "Steam").unwrap_err();
+        assert!(
+            hint.ends_with(":  /opt/eidos play skyrimse -- %command%"),
+            "{hint}"
+        );
+        let others = [
+            Handoff::SetHeroicWrapper {
+                exe: "/opt/eidos".into(),
+                args: "play skyrimse --".into(),
+            },
+            Handoff::SetLegendaryWrapper {
+                file: "/h/.config/legendary/config.ini".into(),
+                app: "ac82db5035584c7f8a2c548d98c86b2c".into(),
+                wrapper: "/opt/eidos play skyrimse --".into(),
+            },
+            Handoff::NoLoader {
+                loader: "skse64_loader.exe",
+            },
+            Handoff::ThroughStore,
+        ];
+        for h in others {
+            let hint = game_entry_handoff(h, "Skyrim Special Edition", "GOG").unwrap_err();
+            assert!(!hint.contains('\n'), "one line: {hint}");
+        }
+    }
 
     #[test]
     fn data_tools_resolve_the_winning_source_before_fingerprinting() {
@@ -986,5 +1259,38 @@ mod env_fact_tests {
             (k == "LD_PRELOAD").then(|| "/b/libx.so".to_string())
         });
         assert_eq!(get(&env, "LD_PRELOAD"), None);
+    }
+}
+
+#[cfg(test)]
+mod import_mo2_tests {
+    use super::*;
+    use eidos_instance::{Mo2Executable, Tool};
+
+    #[test]
+    fn an_import_never_replaces_a_tool_title() {
+        let tool = |t: &str| Tool {
+            title: t.into(),
+            exe: format!("/t/{t}.exe").into(),
+            ..Default::default()
+        };
+        let ok = |t: &str| Mo2Executable {
+            title: t.into(),
+            binary: format!("Z:/t/{t}.exe"),
+            arguments: String::new(),
+            result: Ok(tool(t)),
+        };
+        let (added, report) = mo2_import_plan(
+            &[ok("SSEEdit"), ok("Other"), ok("Other")],
+            &[tool("SSEEdit")],
+        );
+        assert_eq!(
+            added.iter().map(|t| t.title.as_str()).collect::<Vec<_>>(),
+            ["Other"]
+        );
+        assert!(
+            report.contains("a tool named SSEEdit already exists"),
+            "{report}"
+        );
     }
 }

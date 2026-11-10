@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=a52fda783776900495152e3b3a35c98d83d96d42 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=92ef50801ef60cd7ea02e2a2f2538c313e3aeca1 -->
 
 # Używanie Eidos
 
@@ -264,9 +264,7 @@ samego moda, panel podaje oba identyfikatory plików i dalej czeka na ten, któr
 wskazuje kolekcja. Członkowie opcjonalni nie biorą w tym udziału i zachowują
 własny przycisk *Open*.
 
-Jeszcze niestosowane, a wymienione z nazwy w raporcie zamiast pominięte:
-**poprawki binarne**, **nadpisania plików** oraz członkowie, których pliki
-podróżują wewnątrz archiwum kolekcji (`bundle`). Członkowie, których kolekcja
+Stosowane tak, jak opisuje je kolekcja: **poprawki binarne** (każda sprawdzana względem zapisanego CRC), **nadpisania plików** (wskazane pliki są ukrywane przez `.mohidden`, tak jak robi to MO2) oraz członkowie, których pliki podróżują wewnątrz archiwum kolekcji (`bundle`). Członkowie, których kolekcja
 każe pobrać ręcznie (`browse`, `manual`), niosą własne instrukcje autora aż do
 raportu. Członek, którego nazwę nosi już któryś z twoich modów, instaluje się
 obok niego pod wolną nazwą, nigdy na niego, a raport mówi, kogo to dotyczy.
@@ -708,9 +706,28 @@ bezwzględną pliku wykonywalnego (Steam nie widzi `~/.cargo/bin` w PATH):
 
 Eidos otwiera się na instancji tej gry - tej, której użyłeś ostatnio, więc
 instancja przenośna zostaje odnaleziona tak samo jak globalna; kliknij Run, by
-uruchomić ją przez scalony widok. (Przycisk Run pokazuje dokładnie ten wiersz, z
-prawdziwą ścieżką działającego pliku wykonywalnego, jeśli naciśniesz go poza
-Steamem.)
+uruchomić ją przez scalony widok.
+
+Poza Steamem Run nie uruchamia gry sam przez Protona ani Wine. Prosi sklep, do
+którego należy kopia, o jej uruchomienie, a sklep uruchamia Eidos:
+
+- Steam wykonuje `steam -applaunch <appid>`, gdy opisana wyżej opcja
+  uruchamiania jest ustawiona. Jeśli Steam jest zamknięty, najpierw startuje
+  Steam.
+- Heroic (kopia z GOG lub Epic, natywny lub Flatpak) dostaje link
+  `heroic://launch`, gdy Eidos jest wrapperem w ustawieniach gry w Heroicu, z
+  bezwzględną ścieżką do `eidos-gui` jako plikiem wykonywalnym i bez argumentów.
+  Jeśli Heroic jest zamknięty, najpierw startuje Heroic.
+- Sam Legendary wykonuje `legendary launch <app>`, gdy
+  `~/.config/legendary/config.ini` ma `wrapper =` z bezwzględną ścieżką do
+  `eidos-gui` w sekcji gry `[<app>]` albo w `[default]`.
+
+Eidos otwiera wtedy drugie okno na instancji, której użyłeś ostatnio, i tam
+klikasz Run. Pierwsze okno nie śledzi tej sesji, więc po grze naciśnij w nim F5,
+by przeładować jego listy. Gdy brakuje ustawienia w sklepie albo loader script
+extendera nie leży obok pliku wykonywalnego gry, Run niczego nie uruchamia i
+pokazuje, co i gdzie ustawić, z prawdziwą ścieżką działającego pliku
+wykonywalnego.
 
 `%command%` Steama dla tytułów Bethesdy zwykle wskazuje na
 `<Game>Launcher.exe`. Eidos nigdy go nie uruchamia: launcher to osobna aplikacja

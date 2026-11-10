@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=bf2a3d995d27b69444b8e0497adb217856e87ce8 -->
+<!-- eidos-i18n: source=README.md sha=24a826cf58aaf1ab0e91bef4d7acfb7ebb818ed3 -->
 
 <div align="center">
 
@@ -143,8 +143,7 @@ Eidos는 예전 파일을 계속 씁니다. 자세한 내용은
 있습니다 (F4SE 자동 교체, 아카이브 무효화, 별표 로드 순서, LOOT, `.fos`
 세이브) - [guide/fallout4.md](docs/guide/fallout4.md) 참고. 공유 게임
 디스크립터에 따라 연결되어 있고 테스터를 찾는 것: Skyrim LE, Skyrim VR, Enderal SE, Fallout 3, Fallout NV,
-Fallout 4 (+ VR), Starfield, Oblivion, Morrowind (뒤의 둘은 마운트하고 모드를
-관리합니다; 타임스탬프로 정렬되는 플러그인 목록은 아직 관리하지 않습니다).
+Fallout 4 (+ VR), Starfield, Oblivion, Morrowind (로드 순서는 플러그인 파일의 날짜입니다. Eidos는 프로필마다 순서를 하나씩 보관하고, 디스크의 파일은 바꾸지 않은 채 마운트 안에서 그 날짜를 보여 줍니다).
 
 게임군 하나를 추가하는 것은 디스크립터 한 행입니다:
 [internals/adding-games.md](../../../docs/internals/adding-games.md).

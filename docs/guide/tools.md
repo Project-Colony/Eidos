@@ -69,6 +69,19 @@ A tool in a **disabled** mod cannot be rewritten, because its files are not in
 the view either. Eidos says so and runs it from its own folder rather than
 pretending.
 
+## Tools from a Mod Organizer 2 list
+
+A Wabbajack list or another MO2 instance opened as an Eidos instance keeps its `ModOrganizer.ini`, and the executables configured there can be copied into `tools.ini`:
+
+```sh
+eidos tool /path/to/list import-mo2           # show what would be added
+eidos tool /path/to/list import-mo2 --write   # add them
+```
+
+In the window, the Executables dialog has **Import from ModOrganizer.ini**, with a box to untick for each entry; nothing is saved until you press Save.
+
+Paths on `Z:` are Linux paths and stay as they are. A path on another drive letter moves under the list's folder when it names that folder (`D:\Lists\MyList\tools\SSEEdit.exe` becomes `<list>/tools/SSEEdit.exe`), in the executable, the working directory and the arguments. The script extender's loader and the game binary become plain names, so they run from the game folder Eidos mounts over, like the built-in entries. Entries that point elsewhere (a Windows system program, a tool outside the list) are listed as skipped with the reason, and a title already in `tools.ini` is never replaced.
+
 ## Sending a tool's output to its own mod
 
 A generator - FNIS, Nemesis, BodySlide, DynDOLOD, Synthesis - writes hundreds of
@@ -94,6 +107,12 @@ no copy-up. The capture reaches the same end state without either.
 If the target mod is disabled, the output is still written but the game will not
 see it, so the tool would regenerate the same files on the next run. Eidos warns
 when that is the case.
+
+### When its output is out of date
+
+Eidos records which mods, plugin order, profile and executable a tool's output was made from. When one of them changes, the Diagnostics tab says so, and the card has a **Run <tool> again** button that runs the tool as it is configured now.
+
+For a generator whose stale output breaks the game, such as Pandora or Nemesis, add `check_before_play=1` to its entry in `tools.ini`, or turn on **Ask before playing when its output is out of date** for it in the Executables dialog. Run then asks first: run the tool, or play anyway. Play anyway is remembered until the mods, plugins or profile change again, or until the window closes. Eidos never starts the tool by itself.
 
 ## The DLLs a tool needs are chosen by its NAME
 
@@ -316,6 +335,15 @@ entries to reach the second is a picker nobody reads. In the Executables dialog:
 
 Hiding and pinning are about how a tool is *reached* rather than what it runs,
 so they apply to the per-game defaults as well as to your own entries.
+
+The script extender's loader, the launcher and the game binary have no
+Desktop shortcut button. They start the game, which always starts through its
+store, and the store's own shortcut already does that. A shortcut made for one
+of them with Eidos 1.22 or earlier keeps working: like
+`eidos tool <instance> run <title>` typed in a terminal, it asks the store to
+start the game, as Run does in a window no store opened. When the store's
+setting is missing, the command starts nothing and prints what to set. A
+shortcut shows no message, so run the same command in a terminal to read it.
 
 ## A tool that is its own Steam app
 

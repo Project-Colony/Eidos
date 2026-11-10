@@ -170,10 +170,55 @@ pub(crate) fn executables_dialog<'a>(
             can_move_down(state),
         ));
 
-    let left = Column::new().spacing(6).push(list_pane).push(list_actions);
+    let mut left = Column::new().spacing(6).push(list_pane).push(list_actions);
+    if app
+        .created
+        .as_ref()
+        .is_some_and(|i| i.foreign_mo2_ini().is_some())
+    {
+        left = left.push(tool_btn(t("exe_import_mo2"), Message::ExecImportMo2));
+    }
 
     // The editor pane (only meaningful for a selected user tool).
-    let editor: Element<'a, Message> = if state.selected_is_user() {
+    let editor: Element<'a, Message> = if let Some(rows) = &state.mo2_import {
+        let mut list = Column::new().spacing(6);
+        for (i, (entry, checked)) in rows.iter().enumerate() {
+            let title = entry.title.as_str();
+            let skip = match &entry.result {
+                Err(eidos_instance::Mo2Skip::Unplaced(path)) => {
+                    Some(tf("exe_import_unplaced", &[("path", path)]))
+                }
+                Err(eidos_instance::Mo2Skip::NotFound(path)) => {
+                    Some(tf("exe_import_missing", &[("path", path)]))
+                }
+                Ok(tool) if state.title_taken(&tool.title) => {
+                    Some(tf("exe_import_title_taken", &[("title", &tool.title)]))
+                }
+                Ok(_) => None,
+            };
+            list = list.push(match skip {
+                Some(reason) => Column::new()
+                    .push(text(title).size(sz(12)))
+                    .push(text(reason).size(sz(10)))
+                    .into(),
+                None => Element::from(
+                    checkbox(*checked)
+                        .label(title)
+                        .on_toggle(move |_| Message::ExecImportToggle(i)),
+                ),
+            });
+        }
+        Column::new()
+            .spacing(8)
+            .push(scrollable(list).height(Length::Fixed(240.0)))
+            .push(
+                Row::new()
+                    .spacing(4)
+                    .push(tool_btn(t("exe_import_add"), Message::ExecImportApply))
+                    .push(tool_btn(t("common_cancel"), Message::ExecImportCancel)),
+            )
+            .into()
+    } else if state.selected_is_user() {
         Column::new()
             .spacing(8)
             .push(exe_field(
@@ -216,7 +261,7 @@ pub(crate) fn executables_dialog<'a>(
                 &state.app_id,
                 Message::ExecAppIdChanged,
             ))
-            .push(tool_flags_row(state))
+            .push(tool_flags_row(app, state))
             .into()
     } else if state.selected.is_some() {
         // A default cannot be edited, but hiding and pinning are about the
@@ -226,7 +271,7 @@ pub(crate) fn executables_dialog<'a>(
             .spacing(8)
             .push(text(t("exe_default_readonly")).size(sz(12)))
             .push(text(t("exe_default_override")).size(sz(10)))
-            .push(tool_flags_row(state))
+            .push(tool_flags_row(app, state))
             .into()
     } else {
         Column::new()
@@ -516,8 +561,18 @@ pub(crate) fn cap_warning_banner<'a>() -> Element<'a, Message> {
 
 /// MO2's run-lock overlay card: the GUI is locked while the launched application
 /// runs. Shows what is running and offers Unlock (which stops waiting but leaves
-/// the game running - MO2's force-unlock never kills the process).
-pub(crate) fn running_lock_card<'a>(run: &RunningState) -> Element<'a, Message> {
+/// the game running) and, for a run `eidos` can end cleanly, Stop (two presses,
+/// `armed` after the first).
+pub(crate) fn running_lock_card<'a>(run: &RunningState, armed: bool) -> Element<'a, Message> {
+    let mut buttons = Row::new().spacing(10).push(
+        button(text(t("lock_unlock")).size(sz(13)))
+            .padding([6, 22])
+            .on_press(Message::ForceUnlock)
+            .style(button::primary),
+    );
+    if run.stoppable {
+        buttons = buttons.push(stop_button(armed, 13, [6, 22]));
+    }
     let card = Column::new()
         .spacing(10)
         .align_x(iced::alignment::Horizontal::Center)
@@ -531,17 +586,64 @@ pub(crate) fn running_lock_card<'a>(run: &RunningState) -> Element<'a, Message> 
         )
         .push(text(t("lock_body")).size(sz(11)))
         .push(Space::new().height(Length::Fixed(6.0)))
-        .push(
-            button(text(t("lock_unlock")).size(sz(13)))
-                .padding([6, 22])
-                .on_press(Message::ForceUnlock)
-                .style(button::primary),
-        )
+        .push(buttons)
         .push(text(t("lock_unlock_note")).size(sz(10)).color(text_muted()));
     container(card)
         .max_width(470.0)
         .padding(20)
         .style(card_style)
+        .into()
+}
+
+/// Run found a flagged generator's output out of date: run it first, play
+/// anyway, or cancel. Eidos never starts the tool by itself.
+pub(crate) fn play_prompt_card<'a>(prompt: &PlayPrompt) -> Element<'a, Message> {
+    let tool = &prompt.tool;
+    let buttons = Row::new()
+        .spacing(10)
+        .push(
+            button(text(tf("play_prompt_run_first", &[("tool", tool)])).size(sz(13)))
+                .padding([6, 22])
+                .on_press(Message::RunTool(prompt.tool.clone()))
+                .style(button::primary),
+        )
+        .push(
+            button(text(t("play_prompt_play_anyway")).size(sz(13)))
+                .padding([6, 22])
+                .on_press(Message::PlayAnyway)
+                .style(button::secondary),
+        )
+        .push(
+            button(text(t("common_cancel")).size(sz(13)))
+                .padding([6, 22])
+                .on_press(Message::ClosePlayPrompt)
+                .style(button::secondary),
+        );
+    let card = Column::new()
+        .spacing(10)
+        .align_x(iced::alignment::Horizontal::Center)
+        .push(text(tf("play_prompt_title", &[("tool", tool)])).size(sz(18)))
+        .push(text(tf("play_prompt_body", &[("tool", tool)])).size(sz(12)))
+        .push(Space::new().height(Length::Fixed(6.0)))
+        .push(buttons);
+    container(card)
+        .max_width(470.0)
+        .padding(20)
+        .style(card_style)
+        .into()
+}
+
+/// Stop, or "Stop now" once armed: the lock card's and the main screen's.
+pub(crate) fn stop_button<'a>(armed: bool, size: u16, padding: [u16; 2]) -> Element<'a, Message> {
+    let label = if armed {
+        t("run_stop_confirm")
+    } else {
+        t("run_stop")
+    };
+    button(text(label).size(sz(size)))
+        .padding(padding)
+        .on_press(Message::StopRun)
+        .style(button::danger)
         .into()
 }
 
@@ -1076,10 +1178,16 @@ impl std::fmt::Display for CategoryChoice {
 /// Hide, pin, and the desktop shortcut - three things about how a tool is
 /// REACHED rather than what it runs, which is why they sit together and apply to
 /// per-game defaults as well as to the user's own entries.
-fn tool_flags_row<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
+fn tool_flags_row<'a>(app: &App, state: &ExecutablesDialogState) -> Element<'a, Message> {
     let sel = state.selected.and_then(|i| state.merged.get(i));
     let (hidden, pinned) = sel.map(|t| (t.hidden, t.pinned)).unwrap_or((false, false));
-    Row::new()
+    let check = sel.is_some_and(|t| t.check_before_play);
+    // From the desktop `eidos tool run` hands an entry that starts the game to
+    // its store, which the store's own game shortcut already does.
+    let starts_game = sel.is_some_and(|t| {
+        selected_game(app).is_some_and(|g| game_executables(g).launches_the_game(&t.exe))
+    });
+    let mut row = Row::new()
         .spacing(8)
         .align_y(iced::Alignment::Center)
         .push(
@@ -1108,12 +1216,25 @@ fn tool_flags_row<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
                 button::secondary
             })
             .on_press(Message::ExecToggleHidden),
-        )
-        .push(
+        );
+    if !starts_game {
+        row = row.push(
             button(text(t("exe_desktop_shortcut")).size(sz(11)))
                 .padding([4, 10])
                 .style(button::secondary)
                 .on_press(Message::ExecMakeShortcut),
+        );
+    }
+    // The check on its own line: beside the buttons its label overflowed the
+    // pane. The buttons wrap, since French "Afficher dans le sélecteur" is long.
+    Column::new()
+        .spacing(8)
+        .push(row.wrap())
+        .push(
+            checkbox(check)
+                .label(t("exe_check_before_play"))
+                .on_toggle(|_| Message::ExecToggleCheckBeforePlay)
+                .text_size(sz(11)),
         )
         .into()
 }

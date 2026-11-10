@@ -331,6 +331,12 @@ fn log_bucket(args: &[String]) -> &str {
 /// dedicated `eidos` binary accepts and drops it too.
 pub const CLI_MARKER: &str = "--eidos-cli";
 
+/// Set by a window a store opened on the `eidos tool` child it starts. The bare
+/// `legendary` CLI exports no variable of its own, so without this a game entry
+/// run from a window Legendary opened looked like a plain shell and was handed
+/// back to Legendary.
+pub const STORE_STARTED_VAR: &str = "EIDOS_STORE_STARTED";
+
 /// This executable, and whether running the CLI again through it needs
 /// [`CLI_MARKER`] first. The dedicated binary is named `eidos`; anything else is
 /// the window's binary (`eidos-gui`, or `eidos-linux`) carrying the CLI.

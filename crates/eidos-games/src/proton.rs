@@ -399,6 +399,65 @@ pub fn proton_command(
     })
 }
 
+/// The compat tool Steam's `config.vdf` assigns to `app_id` (its own entry,
+/// else the `"0"` default). Read-only.
+pub fn configured_tool_name(home: &Path, app_id: u32) -> Option<String> {
+    compat_tool_name(&steam_root(home)?, app_id)
+}
+
+/// The prefix version Proton recorded in `compatdata/version`, trimmed.
+pub fn prefix_version(compatdata: &Path) -> Option<String> {
+    let s = fs::read_to_string(compatdata.join("version")).ok()?;
+    Some(s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+/// The prefix version a build writes: the `CURRENT_PREFIX_VERSION="..."` line
+/// of its `proton` script.
+pub fn build_prefix_version(proton: &Path) -> Option<String> {
+    let text = fs::read_to_string(proton).ok()?;
+    text.lines()
+        .find_map(|l| l.trim().strip_prefix("CURRENT_PREFIX_VERSION="))
+        .map(|v| v.trim().trim_matches(|c| c == '"' || c == '\'').to_string())
+        .filter(|v| !v.is_empty())
+}
+
+/// Digit runs of `s` as numbers, and `s` with every run replaced by `#`.
+fn version_parts(s: &str) -> (String, Vec<u64>) {
+    let (mut skeleton, mut nums) = (String::new(), Vec::new());
+    let mut run = String::new();
+    for c in s.chars().chain(std::iter::once('\0')) {
+        if c.is_ascii_digit() {
+            run.push(c);
+            continue;
+        }
+        if !run.is_empty() {
+            skeleton.push('#');
+            nums.push(run.parse().unwrap_or(u64::MAX));
+            run.clear();
+        }
+        if c != '\0' {
+            skeleton.push(c);
+        }
+    }
+    (skeleton, nums)
+}
+
+/// Whether starting `build` on a prefix last set up as `prefix` goes backwards.
+/// Only names of one family compare (same skeleton once digit runs become
+/// `#`). Valve's `#.#-#` compares major.minor only: its last counter differs
+/// between builds of one release.
+pub fn is_prefix_downgrade(prefix: &str, build: &str) -> bool {
+    let ((ps, mut pn), (bs, mut bn)) = (version_parts(prefix), version_parts(build));
+    if ps != bs || pn.is_empty() {
+        return false;
+    }
+    if ps == "#.#-#" {
+        pn.truncate(2);
+        bn.truncate(2);
+    }
+    bn < pn
+}
+
 /// Resolve a Proton from the prefix's `config_info`, which Proton itself writes.
 ///
 /// Line 1 is the build's own declared name and lines 2+ are paths into its
@@ -407,7 +466,7 @@ pub fn proton_command(
 /// reliable half: walk one up from the `files/`/`dist/` component to reach the
 /// tool directory and take its `proton`. Returns the NAME for the normal lookup
 /// path; [`proton_from_config_info`] returns the binary directly.
-fn config_info_name(compatdata: &Path) -> Option<String> {
+pub fn config_info_name(compatdata: &Path) -> Option<String> {
     let text = fs::read_to_string(compatdata.join("config_info")).ok()?;
     text.lines()
         .next()
@@ -456,6 +515,36 @@ pub fn is_flatpak_steam(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn prefix_downgrade_compares_within_one_version_family() {
+        use super::is_prefix_downgrade as d;
+        assert!(d("10.0-101", "9.0-203"));
+        assert!(!d("9.0-203", "10.0-101"));
+        assert!(!d("9.0-203", "9.0-102"), "same Valve major.minor");
+        assert!(d("GE-Proton10-34", "GE-Proton9-27"));
+        assert!(!d("GE-Proton9-27", "GE-Proton10-1"));
+        assert!(!d("GE-Proton10-34", "9.0-203"), "another family");
+        assert!(!d("", "9.0-1"));
+    }
+
+    #[test]
+    fn the_build_prefix_version_is_read_from_its_proton_script() {
+        use super::build_prefix_version;
+        let dir = tmp_root();
+        std::fs::write(
+            dir.join("proton"),
+            "#!/usr/bin/env python3\nimport os\nCURRENT_PREFIX_VERSION=\"10.0-101\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            build_prefix_version(&dir.join("proton")).as_deref(),
+            Some("10.0-101")
+        );
+        std::fs::write(dir.join("other"), "#!/usr/bin/env python3\n").unwrap();
+        assert_eq!(build_prefix_version(&dir.join("other")), None);
+        assert_eq!(build_prefix_version(&dir.join("missing")), None);
+    }
+
     #[test]
     fn only_a_plain_wine_run_waits_for_its_wineserver() {
         use super::heroic_run;

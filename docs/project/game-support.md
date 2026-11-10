@@ -10,7 +10,7 @@ involved at any point.
 ## Status (2026-08-25)
 
 **Two of the four proposed fields shipped in [#5](https://github.com/Project-Colony/Eidos/pull/5)
-on 2026-08-03.** The section below called "The actual blocker" describes a state
+on 2026-08-03; `valid_files` and `mod_unit` followed.** The section below called "The actual blocker" describes a state
 that no longer exists; it is kept because the reasoning still explains the design,
 but read it as history.
 
@@ -18,16 +18,16 @@ but read it as history.
 |---|---|
 | `valid_folders` | **shipped** - on `GameDef` and in the TOML schema |
 | `valid_suffixes` | **shipped** - on `GameDef` and in the TOML schema |
-| `valid_files` | not implemented |
-| `mod_unit` | not implemented |
+| `valid_files` | **shipped** (`stardewvalley.toml`, `7daystodie.toml` use them) |
+| `mod_unit` | **shipped** (`stardewvalley.toml`, `7daystodie.toml` use them) |
 | `known_tools` | **shipped** in the TOML schema (2026-08-25), not part of the original proposal |
 
-So a game whose mod root is marked by a FOLDER or an EXTENSION is declarable
-today, with no recompile: Gamebryo/Creation, BepInEx/Unity, Cyberpunk, Unreal
-`~mods`. What is still not declarable is a game whose marker is a FILE
-(`manifest.json`, `ModInfo.xml`, `info.json`) or whose unit of install is a named
-FOLDER rather than loose files - which is what SMAPI/Stardew and 7 Days to Die
-need, and why the worked example below still does not work.
+So a game whose mod root is marked by a FOLDER, an EXTENSION or a FILE is
+declarable today, with no recompile: Gamebryo/Creation, BepInEx/Unity,
+Cyberpunk, Unreal `~mods`, and the FILE markers (`manifest.json`,
+`ModInfo.xml`, `info.json`). A game whose unit of install is a named FOLDER
+rather than loose files is declarable too, through `mod_unit`: that is what
+SMAPI/Stardew and 7 Days to Die use.
 
 ## The state of play
 
@@ -317,16 +317,15 @@ folders. That is wrong for exactly the game it was written for: Stellar Blade ha
 no folder vocabulary, and inheriting one would let an archive shipping `textures/`
 read as a valid mod root. A game now declares its vocabulary as a whole.
 
-`mod_unit` was NOT built. Nothing in the Unreal family needs it - a `.pak` is
-recognised by extension wherever it sits - and it belongs with the first game that
-actually has folder-shaped mods rather than as speculative schema.
+Superseded: `mod_unit` was not built in this step, but it has shipped since, for
+Stardew and 7 Days to Die.
 
 **4. Done.** `meta.ini` records MO2's short name (`SkyrimSE`) instead of the Eidos
 id, with a sidecar still winning and an unknown id falling back to itself. And the
 Plugins tab is only offered where `GameSpec::for_id` resolves, which excludes both
-Stellar Blade (no plugin system) and Oblivion/Morrowind (timestamp order, which
-Eidos does not manage either) - all three used to show a tab that opened an empty
-list. `app.tab` outlives a game switch, so `effective_tab` also stops a
+Stellar Blade (no plugin system) and Oblivion/Morrowind (timestamp order; that
+half is superseded, since `GameSpec::for_id` covers both now) - all three used
+to show a tab that opened an empty list. `app.tab` outlives a game switch, so `effective_tab` also stops a
 remembered-but-invisible tab from deciding which panel draws.
 
 **5. Done.** UE4SS mods, which are Stellar Blade's equivalent of SKSE plugins,
@@ -360,7 +359,4 @@ question asked**.
 
 ## Open question
 
-`mod_unit = "folder"` is the minimum that makes Stardew correct, and it is a
-binary. If a family turns up whose unit is two levels down, it becomes a depth
-integer instead. I would rather ship the binary and widen it when something
-forces the issue than guess at a depth today.
+Shipped as the binary; no family has needed a depth yet.

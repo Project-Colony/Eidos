@@ -358,6 +358,51 @@ pub fn prefix_busy_at(prefix: &Path, compatdata: Option<&Path>) -> Vec<(u32, Str
     busy
 }
 
+/// Rename a Steam game's `compatdata/<appid>` to `<appid>.eidos-backup-<stamp>`
+/// beside it, so Steam builds a fresh prefix on the next start. Nothing is
+/// deleted, and the rename stays on one filesystem, so nothing is copied.
+///
+/// Refuses with `ResourceBusy` while a process holds the prefix, and with
+/// `AlreadyExists` when the backup name is taken (`RENAME_NOREPLACE`), in which
+/// case nothing moves.
+pub fn move_prefix_aside(compatdata: &Path, stamp: &str) -> io::Result<PathBuf> {
+    use std::os::unix::ffi::OsStrExt;
+    if let Some((pid, cmd)) = prefix_busy(&compatdata.join("pfx"), compatdata)
+        .into_iter()
+        .next()
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::ResourceBusy,
+            format!("in use by {cmd} (pid {pid})"),
+        ));
+    }
+    let mut name = compatdata
+        .file_name()
+        .ok_or_else(|| io::Error::other("the prefix path has no folder name"))?
+        .to_os_string();
+    name.push(format!(".eidos-backup-{stamp}"));
+    let to = compatdata.with_file_name(name);
+    let c = |p: &Path| {
+        std::ffi::CString::new(p.as_os_str().as_bytes())
+            .map_err(|_| io::Error::other("the prefix path holds a NUL byte"))
+    };
+    let (from_c, to_c) = (c(compatdata)?, c(&to)?);
+    // SAFETY: both pointers are NUL-terminated strings that outlive the call.
+    let rc = unsafe {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            from_c.as_ptr(),
+            libc::AT_FDCWD,
+            to_c.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+    if rc != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(to)
+}
+
 /// Whether a `/proc/<pid>/environ` buffer (NUL-separated `KEY=VALUE` entries)
 /// names this prefix. Split out from the `/proc` walk so it can be tested against
 /// a synthetic buffer without needing real Wine processes.
@@ -389,6 +434,51 @@ fn same_path(value: &str, want: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn moving_a_prefix_aside_renames_it_and_never_replaces_a_backup() {
+        let root = std::env::temp_dir().join(format!("eidos-move-prefix-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let compat = root.join("steamapps/compatdata/489830");
+        fs::create_dir_all(compat.join("pfx")).unwrap();
+        fs::write(compat.join("pfx/user.reg"), "WINE REGISTRY Version 2\n").unwrap();
+        let to = move_prefix_aside(&compat, "20261109-120000").unwrap();
+        assert_eq!(
+            to,
+            compat.with_file_name("489830.eidos-backup-20261109-120000")
+        );
+        assert!(!compat.exists() && to.join("pfx/user.reg").is_file());
+        fs::create_dir_all(compat.join("pfx")).unwrap();
+        let err = move_prefix_aside(&compat, "20261109-120000").unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
+        assert!(compat.join("pfx").is_dir() && to.join("pfx/user.reg").is_file());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_prefix_in_use_is_not_moved() {
+        let root = std::env::temp_dir().join(format!("eidos-busy-prefix-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let compat = root.join("compatdata/489830");
+        fs::create_dir_all(compat.join("pfx")).unwrap();
+        // `$0` puts the marker in the cmdline; `; :` keeps the shell from
+        // exec'ing sleep and losing it.
+        let mut holder = Command::new("sh")
+            .args(["-c", "sleep 30; :", "wineserver"])
+            .env("WINEPREFIX", compat.join("pfx"))
+            .spawn()
+            .unwrap();
+        let err = move_prefix_aside(&compat, "20261109-120000").unwrap_err();
+        let _ = holder.kill();
+        let _ = holder.wait();
+        assert_eq!(err.kind(), io::ErrorKind::ResourceBusy);
+        assert!(
+            err.to_string().contains(&format!("(pid {})", holder.id())),
+            "{err}"
+        );
+        assert!(compat.join("pfx").is_dir());
+        let _ = fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn external_prefix_ownership_never_needs_a_steam_compat_path() {

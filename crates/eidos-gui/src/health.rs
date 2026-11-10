@@ -32,7 +32,7 @@
 //! [`registry_status_memo`]. No timer, no polling, nothing walking the mod
 //! pool - see the test at the bottom that says so.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use eidos::check::PrefixFacts;
 use eidos::nxm_handler::NxmHandler;
@@ -249,6 +249,105 @@ pub(crate) fn nexus_checks(f: &NexusFacts) -> Vec<Diagnostic> {
     out
 }
 
+/// What the window knows about the Proton that runs a game, read once per
+/// refresh by [`proton_facts`].
+pub(crate) struct ProtonFacts {
+    /// Steam's setting for the game (`config.vdf`).
+    pub(crate) configured: Option<String>,
+    /// The resolved build: the folder holding its `proton` script.
+    pub(crate) build: Option<String>,
+    pub(crate) flatpak: bool,
+    /// The prefix version the build writes.
+    pub(crate) build_version: Option<String>,
+    /// The prefix version recorded in `compatdata/version`.
+    pub(crate) prefix_version: Option<String>,
+    /// The build that last ran in the prefix (`config_info`).
+    pub(crate) last_run: Option<String>,
+    /// The compatdata folder exists, so Rebuild prefix has something to move.
+    pub(crate) prefix_present: bool,
+}
+
+/// `None` when the game has no compatdata folder.
+pub(crate) fn proton_facts(game: &DetectedGame, home: &Path) -> Option<ProtonFacts> {
+    let cd = game.compatdata.as_ref()?;
+    let app = game.def.steam_app_id;
+    let run = eidos_games::proton_command(home, app, cd, &game.install_path);
+    let build = run
+        .as_ref()
+        .and_then(|r| r.proton.parent()?.file_name()?.to_str().map(String::from));
+    Some(ProtonFacts {
+        configured: eidos_games::configured_tool_name(home, app),
+        build,
+        flatpak: run.as_ref().is_some_and(|r| r.flatpak),
+        build_version: run
+            .as_ref()
+            .and_then(|r| eidos_games::build_prefix_version(&r.proton)),
+        prefix_version: eidos_games::prefix_version(cd),
+        last_run: eidos_games::config_info_name(cd),
+        prefix_present: cd.is_dir(),
+    })
+}
+
+pub(crate) fn proton_checks(f: &ProtonFacts) -> Vec<Diagnostic> {
+    let mut out = Vec::new();
+    // A Flatpak-Steam Proton runs from the host here, which can fail to resolve
+    // its sandbox libraries. Eidos will not re-launch through `flatpak run`:
+    // that would put the game in Flatpak's sandbox, blind to the FUSE union in
+    // our private namespace, and it would silently play vanilla.
+    if f.flatpak {
+        out.push(Diagnostic {
+            level: DiagLevel::Problem,
+            title: t("diag_flatpak_proton").to_string(),
+            detail: t("diag_flatpak_proton_detail").to_string(),
+            actions: Vec::new(),
+        });
+    }
+    let none = t("diag_proton_none");
+    let mut card = match &f.build {
+        None => Diagnostic {
+            level: DiagLevel::Advice,
+            title: t("diag_proton_unresolved").to_string(),
+            detail: t("diag_proton_unresolved_detail").to_string(),
+            actions: Vec::new(),
+        },
+        Some(build) => match (&f.prefix_version, &f.build_version) {
+            (Some(pv), Some(bv)) if eidos_games::is_prefix_downgrade(pv, bv) => Diagnostic {
+                level: DiagLevel::Advice,
+                title: tf("diag_proton_downgrade", &[("build", build)]),
+                detail: tf(
+                    "diag_proton_downgrade_detail",
+                    &[
+                        ("prefix_version", pv),
+                        ("build", build),
+                        ("build_version", bv),
+                    ],
+                ),
+                actions: Vec::new(),
+            },
+            _ => Diagnostic {
+                level: DiagLevel::Ok,
+                title: tf("diag_proton", &[("build", build)]),
+                detail: tf(
+                    "diag_proton_detail",
+                    &[
+                        ("configured", &f.configured.as_deref().unwrap_or(none)),
+                        ("last_run", &f.last_run.as_deref().unwrap_or(none)),
+                    ],
+                ),
+                actions: Vec::new(),
+            },
+        },
+    };
+    if f.prefix_present {
+        card.actions = vec![(
+            t("diag_action_rebuild_prefix").to_string(),
+            Message::RebuildPrefix,
+        )];
+    }
+    out.push(card);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,6 +362,82 @@ mod tests {
             gamedrive_found: Some(PathBuf::from("/mnt/Jeux/SteamLibrary/steamapps")),
             gamedrive_want: Some(PathBuf::from("/mnt/Jeux/SteamLibrary")),
         }
+    }
+
+    fn proton(
+        build: Option<&str>,
+        prefix_version: Option<&str>,
+        build_version: Option<&str>,
+    ) -> ProtonFacts {
+        ProtonFacts {
+            configured: build.map(Into::into),
+            build: build.map(Into::into),
+            flatpak: false,
+            build_version: build_version.map(Into::into),
+            prefix_version: prefix_version.map(Into::into),
+            last_run: build.map(Into::into),
+            prefix_present: false,
+        }
+    }
+
+    #[test]
+    fn the_proton_card_offers_rebuild_only_when_a_prefix_exists() {
+        let with = proton_checks(&ProtonFacts {
+            prefix_present: true,
+            ..proton(Some("GE-Proton10-34"), None, None)
+        });
+        assert!(matches!(
+            with[0].actions.as_slice(),
+            [(_, Message::RebuildPrefix)]
+        ));
+        assert!(
+            proton_checks(&proton(Some("GE-Proton10-34"), None, None))[0]
+                .actions
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn the_proton_card_names_the_build_and_who_last_ran_the_prefix() {
+        let d = proton_checks(&proton(
+            Some("GE-Proton10-34"),
+            Some("GE-Proton10-34"),
+            Some("GE-Proton10-34"),
+        ));
+        assert_eq!((d.len(), d[0].level), (1, DiagLevel::Ok));
+        assert_eq!(d[0].title, "Proton: GE-Proton10-34");
+        assert_eq!(
+            d[0].detail.matches("GE-Proton10-34").count(),
+            2,
+            "{}",
+            d[0].detail
+        );
+    }
+
+    #[test]
+    fn an_older_build_than_the_prefix_is_advice() {
+        let d = proton_checks(&proton(Some("proton_9"), Some("10.0-101"), Some("9.0-203")));
+        assert_eq!((d.len(), d[0].level), (1, DiagLevel::Advice));
+        assert!(
+            d[0].detail.contains("10.0-101") && d[0].detail.contains("9.0-203"),
+            "{}",
+            d[0].detail
+        );
+    }
+
+    #[test]
+    fn no_resolvable_proton_is_advice_and_flatpak_is_still_a_problem() {
+        let none = proton_checks(&proton(None, None, None));
+        assert_eq!((none.len(), none[0].level), (1, DiagLevel::Advice));
+        assert_eq!(none[0].title, t("diag_proton_unresolved"));
+        let flat = proton_checks(&ProtonFacts {
+            flatpak: true,
+            ..proton(Some("GE-Proton10-34"), None, None)
+        });
+        assert_eq!(
+            flat.iter().map(|d| d.level).collect::<Vec<_>>(),
+            [DiagLevel::Problem, DiagLevel::Ok]
+        );
     }
 
     #[test]
@@ -615,7 +790,11 @@ mod tests {
         // imported and this assertion is the note explaining why it must not be.
         let src = include_str!("health.rs");
         let body = src.split("#[cfg(test)]").next().unwrap_or("");
-        for check in ["pub(crate) fn prefix_checks", "pub(crate) fn nexus_checks"] {
+        for check in [
+            "pub(crate) fn prefix_checks",
+            "pub(crate) fn nexus_checks",
+            "pub(crate) fn proton_checks",
+        ] {
             let fn_body = body
                 .split(check)
                 .nth(1)

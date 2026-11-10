@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
 
 # Strumenti: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -74,6 +74,19 @@ Uno strumento dentro una mod **disattivata** non può essere riscritto, perché
 nemmeno i suoi file sono nella vista. Eidos lo dice e lo esegue dalla sua
 cartella invece di fingere.
 
+## Strumenti da una lista di Mod Organizer 2
+
+Una lista Wabbajack o un'altra istanza MO2 aperta come istanza Eidos conserva il suo `ModOrganizer.ini`, e gli eseguibili configurati lì possono essere copiati in `tools.ini`:
+
+```sh
+eidos tool /path/to/list import-mo2           # mostra cosa verrebbe aggiunto
+eidos tool /path/to/list import-mo2 --write   # le aggiunge
+```
+
+Nella finestra, la finestra Eseguibili ha **Importa da ModOrganizer.ini**, con una casella da deselezionare per ogni voce. Non viene salvato nulla finché non premi Salva.
+
+I percorsi su `Z:` sono percorsi Linux e restano come sono. Un percorso su un'altra lettera di unità viene spostato nella cartella della lista quando nomina quella cartella (`D:\Lists\MyList\tools\SSEEdit.exe` diventa `<list>/tools/SSEEdit.exe`), nell'eseguibile, nella cartella di lavoro e negli argomenti. Il loader dello script extender e il binario del gioco diventano semplici nomi, quindi partono dalla cartella del gioco su cui Eidos monta la vista, come le voci integrate. Le voci che puntano altrove (un programma di sistema di Windows, uno strumento fuori dalla lista) sono elencate come saltate con il motivo, e un titolo già presente in `tools.ini` non viene mai sostituito.
+
 ## Mandare l'output di uno strumento in una mod sua
 
 Un generatore - FNIS, Nemesis, BodySlide, DynDOLOD, Synthesis - scrive centinaia
@@ -100,6 +113,12 @@ stesso stato finale senza né l'uno né l'altro.
 Se la mod di destinazione è disattivata, l'output viene comunque scritto ma il
 gioco non lo vedrà, quindi lo strumento rigenererebbe gli stessi file alla
 prossima esecuzione. Eidos avvisa quando è così.
+
+### Quando il suo output non è aggiornato
+
+Eidos registra da quali mod, ordine dei plugin, profilo ed eseguibile è stato prodotto l'output di uno strumento. Quando uno di questi cambia, la scheda Diagnostics lo segnala e la card ha un pulsante **Run <tool> again** che esegue lo strumento con la configurazione attuale.
+
+Per un generatore il cui output non aggiornato rompe il gioco, come Pandora o Nemesis, aggiungete `check_before_play=1` alla sua voce in `tools.ini`, oppure attivate **Ask before playing when its output is out of date** nella finestra Executables. Run chiede allora prima: eseguire lo strumento o giocare comunque. La scelta di giocare comunque vale finché mod, plugin o profilo non cambiano di nuovo, o finché la finestra non si chiude. Eidos non avvia mai lo strumento da solo.
 
 ## Le DLL di cui uno strumento ha bisogno sono scelte dal suo NOME
 
@@ -337,6 +356,16 @@ nessuno legge. Nella finestra Executables:
 Nascondere e fissare riguardano il modo in cui uno strumento viene *raggiunto*
 più che ciò che esegue, quindi valgono tanto per i valori predefiniti per gioco
 quanto per le tue voci.
+
+Il loader dello script extender, il lanciatore e l'eseguibile del gioco non
+hanno il pulsante Desktop shortcut. Avviano il gioco, e il gioco si avvia sempre
+tramite il suo store, cosa che fa già il collegamento dello store stesso. Un
+collegamento creato per uno di loro con Eidos 1.22 o precedente continua a
+funzionare: come `eidos tool <instance> run <title>` digitato in un terminale,
+chiede allo store di avviare il gioco, come fa Run in una finestra che nessuno
+store ha aperto. Quando manca l'impostazione dello store, il comando non avvia
+nulla e stampa cosa impostare. Un collegamento non mostra alcun messaggio,
+quindi esegui lo stesso comando in un terminale per leggerlo.
 
 ## Uno strumento che è un'app Steam a sé
 

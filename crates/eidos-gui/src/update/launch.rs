@@ -3,12 +3,116 @@
 
 use super::*;
 
+/// True when the Run list entry `title` starts the game: the script-extender
+/// loader, the vanilla launcher or the game binary.
+fn picks_the_game(app: &App, title: &str) -> bool {
+    let Some(game) = selected_game(app) else {
+        return false;
+    };
+    app.tools
+        .iter()
+        .find(|t| t.title.eq_ignore_ascii_case(title))
+        .is_some_and(|t| game_executables(game).launches_the_game(&t.exe))
+}
+
+/// Run in a window no store opened (A28): ask the store that owns the copy to
+/// start the game, or say what to set first. Returns the status to show.
+fn hand_off(app: &App) -> String {
+    use eidos::check::launch_option::{launch_handoff, Handoff};
+    let (Some(game), Some(inst)) = (selected_game(app), &app.created) else {
+        return t("status_create_or_open_instance").to_string();
+    };
+    let loader_found = game.def.script_extender.as_ref().is_none_or(|se| {
+        eidos_instance::root_executable(
+            &game.install_path,
+            &inst.root_layers(),
+            &inst.root_overwrite_dir(),
+            se.loader,
+        )
+        .is_some()
+    });
+    let this_exe = std::env::current_exe().unwrap_or_else(|_| "eidos-gui".into());
+    let search_path: Vec<std::path::PathBuf> = std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).collect())
+        .unwrap_or_default();
+    let (store, name) = (game.source_name(), game.def.name);
+    match launch_handoff(
+        game,
+        loader_found,
+        &this_exe,
+        &eidos_games::home(),
+        &search_path,
+    ) {
+        Handoff::Start { store: via, argv } => {
+            // shortcut: Flatpak Steam has no steam on PATH, so the spawn fails and the status says so; use flatpak run com.valvesoftware.Steam when a user asks.
+            match std::process::Command::new(&argv[0])
+                .args(&argv[1..])
+                .spawn()
+            {
+                Ok(_) => {
+                    remember_handoff_pick(inst, app.tool_choice.as_deref());
+                    tf(
+                        "status_handed_to_store",
+                        &[("store", &via), ("game", &name)],
+                    )
+                }
+                Err(e) => tf(
+                    "status_handoff_failed",
+                    &[("store", &via), ("error", &e), ("game", &name)],
+                ),
+            }
+        }
+        Handoff::SetSteamOption { line } => {
+            tf("status_set_steam_launch_option", &[("line", &line)])
+        }
+        Handoff::SetHeroicWrapper { exe, args } => tf(
+            "status_set_heroic_wrapper",
+            &[("game", &name), ("exe", &exe), ("args", &args)],
+        ),
+        Handoff::SetLegendaryWrapper {
+            file,
+            app: section,
+            wrapper,
+        } => tf(
+            "status_set_legendary_wrapper",
+            &[
+                ("game", &name),
+                ("app", &section),
+                ("file", &file.display()),
+                ("wrapper", &wrapper),
+            ],
+        ),
+        Handoff::NoLoader { loader } => tf(
+            "status_handoff_no_loader",
+            &[("loader", &loader), ("store", &store), ("game", &name)],
+        ),
+        Handoff::ThroughStore => tf(
+            "status_launch_through_store",
+            &[("game", &name), ("store", &store)],
+        ),
+    }
+}
+
 /// The `update` arms for this group. [`update_inner`] routes only these
 /// messages here.
 pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
     match message {
         Message::ToolPicked(choice) => {
             app.tool_choice = (choice != run_game_label()).then_some(choice);
+        }
+        Message::PlayAnyway => {
+            if let Some(p) = app.play_prompt.take() {
+                app.play_anyway.push(p.key);
+                return handle(app, Message::Run);
+            }
+        }
+        Message::ClosePlayPrompt => app.play_prompt = None,
+        Message::RunTool(title) => {
+            app.play_prompt = None;
+            let previous = app.tool_choice.replace(title);
+            let task = handle(app, Message::Run);
+            app.tool_choice = previous;
+            return task;
         }
         Message::Run => {
             if app.running.is_some() {
@@ -37,31 +141,28 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 reload_mods(app);
                 mod_views_changed(app);
                 app.status = Some(tf("status_launch_blocked_modlist", &[("reason", &why)]));
-            } else if let Some(title) = app.tool_choice.clone() {
+            } else if let Some(title) = app
+                .tool_choice
+                .clone()
+                .filter(|t| !(app.launch_command.is_empty() && picks_the_game(app, t)))
+            {
                 // A tool: the CLI resolves Proton itself, no Steam command needed.
+                // A game entry outside a store-started window takes the hand-off below.
                 // The owned arg ends the immutable borrow before `start_run`.
                 if let Some(arg) = instance_arg(app) {
-                    let cmd = tool_command(&arg, &title);
+                    let cmd = tool_command(&arg, &title, !app.launch_command.is_empty());
                     start_run(app, title, cmd);
                 } else {
                     app.status = Some(t("status_create_or_open_instance").to_string());
                 }
-            } else if selected_game(app).is_some_and(|g| !g.is_steam())
-                && app.launch_command.is_empty()
-            {
-                app.status = Some(t("status_manual_launch_needed").into());
+            } else if let Some(prompt) = play_prompt_for(app) {
+                // Only the game or a game entry gets here (a tool run took the branch above).
+                app.play_prompt = Some(prompt);
             } else if app.launch_command.is_empty() {
-                // Standalone: we don't have Steam's Proton command, so we cannot
-                // build the launch environment. Point the user at the option, with
-                // this binary's absolute path (Steam's launch options don't see
-                // ~/.cargo/bin on PATH) and native d3dcompiler forced so the game's
-                // shader compilation works under Proton. Eidos merges that with any
-                // mod-shipped DLL overrides at launch.
-                let exe = std::env::current_exe()
-                    .ok()
-                    .and_then(|p| p.to_str().map(str::to_string))
-                    .unwrap_or_else(|| "eidos-gui".to_string());
-                app.status = Some(tf("status_set_steam_launch_option", &[("exe", &exe)]));
+                // No game runs outside its store: the store that owns the copy
+                // starts it through its Eidos setting, and when that setting is
+                // missing the status says what to set and where.
+                app.status = Some(hand_off(app));
             } else if let (Some(game), Some(inst)) = (selected_game(app), &app.created) {
                 let id = game.def.id;
                 let game_name = game.def.name.to_string();
@@ -145,6 +246,63 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(tf("status_unlocked", &[("title", &title)]));
             }
         }
+        Message::StopRun => {
+            // Two presses: the first arms, the disarm block in `update_inner`
+            // cancels it on any other action. SIGTERM, not SIGKILL: the `eidos`
+            // child ends its programs itself and then captures and unmounts.
+            let Some(r) = app.running.as_mut().filter(|r| r.stoppable) else {
+                return Task::none();
+            };
+            let title = r.title.clone();
+            if app.confirm_stop {
+                // Once `done` is set the wait thread has reaped the child and
+                // its pid may belong to another process.
+                if !r.done.load(std::sync::atomic::Ordering::SeqCst) {
+                    // SAFETY: kill(2) takes no pointer; the pid is our unreaped child.
+                    unsafe { libc::kill(r.pid as libc::pid_t, libc::SIGTERM) };
+                }
+                r.stopped = true;
+                app.confirm_stop = false;
+                app.status = Some(tf("status_stopping", &[("title", &title)]));
+            } else {
+                app.confirm_stop = true;
+                app.status = Some(tf("status_stop_armed", &[("title", &title)]));
+            }
+        }
+        Message::RebuildPrefix => {
+            // Two presses, like Stop. A tracked run is refused before
+            // `prefix_busy` is asked: its Wine processes may not exist yet.
+            let Some(compat) = selected_game(app).and_then(|g| g.compatdata.clone()) else {
+                return Task::none();
+            };
+            if let Some(r) = &app.running {
+                app.status = Some(tf("status_rebuild_prefix_wait_run", &[("title", &r.title)]));
+                return Task::none();
+            }
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs() as i64);
+            let stamp = backup_stamp(now);
+            if app.confirm_rebuild_prefix {
+                app.confirm_rebuild_prefix = false;
+                app.status = Some(
+                    match eidos_gamefeatures::move_prefix_aside(&compat, &stamp) {
+                        Ok(to) => {
+                            app.diag_dirty = true;
+                            tf("status_rebuild_prefix_done", &[("to", &to.display())])
+                        }
+                        Err(e) => tf("status_rebuild_prefix_failed", &[("error", &e)]),
+                    },
+                );
+            } else {
+                app.confirm_rebuild_prefix = true;
+                let to = format!("{}.eidos-backup-{stamp}", compat.display());
+                app.status = Some(tf(
+                    "status_rebuild_prefix_confirm",
+                    &[("from", &compat.display()), ("to", &to)],
+                ));
+            }
+        }
         Message::CloseLootReport => {
             app.loot_report = None;
         }
@@ -211,6 +369,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         // No lock overlay: its text is about a game in the merged
                         // view, and it would hide the status naming the log.
                         r.lock = false;
+                        // `eidos prereqs` has no SIGTERM handler: Stop would
+                        // kill winetricks mid-write in the prefix.
+                        r.stoppable = false;
                         app.status =
                             Some(tf("status_installing_prereqs", &[("log", &log.display())]));
                     }
@@ -221,4 +382,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         _ => unreachable!("routed by update_inner"),
     }
     Task::none()
+}
+
+/// `YYYYMMDD-HHMMSS` in UTC: the suffix of a prefix backup, which sorts by date.
+pub(super) fn backup_stamp(unix_secs: i64) -> String {
+    let (y, mo, d, h, mi, s) = eidos_log::civil_from_unix(unix_secs);
+    format!("{y:04}{mo:02}{d:02}-{h:02}{mi:02}{s:02}")
 }

@@ -45,6 +45,8 @@ pub(crate) enum Message {
     FomodInstall,
     FomodCancel,
     Run,
+    /// Run the tool with this title as configured now; the picker is unchanged.
+    RunTool(String),
     Refresh,
     OpenFolder(PathBuf),
     ClearOverwrite,
@@ -146,8 +148,18 @@ pub(crate) enum Message {
     ExecAppIdChanged(String),
     ToolArgsAction(iced::widget::text_editor::Action),
     ExecToggleHidden,
+    ExecToggleCheckBeforePlay,
+    /// Play although a flagged generator's output is out of date; close the prompt.
+    PlayAnyway,
+    ClosePlayPrompt,
     ExecTogglePinned,
     ExecMakeShortcut,
+    /// Executables dialog: list the entries of a foreign `ModOrganizer.ini`,
+    /// tick or untick one, add the ticked ones, or drop the list.
+    ExecImportMo2,
+    ExecImportToggle(usize),
+    ExecImportApply,
+    ExecImportCancel,
     /// Copy a mod's folder aside as `<name>_backup`, before editing it.
     ModBackup(usize),
     /// Copy a backup's contents back over the mod it came from. Two clicks.
@@ -696,6 +708,12 @@ pub(crate) enum Message {
     /// The user clicked Unlock: stop waiting and re-enable the UI, but leave the
     /// game running (MO2's force-unlock never kills the process).
     ForceUnlock,
+    /// Stop: the first press arms it, the second sends the `eidos` child SIGTERM,
+    /// which ends its programs and still captures the session.
+    StopRun,
+    /// Rebuild prefix on the Proton card: the first press arms it, the second
+    /// renames the game's `compatdata/<appid>` aside so Steam makes a new one.
+    RebuildPrefix,
     /// Dismiss the transient status-bar message (the small x next to it).
     ClearStatus,
     // ---- MO2's targeted "Send to" actions (the day-to-day way load orders get

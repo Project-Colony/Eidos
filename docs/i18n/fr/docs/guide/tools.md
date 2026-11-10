@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
 
 # Outils : xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -81,6 +81,19 @@ Un outil dans un mod **désactivé** ne peut pas être réécrit, parce que ses
 fichiers ne sont pas dans la vue non plus. Eidos le dit et le lance depuis son
 propre dossier plutôt que de faire semblant.
 
+## Outils d'une liste Mod Organizer 2
+
+Une liste Wabbajack ou une autre instance MO2 ouverte comme instance Eidos garde son `ModOrganizer.ini`, et les exécutables qui y sont configurés peuvent être copiés dans `tools.ini` :
+
+```sh
+eidos tool /path/to/list import-mo2           # affiche ce qui serait ajouté
+eidos tool /path/to/list import-mo2 --write   # les ajoute
+```
+
+Dans la fenêtre, la boîte de dialogue Exécutables propose **Importer depuis ModOrganizer.ini**, avec une case à décocher pour chaque entrée ; rien n'est enregistré avant d'appuyer sur Enregistrer.
+
+Les chemins sur `Z:` sont des chemins Linux et restent tels quels. Un chemin sur une autre lettre de lecteur est ramené sous le dossier de la liste quand il nomme ce dossier (`D:\Lists\MyList\tools\SSEEdit.exe` devient `<list>/tools/SSEEdit.exe`), dans l'exécutable, le dossier de travail et les arguments. Le chargeur de l'extenseur de script et le binaire du jeu deviennent de simples noms, et s'exécutent donc depuis le dossier du jeu sur lequel Eidos monte la vue, comme les entrées intégrées. Les entrées qui pointent ailleurs (un programme système de Windows, un outil hors de la liste) sont signalées comme ignorées avec la raison, et un titre déjà présent dans `tools.ini` n'est jamais remplacé.
+
 ## Envoyer la sortie d'un outil dans son propre mod
 
 Un générateur - FNIS, Nemesis, BodySlide, DynDOLOD, Synthesis - écrit des
@@ -108,6 +121,12 @@ atteint le même état final sans ni l'un ni l'autre.
 Si le mod cible est désactivé, la sortie est quand même écrite mais le jeu ne la
 verra pas, si bien que l'outil régénérerait les mêmes fichiers à l'exécution
 suivante. Eidos prévient quand c'est le cas.
+
+### Quand sa sortie n'est plus à jour
+
+Eidos note à partir de quels mods, de quel ordre des plugins, de quel profil et de quel exécutable la sortie d'un outil a été produite. Quand l'un d'eux change, l'onglet Diagnostics le signale, et la carte propose un bouton **Run <tool> again** qui relance l'outil avec sa configuration actuelle.
+
+Pour un générateur dont la sortie périmée casse le jeu, comme Pandora ou Nemesis, ajoutez `check_before_play=1` à son entrée dans `tools.ini`, ou activez **Demander avant de jouer si sa sortie n'est plus à jour** dans la fenêtre Exécutables. Lancer le jeu demande alors d'abord : lancer l'outil, ou jouer quand même. Le choix de jouer quand même est retenu jusqu'à ce que les mods, les plugins ou le profil changent de nouveau, ou que la fenêtre se ferme. Eidos ne lance jamais l'outil de lui-même.
 
 ## Les DLL dont un outil a besoin sont choisies par son NOM
 
@@ -345,6 +364,16 @@ un sélecteur que personne ne lit. Dans la boîte de dialogue Executables :
 Masquer et épingler concernent la façon dont un outil est *atteint* plutôt que ce
 qu'il exécute, ils s'appliquent donc aux défauts par jeu comme à vos propres
 entrées.
+
+Le loader du script extender, le launcher et le binaire du jeu n'ont pas de
+bouton Desktop shortcut. Ils démarrent le jeu, qui démarre toujours par sa
+boutique, et le raccourci de la boutique fait déjà cela. Un raccourci créé pour
+l'un d'eux avec Eidos 1.22 ou antérieur fonctionne toujours : comme
+`eidos tool <instance> run <title>` tapé dans un terminal, il demande à la
+boutique de démarrer le jeu, comme Run dans une fenêtre qu'aucune boutique n'a
+ouverte. Quand le réglage de la boutique manque, la commande ne démarre rien et
+affiche quoi régler. Un raccourci n'affiche aucun message : lancez la même
+commande dans un terminal pour le lire.
 
 ## Un outil qui est sa propre application Steam
 

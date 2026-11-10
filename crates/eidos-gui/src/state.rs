@@ -311,6 +311,10 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         tab: Tab::Data,
         status: None,
         confirm_clear: false,
+        confirm_stop: false,
+        play_prompt: None,
+        play_anyway: Vec::new(),
+        confirm_rebuild_prefix: false,
         overwrite_to_mod: None,
         send_priority: None,
         send_separator: None,
@@ -557,7 +561,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     if let Some((i, inst)) = pinned {
         open_existing(&mut app, i, inst);
         if auto.is_some() {
-            app.status = Some(t("status_launched_from_steam").to_string());
+            opened_by_store(&mut app, i);
         }
     } else if let Some(i) = auto {
         app.selected = Some(i);
@@ -569,7 +573,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
             });
         if let Some(inst) = found {
             open_existing(&mut app, i, inst);
-            app.status = Some(t("status_launched_from_steam").to_string());
+            opened_by_store(&mut app, i);
         }
     } else if let Some(k) = app.known.first() {
         // Standalone: open the last-used instance if it still exists, else the
@@ -625,6 +629,37 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         None => startup,
     };
     (app, startup)
+}
+
+/// A store started this window with the game's command: name the store, and
+/// preselect the Run list entry the window that handed the game over had picked.
+fn opened_by_store(app: &mut App, i: usize) {
+    let store = app.games[i].source_name();
+    app.status = Some(tf("status_launched_from_steam", &[("store", &store)]));
+    app.tool_choice = app.created.as_ref().and_then(take_handoff_pick);
+}
+
+/// Where Run's hand-off leaves its Run list pick for the window the store opens.
+fn handoff_pick_path(inst: &Instance) -> PathBuf {
+    inst.root.join("handoff-pick.txt")
+}
+
+/// Record the Run list entry picked when Run handed the game to its store;
+/// `None` (the game itself) clears an older pick.
+pub(crate) fn remember_handoff_pick(inst: &Instance, pick: Option<&str>) {
+    let path = handoff_pick_path(inst);
+    let _ = match pick {
+        Some(title) => fs::write(path, title),
+        None => fs::remove_file(path),
+    };
+}
+
+/// The pick [`remember_handoff_pick`] left, once: reading it removes it.
+pub(crate) fn take_handoff_pick(inst: &Instance) -> Option<String> {
+    let path = handoff_pick_path(inst);
+    let pick = fs::read_to_string(&path).ok();
+    let _ = fs::remove_file(path);
+    pick.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
 /// Ask the desktop who owns `nxm://` links. `xdg-mime` is a process, so this
@@ -785,6 +820,7 @@ pub(crate) fn open_executables_dialog(app: &App) -> Option<ExecutablesDialogStat
         prereqs: String::new(),
         output_mod: String::new(),
         app_id: String::new(),
+        mo2_import: None,
         // Separators head groups and unmanaged rows are the game's own content -
         // neither is a folder output can be written into. MO2 filters the same
         // set out of this combo.
@@ -807,9 +843,18 @@ pub(crate) fn open_executables_dialog(app: &App) -> Option<ExecutablesDialogStat
 /// Proton and runs it through the merged view (same single-process requirement
 /// as `play`). Returned unspawned so `start_run` can route its output to a log.
 /// `inst_arg` is [`instance_arg`]'s output: the id or the portable folder.
-pub(crate) fn tool_command(inst_arg: &str, title: &str) -> std::process::Command {
+/// `store_started` (the window a store opened) lets the CLI run a game entry
+/// even when the store, like bare legendary, exported no variable of its own.
+pub(crate) fn tool_command(
+    inst_arg: &str,
+    title: &str,
+    store_started: bool,
+) -> std::process::Command {
     let mut cmd = eidos_command();
     cmd.arg("tool").arg(inst_arg).arg("run").arg(title);
+    if store_started {
+        cmd.env(eidos::STORE_STARTED_VAR, "1");
+    }
     cmd
 }
 
@@ -1245,6 +1290,10 @@ pub(crate) fn start_run_with_log(
             cmd.stderr(std::process::Stdio::from(f));
         }
     }
+    // Before the spawn, so the child's own launch record can never predate it.
+    let started = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
     let child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -1273,6 +1322,9 @@ pub(crate) fn start_run_with_log(
         log,
         lock,
         game: false,
+        stoppable: true,
+        stopped: false,
+        started,
     });
     app.status = Some(if lock {
         tf("status_running_locked", &[("title", &title)])
@@ -1359,8 +1411,10 @@ pub(crate) fn finish_run(app: &mut App) {
             };
         }
     }
-    let mut refused = false;
-    app.status = Some(if failed {
+    app.status = Some(if run.stopped {
+        // The user ended it; the log footer above still records the exit code.
+        tf("status_run_stopped", &[("title", &run.title)])
+    } else if failed {
         match &run.log {
             // When `eidos` itself refused (the instance in use, a list it cannot
             // trust), that sentence IS the answer; "see the log" alone left the
@@ -1369,17 +1423,14 @@ pub(crate) fn finish_run(app: &mut App) {
                 .ok()
                 .and_then(|b| refusal_line(&String::from_utf8_lossy(&b)))
             {
-                Some(reason) => {
-                    refused = true;
-                    tf(
-                        "status_exited_refused",
-                        &[
-                            ("title", &run.title),
-                            ("reason", &reason),
-                            ("log", &p.display()),
-                        ],
-                    )
-                }
+                Some(reason) => tf(
+                    "status_exited_refused",
+                    &[
+                        ("title", &run.title),
+                        ("reason", &reason),
+                        ("log", &p.display()),
+                    ],
+                ),
                 None => tf(
                     "status_exited_error_log",
                     &[("title", &run.title), ("log", &p.display())],
@@ -1391,8 +1442,17 @@ pub(crate) fn finish_run(app: &mut App) {
         tf("status_exited", &[("title", &run.title)])
     });
     // A crash can still exit 0 under Proton; the crash log is the better answer.
-    // A refused launch never started the game, so its crash log is an older one.
-    if run.game && !refused {
+    // Only when this run recorded its start: one that failed or was refused
+    // before that would name the previous session's log. A stopped run is no
+    // crash news, even if the stop made the game write a log.
+    if run.game
+        && !run.stopped
+        && app
+            .created
+            .as_ref()
+            .and_then(|i| i.launch_record().started)
+            .is_some_and(|s| s >= run.started)
+    {
         if let (Some(game), Some(inst)) = (selected_game(app), app.created.as_ref()) {
             let mods = eidos::check::active_mods(inst);
             if let Some(f) = eidos::check::crash::crash_findings(game, inst, &mods).first() {
@@ -2172,10 +2232,11 @@ pub(crate) fn game_manages_plugins(app: &App) -> bool {
 
 /// Whether this game has plugins AT ALL, managed by Eidos or not.
 ///
-/// Wider than [`game_manages_plugins`]: Oblivion and Morrowind have `.esp` files
-/// and a load order, Eidos just does not write it for them. Advice about plugins
-/// is worth giving there and meaningless for a game with no plugin system, which
-/// is the distinction these two predicates exist to keep apart.
+/// Wider than [`game_manages_plugins`] only for a descriptor that declares a load
+/// order but has no `GameSpec`; no built-in game is one today (Oblivion and
+/// Morrowind have a `GameSpec` and are managed). Advice about plugins is worth
+/// giving there and meaningless for a game with no plugin system, which is the
+/// distinction these two predicates exist to keep apart.
 pub(crate) fn game_has_plugins(app: &App) -> bool {
     selected_game(app).is_some_and(|g| g.def.load_order != eidos_games::LoadOrder::None)
 }
@@ -4569,8 +4630,13 @@ mod cli_lookup_tests {
     #[test]
     fn cli_children_carry_the_marker_when_the_cli_is_this_binary() {
         let (bin, marker) = find_eidos_binary();
-        let cmd = tool_command("skyrimse", "SSEEdit");
+        let cmd = tool_command("skyrimse", "SSEEdit", false);
         assert_eq!(cmd.get_program(), bin.as_os_str());
+        assert_eq!(cmd.get_envs().count(), 0, "a plain window marks nothing");
+        let marked = tool_command("skyrimse", "SKSE", true);
+        assert!(marked
+            .get_envs()
+            .any(|(k, v)| k == eidos::STORE_STARTED_VAR && v == Some(std::ffi::OsStr::new("1"))));
         let args: Vec<String> = cmd
             .get_args()
             .map(|a| a.to_string_lossy().into_owned())

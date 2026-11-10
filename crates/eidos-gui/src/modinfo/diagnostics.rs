@@ -470,17 +470,20 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                     .collect::<Vec<_>>()
             })
             .or_else(|| (!game_has_plugins(app)).then(Vec::new));
-        match inst.generated_outputs() {
+        // Known plugins: only drifted outputs come back. Unknown: every output
+        // in the game's view, each reported as unverified.
+        let outputs = match active_plugins.as_ref() {
+            Some(plugins) => stale_outputs(app, inst, plugins),
+            None => inst.generated_outputs().map(|all| {
+                all.into_iter()
+                    .filter(|(owner, _)| output_owner_is_active(app, owner.as_deref()))
+                    .collect()
+            }),
+        };
+        match outputs {
             Ok(outputs) => {
                 for (owner, output) in outputs {
-                    if owner.as_ref().is_some_and(|owner| {
-                        !app.mods
-                            .iter()
-                            .any(|m| m.is_active() && m.name.eq_ignore_ascii_case(owner))
-                    }) {
-                        continue;
-                    }
-                    let Some(active_plugins) = active_plugins.as_ref() else {
+                    if active_plugins.is_none() {
                         out.push(Diagnostic {
                             level: DiagLevel::Advice,
                             title: t("diag_generated_inputs_unverified").into(),
@@ -494,8 +497,8 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                             actions: Vec::new(),
                         });
                         continue;
-                    };
-                    if inst.generated_input_drift(&output.receipt, active_plugins) {
+                    }
+                    {
                         out.push(Diagnostic {
                             level: DiagLevel::Advice,
                             title: t("diag_generated_inputs_changed").into(),
@@ -520,7 +523,19 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                                     ),
                                 ],
                             ),
-                            actions: Vec::new(),
+                            // Runs the tool as configured now, not the recorded preset.
+                            actions: app
+                                .tools
+                                .iter()
+                                .find(|x| x.title.eq_ignore_ascii_case(&output.receipt.tool))
+                                .map(|x| {
+                                    (
+                                        tf("diag_action_run_tool_again", &[("tool", &x.title)]),
+                                        Message::RunTool(x.title.clone()),
+                                    )
+                                })
+                                .into_iter()
+                                .collect(),
                         });
                     }
                 }
@@ -630,23 +645,11 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 actions: Vec::new(),
             });
         }
-        // A Flatpak-Steam Proton runs from the host here, which can fail to resolve
-        // its sandbox libraries. Eidos will not re-launch through `flatpak run`:
-        // that would put the game in Flatpak's sandbox, blind to the FUSE union in
-        // our private namespace, and it would silently play vanilla.
-        if let Some(cd) = game.compatdata.as_ref() {
-            let flatpak =
-                eidos_games::proton_command(&home(), game.def.steam_app_id, cd, &game.install_path)
-                    .is_some_and(|r| r.flatpak);
-            if flatpak {
-                out.push(Diagnostic {
-                    level: DiagLevel::Problem,
-                    title: t("diag_flatpak_proton").to_string(),
-                    detail: t("diag_flatpak_proton_detail").to_string(),
-                    actions: Vec::new(),
-                });
-            }
-        }
+        out.extend(
+            crate::health::proton_facts(game, &home())
+                .map(|f| crate::health::proton_checks(&f))
+                .unwrap_or_default(),
+        );
         if !game.is_steam() {
             out.push(Diagnostic {
                 level: DiagLevel::Advice,
@@ -1032,4 +1035,70 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
 /// file-drop events exist in the type system and never fire.
 pub(crate) fn on_wayland() -> bool {
     std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty())
+}
+
+/// Overwrite, or a mod that is enabled: an output of a disabled mod is not in the
+/// game's view, so it is neither checked nor asked about.
+fn output_owner_is_active(app: &App, owner: Option<&str>) -> bool {
+    owner.is_none_or(|owner| {
+        app.mods
+            .iter()
+            .any(|m| m.is_active() && m.name.eq_ignore_ascii_case(owner))
+    })
+}
+
+/// Generated outputs in the game's view whose recorded inputs no longer match,
+/// as the Diagnostics card and the play prompt both need them.
+pub(crate) fn stale_outputs(
+    app: &App,
+    inst: &Instance,
+    plugins: &[(String, bool)],
+) -> std::io::Result<Vec<(Option<String>, eidos_instance::GeneratedOutput)>> {
+    Ok(inst
+        .generated_outputs()?
+        .into_iter()
+        .filter(|(owner, _)| output_owner_is_active(app, owner.as_deref()))
+        .filter(|(_, output)| inst.generated_input_drift(&output.receipt, plugins))
+        .collect())
+}
+
+/// The first flagged generator whose output is out of date and not yet waved
+/// through for this exact input state. Unknown plugins give `None`: the Health
+/// card already says the inputs are unverified.
+pub(crate) fn play_prompt_for(app: &App) -> Option<PlayPrompt> {
+    let inst = app.created.as_ref()?;
+    if !app.tools.iter().any(|t| t.check_before_play) {
+        return None;
+    }
+    let computed;
+    let list = match app.plugins.as_ref() {
+        Some(list) => Some(list),
+        None => {
+            computed = compute_plugins(app);
+            computed.as_ref()
+        }
+    };
+    let plugins = match list {
+        Some(list) => list
+            .plugins
+            .iter()
+            .map(|p| (p.name.clone(), p.enabled))
+            .collect::<Vec<_>>(),
+        None if !game_has_plugins(app) => Vec::new(),
+        None => return None,
+    };
+    let state = inst.generated_input_state(&plugins);
+    stale_outputs(app, inst, &plugins)
+        .unwrap_or_default()
+        .into_iter()
+        .find_map(|(_, output)| {
+            let tool = app.tools.iter().find(|t| {
+                t.check_before_play && t.title.eq_ignore_ascii_case(&output.receipt.tool)
+            })?;
+            let key = (output.receipt.id, state);
+            (!app.play_anyway.contains(&key)).then(|| PlayPrompt {
+                tool: tool.title.clone(),
+                key,
+            })
+        })
 }

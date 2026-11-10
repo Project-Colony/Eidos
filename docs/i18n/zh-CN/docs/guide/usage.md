@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=a52fda783776900495152e3b3a35c98d83d96d42 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=92ef50801ef60cd7ea02e2a2f2538c313e3aeca1 -->
 
 # 使用 Eidos
 
@@ -197,8 +197,7 @@ eidos collection skyrimse rqhcxy --dry-run     # 读一遍它,说出将会发生
 下来的是同一个模组的另一个文件,面板会写出两个文件 id,并继续等待合集指定的那个。可选
 成员不在其中,保留各自的 *Open* 按钮。
 
-尚未施加、并且在报告里被点名而不是被略过的:**二进制补丁**、**文件覆盖**,以及那些
-文件随合集压缩包一起走的成员(`bundle`)。合集指望你手工去取的成员(`browse`、
+按合集的描述施加:**二进制补丁**(每个都按记录的 CRC 校验)、**文件覆盖**(指定的文件像 MO2 那样用 `.mohidden` 隐藏),以及那些文件随合集压缩包一起走的成员(`bundle`)。合集指望你手工去取的成员(`browse`、
 `manual`)会把作者自己的说明一路带进报告。一个名字已经和你某个模组撞上的成员,会用
 一个没被占用的名字装在它旁边,绝不盖在它上面,报告里也会说明是哪些。
 
@@ -525,8 +524,15 @@ PATH 上的 `~/.cargo/bin`):
 ```
 
 Eidos 会在这款游戏的实例上打开 - 你上次用的那一个,所以便携实例和全局实例一样能被重新
-找到;点 Run 让它穿过合并视图启动。(如果你在 Steam 之外按下 Run 按钮,它会显示这一行
-的确切内容,并带上正在运行的二进制的真实路径。)
+找到;点 Run 让它穿过合并视图启动。
+
+在 Steam 之外,Run 不会自己用 Proton 或 Wine 启动游戏。它请拥有这份副本的商店来启动,再由商店启动 Eidos:
+
+- Steam:设好上面的启动选项后,运行 `steam -applaunch <appid>`。Steam 没开时会先启动 Steam。
+- Heroic(GOG 或 Epic 副本,原生版或 Flatpak 版):当 Eidos 是 Heroic 里该游戏设置中的一个包装器(wrapper),可执行文件为 `eidos-gui` 的绝对路径且不带参数时,它会收到一个 `heroic://launch` 链接。Heroic 没开时会先启动 Heroic。
+- 单独的 Legendary:当 `~/.config/legendary/config.ini` 在游戏的 `[<app>]` 段或 `[default]` 下有 `wrapper =` 加 `eidos-gui` 的绝对路径时,运行 `legendary launch <app>`。
+
+随后 Eidos 会在你上次用的实例上打开第二个窗口,你在那里点 Run。第一个窗口不跟踪这次运行,所以玩完后在它里面按 F5 重新载入列表。商店的设置缺失,或脚本扩展器的 loader 不在游戏可执行文件旁边时,Run 什么也不启动,并显示要在哪里设置什么,带上正在运行的二进制的真实路径。
 
 Bethesda 各作在 Steam 里的 `%command%` 通常指向 `<Game>Launcher.exe`。Eidos 从不运行
 它:那个 launcher 是一个独立的设置程序,它会重新扫描 `Data` 并重写 `plugins.txt`,把
