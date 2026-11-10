@@ -1229,8 +1229,25 @@ pub(crate) fn write_desktop_entry(
     tool: &eidos_instance::Tool,
     profile: Option<&str>,
 ) -> std::io::Result<PathBuf> {
-    let dir = eidos_paths::desktop_entries_dir();
-    std::fs::create_dir_all(&dir)?;
+    write_desktop_entry_in(
+        &eidos_paths::desktop_entries_dir(),
+        inst,
+        game_id,
+        tool,
+        profile,
+    )
+}
+
+/// [`write_desktop_entry`] into `dir`, so a test writes into a temp dir and
+/// never touches `XDG_DATA_HOME`.
+pub(crate) fn write_desktop_entry_in(
+    dir: &Path,
+    inst: &Instance,
+    game_id: &str,
+    tool: &eidos_instance::Tool,
+    profile: Option<&str>,
+) -> std::io::Result<PathBuf> {
+    std::fs::create_dir_all(dir)?;
     // The instance by PATH when it is portable, by id when it is the global one
     // - the same two spellings `eidos tool` itself accepts.
     let target = if inst.root == Instance::global(game_id).root {
@@ -4434,22 +4451,17 @@ mod tests {
         let root = temp_portable("skyrimse");
         let inst = Instance::portable(root.join("Eidos Skyrim"));
         inst.create().unwrap();
-        let home = root.join("fakehome");
-        fs::create_dir_all(&home).unwrap();
-        // The entry must land where the DESKTOP looks, not in the Colony tree.
-        let prev = std::env::var_os("XDG_DATA_HOME");
-        // SAFETY: single-threaded here, and restored below.
-        unsafe { std::env::set_var("XDG_DATA_HOME", &home) };
+        let apps = root.join("applications");
 
         let tool = Tool {
             title: "SSEEdit".to_string(),
             exe: PathBuf::from("/x/SSEEdit.exe"),
             ..Default::default()
         };
-        let path = write_desktop_entry(&inst, "skyrimse", &tool, None).unwrap();
+        let path = write_desktop_entry_in(&apps, &inst, "skyrimse", &tool, None).unwrap();
         let body = fs::read_to_string(&path).unwrap();
 
-        assert!(path.starts_with(home.join("applications")));
+        assert!(path.starts_with(&apps));
         assert!(body.starts_with("[Desktop Entry]"));
         // A portable instance with a space in its path is ordinary, and unquoted
         // it would reach `eidos tool` as two arguments.
@@ -4463,12 +4475,6 @@ mod tests {
         );
         assert!(body.contains("tool "), "{body}");
         assert!(body.contains("run \"SSEEdit\""), "{body}");
-
-        match prev {
-            // SAFETY: as above.
-            Some(v) => unsafe { std::env::set_var("XDG_DATA_HOME", v) },
-            None => unsafe { std::env::remove_var("XDG_DATA_HOME") },
-        }
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -4478,18 +4484,15 @@ mod tests {
         let root = temp_portable("skyrimse");
         let inst = Instance::portable(root.join("Eidos Skyrim"));
         inst.create().unwrap();
-        let home = root.join("fakehome");
-        fs::create_dir_all(&home).unwrap();
-        let prev = std::env::var_os("XDG_DATA_HOME");
-        // SAFETY: single-threaded here, and restored below.
-        unsafe { std::env::set_var("XDG_DATA_HOME", &home) };
+        let apps = root.join("applications");
 
         let game = Tool {
             title: "Skyrim Special Edition".into(),
             exe: "SkyrimSE.exe".into(),
             ..Default::default()
         };
-        let p = write_desktop_entry(&inst, "skyrimse", &game, Some("Survival 100%")).unwrap();
+        let write = |profile| write_desktop_entry_in(&apps, &inst, "skyrimse", &game, profile);
+        let p = write(Some("Survival 100%")).unwrap();
         let body = fs::read_to_string(&p).unwrap();
         assert!(
             body.contains("Name=Skyrim Special Edition (Survival 100%)\n"),
@@ -4499,19 +4502,13 @@ mod tests {
             body.contains(" run \"Skyrim Special Edition\" --profile \"Survival 100%%\"\n"),
             "{body}"
         );
-        let other = write_desktop_entry(&inst, "skyrimse", &game, Some("Other")).unwrap();
-        let plain = write_desktop_entry(&inst, "skyrimse", &game, None).unwrap();
+        let other = write(Some("Other")).unwrap();
+        let plain = write(None).unwrap();
         assert!(
             p != other && p != plain && other != plain,
             "one file per profile"
         );
         assert!(!fs::read_to_string(&plain).unwrap().contains("--profile"));
-
-        match prev {
-            // SAFETY: as above.
-            Some(v) => unsafe { std::env::set_var("XDG_DATA_HOME", v) },
-            None => unsafe { std::env::remove_var("XDG_DATA_HOME") },
-        }
         let _ = fs::remove_dir_all(&root);
     }
 
