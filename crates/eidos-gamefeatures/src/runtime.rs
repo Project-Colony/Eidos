@@ -164,7 +164,7 @@ fn env_in(r: &Runtime, dir: &Path) -> Vec<(String, String)> {
 }
 
 /// A Linux directory as Wine's `Z:` drive sees it, with no trailing separator.
-fn to_windows_dir(p: &Path) -> String {
+pub(crate) fn to_windows_dir(p: &Path) -> String {
     format!("Z:{}", p.to_string_lossy().replace('/', "\\"))
 }
 

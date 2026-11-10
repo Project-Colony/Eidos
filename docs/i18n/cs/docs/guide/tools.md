@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=e3d48ba93d1f21f1e692c797825e0485efc14a00 -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -41,7 +41,10 @@ eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse                       # vypsat, co je zaregistrováno
 eidos tool skyrimse run BodySlide         # spustit ho skrz sloučený pohled
 eidos tool skyrimse run BodySlide --print # ukázat příkaz bez spuštění
+eidos tool skyrimse run "SSEEdit QuickAutoClean" --output-mod "Cleaned plugins" -- -qac -autoexit -autoload Dawnguard.esm
 ```
+
+`--output-mod <mod>` zachytí výstup tohoto spuštění do `mods/<mod>`, ať nástroj nastavuje cokoli.
 
 Script extender, binárka hry a launcher se detekují automaticky; registrovat je
 potřeba jen nástroje navíc.

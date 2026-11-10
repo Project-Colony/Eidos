@@ -44,6 +44,9 @@ pub use prereqs::{
     prefix_busy_at, record_prereqs, satisfied_prereqs_in, verbs_in_prefix,
 };
 
+mod qac;
+pub use qac::{parse_qac_log, qac_args, QacLog, QAC_LOG};
+
 mod runtime;
 pub use runtime::{
     env_for as runtime_env_for, install as install_runtime, is_installed as runtime_is_installed,

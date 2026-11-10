@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9940c6b6adb7d68eb703f9b4314e8ba13cc06e17 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=e3d48ba93d1f21f1e692c797825e0485efc14a00 -->
 
 # Narzędzia: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -42,7 +42,10 @@ eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse                       # wypisać, co jest zarejestrowane
 eidos tool skyrimse run BodySlide         # uruchomić przez scalony widok
 eidos tool skyrimse run BodySlide --print # pokazać polecenie bez uruchamiania
+eidos tool skyrimse run "SSEEdit QuickAutoClean" --output-mod "Cleaned plugins" -- -qac -autoexit -autoload Dawnguard.esm
 ```
+
+`--output-mod <mod>` zapisuje wynik tego uruchomienia w `mods/<mod>`, niezależnie od własnego ustawienia narzędzia.
 
 Script extender, plik wykonywalny gry i launcher są wykrywane automatycznie;
 rejestracji wymagają tylko dodatkowe narzędzia.
