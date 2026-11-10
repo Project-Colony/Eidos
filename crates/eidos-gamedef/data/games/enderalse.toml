@@ -38,3 +38,35 @@ title = "SSEEdit QuickAutoClean"
 [[known_tools]]
 exe = "PGPatcher.exe"
 title = "PGPatcher"
+
+[[known_tools]]
+exe = "Pandora Behaviour Engine+.exe"
+title = "Pandora"
+
+[[known_tools]]
+exe = "Nemesis Unlimited Behavior Engine.exe"
+title = "Nemesis"
+
+[[known_tools]]
+exe = "GenerateFNISforUsers.exe"
+title = "FNIS"
+
+[[known_tools]]
+exe = "BodySlide x64.exe"
+title = "BodySlide x64"
+
+[[known_tools]]
+exe = "DynDOLODx64.exe"
+title = "DynDOLOD"
+
+[[known_tools]]
+exe = "TexGenx64.exe"
+title = "TexGen"
+
+[[known_tools]]
+exe = "xLODGenx64.exe"
+title = "xLODGen"
+
+[[known_tools]]
+exe = "Synthesis.exe"
+title = "Synthesis"

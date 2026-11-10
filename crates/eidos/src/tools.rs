@@ -274,6 +274,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 // Seed known tools' runtime prereqs (BodySlide -> d3dx, Synthesis ->
                 // dotnet...); the user can edit tools.ini to override.
                 prereqs: eidos_instance::default_prereqs(title),
+                output_mod: eidos_instance::default_output_mod(title),
                 // Set through the GUI's Executables editor, or by hand.
                 ..Default::default()
             });

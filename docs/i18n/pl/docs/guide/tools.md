@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=aee189cad83fedb3105dc28dc6b9a5972f05cabb -->
 
 # Narzędzia: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -19,6 +19,8 @@ edycji, przed którymi LOOT wciąż ostrzega. Eidos szuka ich, po nazwie pliku, 
 - **`mods/` tej instancji**, czyli tam, gdzie użytkownicy MO2 instalują narzędzia;
 - **folderze narzędzi** ustawionym w Preferences (General -> Tools), dla
   katalogu współdzielonego między instancjami - `/mnt/Games/Tools` i podobnych.
+
+Popularne generatory są znajdowane w ten sam sposób, każdy dla gier, które obsługuje: Pandora, Nemesis, FNIS, BodySlide, DynDOLOD, TexGen, xLODGen i Synthesis.
 
 `PGPatcher.exe` jest znajdowany tak samo w grach na Creation Engine i przychodzi z argumentem, bez ktorego nie zadziala - zobacz [ponizej](#dlaczego-pgpatcher-potrzebuje---ignore-mo2vfscheck).
 
@@ -123,6 +125,8 @@ tego do tamtego moda:
 ```
 Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 ```
+
+Pandora, Nemesis, FNIS, BodySlide i Synthesis trafiają na listę z ustawionym już modem przechwytującym: `Pandora Output`, `Nemesis Output`, `FNIS Output`, `BodySlide Output` i `Synthesis Output`. DynDOLOD, TexGen i xLODGen trafiają bez niego, bo zapisują do folderu wyjściowego, który im podasz.
 
 Mod jest tworzony, jeśli nie istnieje. Przenoszone są tylko pliki wytworzone
 przez TO uruchomienie; cokolwiek już było w Overwrite, tam zostaje, więc dwa

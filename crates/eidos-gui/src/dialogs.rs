@@ -1300,6 +1300,10 @@ fn output_mod_field<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> 
     let none = t("exe_output_none");
     let mut choices: Vec<String> = vec![none.to_string()];
     choices.extend(state.mod_names.iter().cloned());
+    // A seeded capture mod does not exist until the first run; keep it selectable.
+    if !state.output_mod.trim().is_empty() && !choices.contains(&state.output_mod) {
+        choices.push(state.output_mod.clone());
+    }
     let selected = if state.output_mod.trim().is_empty() {
         Some(none.to_string())
     } else {

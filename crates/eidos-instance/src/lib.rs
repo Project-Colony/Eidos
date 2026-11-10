@@ -57,9 +57,9 @@ pub use registry::{registry_path, InstanceRef, Registry};
 pub use sessions::{SessionMod, SessionRecord, KEEP_SESSIONS};
 pub use settings::Settings;
 pub use tools::{
-    default_args, default_prereqs, default_tools, default_tools_in, default_tools_in_view,
-    is_mod_folder_name, merge_tools, read_tools, root_executable, root_executable_source,
-    tool_search_roots, write_tools, GameExecutables, Runner, Tool,
+    default_args, default_output_mod, default_prereqs, default_tools, default_tools_in,
+    default_tools_in_view, is_mod_folder_name, merge_tools, read_tools, root_executable,
+    root_executable_source, tool_search_roots, write_tools, GameExecutables, Runner, Tool,
 };
 
 /// Where an instance is stored.

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=aee189cad83fedb3105dc28dc6b9a5972f05cabb -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -19,6 +19,8 @@ düzenlemelerin düğmesidir. Eidos onları dosya adına göre şuralarda arar:
 - MO2 kullanıcılarının araçları kurduğu yer olan **bu örneğin `mods/`** dizini;
 - örnekler arasında paylaşılan dizin için Tercihler'de belirlediğiniz **araçlar
   klasörü** (General -> Tools) - `/mnt/Games/Tools` ve benzerleri.
+
+Yaygın üreticiler de aynı yolla bulunur, her biri desteklediği oyunlarda: Pandora, Nemesis, FNIS, BodySlide, DynDOLOD, TexGen, xLODGen ve Synthesis.
 
 `PGPatcher.exe` Creation Engine oyunlarinda ayni sekilde bulunur ve onsuz calisamayacagi bir argumanla gelir - bkz. [asagisi](#pgpatcher-neden---ignore-mo2vfscheck-ister).
 
@@ -123,6 +125,8 @@ Executables düzenleyicisinde **Capture output into** ayarını verin; bu
 ```
 Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 ```
+
+Pandora, Nemesis, FNIS, BodySlide ve Synthesis, yakalama modu hazır ayarlı gelir: `Pandora Output`, `Nemesis Output`, `FNIS Output`, `BodySlide Output` ve `Synthesis Output`. DynDOLOD, TexGen ve xLODGen ise vermeniz gereken çıktı klasörüne yazdıkları için bu ayar olmadan gelir.
 
 Mod yoksa oluşturulur. Yalnızca BU çalıştırmanın ürettiği dosyalar taşınır;
 Overwrite'ta zaten bulunan ne varsa orada kalır, böylece yakalama hedefi olan

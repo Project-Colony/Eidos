@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=aee189cad83fedb3105dc28dc6b9a5972f05cabb -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -19,6 +19,8 @@ voor waarschuwt. Eidos zoekt ernaar, op bestandsnaam, in:
 - **de `mods/` van deze instantie**, waar MO2-gebruikers hun tools installeren;
 - de **tools folder** die je in Preferences instelt (General -> Tools), voor de
   map die tussen instanties gedeeld wordt - `/mnt/Games/Tools` en dergelijke.
+
+De gangbare generatoren worden op dezelfde manier gevonden, elk bij de spellen die het ondersteunt: Pandora, Nemesis, FNIS, BodySlide, DynDOLOD, TexGen, xLODGen en Synthesis.
 
 `PGPatcher.exe` wordt op dezelfde manier gevonden bij de Creation Engine-spellen, en komt met een argument waarzonder het niet kan werken - zie [hieronder](#waarom-pgpatcher---ignore-mo2vfscheck-nodig-heeft).
 
@@ -125,6 +127,8 @@ gaat in plaats daarvan naar die mod:
 ```
 Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 ```
+
+Pandora, Nemesis, FNIS, BodySlide en Synthesis komen met een al ingestelde opvangmod: `Pandora Output`, `Nemesis Output`, `FNIS Output`, `BodySlide Output` en `Synthesis Output`. DynDOLOD, TexGen en xLODGen komen zonder, omdat ze naar de uitvoermap schrijven die je opgeeft.
 
 De mod wordt aangemaakt als hij niet bestaat. Alleen de bestanden die DEZE draai
 voortbracht verhuizen; wat al in de Overwrite stond blijft daar, zodat twee tools

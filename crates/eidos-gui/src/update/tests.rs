@@ -7762,3 +7762,18 @@ mod cleaning {
         assert!(app.status.as_deref().unwrap().contains("Game"));
     }
 }
+
+#[test]
+fn typing_a_generator_title_seeds_its_capture_mod_only_while_empty() {
+    let (mut app, _root) = list_app(&["A"]);
+    let _ = update_inner(&mut app, Message::ShowExecutablesDialog);
+    let _ = update_inner(&mut app, Message::AddExecutableTool);
+    let _ = update_inner(&mut app, Message::ToolTitleChanged("Nemesis".into()));
+    assert_eq!(
+        app.executables.as_ref().unwrap().output_mod,
+        "Nemesis Output"
+    );
+    let _ = update_inner(&mut app, Message::ToolOutputModChanged("Mine".into()));
+    let _ = update_inner(&mut app, Message::ToolTitleChanged("Nemesis 2".into()));
+    assert_eq!(app.executables.as_ref().unwrap().output_mod, "Mine");
+}

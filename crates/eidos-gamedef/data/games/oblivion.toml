@@ -26,3 +26,7 @@ title = "TES4Edit QuickAutoClean"
 [[known_tools]]
 exe = "PGPatcher.exe"
 title = "PGPatcher"
+
+[[known_tools]]
+exe = "xLODGenx64.exe"
+title = "xLODGen"

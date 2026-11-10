@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=aee189cad83fedb3105dc28dc6b9a5972f05cabb -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -19,6 +19,8 @@ edits, na které LOOT pořád upozorňuje. Eidos je hledá podle názvu souboru 
 - **`mods/` této instance**, kam si nástroje instalují uživatelé MO2;
 - **tools folder**, který nastavíte v Preferences (General -> Tools), pro
   adresář sdílený mezi instancemi - `/mnt/Games/Tools` a podobně.
+
+Obvyklé generátory se najdou stejným způsobem, každý u her, které podporuje: Pandora, Nemesis, FNIS, BodySlide, DynDOLOD, TexGen, xLODGen a Synthesis.
 
 `PGPatcher.exe` se stejnym zpusobem najde u her na Creation Engine a prichazi s argumentem, bez ktereho nemuze pracovat - viz [nize](#proc-pgpatcher-potrebuje---ignore-mo2vfscheck).
 
@@ -120,6 +122,8 @@ toho do zvoleného módu:
 ```
 Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 ```
+
+Pandora, Nemesis, FNIS, BodySlide a Synthesis přijdou s už nastaveným cílovým modem: `Pandora Output`, `Nemesis Output`, `FNIS Output`, `BodySlide Output` a `Synthesis Output`. DynDOLOD, TexGen a xLODGen přijdou bez něj, protože zapisují do výstupní složky, kterou jim zadáte.
 
 Mód se vytvoří, pokud neexistuje. Přesunou se jen soubory, které vyrobil TENTO
 běh; cokoli už v Overwrite bylo, tam zůstane, takže dva nástroje s cílem pro

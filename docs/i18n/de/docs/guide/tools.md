@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=aee189cad83fedb3105dc28dc6b9a5972f05cabb -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -20,6 +20,8 @@ ist, vor denen LOOT ständig warnt. Eidos sucht danach, nach Dateiname, in:
 - dem **Tools folder**, den Sie in den Preferences festlegen (General -> Tools),
   für das zwischen Instanzen geteilte Verzeichnis - `/mnt/Games/Tools`
   und dergleichen.
+
+Die gängigen Generatoren werden auf dieselbe Weise gefunden, jeweils bei den Spielen, die sie unterstützen: Pandora, Nemesis, FNIS, BodySlide, DynDOLOD, TexGen, xLODGen und Synthesis.
 
 `PGPatcher.exe` wird auf den Creation-Engine-Spielen genauso gefunden, und es kommt mit einem Argument, ohne das es nicht arbeiten kann - siehe [unten](#warum-pgpatcher---ignore-mo2vfscheck-braucht).
 
@@ -127,6 +129,8 @@ Laufs geht stattdessen in jenen Mod:
 ```
 Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 ```
+
+Pandora, Nemesis, FNIS, BodySlide und Synthesis kommen mit bereits eingetragenem Zielmod: `Pandora Output`, `Nemesis Output`, `FNIS Output`, `BodySlide Output` und `Synthesis Output`. DynDOLOD, TexGen und xLODGen kommen ohne, weil sie in den Ausgabeordner schreiben, den Sie ihnen angeben.
 
 Der Mod wird angelegt, falls er nicht existiert. Nur die Dateien, die DIESER
 Lauf erzeugt hat, werden verschoben; was schon vorher im Overwrite lag, bleibt

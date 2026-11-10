@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=aee189cad83fedb3105dc28dc6b9a5972f05cabb -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -17,6 +17,8 @@ LOOT 一直在警告的 dirty edits 所对应的按钮。Eidos 按文件名在�
 - **本实例的 `mods/`**,MO2 用户就是把工具装在那里;
 - 你在偏好设置里指定的**工具文件夹**(General -> Tools),用于实例之间共享的
   那个目录 - 诸如 `/mnt/Games/Tools`。
+
+常用的生成器也用同样的方式查找，各自只在其支持的游戏中出现：Pandora、Nemesis、FNIS、BodySlide、DynDOLOD、TexGen、xLODGen 和 Synthesis。
 
 `PGPatcher.exe` 在 Creation Engine 系列游戏中以同样的方式被找到，并且带着一个缺了就无法工作的参数 - 见[下文](#为什么-pgpatcher-需要---ignore-mo2vfscheck)。
 
@@ -96,6 +98,8 @@ eidos tool /path/to/list import-mo2 --write   # 添加
 ```
 Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 ```
+
+Pandora、Nemesis、FNIS、BodySlide 和 Synthesis 添加时已设好捕获 mod：`Pandora Output`、`Nemesis Output`、`FNIS Output`、`BodySlide Output` 和 `Synthesis Output`。DynDOLOD、TexGen 和 xLODGen 没有预设，因为它们写入你指定的输出文件夹。
 
 模组不存在就会被创建。只有这次运行产生的文件会被移走;原本已经在 Overwrite
 里的东西留在原处,所以两个都设了捕获目标的工具不会偷走彼此的输出。什么都没写

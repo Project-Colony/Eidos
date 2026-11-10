@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=aee189cad83fedb3105dc28dc6b9a5972f05cabb -->
 
 # 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -19,6 +19,8 @@ Eidos를 통해 실행된 도구는 게임 자신의 Proton 프리픽스 안에�
 - **이 인스턴스의 `mods/`** - MO2 사용자가 도구를 설치하는 곳입니다;
 - Preferences에서 지정한 **tools folder** (General -> Tools), 인스턴스끼리 공유하는
   디렉터리용 - `/mnt/Games/Tools` 같은 것.
+
+자주 쓰는 생성기도 같은 방식으로 찾습니다. 각각 지원하는 게임에서만 대상이 됩니다. 대상은 Pandora, Nemesis, FNIS, BodySlide, DynDOLOD, TexGen, xLODGen, Synthesis입니다.
 
 `PGPatcher.exe`도 Creation Engine 게임에서 같은 방식으로 발견되며, 없으면 동작할 수 없는 인자와 함께 등록됩니다 - [아래](#pgpatcher에---ignore-mo2vfscheck가-필요한-이유) 참조.
 
@@ -102,6 +104,8 @@ Executables 편집기에서 **Capture output into**를 지정하면 이번 실�
 ```
 Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 ```
+
+Pandora, Nemesis, FNIS, BodySlide, Synthesis는 캡처 모드가 미리 지정된 채로 추가됩니다. `Pandora Output`, `Nemesis Output`, `FNIS Output`, `BodySlide Output`, `Synthesis Output`입니다. DynDOLOD, TexGen, xLODGen은 사용자가 지정한 출력 폴더에 기록하므로 지정되지 않습니다.
 
 모드가 없으면 만들어집니다. 이번 실행이 만들어낸 파일만 옮겨집니다; 이미
 Overwrite에 있던 것은 그대로 남으므로, 캡처 대상이 있는 도구 둘이 서로의 출력을

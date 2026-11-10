@@ -518,6 +518,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         state.args_editor = iced::widget::text_editor::Content::with_text(&seeded);
                     }
                 }
+                if state.output_mod.trim().is_empty() {
+                    if let Some(m) = eidos_instance::default_output_mod(&s) {
+                        state.output_mod = m;
+                    }
+                }
                 state.title = s;
             }
         }

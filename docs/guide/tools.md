@@ -21,6 +21,8 @@ file name, in:
 - the **tools folder** you set in Preferences (General -> Tools), for the
   directory shared between instances - `/mnt/Games/Tools` and the like.
 
+The usual generators are found the same way, each on the games it supports: Pandora, Nemesis, FNIS, BodySlide, DynDOLOD, TexGen, xLODGen and Synthesis.
+
 The list is per game, so a Skyrim instance is never offered Fallout's editor.
 The search stops four levels down, because a mod pool is hundreds of thousands
 of files and this runs every time the tool list is built, and it does not follow
@@ -117,6 +119,8 @@ instead:
 ```
 Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 ```
+
+Pandora, Nemesis, FNIS, BodySlide and Synthesis arrive with a capture mod already set: `Pandora Output`, `Nemesis Output`, `FNIS Output`, `BodySlide Output` and `Synthesis Output`. DynDOLOD, TexGen and xLODGen arrive without one, because they write to the output folder you give them.
 
 The mod is created if it does not exist. Only the files THIS run produced move;
 anything that was already in the Overwrite stays there, so two tools with capture

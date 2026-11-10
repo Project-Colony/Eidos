@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=aee189cad83fedb3105dc28dc6b9a5972f05cabb -->
 
 # Инструменты: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -19,6 +19,8 @@ Overwrite, откуда одним щелчком превращается в н
 - **`mods/` этой инстанции**, куда инструменты ставят пользователи MO2;
 - **папке инструментов**, заданной в Preferences (General -> Tools), для
   каталога, общего для нескольких инстанций - `/mnt/Games/Tools` и тому подобное.
+
+Распространённые генераторы находятся так же, каждый для игр, которые он поддерживает: Pandora, Nemesis, FNIS, BodySlide, DynDOLOD, TexGen, xLODGen и Synthesis.
 
 `PGPatcher.exe` находится тем же способом в играх на Creation Engine и приходит с аргументом, без которого не может работать - см. [ниже](#почему-pgpatcher-требует---ignore-mo2vfscheck).
 
@@ -123,6 +125,8 @@ eidos tool /path/to/list import-mo2 --write   # добавить
 ```
 Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 ```
+
+Pandora, Nemesis, FNIS, BodySlide и Synthesis появляются с уже заданным модом для перехвата: `Pandora Output`, `Nemesis Output`, `FNIS Output`, `BodySlide Output` и `Synthesis Output`. DynDOLOD, TexGen и xLODGen появляются без него, потому что пишут в выходную папку, которую вы им укажете.
 
 Мод создаётся, если его нет. Переносятся только файлы, созданные ЭТИМ запуском;
 всё, что уже было в Overwrite, там и остаётся, поэтому два инструмента с целями

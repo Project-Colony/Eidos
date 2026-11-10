@@ -27,3 +27,15 @@ title = "FO3Edit QuickAutoClean"
 [[known_tools]]
 exe = "PGPatcher.exe"
 title = "PGPatcher"
+
+[[known_tools]]
+exe = "BodySlide x64.exe"
+title = "BodySlide x64"
+
+[[known_tools]]
+exe = "BodySlide.exe"
+title = "BodySlide"
+
+[[known_tools]]
+exe = "xLODGenx64.exe"
+title = "xLODGen"

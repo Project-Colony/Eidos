@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=aee189cad83fedb3105dc28dc6b9a5972f05cabb -->
 
 # ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -19,6 +19,8 @@ Fallout 4 なら `FO4Edit.exe`、Skyrim SE なら `SSEEdit.exe`、初代なら
 - **このインスタンスの `mods/`**。MO2 の利用者がツールを入れる場所です;
 - 環境設定で指定した**ツールフォルダ**(General -> Tools)。インスタンス間で
   共有するディレクトリ - `/mnt/Games/Tools` のようなもののためです。
+
+よく使われるジェネレーターも同じ方法で見つかります。それぞれ対応するゲームでのみ対象になります。対象は Pandora、Nemesis、FNIS、BodySlide、DynDOLOD、TexGen、xLODGen、Synthesis です。
 
 `PGPatcher.exe` も Creation Engine 系のゲームで同じように見つかり、これがないと動作できない引数とともに登録されます - [下記](#pgpatcher-に---ignore-mo2vfscheck-が要る理由)を参照。
 
@@ -103,6 +105,8 @@ Executables のエディタで **Capture output into** を設定すると、そ�
 ```
 Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 ```
+
+Pandora、Nemesis、FNIS、BodySlide、Synthesis には、取り込み先の mod があらかじめ設定されます。`Pandora Output`、`Nemesis Output`、`FNIS Output`、`BodySlide Output`、`Synthesis Output` です。DynDOLOD、TexGen、xLODGen は、指定した出力フォルダーに書き込むため、設定されません。
 
 MOD が無ければ作られます。動くのはこの実行が生んだファイルだけで、すでに
 Overwrite にあったものはそのまま残ります。だから取り込み先を持つ二つのツールが

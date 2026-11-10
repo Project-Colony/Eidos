@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=aee189cad83fedb3105dc28dc6b9a5972f05cabb -->
 
 # Ferramentas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -21,6 +21,8 @@ nome do arquivo, em:
 - a **pasta de ferramentas** que você define em Preferences (General -> Tools),
   para o diretório compartilhado entre instâncias - `/mnt/Games/Tools`
   e afins.
+
+Os geradores mais comuns são encontrados do mesmo jeito, cada um nos jogos que suporta: Pandora, Nemesis, FNIS, BodySlide, DynDOLOD, TexGen, xLODGen e Synthesis.
 
 `PGPatcher.exe` e encontrado da mesma forma nos jogos Creation Engine, e chega com um argumento sem o qual nao consegue funcionar - veja [abaixo](#por-que-o-pgpatcher-precisa-de---ignore-mo2vfscheck).
 
@@ -125,6 +127,8 @@ para aquele mod:
 ```
 Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 ```
+
+Pandora, Nemesis, FNIS, BodySlide e Synthesis já vêm com um mod de captura definido: `Pandora Output`, `Nemesis Output`, `FNIS Output`, `BodySlide Output` e `Synthesis Output`. DynDOLOD, TexGen e xLODGen vêm sem ele, porque gravam na pasta de saída que você indicar.
 
 O mod é criado se não existir. Só os arquivos que ESTA execução produziu se
 movem; qualquer coisa que já estava no Overwrite fica lá, então duas ferramentas

@@ -556,8 +556,21 @@ mod tests {
         };
         assert_eq!(
             tools("skyrimse"),
-            ["SSEEdit.exe", "SSEEditQuickAutoClean.exe", "PGPatcher.exe"]
+            [
+                "SSEEdit.exe",
+                "SSEEditQuickAutoClean.exe",
+                "PGPatcher.exe",
+                "Pandora Behaviour Engine+.exe",
+                "Nemesis Unlimited Behavior Engine.exe",
+                "GenerateFNISforUsers.exe",
+                "BodySlide x64.exe",
+                "DynDOLODx64.exe",
+                "TexGenx64.exe",
+                "xLODGenx64.exe",
+                "Synthesis.exe"
+            ]
         );
+        assert_eq!(tools("oblivion").last(), Some(&"xLODGenx64.exe"));
         assert_eq!(tools("stardewvalley"), ["StardewModdingAPI.exe"]);
         assert!(tools("morrowind").is_empty());
     }
