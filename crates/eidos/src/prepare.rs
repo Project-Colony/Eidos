@@ -81,12 +81,14 @@ fn plugin_diagnostic_messages(
 /// of the plugin files, done with the mount namespace the saves already use.
 ///
 /// Best-effort - a game with no plugin system or no Proton prefix is simply
-/// skipped (`None`).
+/// skipped (`None`). `shadow_prefix` false (a test run) leaves the prefix's own
+/// plugin files alone.
 pub(crate) fn prepare_plugins(
     id: &str,
     game: &DetectedGame,
     inst: &Instance,
     prof: &eidos_instance::Profile,
+    shadow_prefix: bool,
 ) -> Option<(PathBuf, PathBuf)> {
     for d in runtime_diagnostics(game, inst) {
         eidos_log::warn!(
@@ -179,7 +181,7 @@ pub(crate) fn prepare_plugins(
     // copy of anything. External tools (LOOT, xEdit run outside Eidos) read the
     // prefix, and if the bind ever fails the game reads exactly what a pre-bind
     // session would have. Never fatal.
-    if spec.mechanism != eidos_plugins::LoadOrderMechanism::Timestamp {
+    if shadow_prefix && spec.mechanism != eidos_plugins::LoadOrderMechanism::Timestamp {
         let _ = list.write_load_order(&prefix_dir, &spec);
     }
 
@@ -787,7 +789,7 @@ mod rescue_tests {
         .unwrap();
         let prof = inst.active();
         fs::write(prof.tweaks_path(), "[General]\nValue=2\n").unwrap();
-        let binding = prepare_plugins("morrowind", &game, &inst, &prof).unwrap();
+        let binding = prepare_plugins("morrowind", &game, &inst, &prof, true).unwrap();
         assert_eq!(binding.1, game.install_path);
         let prepared = prepare_inis("morrowind", &game, &inst, &prof)
             .unwrap()
@@ -930,7 +932,7 @@ mod rescue_tests {
             .unwrap();
             let profile = inst.profile(if root_mode { "Root" } else { "Documents" });
             fs::create_dir_all(profile.dir()).unwrap();
-            let bind = prepare_plugins("oblivion", &game, &inst, &profile).unwrap();
+            let bind = prepare_plugins("oblivion", &game, &inst, &profile, true).unwrap();
             assert_eq!(
                 bind.1,
                 if root_mode {
@@ -968,6 +970,70 @@ mod rescue_tests {
                 "Oblivion.esm\n"
             );
         }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_test_run_leaves_the_prefix_plugin_files_alone() {
+        let root =
+            std::env::temp_dir().join(format!("eidos-test-run-plugins-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let inst = Instance::portable(root.join("instance"));
+        inst.create().unwrap();
+        let moddir = inst.mods_dir().join("A");
+        fs::create_dir_all(&moddir).unwrap();
+        engine_plugin(&moddir.join("A.esp"), false);
+        inst.save_modlist(&[ModEntry {
+            name: "A".into(),
+            path: moddir,
+            enabled: true,
+            unmanaged: false,
+        }])
+        .unwrap();
+        // Not a Steam copy: the host findings inside prepare_plugins would read
+        // localconfig.vdf and the Proton script under the real HOME.
+        let prefix = root.join("prefix");
+        let game = DetectedGame {
+            def: eidos_games::GameDef::for_id("skyrimse").unwrap(),
+            source: eidos_games::GameSource::External {
+                store: eidos_games::Store::Gog,
+                app_id: "synthetic".into(),
+                prefix: Some(prefix.clone()),
+                heroic: true,
+                runner: None,
+            },
+            install_path: root.join("game"),
+            data_path: root.join("game/Data"),
+            compatdata: None,
+            steam_name: String::new(),
+        };
+        fs::create_dir_all(&game.data_path).unwrap();
+        let spec = game.plugin_spec().unwrap();
+        let prefix_dir = eidos_plugins::plugin_state_dir(&prefix, &game.install_path, &spec);
+        fs::create_dir_all(&prefix_dir).unwrap();
+        fs::write(prefix_dir.join("plugins.txt"), "*Old.esp\n").unwrap();
+        // The working copy a begun test run makes of the real profile.
+        inst.request_test_run(&eidos_instance::TestRun {
+            profile: "Default".into(),
+            game: "skyrimse".into(),
+            ..Default::default()
+        })
+        .unwrap();
+        inst.begin_test_run(&inst.active(), "skyrimse", &[], None, false, 200)
+            .unwrap()
+            .unwrap();
+        let test = inst.test_run_profile();
+        let bind = prepare_plugins("skyrimse", &game, &inst, &test, false).unwrap();
+        assert_eq!(bind.0, test.plugins_state_dir());
+        assert_eq!(
+            fs::read_to_string(prefix_dir.join("plugins.txt")).unwrap(),
+            "*Old.esp\n"
+        );
+        assert!(
+            fs::read_to_string(test.plugins_state_dir().join("plugins.txt"))
+                .unwrap()
+                .contains("A.esp")
+        );
         fs::remove_dir_all(root).unwrap();
     }
 

@@ -989,14 +989,7 @@ impl Instance {
     /// contribute nothing, so an ordinary load order returns an empty vec and no
     /// second mount happens at all.
     pub fn root_layers(&self) -> Vec<PathBuf> {
-        // `modlist()` is display order (lowest priority first); the union wants
-        // highest first, so walk it in reverse.
-        self.modlist()
-            .into_iter()
-            .rev()
-            .filter(|m| m.is_active())
-            .filter_map(|m| find_root_dir(&m.path))
-            .collect()
+        self.active().root_layers()
     }
 
     /// Downloaded mod archives land here (`<root>/downloads/`), each with its

@@ -314,6 +314,19 @@ impl Profile {
         (out, trust)
     }
 
+    /// The `Root/` directories of this profile's enabled mods, highest priority
+    /// FIRST, as [`crate::Instance::root_layers`] gives them for the active one.
+    pub fn root_layers(&self) -> Vec<PathBuf> {
+        // `modlist()` is display order (lowest priority first); the union wants
+        // highest first, so walk it in reverse.
+        self.modlist()
+            .into_iter()
+            .rev()
+            .filter(|m| m.is_active())
+            .filter_map(|m| crate::find_root_dir(&m.path))
+            .collect()
+    }
+
     /// Persist this profile's mod list (`+Name` enabled, `-Name` disabled).
     ///
     /// Written atomically (MO2's `SafeWriteFile`/`QSaveFile`): the content goes to
