@@ -184,16 +184,22 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
                 &[("n", &(app.hidden_saves.len() - 10))],
             ));
         }
+        // Fill and clipped: Shrink children are laid out first, so the Import
+        // button keeps its width however long the one-line notice is.
         folder = folder
-            .push(tooltip(
-                text(tf("saves_hidden_notice", &[("n", &app.hidden_saves.len())]))
-                    .size(sz(11))
-                    .wrapping(iced::widget::text::Wrapping::None),
-                container(text(names).size(sz(11)))
-                    .padding(6)
-                    .style(card_style),
-                tooltip::Position::Bottom,
-            ))
+            .push(
+                container(tooltip(
+                    text(tf("saves_hidden_notice", &[("n", &app.hidden_saves.len())]))
+                        .size(sz(11))
+                        .wrapping(iced::widget::text::Wrapping::None),
+                    container(text(names).size(sz(11)))
+                        .padding(6)
+                        .style(card_style),
+                    tooltip::Position::Bottom,
+                ))
+                .width(Length::Fill)
+                .clip(true),
+            )
             .push(
                 button(text(t("saves_import")).size(sz(11)))
                     .padding(4)

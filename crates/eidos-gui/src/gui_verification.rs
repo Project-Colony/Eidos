@@ -1333,4 +1333,22 @@ fn the_hidden_saves_notice_never_moves_the_save_rows() {
         .labels
         .iter()
         .any(|(s, _)| s == t("saves_import")));
+    // A list narrower than the one-line notice (the 0.6 split with a save
+    // selected) still leaves the Import button its own width.
+    let narrow = container(crate::modinfo::saves_panel(&app)).width(Length::Fixed(400.0));
+    let labels = positions(narrow.into(), &mut renderer).labels;
+    let (_, import) = labels
+        .iter()
+        .find(|(s, _)| s == t("saves_import"))
+        .unwrap_or_else(|| panic!("Missing Import: {labels:?}"));
+    assert!(
+        import.width > 0.0 && import.x + import.width <= 400.0,
+        "Import squeezed out: {labels:?}"
+    );
+    assert!(
+        labels
+            .iter()
+            .any(|(s, r)| s.ends_with("saves") && r.width > 0.0),
+        "saves folder squeezed out: {labels:?}"
+    );
 }
