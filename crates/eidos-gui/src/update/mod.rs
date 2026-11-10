@@ -1866,6 +1866,14 @@ fn normalize_fomod_step(w: &mut FomodWizard) {
 /// defect (stale meta rows, the other game's merged Data tree), so there must
 /// be exactly ONE copy of it.
 pub(crate) fn open_instance(app: &mut App, inst: Instance) {
+    // A clean belongs to the instance it was asked from: the rest of its queue
+    // must not run xEdit here, and one still running there (after Unlock)
+    // reports nothing here.
+    app.clean_queue.clear();
+    app.cleaning = app
+        .cleaning
+        .take()
+        .filter(|c| c.scratch.starts_with(&inst.root));
     app.created = Some(inst);
     // Another instance's LOOT verdicts must not decorate this one's plugins.
     app.loot_meta = None;

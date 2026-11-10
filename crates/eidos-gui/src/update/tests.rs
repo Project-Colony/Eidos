@@ -6769,6 +6769,112 @@ mod cleaning {
     }
 
     #[test]
+    fn the_dirty_card_stays_while_a_queued_clean_runs() {
+        let (mut app, root) = list_app(&["Base"]);
+        let dirty = ["A.esp", "B.esp", "C.esp"];
+        for p in dirty {
+            fs::write(root.join("mods/Base").join(p), tes4_header(0)).unwrap();
+        }
+        app.plugins = compute_plugins(&app);
+        for p in &mut app.plugins.as_mut().unwrap().plugins {
+            p.enabled = true;
+        }
+        app.loot_meta = Some(
+            dirty
+                .iter()
+                .map(|p| {
+                    let bundle = eidos_loot::PluginMetadataBundle {
+                        dirty_info: vec![eidos_loot::LootDirtyInfo {
+                            crc: 1,
+                            cleaning_utility: "SSEEdit".into(),
+                            itm_count: 3,
+                            deleted_reference_count: 0,
+                            deleted_navmesh_count: 0,
+                        }],
+                        ..Default::default()
+                    };
+                    (p.to_ascii_lowercase(), bundle)
+                })
+                .collect(),
+        );
+        app.tools = vec![qac()];
+        let cleaning = |plugin: &str| Cleaning {
+            plugin: plugin.into(),
+            scratch: root.join("logs/qac-1"),
+            source: None,
+        };
+        let card = |names: &[&str], plugin: &str, left: usize| {
+            Some(DirtyCard {
+                names: names.iter().map(|n| n.to_string()).collect(),
+                slot: DirtySlot::Cleaning {
+                    plugin: plugin.into(),
+                    left,
+                },
+            })
+        };
+        // Clean all 3 from idle: A runs.
+        app.cleaning = Some(cleaning("A.esp"));
+        app.clean_queue = ["B.esp".to_string(), "C.esp".to_string()].into();
+        assert_eq!(dirty_card(&app), card(&dirty, "A.esp", 2));
+        // A exited: finish_run dropped the LOOT verdicts, and B runs.
+        invalidate_plugins(&mut app);
+        assert!(app.loot_meta.is_none());
+        app.cleaning = Some(cleaning("B.esp"));
+        app.clean_queue = ["C.esp".to_string()].into();
+        assert_eq!(dirty_card(&app), card(&["B.esp", "C.esp"], "B.esp", 1));
+        // Clean all while a game runs: the game exited and A is next.
+        app.cleaning = None;
+        app.clean_queue = dirty.iter().map(|p| p.to_string()).collect();
+        assert_eq!(dirty_card(&app), card(&dirty, "A.esp", 2));
+        // The last clean ended.
+        app.clean_queue.clear();
+        assert_eq!(dirty_card(&app), None);
+    }
+
+    #[test]
+    fn a_clean_queue_stays_in_its_instance() {
+        let (mut app, root) = list_app(&[]);
+        app.tools = vec![qac()];
+        start_run(
+            &mut app,
+            "SSEEdit QuickAutoClean".into(),
+            std::process::Command::new("/bin/true"),
+        );
+        let scratch = root.join("logs/qac-5");
+        fs::create_dir_all(&scratch).unwrap();
+        fs::write(scratch.join(QAC_LOG), "[00:03] Done: Removing \"Identical to Master\" records, Processed Records: 9, Removed Records: 1, Elapsed Time: 00:01\n[00:04] Saving: Dawnguard.esm\n").unwrap();
+        let source = PluginSource {
+            name: "Dawnguard.esm".into(),
+            size: 10,
+            mtime: 1,
+        };
+        let done = || Cleaning {
+            plugin: "Dawnguard.esm".into(),
+            scratch: scratch.clone(),
+            source: Some(source.clone()),
+        };
+        app.cleaning = Some(done());
+        app.clean_queue = ["Hearthfires.esm".to_string()].into();
+        // Unlock, then open another instance that has a Cleaned plugins mod.
+        let (other, other_root) = list_app(&["Cleaned plugins"]);
+        fs::write(
+            other_root.join("mods/Cleaned plugins/Dawnguard.esm"),
+            b"clean",
+        )
+        .unwrap();
+        open_instance(&mut app, other.created.unwrap());
+        app.tools = vec![qac()];
+        assert!(app.clean_queue.is_empty() && app.cleaning.is_none());
+        super::finish_tracked_run(&mut app);
+        let meta = other_root.join("mods/Cleaned plugins/meta.ini");
+        assert!(!meta.exists());
+        // finish_clean on its own leaves a clean from another instance alone.
+        assert!(!finish_clean(&mut app, done()));
+        assert!(!meta.exists());
+        assert!(scratch.exists());
+    }
+
+    #[test]
     fn only_games_with_an_xedit_and_loot_dirty_data_get_the_dirty_card() {
         let mut with: Vec<&str> = eidos_games::catalog()
             .iter()

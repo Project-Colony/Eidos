@@ -934,6 +934,15 @@ pub(crate) fn start_next_clean(app: &mut App) {
 /// Report a finished clean from xEdit's log and record the copy's source.
 /// `false` when the clean did not do its job, so the queue stops.
 pub(crate) fn finish_clean(app: &mut App, done: Cleaning) -> bool {
+    // The scratch is `<root>/logs/qac-N`: a clean from an instance that is no
+    // longer open (Restart after Unlock) is neither reported nor recorded here.
+    if !app
+        .created
+        .as_ref()
+        .is_some_and(|i| done.scratch.starts_with(&i.root))
+    {
+        return false;
+    }
     let run_log = app
         .running
         .as_ref()

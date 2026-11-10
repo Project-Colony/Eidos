@@ -1146,25 +1146,38 @@ pub(crate) struct DirtyCard {
 }
 
 /// The dirty-plugin card for the open setup, from App state only (no IO), so
-/// the view can call it. `None` for a game without one, before a LOOT sort,
-/// or when no enabled plugin is flagged.
+/// the view can call it. `None` for a game without one, or when no enabled
+/// plugin is flagged (or no LOOT sort ran) and no clean runs or waits.
 pub(crate) fn dirty_card(app: &App) -> Option<DirtyCard> {
     if !selected_game(app).is_some_and(|g| has_dirty_card(g.def)) {
         return None;
     }
-    let meta = app.loot_meta.as_ref()?;
-    let names: Vec<String> = app
-        .plugins
-        .as_ref()?
-        .plugins
-        .iter()
-        .filter(|p| p.enabled)
-        .filter(|p| {
-            meta.get(&p.name.to_ascii_lowercase())
-                .is_some_and(|b| b.needs_cleaning())
+    let mut names: Vec<String> = app
+        .loot_meta
+        .as_ref()
+        .zip(app.plugins.as_ref())
+        .map(|(meta, list)| {
+            list.plugins
+                .iter()
+                .filter(|p| p.enabled)
+                .filter(|p| {
+                    meta.get(&p.name.to_ascii_lowercase())
+                        .is_some_and(|b| b.needs_cleaning())
+                })
+                .map(|p| p.name.clone())
+                .collect()
         })
-        .map(|p| p.name.clone())
-        .collect();
+        .unwrap_or_default();
+    if names.is_empty() {
+        // `finish_run` drops the LOOT verdicts after every run, so a queue that
+        // goes on keeps its card, and its slot, from the plugins left to clean.
+        names = app
+            .cleaning
+            .iter()
+            .map(|c| c.plugin.clone())
+            .chain(app.clean_queue.iter().cloned())
+            .collect();
+    }
     if names.is_empty() {
         return None;
     }
