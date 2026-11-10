@@ -537,7 +537,7 @@ mount: the first three are for the mod manager, and `Root/` goes to the game
 folder instead. A file the game or a tool writes under one of those names lands
 in the Overwrite and stays visible. **Plugins** is the
 ESP/ESM/ESL load order (toggle, reorder by hand, or sort with LOOT and read the
-post-sort report, whose advice links open in your browser). **Conflicts**
+post-sort report, whose advice links open in your browser). Its header counts the enabled plugins in each index space against the game's limit, for example `full 231/254, light 512/4096`, and turns orange when one is full. **Conflicts**
 explains the per-file winners and losers. **Overwrite** turns what the game wrote
 into a real mod in one step. **Saves** parses each save's header - character,
 level, location, playtime - and diffs the plugin list baked into it against your

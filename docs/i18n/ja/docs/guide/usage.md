@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=aad8b7a5aeb97c7e2dbf0df01ff33a1c759ff0e9 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=dae685f644442ee57909a3c2b80543d39adc4c42 -->
 
 # Eidos の使い方
 
@@ -514,7 +514,7 @@ MOD の Information の General タブには、その MOD が必要とする MOD
 マネージャで Reveal できます。
 MOD の最上位にある `meta.ini`、`readme.txt`、`fomod/`、`Root/` は、このタブでもマウントでも Data に含まれません。最初の三つは MOD マネージャ用で、`Root/` は代わりにゲームフォルダへ入ります。ゲームやツールがこれらの名前で書いたファイルは Overwrite に入り、表示されたままです。**Plugins** は ESP/ESM/ESL のロード順です
 (切り替え、手での並べ替え、あるいは LOOT での並べ替えと、その後のレポートの
-閲覧。レポートの助言のリンクはブラウザで開きます)。**Conflicts** はファイル
+閲覧。レポートの助言のリンクはブラウザで開きます)。ヘッダには、有効なプラグインの数がインデックス空間ごとにゲームの上限と並んで表示され(例: `full 231/254, light 512/4096`)、どれかが満杯になるとオレンジ色になります。**Conflicts** はファイル
 ごとの勝ち負けを説明します。**Overwrite** はゲームが書いたものを一手で本物の
 MOD に変えます。**Saves** は各セーブのヘッダを解析し - キャラクター、レベル、
 場所、プレイ時間 - そこに焼き込まれたプラグイン一覧を今のものと突き合わせ、

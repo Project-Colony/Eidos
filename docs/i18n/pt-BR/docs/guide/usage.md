@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=aad8b7a5aeb97c7e2dbf0df01ff33a1c759ff0e9 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=dae685f644442ee57909a3c2b80543d39adc4c42 -->
 
 # Usar o Eidos
 
@@ -569,7 +569,7 @@ e `Root/` vai para a pasta do jogo. Um arquivo que o jogo ou uma ferramenta
 grava com um desses nomes vai para o Overwrite e continua visível.
 **Plugins** é a ordem de carga dos ESP/ESM/ESL (ligar e desligar, reordenar à
 mão, ou ordenar com o LOOT e ler o relatório pós-ordenação, cujos links de
-conselho abrem no seu navegador). **Conflicts** explica os vencedores e os
+conselho abrem no seu navegador). O cabeçalho conta os plugins ativos de cada espaço de índices contra o limite do jogo, por exemplo `full 231/254, light 512/4096`, e fica laranja quando um deles está cheio. **Conflicts** explica os vencedores e os
 perdedores arquivo por arquivo. **Overwrite** transforma o que o jogo escreveu
 num mod de verdade, em um passo. **Saves** lê o cabeçalho de cada save -
 personagem, nível, local, tempo de jogo - e compara a lista de plugins gravada

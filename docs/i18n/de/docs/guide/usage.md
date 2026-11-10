@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=aad8b7a5aeb97c7e2dbf0df01ff33a1c759ff0e9 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=dae685f644442ee57909a3c2b80543d39adc4c42 -->
 
 # Eidos verwenden
 
@@ -610,7 +610,7 @@ das Spiel oder ein Werkzeug unter einem dieser Namen schreibt, landet im
 Overwrite und bleibt sichtbar.
 **Plugins** ist die ESP/ESM/ESL-Ladereihenfolge (umschalten, von Hand umsortieren
 oder mit LOOT sortieren und den Bericht danach lesen, dessen Ratschlag-Links sich
-im Browser öffnen). **Conflicts** erklärt die Gewinner und Verlierer je Datei.
+im Browser öffnen). Seine Kopfzeile zählt die aktiven Plugins je Indexraum gegen das Limit des Spiels, zum Beispiel `full 231/254, light 512/4096`, und wird orange, sobald einer voll ist. **Conflicts** erklärt die Gewinner und Verlierer je Datei.
 **Overwrite** macht in einem Schritt eine echte Mod aus dem, was das Spiel
 geschrieben hat. **Saves** liest den Kopf jedes Spielstands - Charakter, Stufe,
 Ort, Spielzeit - und vergleicht die darin eingebackene Plugin-Liste mit Ihrer

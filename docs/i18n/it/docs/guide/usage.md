@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=aad8b7a5aeb97c7e2dbf0df01ff33a1c759ff0e9 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=dae685f644442ee57909a3c2b80543d39adc4c42 -->
 
 # Usare Eidos
 
@@ -597,7 +597,7 @@ servono al gestore di mod, e `Root/` va invece nella cartella del gioco. Un file
 che il gioco o uno strumento scrive con uno di quei nomi finisce nell'Overwrite
 e resta visibile. **Plugins** è l'ordine di caricamento ESP/ESM/ESL (attivare,
 riordinare a mano, oppure ordinare con LOOT e leggere il rapporto successivo,
-i cui link ai consigli si aprono nel tuo browser). **Conflicts** spiega
+i cui link ai consigli si aprono nel tuo browser). La sua intestazione conta i plugin attivi di ogni spazio di indici rispetto al limite del gioco, per esempio `full 231/254, light 512/4096`, e diventa arancione quando uno è pieno. **Conflicts** spiega
 vincitori e perdenti file per file. **Overwrite** trasforma in un passo quello
 che il gioco ha scritto in una vera mod. **Saves** analizza l'intestazione di
 ogni salvataggio - personaggio, livello, luogo, tempo di gioco - e confronta

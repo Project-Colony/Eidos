@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=aad8b7a5aeb97c7e2dbf0df01ff33a1c759ff0e9 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=dae685f644442ee57909a3c2b80543d39adc4c42 -->
 
 # Usar Eidos
 
@@ -586,7 +586,7 @@ archivo que el juego o una herramienta escribe con uno de esos nombres va a
 parar al Overwrite y sigue visible.
 **Plugins** es el orden de carga de ESP/ESM/ESL (activar,
 reordenar a mano, u ordenar con LOOT y leer el informe posterior, cuyos enlaces de
-consejo se abren en tu navegador). **Conflicts** explica los ganadores y
+consejo se abren en tu navegador). Su cabecera cuenta los plugins activos de cada espacio de índices frente al límite del juego, por ejemplo `full 231/254, light 512/4096`, y se pone naranja cuando uno está lleno. **Conflicts** explica los ganadores y
 perdedores archivo por archivo. **Overwrite** convierte lo que el juego escribió
 en un mod real en un solo paso. **Saves** analiza la cabecera de cada partida
 guardada - personaje, nivel, lugar, tiempo jugado - y compara la lista de plugins

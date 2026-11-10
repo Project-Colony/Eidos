@@ -115,6 +115,14 @@ impl GameSpec {
     }
 }
 
+/// Plugins used against the capacity of each index space, as `(used, capacity)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SlotUsage {
+    pub full: (u32, u32),
+    pub light: Option<(u32, u32)>,
+    pub medium: Option<(u32, u32)>,
+}
+
 /// One plugin in the load order.
 #[derive(Debug, Clone)]
 pub struct Plugin {
@@ -692,6 +700,30 @@ impl PluginList {
                 });
                 normal += 1;
             }
+        }
+    }
+
+    /// Plugins per index space against each space's capacity, counted exactly
+    /// as `generate_indexes` hands out indexes.
+    pub fn slot_usage(&self, spec: &GameSpec) -> SlotUsage {
+        let (light_ok, medium_ok) = (spec.light_supported(), spec.medium_supported());
+        let (mut full, mut light, mut medium) = (0, 0, 0);
+        for p in &self.plugins {
+            if !p.enabled || p.force_disabled || p.header_error.is_some() {
+                continue;
+            }
+            if medium_ok && p.is_medium {
+                medium += 1;
+            } else if light_ok && p.is_light {
+                light += 1;
+            } else {
+                full += 1;
+            }
+        }
+        SlotUsage {
+            full: (full, self.full_capacity(spec)),
+            light: light_ok.then_some((light, 4096)),
+            medium: medium_ok.then_some((medium, 256)),
         }
     }
 
@@ -1406,6 +1438,36 @@ mod tests {
 
     fn se() -> GameSpec {
         GameSpec::for_id("skyrimse").unwrap()
+    }
+
+    #[test]
+    fn slot_usage_counts_each_index_space_against_its_limit() {
+        let mut off = p("Off.esp", &[]);
+        off.enabled = false;
+        let list = PluginList {
+            plugins: vec![
+                p("Skyrim.esm", &[]),
+                p("A.esp", &[]),
+                p("B.esp", &[]),
+                p("C.esl", &[]),
+                p("D.esl", &[]),
+                off,
+            ],
+            ..Default::default()
+        };
+        assert_eq!(
+            list.slot_usage(&se()),
+            SlotUsage {
+                full: (3, 254),
+                light: Some((2, 4096)),
+                medium: None
+            }
+        );
+        let no_light = PluginList {
+            plugins: vec![p("Skyrim.esm", &[])],
+            ..Default::default()
+        };
+        assert_eq!(no_light.slot_usage(&se()).full, (1, 255));
     }
 
     #[test]
