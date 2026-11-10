@@ -34,43 +34,18 @@
 
 use std::path::PathBuf;
 
+use eidos::check::PrefixFacts;
 use eidos_gamefeatures::RegistryStatus;
 use eidos_games::DetectedGame;
 
+use crate::message::Message;
 use crate::modinfo::{DiagLevel, Diagnostic};
 use crate::{t, tf};
 
-/// Everything the prefix checks need, read once so the checks themselves stay
-/// pure and testable. Gathering is I/O; deciding is not.
-pub(crate) struct PrefixFacts {
-    /// The game's display name, for messages a user has to act on.
-    pub(crate) game_name: String,
-    pub(crate) registry: RegistryStatus,
-    /// Where `dosdevices/s:` points, if it exists.
-    pub(crate) gamedrive_found: Option<PathBuf>,
-    /// Where EIDOS points it for a tool launch: the library ROOT, the directory
-    /// that HOLDS `steamapps`. Taken from `library_path`, the same function whose
-    /// value is handed to Proton, so this can never disagree with what Eidos
-    /// passes. Steam, launching the game, leaves it on `<root>/steamapps`
-    /// instead - both are sound, and the check below accepts both.
-    pub(crate) gamedrive_want: Option<PathBuf>,
-}
-
-/// Read the prefix's health off disk. `None` when the game has no prefix path at
-/// all, which is not a fault worth reporting - the game may simply never have
-/// been set up to run under Proton.
+/// [`eidos::check::prefix_facts`], with the registry read through
+/// [`registry_status_memo`]. `None` when the game has no prefix path at all.
 pub(crate) fn prefix_facts(game: &DetectedGame) -> Option<PrefixFacts> {
-    let compat = game.compatdata.as_ref()?;
-    // Read once and hand to both consumers: the registry check resolves the
-    // launcher's `S:`-relative value through THIS link, so the two facts must
-    // describe the same instant.
-    let gamedrive_found = std::fs::read_link(compat.join("pfx/dosdevices/s:")).ok();
-    Some(PrefixFacts {
-        game_name: game.def.name.to_string(),
-        registry: registry_status_memo(compat, game, gamedrive_found.as_deref()),
-        gamedrive_found,
-        gamedrive_want: eidos_games::library_path(&game.install_path),
-    })
+    eidos::check::prefix_facts_with(game, registry_status_memo)
 }
 
 /// [`eidos_gamefeatures::registry_status`], answered from the last call when
@@ -128,70 +103,93 @@ fn registry_status_memo(
     status
 }
 
-/// Turn the facts into cards. Pure: no I/O, no `App`, so the interesting cases
-/// can be written down as tests instead of reproduced by hand on a real prefix.
+/// Turn the facts into cards through [`eidos::check::prefix_findings`]. Pure:
+/// no I/O, no `App`, so the interesting cases can be written down as tests
+/// instead of reproduced by hand on a real prefix.
 pub(crate) fn prefix_checks(f: &PrefixFacts) -> Vec<Diagnostic> {
-    let mut out = Vec::new();
-    let game = &f.game_name;
+    eidos::check::prefix_findings(f)
+        .iter()
+        .map(finding_card)
+        .collect()
+}
 
-    match &f.registry {
-        RegistryStatus::NotApplicable | RegistryStatus::Correct => {}
-        RegistryStatus::PrefixUninitialised => out.push(Diagnostic {
-            level: DiagLevel::Problem,
-            title: tf("health_no_prefix", &[("game", game)]),
-            detail: tf("health_no_prefix_detail", &[("game", game)]),
-            actions: Vec::new(),
-        }),
-        RegistryStatus::Stale { found, want } => out.push(Diagnostic {
-            level: DiagLevel::Problem,
-            title: tf("health_registry_stale", &[("game", game)]),
-            detail: match found {
-                // Showing the wrong value is the point: it is the exact path the
-                // tool is about to complain about, and the only thing that lets
-                // someone connect that complaint to Eidos.
-                Some(bad) => tf("health_registry_wrong", &[("found", &bad), ("want", &want)]),
-                None => tf(
-                    "health_registry_missing",
-                    &[("game", game), ("want", &want)],
-                ),
-            },
-            actions: Vec::new(),
-        }),
+/// Render one `eidos::check` finding through its `diag_<code>` strings.
+pub(crate) fn finding_card(f: &eidos::check::Finding) -> Diagnostic {
+    debug_assert!(eidos::check::CODES.contains(&f.code), "{}", f.code);
+    // A check leaves out what it could not read; the card says so in the
+    // user's language.
+    let unread: &[(&str, &str)] = match f.code {
+        "game_crashed" | "game_crashed_unattributed" => &[
+            ("logger", "diag_crash_logger_unknown"),
+            ("exception", "diag_crash_no_exception"),
+        ],
+        _ => &[],
+    };
+    let fills: Vec<(&str, &str)> = unread
+        .iter()
+        .filter(|(k, _)| f.arg(k).is_none())
+        .map(|(k, key)| (*k, t(key)))
+        .collect();
+    let args: Vec<(&str, &dyn std::fmt::Display)> = f
+        .args
+        .iter()
+        .map(|(k, v)| (*k, v as &dyn std::fmt::Display))
+        .chain(fills.iter().map(|(k, v)| (*k, v as &dyn std::fmt::Display)))
+        .collect();
+    let detail = match (f.code, f.arg("runtime")) {
+        ("extender_missing", None) => "diag_extender_missing_any_version_detail".to_string(),
+        _ => format!("diag_{}_detail", f.code),
+    };
+    Diagnostic {
+        level: match f.level {
+            eidos::check::Level::Problem => DiagLevel::Problem,
+            eidos::check::Level::Advice => DiagLevel::Advice,
+        },
+        title: tf(&format!("diag_{}", f.code), &args),
+        detail: tf(&detail, &args),
+        actions: finding_actions(f),
     }
+}
 
-    // The game drive. Proton recreates `dosdevices/s:` from whatever it is
-    // handed on EVERY run, and the two things that hand it something disagree
-    // on purpose: Eidos passes the library ROOT for a tool (so BodySlide's
-    // `<drive>\steamapps\common\<game>` search lands), Steam passes
-    // `<root>/steamapps` for the game. Both are sound; each launcher re-points
-    // the link before it runs anything. The old version of this check called
-    // Steam's value a fault, which lit the card after every game launch for as
-    // long as the instance existed. What IS a fault is a link that matches
-    // neither: a library that moved, or a prefix copied from another machine.
-    // Then every `S:`-relative path already stored in the prefix - the launcher's
-    // `installed path` above all - resolves nowhere, and a tool that WRITES
-    // there creates the directory outside the mount instead of failing.
-    if let (Some(found), Some(want)) = (&f.gamedrive_found, &f.gamedrive_want) {
-        let steam = want.join("steamapps");
-        if found != want && *found != steam {
-            out.push(Diagnostic {
-                level: DiagLevel::Problem,
-                title: t("health_gamedrive").to_string(),
-                detail: tf(
-                    "health_gamedrive_detail",
-                    &[
-                        ("found", &found.display()),
-                        ("tool", &want.display()),
-                        ("steam", &steam.display()),
-                        ("game", game),
-                    ],
-                ),
-                actions: Vec::new(),
-            });
+/// The findings Eidos can fix itself get a Fix button; a crash card opens or
+/// copies its log.
+pub(crate) fn finding_actions(f: &eidos::check::Finding) -> Vec<(String, Message)> {
+    match f.code {
+        "fullscreen_blocks_framegen" | "enb_linux_version" => {
+            vec![(t("diag_action_fix").to_string(), Message::HealthFix(f.code))]
         }
+        "game_crashed" | "game_crashed_unattributed" => {
+            let Some(log) = f.arg("log").map(PathBuf::from) else {
+                return Vec::new();
+            };
+            vec![
+                (
+                    t("diag_action_open_log").to_string(),
+                    Message::OpenFile(log.clone()),
+                ),
+                (
+                    t("diag_action_copy_log").to_string(),
+                    Message::CopyCrashLog(log),
+                ),
+            ]
+        }
+        "extender_missing" | "extender_runtime_missing" => {
+            let Some(page) = f.arg("page") else {
+                return Vec::new();
+            };
+            vec![
+                (
+                    t("diag_action_extender_page").to_string(),
+                    Message::OpenUrl(page.to_string()),
+                ),
+                (
+                    t("diag_action_install_archive").to_string(),
+                    Message::InstallMod,
+                ),
+            ]
+        }
+        _ => Vec::new(),
     }
-
-    out
 }
 
 /// Whether Eidos can reach Nexus on the user's behalf. Not a card about the
@@ -243,6 +241,127 @@ mod tests {
             gamedrive_found: Some(PathBuf::from("/mnt/Jeux/SteamLibrary/steamapps")),
             gamedrive_want: Some(PathBuf::from("/mnt/Jeux/SteamLibrary")),
         }
+    }
+
+    #[test]
+    fn fixable_cards_carry_a_fix_button() {
+        use eidos::check::{Finding, Level};
+        let a = finding_actions(&Finding {
+            code: "enb_linux_version",
+            level: Level::Advice,
+            args: vec![],
+        });
+        assert!(matches!(
+            a.as_slice(),
+            [(_, Message::HealthFix("enb_linux_version"))]
+        ));
+        let none = finding_actions(&Finding {
+            code: "nvapi_missing",
+            level: Level::Advice,
+            args: vec![],
+        });
+        assert!(none.is_empty());
+    }
+
+    #[test]
+    fn every_finding_code_has_english_strings() {
+        for code in eidos::check::CODES {
+            for key in [format!("diag_{code}"), format!("diag_{code}_detail")] {
+                assert_ne!(t(&key), key, "missing {key} in en.rs");
+            }
+        }
+    }
+
+    #[test]
+    fn crash_cards_offer_open_and_copy() {
+        use eidos::check::{Finding, Level};
+        use std::path::Path;
+        for code in ["game_crashed", "game_crashed_unattributed"] {
+            let f = Finding {
+                code,
+                level: Level::Problem,
+                args: vec![("log", "/tmp/crash-x.log".into())],
+            };
+            let a = finding_actions(&f);
+            assert!(matches!(&a[0].1, Message::OpenFile(p) if p == Path::new("/tmp/crash-x.log")));
+            assert!(
+                matches!(&a[1].1, Message::CopyCrashLog(p) if p == Path::new("/tmp/crash-x.log"))
+            );
+        }
+    }
+
+    #[test]
+    fn extender_cards_offer_the_download_page_and_install() {
+        use eidos::check::{Finding, Level};
+        let f = Finding {
+            code: "extender_runtime_missing",
+            level: Level::Problem,
+            args: vec![("page", "https://skse.silverlock.org/".into())],
+        };
+        let a = finding_actions(&f);
+        assert!(matches!(&a[0].1, Message::OpenUrl(u) if u == "https://skse.silverlock.org/"));
+        assert!(matches!(&a[1].1, Message::InstallMod));
+    }
+
+    #[test]
+    fn a_finding_renders_its_args() {
+        let f = eidos::check::Finding {
+            code: "extender_runtime_missing",
+            level: eidos::check::Level::Problem,
+            args: vec![
+                ("loader", "skse64_loader.exe".into()),
+                ("dll", "skse64_1_6_1179.dll".into()),
+                ("runtime", "1.6.1179.0".into()),
+            ],
+        };
+        let d = finding_card(&f);
+        assert_eq!(d.level, DiagLevel::Problem);
+        assert!(d.detail.contains("skse64_1_6_1179.dll"), "{}", d.detail);
+        assert_eq!(d.detail.matches("1.6.1179.0").count(), 2, "{}", d.detail);
+    }
+
+    #[test]
+    fn a_crash_log_without_a_logger_or_exception_line_reads_as_a_sentence() {
+        for code in ["game_crashed", "game_crashed_unattributed"] {
+            let f = eidos::check::Finding {
+                code,
+                level: eidos::check::Level::Problem,
+                args: vec![
+                    ("log", "/tmp/crash-x.log".into()),
+                    ("culprits", "x.dll (Mod)".into()),
+                ],
+            };
+            let d = finding_card(&f);
+            assert!(
+                d.detail.starts_with(&format!(
+                    "{} wrote /tmp/crash-x.log. {}.",
+                    t("diag_crash_logger_unknown"),
+                    t("diag_crash_no_exception")
+                )),
+                "{}",
+                d.detail
+            );
+            assert!(!d.detail.contains('{'), "{}", d.detail);
+        }
+    }
+
+    #[test]
+    fn an_extender_card_names_a_game_version_only_when_it_was_read() {
+        let mut f = eidos::check::Finding {
+            code: "extender_missing",
+            level: eidos::check::Level::Problem,
+            args: vec![
+                ("loader", "nvse_loader.exe".into()),
+                ("dir", "NVSE/Plugins".into()),
+                ("n", "3".into()),
+                ("page", "https://xnvse.example/".into()),
+            ],
+        };
+        let d = finding_card(&f);
+        assert!(!d.detail.contains("{runtime}") && !d.detail.contains("unknown"));
+        assert!(d.detail.contains("https://xnvse.example/"), "{}", d.detail);
+        f.args.push(("runtime", "1.6.1170.0".into()));
+        assert!(finding_card(&f).detail.contains("game version 1.6.1170.0"));
     }
 
     #[test]

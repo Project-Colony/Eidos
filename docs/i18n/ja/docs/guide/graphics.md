@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=a2dfee4604b4e78f8f22e935fab06fbfe6d4d301 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
 
 # Community Shaders、DLSS、フレーム生成
 
@@ -8,6 +8,8 @@ Community Shaders 1.4+ は独自のアップスケーリング(DLSS 4 / FSR 3.1 
 普通の MOD として入り、統合ビューはそれらの DLL を他と同じように供給します -
 けれども三つのことはゲームの中から**気づけません**。しかもそのどれもが、機能を
 黙って何もさせなくします。このページはその一覧で、実機で痛い目に遭って得たものです。
+
+「ヘルス」タブはこのうち 3 つを確認します。NVIDIA ドライバーと Upscaling パッケージがあり、ゲームの Proton ビルドが NVAPI を既定でオフにしている場合の NVAPI 変数(GE-Proton11-9 と Proton 11.0 はオンにします)、プロファイルの `SkyrimPrefs.ini` にある排他的フルスクリーン、そして下で説明する ENB の行です。後の 2 つには「修正」ボタンがあります。
 
 ## DLSS が必要とする起動オプション
 
@@ -100,6 +102,10 @@ Linux で実行する前に二点:
 **Capture output into** の MOD を Output location にしないでください。Eidos は
 実行のたびに PGPatcher 自身の `cfg/` と `log/` をその MOD へ移すため、PGPatcher
 は「Output directory has non-PGPatcher related files」で止まります。
+
+## Proton 上の ENB: LinuxVersion
+
+Jackify は、Proton 上でインストールするすべての ENB について、`enblocal.ini` の `[GLOBAL]` セクションに `LinuxVersion=true` を書き込みます。ENB 自身のドキュメントにこのキーの説明はありません。「ヘルス」タブはこの行がない `enblocal.ini` を知らせ、「修正」ボタンは、優先される `enblocal.ini` のコピーにこの行を設定して `overwrite/Root/` に書き込みます。ENB の Mod のファイルはそのまま残ります。
 
 ## あとで数字をどう読むか
 

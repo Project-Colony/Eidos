@@ -8,6 +8,8 @@ NOT discoverable from inside the game, and each one makes the feature silently
 do nothing. This page is the list of them, learned the hard way on a real
 setup.
 
+The Health tab checks three of these for you: the NVAPI variable when an NVIDIA driver and the Upscaling package are both present and the game's Proton build leaves NVAPI off by default (GE-Proton11-9 and Proton 11.0 turn it on), exclusive fullscreen in the profile's `SkyrimPrefs.ini`, and the ENB line below. The last two have a Fix button.
+
 ## The launch option DLSS needs
 
 ```
@@ -103,6 +105,10 @@ with a high priority: it is meant to win.
 Do not use a **Capture output into** mod as the Output location. Eidos moves
 PGPatcher's own `cfg/` and `log/` into that mod after each run, and PGPatcher
 then stops with "Output directory has non-PGPatcher related files".
+
+## ENB under Proton: LinuxVersion
+
+Jackify writes `LinuxVersion=true` in the `[GLOBAL]` section of `enblocal.ini` for every ENB it installs under Proton. ENB's own documentation does not describe the key. The Health tab flags an `enblocal.ini` without the line, and its Fix button writes a copy of the winning `enblocal.ini` into `overwrite/Root/` with the line set, so the ENB mod keeps its file.
 
 ## Reading the numbers afterwards
 

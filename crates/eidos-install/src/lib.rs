@@ -284,8 +284,13 @@ impl ArchiveTree {
         let mut game_dir: Option<&str> = None;
         let mut root_entries: Vec<String> = Vec::new();
         let mut has_image = false;
+        // Script extender archives ship their C++ source next to the loader.
+        let has_loader = self.entries.values().any(|n| {
+            matches!(n, TreeNode::File { name } if name.to_ascii_lowercase().ends_with("_loader.exe"))
+        });
         for node in self.entries.values() {
             match node {
+                TreeNode::Dir { name, .. } if has_loader && name.eq_ignore_ascii_case("src") => {}
                 TreeNode::Dir { name, .. } if name.eq_ignore_ascii_case("data") => {
                     if data.is_some() {
                         return None; // two Data dirs: not a shape we can reason about
@@ -1504,6 +1509,32 @@ mod tests {
     fn a_directory_beside_a_loose_dll_disqualifies_the_split() {
         assert_eq!(
             tree(&["loader.dll", "extras/thing.cfg"]).root_builder_split(rules()),
+            None
+        );
+    }
+
+    #[test]
+    fn a_script_extender_archive_puts_the_loader_in_root_and_drops_its_source() {
+        let t = tree(&[
+            "skse64_2_02_06/skse64_1_6_1170.dll",
+            "skse64_2_02_06/skse64_loader.exe",
+            "skse64_2_02_06/skse64_readme.txt",
+            "skse64_2_02_06/Data/Scripts/Actor.pex",
+            "skse64_2_02_06/src/skse64/main.cpp",
+            "skse64_2_02_06/src/common/IPrefix.h",
+        ]);
+        let split = t.root_builder_split(rules()).expect("extender archive");
+        assert_eq!(split.wrapper_prefix, "skse64_2_02_06/");
+        assert_eq!(split.data_prefix.as_deref(), Some("Data/"));
+        let mut root = split.root_entries.clone();
+        root.sort();
+        assert_eq!(root, ["skse64_1_6_1170.dll", "skse64_loader.exe"]);
+    }
+
+    #[test]
+    fn a_src_folder_without_a_loader_still_disqualifies() {
+        assert_eq!(
+            tree(&["Data/x.esp", "src/a.cpp", "thing.dll"]).root_builder_split(rules()),
             None
         );
     }

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=a2dfee4604b4e78f8f22e935fab06fbfe6d4d301 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
 
 # Community Shaders, DLSS a generování snímků
 
@@ -8,6 +8,8 @@ Všechno to funguje přes Eidos na Linuxu - CS i jeho balíčky se instalují ja
 módy a sjednocení podává jejich DLL jako cokoli jiného - ale tři věci **nelze**
 odhalit zevnitř hry a každá z nich způsobí, že funkce tiše nedělá nic. Tato stránka
 je jejich seznam, získaný natvrdo na skutečné sestavě.
+
+Karta Stav kontroluje tři z těchto věcí za vás: proměnnou NVAPI, když je načtený ovladač NVIDIA i balíček Upscaling a Proton sestavení hry nechává NVAPI ve výchozím stavu vypnuté (GE-Proton11-9 a Proton 11.0 ho zapínají), exkluzivní celou obrazovku v `SkyrimPrefs.ini` profilu a řádek ENB popsaný níže. U posledních dvou je tlačítko Opravit.
 
 ## Parametr spuštění, který DLSS potřebuje
 
@@ -104,6 +106,10 @@ Jako Output location nepoužívejte mód zvolený v **Capture output into**. Eid
 po každém běhu přesune vlastní `cfg/` a `log/` PGPatcheru do tohoto módu a
 PGPatcher se pak zastaví s hláškou
 „Output directory has non-PGPatcher related files".
+
+## ENB pod Protonem: LinuxVersion
+
+Jackify zapisuje `LinuxVersion=true` do sekce `[GLOBAL]` souboru `enblocal.ini` pro každé ENB, které pod Protonem instaluje. Vlastní dokumentace ENB tento klíč nepopisuje. Karta Stav upozorní na `enblocal.ini` bez tohoto řádku a tlačítko Opravit zapíše kopii vítězného `enblocal.ini` do `overwrite/Root/` s nastaveným řádkem, takže mod ENB si svůj soubor ponechá.
 
 ## Jak potom číst čísla
 
