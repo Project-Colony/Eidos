@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2a7a2fa88e71d2513c7d51f4a9d5c89812ad2b26 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=dbfc389b04dc12924b04def193f8b07b6fe6e324 -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -53,7 +53,7 @@ Zálohy, cache a log nástroje xEdit jdou do `<instance>/logs/qac-<time>/`, mimo
 sloučený pohled, a stavový řádek hlásí počty z tohoto logu. Po úspěšném
 vyčištění Eidos tuto složku smaže, po neúspěšném ji ponechá. Velikost a datum
 pluginu, ze kterého každá kopie vznikla, Eidos zapisuje do `Cleaned
-plugins/meta.ini`.
+plugins/meta.ini`. Když se tento plugin změní, karta Health ohlásí kopii jako zastaralou a nabídne její skrytí.
 
 ## Přidání nástroje
 

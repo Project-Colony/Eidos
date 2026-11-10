@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2a7a2fa88e71d2513c7d51f4a9d5c89812ad2b26 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=dbfc389b04dc12924b04def193f8b07b6fe6e324 -->
 
 # Strumenti: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -53,7 +53,7 @@ I backup, la cache e il log di xEdit finiscono in `<instance>/logs/qac-<time>/`,
 fuori dalla vista unita, e la riga di stato riporta i numeri di quel log. Eidos
 cancella quella cartella dopo una pulizia riuscita e la tiene dopo una fallita.
 Eidos annota in `Cleaned plugins/meta.ini` la dimensione e la data del plugin da
-cui è stata fatta ogni copia.
+cui è stata fatta ogni copia. Quando quel plugin cambia, la scheda Health segnala la copia come obsoleta e propone di nasconderla.
 
 ## Aggiungerne uno
 

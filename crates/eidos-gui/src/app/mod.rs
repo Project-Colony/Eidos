@@ -816,4 +816,7 @@ pub(crate) struct RowMeta {
     /// say", which have to look identical: a mod installed from a folder never
     /// had a game recorded, and warning about that would flag half a list.
     pub(crate) other_game: Option<String>,
+    /// The plugins this mod holds a generated copy of (cleaned or light-flagged),
+    /// with the size and date of the file each was made from.
+    pub(crate) plugin_sources: Vec<eidos_instance::PluginSource>,
 }

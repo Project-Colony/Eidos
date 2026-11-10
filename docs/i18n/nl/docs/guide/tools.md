@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2a7a2fa88e71d2513c7d51f4a9d5c89812ad2b26 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=dbfc389b04dc12924b04def193f8b07b6fe6e324 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -56,7 +56,7 @@ De back-ups, cache en log van xEdit gaan naar `<instance>/logs/qac-<time>/`,
 buiten de samengevoegde weergave, en de statusregel meldt de aantallen uit die
 log. Eidos verwijdert die map na een geslaagde opschoning en houdt hem na een
 mislukte. Eidos legt de grootte en datum van de plugin waaruit elke kopie
-gemaakt is vast in `Cleaned plugins/meta.ini`.
+gemaakt is vast in `Cleaned plugins/meta.ini`. Als die plugin verandert, meldt het tabblad Health de kopie als verouderd en biedt het aan haar te verbergen.
 
 ## Er een toevoegen
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2a7a2fa88e71d2513c7d51f4a9d5c89812ad2b26 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=dbfc389b04dc12924b04def193f8b07b6fe6e324 -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -32,7 +32,7 @@ LOOT 一直在警告的 dirty edits 所对应的按钮。Eidos 按文件名在�
 
 LOOT 排序之后，Diagnostics 标签页会列出 LOOT 标记为 dirty（需要清理）的插件，适用于同时有 xEdit 和 LOOT 清理数据的游戏（Skyrim LE、SE 和 VR，Enderal SE，Fallout 3，New Vegas，Fallout 4 和 4 VR，Oblivion，Starfield）。如果 Eidos 找到了 xEdit（在 Executables 里登记过，或者放在实例中 Eidos 查找工具的任何位置），卡片上会有 Clean all，每个 dirty 插件的行菜单里会有 Clean with QuickAutoClean；否则卡片会提示在 Executables 里添加 xEdit。Eidos 不会下载 xEdit。它通过合并视图，用 `-qac -autoexit -autoload`，一次对一个插件运行 xEdit 的 QuickAutoClean 模式。xEdit 把清理后的插件保存在它加载的那个插件上，在合并视图里这是 Overwrite 中的一个新文件；Eidos 把它移进名为 `Cleaned plugins` 的模组，这个模组创建时处于启用状态，位于列表底部，在所有冲突中胜出。原模组里的插件和游戏 Data 文件夹里的插件永远不会被写入。要撤销一次清理，停用 `Cleaned plugins`，或者隐藏其中的一个文件。
 
-xEdit 的备份、缓存和日志放在合并视图之外的 `<instance>/logs/qac-<time>/`，状态栏会报告从这份日志读到的数量。清理成功后 Eidos 会删除这个文件夹，清理失败则保留。Eidos 会把每个副本所依据的插件的大小和日期记录在 `Cleaned plugins/meta.ini` 里。
+xEdit 的备份、缓存和日志放在合并视图之外的 `<instance>/logs/qac-<time>/`，状态栏会报告从这份日志读到的数量。清理成功后 Eidos 会删除这个文件夹，清理失败则保留。Eidos 会把每个副本所依据的插件的大小和日期记录在 `Cleaned plugins/meta.ini` 里。 该插件变更后，Health 标签页会报告这个副本已过期，并提供隐藏它的选项。
 
 ## 添加一个
 

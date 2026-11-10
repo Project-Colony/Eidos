@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2a7a2fa88e71d2513c7d51f4a9d5c89812ad2b26 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=dbfc389b04dc12924b04def193f8b07b6fe6e324 -->
 
 # Narzędzia: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -54,7 +54,7 @@ Kopie zapasowe, cache i log programu xEdit trafiają do
 `<instance>/logs/qac-<time>/`, poza scalony widok, a pasek stanu podaje liczby z
 tego logu. Eidos usuwa ten folder po udanym czyszczeniu i zostawia go po
 nieudanym. Rozmiar i datę pluginu, z którego powstała każda kopia, Eidos
-zapisuje w `Cleaned plugins/meta.ini`.
+zapisuje w `Cleaned plugins/meta.ini`. Gdy ta wtyczka się zmieni, karta Health zgłasza kopię jako nieaktualną i proponuje jej ukrycie.
 
 ## Dodawanie narzędzia
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2a7a2fa88e71d2513c7d51f4a9d5c89812ad2b26 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=dbfc389b04dc12924b04def193f8b07b6fe6e324 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -57,7 +57,7 @@ Backups, Cache und Log von xEdit landen in `<instance>/logs/qac-<time>/`,
 außerhalb des zusammengeführten Blicks, und die Statuszeile meldet die Zahlen
 aus diesem Log. Eidos löscht diesen Ordner nach einer gelungenen Bereinigung und
 behält ihn nach einer fehlgeschlagenen. Eidos vermerkt Größe und Datum des
-Plugins, aus dem jede Kopie entstand, in `Cleaned plugins/meta.ini`.
+Plugins, aus dem jede Kopie entstand, in `Cleaned plugins/meta.ini`. Ändert sich dieses Plugin, meldet der Health-Tab die Kopie als veraltet und bietet an, sie auszublenden.
 
 ## Eines hinzufügen
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2a7a2fa88e71d2513c7d51f4a9d5c89812ad2b26 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=dbfc389b04dc12924b04def193f8b07b6fe6e324 -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -55,7 +55,7 @@ xEdit'in yedekleri, önbelleği ve günlüğü birleşik görünümün dışınd
 `<instance>/logs/qac-<time>/` içine gider ve durum satırı o günlükteki sayıları
 bildirir. Eidos bu klasörü başarılı bir temizlikten sonra siler, başarısız bir
 temizlikten sonra tutar. Eidos her kopyanın yapıldığı eklentinin boyutunu ve
-tarihini `Cleaned plugins/meta.ini` içine kaydeder.
+tarihini `Cleaned plugins/meta.ini` içine kaydeder. Bu eklenti değiştiğinde Health sekmesi kopyayı eski olarak bildirir ve gizlemeyi önerir.
 
 ## Bir araç eklemek
 

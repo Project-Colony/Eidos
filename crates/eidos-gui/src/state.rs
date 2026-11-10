@@ -67,6 +67,7 @@ pub(crate) fn refresh_meta_cache(app: &mut App) {
                 version: meta.version(),
                 mod_id: meta.mod_id(),
                 installed_files: meta.installed_files(),
+                plugin_sources: meta.plugin_sources(),
                 install_warning: meta.install_warning(),
                 category_id,
                 category_name,

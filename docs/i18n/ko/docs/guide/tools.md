@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2a7a2fa88e71d2513c7d51f4a9d5c89812ad2b26 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=dbfc389b04dc12924b04def193f8b07b6fe6e324 -->
 
 # 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -35,7 +35,7 @@ Eidos를 통해 실행된 도구는 게임 자신의 Proton 프리픽스 안에�
 
 LOOT로 정렬하고 나면 Diagnostics 탭이 LOOT가 dirty로 표시한 플러그인을 나열합니다. xEdit와 LOOT 정리 데이터가 모두 있는 게임이 대상입니다(Skyrim LE, SE, VR, Enderal SE, Fallout 3, New Vegas, Fallout 4와 4 VR, Oblivion, Starfield). Eidos가 xEdit를 찾으면(Executables에 등록되어 있거나 인스턴스 안에서 도구를 찾는 곳 어디에든 있으면) 카드에 Clean all이 나타나고, dirty 플러그인마다 행 메뉴에 Clean with QuickAutoClean이 나타납니다. 찾지 못하면 카드가 Executables에 xEdit를 추가하라고 안내합니다. Eidos는 xEdit를 내려받지 않습니다. Eidos는 xEdit의 QuickAutoClean 모드를 병합된 뷰를 통해 `-qac -autoexit -autoload`와 함께 한 번에 플러그인 하나씩 실행합니다. xEdit는 정리한 플러그인을 불러온 플러그인 위에 저장하는데, 병합된 뷰에서는 이것이 Overwrite에 생기는 새 파일입니다. Eidos는 이 파일을 `Cleaned plugins`라는 모드로 옮기며, 이 모드는 활성화된 상태로 목록 맨 아래에 만들어져 모든 충돌에서 이깁니다. 원래 모드 안의 플러그인이나 게임의 Data 폴더 안의 플러그인에는 절대 쓰지 않습니다. 정리를 되돌리려면 `Cleaned plugins`를 비활성화하거나 그 안의 파일 하나를 숨기십시오.
 
-xEdit의 백업, 캐시, 로그는 병합된 뷰 바깥인 `<instance>/logs/qac-<time>/`에 들어가며, 상태 줄은 그 로그에서 읽은 개수를 보여 줍니다. 정리가 성공하면 Eidos는 이 폴더를 지우고, 실패하면 남겨 둡니다. Eidos는 각 사본을 만든 원본 플러그인의 크기와 날짜를 `Cleaned plugins/meta.ini`에 기록합니다.
+xEdit의 백업, 캐시, 로그는 병합된 뷰 바깥인 `<instance>/logs/qac-<time>/`에 들어가며, 상태 줄은 그 로그에서 읽은 개수를 보여 줍니다. 정리가 성공하면 Eidos는 이 폴더를 지우고, 실패하면 남겨 둡니다. Eidos는 각 사본을 만든 원본 플러그인의 크기와 날짜를 `Cleaned plugins/meta.ini`에 기록합니다. 그 플러그인이 바뀌면 Health 탭이 사본이 오래되었다고 알리고 숨기기를 제안합니다.
 
 ## 하나 추가하기
 

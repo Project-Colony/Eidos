@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2a7a2fa88e71d2513c7d51f4a9d5c89812ad2b26 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=dbfc389b04dc12924b04def193f8b07b6fe6e324 -->
 
 # Инструменты: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -54,7 +54,7 @@ QuickAutoClean; иначе карточка предлагает добавит�
 пределы объединённого вида, а строка состояния показывает числа из этого
 журнала. После удачной очистки Eidos удаляет эту папку, после неудачной
 оставляет её. Размер и дату плагина, из которого сделана каждая копия, Eidos
-записывает в `Cleaned plugins/meta.ini`.
+записывает в `Cleaned plugins/meta.ini`. Когда этот плагин меняется, вкладка Health сообщает, что копия устарела, и предлагает её скрыть.
 
 ## Как добавить
 

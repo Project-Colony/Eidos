@@ -670,6 +670,21 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         out.extend(script_extender_diagnostic(game));
     }
 
+    for (row, plugin) in stale_copies(app) {
+        out.push(Diagnostic {
+            level: DiagLevel::Problem,
+            title: tf("diag_stale_copy", &[("plugin", &plugin)]),
+            detail: tf(
+                "diag_stale_copy_detail",
+                &[("mod", &app.mods[row].name), ("plugin", &plugin)],
+            ),
+            actions: vec![(
+                t("diag_hide_stale_copy").into(),
+                Message::ToggleFileHidden(row, plugin),
+            )],
+        });
+    }
+
     out
 }
 
@@ -893,6 +908,34 @@ pub(crate) fn script_extender_diagnostic(game: &DetectedGame) -> Option<Diagnost
         ),
         actions: Vec::new(),
     })
+}
+
+/// Generated plugin copies whose source file changed since the copy was made:
+/// `(row of the mod holding the copy, plugin name)`. The source is the file of
+/// that name in the nearest enabled mod below the copy, else the game's Data
+/// folder. Only stats, no reads.
+pub(crate) fn stale_copies(app: &App) -> Vec<(usize, String)> {
+    let data = selected_game(app).map(|g| &g.data_path);
+    let mut out = Vec::new();
+    for (row, m) in app.mods.iter().enumerate().filter(|(_, m)| m.enabled) {
+        let Some(sources) = app.meta_cache.get(&m.name).map(|r| &r.plugin_sources) else {
+            continue;
+        };
+        for src in sources {
+            let now = app.mods[..row]
+                .iter()
+                .rev()
+                .filter(|b| b.enabled)
+                .map(|b| b.path.join(&src.name))
+                .chain(data.map(|d| d.join(&src.name)))
+                .find(|p| p.exists());
+            let current = now.and_then(|p| eidos_instance::PluginSource::of(&src.name, &p));
+            if current.as_ref() != Some(src) {
+                out.push((row, src.name.clone()));
+            }
+        }
+    }
+    out
 }
 
 pub(crate) fn orphan_archive_diagnostics(app: &App, game_id: &str) -> Vec<Diagnostic> {

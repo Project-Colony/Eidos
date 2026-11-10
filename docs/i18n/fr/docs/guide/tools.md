@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2a7a2fa88e71d2513c7d51f4a9d5c89812ad2b26 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=dbfc389b04dc12924b04def193f8b07b6fe6e324 -->
 
 # Outils : xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -60,7 +60,7 @@ Les sauvegardes, le cache et le journal de xEdit vont dans
 `<instance>/logs/qac-<time>/`, hors de la vue fusionnée, et la barre d'état
 donne les nombres lus dans ce journal. Eidos supprime ce dossier après un
 nettoyage réussi et le garde après un échec. Eidos enregistre dans `Cleaned
-plugins/meta.ini` la taille et la date du plugin dont chaque copie a été tirée.
+plugins/meta.ini` la taille et la date du plugin dont chaque copie a été tirée. Quand ce plugin change, l'onglet Health signale la copie comme périmée et propose de la masquer.
 
 ## En ajouter un
 

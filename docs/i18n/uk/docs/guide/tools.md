@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=2a7a2fa88e71d2513c7d51f4a9d5c89812ad2b26 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=dbfc389b04dc12924b04def193f8b07b6fe6e324 -->
 
 # Інструменти: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -54,7 +54,7 @@ plugins` або сховайте в ньому один файл.
 поза об'єднаний вигляд, а рядок стану показує числа з цього журналу. Після
 вдалого очищення Eidos видаляє цю теку, після невдалого залишає її. Розмір і
 дату плагіна, з якого зроблено кожну копію, Eidos записує в `Cleaned
-plugins/meta.ini`.
+plugins/meta.ini`. Коли цей плагін змінюється, вкладка Health повідомляє, що копія застаріла, і пропонує її приховати.
 
 ## Як додати
 

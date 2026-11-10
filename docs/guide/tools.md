@@ -50,7 +50,7 @@ xEdit's backups, cache and log go to `<instance>/logs/qac-<time>/`, outside the
 merged view, and the status line reports the counts from that log. Eidos deletes
 that folder after a clean that worked and keeps it after one that failed.
 Eidos records the size and date of the plugin each copy was made from in
-`Cleaned plugins/meta.ini`.
+`Cleaned plugins/meta.ini`. When that plugin changes, the Health tab reports the copy as out of date and offers to hide it.
 
 ## Adding one
 

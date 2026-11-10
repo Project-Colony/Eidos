@@ -6653,6 +6653,30 @@ mod cleaning {
     }
 
     #[test]
+    fn a_copy_whose_source_changed_is_reported_with_a_hide_action() {
+        let (mut app, root) = list_app(&["Base", "Cleaned plugins"]);
+        let src = root.join("mods/Base/Dirty.esp");
+        fs::write(&src, b"source").unwrap();
+        fs::write(root.join("mods/Cleaned plugins/Dirty.esp"), b"clean").unwrap();
+        edit_mod_meta(app.created.as_ref().unwrap(), "Cleaned plugins", |m| {
+            m.set_plugin_source(PluginSource::of("Dirty.esp", &src).unwrap())
+        })
+        .unwrap();
+        invalidate_meta(&mut app, "Cleaned plugins");
+        refresh_meta_cache(&mut app);
+        assert!(stale_copies(&app).is_empty());
+        fs::write(&src, b"updated source").unwrap();
+        assert_eq!(stale_copies(&app), [(1, "Dirty.esp".to_string())]);
+        let card = diagnostics(&app)
+            .into_iter()
+            .find(|d| d.title == tf("diag_stale_copy", &[("plugin", &"Dirty.esp")]))
+            .unwrap();
+        assert!(
+            matches!(&card.actions[0].1, Message::ToggleFileHidden(1, rel) if rel == "Dirty.esp")
+        );
+    }
+
+    #[test]
     fn a_clean_that_left_no_log_stops_the_queue() {
         let (mut app, root) = list_app(&[]);
         app.clean_queue = ["Next.esp".to_string()].into();
