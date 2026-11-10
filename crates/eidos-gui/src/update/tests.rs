@@ -9044,6 +9044,24 @@ fn another_answer_or_action_rearms_instead_of_deleting() {
     assert!(inst.test_run().is_some());
     assert_eq!(inst.read_bisect().unwrap().steps[0].answer, None);
     let _ = fs::remove_dir_all(root);
+
+    // An answer that needs no confirmation still disarms an armed Stop.
+    let (mut app, root) = answer_app(false);
+    let _ = update_inner(&mut app, Message::BisectReview);
+    let _ = update_inner(
+        &mut app,
+        Message::ReviewChoose(eidos_instance::TestGroup::Saves, true),
+    );
+    let _ = update_inner(&mut app, Message::ReviewApply);
+    assert!(app.created.as_ref().unwrap().test_run().is_none());
+    let _ = update_inner(&mut app, Message::BisectStop);
+    assert_eq!(app.bisect_armed, Some(BisectArm::Stop));
+    let _ = update_inner(&mut app, Message::BisectAnswer(Answer::Bad));
+    assert_eq!(bisect_stage(&app), BisectStage::Ready);
+    assert_eq!(app.bisect_armed, None);
+    let _ = update_inner(&mut app, Message::BisectStop);
+    assert!(app.created.as_ref().unwrap().read_bisect().is_some());
+    let _ = fs::remove_dir_all(root);
 }
 
 #[test]

@@ -1216,11 +1216,15 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 r.line = None;
             }
         }
-        // Each of these re-arms for itself when it is not the armed one.
-        if !matches!(
-            message,
-            Message::BisectAnswer(_) | Message::BisectRepeat | Message::BisectStop
-        ) {
+        // Only the press that would confirm the armed action keeps it; the
+        // handlers arm a first press for themselves.
+        let confirms = match &message {
+            Message::BisectAnswer(a) => Some(BisectArm::Answer(*a)),
+            Message::BisectRepeat => Some(BisectArm::Repeat),
+            Message::BisectStop => Some(BisectArm::Stop),
+            _ => None,
+        };
+        if app.bisect_armed != confirms {
             app.bisect_armed = None;
         }
         app.bisect_line = None;
