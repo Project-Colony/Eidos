@@ -86,6 +86,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // A collection walk lands its files one at a time, so every landing
             // would look like the last; its Done step sends the one notification.
             let walking = app.collection.as_ref().is_some_and(|c| c.walk.is_some());
+            // shortcut: reads the filtered rows, so a Downloads filter hiding an
+            // arrival skips it or ends the wait early; scan downloads/ unfiltered
+            // if that bites.
             if !walking && crate::notify::downloads_finished(&before, &states(app)) {
                 crate::notify::when_away(app, t("notify_downloads_done"), "");
             }

@@ -7938,6 +7938,48 @@ fn a_collection_walk_notifies_once_when_it_ends() {
     let _ = fs::remove_dir_all(&root);
 }
 
+/// The tick stops while the window has focus outside the Downloads tab, so a
+/// download that ends then must not be announced once the window goes away.
+#[test]
+fn a_download_that_ended_while_the_window_had_focus_sends_nothing() {
+    let (mut app, root) = list_app(&[]);
+    app.prefs.notify_when_away = true;
+    let _ = crate::notify::take_sent();
+    let dl = app.created.as_ref().unwrap().downloads_dir();
+    fs::create_dir_all(&dl).unwrap();
+    let arrive = |name: &str| {
+        fs::write(dl.join(format!("{name}.unfinished")), b"x").unwrap();
+        fs::write(
+            dl.join(format!("{name}.meta")),
+            "[General]\ngameName=SkyrimSE\nmodID=1\nfileID=2\n",
+        )
+        .unwrap();
+    };
+    let land = |name: &str| {
+        fs::rename(dl.join(format!("{name}.unfinished")), dl.join(name)).unwrap();
+    };
+
+    // Clicked in the browser: the window is away, the tick sees the arrival.
+    arrive("a.7z");
+    let _ = update_inner(&mut app, Message::WindowFocused(false));
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert_eq!(app.downloads[0].state, DownloadState::Downloading);
+    // Back in Eidos on the Mods tab: no tick runs, and the download ends.
+    let _ = update_inner(&mut app, Message::WindowFocused(true));
+    land("a.7z");
+    let _ = update_inner(&mut app, Message::WindowFocused(false));
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(crate::notify::take_sent().is_empty(), "old news");
+
+    // One that ends while the window is away still notifies.
+    arrive("b.7z");
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    land("b.7z");
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert_eq!(crate::notify::take_sent().len(), 1);
+    let _ = fs::remove_dir_all(root);
+}
+
 #[test]
 fn a_focus_change_disarms_nothing() {
     let app = nav_app(&[]);

@@ -266,7 +266,14 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 }
             }
         }
-        Message::WindowFocused(f) => app.focused = f,
+        Message::WindowFocused(f) => {
+            app.focused = f;
+            // The tick did not run while the window had focus outside Downloads,
+            // so the rows are stale; the first away tick compares against these.
+            if !f && app.prefs.notify_when_away {
+                load_downloads(app);
+            }
+        }
         Message::CycleFocus => {
             // Only somewhere there is a list to drive.
             app.focus = match app.focus {
