@@ -7860,6 +7860,17 @@ fn a_saved_tree_answer_disarms_nothing() {
 }
 
 #[test]
+fn the_hidden_saves_tooltip_starts_with_the_whole_notice() {
+    let hidden: Vec<String> = (0..12).map(|i| format!("Deck{i}.ess")).collect();
+    let tip = crate::modinfo::hidden_saves_tip(&hidden);
+    let lines: Vec<&str> = tip.lines().collect();
+    assert_eq!(lines[0], tf("saves_hidden_notice", &[("n", &12)]));
+    assert_eq!(lines[1..11], hidden[..10]);
+    assert_eq!(lines[11], tf("plugins_and_more", &[("n", &2)]));
+    assert_eq!(lines.len(), 12);
+}
+
+#[test]
 fn importing_hidden_saves_copies_them_into_the_profile_and_clears_the_notice() {
     let (mut app, root) = list_app(&[]);
     app.games[0].compatdata = Some(root.join("compatdata"));

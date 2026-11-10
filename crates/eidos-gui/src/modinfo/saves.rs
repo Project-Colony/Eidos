@@ -170,20 +170,6 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
             .clip(true),
         );
     if !app.hidden_saves.is_empty() {
-        let mut names = app
-            .hidden_saves
-            .iter()
-            .take(10)
-            .cloned()
-            .collect::<Vec<_>>()
-            .join("\n");
-        if app.hidden_saves.len() > 10 {
-            names.push('\n');
-            names.push_str(&tf(
-                "plugins_and_more",
-                &[("n", &(app.hidden_saves.len() - 10))],
-            ));
-        }
         // Fill and clipped: Shrink children are laid out first, so the Import
         // button keeps its width however long the one-line notice is.
         folder = folder
@@ -192,7 +178,7 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
                     text(tf("saves_hidden_notice", &[("n", &app.hidden_saves.len())]))
                         .size(sz(11))
                         .wrapping(iced::widget::text::Wrapping::None),
-                    container(text(names).size(sz(11)))
+                    container(text(hidden_saves_tip(&app.hidden_saves)).size(sz(11)))
                         .padding(6)
                         .style(card_style),
                     tooltip::Position::Bottom,
@@ -354,6 +340,17 @@ pub(crate) fn save_details<'a>(
         col = col.push(text(t("saves_truncated_note")).size(sz(10)));
     }
     col.into()
+}
+
+/// The hidden saves notice's tooltip: the whole notice, which its clipped line
+/// may cut, then the first 10 names.
+pub(crate) fn hidden_saves_tip(hidden: &[String]) -> String {
+    let mut lines = vec![tf("saves_hidden_notice", &[("n", &hidden.len())])];
+    lines.extend(hidden.iter().take(10).cloned());
+    if hidden.len() > 10 {
+        lines.push(tf("plugins_and_more", &[("n", &(hidden.len() - 10))]));
+    }
+    lines.join("\n")
 }
 
 /// Cap on the rows the Saves / Downloads panels render (matches the 500-entry
