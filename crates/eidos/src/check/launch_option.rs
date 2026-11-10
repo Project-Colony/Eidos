@@ -83,6 +83,15 @@ fn shell_words(s: &str) -> Vec<String> {
     words
 }
 
+/// `NAME=value`, as the shell reads it before a command: `EIDOS_INSTANCE=/x/eidos`
+/// sets a variable and is not a path to an Eidos binary.
+fn is_env_assignment(word: &str) -> bool {
+    word.split_once('=').is_some_and(|(name, _)| {
+        name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+            && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    })
+}
+
 fn resolve(token: &str, home: &Path, search_path: &[PathBuf]) -> Option<PathBuf> {
     let expanded = if let Some(rest) = token.strip_prefix("~/") {
         home.join(rest)
@@ -120,7 +129,7 @@ pub fn launch_option_findings(
         )];
     }
     let words = shell_words(options);
-    let Some(token) = words.iter().find(|w| {
+    let Some(token) = words.iter().filter(|w| !is_env_assignment(w)).find(|w| {
         Path::new(w.as_str())
             .file_name()
             .is_some_and(|n| EIDOS_NAMES.iter().any(|e| n == *e))
@@ -269,6 +278,17 @@ mod tests {
         e.this = e.t.join("My Games/eidos-gui");
         touch(&e.this);
         let opt = format!(r#"PROTON_ENABLE_NVAPI=1 "{}" %command%"#, e.this.display());
+        assert!(launch_option_findings(Some(&opt), &e.this, &e.t, &[], game()).is_empty());
+    }
+
+    #[test]
+    fn an_instance_variable_ending_in_eidos_is_not_the_binary() {
+        let e = env("envassign");
+        let opt = format!(
+            "EIDOS_INSTANCE={}/eidos {} %command%",
+            e.t.display(),
+            e.this.display()
+        );
         assert!(launch_option_findings(Some(&opt), &e.this, &e.t, &[], game()).is_empty());
     }
 
