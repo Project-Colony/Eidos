@@ -297,7 +297,7 @@ pub fn launch_option_findings(
         )];
     }
     let words = shell_words(options);
-    let Some(token) = words.iter().find(|w| is_eidos_word(w)) else {
+    let Some(at) = words.iter().position(|w| is_eidos_word(w)) else {
         return vec![finding(
             "launch_option_no_eidos",
             Level::Advice,
@@ -308,6 +308,7 @@ pub fn launch_option_findings(
             ],
         )];
     };
+    let token = &words[at];
     let mut out = Vec::new();
     let found = resolve(token, home, search_path);
     if found.is_none() {
@@ -317,7 +318,8 @@ pub fn launch_option_findings(
             vec![("path", token.clone()), ("line", line.clone())],
         ));
     }
-    if !words.iter().any(|w| w == "%command%") {
+    // Before Eidos, `%command%` runs the game and Eidos is only one of its arguments.
+    if !words[at + 1..].iter().any(|w| w == "%command%") {
         out.push(finding(
             "launch_option_no_command",
             Level::Problem,
@@ -424,6 +426,7 @@ mod tests {
             (Some("%command% -skipintro"), false),
             (Some("THIS"), false),
             (Some("/gone/eidos-gui %command%"), false),
+            (Some("%command% THIS"), false),
             (Some("THIS %command%"), true),
         ]
         .into_iter()
@@ -658,6 +661,9 @@ mod tests {
         assert!(f
             .iter()
             .any(|f| f.code == "launch_option_no_command" && f.level == Level::Problem));
+        let after = format!("%command% {}", e.this.display());
+        let f = launch_option_findings(Some(&after), &e.this, &e.t, &[], game());
+        assert!(f.iter().any(|f| f.code == "launch_option_no_command"));
     }
 
     #[test]
