@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=7f872c8fb702f4417931831cc14a48ffb9d9e30b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=697ab61c73cce270d79a42be1a29c4800a6ee6d0 -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -152,15 +152,23 @@ Executables 對話框裡的 `Prereqs` 欄位可以編輯 - 偵測結果是預設
 **第一層 - 隨附的 DLL**(`d3dx9_43`、`d3dcompiler_47`、`d3dcompiler_43`、
 `d3dx11_43`)。Eidos 自己帶著它們,並在啟動時複製進前綴。不必做任何事,不用網路。
 
-**第二層 - winetricks verb**(`vcrun2022`、`dotnet8`、`dotnetdesktop8`、
-`dotnet48`、`xact`...)。它們會寫入登錄機碼、GAC 與 CLR host,所以沒辦法用複製
-檔案解決。它們會**從 Microsoft 下載**。
+**第二層 - 安裝程式**(`vcrun2022`、`dotnet8`、`dotnetdesktop8`、`dotnet48`、`xact`...)。
+它們會寫入登錄機碼、GAC 與 CLR host,所以沒辦法用複製檔案解決。
+其中三個由 Eidos 直接安裝,不經過 winetricks:`vcrun2022` 執行 Microsoft 的 `VC_redist.x86.exe` 與 `VC_redist.x64.exe`,`dotnet8` 與 `dotnetdesktop8` 執行 .NET 8.0.12 Desktop Runtime 安裝程式,它也包含 .NET 執行階段。
+發行套件(`eidos-linux-bundle.tar.gz`)在 `runtimes/` 資料夾裡附上這些安裝程式,`install.sh` 會把它們複製到 `~/.local/share/Colony/Eidos/runtimes/`。
+沒有這份副本時(單一檔案 `eidos-linux`、從原始碼建置),Eidos 會把它們**從 Microsoft 下載**(`download.visualstudio.microsoft.com`)到同一個資料夾。
+不論哪種情況,SHA-256 與編進 Eidos 的值不符的檔案都會被拒絕;檔案會在遊戲前綴裡以靜默模式執行,用的是執行該遊戲工具的那個 Proton 或 Wine 版本。
+和 winetricks 一樣,`vcrun2022` 會先在前綴的 DLL 覆寫設定裡把 Visual C++ 的 DLL 設成 `native,builtin`。
+之後 Eidos 會檢查前綴裡的 C++ 執行階段是不是一半來自 Microsoft、一半來自 Proton,若是,就把這次安裝回報為失敗。
+只會安裝 64 位元的 .NET 8;32 位元的 .NET 8 工具仍然需要 `winetricks dotnetdesktop8`。
+其他 verb 則透過系統的 `winetricks`。
 
 **第三層 - 執行階段**(`dotnet10`, `dotnetsdk10`)。現代的 .NET 執行階段是 193 個檔案,住在
 自己的目錄裡,透過 `DOTNET_ROOT` 被找到:從不註冊,也完全不安裝進前綴,所以
 另外兩層都載不動它。Eidos 自己下載,對照編進二進位檔裡的 checksum 檢查,並快取
 在 `~/.local/share/Colony/Eidos/runtimes/` - **在任何實例之外**,因為 78 MB 不是
 每個遊戲一份,也不是每個 profile 一份。
+發行套件也在 `runtimes/` 裡附上 `dotnet10` 執行階段的 zip,所以 Eidos 會解開這份副本,只有沒有它時才下載;`dotnetsdk10` 一律要下載。
 
 `dotnetsdk10` 是 .NET 10 SDK,下載 301 MB,解壓縮後 808 MB。
 Synthesis 編譯 patcher 需要它,而且建置與執行 patcher 時呼叫的是不帶路徑的 `dotnet`,
@@ -202,7 +210,7 @@ Mono - 而它的 `System.Uri` 初始化程序會呼叫一個 Mono 沒有實作�
 `DOTNET_ROOT` 指向一份 .NET 10 執行階段,它就跑得起來。`dotnet10` 準備的就是
 這個,而 Eidos 在啟動任何宣告了它的工具時會設好這個變數。
 
-Eidos 是用系統的 `winetricks`,搭配 Proton 自己的 `wine` 與遊戲前綴來執行的,
+其他第二層 verb,Eidos 是用系統的 `winetricks`,搭配 Proton 自己的 `wine` 與遊戲前綴來執行的,
 這樣就繞開了 Steam 的 pressure-vessel 容器,以及 protontricks 與 Proton-GE
 不相容的問題。宣告了未安裝的第二層 verb 的工具照樣會啟動,只是帶一則警告,
 點名該 verb 以及修好它的命令 - 使用者也可能已經從別處裝了。
@@ -379,12 +387,12 @@ Windows 程式,要寫它在遊戲 `Data` 資料夾下的路徑,合併檢視就�
 用 Heroic 安裝的 GOG 或 Epic 副本,如果遊戲的 Heroic 設定
 (`GamesConfig/<appName>.json`)指定了 Wine 或 Proton 版本,工具就不需要這樣的
 項目:Eidos 用那個版本在遊戲的 Heroic 前綴裡執行它們,
-`eidos prereqs <instance> --install` 也把它交給 winetricks。只用 Legendary
+`eidos prereqs <instance> --install` 也把它用於安裝程式與 winetricks。只用 Legendary
 安裝的副本沒有 Heroic 設定。
 
 `slr=1` 會讓工具及其之前的登錄檔匯入,在工具的 Proton 版本所指定的 Steam Linux Runtime 容器裡啟動(見其 `toolmanifest.vdf` 中的 `require_tool_appid`),與 Steam 啟動遊戲的方式相同。
 這個執行階段必須裝在某個 Steam 媒體庫中;沒有裝的話,執行會停下,並指出需要安裝的 Steam 應用程式。
-`eidos prereqs` 仍在主機上執行 winetricks,`runner=native` 的工具會忽略這個鍵。
+`eidos prereqs` 仍在主機上執行它的安裝程式與 winetricks,`runner=native` 的工具會忽略這個鍵。
 容器能看到你的家目錄與遊戲所在的 Steam 媒體庫。
 放在其他地方(例如另一顆磁碟上)的工具、mod 或執行階段,需要 `env=STEAM_COMPAT_MOUNTS=/那個/路徑`(多個路徑以 `:` 分隔)。
 裝在 `/usr/share/steam/compatibilitytools.d` 下的 Proton 很可能無法搭配 `slr=1` 使用,因為容器裡的 `/usr` 是執行階段自己的。

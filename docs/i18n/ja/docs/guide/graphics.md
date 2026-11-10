@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
 
 # Community Shaders、DLSS、フレーム生成
 
@@ -9,7 +9,7 @@ Community Shaders 1.4+ は独自のアップスケーリング(DLSS 4 / FSR 3.1 
 けれども三つのことはゲームの中から**気づけません**。しかもそのどれもが、機能を
 黙って何もさせなくします。このページはその一覧で、実機で痛い目に遭って得たものです。
 
-「ヘルス」タブはこのうち 3 つを確認します。NVIDIA ドライバーと Upscaling パッケージがあり、ゲームの Proton ビルドが NVAPI を既定でオフにしている場合の NVAPI 変数(GE-Proton11-9 と Proton 11.0 はオンにします)、プロファイルの `SkyrimPrefs.ini` にある排他的フルスクリーン、そして下で説明する ENB の行です。後の 2 つには「修正」ボタンがあります。
+「ヘルス」タブはこのうち 3 つを確認します。NVIDIA ドライバーと Upscaling パッケージがあり、ゲームの Proton ビルドが NVAPI を既定でオフにしている場合の NVAPI 変数(GE-Proton11-9 と Proton 11.0 はオンにします)、プロファイルの `SkyrimPrefs.ini` にある排他的フルスクリーン、そして下で説明する ENB の行です。後の 2 つには「修正」ボタンがあり、Diagnostics の「表示」カードではボーダーレスとサイズをまとめて設定できます。
 
 ## DLSS が必要とする起動オプション
 
@@ -23,6 +23,8 @@ Proton は、ゲームが Valve の許可リストに載っていない限り NV
 NVIDIA でないマシンでこの変数を設定しても損はないので、無難な起動オプションは上の
 一行で十分です。フレーム生成そのものは FSR 3.1 で NVAPI を必要としません。必要なのは
 DLSS アップスケーラだけです。
+
+1つのプロファイルだけに設定するには、そのプロファイルの `launch-env.ini` に `env=PROTON_ENABLE_NVAPI=1` を書きます(View -> INI editor の最後のタブ)。Health カードもこの行を数えます。
 
 ## フレーム生成にはボーダーレスウィンドウが要る
 

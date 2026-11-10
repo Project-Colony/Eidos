@@ -5,7 +5,7 @@ use super::*;
 
 /// True when the Run list entry `title` starts the game: the script-extender
 /// loader, the vanilla launcher or the game binary.
-fn picks_the_game(app: &App, title: &str) -> bool {
+pub(crate) fn picks_the_game(app: &App, title: &str) -> bool {
     let Some(game) = selected_game(app) else {
         return false;
     };
@@ -115,13 +115,28 @@ pub(crate) fn start_directly(app: &mut App, force_window: bool) -> bool {
     }
     app.diag_dirty = true;
     refresh_diagnostics(app);
-    if app.diag.iter().any(|d| d.level == DiagLevel::Problem) {
+    if let Some(key) = direct_start_hold(app) {
         let game = selected_game(app).map_or("", |g| g.def.name);
-        app.status = Some(tf("status_direct_start_held", &[("game", &game)]));
+        app.status = Some(tf(key, &[("game", &game)]));
+        if key == "status_direct_start_display" {
+            app.tab = Tab::Diagnostics;
+        }
         return false;
     }
     let _ = handle(app, Message::Run);
     app.running.is_some()
+}
+
+/// Why a direct start waits for the window: a Health problem, or a profile with
+/// no window size yet (the Display card asks once, and Apply ends it).
+pub(crate) fn direct_start_hold(app: &App) -> Option<&'static str> {
+    if app.diag.iter().any(|d| d.level == DiagLevel::Problem) {
+        return Some("status_direct_start_held");
+    }
+    app.display
+        .as_ref()
+        .is_some_and(|f| f.facts.current.is_none() && !f.facts.tweaks)
+        .then_some("status_direct_start_display")
 }
 
 /// Block until the run [`start_directly`] started ends, and give its exit code:

@@ -154,6 +154,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let facts = eidos::check::report_facts(
                 &home(),
                 crate::state::selected_game(app),
+                app.created.as_ref(),
                 app.cap_missing,
             );
             let text = health_report(&facts, &app.diag);
@@ -206,6 +207,77 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             });
             app.diag_dirty = true;
         }
+        Message::DisplayWidth(v) => {
+            if let Some(f) = &mut app.display {
+                f.width = v;
+                f.edited = true;
+            }
+        }
+        Message::DisplayHeight(v) => {
+            if let Some(f) = &mut app.display {
+                f.height = v;
+                f.edited = true;
+            }
+        }
+        Message::DisplayMode(mode) => {
+            if let Some(f) = &mut app.display {
+                f.mode = mode;
+                f.edited = true;
+            }
+        }
+        Message::DisplayApply => {
+            if let Some(r) = &app.running {
+                // A capture at the end of the run would overwrite a profile INI edit.
+                app.status = Some(tf("status_still_running", &[("title", &r.title)]));
+                return Task::none();
+            }
+            let (Some(inst), Some(game), Some(form)) = (
+                app.created.as_ref(),
+                selected_game(app),
+                app.display.as_ref(),
+            ) else {
+                return Task::none();
+            };
+            let Some((width, height)) =
+                eidos::check::display::parse_size(&form.width, &form.height)
+            else {
+                app.status = Some(t("status_display_invalid").to_string());
+                return Task::none();
+            };
+            let d = eidos::check::display::Display {
+                width,
+                height,
+                mode: form.mode,
+            };
+            let _lock = match inst.try_lock("the Eidos window") {
+                Ok(l) => l,
+                Err(e) => {
+                    app.status = Some(tf("status_not_saved", &[("error", &e)]));
+                    return Task::none();
+                }
+            };
+            let done = eidos::check::display::apply_display(
+                game,
+                inst,
+                &eidos::check::active_mods(inst),
+                d,
+            );
+            app.status = Some(match done {
+                Ok(written) => tf(
+                    "status_display_applied",
+                    &[
+                        ("size", &format!("{width}x{height}")),
+                        ("mode", &mode_label(d.mode)),
+                        ("path", &written[0].display()),
+                    ],
+                ),
+                Err(e) => tf("status_fix_failed", &[("error", &e)]),
+            });
+            if let Some(f) = &mut app.display {
+                f.edited = false;
+            }
+            app.diag_dirty = true;
+        }
         Message::LogCopy => {
             let Some(pane) = &app.log_pane else {
                 return Task::none();
@@ -237,11 +309,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(t("status_open_instance_first").to_string());
                 return Task::none();
             };
-            let files: Vec<String> = game.def.ini_files.iter().map(|f| f.to_string()).collect();
-            let Some(first) = files.first().cloned() else {
-                app.status = Some(tf("status_no_managed_inis", &[("game", &game.def.name)]));
-                return Task::none();
-            };
+            let mut files: Vec<String> = game.def.ini_files.iter().map(|f| f.to_string()).collect();
+            files.push(eidos_instance::LAUNCH_ENV_FILE.to_string());
+            let first = files[0].clone();
             let inst = inst.clone();
             if let Err(e) = seed_ini_from_game(app, &first) {
                 app.status = Some(e);
@@ -327,10 +397,27 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     ed.on_disk = content_hash(&std::fs::read(&path).ok());
                     app.archive_epoch
                         .set(app.archive_epoch.get().wrapping_add(1));
-                    app.status = Some(tf(
-                        "status_ini_saved",
-                        &[("file", &ed.current), ("profile", &inst.active().name)],
-                    ));
+                    let ignored = if ed.current == eidos_instance::LAUNCH_ENV_FILE {
+                        eidos_instance::parse_launch_env(&text).1
+                    } else {
+                        Vec::new()
+                    };
+                    app.status = Some(if ignored.is_empty() {
+                        tf(
+                            "status_ini_saved",
+                            &[("file", &ed.current), ("profile", &inst.active().name)],
+                        )
+                    } else {
+                        let lines = ignored
+                            .iter()
+                            .map(usize::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        tf(
+                            "status_launch_env_ignored",
+                            &[("file", &ed.current), ("lines", &lines)],
+                        )
+                    });
                     // Morrowind.ini (and plugins.txt) live in the profile's plugin
                     // state: the cached load order and the hash its next write is
                     // checked against are both stale now, and left so that write

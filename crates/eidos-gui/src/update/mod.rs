@@ -9,6 +9,7 @@
 
 use crate::*;
 
+mod bisect;
 mod categories;
 mod downloads;
 mod files;
@@ -22,11 +23,13 @@ mod plugins;
 mod preferences;
 mod profiles;
 mod saves;
+mod test_run;
 mod tools;
 mod window;
 mod wizard;
 
-pub(crate) use launch::{start_directly, wait_direct_run};
+pub(crate) use launch::{picks_the_game, start_directly, wait_direct_run};
+pub(crate) use test_run::load_test_state;
 
 /// Open `archive` on a worker thread, reporting 7-Zip's percentage as it goes.
 ///
@@ -1209,6 +1212,24 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         if !matches!(message, Message::StopRun) {
             app.confirm_stop = false;
         }
+        if !matches!(message, Message::ReviewApply) {
+            if let Some(r) = app.test_review.as_mut().filter(|r| r.armed) {
+                r.armed = false;
+                r.line = None;
+            }
+        }
+        // Only the press that would confirm the armed action keeps it; the
+        // handlers arm a first press for themselves.
+        let confirms = match &message {
+            Message::BisectAnswer(a) => Some(BisectArm::Answer(*a)),
+            Message::BisectRepeat => Some(BisectArm::Repeat),
+            Message::BisectStop => Some(BisectArm::Stop),
+            _ => None,
+        };
+        if app.bisect_armed != confirms {
+            app.bisect_armed = None;
+        }
+        app.bisect_line = None;
         if !matches!(message, Message::RebuildPrefix) {
             app.confirm_rebuild_prefix = false;
         }
@@ -1464,6 +1485,23 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::ChangeGame
         | Message::OpenNexusGame
         | Message::SetupPrereqs) => launch::handle(app, m),
+        m @ (Message::OpenTestRun
+        | Message::TestChoose(..)
+        | Message::TestStart
+        | Message::TestCancelRequest
+        | Message::CloseTestDialog
+        | Message::ReviewChoose(..)
+        | Message::ReviewApply
+        | Message::ReviewLater) => test_run::handle(app, m),
+        m @ (Message::OpenBisect
+        | Message::BisectStart
+        | Message::BisectRunStep
+        | Message::BisectHide
+        | Message::BisectAnswer(_)
+        | Message::BisectRepeat
+        | Message::BisectReview
+        | Message::BisectStop
+        | Message::BisectClose) => bisect::handle(app, m),
         m @ (Message::OverwriteToModStart
         | Message::ToolOutputModChanged(..)
         | Message::OverwriteToModName(..)
@@ -1530,6 +1568,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::LogCopy
         | Message::CopyHealthReport
         | Message::HealthFix(..)
+        | Message::DisplayWidth(..)
+        | Message::DisplayHeight(..)
+        | Message::DisplayMode(..)
+        | Message::DisplayApply
         | Message::CopyCrashLog(..)
         | Message::LogOpenFolder
         | Message::ShowIniEditor
@@ -1983,6 +2025,12 @@ pub(crate) fn open_instance(app: &mut App, inst: Instance) {
     // exist in this game at all.
     app.data_expanded.clear();
     recompute_counts(app);
+    // The other instance's test run is not this one's; this one's may have
+    // ended, or died, since the window last looked.
+    app.test_dialog = None;
+    app.test_review = None;
+    app.bisect_open = false;
+    load_test_state(app, true);
 }
 
 /// Read one of a profile's INIs into a fresh editor state.

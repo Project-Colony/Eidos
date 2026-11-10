@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=2d528a4f9866439b25ba6b9f89bd62b93bd37f0e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=d9e26a15d52ab549773ed61d97c7ecf36fea8342 -->
 
 # Usare Eidos
 
@@ -175,6 +175,20 @@ salvataggio del profilo.
 ### Cosa è cambiato dall'ultima esecuzione riuscita
 
 Ogni esecuzione tramite `eidos play` o `eidos tool run`, avviata dalla finestra, da un terminale o da Steam, scrive un record in `<instance>/logs/sessions/`: il profilo, ogni mod attiva con versione e id dei file Nexus, l'ordine dei plugin, un checksum di ogni INI del profilo, la versione dell'eseguibile del gioco, la versione di Eidos, il codice di uscita e i salvataggi creati dall'esecuzione. Si tengono i 50 più recenti, e `logs/` resta fuori da un'istanza impacchettata. `eidos sessions <instance> diff` confronta l'ultima esecuzione del gioco terminata con codice 0 con lo stato attuale; `diff <id>` sceglie un altro record dell'elenco. Eidos non rileva ancora i crash qui, e un gioco andato in crash sotto Proton può comunque uscire con codice 0: se l'esecuzione scelta è una di queste, indicane una precedente con `diff <id>`.
+
+### Esecuzioni di prova
+
+Il pulsante Test run accanto a Run avvia il gioco come Run, ma tutto ciò che il gioco scrive finisce in `<instance>/test-run/` invece che nel tuo profilo, nell'Overwrite e nel prefisso: salvataggi nuovi e modificati, modifiche agli INI, `plugins.txt`, file scritti in Data o nella cartella del gioco, e i log in `Documents/My Games/<game>`. Puoi provare con le mod del profilo, senza nessuna mod, oppure solo con le mod selezionate nella lista più le mod i cui plugin fanno loro da master.
+
+Quando il gioco si chiude, Eidos elenca quei file in cinque gruppi (salvataggi, modifiche agli INI, stato dei plugin, output dell'Overwrite, log) e ti chiede di tenere o buttare ciascuno. Tenere i salvataggi non cancella mai un salvataggio dal profilo, nemmeno uno che il gioco ha cancellato durante l'esecuzione. Buttare qualsiasi cosa richiede una seconda pressione. Se Eidos o il computer si fermano durante un'esecuzione di prova, i file restano in `test-run/` e l'elenco si apre la prossima volta che apri l'istanza o premi F5.
+
+Quando la finestra non è stata avviata dallo store del gioco, Test run passa il gioco a quello store (Steam, Heroic o Legendary), come fa Run, e l'esecuzione che lo store avvia è l'esecuzione di prova. Un'esecuzione di prova copre solo le cartelle elencate sopra: le altre scritture del gioco, come il registro di Wine, vanno dove vanno sempre. I salvataggi di un'esecuzione di prova arrivano a Steam Cloud solo dopo che li hai tenuti e hai giocato un'esecuzione normale.
+
+### Trovare la mod dietro un problema
+
+Il pulsante Find the mod behind a problem in Diagnostics cerca la mod che causa un problema che sai riprodurre, per esempio un crash in un certo punto. Ogni passo è un'esecuzione di prova con metà dei sospetti rimasti, i master di cui hanno bisogno e le mod che tieni sempre attive (le mod selezionate nella lista quando inizi e la mod che fornisce lo script extender). Dopo ogni esecuzione rispondi se il problema si è presentato; Not sure divide i sospetti in un altro modo e Run it again ripete il passo. Rispondere, o premere Run it again, butta i file scritti dal passo, dopo una seconda pressione. Per tenerne alcuni, premi prima See the files: apre lo stesso elenco che compare dopo un'esecuzione di prova. Se il gioco è andato in crash e un crash logger ha scritto un log, o se il gioco è uscito con un codice di errore, Eidos indica Yes come risposta probabile. 200 sospetti richiedono circa 8 esecuzioni.
+
+La ricerca è salvata in `<instance>/bisect.json`, quindi puoi chiudere Eidos tra un passo e l'altro. Stop the search la scarta dopo una seconda pressione. Il risultato nomina la mod, o l'insieme di mod che hanno bisogno l'una dei master dell'altra, ed è conservato in `<instance>/logs/bisect-<time>.txt`. Le mod generate (un output di Nemesis o DynDOLOD, un Bashed Patch) sono costruite per la lista completa e possono fallire con metà di essa: tienile sempre attive, oppure lasciale spente per tutta la ricerca.
 
 ### Nessun passaggio privilegiato
 
@@ -808,6 +822,8 @@ resta, non quella sepolta nel prefisso Proton che viene sovrascritta a ogni
 avvio. **View -> Log** legge i log di sessione. **View -> Extensions** elenca i
 tuoi add-on; vedi [extensions.it.md](extensions.md).
 
+Quando un avvio non trova l'INI principale del gioco (`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini`...) né nel profilo né nel prefisso, Eidos copia prima nel profilo quello predefinito della cartella del gioco (`Skyrim_Default.ini`, `Fallout4_Default.ini`...), come fa MO2. Il prefisso e la cartella del gioco non vengono modificati.
+
 L'installazione accetta tutto: i percorsi Simple e FOMOD, più i pacchetti
 **BAIN** di Wrye Bash (spunta i sotto-pacchetti, che si uniscono in ordine) e un
 selettore **manuale** che mostra l'albero dell'archivio e ti lascia indicare la
@@ -830,6 +846,8 @@ miei plugin SKSE si sono caricati?" da deduzione in prova.
 Segnala anche un aggiornamento del gioco dall'ultimo avvio pulito, uno script extender assente o che non corrisponde alla versione del gioco (con la pagina di download dell'extender e un pulsante che installa l'archivio che scarichi), un'opzione di avvio di Steam che non avvia Eidos con `%command%`, NVAPI lasciato spento per DLSS, uno schermo intero esclusivo che blocca la generazione di frame, un `enblocal.ini` di ENB senza `LinuxVersion=true`, le dichiarazioni dei plugin F4SE e SFSE e il log di crash dell'ultima sessione con le mod che nomina.
 Il controllo degli aggiornamenti legge anche i requisiti Nexus di ogni mod. Diagnostics elenca un mod richiesto che manca o è disattivato, con Ignore per un requisito soddisfatto in altro modo.
 
+Per Skyrim SE, Enderal SE e Fallout 4, Diagnostics ha anche una scheda Schermo. Mostra la dimensione e la modalità della finestra impostate nel `SkyrimPrefs.ini` del profilo (`EnderalPrefs.ini`, `Fallout4Prefs.ini`), oppure nella copia del prefisso quando il profilo non ne ha ancora una. Quando nessuna delle due imposta una dimensione, i campi partono dallo schermo collegato più grande elencato in `/sys/class/drm`, quindi una Steam Deck mostra 1280x800. Apply scrive `iSize W`, `iSize H`, `bFull Screen` e `bBorderless` nella copia del profilo, dopo aver adottato la copia del prefisso se il profilo non ne ha una. Quando SSE Display Tweaks imposta la finestra, Apply scrive la stessa dimensione e la stessa modalità nella sua copia in Overwrite; il file del mod stesso non viene modificato.
+
 Per avviare il gioco attraverso la GUI, imposta l'opzione di avvio Steam del
 gioco al percorso assoluto del binario (Steam non vede `~/.cargo/bin` nel PATH):
 
@@ -841,7 +859,7 @@ Eidos si apre sull'istanza di quel gioco - quella che hai usato per ultima, cos�
 un'istanza portatile viene ritrovata proprio come quella globale; clicca Run per
 avviarlo attraverso la vista unita.
 
-Con **Start the game at once when a store opens Eidos** attivo (Preferences, General, Running a game), Eidos salta quel clic: controlla Health e avvia il gioco senza mostrare la sua finestra. La finestra si apre come al solito quando Health segnala un problema, quando la lista delle mod richiede attenzione o quando uno strumento impostato per girare prima di giocare ha un output non aggiornato. Per avere la finestra in un solo avvio, metti `EIDOS_WINDOW=1` davanti al comando: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
+Con **Start the game at once when a store opens Eidos** attivo (Preferences, General, Running a game), Eidos salta quel clic: controlla Health e avvia il gioco senza mostrare la sua finestra. La finestra si apre come al solito quando Health segnala un problema, quando la lista delle mod richiede attenzione, quando uno strumento impostato per girare prima di giocare ha un output non aggiornato o, per Skyrim SE, Enderal SE e Fallout 4, quando il profilo non ha ancora una dimensione della finestra (la finestra si apre allora su Diagnostics). Per avere la finestra in un solo avvio, metti `EIDOS_WINDOW=1` davanti al comando: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Fuori da Steam, Run non avvia il gioco da sé con Proton o Wine. Chiede allo
 store a cui appartiene la copia di avviarlo, e lo store avvia Eidos:
@@ -862,6 +880,23 @@ essa dopo aver giocato per ricaricarne le liste. Quando manca l'impostazione
 dello store, o il loader dello script extender non è accanto all'eseguibile del
 gioco, Run non avvia nulla e mostra cosa impostare e dove, con il percorso reale
 del binario in esecuzione.
+
+### Variabili e wrapper per profilo
+
+Un profilo può avere le proprie variabili d'ambiente e i propri comandi wrapper in `profiles/<nome>/launch-env.ini`, una voce per riga:
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+Valgono per ogni `eidos play` di quel profilo (il gioco avviato dal `%command%` di Steam, o da Run in una finestra aperta da uno store) e per ogni esecuzione di uno strumento. `eidos shell` riceve le variabili e nessun wrapper. La prima riga `wrapper=` è la più esterna. Una riga `wrapper=` che contiene `%command%` riceve il comando in quel punto, come nelle opzioni di avvio di Steam; una riga senza riceve il comando in fondo. I wrapper girano nel namespace privato di Eidos, quindi vedono le mod.
+
+Una variabile messa qui sostituisce il valore che Eidos imposta per lo stesso nome, e la riga `env=` propria di uno strumento in `tools.ini` sostituisce entrambi. `WINEDLLOVERRIDES` invece viene aggiunta dopo gli override che Eidos imposta per ENB, ReShade e le DLL incluse: una DLL citata in entrambi prende l'impostazione del profilo, le altre mantengono la propria.
+
+View -> INI editor apre il file come ultima scheda, per ogni gioco. Al salvataggio Eidos elenca i numeri delle righe che ignora: quelle che non sono né `env=NOME=valore` né `wrapper=comando`. `eidos play <istanza>` senza comando elenca le variabili che riceve un'esecuzione e i wrapper. Copy report in Diagnostics nomina le variabili e i programmi wrapper, senza i loro valori.
 
 Il `%command%` di Steam per i titoli Bethesda di solito punta a
 `<Game>Launcher.exe`. Eidos non lo esegue mai: il launcher è un'app di

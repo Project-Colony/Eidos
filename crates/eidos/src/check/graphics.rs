@@ -59,7 +59,15 @@ pub fn graphics_facts(
     let overwrite = inst.overwrite_dir();
     let options = launch_options.unwrap_or("");
     let nvapi_set = std::env::var("PROTON_ENABLE_NVAPI").is_ok_and(|v| v == "1")
-        || options.contains("PROTON_ENABLE_NVAPI=1");
+        || options.contains("PROTON_ENABLE_NVAPI=1")
+        || inst
+            .active()
+            .launch_env()
+            .env
+            .iter()
+            .rev()
+            .find(|(k, _)| k == "PROTON_ENABLE_NVAPI")
+            .is_some_and(|(_, v)| v == "1");
 
     let mut nvapi_off_by_default = false;
     let mut proton_build = String::new();
@@ -356,6 +364,46 @@ mod tests {
         let fo4 = facts("fallout4");
         assert!(!fo4.nvapi_off_by_default);
         assert_eq!(fo4.proton_build, "");
+    }
+
+    #[test]
+    fn a_profile_variable_counts_as_nvapi_set() {
+        let root = scratch("nvapi-profile");
+        let inst = Instance::portable(root.join("instance"));
+        inst.create().unwrap();
+        let game_dir = root.join("game");
+        std::fs::create_dir_all(game_dir.join("Data")).unwrap();
+        let game = DetectedGame {
+            source: Default::default(),
+            def: eidos_games::GameDef::for_id("skyrimse").unwrap(),
+            install_path: game_dir.clone(),
+            data_path: game_dir.join("Data"),
+            compatdata: None,
+            steam_name: "synthetic".into(),
+        };
+        let nvapi_set = || {
+            graphics_facts(
+                &game,
+                &inst,
+                &[],
+                None,
+                Path::new("eidos"),
+                &root.join("home"),
+            )
+            .nvapi_set
+        };
+        if std::env::var("PROTON_ENABLE_NVAPI").map_or(true, |v| v != "1") {
+            assert!(!nvapi_set());
+        }
+        let prof = inst.active();
+        std::fs::create_dir_all(prof.dir()).unwrap();
+        std::fs::write(
+            prof.dir().join(eidos_instance::LAUNCH_ENV_FILE),
+            "env=PROTON_ENABLE_NVAPI=1\n",
+        )
+        .unwrap();
+        assert!(nvapi_set());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

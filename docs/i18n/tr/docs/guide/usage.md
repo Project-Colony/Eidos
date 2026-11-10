@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=2d528a4f9866439b25ba6b9f89bd62b93bd37f0e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=d9e26a15d52ab549773ed61d97c7ecf36fea8342 -->
 
 # Eidos kullanımı
 
@@ -169,6 +169,20 @@ hiçbir kaydı değiştirmez.
 ### Son iyi çalıştırmadan beri neyin değiştiği
 
 `eidos play` veya `eidos tool run` ile yapılan her çalıştırma, pencereden, terminalden ya da Steam'den başlasın, `<instance>/logs/sessions/` altına bir kayıt yazar: profil, etkin her mod ile sürümü ve Nexus dosya kimlikleri, eklenti sırası, her profil INI dosyasının sağlama toplamı, oyun yürütülebilir dosyasının sürümü, Eidos sürümü, çıkış kodu ve çalıştırmanın oluşturduğu kayıtlar. En yeni 50 kayıt tutulur ve `logs/` paketlenen bir örneğe girmez. `eidos sessions <instance> diff`, çıkış kodu 0 ile biten en yeni oyun çalıştırmasını mevcut durumla karşılaştırır; `diff <id>` listeden başka bir kaydı seçer. Eidos burada henüz çökmeleri algılamaz ve Proton altında çöken bir oyun yine de 0 koduyla çıkabilir: seçilen çalıştırma böyleyse `diff <id>` ile daha eskisini belirtin.
+
+### Test çalıştırmaları
+
+Run'ın yanındaki Test run düğmesi oyunu Run gibi başlatır, ama oyunun yazdığı her şey profiliniz, Overwrite ve önek yerine `<instance>/test-run/` içine gider: yeni ve değişen kayıtlar, INI değişiklikleri, `plugins.txt`, Data'ya ya da oyun klasörüne yazılan dosyalar ve `Documents/My Games/<game>` içindeki günlükler. Profilin modlarıyla, hiç mod olmadan ya da yalnızca listede seçili modlar ve bunların eklentilerinin master olarak gerektirdiği modlarla test edebilirsiniz.
+
+Oyun kapandığında Eidos bu dosyaları beş grupta listeler (kayıtlar, INI değişiklikleri, eklenti durumu, Overwrite çıktısı, günlükler) ve her birini tutmak mı yoksa atmak mı istediğinizi sorar. Kayıtları tutmak profilden hiçbir kaydı silmez, oyunun çalıştırma sırasında sildiği bir kaydı bile. Herhangi bir şeyi atmak ikinci bir basış ister. Eidos ya da bilgisayar bir test çalıştırması sırasında durursa dosyalar `test-run/` içinde kalır ve liste, örneği bir sonraki açışınızda ya da F5'e bastığınızda açılır.
+
+Pencere oyunun mağazası tarafından başlatılmadıysa Test run, Run'ın yaptığı gibi oyunu o mağazaya (Steam, Heroic ya da Legendary) devreder ve mağazanın başlattığı çalıştırma test çalıştırması olur. Bir test çalıştırması yalnızca yukarıda sayılan klasörleri kapsar: oyunun Wine kayıt defteri gibi başka yerlere yazdıkları her zamanki yerlerine gider. Bir test çalıştırmasından gelen kayıtlar Steam Cloud'a ancak onları tuttuktan ve normal bir çalıştırma oynadıktan sonra ulaşır.
+
+### Bir sorunun arkasındaki modu bulmak
+
+Diagnostics'teki Find the mod behind a problem düğmesi, yeniden üretebildiğiniz bir sorunun, örneğin belirli bir yerdeki bir çökmenin nedeni olan modu arar. Her adım, kalan şüphelilerin yarısı, bunların gerektirdiği master'lar ve her zaman açık tuttuğunuz modlarla (başlarken listede seçili olan modlar ve script extender'ı sağlayan mod) yapılan bir test çalıştırmasıdır. Her çalıştırmadan sonra sorunun olup olmadığını yanıtlarsınız; Not sure şüphelileri başka türlü böler, Run it again ise adımı yineler. Bir yanıt ya da Run it again, adımın yazdığı dosyaları ikinci bir basıştan sonra atar. Bazılarını tutmak için önce See the files'a basın: bir test çalıştırmasından sonraki listenin aynısını açar. Oyun çöktüyse ve bir crash logger günlük yazdıysa ya da oyun bir hata koduyla çıktıysa Eidos, Yes'i olası yanıt olarak işaretler. 200 şüpheli yaklaşık 8 çalıştırma sürer.
+
+Arama `<instance>/bisect.json` içinde saklanır, bu yüzden adımlar arasında Eidos'u kapatabilirsiniz. Stop the search ikinci bir basıştan sonra aramayı bırakır. Sonuç, modu ya da birbirinin master'larına ihtiyaç duyan mod kümesini adlandırır ve `<instance>/logs/bisect-<time>.txt` içinde saklanır. Üretilmiş modlar (bir Nemesis ya da DynDOLOD çıktısı, bir Bashed Patch) tam liste için oluşturulur ve listenin yarısıyla bozulabilir: onları her zaman açık tutun ya da tüm arama boyunca kapalı bırakın.
 
 ### Ayrıcalıklı adım gerekmez
 
@@ -766,6 +780,8 @@ MO2'nin kendisidir (`categories.dat` ve `nexuscatmap.dat`), yani paylaşılan bi
 **View -> Log**, oturum günlüklerini okur. **View -> Extensions**, kendi
 eklentilerinizi listeler; bkz. [extensions.tr.md](extensions.md).
 
+Bir başlatma oyunun ana INI dosyasını (`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini`...) ne profilde ne de önekte bulamazsa, Eidos önce oyun klasöründeki varsayılan dosyayı (`Skyrim_Default.ini`, `Fallout4_Default.ini`...) MO2'nin yaptığı gibi profile kopyalar. Önek ve oyun klasörü değiştirilmez.
+
 Kurulum her şeyi kabul eder: Simple ve FOMOD yolları, artı Wrye Bash **BAIN**
 paketleri (sırayla katılan alt paketleri işaretleyin) ve hiçbir sezgisel yöntem
 yerleşimi tanımadığında arşiv ağacını gösterip veri kökünü işaret etmenizi
@@ -787,6 +803,8 @@ eklentilerim yüklendi mi?" sorusunu bir çıkarımdan bir kanıta çevirir.
 Ayrıca son temiz başlatmadan bu yana bir oyun güncellemesini, eksik ya da oyun sürümüyle uyuşmayan bir script extender'ı (extender'ın indirme sayfası ve indirdiğiniz arşivi kuran bir düğmeyle), Eidos'u `%command%` ile başlatmayan bir Steam başlatma seçeneğini, DLSS için kapalı bırakılmış NVAPI'yi, kare üretimini durduran özel tam ekranı, `LinuxVersion=true` içermeyen bir ENB `enblocal.ini` dosyasını, F4SE ve SFSE eklenti bildirimlerini ve son oturumun çökme günlüğünü, adını verdiği modlarla birlikte bildirir.
 Güncelleme denetimi her modun Nexus gereksinimlerini de okur. Diagnostics, eksik veya devre dışı bir gerekli modu listeler; başka yoldan karşılanan bir gereksinim için Ignore vardır.
 
+Skyrim SE, Enderal SE ve Fallout 4 için Diagnostics'te bir de Ekran kartı vardır. Profilin `SkyrimPrefs.ini` dosyasında (`EnderalPrefs.ini`, `Fallout4Prefs.ini`) ayarlı pencere boyutunu ve kipini, profilde bu dosya henüz yoksa önekteki kopyadakini gösterir. İkisi de bir boyut belirtmiyorsa alanlar `/sys/class/drm` içinde listelenen en büyük bağlı ekranla dolar, yani Steam Deck 1280x800 gösterir. Apply `iSize W`, `iSize H`, `bFull Screen` ve `bBorderless` değerlerini profilin kopyasına yazar; profilde kopya yoksa önce önekteki kopyayı alır. Pencereyi SSE Display Tweaks belirliyorsa Apply aynı boyutu ve kipi onun Overwrite'taki kopyasına da yazar; modun kendi dosyası değiştirilmez.
+
 Oyunu GUI üzerinden başlatmak için oyunun Steam başlatma seçeneğini ikili
 dosyanın mutlak yoluna ayarlayın (Steam, PATH'te `~/.cargo/bin`'i görmez):
 
@@ -798,7 +816,7 @@ Eidos o oyunun örneğinde açılır - en son kullandığınızda, yani taşına
 örnek de global olan gibi yeniden bulunur; birleşik görünüm üzerinden başlatmak
 için Run'a tıklayın.
 
-**Start the game at once when a store opens Eidos** açıkken (Preferences, General, Running a game) Eidos bu tıklamayı atlar: Health'i denetler ve oyunu penceresini göstermeden başlatır. Health bir sorun bildirdiğinde, mod listesi ilgi gerektirdiğinde ya da oynamadan önce çalışacak şekilde ayarlanmış bir aracın çıktısı eskidiğinde pencere her zamanki gibi açılır. Pencereyi tek bir başlatma için isterseniz komutun önüne `EIDOS_WINDOW=1` ekleyin: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
+**Start the game at once when a store opens Eidos** açıkken (Preferences, General, Running a game) Eidos bu tıklamayı atlar: Health'i denetler ve oyunu penceresini göstermeden başlatır. Health bir sorun bildirdiğinde, mod listesi ilgi gerektirdiğinde, oynamadan önce çalışacak şekilde ayarlanmış bir aracın çıktısı eskidiğinde ya da Skyrim SE, Enderal SE ve Fallout 4'te profilin henüz bir pencere boyutu olmadığında pencere her zamanki gibi açılır (son durumda Diagnostics sekmesinde açılır). Pencereyi tek bir başlatma için isterseniz komutun önüne `EIDOS_WINDOW=1` ekleyin: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Steam dışında Run oyunu kendisi Proton ya da Wine ile başlatmaz. Kopyanın sahibi
 olan mağazadan onu başlatmasını ister, mağaza da Eidos'u başlatır:
@@ -819,6 +837,23 @@ yüklemek için oynadıktan sonra orada F5'e basın. Mağazadaki ayar eksikse ya
 script extender'ın loader'ı oyunun çalıştırılabilir dosyasının yanında değilse,
 Run hiçbir şey başlatmaz ve neyin nereye ayarlanacağını, çalışan ikili dosyanın
 gerçek yoluyla gösterir.
+
+### Profil başına değişkenler ve wrapper'lar
+
+Bir profil, kendi ortam değişkenlerini ve wrapper komutlarını `profiles/<ad>/launch-env.ini` içinde, satır başına bir girdi olacak şekilde taşıyabilir:
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+Bu profilin her `eidos play` çalıştırmasında (Steam'in `%command%` değeriyle ya da bir mağazanın açtığı pencerede Run ile başlatılan oyun) ve her araç çalıştırmasında geçerlidir. `eidos shell` değişkenleri alır, wrapper almaz. İlk `wrapper=` satırı en dıştakidir. `%command%` içeren bir `wrapper=` satırında komut o yere konur, Steam'in başlatma seçeneklerindeki gibi; içermeyen satırda komut sona eklenir. Wrapper'lar Eidos'un özel ad alanında çalışır, bu yüzden modları görür.
+
+Buradaki bir değişken, Eidos'un aynı ad için ayarladığı değerin yerine geçer; bir aracın `tools.ini` içindeki kendi `env=` satırı ise ikisinin de yerine geçer. `WINEDLLOVERRIDES` ise Eidos'un ENB, ReShade ve birlikte gelen DLL'ler için ayarladığı override'lardan sonra eklenir: ikisinde de adı geçen bir DLL profilin ayarını alır, diğerleri kendi ayarını korur.
+
+View -> INI editor dosyayı her oyun için son sekme olarak açar. Kaydederken Eidos'un yok saydığı satır numaralarını listeler: ne `env=AD=değer` ne de `wrapper=komut` olan satırlar. Komutsuz `eidos play <örnek>`, bir çalıştırmanın alacağı değişkenleri ve wrapper'ları listeler. Diagnostics içindeki Copy report değişkenleri ve wrapper programlarını değerleri olmadan adlandırır.
 
 Bethesda oyunları için Steam'in `%command%` değeri genellikle
 `<Game>Launcher.exe`'yi gösterir. Eidos onu asla çalıştırmaz: başlatıcı, `Data`'yı

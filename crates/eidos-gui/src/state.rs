@@ -316,6 +316,16 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         confirm_clear: false,
         confirm_stop: false,
         play_prompt: None,
+        test_dialog: None,
+        test_state: None,
+        test_review: None,
+        bisect: None,
+        bisect_open: false,
+        bisect_universe: Default::default(),
+        bisect_pinned: Vec::new(),
+        bisect_armed: None,
+        bisect_step: (None, 0),
+        bisect_line: None,
         play_anyway: Vec::new(),
         confirm_rebuild_prefix: false,
         overwrite_to_mod: None,
@@ -511,6 +521,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         diag: Vec::new(),
         diag_dirty: true,
         diag_stale: std::cell::Cell::new(true),
+        display: None,
         data_listing: std::cell::RefCell::new(HashMap::new()),
         profiles_cache: std::cell::RefCell::new(None),
         archives_cache: std::cell::RefCell::new(None),
@@ -563,21 +574,6 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
             }
             inst.exists().then_some((i, inst))
         });
-    let open_existing = |app: &mut App, i: usize, inst: Instance| {
-        let id = app.games[i].def.id;
-        // No-op when a manifest exists (every registry-found portable has
-        // one); stamps the legacy manifest-less global otherwise.
-        let _ = inst.ensure_manifest(id, InstanceKind::Global);
-        let _ = inst.ensure_profiles();
-        remember_open(&inst, id);
-        app.selected = Some(i);
-        app.created = Some(inst);
-        // Through `reload_mods`, which also records what `modlist.txt` held: a
-        // window Steam opened is exactly the one most likely to sit next to
-        // another, and without the record its first save could not tell.
-        reload_mods(app);
-        app.screen = Screen::Main;
-    };
     if let Some((i, inst)) = pinned {
         open_existing(&mut app, i, inst);
         if auto.is_some() {
@@ -667,6 +663,27 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         None => startup,
     };
     (app, startup)
+}
+
+/// Open the instance a starting window restores: the last-used one,
+/// `EIDOS_INSTANCE`, or the one a store opened.
+pub(crate) fn open_existing(app: &mut App, i: usize, inst: Instance) {
+    let id = app.games[i].def.id;
+    // No-op when a manifest exists (every registry-found portable has
+    // one); stamps the legacy manifest-less global otherwise.
+    let _ = inst.ensure_manifest(id, InstanceKind::Global);
+    let _ = inst.ensure_profiles();
+    remember_open(&inst, id);
+    app.selected = Some(i);
+    app.created = Some(inst);
+    // Through `reload_mods`, which also records what `modlist.txt` held: a
+    // window Steam opened is exactly the one most likely to sit next to
+    // another, and without the record its first save could not tell.
+    reload_mods(app);
+    app.screen = Screen::Main;
+    // A test run that ended, or died with Eidos or the computer, while no
+    // window was open is closed and reviewed now, as `open_instance` does.
+    load_test_state(app, true);
 }
 
 /// A store started this window with the game's command: name the store, and
@@ -1649,6 +1666,15 @@ pub(crate) fn start_run_with_log(
 pub(crate) fn finish_run(app: &mut App) {
     let run = app.running.take();
     reload_mods(app);
+    // Before the status below, which a Stop decides: the review (or the bisect
+    // panel) opens whatever the run's end.
+    load_test_state(app, true);
+    // The test run began during this run, so this run was it.
+    let test_ran = run.as_ref().is_some_and(|r| {
+        r.game
+            && matches!(&app.test_state, Some((test, eidos_instance::TestState::Ended))
+                if test.started.is_some_and(|s| s >= r.started))
+    });
     if app.created.is_some() {
         // A game run under `eidos play` writes only into the Overwrite: the mods
         // are read-only lowers of the union, and game-root writes land in
@@ -1746,12 +1772,17 @@ pub(crate) fn finish_run(app: &mut App) {
     } else {
         tf("status_exited", &[("title", &run.title)])
     });
+    // Stopped wins; otherwise the review names the code and the crash log.
+    if test_ran && !run.stopped {
+        app.status = Some(t("status_test_ended").to_string());
+    }
     // A crash can still exit 0 under Proton; the crash log is the better answer.
     // Only when this run recorded its start: one that failed or was refused
     // before that would name the previous session's log. A stopped run is no
     // crash news, even if the stop made the game write a log.
     if run.game
         && !run.stopped
+        && !test_ran
         && app
             .created
             .as_ref()
@@ -3032,6 +3063,20 @@ pub(crate) fn refresh_diagnostics(app: &mut App) {
     app.diag_dirty = false;
     run_diagnose_addons(app);
     app.diag = diagnostics(app);
+    let display = app
+        .created
+        .as_ref()
+        .zip(selected_game(app))
+        .and_then(|(inst, game)| {
+            eidos::check::display::display_facts(
+                game,
+                inst,
+                &eidos::check::active_mods(inst),
+                Path::new(eidos::check::display::DRM),
+            )
+        })
+        .map(|f| next_form(app.display.as_ref(), f));
+    app.display = display;
 }
 
 /// The values an add-on's `{placeholders}` are filled from.

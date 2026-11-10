@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
 
 # Community Shaders、DLSS 與影格生成
 
@@ -8,7 +8,7 @@ Community Shaders 1.4+ 自帶升頻(DLSS 4 / FSR 3.1 / XeSS,透過單獨的
 它們的 DLL —— 但有三件事在遊戲裡**看不出來**,而且每一件都會讓功能靜悄悄地什麼也
 不做。本頁就是這份清單,是在真實環境裡吃過苦頭換來的。
 
-「健康」分頁會替你檢查其中三項:存在 NVIDIA 驅動程式和 Upscaling 套件、而遊戲所用的 Proton 版本預設關閉 NVAPI 時的 NVAPI 變數(GE-Proton11-9 和 Proton 11.0 會開啟它),設定檔 `SkyrimPrefs.ini` 中的獨占全螢幕,以及下面介紹的 ENB 那一行。後兩項附有「修復」按鈕。
+「健康」分頁會替你檢查其中三項:存在 NVIDIA 驅動程式和 Upscaling 套件、而遊戲所用的 Proton 版本預設關閉 NVAPI 時的 NVAPI 變數(GE-Proton11-9 和 Proton 11.0 會開啟它),設定檔 `SkyrimPrefs.ini` 中的獨占全螢幕,以及下面介紹的 ENB 那一行。後兩項附有「修復」按鈕,Diagnostics 中的「顯示」卡片可以連同尺寸一起設為無邊框視窗。
 
 ## DLSS 需要的啟動選項
 
@@ -20,6 +20,8 @@ PROTON_ENABLE_NVAPI=1 eidos-gui %command%
 而 Skyrim 不在清單裡。沒有它,CS 無法初始化 DLSS,會悄悄退回 FSR 升頻,畫面上不會有
 任何提示說明原因。在非 NVIDIA 機器上設定這個變數毫無代價,所以放心用的啟動選項就是
 上面那一行。影格生成本身是 FSR 3.1,不需要 NVAPI;只有 DLSS 升頻器需要。
+
+只想為一個設定檔設定時,把 `env=PROTON_ENABLE_NVAPI=1` 寫進該設定檔的 `launch-env.ini`(View -> INI editor,最後一個分頁)。Health 卡片也會計入這一行。
 
 ## 影格生成需要無邊框視窗
 

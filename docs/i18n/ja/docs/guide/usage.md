@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=2d528a4f9866439b25ba6b9f89bd62b93bd37f0e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=d9e26a15d52ab549773ed61d97c7ecf36fea8342 -->
 
 # Eidos の使い方
 
@@ -145,6 +145,20 @@ Import を押してください。Import はそのセーブをコセーブと一
 ### 前回の正常な実行から何が変わったか
 
 `eidos play` または `eidos tool run` による実行は、ウィンドウ、ターミナル、Steam のどこから始めても、`<instance>/logs/sessions/` に記録を書き込みます。内容は、プロファイル、有効な各 mod とそのバージョンおよび Nexus のファイル ID、プラグインの順序、各プロファイル INI のチェックサム、ゲーム実行ファイルのバージョン、Eidos のバージョン、終了コード、その実行で作られたセーブです。新しい 50 件が残り、`logs/` はパックしたインスタンスに含まれません。`eidos sessions <instance> diff` は、終了コード 0 で終わった直近のゲーム実行を現在の状態と比べます。`diff <id>` で一覧から別の記録を選べます。Eidos はここではまだクラッシュを検出せず、Proton 上でクラッシュしたゲームも終了コード 0 で終わることがあります。選ばれた実行がそれに当たる場合は、`diff <id>` でより前の記録を指定してください。
+
+### テスト実行
+
+Run の隣にある Test run ボタンは Run と同じようにゲームを起動しますが、ゲームが書き込むものはすべて、プロファイル、Overwrite、プレフィックスではなく `<instance>/test-run/` に入ります。対象は、新しいセーブと変更されたセーブ、INI の変更、`plugins.txt`、Data やゲームフォルダに書かれたファイル、そして `Documents/My Games/<game>` のログです。テストは、プロファイルの MOD のまま、MOD なし、またはリストで選択した MOD とそのプラグインがマスターとして必要とする MOD だけ、のいずれかで行えます。
+
+ゲームが終了すると、Eidos はそれらのファイルを 5 つのグループ (セーブ、INI の変更、プラグインの状態、Overwrite への出力、ログ) に分けて一覧にし、グループごとに残すか捨てるかを尋ねます。セーブを残しても、プロファイルのセーブが消えることはありません。実行中にゲームが消したセーブも同じです。何かを捨てるには 2 回目の押下が必要です。テスト実行中に Eidos やコンピューターが止まった場合、ファイルは `test-run/` に残り、次にインスタンスを開いたときか F5 を押したときに一覧が開きます。
+
+ウィンドウがゲームのストアから起動されたものでない場合、Test run は Run と同じようにゲームをそのストア (Steam、Heroic、Legendary) に渡し、ストアが始めた実行がテスト実行になります。テスト実行が扱うのは上に挙げたフォルダだけです。Wine のレジストリなど、ゲームのそれ以外の書き込みはいつもの場所に行きます。テスト実行のセーブが Steam Cloud に届くのは、それを残してから通常の実行をプレイした後だけです。
+
+### 問題の原因になっている MOD を見つける
+
+Diagnostics にある Find the mod behind a problem ボタンは、再現できる問題 (特定の場所でのクラッシュなど) を起こしている MOD を探します。各ステップは、残っている容疑の MOD の半分、それらが必要とするマスター、常にオンにしておく MOD (開始時にリストで選択していた MOD と、スクリプトエクステンダを提供する MOD) によるテスト実行です。実行のたびに、問題が起きたかどうかを答えます。Not sure は容疑の MOD を別の分け方で分け直し、Run it again はそのステップをやり直します。回答または Run it again は、2 回目の押下でそのステップが書いたファイルを捨てます。その一部を残したい場合は、先に See the files を押してください。テスト実行の後と同じ一覧が開きます。ゲームがクラッシュしてクラッシュロガーがログを書いた場合、またはゲームがエラーコードで終了した場合、Eidos は Yes をありそうな答えとして示します。容疑の MOD が 200 個なら、実行は約 8 回です。
+
+探索は `<instance>/bisect.json` に保存されるので、ステップの合間に Eidos を閉じてもかまいません。Stop the search は 2 回目の押下で探索を破棄します。結果は、その MOD か、互いのマスターを必要とする MOD の組を示し、`<instance>/logs/bisect-<time>.txt` に残ります。生成された MOD (Nemesis や DynDOLOD の出力、Bashed Patch) は完全なリスト向けに作られているため、その半分では失敗することがあります。常にオンにしておくか、探索のあいだずっとオフにしておいてください。
 
 ### 特権の要る手順はない
 
@@ -690,6 +704,8 @@ Nexus から取ってこられます。カタログのファイルはどちら�
 **View -> Log** はセッションログを読みます。**View -> Extensions** は自分の
 アドオンを一覧します。[extensions.ja.md](extensions.md) を参照。
 
+起動時にゲームのメイン INI (`Skyrim.ini`、`Fallout4.ini`、`Oblivion.ini` など) がプロファイルにもプレフィックスにもない場合、Eidos は MO2 と同じく、ゲームフォルダーの既定ファイル (`Skyrim_Default.ini`、`Fallout4_Default.ini` など) を先にプロファイルへコピーします。プレフィックスとゲームフォルダーは変更されません。
+
 インストールは何でも受け付けます。Simple と FOMOD の経路に加え、Wrye Bash の
 **BAIN** パッケージ(サブパッケージにチェックを入れると順に統合されます)、
 そしてどの推測も配置を認識できないときに書庫の木を見せてデータのルートを指させる
@@ -709,6 +725,8 @@ FOMOD の MOD を再インストールまたは更新すると、ウィザード
 さらに、前回の正常な起動以降のゲーム更新、スクリプトエクステンダの欠落やゲームのバージョンとの不一致(エクステンダのダウンロードページと、ダウンロードした書庫をインストールするボタン付き)、Eidos を `%command%` 付きで起動しない Steam の起動オプション、DLSS 用にオフのままの NVAPI、フレーム生成を止める排他的フルスクリーン、`LinuxVersion=true` のない ENB の `enblocal.ini`、F4SE と SFSE のプラグイン宣言、そして前回のセッションのクラッシュログとそこに名前の出る MOD も報告します。
 更新の確認では、各 mod の Nexus 上の要件も読み込みます。Diagnostics は、見つからない、または無効になっている必須 mod を一覧し、別の方法で満たしている要件は Ignore で非表示にできます。
 
+Skyrim SE、Enderal SE、Fallout 4 では、Diagnostics に「表示」カードもあります。プロファイルの `SkyrimPrefs.ini` (`EnderalPrefs.ini`、`Fallout4Prefs.ini`) に設定されたウィンドウのサイズとモードを表示し、プロファイルにまだファイルがない場合はプレフィックス側のコピーの値を表示します。どちらにもサイズがない場合、入力欄には `/sys/class/drm` に載っている接続中で最大の画面の値が入るので、Steam Deck では 1280x800 になります。Apply は `iSize W`、`iSize H`、`bFull Screen`、`bBorderless` をプロファイルのコピーに書き込みます。プロファイルにコピーがなければ、先にプレフィックスのコピーを取り込みます。SSE Display Tweaks がウィンドウを設定している場合、Apply は同じサイズとモードを Overwrite にあるそのコピーにも書き込みます。MOD 自体のファイルは変更されません。
+
 GUI からゲームを起動するには、そのゲームの Steam 起動オプションに実行ファイルの
 絶対パスを設定してください(Steam は PATH の `~/.cargo/bin` を見ません):
 
@@ -720,7 +738,7 @@ Eidos はそのゲームのインスタンスで開きます - 最後に使っ�
 インスタンスもグローバルと同じように見つかります。Run を押せば統合ビュー越しに
 起動します。
 
-**Start the game at once when a store opens Eidos** をオンにすると (Preferences、General、Running a game)、Eidos はこのクリックを省きます。Health を確認し、ウィンドウを表示せずにゲームを起動します。Health が問題を挙げたとき、MOD リストに対応が必要なとき、プレイ前に実行するよう設定したツールの出力が古いときは、いつもどおりウィンドウが開きます。1 回の起動だけウィンドウを出したい場合は、コマンドの前に `EIDOS_WINDOW=1` を付けます (`EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`)。
+**Start the game at once when a store opens Eidos** をオンにすると (Preferences、General、Running a game)、Eidos はこのクリックを省きます。Health を確認し、ウィンドウを表示せずにゲームを起動します。Health が問題を挙げたとき、MOD リストに対応が必要なとき、プレイ前に実行するよう設定したツールの出力が古いとき、Skyrim SE、Enderal SE、Fallout 4 でプロファイルにまだウィンドウサイズがないときは、いつもどおりウィンドウが開きます (最後の場合は Diagnostics タブで開きます)。1 回の起動だけウィンドウを出したい場合は、コマンドの前に `EIDOS_WINDOW=1` を付けます (`EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`)。
 
 Steam の外では、Run は Proton や Wine でゲームを自分で起動しません。そのコピーを持つストアに起動を頼み、ストアが Eidos を起動します。
 
@@ -729,6 +747,23 @@ Steam の外では、Run は Proton や Wine でゲームを自分で起動し�
 - Legendary 単体は、`~/.config/legendary/config.ini` のゲームの `[<app>]` セクションか `[default]` に `wrapper =` と `eidos-gui` の絶対パスがあるとき、`legendary launch <app>` を実行します。
 
 すると Eidos は最後に使ったインスタンスで 2 つ目のウィンドウを開くので、そちらで Run を押します。最初のウィンドウはその実行を追わないため、遊び終えたらそのウィンドウで F5 を押してリストを読み直してください。ストアの設定がない場合や、スクリプトエクステンダーのローダーがゲームの実行ファイルの隣にない場合、Run は何も起動せず、何をどこに設定するかを、動いている実行ファイルの実際のパス入りで表示します。
+
+### プロファイルごとの変数とラッパー
+
+プロファイルは、独自の環境変数とラッパーコマンドを `profiles/<名前>/launch-env.ini` に1行1項目で持てます。
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+これらは、そのプロファイルのすべての `eidos play`(Steam の `%command%` で起動したゲーム、またはストアが開いたウィンドウで Run が起動したゲーム)と、すべてのツール実行に適用されます。`eidos shell` には変数だけが渡され、ラッパーは付きません。最初の `wrapper=` 行が最も外側です。`%command%` を含む `wrapper=` 行ではその位置にコマンドが入ります(Steam の起動オプションと同じです)。含まない行では末尾にコマンドが付きます。ラッパーは Eidos の専用名前空間の中で動くので、MOD が見えます。
+
+ここに書いた変数は、Eidos が同じ名前に設定する値を置き換え、`tools.ini` にあるツール自身の `env=` 行はその両方を置き換えます。`WINEDLLOVERRIDES` だけは、Eidos が ENB、ReShade、同梱 DLL のために設定するオーバーライドの後ろに追加されます。両方に名前がある DLL はプロファイルの設定になり、それ以外は元の設定のままです。
+
+View -> INI editor は、このファイルをどのゲームでも最後のタブとして開きます。保存すると、Eidos が無視する行番号(`env=NAME=value` でも `wrapper=command` でもない行)が表示されます。コマンドなしの `eidos play <インスタンス>` は、実行が受け取る変数とラッパーを一覧します。Diagnostics の Copy report には、変数名とラッパーのプログラム名が値なしで載ります。
 
 Bethesda のタイトルでは、Steam の `%command%` はたいてい `<Game>Launcher.exe` を
 指しています。Eidos はそれを実行しません。あのランチャーは `Data` を再走査して

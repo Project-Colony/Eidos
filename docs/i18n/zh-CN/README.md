@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=24a826cf58aaf1ab0e91bef4d7acfb7ebb818ed3 -->
+<!-- eidos-i18n: source=README.md sha=65fb26275cd8e0b8dbf88b169fd66887cd7dd420 -->
 
 <div align="center">
 
@@ -302,7 +302,7 @@ Eidos 不发送遥测、不做分析,也不发送崩溃报告。除了下表列�
 | Nexus 下载 | 发送 | 你请求的文件,来自下载链接指明的 Nexus CDN 主机,保存在实例的下载文件夹里,每个文件旁边都有一个 MO2 格式的 `.meta`。 |
 | `nxm://` 链接 | 存储 | `eidos nxm --register`(`install.sh` 会替你运行)写入 `~/.local/share/applications/eidos-nxm.desktop`,并通过 `xdg-mime` 让它成为 `nxm://` 处理器,这样网站上的 Mod Manager Download 按钮就会把链接交给 Eidos。Arch 软件包会在系统范围内安装同样的条目。 |
 | LOOT 主列表 | 发送 | `raw.githubusercontent.com/loot/...`,在某个游戏第一次 LOOT 排序时,以及每当你请求更新时。不会发送任何属于你的东西。[GitHub 隐私声明](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement) |
-| 工具运行时 | 发送 | 只在你安装某个工具前置条件或某个模组需要时:来自 `builds.dotnet.microsoft.com` 的 .NET 运行时(与 Eidos 内置的 SHA-256 不一致即拒绝),以及 `winetricks`,它会从 Microsoft 和 winetricks 使用的其他主机下载它要装进游戏 Proton 前缀的东西(Visual C++ 和 .NET 可再发行组件)。[Microsoft 隐私声明](https://www.microsoft.com/en-us/privacy/privacystatement) |
+| 工具运行时 | 发送 | 只在你安装某个工具前置条件或某个模组需要时,而且只针对发行包没有附带的东西(单文件 `eidos-linux` 和从源码构建都不附带任何东西):来自 `builds.dotnet.microsoft.com` 的 .NET 10 运行时,以及来自 `download.visualstudio.microsoft.com` 的 Visual C++ 和 .NET 8 安装程序,与 Eidos 内置的 SHA-256 不一致即拒绝;.NET 10 SDK,始终来自 `builds.dotnet.microsoft.com`;以及用于其他前置条件(.NET Framework 4.8、XAudio)的 `winetricks`,它会从 Microsoft 和 winetricks 使用的其他主机下载它要安装的东西。[Microsoft 隐私声明](https://www.microsoft.com/en-us/privacy/privacystatement) |
 | 会话日志 | 存储 | `~/.local/share/Colony/Eidos/logs/`,权限 0600:每个实例保留十次会话,30 天后清除。你的主目录写作 `~`,用户名写作 `<user>`,所以日志可以原样贴进 issue。除非你自己发送,它们永远不会离开你的机器。 |
 | 快捷方式 | 存储 | `install.sh` 把 `eidos.desktop` 及其图标写到 `~/.local/share` 下;你创建的工具快捷方式放在 `~/.local/share/applications`。 |
 | 你打开的链接 | 都不 | 模组页面和其他链接通过 `xdg-open` 在你自己的浏览器里打开。 |

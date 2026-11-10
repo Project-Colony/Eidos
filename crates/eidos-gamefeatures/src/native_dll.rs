@@ -21,7 +21,7 @@
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 use object::pe::{ImageNtHeaders32, ImageNtHeaders64};
@@ -31,7 +31,9 @@ use object::LittleEndian as LE;
 /// A genuine Microsoft redistributable DLL Eidos bundles to drop into a Proton
 /// prefix (the x86_64 build for `system32`, the i386 build for `syswow64`), because
 /// Wine's builtin is either a broken stub (d3dcompiler) or one some tools reject
-/// (d3dx). `verb` is the winetricks-style name, also the on-disk file stem.
+/// (d3dx). `verb` is the winetricks-style name, also the on-disk file stem. Each
+/// build is embedded gzip-compressed (`assets/<verb>/<arch>.dll.gz`); `inflate`
+/// unpacks it.
 struct NativeDll {
     verb: &'static str,
     x86_64: &'static [u8],
@@ -46,23 +48,23 @@ struct NativeDll {
 const NATIVE_DLLS: &[NativeDll] = &[
     NativeDll {
         verb: "d3dcompiler_47",
-        x86_64: include_bytes!("../assets/d3dcompiler_47/x86_64.dll"),
-        i386: include_bytes!("../assets/d3dcompiler_47/i386.dll"),
+        x86_64: include_bytes!("../assets/d3dcompiler_47/x86_64.dll.gz"),
+        i386: include_bytes!("../assets/d3dcompiler_47/i386.dll.gz"),
     },
     NativeDll {
         verb: "d3dcompiler_43",
-        x86_64: include_bytes!("../assets/d3dcompiler_43/x86_64.dll"),
-        i386: include_bytes!("../assets/d3dcompiler_43/i386.dll"),
+        x86_64: include_bytes!("../assets/d3dcompiler_43/x86_64.dll.gz"),
+        i386: include_bytes!("../assets/d3dcompiler_43/i386.dll.gz"),
     },
     NativeDll {
         verb: "d3dx9_43",
-        x86_64: include_bytes!("../assets/d3dx9_43/x86_64.dll"),
-        i386: include_bytes!("../assets/d3dx9_43/i386.dll"),
+        x86_64: include_bytes!("../assets/d3dx9_43/x86_64.dll.gz"),
+        i386: include_bytes!("../assets/d3dx9_43/i386.dll.gz"),
     },
     NativeDll {
         verb: "d3dx11_43",
-        x86_64: include_bytes!("../assets/d3dx11_43/x86_64.dll"),
-        i386: include_bytes!("../assets/d3dx11_43/i386.dll"),
+        x86_64: include_bytes!("../assets/d3dx11_43/x86_64.dll.gz"),
+        i386: include_bytes!("../assets/d3dx11_43/i386.dll.gz"),
     },
 ];
 
@@ -318,13 +320,22 @@ pub fn ensure_native_dll(windows_dir: &Path, verb: &str) -> io::Result<bool> {
     let system32 = windows_dir.join("system32");
     let syswow64 = windows_dir.join("syswow64");
     if syswow64.is_dir() {
-        let a = deploy_native(&system32.join(&fname), dll.x86_64)?;
-        let b = deploy_native(&syswow64.join(&fname), dll.i386)?;
+        let a = deploy_native(&system32.join(&fname), &inflate(dll.x86_64)?)?;
+        let b = deploy_native(&syswow64.join(&fname), &inflate(dll.i386)?)?;
         Ok(a || b)
     } else {
         // 32-bit prefix: the 32-bit DLL is the one the game loads, from system32.
-        deploy_native(&system32.join(&fname), dll.i386)
+        deploy_native(&system32.join(&fname), &inflate(dll.i386)?)
     }
+}
+
+/// The DLL inside one embedded `.dll.gz`. Stored compressed, the eight DLLs take
+/// 7.9 MB of each binary instead of 17.9 MB; one is unpacked (4.7 MB at most)
+/// only while it is deployed. The gzip trailer's CRC-32 and length are checked.
+fn inflate(gz: &[u8]) -> io::Result<Vec<u8>> {
+    let mut dll = Vec::new();
+    flate2::read::GzDecoder::new(gz).read_to_end(&mut dll)?;
+    Ok(dll)
 }
 
 /// Convenience for the game path: ensure the native HLSL compiler (the mod
@@ -502,13 +513,53 @@ mod tests {
         let _ = fs::remove_dir_all(&empty_root);
     }
 
-    /// Look up a bundled blob by verb + arch (x86_64 when `x64`, else i386).
-    fn blob(verb: &str, x64: bool) -> &'static [u8] {
+    /// A bundled DLL by verb + arch (x86_64 when `x64`, else i386), unpacked.
+    fn blob(verb: &str, x64: bool) -> Vec<u8> {
         let d = NATIVE_DLLS.iter().find(|d| d.verb == verb).unwrap();
-        if x64 {
-            d.x86_64
-        } else {
-            d.i386
+        inflate(if x64 { d.x86_64 } else { d.i386 }).unwrap()
+    }
+
+    /// The SHA-256 of each unpacked DLL (verb, x86_64, i386), as PROVENANCE.md records it.
+    const RECORDED_SHA256: [(&str, &str, &str); 4] = [
+        (
+            "d3dcompiler_47",
+            "9489124759292316d11eae5ffb67b74bfaf0e1853b968137b047567f31c76232",
+            "2ad0d4987fc4624566b190e747c9d95038443956ed816abfd1e2d389b5ec0851",
+        ),
+        (
+            "d3dcompiler_43",
+            "44c3a7e330b54a35a9efa015831392593aa02e7da1460be429d17c3644850e8a",
+            "2f23182ec6f4889397ac4bf03d62536136c5bdba825c7d2c4ef08c827f3a8a1c",
+        ),
+        (
+            "d3dx9_43",
+            "84b900dbd7fa978d6e0caee26fc54f2f61d92c9c75d10b35f00e3e82cd1d67b4",
+            "0b28546be22c71834501f7d7185ede5d79742457331c7ee09efc14490dd64f5f",
+        ),
+        (
+            "d3dx11_43",
+            "981e42629df751217406e7150477cddc853b79abd6a8568a1566298ed8f7bd59",
+            "492e960cb3ccfc8c25fc83f7c464ba77c86a20411347a1a9b3e5d3e8c9180a8d",
+        ),
+    ];
+
+    #[test]
+    fn embedded_dlls_decompress_to_their_recorded_sha256() {
+        use sha2::{Digest, Sha256};
+        let provenance = include_str!("../assets/PROVENANCE.md");
+        assert_eq!(NATIVE_DLLS.len(), RECORDED_SHA256.len());
+        for (verb, x64, x86) in RECORDED_SHA256 {
+            for (is_x64, want) in [(true, x64), (false, x86)] {
+                assert!(
+                    provenance.contains(want),
+                    "{verb}: {want} not in PROVENANCE.md"
+                );
+                let got: String = Sha256::digest(blob(verb, is_x64))
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect();
+                assert_eq!(got, want, "{verb} x86_64={is_x64}");
+            }
         }
     }
 
@@ -632,7 +683,7 @@ mod tests {
     #[test]
     fn scan_skips_asset_folders_at_the_mod_root_only() {
         let dir = tmp_dir();
-        let dll = blob("d3dcompiler_47", true);
+        let dll = &blob("d3dcompiler_47", true);
         // Any real import of the bundled DLL is the needle, as in the test above.
         fs::write(dir.join("probe.dll"), dll).unwrap();
         let any_import = imported_dlls(&dir.join("probe.dll"))

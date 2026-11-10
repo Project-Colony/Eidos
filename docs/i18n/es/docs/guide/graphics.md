@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
 
 # Community Shaders, DLSS y generación de fotogramas
 
@@ -10,7 +10,7 @@ tres cosas que **no** se pueden descubrir desde dentro del juego, y cada una hac
 que la función no haga nada, en silencio. Esta página es la lista, aprendida a las
 malas en una instalación real.
 
-La pestaña Estado comprueba tres de ellas por usted: la variable NVAPI, cuando hay un controlador NVIDIA y el paquete Upscaling y la versión de Proton del juego deja NVAPI desactivado por defecto (GE-Proton11-9 y Proton 11.0 lo activan), la pantalla completa exclusiva en el `SkyrimPrefs.ini` del perfil y la línea de ENB que se describe más abajo. Las dos últimas tienen un botón Corregir.
+La pestaña Estado comprueba tres de ellas por usted: la variable NVAPI, cuando hay un controlador NVIDIA y el paquete Upscaling y la versión de Proton del juego deja NVAPI desactivado por defecto (GE-Proton11-9 y Proton 11.0 lo activan), la pantalla completa exclusiva en el `SkyrimPrefs.ini` del perfil y la línea de ENB que se describe más abajo. Las dos últimas tienen un botón Corregir, y la tarjeta Pantalla de Diagnostics pone la ventana sin bordes con un tamaño.
 
 ## La opción de lanzamiento que DLSS necesita
 
@@ -25,6 +25,8 @@ Definir la variable no cuesta nada en máquinas sin NVIDIA, así que la opción 
 lanzamiento segura es sencillamente la línea de arriba. La generación de
 fotogramas en sí es FSR 3.1 y no necesita NVAPI; sólo lo necesita el escalador
 DLSS.
+
+Para fijarla solo en un perfil, pon `env=PROTON_ENABLE_NVAPI=1` en el `launch-env.ini` de ese perfil (View -> INI editor, última pestaña). La tarjeta de Salud también cuenta esa línea.
 
 ## La generación de fotogramas exige ventana sin bordes
 

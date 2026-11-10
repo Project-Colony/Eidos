@@ -156,6 +156,31 @@ pub(crate) enum Message {
     /// Play although a flagged generator's output is out of date; close the prompt.
     PlayAnyway,
     ClosePlayPrompt,
+    /// The Test run dialog: open it, pick which mods, ask for the run (then Run),
+    /// drop the waiting request, close it.
+    OpenTestRun,
+    TestChoose(TestChoice),
+    TestStart,
+    TestCancelRequest,
+    CloseTestDialog,
+    /// The test run review: keep or throw away a group, apply, or close it
+    /// and decide later.
+    ReviewChoose(eidos_instance::TestGroup, bool),
+    ReviewApply,
+    ReviewLater,
+    /// The bisect panel (A37): open it, start a search, run the next step as a
+    /// test run, hide it (nothing changes on disk).
+    OpenBisect,
+    BisectStart,
+    BisectRunStep,
+    BisectHide,
+    /// Answer the step, run it again, review what it wrote, stop the search,
+    /// or close the result.
+    BisectAnswer(eidos_instance::Answer),
+    BisectRepeat,
+    BisectReview,
+    BisectStop,
+    BisectClose,
     ExecTogglePinned,
     ExecMakeShortcut,
     /// Executables dialog: list the entries of a foreign `ModOrganizer.ini`,
@@ -585,6 +610,11 @@ pub(crate) enum Message {
     CopyHealthReport,
     /// Apply the fix a Health card offers, named by its finding code.
     HealthFix(&'static str),
+    /// The Display card's fields, and Apply.
+    DisplayWidth(String),
+    DisplayHeight(String),
+    DisplayMode(eidos::check::display::WindowMode),
+    DisplayApply,
     /// Put a crash log on the clipboard, home path and user name replaced.
     CopyCrashLog(PathBuf),
     /// Open the logs folder in a file manager.

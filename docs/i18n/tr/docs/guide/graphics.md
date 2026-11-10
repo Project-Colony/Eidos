@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
 
 # Community Shaders, DLSS ve kare üretimi
 
@@ -9,7 +9,7 @@ ve birleşim onların DLL'lerini her şey gibi sunar - ama üç şey oyunun içi
 **anlaşılamaz** ve her biri özelliğin sessizce hiçbir şey yapmamasına yol açar. Bu
 sayfa onların listesi; gerçek bir kurulumda zor yoldan öğrenildi.
 
-Sağlık sekmesi bunlardan üçünü sizin yerinize denetler: bir NVIDIA sürücüsü ve Upscaling paketi varken ve oyunun Proton sürümü NVAPI'yi varsayılan olarak kapalı bırakırken NVAPI değişkenini (GE-Proton11-9 ve Proton 11.0 onu açar), profilin `SkyrimPrefs.ini` dosyasındaki özel tam ekranı ve aşağıda anlatılan ENB satırını. Son ikisinin Düzelt düğmesi vardır.
+Sağlık sekmesi bunlardan üçünü sizin yerinize denetler: bir NVIDIA sürücüsü ve Upscaling paketi varken ve oyunun Proton sürümü NVAPI'yi varsayılan olarak kapalı bırakırken NVAPI değişkenini (GE-Proton11-9 ve Proton 11.0 onu açar), profilin `SkyrimPrefs.ini` dosyasındaki özel tam ekranı ve aşağıda anlatılan ENB satırını. Son ikisinin Düzelt düğmesi vardır; Diagnostics'teki Ekran kartı da kenarlıksız pencereyi bir boyutla birlikte ayarlar.
 
 ## DLSS'in gereksindiği başlatma seçeneği
 
@@ -23,6 +23,8 @@ sessizce FSR ölçeklemesine geri düşer; ekranda nedenini söyleyen hiçbir ş
 Değişkeni ayarlamak NVIDIA olmayan makinelerde hiçbir şeye mal olmaz, bu yüzden
 güvenli başlatma seçeneği yukarıdaki satırdır. Kare üretiminin kendisi FSR 3.1'dir
 ve NVAPI istemez; onu yalnızca DLSS ölçekleyici ister.
+
+Bunu yalnızca tek bir profil için ayarlamak istiyorsanız, `env=PROTON_ENABLE_NVAPI=1` satırını o profilin `launch-env.ini` dosyasına yazın (View -> INI editor, son sekme). Health kartı bu satırı da hesaba katar.
 
 ## Kare üretimi kenarlıksız pencere ister
 

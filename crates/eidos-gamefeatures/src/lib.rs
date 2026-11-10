@@ -41,8 +41,9 @@ pub use se_log::{parse_se_log, se_log_path, SePluginLoad};
 
 mod prereqs;
 pub use prereqs::{
-    cabextract_available, find_winetricks, install_tier2_verb, is_tier2_verb, move_prefix_aside,
-    prefix_busy, prefix_busy_at, record_prereqs, satisfied_prereqs_in, verbs_in_prefix,
+    cabextract_available, find_winetricks, install_redist_verb, install_tier2_verb, is_tier2_verb,
+    move_prefix_aside, prefix_busy, prefix_busy_at, record_prereqs, redists_for,
+    satisfied_prereqs_in, verbs_in_prefix, Redist,
 };
 
 mod qac;
