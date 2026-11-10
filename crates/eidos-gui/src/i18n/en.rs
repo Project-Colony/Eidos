@@ -1153,7 +1153,7 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("diag_overwrite_root_data", "Overwrite/Root holds {dirs}"),
     ("diag_overwrite_root_data_detail", "{path} contains {dirs}. The game reads these folders only inside Data, so it never sees them here. A tool whose data path pointed at the game folder wrote them. Correct that path, delete these folders and run the tool again."),
     ("diag_action_fix", "Fix"),
-    ("diag_collection_order_broken", "{n} order rules of the collection {collection} no longer hold"),
+    ("diag_collection_order_broken", "Order rules of the collection {collection} that no longer hold ({n})"),
     ("diag_collection_order_broken_detail", "{earlier} should sit above {later} in the mod list, so that {later} wins the files they share. Restore puts this collection's mods back in an order that keeps its rules and leaves your other mods where they are. Ctrl+Z undoes it."),
     ("diag_action_restore_collection_order", "Restore collection order"),
     ("status_collection_order_restored", "Moved {n} mods of {collection} back into the collection's order."),

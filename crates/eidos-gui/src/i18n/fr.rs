@@ -1153,7 +1153,7 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("diag_overwrite_root_data", "Overwrite/Root contient {dirs}"),
     ("diag_overwrite_root_data_detail", "{path} contient {dirs}. Le jeu ne lit ces dossiers que dans Data et ne les voit donc pas ici. Un outil dont le chemin des données visait le dossier du jeu les a écrits. Corrigez ce chemin, supprimez ces dossiers et relancez l'outil."),
     ("diag_action_fix", "Corriger"),
-    ("diag_collection_order_broken", "{n} règles d'ordre de la collection {collection} ne sont plus respectées"),
+    ("diag_collection_order_broken", "Règles d'ordre de la collection {collection} qui ne sont plus respectées ({n})"),
     ("diag_collection_order_broken_detail", "{earlier} doit se trouver au-dessus de {later} dans la liste des mods, pour que {later} l'emporte sur les fichiers qu'ils partagent. Restaurer remet les mods de cette collection dans un ordre qui respecte ses règles et laisse vos autres mods à leur place. Ctrl+Z annule l'opération."),
     ("diag_action_restore_collection_order", "Restaurer l'ordre de la collection"),
     ("status_collection_order_restored", "{n} mods de {collection} remis dans l'ordre de la collection."),
