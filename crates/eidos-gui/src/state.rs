@@ -67,6 +67,7 @@ pub(crate) fn refresh_meta_cache(app: &mut App) {
                 version: meta.version(),
                 mod_id: meta.mod_id(),
                 installed_files: meta.installed_files(),
+                plugin_sources: meta.plugin_sources(),
                 install_warning: meta.install_warning(),
                 category_id,
                 category_name,
@@ -299,6 +300,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         error: None,
         mods: Vec::new(),
         modlist_seen: std::cell::Cell::new(None),
+        history: Default::default(),
         plugins: None,
         plugins_seen: std::cell::Cell::new(None),
         conflicts: None,
@@ -331,8 +333,10 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         rename: None,
         meta_cache: HashMap::new(),
         confirm_remove: None,
+        disable_confirm: None,
         info_mod: None,
         info_provenance: String::new(),
+        info_requirements: Default::default(),
         info_tab: InfoTab::General,
         notes_edit: String::new(),
         collapsed: HashSet::new(),
@@ -486,6 +490,8 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         profile_copy: None,
         profile_delete_confirm: None,
         running: None,
+        clean_queue: Default::default(),
+        cleaning: None,
         cap_missing: !eidos_launch::binary_has_cap_sys_admin(&find_eidos_binary().0),
         files_cache: std::cell::RefCell::new(HashMap::new()),
         view_generation: std::cell::Cell::new(0),
@@ -858,6 +864,203 @@ pub(crate) fn tool_command(
     cmd
 }
 
+/// The mod QuickAutoClean's copies are captured into. The source plugins are
+/// never written.
+pub(crate) const CLEANED_MOD: &str = "Cleaned plugins";
+
+/// The xEdit Eidos found for the selected game (registered or found in the
+/// instance): its QuickAutoClean twin first, else the editor, which `-qac`
+/// puts in the same mode. `None` for a game with no xEdit.
+pub(crate) fn qac_tool(app: &App) -> Option<&Tool> {
+    let twin = selected_game(app)?
+        .def
+        .known_tools
+        .iter()
+        .map(|(exe, _)| *exe)
+        .find(|exe| exe.to_ascii_lowercase().ends_with("quickautoclean.exe"))?;
+    let editor = format!("{}.exe", &twin[..twin.len() - "QuickAutoClean.exe".len()]);
+    // A path typed in tools.ini may use either separator.
+    let named = |want: &str| {
+        app.tools.iter().find(|t| {
+            t.exe
+                .to_string_lossy()
+                .rsplit(['/', '\\'])
+                .next()
+                .is_some_and(|n| n.eq_ignore_ascii_case(want))
+        })
+    };
+    named(twin).or_else(|| named(&editor))
+}
+
+/// The plugin at this row of the plugin list when its row menu offers Clean:
+/// LOOT flags it dirty, it is not in the Overwrite, and Eidos found an xEdit.
+pub(crate) fn plugin_clean_target(app: &App, row: usize) -> Option<String> {
+    let p = app.plugins.as_ref()?.plugins.get(row)?;
+    let dirty = app
+        .loot_meta
+        .as_ref()?
+        .get(&p.name.to_ascii_lowercase())
+        .is_some_and(|b| b.needs_cleaning());
+    (dirty && p.origin_mod != "overwrite" && qac_tool(app).is_some()).then(|| p.name.clone())
+}
+
+/// `eidos tool <instance> run <xEdit> --output-mod "Cleaned plugins" -- -qac ...`
+/// for one plugin, xEdit's backups, cache and log under `scratch`.
+pub(crate) fn clean_command(
+    app: &App,
+    plugin: &str,
+    scratch: &Path,
+) -> Option<std::process::Command> {
+    let qac = qac_tool(app)?;
+    let mut cmd = tool_command(
+        &instance_arg(app)?,
+        &qac.title,
+        !app.launch_command.is_empty(),
+    );
+    cmd.arg("--output-mod")
+        .arg(CLEANED_MOD)
+        .arg("--")
+        .args(eidos_gamefeatures::qac_args(plugin, scratch));
+    Some(cmd)
+}
+
+/// Start QuickAutoClean on the next queued plugin, as a tracked run.
+pub(crate) fn start_next_clean(app: &mut App) {
+    let Some(plugin) = app.clean_queue.pop_front() else {
+        return;
+    };
+    // A reclean of a copy keeps the source its first clean recorded.
+    let list = app.plugins.clone().or_else(|| compute_plugins(app));
+    let row = list.as_ref().and_then(|l| {
+        l.plugins
+            .iter()
+            .find(|p| p.name.eq_ignore_ascii_case(&plugin))
+    });
+    // xEdit would save over the Overwrite's file itself, and the capture would
+    // then move it out and drop the scratch that holds its only backup.
+    if row.is_some_and(|p| p.origin_mod == "overwrite") {
+        app.clean_queue.clear();
+        app.status = Some(tf("status_clean_in_overwrite", &[("plugin", &plugin)]));
+        return;
+    }
+    let source = row
+        .filter(|p| !p.origin_mod.eq_ignore_ascii_case(CLEANED_MOD))
+        .and_then(|p| eidos_instance::PluginSource::of(&p.name, &p.path));
+    let stamp = std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    // Under logs/, outside the merged view and left out of packs.
+    let Some(scratch) = app
+        .created
+        .as_ref()
+        .map(|i| i.root.join("logs").join(format!("qac-{stamp}")))
+    else {
+        app.clean_queue.clear();
+        return;
+    };
+    if let Err(e) = std::fs::create_dir_all(&scratch) {
+        app.clean_queue.clear();
+        app.status = Some(tf("status_launch_failed", &[("error", &e)]));
+        return;
+    }
+    let Some((title, cmd)) = qac_tool(app)
+        .map(|t| t.title.clone())
+        .zip(clean_command(app, &plugin, &scratch))
+    else {
+        let _ = std::fs::remove_dir_all(&scratch);
+        app.clean_queue.clear();
+        app.status = Some(t("status_no_qac").into());
+        return;
+    };
+    start_run(app, title, cmd);
+    if app.running.is_none() {
+        // The spawn failed and start_run said why.
+        let _ = std::fs::remove_dir_all(&scratch);
+        app.clean_queue.clear();
+        return;
+    }
+    app.cleaning = Some(Cleaning {
+        plugin,
+        scratch,
+        source,
+    });
+}
+
+/// Report a finished clean from xEdit's log and record the copy's source.
+/// `false` when the clean did not do its job, so the queue stops.
+pub(crate) fn finish_clean(app: &mut App, done: Cleaning) -> bool {
+    // The scratch is `<root>/logs/qac-N`: a clean from an instance that is no
+    // longer open (Restart after Unlock) is neither reported nor recorded here.
+    if !app
+        .created
+        .as_ref()
+        .is_some_and(|i| done.scratch.starts_with(&i.root))
+    {
+        return false;
+    }
+    let run_log = app
+        .running
+        .as_ref()
+        .and_then(|r| r.log.clone())
+        .or_else(|| app.created.as_ref().map(|i| i.root.join("logs")))
+        .unwrap_or_else(|| PathBuf::from("logs/"));
+    let log = std::fs::read_to_string(done.scratch.join(eidos_gamefeatures::QAC_LOG))
+        .ok()
+        .and_then(|text| eidos_gamefeatures::parse_qac_log(&text));
+    let Some(log) = log else {
+        let mut status = tf(
+            "status_clean_failed",
+            &[("plugin", &done.plugin), ("log", &run_log.display())],
+        );
+        // The CLI's own refusal (instance in use, a list it cannot trust) is the why.
+        if let Some(reason) = std::fs::read(&run_log)
+            .ok()
+            .and_then(|b| refusal_line(&String::from_utf8_lossy(&b)))
+        {
+            status.push(' ');
+            status.push_str(&reason);
+        }
+        app.status = Some(status);
+        return false;
+    };
+    if !log.saved {
+        app.status = Some(tf("status_clean_nothing", &[("plugin", &done.plugin)]));
+        let _ = std::fs::remove_dir_all(&done.scratch);
+        return true;
+    }
+    let Some(inst) = app
+        .created
+        .clone()
+        .filter(|i| i.mods_dir().join(CLEANED_MOD).join(&done.plugin).is_file())
+    else {
+        // xEdit saved, but the capture did not move the copy (the run log says why).
+        app.status = Some(tf(
+            "status_clean_not_captured",
+            &[("plugin", &done.plugin), ("log", &run_log.display())],
+        ));
+        return false;
+    };
+    if let Some(source) = done.source {
+        // Best effort: the copy is in place either way.
+        if let Err(e) = edit_mod_meta(&inst, CLEANED_MOD, |m| m.set_plugin_source(source)) {
+            eidos_log::warn!("Could not record the source of {}: {e}", done.plugin);
+        }
+    }
+    invalidate_meta(app, CLEANED_MOD);
+    refresh_meta_cache(app);
+    app.status = Some(tf(
+        "status_cleaned",
+        &[
+            ("plugin", &done.plugin),
+            ("itm", &log.removed),
+            ("udr", &log.undeleted),
+        ],
+    ));
+    let _ = std::fs::remove_dir_all(&done.scratch);
+    true
+}
+
 /// Install the tools' runtime prerequisites into the prefix (`eidos prereqs <id>
 /// --install`). The Tier-2 winetricks step downloads from Microsoft and can take a
 /// while. Returned unspawned, like [`tool_command`]: it runs as a tracked run
@@ -985,6 +1188,10 @@ pub(crate) fn reload_mods(app: &mut App) {
     // stale the moment a member is installed. Recomputed here rather than in the
     // view, which runs every frame and this reads every mod's meta.ini.
     crate::update::recompute_collection_states(app);
+    // What was undoable described the list before this read.
+    app.history
+        .borrow_mut()
+        .reset(crate::history::mods_state(&app.mods));
 }
 
 /// Find the `eidos` CLI that drives the namespaced launch. The GUI is
@@ -1462,6 +1669,29 @@ pub(crate) fn finish_run(app: &mut App) {
                 ));
             }
         }
+    }
+    if let Some(done) = app.cleaning.take() {
+        let stopped = run.stopped.then(|| app.status.clone());
+        // Back for the call only: `finish_clean` names this run's log.
+        app.running = Some(run);
+        let go_on = finish_clean(app, done);
+        app.running = None;
+        if !go_on || stopped.is_some() {
+            app.clean_queue.clear();
+        }
+        // The user stopped xEdit: the status says so and the rest of the queue is dropped.
+        if let Some(said) = stopped {
+            app.status = said;
+        }
+    }
+    if !app.clean_queue.is_empty() {
+        // The last clean's counts stay in front of the next run's status.
+        let said = app.status.take();
+        start_next_clean(app);
+        app.status = match (said, app.status.take()) {
+            (Some(a), Some(b)) => Some(format!("{a} {b}")),
+            (a, b) => b.or(a),
+        };
     }
 }
 
@@ -2393,7 +2623,9 @@ pub(crate) fn key_nav(app: &mut App, nav: Nav) -> Task<Message> {
                     }
                     let name = app.mods[i].display_name().to_string();
                     app.confirm_remove = Some(i);
-                    app.status = Some(tf("status_press_delete_again", &[("name", &name)]));
+                    let warning = remove_warning(app, &[i]);
+                    app.status =
+                        Some(warning + &tf("status_press_delete_again", &[("name", &name)]));
                     Task::none()
                 }
                 _ => Task::none(),
@@ -2963,6 +3195,7 @@ pub(crate) fn put_mod_selection(app: &mut App, held: HeldSelection) {
     app.sel_anchor = held.anchor.as_ref().and_then(at);
     app.selected_mods = held.set.iter().filter_map(at).collect();
     app.confirm_remove = None;
+    app.disable_confirm = None;
 }
 
 /// Persist the mod list and invalidate everything derived from it (plugin order,
@@ -2970,6 +3203,8 @@ pub(crate) fn put_mod_selection(app: &mut App, held: HeldSelection) {
 /// landed: a caller that reports success sets its status only then, or it
 /// replaces the refusal this put there with news of an edit that was reverted.
 pub(crate) fn mods_changed(app: &mut App) -> bool {
+    // Indices may have moved; a held disable could now name other rows.
+    app.disable_confirm = None;
     let refused = save_mods(app);
     if let Some(err) = &refused {
         app.status = Some(err.clone());
@@ -2979,6 +3214,10 @@ pub(crate) fn mods_changed(app: &mut App) -> bool {
         // evaporates when they close the window. Disk is the truth; resync the
         // view to it.
         reload_mods(app);
+    } else {
+        app.history
+            .borrow_mut()
+            .saved_mods(crate::history::mods_state(&app.mods));
     }
     mod_views_changed(app);
     refused.is_none()

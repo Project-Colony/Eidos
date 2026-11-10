@@ -45,6 +45,9 @@ pub use prereqs::{
     prefix_busy, prefix_busy_at, record_prereqs, satisfied_prereqs_in, verbs_in_prefix,
 };
 
+mod qac;
+pub use qac::{parse_qac_log, qac_args, QacLog, QAC_LOG};
+
 mod runtime;
 pub use runtime::{
     env_for as runtime_env_for, install as install_runtime, is_installed as runtime_is_installed,
@@ -53,8 +56,9 @@ pub use runtime::{
 
 mod savegame;
 pub use savegame::{
-    missing_plugins, parse_save, read_screenshot, read_screenshot_with, KnownPlugin, MissingPlugin,
-    ModFolder, SaveCompression, SaveEngine, SaveInfo, SaveParseError, SavePluginState, Screenshot,
+    missing_from, missing_plugins, newest_saves, parse_save, read_screenshot, read_screenshot_with,
+    KnownPlugin, MissingPlugin, ModFolder, SaveCompression, SaveEngine, SaveInfo, SaveParseError,
+    SavePluginState, Screenshot,
 };
 
 /// The game INI that holds the `[Archive]` section: the first of the per-profile

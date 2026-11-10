@@ -30,6 +30,28 @@ runtimes come from its name, by the same rule as everything below.
 If a tool is somewhere else, or you want different arguments, add it by hand -
 a user entry with the same title overrides anything found automatically.
 
+## Cleaning a plugin LOOT flags as dirty
+
+After a LOOT sort, the Diagnostics tab lists the plugins LOOT flags as dirty, for
+the games that have both an xEdit and LOOT cleaning data (Skyrim LE, SE and VR,
+Enderal SE, Fallout 3, New Vegas, Fallout 4 and 4 VR, Oblivion, Starfield). When
+Eidos finds xEdit, registered in Executables or anywhere it looks for tools in
+the instance, the card has Clean all and each dirty plugin has Clean with
+QuickAutoClean on its row menu; otherwise the card says to add xEdit in
+Executables. Eidos does not download xEdit. It runs xEdit's QuickAutoClean mode
+on one plugin at a time, through the merged view, with `-qac -autoexit
+-autoload`. xEdit saves the cleaned plugin over the one it loaded, which in the
+merged view is a new file in the Overwrite; Eidos moves it into a mod named
+`Cleaned plugins`, created enabled at the bottom of the list, where it wins every
+conflict. The plugin in its own mod, or in the game's Data folder, is never
+written. Disable `Cleaned plugins`, or hide one file in it, to undo a clean.
+
+xEdit's backups, cache and log go to `<instance>/logs/qac-<time>/`, outside the
+merged view, and the status line reports the counts from that log. Eidos deletes
+that folder after a clean that worked and keeps it after one that failed.
+Eidos records the size and date of the plugin each copy was made from in
+`Cleaned plugins/meta.ini`. When that plugin changes, the Health tab reports the copy as out of date and offers to hide it.
+
 ## Adding one
 
 In the GUI: **Tools -> Executables**, then Add. From the command line:
@@ -39,7 +61,10 @@ eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse                       # list what is registered
 eidos tool skyrimse run BodySlide         # run it through the merged view
 eidos tool skyrimse run BodySlide --print # show the command without running it
+eidos tool skyrimse run "SSEEdit QuickAutoClean" --output-mod "Cleaned plugins" -- -qac -autoexit -autoload Dawnguard.esm
 ```
+
+`--output-mod <mod>` captures that run's output into `mods/<mod>`, whatever the tool's own setting says.
 
 The script extender, the game binary and the launcher are detected
 automatically; only extra tools need registering.

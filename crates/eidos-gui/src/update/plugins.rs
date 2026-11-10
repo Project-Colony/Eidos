@@ -875,6 +875,126 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
             commit_plugin_order(app, &spec);
         }
+        Message::CleanPlugins(names) => {
+            app.menu_plugin = None;
+            if qac_tool(app).is_none() {
+                app.status = Some(t("status_no_qac").into());
+                return Task::none();
+            }
+            // Refused here too, so a request queued behind a run says why at once.
+            let in_overwrite = names.iter().find(|n| {
+                app.plugins.as_ref().is_some_and(|l| {
+                    l.plugins
+                        .iter()
+                        .any(|p| p.origin_mod == "overwrite" && p.name.eq_ignore_ascii_case(n))
+                })
+            });
+            if let Some(name) = in_overwrite {
+                app.status = Some(tf("status_clean_in_overwrite", &[("plugin", name)]));
+                return Task::none();
+            }
+            for name in names {
+                let busy = app
+                    .clean_queue
+                    .iter()
+                    .chain(app.cleaning.as_ref().map(|c| &c.plugin))
+                    .any(|q| q.eq_ignore_ascii_case(&name));
+                if !busy {
+                    app.clean_queue.push_back(name);
+                }
+            }
+            match app.running.as_ref().map(|r| r.title.clone()) {
+                None => start_next_clean(app),
+                Some(title) => {
+                    app.status = Some(tf(
+                        "status_clean_queued",
+                        &[("n", &app.clean_queue.len()), ("title", &title)],
+                    ))
+                }
+            }
+        }
+        Message::FlagPluginLight(i) => {
+            app.menu_plugin = None;
+            let Some(p) = app.plugins.as_ref().and_then(|l| l.plugins.get(i)).cloned() else {
+                return Task::none();
+            };
+            let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
+                return Task::none();
+            };
+            // The Overwrite outranks every mod: a copy in a mod would never load.
+            if p.origin_mod == "overwrite" {
+                app.status = Some(tf("status_flag_light_in_overwrite", &[("plugin", &p.name)]));
+                return Task::none();
+            }
+            // A save that loads it as full keeps its records at full-plugin ids.
+            if let Some(save) = full_in_saves(&p.name, &newest_profile_saves(app)) {
+                let save = save
+                    .file_name()
+                    .unwrap_or(save.as_os_str())
+                    .to_string_lossy();
+                app.status = Some(tf(
+                    "status_flag_light_refused_save",
+                    &[("save", &save), ("plugin", &p.name)],
+                ));
+                return Task::none();
+            }
+            // Under the lock and known current before the folder exists, as ModRemove.
+            let Some(inst) = app.created.clone() else {
+                return Task::none();
+            };
+            let _lock = match inst.try_lock("the Eidos window") {
+                Ok(l) => l,
+                Err(e) => {
+                    app.status = Some(tf("status_cannot_create_now", &[("error", &e)]));
+                    return Task::none();
+                }
+            };
+            if refuse_stale_modlist(app) {
+                return Task::none();
+            }
+            let failed = |e: &dyn std::fmt::Display| {
+                tf(
+                    "status_flag_light_failed",
+                    &[("plugin", &p.name), ("error", &e)],
+                )
+            };
+            let mod_name = format!("{} (light)", p.name);
+            let entry = match inst.create_empty_mod(&mod_name) {
+                Ok(entry) => entry,
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    app.status = Some(tf(
+                        "status_flag_light_exists",
+                        &[("mod", &mod_name), ("plugin", &p.name)],
+                    ));
+                    return Task::none();
+                }
+                Err(e) => {
+                    app.status = Some(failed(&e));
+                    return Task::none();
+                }
+            };
+            if let Err(e) =
+                eidos_plugins::write_light_copy(&p.path, &entry.path.join(&p.name), &spec)
+            {
+                let _ = fs::remove_dir_all(&entry.path);
+                app.status = Some(failed(&e));
+                return Task::none();
+            }
+            if let Some(source) = eidos_instance::PluginSource::of(&p.name, &p.path) {
+                // Best effort: the copy is in place either way.
+                if let Err(e) = edit_mod_meta(&inst, &entry.name, |m| m.set_plugin_source(source)) {
+                    eidos_log::warn!("Could not record the source of {}: {e}", p.name);
+                }
+            }
+            // The last row: the highest priority, so the copy wins over its source.
+            app.mods.push(entry);
+            if mods_changed(app) {
+                app.status = Some(tf(
+                    "status_flagged_light",
+                    &[("plugin", &p.name), ("mod", &mod_name)],
+                ));
+            }
+        }
         Message::TogglePluginLock(i) => {
             let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
                 return Task::none();

@@ -34,6 +34,7 @@ mod mod_backup;
 mod profile;
 mod provenance;
 mod registry;
+mod sessions;
 pub mod settings;
 mod tools;
 pub use categories::{
@@ -42,7 +43,7 @@ pub use categories::{
 pub use export::{csv_quote, fmt_mtime, mod_list_csv, Column, ExportScope};
 pub use launch_record::{GameBuild, LaunchRecord};
 pub use manifest::Manifest;
-pub use meta::{same_version, ModMeta};
+pub use meta::{same_version, ModMeta, PluginSource};
 pub use mo2_ini::{mo2_executables, Mo2Executable, Mo2Ini, Mo2Skip};
 pub use mod_backup::{backup_mod, reserve_mod_backup};
 pub use profile::{
@@ -53,11 +54,12 @@ pub use provenance::{
     GeneratedInput, GeneratedOutput, GeneratedReceipt, GeneratedRun, ToolExecutable,
 };
 pub use registry::{registry_path, InstanceRef, Registry};
+pub use sessions::{SessionMod, SessionRecord, KEEP_SESSIONS};
 pub use settings::Settings;
 pub use tools::{
     default_args, default_prereqs, default_tools, default_tools_in, default_tools_in_view,
-    merge_tools, read_tools, root_executable, root_executable_source, tool_search_roots,
-    write_tools, GameExecutables, Runner, Tool,
+    is_mod_folder_name, merge_tools, read_tools, root_executable, root_executable_source,
+    tool_search_roots, write_tools, GameExecutables, Runner, Tool,
 };
 
 /// Where an instance is stored.

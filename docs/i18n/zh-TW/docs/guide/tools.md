@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -28,6 +28,12 @@ edits 的按鈕。Eidos 會依檔名,在這些地方找它們:
 如果工具在別的地方,或你想用不同的參數,就手動加 - 標題相同的使用者項目會
 覆蓋任何自動找到的結果。
 
+## 清理 LOOT 標記為 dirty 的外掛
+
+LOOT 排序之後，Diagnostics 分頁會列出 LOOT 標記為 dirty（需要清理）的外掛，適用於同時有 xEdit 和 LOOT 清理資料的遊戲（Skyrim LE、SE 和 VR，Enderal SE，Fallout 3，New Vegas，Fallout 4 和 4 VR，Oblivion，Starfield）。如果 Eidos 找到了 xEdit（在 Executables 裡登記過，或放在實例中 Eidos 尋找工具的任何位置），卡片上會有 Clean all，每個 dirty 外掛的列選單裡會有 Clean with QuickAutoClean；否則卡片會提示在 Executables 裡加入 xEdit。Eidos 不會下載 xEdit。它透過合併檢視，用 `-qac -autoexit -autoload`，一次對一個外掛執行 xEdit 的 QuickAutoClean 模式。xEdit 把清理後的外掛存回它載入的那個外掛上，在合併檢視裡這是 Overwrite 中的一個新檔案；Eidos 把它移進名為 `Cleaned plugins` 的模組，這個模組建立時是啟用狀態，位於清單底部，在所有衝突中勝出。原模組裡的外掛和遊戲 Data 資料夾裡的外掛永遠不會被寫入。要復原一次清理，停用 `Cleaned plugins`，或隱藏其中的一個檔案。
+
+xEdit 的備份、快取和記錄檔放在合併檢視之外的 `<instance>/logs/qac-<time>/`，狀態列會回報從這份記錄檔讀到的數量。清理成功後 Eidos 會刪除這個資料夾，失敗則保留。Eidos 會把每個副本所依據的外掛的大小和日期記錄在 `Cleaned plugins/meta.ini` 裡。 該外掛變更後，Health 分頁會回報這個副本已過期，並提供隱藏它的選項。
+
 ## 加一個進去
 
 在 GUI 裡:**Tools -> Executables**,然後按 Add。在命令列裡:
@@ -37,7 +43,10 @@ eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse                       # list what is registered
 eidos tool skyrimse run BodySlide         # run it through the merged view
 eidos tool skyrimse run BodySlide --print # show the command without running it
+eidos tool skyrimse run "SSEEdit QuickAutoClean" --output-mod "Cleaned plugins" -- -qac -autoexit -autoload Dawnguard.esm
 ```
+
+`--output-mod <mod>` 會把該次執行的輸出收進 `mods/<mod>`，不論工具本身如何設定。
 
 script extender、遊戲主程式與啟動器都會自動偵測;只有額外的工具需要註冊。
 

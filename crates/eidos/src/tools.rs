@@ -113,7 +113,7 @@ fn game_entry_handoff(
 }
 
 /// `eidos tool <game-id> [list | add <title> <exe> [args...] | rm <title> |
-/// run <title> [--print] [-- extra...]]` - manage and run tools (xEdit, FNIS,
+/// run <title> [--print] [--output-mod <mod>] [-- extra...]]` - manage and run tools (xEdit, FNIS,
 /// BodySlide) through the merged view, inside the game's Proton prefix.
 /// A command uses the projected path, while existence and provenance use its
 /// real backing file. Root-only tools do not exist in the game directory yet.
@@ -164,6 +164,31 @@ fn tool_executable(
     }
 }
 
+/// `run` flags (`args` starts at `run`): (print, output mod, extra args). Flags count only BEFORE the
+/// first `--`; everything after it is opaque tool args (a tool may take its own
+/// `--print` or `--output-mod`).
+fn run_flags(args: &[String]) -> Result<(bool, Option<String>, Vec<String>), String> {
+    let sep = args.iter().position(|a| a == "--").unwrap_or(args.len());
+    let extra = args.get(sep + 1..).unwrap_or_default().to_vec();
+    let mut print = false;
+    let mut output = None;
+    let mut it = args[..sep].iter().skip(2);
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--print" => print = true,
+            "--output-mod" => {
+                let m = it.next().ok_or("--output-mod needs a mod name")?;
+                if !eidos_instance::is_mod_folder_name(m) {
+                    return Err(format!("'{m}' is not a valid mod folder name"));
+                }
+                output = Some(m.clone());
+            }
+            _ => {}
+        }
+    }
+    Ok((print, output, extra))
+}
+
 pub(crate) fn cmd_tool(args: &[String]) {
     // `--help` is a request for this text, not a game id to look up.
     let asked_help = args.first().is_some_and(|a| a == "--help" || a == "-h");
@@ -174,7 +199,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
              \x20 eidos tool <game-id> add <title> <exe> [args...]\n\
              \x20 eidos tool <game-id> rm <title>\n\
              \x20 eidos tool <game-id> import-mo2 [--write]\n\
-             \x20 eidos tool <game-id> run <title> [--print] [-- <extra args>...]"
+             \x20 eidos tool <game-id> run <title> [--print] [--output-mod <mod>] [-- <extra args>...]"
         );
         exit(if asked_help { 0 } else { 2 });
     };
@@ -310,19 +335,16 @@ pub(crate) fn cmd_tool(args: &[String]) {
         Some("run") => {
             let Some(title) = args.get(2) else {
                 eidos_log::info!(
-                    "usage: eidos tool {id} run <title> [--print] [-- <extra args>...]"
+                    "usage: eidos tool {id} run <title> [--print] [--output-mod <mod>] [-- <extra args>...]"
                 );
                 exit(2);
             };
-            // Everything after `--` is opaque tool args, so scan for --print only
-            // BEFORE the separator (a tool may itself take a --print flag).
-            let sep = args.iter().position(|a| a == "--");
-            let print_only = args[..sep.unwrap_or(args.len())]
-                .iter()
-                .any(|a| a == "--print");
-            let extra: Vec<String> = match sep {
-                Some(i) => args[i + 1..].to_vec(),
-                None => Vec::new(),
+            let (print_only, output_flag, extra) = match run_flags(&args[1..]) {
+                Ok(v) => v,
+                Err(e) => {
+                    eidos_log::warn!("eidos tool: {e}");
+                    exit(2);
+                }
             };
 
             // A user tool wins `merge_tools` over a default with the same title,
@@ -558,7 +580,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 .map(|c| virtualize_under_data(&c, &layers, &game.data_path).unwrap_or(c))
                 .or_else(|| exe.parent().map(|p| p.to_path_buf()));
             let prereqs = tool.prereqs.clone();
-            let output_mod = tool.output_mod.clone();
+            let output_mod = output_flag.or_else(|| tool.output_mod.clone());
             let app_id = tool.app_id;
             // The bundled Tier-1 DLLs get provisioned at launch; but a Tier-2 verb
             // (vcrun/dotnet) that hasn't been installed will likely crash the tool, so
@@ -908,6 +930,30 @@ fn apply_tool_env_facts(
 #[cfg(test)]
 mod root_tool_tests {
     use super::*;
+
+    #[test]
+    fn run_flags_read_print_and_output_mod_before_the_separator() {
+        let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            run_flags(&v(&[
+                "run",
+                "T",
+                "--output-mod",
+                "Cleaned plugins",
+                "--print",
+                "--",
+                "--output-mod",
+                "x"
+            ])),
+            Ok((
+                true,
+                Some("Cleaned plugins".into()),
+                v(&["--output-mod", "x"])
+            ))
+        );
+        assert!(run_flags(&v(&["run", "T", "--output-mod"])).is_err());
+        assert!(run_flags(&v(&["run", "T", "--output-mod", "a/b"])).is_err());
+    }
 
     #[test]
     fn the_game_and_its_loader_are_not_generators() {

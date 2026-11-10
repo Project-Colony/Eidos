@@ -361,3 +361,127 @@ fn nexus_update_accepts_apply() {
         assert!(update_args(&strings(bad)).is_err(), "{bad:?}");
     }
 }
+
+/// A portable Skyrim SE instance with no game executable: mod "A" enabled with
+/// a version and one installed Nexus file, mod "B" disabled, two plugins and
+/// one profile INI.
+fn session_fixture(tag: &str) -> (Tmp, eidos_games::DetectedGame, eidos_instance::Instance) {
+    let t = Tmp::new(tag);
+    let inst = eidos_instance::Instance::portable(t.0.join("instance"));
+    inst.create().unwrap();
+    for m in ["A", "B"] {
+        fs::create_dir_all(inst.mods_dir().join(m)).unwrap();
+    }
+    fs::write(
+        inst.mods_dir().join("A/meta.ini"),
+        "[General]\nversion=1.2\n\n[installedFiles]\n1\\modid=5\n1\\fileid=9\nsize=1\n",
+    )
+    .unwrap();
+    let prof = inst.active();
+    fs::write(prof.dir().join("modlist.txt"), "-B\n+A\n").unwrap();
+    fs::write(
+        prof.plugins_state_dir().join("plugins.txt"),
+        "*A.esp\nB.esp\n",
+    )
+    .unwrap();
+    fs::write(prof.ini_path("Skyrim.ini"), "x").unwrap();
+    let game_dir = t.0.join("game");
+    fs::create_dir_all(game_dir.join("Data")).unwrap();
+    let game = eidos_games::DetectedGame {
+        source: Default::default(),
+        def: eidos_games::catalog()
+            .iter()
+            .find(|g| g.id == "skyrimse")
+            .unwrap(),
+        install_path: game_dir.clone(),
+        data_path: game_dir.join("Data"),
+        compatdata: None,
+        steam_name: "synthetic".into(),
+    };
+    (t, game, inst)
+}
+
+#[test]
+fn capture_reads_mod_versions_plugin_order_and_ini_checksums() {
+    let (_t, game, inst) = session_fixture("session-capture");
+    let r = sessions::capture(&game, &inst, &inst.active(), None);
+    assert_eq!(
+        r.mods,
+        [eidos_instance::SessionMod {
+            name: "A".into(),
+            version: Some("1.2".into()),
+            files: vec![(5, 9)]
+        }]
+    );
+    assert_eq!(r.plugins, [("A.esp".into(), true), ("B.esp".into(), false)]);
+    assert_eq!(r.inis, [("Skyrim.ini".into(), crc32fast::hash(b"x"))]);
+    assert_eq!(
+        (r.game_version, r.exit, r.eidos.as_str()),
+        (None, None, env!("CARGO_PKG_VERSION"))
+    );
+}
+
+#[test]
+fn begin_returns_none_when_the_record_cannot_be_written() {
+    let (t, game, inst) = session_fixture("session-begin");
+    fs::write(t.0.join("instance/logs"), b"a file, not a dir").unwrap();
+    assert!(sessions::begin(&game, &inst, &inst.active(), None).is_none());
+}
+
+#[test]
+fn finish_records_the_signal_exit_and_only_the_saves_written_during_the_run() {
+    let (_t, game, inst) = session_fixture("session-finish");
+    let prof = inst.active();
+    fs::create_dir_all(prof.saves_dir()).unwrap();
+    let old = prof.saves_dir().join("Old.ess");
+    fs::write(&old, b"").unwrap();
+    fs::File::options()
+        .write(true)
+        .open(&old)
+        .unwrap()
+        .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1000))
+        .unwrap();
+    let begun = sessions::begin(&game, &inst, &prof, Some("SSEEdit"));
+    fs::write(prof.saves_dir().join("New.ess"), b"").unwrap();
+    // A raw wait status of 9: killed by SIGKILL.
+    let killed = Ok(std::process::ExitStatus::from_raw(9));
+    sessions::finish(begun, &killed, &inst, &prof);
+    let all = inst.sessions();
+    assert_eq!(all.len(), 1);
+    let r = &all[0].1;
+    assert_eq!(
+        (r.exit, r.new_saves.as_slice(), r.tool.as_deref()),
+        (Some(137), &["New.ess".to_string()][..], Some("SSEEdit"))
+    );
+    assert!(r.ended.is_some_and(|e| e >= r.started));
+}
+
+#[test]
+fn the_default_diff_target_is_the_newest_game_run_that_exited_zero() {
+    let r = |started, tool: Option<&str>, exit| {
+        (
+            PathBuf::from(format!("{started}")),
+            eidos_instance::SessionRecord {
+                started,
+                tool: tool.map(Into::into),
+                exit,
+                ..Default::default()
+            },
+        )
+    };
+    let records = [
+        r(4, None, Some(1)),
+        r(3, Some("SSEEdit"), Some(0)),
+        r(2, None, Some(0)),
+        r(1, None, Some(0)),
+    ];
+    assert_eq!(sessions::default_target(&records).unwrap().1.started, 2);
+}
+
+#[test]
+fn a_stopped_run_is_never_recorded_as_exit_zero() {
+    assert_eq!(sessions::recorded_exit(0, true), 143);
+    assert_eq!(sessions::recorded_exit(143, true), 143);
+    assert_eq!(sessions::recorded_exit(1, true), 1);
+    assert_eq!(sessions::recorded_exit(0, false), 0);
+}

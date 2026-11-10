@@ -171,6 +171,17 @@ pub(crate) fn subscription(app: &App) -> iced::Subscription<Message> {
             Key::Character("c") if mods.control() || mods.command() => {
                 Some(Message::CopyLootReport)
             }
+            // The logical key, so the Z of an AZERTY keyboard is the one that
+            // undoes. Shift's uppercase "Z" is the same letter.
+            Key::Character(c)
+                if (mods.control() || mods.command()) && c.eq_ignore_ascii_case("z") =>
+            {
+                Some(if mods.shift() {
+                    Message::Redo
+                } else {
+                    Message::Undo
+                })
+            }
             // Navigation. Which list answers is decided in `update` - this closure
             // is a plain `fn` and cannot see the app.
             Key::Named(Named::Tab) => Some(Message::CycleFocus),

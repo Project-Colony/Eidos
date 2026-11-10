@@ -27,10 +27,63 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             {
                 return Task::none();
             }
+            if app.mods.get(i).is_some_and(|m| m.enabled) {
+                let saves = newest_profile_saves(app);
+                if arm_disable(app, vec![i], &saves) {
+                    return Task::none();
+                }
+            }
             if let Some(m) = app.mods.get_mut(i) {
                 m.enabled = !m.enabled;
             }
             mods_changed(app);
+        }
+        Message::ConfirmDisable | Message::ConfirmDisableWithDependents => {
+            let Some(confirm) = app.disable_confirm.take() else {
+                return Task::none();
+            };
+            let mut rows = confirm.targets;
+            if matches!(message, Message::ConfirmDisableWithDependents) {
+                rows.extend(confirm.dependents);
+            }
+            for &i in &rows {
+                if let Some(m) = app.mods.get_mut(i) {
+                    m.enabled = false;
+                }
+            }
+            if mods_changed(app) {
+                app.status = Some(tf("status_disabled_n", &[("n", &rows.len())]));
+            }
+        }
+        Message::CancelDisable => app.disable_confirm = None,
+        Message::Undo | Message::Redo => {
+            // A text field has Ctrl+Z for itself.
+            if app.typing {
+                return Task::none();
+            }
+            let undo = matches!(message, Message::Undo);
+            let step = if undo {
+                app.history.borrow_mut().undo()
+            } else {
+                app.history.borrow_mut().redo()
+            };
+            let state = match step {
+                Some(crate::history::Step::Mods(state)) => state,
+                Some(crate::history::Step::Plugins(state)) => {
+                    apply_plugins_step(app, state, undo);
+                    return Task::none();
+                }
+                None => {
+                    let key = if undo {
+                        "status_nothing_to_undo"
+                    } else {
+                        "status_nothing_to_redo"
+                    };
+                    app.status = Some(t(key).to_string());
+                    return Task::none();
+                }
+            };
+            apply_mods_step(app, state, undo);
         }
         Message::SendToFirstConflict(i) | Message::SendToLastConflict(i) => {
             let first = matches!(message, Message::SendToFirstConflict(_));
@@ -281,6 +334,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
             app.typing = false;
             app.confirm_remove = None;
+            app.disable_confirm = None;
             app.selected_mods.clear();
             app.selected_plugins.clear();
             app.drag_state = None;
@@ -465,7 +519,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             } else {
                 app.confirm_remove = Some(i);
                 if let Some(m) = app.mods.get(i) {
-                    app.status = Some(tf("status_click_remove_again", &[("name", &m.name)]));
+                    let again = tf("status_click_remove_again", &[("name", &m.name)]);
+                    app.status = Some(remove_warning(app, &[i]) + &again);
                 }
             }
         }
@@ -1105,6 +1160,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 .iter()
                 .any(|&i| app.mods.get(i).is_some_and(|m| m.enabled));
             let new_state = !any_on;
+            if !new_state {
+                let saves = newest_profile_saves(app);
+                if arm_disable(app, targets.clone(), &saves) {
+                    return Task::none();
+                }
+            }
             for &i in &targets {
                 if let Some(m) = app.mods.get_mut(i) {
                     m.enabled = new_state;
@@ -1123,13 +1184,15 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::BatchRemoveMods => {
-            let n = real_selection(app).len();
+            let targets = real_selection(app);
+            let n = targets.len();
             if n == 0 {
                 app.status = Some(t("status_select_mods_first").to_string());
                 return Task::none();
             }
             app.confirm_batch_remove = true;
-            app.status = Some(tf("status_click_remove_again_n", &[("n", &n)]));
+            let again = tf("status_click_remove_again_n", &[("n", &n)]);
+            app.status = Some(remove_warning(app, &targets) + &again);
         }
         Message::ConfirmBatchRemove => {
             app.confirm_batch_remove = false;
@@ -1731,4 +1794,154 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         _ => unreachable!("routed by update_inner"),
     }
     Task::none()
+}
+
+/// Put the mod list back to `state`, an undo or redo step. Only order and
+/// enabled flags are restored: a step taken before a mod was added, removed or
+/// renamed no longer matches the folders on disk, so it is refused and the
+/// history restarts from the list as it is.
+fn apply_mods_step(app: &mut App, state: crate::history::ModsState, undo: bool) {
+    let mut want: Vec<&str> = state.iter().map(|(n, _)| n.as_str()).collect();
+    let mut have: Vec<&str> = app.mods.iter().map(|m| m.name.as_str()).collect();
+    want.sort_unstable();
+    have.sort_unstable();
+    if want != have {
+        // `step` already moved the baseline to the stale state; the list on
+        // screen still matches disk, so later edits are recorded from it.
+        let now = crate::history::mods_state(&app.mods);
+        app.history.borrow_mut().reset(now);
+        app.status = Some(t("status_undo_list_changed").to_string());
+        return;
+    }
+    let mut pool: Vec<Option<ModEntry>> = std::mem::take(&mut app.mods)
+        .into_iter()
+        .map(Some)
+        .collect();
+    app.mods = state
+        .into_iter()
+        .filter_map(|(name, enabled)| {
+            let entry = pool
+                .iter_mut()
+                .find(|e| e.as_ref().is_some_and(|e| e.name == name))?
+                .take()?;
+            Some(ModEntry { enabled, ..entry })
+        })
+        .collect();
+    // Rows may have moved under the selected indices, and under a drag's `from`.
+    put_mod_selection(app, HeldSelection::default());
+    app.drag_state = None;
+    // A refused save already said so, and its reload cleared the history.
+    if mods_changed(app) {
+        let key = if undo {
+            "status_undone_mods"
+        } else {
+            "status_redone_mods"
+        };
+        app.status = Some(t(key).to_string());
+    }
+}
+
+/// Put the load order back to `state`. Refused, with the history cleared, when
+/// the set of plugins is not the one the step was taken on.
+fn apply_plugins_step(app: &mut App, state: crate::history::PluginsState, undo: bool) {
+    let fresh = app.plugins.is_none();
+    if fresh {
+        app.plugins = compute_plugins(app);
+    }
+    let spec = selected_game(app).and_then(|g| g.plugin_spec());
+    let (Some(spec), Some(list)) = (spec, app.plugins.as_mut()) else {
+        app.history.borrow_mut().clear();
+        return;
+    };
+    let names = |it: Vec<&str>| {
+        let mut v: Vec<String> = it.iter().map(|n| n.to_ascii_lowercase()).collect();
+        v.sort_unstable();
+        v
+    };
+    if names(list.plugins.iter().map(|p| p.name.as_str()).collect())
+        != names(state.0.iter().map(|(n, _)| n.as_str()).collect())
+    {
+        // `step` moved the baseline to the stale state; the list shown is the truth.
+        let mut h = app.history.borrow_mut();
+        h.seen_plugins(crate::history::plugins_state(list));
+        h.clear();
+        app.status = Some(t("status_undo_plugins_changed").to_string());
+        return;
+    }
+    if fresh {
+        // `compute_plugins` just recorded the disk state as the baseline.
+        app.history.borrow_mut().seen_plugins(state.clone());
+    }
+    let mut pool = std::mem::take(&mut list.plugins);
+    let (order, locked) = state;
+    list.plugins = order
+        .into_iter()
+        .filter_map(|(name, enabled)| {
+            let at = pool
+                .iter()
+                .position(|p| p.name.eq_ignore_ascii_case(&name))?;
+            let mut p = pool.swap_remove(at);
+            p.enabled = enabled;
+            Some(p)
+        })
+        .collect();
+    list.locked = locked;
+    list.refresh(&spec);
+    // The rows a drag holds by index may have moved.
+    app.plugin_drag = None;
+    let key = if undo {
+        "status_undone_plugins"
+    } else {
+        "status_redone_plugins"
+    };
+    // A refused write replaces this with its own message.
+    app.status = Some(t(key).to_string());
+    commit_plugin_order(app, &spec);
+}
+
+/// Hold back a disable of `targets` when the newest `saves` use their plugins:
+/// arms `app.disable_confirm` and toggles nothing. False when there is nothing
+/// to warn about, and the caller disables as before.
+pub(crate) fn arm_disable(
+    app: &mut App,
+    targets: Vec<usize>,
+    saves: &[(PathBuf, eidos_gamefeatures::SaveInfo)],
+) -> bool {
+    // A batch disable over a mixed selection must not name mods already off.
+    let active: Vec<usize> = targets
+        .iter()
+        .copied()
+        .filter(|&i| app.mods.get(i).is_some_and(|m| m.is_active()))
+        .collect();
+    let plugins = plugins_saves_use(app, &active, saves);
+    // `app.plugins` is a cache that is usually cold; compute it as diagnostics does.
+    let computed;
+    let list = match app.plugins.as_ref() {
+        Some(list) => Some(list),
+        None => {
+            computed = compute_plugins(app);
+            computed.as_ref()
+        }
+    };
+    let dependents: Vec<usize> = list.map_or_else(Vec::new, |list| {
+        let names: Vec<&str> = active.iter().map(|&i| app.mods[i].name.as_str()).collect();
+        let needing = eidos_plugins::dependents_of(&list.mod_requirements(), &names);
+        (0..app.mods.len())
+            .filter(|i| !targets.contains(i))
+            .filter(|&i| {
+                let m = &app.mods[i];
+                m.enabled && needing.iter().any(|n| n.eq_ignore_ascii_case(&m.name))
+            })
+            .collect()
+    });
+    if plugins.is_empty() && dependents.is_empty() {
+        return false;
+    }
+    app.menu_mod = None;
+    app.disable_confirm = Some(DisableConfirm {
+        targets,
+        plugins,
+        dependents,
+    });
+    true
 }

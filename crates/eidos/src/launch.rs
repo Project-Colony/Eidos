@@ -622,7 +622,9 @@ pub(crate) fn run_through_view(
             eidos_log::warn!("eidos: could not record the game build: {e}");
         }
     }
+    let session = crate::sessions::begin(game, inst, &prof, opts.tool_name);
     let result = launch(spec);
+    crate::sessions::finish(session, &result, inst, &prof);
     // A crash under Proton can still exit 0; a crash log written since the start says otherwise.
     // A stopped run is never clean: Steam's wrapper chain may turn the SIGTERM into exit 0.
     if game_run
@@ -773,11 +775,7 @@ pub(crate) fn run_through_view(
         // child was killed by a signal, so fall back to the shell convention
         // 128 + signal - otherwise a crashed (signal-killed) game/tool would make
         // eidos exit 0 and hide the failure from Steam or any wrapping script.
-        Ok(status) => exit(
-            status
-                .code()
-                .unwrap_or_else(|| 128 + status.signal().unwrap_or(1)),
-        ),
+        Ok(status) => exit(exit_code(&status)),
         Err(e) => {
             // Name what was being mounted. `No such file or directory (os error 2)`
             // on its own gives the user nothing to act on, and it is the message
@@ -794,6 +792,13 @@ pub(crate) fn run_through_view(
             exit(1)
         }
     }
+}
+
+/// The child's exit code, or 128 + signal when a signal killed it.
+pub(crate) fn exit_code(status: &std::process::ExitStatus) -> i32 {
+    status
+        .code()
+        .unwrap_or_else(|| 128 + status.signal().unwrap_or(1))
 }
 
 /// `sLanguage` from the active profile's primary game INI, if the game has one.

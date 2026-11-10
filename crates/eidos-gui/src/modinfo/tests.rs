@@ -758,6 +758,48 @@ fn preflight_diagnostics_preserve_interrupted_runs_and_warn_when_inputs_change()
 }
 
 #[test]
+fn a_cleaned_copy_raises_no_generic_stale_output_card() {
+    let (mut app, root) = data_app(&[("meshes/test.nif", "mesh")], &[]);
+    let inst = app.created.clone().unwrap();
+    let plugins = compute_plugins(&app)
+        .unwrap()
+        .plugins
+        .into_iter()
+        .map(|p| (p.name, p.enabled))
+        .collect::<Vec<_>>();
+    let run = inst
+        .begin_tool_run(
+            "SSEEdit QuickAutoClean",
+            None,
+            &["SSEEditQuickAutoClean.exe".into()],
+            &plugins,
+        )
+        .unwrap();
+    fs::write(inst.overwrite_dir().join("Dirty.esp"), b"cleaned").unwrap();
+    let before = run.before.clone();
+    inst.finish_tool_run(run).unwrap();
+    // What `eidos tool run --output-mod` does once the tool exits.
+    assert_eq!(
+        inst.capture_overwrite_into_mod(CLEANED_MOD, &before)
+            .unwrap(),
+        1
+    );
+    app.mods.push(ModEntry {
+        name: CLEANED_MOD.into(),
+        enabled: true,
+        path: inst.mods_dir().join(CLEANED_MOD),
+        unmanaged: false,
+    });
+    let mut meta = inst.mod_meta("AAA");
+    meta.set_installed_files(&[(12, 34)]);
+    meta.write(&inst.meta_path("AAA")).unwrap();
+    assert!(!diagnostics(&app)
+        .iter()
+        .any(|d| d.title == t("diag_generated_inputs_changed")));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn a_stale_output_card_offers_run_again_only_for_a_known_tool() {
     let (mut app, root) = data_app(&[("meshes/test.nif", "mesh")], &[]);
     let inst = app.created.as_ref().unwrap();
@@ -1071,4 +1113,19 @@ mod requirement_tests {
             [(_, Message::IgnoreRequirement { key, .. })] if key == "offsite:VC++ Redistributable"
         ));
     }
+}
+
+#[test]
+fn mod_information_lists_what_a_mod_requires_and_what_requires_it() {
+    let (mut app, _root) = list_app(&["ModA", "ModB"]);
+    let mut a = plugin_row("A.esp", "ModA");
+    a.masters = vec!["B.esm".into()];
+    app.plugins = Some(PluginList {
+        plugins: vec![plugin_row("B.esm", "ModB"), a],
+        ..Default::default()
+    });
+    let _ = update(&mut app, Message::ShowModInfo(0));
+    assert_eq!(app.info_requirements.0, ["ModB (A.esp needs B.esm)"]);
+    let _ = update(&mut app, Message::ShowModInfo(1));
+    assert_eq!(app.info_requirements.1, ["ModA (A.esp needs B.esm)"]);
 }

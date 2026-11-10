@@ -349,11 +349,14 @@ pub(crate) fn data_stack(
     // mods, separators and unmanaged rows - exactly what the mount is handed.
     let mut layers = inst.load_order();
     layers.push(game.data_path.clone());
-    let stack = std::rc::Rc::new(if want_index {
-        eidos_core::LayerStack::new(layers, inst.overwrite_dir())
-    } else {
-        eidos_core::LayerStack::new_unindexed(layers, inst.overwrite_dir())
-    });
+    let stack = std::rc::Rc::new(
+        if want_index {
+            eidos_core::LayerStack::new(layers, inst.overwrite_dir())
+        } else {
+            eidos_core::LayerStack::new_unindexed(layers, inst.overwrite_dir())
+        }
+        .hiding_mod_metadata(),
+    );
 
     // Where each real path came from, so a winner can be named.
     let mut sources = DataSources::new();
@@ -1976,6 +1979,25 @@ pub(crate) fn plugin_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> 
                 col.push(container(text(t("plugin_menu_from_game")).size(sz(11))).padding([4, 8]));
         }
     }
+    if let Some(name) = plugin_clean_target(app, i) {
+        col = col.push(menu_item(
+            t("plugin_menu_clean"),
+            Message::CleanPlugins(vec![name]),
+        ));
+    }
+    // Not from the Overwrite: it outranks the new mod, so the flag would not load.
+    let light_candidate = p.origin_mod != "overwrite"
+        && app
+            .loot_meta
+            .as_ref()
+            .and_then(|m| m.get(&p.name.to_ascii_lowercase()))
+            .is_some_and(|b| b.light_candidate);
+    if light_candidate {
+        col = col.push(menu_item(
+            t("plugin_menu_flag_light"),
+            Message::FlagPluginLight(i),
+        ));
+    }
 
     col = col
         .push(menu_sep())
@@ -2864,6 +2886,25 @@ mod tests {
             !names.contains(&"Skyrim.esm".to_string()),
             "a whited-out file is NOT in the merged view: {names:?}"
         );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_data_tab_leaves_out_a_mods_manager_files() {
+        let (app, root) = data_app(
+            &[
+                ("meta.ini", "x"),
+                ("readme.txt", "x"),
+                ("Root/skse64_loader.exe", "x"),
+                ("mod.esp", "x"),
+            ],
+            &[],
+        );
+        let names: Vec<_> = merged_listing(&app, "")
+            .into_iter()
+            .map(|r| r.name)
+            .collect();
+        assert_eq!(names, ["mod.esp", "Skyrim.esm"]);
         let _ = fs::remove_dir_all(&root);
     }
 

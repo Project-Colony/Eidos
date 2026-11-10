@@ -1096,6 +1096,7 @@ checksum = "edf234dd1594d6dd434a8fb8cada51ddbbc593e40e4a01556a0b31c62da2775b"
 name = "eidos"
 version = "1.22.0"
 dependencies = [
+ "crc32fast",
  "eidos-addons",
  "eidos-collections",
  "eidos-fomod",

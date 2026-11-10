@@ -894,6 +894,63 @@ pub(crate) fn loot_severity_label(kind: eidos_loot::MessageType) -> &'static str
     }
 }
 
+/// The card a disable waits behind while the newest saves use the mods'
+/// plugins or other mods need them as masters. None when nothing is held.
+pub(crate) fn disable_confirm_dialog<'a>(app: &App) -> Option<Element<'a, Message>> {
+    let confirm = app.disable_confirm.as_ref()?;
+    let mut lines = Column::new().spacing(6).width(Length::Fill);
+    if !confirm.plugins.is_empty() {
+        lines = lines.push(text(saves_warning(&confirm.plugins)).size(sz(11)));
+    }
+    if !confirm.dependents.is_empty() {
+        let mut names = confirm
+            .dependents
+            .iter()
+            .take(5)
+            .filter_map(|&i| app.mods.get(i))
+            .map(|m| m.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        if confirm.dependents.len() > 5 {
+            names.push_str(&tf(
+                "diag_and_n_more",
+                &[("n", &(confirm.dependents.len() - 5))],
+            ));
+        }
+        lines = lines.push(text(tf("warn_dependents", &[("mods", &names)])).size(sz(11)));
+    }
+    let mut row = Row::new()
+        .spacing(10)
+        .push(Space::new().width(Length::Fill));
+    row = if confirm.dependents.is_empty() {
+        row.push(flat_btn(t("disable_anyway"), Message::ConfirmDisable))
+    } else {
+        row.push(flat_btn(
+            t("disable_with_dependents"),
+            Message::ConfirmDisableWithDependents,
+        ))
+        .push(flat_btn(
+            t("disable_keep_dependents"),
+            Message::ConfirmDisable,
+        ))
+    };
+    let row = row.push(flat_btn(t("common_cancel"), Message::CancelDisable));
+    Some(
+        container(Column::new().spacing(12).push(lines).push(row))
+            .max_width(560)
+            .padding(16)
+            .style(|th| container::Style {
+                border: Border {
+                    color: pal().warning,
+                    ..crate::theme::card_style(th).border
+                },
+                text_color: Some(pal().warning),
+                ..crate::theme::card_style(th)
+            })
+            .into(),
+    )
+}
+
 /// The Categories dialog (MO2's Change Categories, plus its category editor).
 ///
 /// Two modes in one card because they are one job: assigning a category the

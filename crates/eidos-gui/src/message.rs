@@ -218,6 +218,9 @@ pub(crate) enum Message {
     SelectSave(usize),
     /// Enable every mod that supplies one of the selected save's missing plugins.
     FixSaveMods,
+    /// Health card: enable the mod that holds each missing master, and tick a
+    /// master plugin that is present but unticked.
+    EnableMissingMasters,
     /// Put the pre-session `plugins.txt` back after a session damaged the active
     /// set (the Diagnostics card's one-click restore).
     RestorePreSessionPlugins,
@@ -332,6 +335,12 @@ pub(crate) enum Message {
     PluginsSendBottom,
     /// Activate or deactivate every plugin the engine does not own.
     PluginsSetAll(bool),
+    /// Clean these plugins with xEdit's QuickAutoClean, one run at a time,
+    /// into the `Cleaned plugins` mod.
+    CleanPlugins(Vec<String>),
+    /// Write a light-flagged copy of the plugin at this row into a new
+    /// `<plugin> (light)` mod at the highest priority.
+    FlagPluginLight(usize),
     /// Ask Nexus what this archive is, by its MD5 (MO2's Query Metadata).
     IdentifyDownload(String),
     /// The lookup came back: `Ok` carries the name it identified.
@@ -596,6 +605,12 @@ pub(crate) enum Message {
     BatchRemoveMods,
     /// Second click: actually remove every selected mod from disk.
     ConfirmBatchRemove,
+    /// Disable the mods held back because the newest saves use their plugins.
+    ConfirmDisable,
+    /// Disable the held-back mods and every enabled mod that needs them.
+    ConfirmDisableWithDependents,
+    /// Keep the mods held back by the saves warning enabled.
+    CancelDisable,
     /// Drop from every profile's list the mods whose folders were deleted
     /// outside Eidos (the Diagnostics card's one-click answer to a suspect list).
     ForgetMissingMods,
@@ -698,6 +713,10 @@ pub(crate) enum Message {
     CycleFocus,
     /// Select every row of the focused list (Ctrl+A).
     SelectAllInFocus,
+    /// Put back the mod list as it was before the last saved change (Ctrl+Z).
+    Undo,
+    /// Reapply the change the last undo took back (Ctrl+Shift+Z).
+    Redo,
     // ---- keyboard tracking (drives Ctrl/Shift multi-select + shortcuts) ----
     /// The held keyboard modifiers changed (from key press/release subscriptions).
     ModifiersChanged(iced::keyboard::Modifiers),

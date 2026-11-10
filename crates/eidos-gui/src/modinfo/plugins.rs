@@ -77,6 +77,9 @@ pub(crate) fn compute_plugins(app: &App) -> Option<PluginList> {
         list.locked = inst.active().read_locked_order();
     }
     list.refresh(&spec);
+    app.history
+        .borrow_mut()
+        .seen_plugins(crate::history::plugins_state(&list));
     Some(list)
 }
 
@@ -187,6 +190,7 @@ pub(crate) fn write_plugin_state(
             .get()
             .is_none_or(|seen| seen == plugin_state_fingerprint(&prof, spec));
         if !unchanged {
+            app.history.borrow_mut().clear();
             return Err(std::io::Error::other(t("plugin_order_changed_elsewhere")));
         }
         // Adopt the game's state first, as launch and sort do, failing closed.
@@ -208,6 +212,9 @@ pub(crate) fn write_plugin_state(
         }
         app.plugins_seen
             .set(Some(plugin_state_fingerprint(&prof, spec)));
+        app.history
+            .borrow_mut()
+            .saved_plugins(crate::history::plugins_state(list));
     }
     if spec.mechanism != eidos_plugins::LoadOrderMechanism::Timestamp {
         if let Some(dir) = selected_game(app).and_then(|g| g.plugin_state_dir()) {
@@ -215,6 +222,15 @@ pub(crate) fn write_plugin_state(
         }
     }
     Ok(())
+}
+
+/// "full 231/254, light 512/4096": one part per index space the game has.
+pub(crate) fn slots_text(usage: &eidos_plugins::SlotUsage) -> String {
+    let part = |key: &str, (n, cap): (u32, u32)| tf(key, &[("n", &n), ("cap", &cap)]);
+    let mut parts = vec![part("plugins_slots_full", usage.full)];
+    parts.extend(usage.light.map(|u| part("plugins_slots_light", u)));
+    parts.extend(usage.medium.map(|u| part("plugins_slots_medium", u)));
+    parts.join(", ")
 }
 
 pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
@@ -241,6 +257,18 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         ))
         .size(sz(12)),
     );
+    if let Some(spec) = selected_game(app).and_then(|g| g.plugin_spec()) {
+        let usage = list.slot_usage(&spec);
+        let full = [Some(usage.full), usage.light, usage.medium]
+            .into_iter()
+            .flatten()
+            .any(|(n, cap)| n >= cap);
+        top = top.push(text(slots_text(&usage)).size(sz(12)).style(move |_| {
+            iced::widget::text::Style {
+                color: full.then(|| pal().warning),
+            }
+        }));
+    }
     if loot_ok {
         // No `on_press` while a sort runs, nor while a run is tracked: the button
         // greys itself. That is the only sign of work a multi-second masterlist
@@ -555,6 +583,10 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
                     ],
                 ));
             }
+            if b.light_candidate {
+                tip.push('\n');
+                tip.push_str(t("plugin_tip_light_candidate"));
+            }
             if !b.bash_tags.is_empty() {
                 tip.push_str(&format!("\nBash Tags: {}", b.bash_tags.join(", ")));
             }
@@ -745,6 +777,17 @@ mod tests {
     use super::*;
     use crate::test_support::plugin_row;
     use eidos_gamefeatures::archives::{ArchiveActivation, ArchivePlan};
+
+    #[test]
+    fn slots_text_names_each_space() {
+        let _look = crate::test_support::look_lock();
+        let u = eidos_plugins::SlotUsage {
+            full: (231, 254),
+            light: Some((512, 4096)),
+            medium: None,
+        };
+        assert_eq!(slots_text(&u), "full 231/254, light 512/4096");
+    }
 
     #[test]
     fn selecting_a_plugin_paints_its_masters_and_the_mod_that_ships_it() {

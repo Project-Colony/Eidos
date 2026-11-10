@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=92ef50801ef60cd7ea02e2a2f2538c313e3aeca1 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
 
 # 使用 Eidos
 
@@ -18,6 +18,8 @@ eidos sort skyrimse               # 用 LOOT 排序插件加载顺序
 eidos play skyrimse               # 显示将会挂载什么
 eidos play skyrimse -- <command>  # 在模组盖住游戏的视图下运行 <command>
 eidos check skyrimse              # 不开窗口跑健康检查(脚本用 --json)
+eidos sessions skyrimse           # 按从新到旧列出已记录的游戏和工具运行
+eidos sessions skyrimse diff      # 显示自上次以退出码 0 结束的运行以来的变化
 eidos collection skyrimse <link>  # 按作者构建它的方式安装一个 Nexus 合集
 eidos nexus update skyrimse --apply  # 安装取代了你那些文件的 Nexus 文件
 eidos pack skyrimse backup.eidos  # 整个实例装进一个文件,好搬到别处去
@@ -113,6 +115,10 @@ Add separator、Remove,以及把 Overwrite 变成一个模组,都会在动 `mods
 时会在这次运行的日志里点出它的名字(从窗口启动是实例的 `logs/run-*.log`,从 Steam 启动
 则是 Steam 的控制台),每当这组文件发生变化就点一次。要玩它,把它连同它的 co-save 一起
 复制进配置档的 `saves/` 文件夹。
+
+### 自上次正常运行以来的变化
+
+无论从窗口、终端还是 Steam 启动，每次通过 `eidos play` 或 `eidos tool run` 的运行都会在 `<instance>/logs/sessions/` 写一条记录：配置文件、每个启用的 mod 及其版本和 Nexus 文件 ID、插件顺序、每个配置文件 INI 的校验和、游戏可执行文件的版本、Eidos 版本、退出码，以及这次运行创建的存档。保留最新的 50 条，`logs/` 不会进入打包的实例。`eidos sessions <instance> diff` 把最近一次以退出码 0 结束的游戏运行与当前状态比较；`diff <id>` 从列表中选另一条记录。Eidos 目前不检测崩溃，在 Proton 下崩溃的游戏仍可能以退出码 0 结束：如果选中的运行属于这种情况，请用 `diff <id>` 指定更早的一条。
 
 ### 不需要任何特权步骤
 
@@ -385,6 +391,10 @@ Ctrl+F 把光标放进过滤框。敲一个字母跳到下一个以它开头的�
 分隔条菜单里的 "Collapse others" 会折叠除该组之外的每一组。拖动过程中,停在一个折叠的
 分组上会把它展开,于是模组可以直接放进去,不必先放弃这次拖动 - 是停留,不是掠过。
 
+Ctrl+Z 撤销对模组列表或加载顺序的上一次改动:一次勾选、一次移动、一次批量禁用、一次 LOOT 排序。Ctrl+Shift+Z 重做。
+窗口保留 50 步,在按 F5、游戏或工具运行结束、切换配置档以及另一个 Eidos 进程改动列表时
+清空。安装、重命名或移除模组会改变磁盘上的文件夹,所以越过这类操作的撤销会被拒绝。
+
 ### 列表会告诉你一个模组的哪些事
 
 两个提示性标记,都是一个字形,悬停给出解释。**No valid game data** 意思是这个模组顶层
@@ -395,6 +405,15 @@ Ctrl+F 把光标放进过滤框。敲一个字母跳到下一个以它开头的�
 
 布局检查是刻意宽松的:一棵 `Root/` 树算,读不了的文件夹算,空文件夹也算。在一个五百行
 的列表上,一个错误的警告比一个漏掉的警告更糟。
+
+### 停用存档或其他模组用到的模组
+
+在停用或移除一个模组之前,Eidos 会读取该配置档最新三个存档的插件列表。只要其中一个
+存档用到了这个模组里的插件,列表上方就会出现一条提示栏,列出这些插件,并等待你点
+"Disable anyway" 或 "Cancel"(按 Esc 也会取消)。Remove 会把同样的插件名加进它
+要求再点一次的提示里。只读取 Skyrim 和 Fallout 4 的存档;其他游戏不询问,直接停用。
+
+模组的 Information 里的 General 标签页会列出它需要的模组和需要它的模组,依据已启用插件的主文件读取。停用其他模组需要的模组时会出现同样的提示栏:"Disable them too"会同时停用所有需要它的模组,以及需要那些模组的模组;"Keep them enabled"则只停用所选的。 Health 标签页上的缺少主文件卡片有 "Enable what provides them":它会启用包含每个缺失主文件的模组,并勾选存在但未勾选的主插件。
 
 ### 动一个模组之前先给它做备份
 
@@ -408,8 +427,9 @@ Ctrl+F 把光标放进过滤框。敲一个字母跳到下一个以它开头的�
 的图层各读一次目录,而不是递归遍历每一个启用的模组。回答它的是挂载所依据的同一套图层
 栈,所以 whiteout 与隐藏文件都被遵守,这个标签页不可能和游戏将会看到的东西相左。按
 名称过滤它,收窄到只看有争议的文件,用 Size 与 Modified 两列理清什么在哪里,任意一行
-都可以在文件管理器里 Reveal。**Plugins** 是 ESP/ESM/ESL 的加载顺序(勾选、手工重排,
-或者用 LOOT 排序并阅读排序后的报告,报告里的建议链接会在你的浏览器中打开)。
+都可以在文件管理器里 Reveal。
+模组顶层的 `meta.ini`、`readme.txt`、`fomod/` 和 `Root/` 不进入 Data,这个标签页和挂载里都一样:前三个是给模组管理器用的,`Root/` 则改去游戏文件夹。游戏或工具以这些名字写下的文件会落进 Overwrite,并保持可见。**Plugins** 是 ESP/ESM/ESL 的加载顺序(勾选、手工重排,
+或者用 LOOT 排序并阅读排序后的报告,报告里的建议链接会在你的浏览器中打开)。它的标题栏按索引空间统计已启用的插件数量,并与游戏的上限对照,例如 `full 231/254, light 512/4096`,某个空间满了就变成橙色。LOOT 排序之后,新记录全部落在 light 范围内的完整插件会在悬停时说明这一点,它那一行的菜单里也会出现 Flag as light。Eidos 会把带 light 标志的副本写进一个名为 `<plugin> (light)` 的新模组,放在模组列表最底部(优先级最高),原插件不动,所以停用这个模组就能撤销。如果该配置档最新三个存档中有一个把这个插件作为完整插件加载,Eidos 会拒绝。只读取 Skyrim 和 Fallout 4 的存档,所以在 Starfield 上不会检查任何存档。LOOT 只检查记录范围:会添加单元格或世界空间的插件,标记之前先在 xEdit 里看一下。
 **Conflicts** 解释每个文件的赢家与输家。**Overwrite** 一步把游戏写出来的东西变成一个
 真正的模组。**Saves** 解析每个存档的头部 - 角色、等级、地点、游戏时长 - 并把烘进存档
 的插件列表与你当前的做差异比较,还带一个按钮来启用它需要的模组,因为只把它们的名字

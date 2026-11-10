@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
 
 # ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -31,6 +31,12 @@ Fallout 4 なら `FO4Edit.exe`、Skyrim SE なら `SSEEdit.exe`、初代なら
 ツールが別の場所にある場合や、違う引数を渡したい場合は、手で追加してください -
 同じタイトルのユーザー項目は、自動で見つかったものを上書きします。
 
+## LOOT が dirty と判定したプラグインをクリーニングする
+
+LOOT でソートすると、Diagnostics タブに LOOT が dirty と判定したプラグインが一覧表示されます。対象は xEdit と LOOT のクリーニングデータの両方があるゲームです（Skyrim LE、SE、VR、Enderal SE、Fallout 3、New Vegas、Fallout 4 と 4 VR、Oblivion、Starfield）。Eidos が xEdit を見つけた場合（Executables に登録されているか、インスタンス内でツールを探す場所のどこかにある場合）、カードには Clean all が、dirty な各プラグインの行メニューには Clean with QuickAutoClean が表示されます。見つからない場合、カードは Executables に xEdit を追加するよう案内します。Eidos は xEdit をダウンロードしません。xEdit の QuickAutoClean モードを、統合ビュー越しに `-qac -autoexit -autoload` を付けて、一度に一つのプラグインに対して実行します。xEdit はクリーニングしたプラグインを読み込んだものの上に保存します。統合ビューではこれは Overwrite 内の新しいファイルになり、Eidos はそれを `Cleaned plugins` という名前の MOD に移します。この MOD は有効な状態でリストの末尾に作られ、すべての競合に勝ちます。元の MOD 内のプラグインにも、ゲームの Data フォルダ内のプラグインにも、書き込むことはありません。クリーニングを元に戻すには、`Cleaned plugins` を無効にするか、その中のファイルを一つ非表示にします。
+
+xEdit のバックアップ、キャッシュ、ログは統合ビューの外の `<instance>/logs/qac-<time>/` に置かれ、ステータス行はそのログから読んだ件数を表示します。クリーニングが成功すると Eidos はこのフォルダを削除し、失敗した場合は残します。Eidos は各コピーの元になったプラグインのサイズと日付を `Cleaned plugins/meta.ini` に記録します。 そのプラグインが変わると、Health タブはコピーが古くなったと報告し、非表示にするよう提案します。
+
 ## 追加する
 
 GUI なら **Tools -> Executables** を開いて Add。コマンドラインなら:
@@ -40,7 +46,10 @@ eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse                       # list what is registered
 eidos tool skyrimse run BodySlide         # run it through the merged view
 eidos tool skyrimse run BodySlide --print # show the command without running it
+eidos tool skyrimse run "SSEEdit QuickAutoClean" --output-mod "Cleaned plugins" -- -qac -autoexit -autoload Dawnguard.esm
 ```
+
+`--output-mod <mod>` は、ツール自身の設定に関係なく、その実行の出力を `mods/<mod>` に取り込みます。
 
 スクリプトエクステンダ、ゲーム本体、ランチャーは自動で検出されます。登録が
 要るのは追加のツールだけです。

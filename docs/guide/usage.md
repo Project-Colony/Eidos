@@ -17,6 +17,8 @@ eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
 eidos check skyrimse              # Health checks without the window (--json for scripts)
+eidos sessions skyrimse           # the recorded game and tool runs, newest first
+eidos sessions skyrimse diff      # what changed since the last run that exited with code 0
 eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
 eidos nexus update skyrimse --apply  # install the Nexus files that replaced yours
 eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
@@ -157,6 +159,10 @@ hidden while the profile's saves are mounted. Nothing deletes it: the launch
 names it in the run's log (the instance's `logs/run-*.log` for a window launch,
 Steam's console for a Steam launch), once each time that set of files changes.
 To play it, copy it and its co-save into the profile's `saves/` folder.
+
+### What changed since the last good run
+
+Every run through `eidos play` or `eidos tool run`, started from the window, a terminal or Steam, writes a record to `<instance>/logs/sessions/`: the profile, each enabled mod with its version and Nexus file ids, the plugin order, a checksum of each profile INI, the game executable's version, the Eidos version, the exit code and the saves the run created. The 50 newest are kept, and `logs/` stays out of a packed instance. `eidos sessions <instance> diff` compares the newest game run that exited with code 0 against the current state; `diff <id>` picks another record from the list. Eidos does not detect crashes here yet, and a game that crashed under Proton can still exit with code 0: if the run it picks was one of those, name an earlier one with `diff <id>`.
 
 ### No privileged step required
 
@@ -500,6 +506,13 @@ you cannot see is how the next Space toggles a mod you were not looking at.
 drag, resting on a folded group opens it, so a mod can be dropped inside without
 abandoning the drag first - resting, not brushing past.
 
+Ctrl+Z undoes the last change to the mod list or the load order: a tick, a move, a
+batch disable, a LOOT sort.
+Ctrl+Shift+Z redoes it. The window keeps 50 steps and forgets them on F5, at the
+end of a game or tool run, on a profile switch and when another Eidos process
+changes the list. Installing, renaming or removing a mod changes the folders on
+disk, so an undo past one of those is refused.
+
 ### What the list tells you about a mod
 
 Two advisory flags, both a glyph with the explanation on hover. **No valid game
@@ -513,6 +526,20 @@ for in one manager arrives quiet in the other.
 The layout check is deliberately generous: a `Root/` tree counts, an unreadable
 folder counts, an empty one counts. A wrong warning on a five-hundred-row list
 is worse than a missing one.
+
+### Disabling a mod your saves or other mods need
+
+Before a mod is disabled or removed, Eidos reads the plugin lists of the
+profile's three newest saves. When one of them uses a plugin from that mod, a
+bar above the list names the plugins and waits for Disable anyway or Cancel
+(Escape cancels too). Remove adds the same names to its click-again message.
+Only Skyrim and Fallout 4 saves are read; other games disable without asking.
+
+A mod's Information, General tab, lists the mods it requires and the mods that
+require it, read from the masters of the enabled plugins. Disabling a mod that
+others require shows the same bar with Disable them too, which also disables
+every mod that needs it and the mods that need those, or Keep them enabled.
+The missing-masters card on the Health tab has Enable what provides them: it enables the mod that holds each missing master and ticks a master plugin that is present but unticked.
 
 ### Backing a mod up before you touch it
 
@@ -529,9 +556,13 @@ recursive walk of every enabled mod. It is answered by the SAME layer stack the
 mount serves from, so whiteouts and hidden files are respected and the tab
 cannot disagree with what the game will see. Filter it by name, narrow it to
 contested files only, sort out what is where with the Size and Modified columns,
-and Reveal any row in a file manager. **Plugins** is the
+and Reveal any row in a file manager. A mod's top-level `meta.ini`,
+`readme.txt`, `fomod/` and `Root/` are left out of Data, in this tab and in the
+mount: the first three are for the mod manager, and `Root/` goes to the game
+folder instead. A file the game or a tool writes under one of those names lands
+in the Overwrite and stays visible. **Plugins** is the
 ESP/ESM/ESL load order (toggle, reorder by hand, or sort with LOOT and read the
-post-sort report, whose advice links open in your browser). **Conflicts**
+post-sort report, whose advice links open in your browser). Its header counts the enabled plugins in each index space against the game's limit, for example `full 231/254, light 512/4096`, and turns orange when one is full. After a LOOT sort, a full plugin whose new records all fit the light range says so on hover, and its row menu has Flag as light. Eidos writes a copy with the light flag into a new mod named `<plugin> (light)` at the bottom of the mod list (the highest priority) and leaves the original alone, so disabling that mod undoes it. It refuses when one of the profile's three newest saves loads the plugin as a full plugin. Only Skyrim and Fallout 4 saves are read, so on Starfield no save is checked. LOOT checks record ranges only: look at a plugin that adds cells or worldspaces in xEdit before flagging it. **Conflicts**
 explains the per-file winners and losers. **Overwrite** turns what the game wrote
 into a real mod in one step. **Saves** parses each save's header - character,
 level, location, playtime - and diffs the plugin list baked into it against your

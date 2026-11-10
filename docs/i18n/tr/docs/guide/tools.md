@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -33,6 +33,30 @@ Bir araç başka bir yerdeyse ya da farklı argümanlar istiyorsanız, elle ekle
 aynı başlığa sahip bir kullanıcı girdisi, otomatik bulunan her şeyi geçersiz
 kılar.
 
+## LOOT'un kirli olarak işaretlediği bir eklentiyi temizlemek
+
+Bir LOOT sıralamasından sonra Diagnostics sekmesi, LOOT'un kirli (dirty) olarak
+işaretlediği eklentileri listeler. Bu, hem bir xEdit'i hem de LOOT temizlik
+verisi olan oyunlar içindir (Skyrim LE, SE ve VR, Enderal SE, Fallout 3, New
+Vegas, Fallout 4 ve 4 VR, Oblivion, Starfield). Eidos xEdit'i bulduğunda
+(Executables'a kayıtlı ya da örnekte araç aradığı herhangi bir yerde), kartta
+Clean all bulunur ve her kirli eklentinin satır menüsünde Clean with
+QuickAutoClean yer alır; bulamazsa kart, xEdit'i Executables'a eklemenizi
+söyler. Eidos xEdit'i indirmez. xEdit'in QuickAutoClean modunu birleşik görünüm
+üzerinden, `-qac -autoexit -autoload` ile, her seferinde tek bir eklenti
+üzerinde çalıştırır. xEdit temizlenmiş eklentiyi yüklediğinin üzerine kaydeder;
+birleşik görünümde bu, Overwrite'ta yeni bir dosyadır. Eidos bu dosyayı `Cleaned
+plugins` adlı bir moda taşır; bu mod etkin olarak listenin en altında
+oluşturulur ve orada her çakışmayı kazanır. Kendi modundaki ya da oyunun Data
+klasöründeki eklentiye asla yazılmaz. Bir temizliği geri almak için `Cleaned
+plugins` modunu devre dışı bırakın ya da içindeki bir dosyayı gizleyin.
+
+xEdit'in yedekleri, önbelleği ve günlüğü birleşik görünümün dışında,
+`<instance>/logs/qac-<time>/` içine gider ve durum satırı o günlükteki sayıları
+bildirir. Eidos bu klasörü başarılı bir temizlikten sonra siler, başarısız bir
+temizlikten sonra tutar. Eidos her kopyanın yapıldığı eklentinin boyutunu ve
+tarihini `Cleaned plugins/meta.ini` içine kaydeder. Bu eklenti değiştiğinde Health sekmesi kopyayı eski olarak bildirir ve gizlemeyi önerir.
+
 ## Bir araç eklemek
 
 GUI'de: **Tools -> Executables**, ardından Add. Komut satırından:
@@ -42,7 +66,10 @@ eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse                       # kayıtlı olanları listele
 eidos tool skyrimse run BodySlide         # birleşik görünüm üzerinden çalıştır
 eidos tool skyrimse run BodySlide --print # komutu çalıştırmadan göster
+eidos tool skyrimse run "SSEEdit QuickAutoClean" --output-mod "Cleaned plugins" -- -qac -autoexit -autoload Dawnguard.esm
 ```
+
+`--output-mod <mod>` bu çalıştırmanın çıktısını, aracın kendi ayarı ne olursa olsun, `mods/<mod>` içine alır.
 
 Script extender, oyun ikili dosyası ve başlatıcı kendiliğinden algılanır;
 yalnızca ek araçların kaydedilmesi gerekir.

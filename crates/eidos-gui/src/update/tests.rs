@@ -6802,3 +6802,950 @@ fn an_update_over_its_folder_asks_with_the_backup_ticked() {
     assert_eq!(app.update_target, None);
     fs::remove_dir_all(root).unwrap();
 }
+
+mod saves_use {
+    use super::super::mod_list::arm_disable;
+    use super::*;
+    use eidos_gamefeatures::SaveInfo;
+
+    fn save_with(full: &[&str], light: &[&str]) -> Vec<(PathBuf, SaveInfo)> {
+        vec![(
+            PathBuf::from("Save1.ess"),
+            SaveInfo {
+                plugins: full.iter().map(|s| s.to_string()).collect(),
+                light_plugins: light.iter().map(|s| s.to_string()).collect(),
+                ..Default::default()
+            },
+        )]
+    }
+
+    #[test]
+    fn plugins_saves_use_matches_case_insensitively_and_skips_other_winners() {
+        let (mut app, root) = list_app(&["Foo", "Bar"]);
+        fs::write(root.join("mods/Foo/Foo.esp"), b"x").unwrap();
+        fs::write(root.join("mods/Bar/Bar.esp"), b"x").unwrap();
+        app.plugins = Some(PluginList {
+            plugins: vec![plugin_row("Foo.esp", "Foo"), plugin_row("Bar.esp", "Other")],
+            ..Default::default()
+        });
+        let saves = save_with(&["Skyrim.esm", "FOO.ESP"], &["Bar.esp"]);
+        assert_eq!(plugins_saves_use(&app, &[0, 1], &saves), ["Foo.esp"]);
+        assert!(plugins_saves_use(&app, &[0], &save_with(&["Skyrim.esm"], &[])).is_empty());
+        app.mods[0].enabled = false;
+        // Removing a disabled mod still deletes the only copy of its plugin...
+        assert_eq!(plugins_saves_use(&app, &[0, 1], &saves), ["Foo.esp"]);
+        // ...but disabling it again has nothing to warn about.
+        assert!(!arm_disable(&mut app, vec![0], &saves));
+        assert!(app.disable_confirm.is_none());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn disabling_a_mod_the_newest_saves_use_waits_for_a_choice() {
+        let (mut app, root) = list_app(&["Foo"]);
+        fs::write(root.join("mods/Foo/Foo.esp"), b"x").unwrap();
+        app.plugins = Some(PluginList {
+            plugins: vec![plugin_row("Foo.esp", "Foo")],
+            ..Default::default()
+        });
+        let uses_foo = || save_with(&["Foo.esp"], &[]);
+        assert!(arm_disable(&mut app, vec![0], &uses_foo()));
+        assert!(app.mods[0].enabled, "nothing toggles until the user picks");
+        assert_eq!(app.disable_confirm.as_ref().unwrap().plugins, ["Foo.esp"]);
+        let _ = update(&mut app, Message::CancelDisable);
+        assert!(app.disable_confirm.is_none() && app.mods[0].enabled);
+        assert!(arm_disable(&mut app, vec![0], &uses_foo()));
+        let _ = update(&mut app, Message::ClearSelection); // Escape cancels too
+        assert!(app.disable_confirm.is_none() && app.mods[0].enabled);
+        assert!(arm_disable(&mut app, vec![0], &uses_foo()));
+        let _ = update(&mut app, Message::ConfirmDisable);
+        assert!(app.disable_confirm.is_none() && !app.mods[0].enabled);
+        assert!(!arm_disable(
+            &mut app,
+            vec![0],
+            &save_with(&["Other.esp"], &[])
+        ));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    fn chain_app() -> (App, PathBuf) {
+        let (mut app, root) = list_app(&["Fw", "UsesFw", "UsesA"]);
+        let mut a = plugin_row("A.esp", "UsesFw");
+        a.masters = vec!["Fw.esm".into()];
+        let mut b = plugin_row("B.esp", "UsesA");
+        b.masters = vec!["A.esp".into()];
+        app.plugins = Some(PluginList {
+            plugins: vec![plugin_row("Fw.esm", "Fw"), a, b],
+            ..Default::default()
+        });
+        (app, root)
+    }
+
+    #[test]
+    fn disable_them_too_disables_the_whole_chain() {
+        let (mut app, _root) = chain_app();
+        assert!(arm_disable(&mut app, vec![0], &[]));
+        assert_eq!(app.disable_confirm.as_ref().unwrap().dependents, [1, 2]);
+        let _ = update(&mut app, Message::ConfirmDisableWithDependents);
+        assert!(app.mods.iter().all(|m| !m.enabled));
+    }
+
+    #[test]
+    fn keep_them_enabled_disables_only_the_target() {
+        let (mut app, _root) = chain_app();
+        assert!(arm_disable(&mut app, vec![0], &[]));
+        let _ = update(&mut app, Message::ConfirmDisable);
+        assert!(!app.mods[0].enabled && app.mods[1].enabled && app.mods[2].enabled);
+    }
+
+    #[test]
+    fn a_master_from_the_overwrite_or_the_game_asks_nothing() {
+        let (mut app, _root) = list_app(&["UsesBoth"]);
+        let mut a = plugin_row("A.esp", "UsesBoth");
+        a.masters = vec!["Gen.esm".into(), "Skyrim.esm".into()];
+        app.plugins = Some(PluginList {
+            plugins: vec![
+                plugin_row("Skyrim.esm", ""),
+                plugin_row("Gen.esm", "overwrite"),
+                a,
+            ],
+            ..Default::default()
+        });
+        assert!(!arm_disable(&mut app, vec![0], &[]));
+        assert!(app.disable_confirm.is_none());
+    }
+
+    #[test]
+    fn the_saves_warning_names_five_plugins_then_counts() {
+        let names: Vec<String> = (1..=7).map(|n| format!("P{n}.esp")).collect();
+        let w = saves_warning(&names);
+        assert!(
+            w.contains("P5.esp")
+                && !w.contains("P6.esp")
+                && w.contains(&tf("diag_and_n_more", &[("n", &2)])),
+            "{w}"
+        );
+    }
+}
+
+#[test]
+fn the_missing_masters_card_enables_the_mod_that_holds_the_master() {
+    let (mut app, root) = list_app(&["Needs", "Provider"]);
+    app.mods[1].enabled = false;
+    fs::write(root.join("mods/Provider/B.esm"), b"x").unwrap();
+    let mut a = plugin_row("A.esp", "Needs");
+    a.masters = vec!["B.esm".into()];
+    app.plugins = Some(PluginList {
+        plugins: vec![a],
+        ..Default::default()
+    });
+    let card = diagnostics(&app)
+        .into_iter()
+        .find(|d| d.title.contains("missing a master"))
+        .unwrap();
+    assert!(matches!(card.actions[0].1, Message::EnableMissingMasters));
+    let _ = update(&mut app, Message::EnableMissingMasters);
+    assert!(app.mods[1].enabled);
+    assert!(
+        fs::read_to_string(root.join("profiles/Default/modlist.txt"))
+            .unwrap()
+            .contains("+Provider")
+    );
+}
+
+#[test]
+fn a_master_no_mod_provides_is_named_without_an_enabled_count() {
+    let (mut app, _root) = list_app(&["Needs"]);
+    let mut a = plugin_row("A.esp", "Needs");
+    a.masters = vec!["Gone.esm".into()];
+    app.plugins = Some(PluginList {
+        plugins: vec![a],
+        ..Default::default()
+    });
+    let _ = update(&mut app, Message::EnableMissingMasters);
+    assert_eq!(
+        app.status.as_deref(),
+        Some(tf("status_masters_unprovided", &[("list", &"Gone.esm")]).as_str())
+    );
+}
+
+fn history_app(names: &[&str]) -> (App, PathBuf) {
+    let (mut app, root) = list_app(names);
+    app.created
+        .as_ref()
+        .unwrap()
+        .save_modlist(&app.mods)
+        .unwrap();
+    reload_mods(&mut app);
+    (app, root)
+}
+
+#[test]
+fn ctrl_z_undoes_a_mod_toggle_and_ctrl_shift_z_redoes_it() {
+    let (mut app, root) = history_app(&["A", "B"]);
+    let _ = update(&mut app, Message::ToggleMod(0));
+    assert!(!app.mods[0].enabled);
+    let _ = update(&mut app, Message::Undo);
+    assert!(app.mods[0].enabled);
+    assert!(
+        fs::read_to_string(root.join("profiles/Default/modlist.txt"))
+            .unwrap()
+            .contains("+A")
+    );
+    let _ = update(&mut app, Message::Redo);
+    assert!(!app.mods[0].enabled);
+}
+
+#[test]
+fn undo_drops_a_drag_whose_rows_it_moves() {
+    // The drop would move whichever row the step put at the drag's `from`.
+    let (mut app, _root) = history_app(&["A", "B"]);
+    let _ = update(&mut app, Message::ToggleMod(0));
+    app.drag_state = Some(DragState {
+        from: 0,
+        gap: 2,
+        aimed: true,
+    });
+    let _ = update(&mut app, Message::Undo);
+    assert!(app.mods[0].enabled && app.drag_state.is_none());
+    let (mut app, _root, i) = plugin_history_app();
+    let _ = update(&mut app, Message::TogglePlugin(i));
+    let _ = update(&mut app, Message::PluginDragStart(i));
+    assert!(app.plugin_drag.is_some());
+    let _ = update(&mut app, Message::Undo);
+    assert!(app.plugin_drag.is_none());
+}
+
+#[test]
+fn undo_refuses_after_mods_were_added_removed_or_renamed() {
+    let (mut app, root) = history_app(&["A"]);
+    let _ = update(&mut app, Message::ToggleMod(0));
+    fs::create_dir_all(root.join("mods/New")).unwrap();
+    app.mods.push(ModEntry {
+        name: "New".into(),
+        enabled: true,
+        path: root.join("mods/New"),
+        unmanaged: false,
+    });
+    mods_changed(&mut app);
+    let _ = update(&mut app, Message::Undo);
+    assert_eq!(app.mods.len(), 2);
+    assert!(app.status.as_deref().unwrap().contains("Cannot undo"));
+    let _ = update(&mut app, Message::Undo);
+    assert!(app.status.as_deref().unwrap().contains("Nothing to undo"));
+    // The refusal said the history was cleared, so the next change is recorded.
+    let _ = update(&mut app, Message::ToggleMod(0));
+    assert!(app.mods[0].enabled);
+    let _ = update(&mut app, Message::Undo);
+    assert!(app.status.as_deref().unwrap().contains("Undid"));
+    assert!(!app.mods[0].enabled);
+}
+
+#[test]
+fn undo_after_an_outside_edit_is_refused_and_clears_history() {
+    let (mut app, root) = history_app(&["A"]);
+    let _ = update(&mut app, Message::ToggleMod(0));
+    // Another process; bytes unlike the window's own "-A\n", or the
+    // fingerprint would not see the change.
+    fs::write(
+        root.join("profiles/Default/modlist.txt"),
+        "# elsewhere\n-A\n",
+    )
+    .unwrap();
+    let _ = update(&mut app, Message::Undo);
+    assert!(app
+        .status
+        .as_deref()
+        .unwrap()
+        .contains("another Eidos process"));
+    assert!(!app.mods[0].enabled, "the list on disk wins");
+    let _ = update(&mut app, Message::Undo);
+    assert!(app.status.as_deref().unwrap().contains("Nothing to undo"));
+}
+
+#[test]
+fn ctrl_z_in_a_text_field_does_not_touch_the_list() {
+    let (mut app, _root) = history_app(&["A"]);
+    let _ = update(&mut app, Message::ToggleMod(0));
+    app.typing = true;
+    let _ = update(&mut app, Message::Undo);
+    assert!(!app.mods[0].enabled);
+}
+
+/// A 24-byte TES4 record: flags at bytes 8..12, form version 44 at 20..22, no
+/// subrecords.
+fn tes4_header(flags: u32) -> Vec<u8> {
+    let mut b = vec![0u8; 24];
+    b[..4].copy_from_slice(b"TES4");
+    b[8..12].copy_from_slice(&flags.to_le_bytes());
+    b[20..22].copy_from_slice(&44u16.to_le_bytes());
+    b
+}
+
+#[test]
+fn flag_as_light_writes_a_new_mod_above_the_source() {
+    let (mut app, root) = list_app(&["Base"]);
+    let original = tes4_header(0x1);
+    fs::write(root.join("mods/Base/Patch.esp"), &original).unwrap();
+    let mut row = plugin_row("Patch.esp", "Base");
+    row.path = root.join("mods/Base/Patch.esp");
+    app.plugins = Some(PluginList {
+        plugins: vec![row],
+        ..Default::default()
+    });
+    let _ = update(&mut app, Message::FlagPluginLight(0));
+    let out = fs::read(root.join("mods/Patch.esp (light)/Patch.esp")).unwrap();
+    assert_eq!(
+        u32::from_le_bytes(out[8..12].try_into().unwrap()),
+        0x1 | 0x200
+    );
+    assert_eq!(app.mods.last().unwrap().name, "Patch.esp (light)");
+    assert!(app.mods.last().unwrap().enabled);
+    assert_eq!(
+        fs::read(root.join("mods/Base/Patch.esp")).unwrap(),
+        original
+    );
+    let meta = eidos_instance::ModMeta::read(&root.join("mods/Patch.esp (light)/meta.ini"));
+    assert_eq!(meta.plugin_sources()[0].name, "Patch.esp");
+    // On disk at the bottom of the list, the row that wins.
+    let listed = Instance::portable(root.clone()).modlist();
+    assert!(listed
+        .last()
+        .is_some_and(|m| m.name == "Patch.esp (light)" && m.enabled));
+
+    // A second flag finds the folder and leaves it alone.
+    let mut row = plugin_row("Patch.esp", "Base");
+    row.path = root.join("mods/Base/Patch.esp");
+    app.plugins = Some(PluginList {
+        plugins: vec![row],
+        ..Default::default()
+    });
+    let mods = app.mods.len();
+    let _ = update(&mut app, Message::FlagPluginLight(0));
+    assert_eq!(app.mods.len(), mods);
+    assert_eq!(
+        app.status.as_deref(),
+        Some(
+            tf(
+                "status_flag_light_exists",
+                &[("mod", &"Patch.esp (light)"), ("plugin", &"Patch.esp")]
+            )
+            .as_str()
+        )
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_failed_light_copy_leaves_no_mod_behind() {
+    let (mut app, root) = list_app(&["Base"]);
+    fs::write(root.join("mods/Base/Patch.esp"), b"not a plugin").unwrap();
+    let mut row = plugin_row("Patch.esp", "Base");
+    row.path = root.join("mods/Base/Patch.esp");
+    app.plugins = Some(PluginList {
+        plugins: vec![row],
+        ..Default::default()
+    });
+    let _ = update(&mut app, Message::FlagPluginLight(0));
+    assert!(!root.join("mods/Patch.esp (light)").exists());
+    assert_eq!(app.mods.len(), 1);
+    assert!(app
+        .status
+        .as_deref()
+        .is_some_and(|s| s.contains("Patch.esp")));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_plugin_in_the_overwrite_is_not_flagged_as_light() {
+    // The Overwrite outranks every mod, so a light copy in a mod would never load.
+    let (mut app, root) = list_app(&["Base"]);
+    let ow = root.join("overwrite");
+    fs::create_dir_all(&ow).unwrap();
+    fs::write(ow.join("Synthesis.esp"), tes4_header(0x1)).unwrap();
+    let mut row = plugin_row("Synthesis.esp", "overwrite");
+    row.path = ow.join("Synthesis.esp");
+    app.plugins = Some(PluginList {
+        plugins: vec![row],
+        ..Default::default()
+    });
+    let _ = update(&mut app, Message::FlagPluginLight(0));
+    assert!(!root.join("mods/Synthesis.esp (light)").exists());
+    assert_eq!(app.mods.len(), 1);
+    assert_eq!(
+        app.status.as_deref(),
+        Some(
+            tf(
+                "status_flag_light_in_overwrite",
+                &[("plugin", &"Synthesis.esp")]
+            )
+            .as_str()
+        )
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_save_that_loads_the_plugin_as_full_is_named() {
+    use eidos_gamefeatures::SaveInfo;
+    let saves = vec![(
+        PathBuf::from("Save9.ess"),
+        SaveInfo {
+            plugins: vec!["PATCH.esp".into()],
+            ..Default::default()
+        },
+    )];
+    assert_eq!(
+        full_in_saves("Patch.esp", &saves),
+        Some(Path::new("Save9.ess"))
+    );
+    let light = vec![(
+        PathBuf::from("Save9.ess"),
+        SaveInfo {
+            light_plugins: vec!["Patch.esp".into()],
+            ..Default::default()
+        },
+    )];
+    assert_eq!(full_in_saves("Patch.esp", &light), None);
+}
+
+fn plugin_history_app() -> (App, PathBuf, usize) {
+    let (mut app, root) = history_app(&["A"]);
+    fs::write(root.join("mods/A/A.esp"), tes4_header(0)).unwrap();
+    app.tab = Tab::Plugins;
+    app.plugins = compute_plugins(&app); // records the plugins baseline
+    let i = app
+        .plugins
+        .as_ref()
+        .unwrap()
+        .plugins
+        .iter()
+        .position(|p| p.name == "A.esp")
+        .unwrap();
+    (app, root, i)
+}
+
+#[test]
+fn ctrl_z_undoes_a_plugin_toggle() {
+    let (mut app, _root, i) = plugin_history_app();
+    let before = app.plugins.as_ref().unwrap().plugins[i].enabled;
+    let _ = update(&mut app, Message::TogglePlugin(i));
+    assert_ne!(app.plugins.as_ref().unwrap().plugins[i].enabled, before);
+    let _ = update(&mut app, Message::Undo);
+    assert_eq!(app.plugins.as_ref().unwrap().plugins[i].enabled, before);
+    assert!(app.status.as_deref().unwrap().contains("load order"));
+    let _ = update(&mut app, Message::Redo);
+    assert_ne!(app.plugins.as_ref().unwrap().plugins[i].enabled, before);
+}
+
+#[test]
+fn a_plugin_undo_after_the_plugin_set_changed_is_refused() {
+    let (mut app, _root, i) = plugin_history_app();
+    let _ = update(&mut app, Message::TogglePlugin(i));
+    app.plugins.as_mut().unwrap().plugins.remove(i); // the set changed, nothing saved
+    let _ = update(&mut app, Message::Undo);
+    assert!(app.status.as_deref().unwrap().contains("Cannot undo"));
+    assert!(app
+        .plugins
+        .as_ref()
+        .unwrap()
+        .plugins
+        .iter()
+        .all(|p| p.name != "A.esp"));
+}
+
+mod cleaning {
+    use super::*;
+    use eidos_gamefeatures::QAC_LOG;
+    use eidos_instance::{ModMeta, PluginSource};
+
+    fn qac() -> Tool {
+        Tool {
+            title: "SSEEdit QuickAutoClean".into(),
+            exe: "/t/SSEEditQuickAutoClean.exe".into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn cleaning_without_quickautoclean_says_where_to_add_it() {
+        let mut app = nav_app(&[]);
+        let _ = update(&mut app, Message::CleanPlugins(vec!["Dirty.esp".into()]));
+        assert_eq!(app.status.as_deref(), Some(t("status_no_qac")));
+        assert!(app.clean_queue.is_empty() && app.cleaning.is_none());
+    }
+
+    #[test]
+    fn the_clean_command_runs_quickautoclean_into_cleaned_plugins() {
+        let (mut app, _root) = list_app(&[]);
+        app.tools = vec![qac()];
+        let cmd = clean_command(&app, "Dirty Plugin.esp", Path::new("/s")).unwrap();
+        let args: Vec<_> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let at = args.iter().position(|a| a == "tool").unwrap();
+        assert_eq!(
+            &args[at + 2..at + 7],
+            [
+                "run",
+                "SSEEdit QuickAutoClean",
+                "--output-mod",
+                "Cleaned plugins",
+                "--"
+            ]
+        );
+        assert_eq!(args.last().unwrap(), "Dirty Plugin.esp");
+    }
+
+    #[test]
+    fn a_finished_clean_reports_counts_and_records_its_source() {
+        let (mut app, root) = list_app(&["Base", "Cleaned plugins"]);
+        fs::write(root.join("mods/Base/Dirty.esp"), b"source").unwrap();
+        fs::write(root.join("mods/Cleaned plugins/Dirty.esp"), b"clean").unwrap();
+        let scratch = root.join("logs/qac-1");
+        fs::create_dir_all(&scratch).unwrap();
+        // Task 67's LOG lives in eidos-gamefeatures' test module, out of reach: the same counts, inline
+        fs::write(scratch.join(QAC_LOG), "[00:03] Done: Removing \"Identical to Master\" records, Processed Records: 4210, Removed Records: 4, Elapsed Time: 00:01\n[00:03] Done: Undeleting and Disabling References, Processed Records: 4207, Undeleted Records: 2, Elapsed Time: 00:00\n[00:04] Saving: Dirty.esp\n").unwrap();
+        let source = PluginSource::of("Dirty.esp", &root.join("mods/Base/Dirty.esp"));
+        assert!(finish_clean(
+            &mut app,
+            Cleaning {
+                plugin: "Dirty.esp".into(),
+                scratch: scratch.clone(),
+                source: source.clone()
+            }
+        ));
+        let status = app.status.clone().unwrap();
+        assert!(status.contains('4') && status.contains('2'), "{status}");
+        let meta = ModMeta::read(&root.join("mods/Cleaned plugins/meta.ini"));
+        assert_eq!(meta.plugin_sources(), [source.unwrap()]);
+        assert!(!scratch.exists());
+    }
+
+    #[test]
+    fn a_copy_whose_source_changed_is_reported_with_a_hide_action() {
+        let (mut app, root) = list_app(&["Base", "Cleaned plugins"]);
+        let src = root.join("mods/Base/Dirty.esp");
+        fs::write(&src, b"source").unwrap();
+        fs::write(root.join("mods/Cleaned plugins/Dirty.esp"), b"clean").unwrap();
+        edit_mod_meta(app.created.as_ref().unwrap(), "Cleaned plugins", |m| {
+            m.set_plugin_source(PluginSource::of("Dirty.esp", &src).unwrap())
+        })
+        .unwrap();
+        invalidate_meta(&mut app, "Cleaned plugins");
+        refresh_meta_cache(&mut app);
+        assert!(stale_copies(&app).is_empty());
+        fs::write(&src, b"updated source").unwrap();
+        assert_eq!(stale_copies(&app), [(1, "Dirty.esp".to_string())]);
+        let card = diagnostics(&app)
+            .into_iter()
+            .find(|d| d.title == tf("diag_stale_copy", &[("plugin", &"Dirty.esp")]))
+            .unwrap();
+        assert!(
+            matches!(&card.actions[0].1, Message::ToggleFileHidden(1, rel) if rel == "Dirty.esp")
+        );
+        crate::view::set_hidden(&root.join("mods/Cleaned plugins/Dirty.esp"), true).unwrap();
+        invalidate_meta(&mut app, "Cleaned plugins");
+        refresh_meta_cache(&mut app);
+        assert!(stale_copies(&app).is_empty());
+    }
+
+    #[test]
+    fn a_clean_that_left_no_log_stops_the_queue() {
+        let (mut app, root) = list_app(&[]);
+        app.clean_queue = ["Next.esp".to_string()].into();
+        assert!(!finish_clean(
+            &mut app,
+            Cleaning {
+                plugin: "Dirty.esp".into(),
+                scratch: root.join("logs/qac-2"),
+                source: None
+            }
+        ));
+        assert!(app.status.as_deref().unwrap().contains("Dirty.esp"));
+    }
+
+    #[test]
+    fn a_failed_clean_names_its_run_log_and_ends_the_queue_when_the_run_exits() {
+        let (mut app, root) = list_app(&[]);
+        app.tools = vec![qac()];
+        start_run(
+            &mut app,
+            "SSEEdit QuickAutoClean".into(),
+            std::process::Command::new("/bin/true"),
+        );
+        let run_log = app.running.as_ref().unwrap().log.clone().unwrap();
+        app.cleaning = Some(Cleaning {
+            plugin: "Dirty.esp".into(),
+            scratch: root.join("logs/qac-4"),
+            source: None,
+        });
+        app.clean_queue = ["Next.esp".to_string()].into();
+        super::finish_tracked_run(&mut app);
+        assert!(app.cleaning.is_none() && app.clean_queue.is_empty());
+        let status = app.status.clone().unwrap();
+        assert!(
+            status.contains("Dirty.esp") && status.contains(&run_log.display().to_string()),
+            "{status}"
+        );
+    }
+
+    #[test]
+    fn a_stopped_clean_says_stopped_and_ends_the_queue() {
+        let (mut app, root) = list_app(&["Cleaned plugins"]);
+        // No tool: a regression that lets the queue go on cannot spawn a real run.
+        app.tools = vec![];
+        let mut cmd = std::process::Command::new("sleep");
+        cmd.arg("30");
+        start_run(&mut app, "SSEEdit QuickAutoClean".into(), cmd);
+        app.cleaning = Some(Cleaning {
+            plugin: "Dirty.esp".into(),
+            scratch: root.join("logs/qac-5"),
+            source: None,
+        });
+        // xEdit saved before the stop: finish_clean succeeds, only the stop ends the queue.
+        let scratch = root.join("logs/qac-5");
+        fs::create_dir_all(&scratch).unwrap();
+        fs::write(scratch.join(QAC_LOG), "[00:03] Done: Removing \"Identical to Master\" records, Processed Records: 9, Removed Records: 1, Elapsed Time: 00:01\n[00:04] Saving: Dirty.esp\n").unwrap();
+        fs::write(root.join("mods/Cleaned plugins/Dirty.esp"), b"clean").unwrap();
+        app.clean_queue = ["Next.esp".to_string()].into();
+        let _ = update_inner(&mut app, Message::StopRun);
+        let _ = update_inner(&mut app, Message::StopRun);
+        super::finish_tracked_run(&mut app);
+        assert!(app.cleaning.is_none() && app.clean_queue.is_empty());
+        assert_eq!(
+            app.status.as_deref(),
+            Some(
+                tf(
+                    "status_run_stopped",
+                    &[("title", &"SSEEdit QuickAutoClean")]
+                )
+                .as_str()
+            )
+        );
+    }
+
+    #[test]
+    fn a_refused_clean_keeps_the_cli_reason() {
+        let (mut app, root) = list_app(&[]);
+        app.tools = vec![qac()];
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args([
+            "-c",
+            "echo 'WARN  eidos: refusing to launch: /x is in use by eidos play' >&2; exit 1",
+        ]);
+        start_run(&mut app, "SSEEdit QuickAutoClean".into(), cmd);
+        app.cleaning = Some(Cleaning {
+            plugin: "Dirty.esp".into(),
+            scratch: root.join("logs/qac-6"),
+            source: None,
+        });
+        super::finish_tracked_run(&mut app);
+        let status = app.status.clone().unwrap();
+        assert!(
+            status.contains("Dirty.esp")
+                && status.contains("refusing to launch: /x is in use by eidos play"),
+            "{status}"
+        );
+    }
+
+    #[test]
+    fn a_saved_clean_whose_copy_never_reached_the_mod_stops_the_queue() {
+        let (mut app, root) = list_app(&[]);
+        let scratch = root.join("logs/qac-3");
+        fs::create_dir_all(&scratch).unwrap();
+        fs::write(scratch.join(QAC_LOG), "[00:03] Done: Removing \"Identical to Master\" records, Processed Records: 9, Removed Records: 1, Elapsed Time: 00:01\n[00:04] Saving: Dirty.esp\n").unwrap();
+        assert!(!finish_clean(
+            &mut app,
+            Cleaning {
+                plugin: "Dirty.esp".into(),
+                scratch: scratch.clone(),
+                source: None
+            }
+        ));
+        let status = app.status.clone().unwrap();
+        assert!(
+            status.contains("Dirty.esp") && status.contains("logs"),
+            "{status}"
+        );
+        assert!(scratch.exists(), "the xEdit log stays for the user");
+    }
+
+    #[test]
+    fn the_dirty_card_shows_with_or_without_xedit_and_says_which() {
+        let (mut app, root) = list_app(&["Base"]);
+        fs::write(root.join("mods/Base/Dirty.esp"), tes4_header(0)).unwrap();
+        app.plugins = compute_plugins(&app);
+        for p in &mut app.plugins.as_mut().unwrap().plugins {
+            p.enabled = true;
+        }
+        app.loot_meta = Some(HashMap::from([(
+            "dirty.esp".to_string(),
+            eidos_loot::PluginMetadataBundle {
+                dirty_info: vec![eidos_loot::LootDirtyInfo {
+                    crc: 1,
+                    cleaning_utility: "SSEEdit".into(),
+                    itm_count: 3,
+                    deleted_reference_count: 0,
+                    deleted_navmesh_count: 0,
+                }],
+                ..Default::default()
+            },
+        )]));
+        app.tools.clear();
+        assert_eq!(dirty_card(&app).map(|c| c.slot), Some(DirtySlot::AddXedit));
+        app.tools = vec![qac()];
+        assert_eq!(
+            dirty_card(&app),
+            Some(DirtyCard {
+                names: vec!["Dirty.esp".into()],
+                slot: DirtySlot::Clean(1)
+            })
+        );
+        app.tools = vec![Tool {
+            title: "SSEEdit".into(),
+            exe: "/t/SSEEdit.exe".into(),
+            ..Default::default()
+        }];
+        assert_eq!(
+            dirty_card(&app).map(|c| c.slot),
+            Some(DirtySlot::Clean(1)),
+            "the editor counts as xEdit"
+        );
+        app.clean_queue = ["Dirty.esp".to_string()].into();
+        assert!(matches!(
+            dirty_card(&app).map(|c| c.slot),
+            Some(DirtySlot::Cleaning { .. })
+        ));
+        app.clean_queue.clear();
+        app.plugins.as_mut().unwrap().plugins[0].enabled = false;
+        assert_eq!(dirty_card(&app), None, "a disabled plugin is not listed");
+        app.plugins.as_mut().unwrap().plugins[0].enabled = true;
+        app.loot_meta = None;
+        assert_eq!(dirty_card(&app), None);
+    }
+
+    #[test]
+    fn the_dirty_card_stays_while_a_queued_clean_runs() {
+        let (mut app, root) = list_app(&["Base"]);
+        let dirty = ["A.esp", "B.esp", "C.esp"];
+        for p in dirty {
+            fs::write(root.join("mods/Base").join(p), tes4_header(0)).unwrap();
+        }
+        app.plugins = compute_plugins(&app);
+        for p in &mut app.plugins.as_mut().unwrap().plugins {
+            p.enabled = true;
+        }
+        app.loot_meta = Some(
+            dirty
+                .iter()
+                .map(|p| {
+                    let bundle = eidos_loot::PluginMetadataBundle {
+                        dirty_info: vec![eidos_loot::LootDirtyInfo {
+                            crc: 1,
+                            cleaning_utility: "SSEEdit".into(),
+                            itm_count: 3,
+                            deleted_reference_count: 0,
+                            deleted_navmesh_count: 0,
+                        }],
+                        ..Default::default()
+                    };
+                    (p.to_ascii_lowercase(), bundle)
+                })
+                .collect(),
+        );
+        app.tools = vec![qac()];
+        let cleaning = |plugin: &str| Cleaning {
+            plugin: plugin.into(),
+            scratch: root.join("logs/qac-1"),
+            source: None,
+        };
+        let card = |names: &[&str], plugin: &str, left: usize| {
+            Some(DirtyCard {
+                names: names.iter().map(|n| n.to_string()).collect(),
+                slot: DirtySlot::Cleaning {
+                    plugin: plugin.into(),
+                    left,
+                },
+            })
+        };
+        // Clean all 3 from idle: A runs.
+        app.cleaning = Some(cleaning("A.esp"));
+        app.clean_queue = ["B.esp".to_string(), "C.esp".to_string()].into();
+        assert_eq!(dirty_card(&app), card(&dirty, "A.esp", 2));
+        // A exited: finish_run dropped the LOOT verdicts, and B runs.
+        invalidate_plugins(&mut app);
+        assert!(app.loot_meta.is_none());
+        app.cleaning = Some(cleaning("B.esp"));
+        app.clean_queue = ["C.esp".to_string()].into();
+        assert_eq!(dirty_card(&app), card(&["B.esp", "C.esp"], "B.esp", 1));
+        // Clean all while a game runs: the game exited and A is next.
+        app.cleaning = None;
+        app.clean_queue = dirty.iter().map(|p| p.to_string()).collect();
+        assert_eq!(dirty_card(&app), card(&dirty, "A.esp", 2));
+        // The last clean ended.
+        app.clean_queue.clear();
+        assert_eq!(dirty_card(&app), None);
+    }
+
+    #[test]
+    fn a_clean_queue_stays_in_its_instance() {
+        let (mut app, root) = list_app(&[]);
+        app.tools = vec![qac()];
+        start_run(
+            &mut app,
+            "SSEEdit QuickAutoClean".into(),
+            std::process::Command::new("/bin/true"),
+        );
+        let scratch = root.join("logs/qac-5");
+        fs::create_dir_all(&scratch).unwrap();
+        fs::write(scratch.join(QAC_LOG), "[00:03] Done: Removing \"Identical to Master\" records, Processed Records: 9, Removed Records: 1, Elapsed Time: 00:01\n[00:04] Saving: Dawnguard.esm\n").unwrap();
+        let source = PluginSource {
+            name: "Dawnguard.esm".into(),
+            size: 10,
+            mtime: 1,
+        };
+        let done = || Cleaning {
+            plugin: "Dawnguard.esm".into(),
+            scratch: scratch.clone(),
+            source: Some(source.clone()),
+        };
+        app.cleaning = Some(done());
+        app.clean_queue = ["Hearthfires.esm".to_string()].into();
+        // Unlock, then open another instance that has a Cleaned plugins mod.
+        let (other, other_root) = list_app(&["Cleaned plugins"]);
+        fs::write(
+            other_root.join("mods/Cleaned plugins/Dawnguard.esm"),
+            b"clean",
+        )
+        .unwrap();
+        open_instance(&mut app, other.created.unwrap());
+        app.tools = vec![qac()];
+        assert!(app.clean_queue.is_empty() && app.cleaning.is_none());
+        super::finish_tracked_run(&mut app);
+        let meta = other_root.join("mods/Cleaned plugins/meta.ini");
+        assert!(!meta.exists());
+        // finish_clean on its own leaves a clean from another instance alone.
+        assert!(!finish_clean(&mut app, done()));
+        assert!(!meta.exists());
+        assert!(scratch.exists());
+    }
+
+    #[test]
+    fn only_games_with_an_xedit_and_loot_dirty_data_get_the_dirty_card() {
+        let mut with: Vec<&str> = eidos_games::catalog()
+            .iter()
+            .filter(|d| has_dirty_card(d))
+            .map(|d| d.id)
+            .collect();
+        with.sort();
+        assert_eq!(
+            with,
+            [
+                "enderalse",
+                "fallout3",
+                "fallout4",
+                "fallout4vr",
+                "falloutnv",
+                "oblivion",
+                "skyrim",
+                "skyrimse",
+                "skyrimvr",
+                "starfield"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_dirty_plugin_row_offers_clean_only_with_xedit() {
+        let (mut app, root) = list_app(&["Base"]);
+        fs::write(root.join("mods/Base/Dirty.esp"), tes4_header(0)).unwrap();
+        app.plugins = compute_plugins(&app);
+        app.loot_meta = Some(HashMap::from([(
+            "dirty.esp".to_string(),
+            eidos_loot::PluginMetadataBundle {
+                dirty_info: vec![eidos_loot::LootDirtyInfo {
+                    crc: 1,
+                    cleaning_utility: "SSEEdit".into(),
+                    itm_count: 3,
+                    deleted_reference_count: 0,
+                    deleted_navmesh_count: 0,
+                }],
+                ..Default::default()
+            },
+        )]));
+        assert_eq!(plugin_clean_target(&app, 0), None);
+        app.tools = vec![qac()];
+        assert_eq!(plugin_clean_target(&app, 0).as_deref(), Some("Dirty.esp"));
+        app.loot_meta = None;
+        assert_eq!(plugin_clean_target(&app, 0), None);
+    }
+
+    #[test]
+    fn a_dirty_plugin_in_the_overwrite_is_never_cleaned() {
+        // xEdit would save over the Overwrite's file, and its backup leaves with the scratch.
+        let (mut app, root) = list_app(&["Base"]);
+        fs::create_dir_all(root.join("overwrite")).unwrap();
+        fs::write(root.join("overwrite/Dirty.esp"), tes4_header(0)).unwrap();
+        app.plugins = compute_plugins(&app);
+        assert_eq!(
+            app.plugins.as_ref().unwrap().plugins[0].origin_mod,
+            "overwrite"
+        );
+        app.loot_meta = Some(HashMap::from([(
+            "dirty.esp".to_string(),
+            eidos_loot::PluginMetadataBundle {
+                dirty_info: vec![eidos_loot::LootDirtyInfo {
+                    crc: 1,
+                    cleaning_utility: "SSEEdit".into(),
+                    itm_count: 3,
+                    deleted_reference_count: 0,
+                    deleted_navmesh_count: 0,
+                }],
+                ..Default::default()
+            },
+        )]));
+        app.tools = vec![qac()];
+        assert_eq!(plugin_clean_target(&app, 0), None);
+        assert_eq!(dirty_card(&app), None);
+        let refused = tf("status_clean_in_overwrite", &[("plugin", &"Dirty.esp")]);
+        // Behind a harmless run, so a missing guard queues instead of spawning xEdit.
+        start_run(
+            &mut app,
+            "Game".into(),
+            std::process::Command::new("/bin/true"),
+        );
+        let _ = update(&mut app, Message::CleanPlugins(vec!["Dirty.esp".into()]));
+        assert!(app.clean_queue.is_empty());
+        assert_eq!(app.status.as_deref(), Some(refused.as_str()));
+        // The queue's own guard, reached with no xEdit so nothing can spawn past it.
+        app.running = None;
+        app.tools.clear();
+        app.clean_queue = ["Dirty.esp".to_string(), "Next.esp".to_string()].into();
+        start_next_clean(&mut app);
+        assert!(app.clean_queue.is_empty() && app.cleaning.is_none());
+        assert_eq!(app.status.as_deref(), Some(refused.as_str()));
+        assert!(root.join("overwrite/Dirty.esp").is_file());
+    }
+
+    #[test]
+    fn clean_requests_queue_behind_a_running_program_without_duplicates() {
+        let (mut app, _root) = list_app(&[]);
+        app.tools = vec![qac()];
+        start_run(
+            &mut app,
+            "Game".into(),
+            std::process::Command::new("/bin/true"),
+        );
+        assert!(app.running.is_some());
+        let _ = update(
+            &mut app,
+            Message::CleanPlugins(vec!["A.esp".into(), "B.esp".into()]),
+        );
+        let _ = update(&mut app, Message::CleanPlugins(vec!["a.esp".into()]));
+        assert_eq!(app.clean_queue, ["A.esp", "B.esp"]);
+        assert!(app.cleaning.is_none());
+        assert!(app.status.as_deref().unwrap().contains("Game"));
+    }
+}

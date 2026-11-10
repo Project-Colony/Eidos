@@ -115,6 +115,14 @@ impl GameSpec {
     }
 }
 
+/// Plugins used against the capacity of each index space, as `(used, capacity)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SlotUsage {
+    pub full: (u32, u32),
+    pub light: Option<(u32, u32)>,
+    pub medium: Option<(u32, u32)>,
+}
+
 /// One plugin in the load order.
 #[derive(Debug, Clone)]
 pub struct Plugin {
@@ -695,6 +703,30 @@ impl PluginList {
         }
     }
 
+    /// Plugins per index space against each space's capacity, counted exactly
+    /// as `generate_indexes` hands out indexes.
+    pub fn slot_usage(&self, spec: &GameSpec) -> SlotUsage {
+        let (light_ok, medium_ok) = (spec.light_supported(), spec.medium_supported());
+        let (mut full, mut light, mut medium) = (0, 0, 0);
+        for p in &self.plugins {
+            if !p.enabled || p.force_disabled || p.header_error.is_some() {
+                continue;
+            }
+            if medium_ok && p.is_medium {
+                medium += 1;
+            } else if light_ok && p.is_light {
+                light += 1;
+            } else {
+                full += 1;
+            }
+        }
+        SlotUsage {
+            full: (full, self.full_capacity(spec)),
+            light: light_ok.then_some((light, 4096)),
+            medium: medium_ok.then_some((medium, 256)),
+        }
+    }
+
     /// Enabled plugins whose masters are missing from the enabled set - a reliable
     /// crash predictor (MO2's `testMasters`). Returns `(plugin, missing_master)`.
     pub fn missing_masters(&self) -> Vec<(String, String)> {
@@ -709,6 +741,30 @@ impl PluginList {
             for m in &p.masters {
                 if !active.contains(&m.to_ascii_lowercase()) {
                     out.push((p.name.clone(), m.clone()));
+                }
+            }
+        }
+        out
+    }
+
+    /// Mod-to-mod links read from the masters of enabled plugins: one entry per
+    /// (plugin, master) whose master comes from another mod. The list holds one
+    /// winner per name, so an overridden provider never shows up.
+    pub fn mod_requirements(&self) -> Vec<ModRequirement> {
+        let mut out = Vec::new();
+        for p in self.plugins.iter().filter(|p| p.enabled) {
+            for m in &p.masters {
+                let Some(provider) = self.plugins.iter().find(|q| q.name.eq_ignore_ascii_case(m))
+                else {
+                    continue;
+                };
+                if !provider.origin_mod.is_empty() && provider.origin_mod != p.origin_mod {
+                    out.push(ModRequirement {
+                        dependent: p.origin_mod.clone(),
+                        plugin: p.name.clone(),
+                        required: provider.origin_mod.clone(),
+                        master: provider.name.clone(),
+                    });
                 }
             }
         }
@@ -1197,6 +1253,45 @@ fn parse_header(path: &Path, game_id: GameId) -> Result<Header, String> {
     })
 }
 
+/// Copy the plugin at `src` to `dest` with the game's light flag set in its TES4
+/// record flags (`0x100` on Starfield, `0x200` elsewhere). `src` is only read.
+/// Fails, and leaves no `dest`, when `src` is not a TES4 plugin or the copy does
+/// not read back as light for this game.
+pub fn write_light_copy(src: &Path, dest: &Path, spec: &GameSpec) -> std::io::Result<()> {
+    use std::io::{Error, Read, Write};
+    let mut input = std::fs::File::open(src)?;
+    let mut head = [0u8; 12];
+    if input.read_exact(&mut head).is_err() || &head[..4] != b"TES4" {
+        return Err(Error::other(format!(
+            "{} is not a TES4 plugin",
+            src.display()
+        )));
+    }
+    let flag: u32 = if spec.esplugin_id == GameId::Starfield {
+        0x100
+    } else {
+        0x200
+    };
+    let flags = u32::from_le_bytes([head[8], head[9], head[10], head[11]]) | flag;
+    head[8..12].copy_from_slice(&flags.to_le_bytes());
+    // Never over an existing file: only a file this call created is removed below.
+    let mut out = std::fs::File::create_new(dest)?;
+    let written = out
+        .write_all(&head)
+        .and_then(|()| std::io::copy(&mut input, &mut out))
+        .and_then(|_| out.flush());
+    drop(out);
+    let checked = written.and_then(|()| match parse_header(dest, spec.esplugin_id) {
+        Ok(h) if h.is_light => Ok(()),
+        Ok(_) => Err(Error::other("the copy does not read as a light plugin")),
+        Err(e) => Err(Error::other(e)),
+    });
+    if checked.is_err() {
+        let _ = std::fs::remove_file(dest);
+    }
+    checked
+}
+
 /// Stable topological order: respect `base` (the tier ordering) as the tiebreak,
 /// but never place a plugin before one of its present masters. O(n^2), fine for
 /// realistic plugin counts. A dependency cycle (should not occur) falls back to
@@ -1315,6 +1410,41 @@ fn topo_stable(plugins: &[Plugin], base: &[usize], tier: &[u8]) -> Vec<usize> {
     result
 }
 
+/// A mod that needs another mod, through a plugin master.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModRequirement {
+    pub dependent: String,
+    pub plugin: String,
+    pub required: String,
+    pub master: String,
+}
+
+/// The mods that need one of `mods`, directly or through another dependent,
+/// case-insensitive, without `mods` themselves, each once, in first-reached
+/// order.
+pub fn dependents_of(reqs: &[ModRequirement], mods: &[&str]) -> Vec<String> {
+    let mut seen: Vec<String> = mods.iter().map(|m| m.to_ascii_lowercase()).collect();
+    let mut out = Vec::new();
+    let mut next = 0;
+    let mut frontier: Vec<String> = seen.clone();
+    while next < frontier.len() {
+        let needed = frontier[next].clone();
+        next += 1;
+        for r in reqs
+            .iter()
+            .filter(|r| r.required.to_ascii_lowercase() == needed)
+        {
+            let key = r.dependent.to_ascii_lowercase();
+            if !seen.contains(&key) {
+                seen.push(key.clone());
+                frontier.push(key);
+                out.push(r.dependent.clone());
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1347,6 +1477,36 @@ mod tests {
 
     fn se() -> GameSpec {
         GameSpec::for_id("skyrimse").unwrap()
+    }
+
+    #[test]
+    fn slot_usage_counts_each_index_space_against_its_limit() {
+        let mut off = p("Off.esp", &[]);
+        off.enabled = false;
+        let list = PluginList {
+            plugins: vec![
+                p("Skyrim.esm", &[]),
+                p("A.esp", &[]),
+                p("B.esp", &[]),
+                p("C.esl", &[]),
+                p("D.esl", &[]),
+                off,
+            ],
+            ..Default::default()
+        };
+        assert_eq!(
+            list.slot_usage(&se()),
+            SlotUsage {
+                full: (3, 254),
+                light: Some((2, 4096)),
+                medium: None
+            }
+        );
+        let no_light = PluginList {
+            plugins: vec![p("Skyrim.esm", &[])],
+            ..Default::default()
+        };
+        assert_eq!(no_light.slot_usage(&se()).full, (1, 255));
     }
 
     #[test]
@@ -1471,6 +1631,52 @@ mod tests {
         let header = parse_header(&path, GameId::Starfield).unwrap();
         assert!(header.is_light && !header.is_update);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn write_light_copy_sets_the_games_light_flag_on_a_copy() {
+        use std::fs;
+        let dir = std::env::temp_dir().join(format!("eidos-light-copy-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let (src, dest, other) = (
+            dir.join("Patch.esp"),
+            dir.join("out.esp"),
+            dir.join("x.esp"),
+        );
+        // The 24-byte TES4 header, master-flagged, form version 44, no subrecords.
+        let mut original = vec![0u8; 24];
+        original[..4].copy_from_slice(b"TES4");
+        original[8..12].copy_from_slice(&0x1u32.to_le_bytes());
+        original[20..22].copy_from_slice(&44u16.to_le_bytes());
+        original.extend_from_slice(b"GRUP rest of the file");
+        for (id, flag) in [("skyrimse", 0x200u32), ("starfield", 0x100)] {
+            fs::write(&src, &original).unwrap();
+            let spec = GameSpec::for_id(id).unwrap();
+            write_light_copy(&src, &dest, &spec).unwrap();
+            assert!(parse_header(&dest, spec.esplugin_id).unwrap().is_light);
+            let out = fs::read(&dest).unwrap();
+            assert_eq!(
+                u32::from_le_bytes(out[8..12].try_into().unwrap()),
+                0x1 | flag
+            );
+            assert_eq!(out[12..], original[12..], "only the flags change");
+            assert_eq!(
+                fs::read(&src).unwrap(),
+                original,
+                "the source is never written"
+            );
+            // An existing file is refused and kept.
+            assert!(write_light_copy(&src, &dest, &spec).is_err());
+            assert_eq!(fs::read(&dest).unwrap(), out);
+            fs::remove_file(&dest).unwrap();
+        }
+        fs::write(&src, b"nope").unwrap();
+        assert!(write_light_copy(&src, &other, &se()).is_err() && !other.exists());
+        // A game without light plugins: the copy would not read as light.
+        fs::write(&src, &original).unwrap();
+        let oblivion = GameSpec::for_id("oblivion").unwrap();
+        assert!(write_light_copy(&src, &other, &oblivion).is_err() && !other.exists());
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
@@ -1745,6 +1951,51 @@ mod tests {
         assert_eq!(by("Normal.esp"), Some("01".to_string())); // second normal
         assert_eq!(by("Light.esl"), Some("FE:000".to_string())); // first light
         assert_eq!(by("Off.esp"), None); // disabled
+    }
+
+    #[test]
+    fn mod_requirements_link_mods_through_plugin_masters() {
+        let mut a = p("A.esp", &["Skyrim.esm", "b.ESM", "A2.esp"]);
+        a.origin_mod = "ModA".into();
+        let mut a2 = p("A2.esp", &[]);
+        a2.origin_mod = "ModA".into();
+        let mut b = p("B.esm", &[]);
+        b.origin_mod = "ModB".into();
+        let mut d = p("D.esp", &["B.esm"]);
+        d.origin_mod = "ModD".into();
+        d.enabled = false;
+        let list = PluginList {
+            plugins: vec![p("Skyrim.esm", &[]), b, a2, a, d],
+            ..Default::default()
+        };
+        assert_eq!(
+            list.mod_requirements(),
+            [ModRequirement {
+                dependent: "ModA".into(),
+                plugin: "A.esp".into(),
+                required: "ModB".into(),
+                master: "B.esm".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn dependents_follow_chains_and_stop_on_cycles() {
+        let r = |d: &str, q: &str| ModRequirement {
+            dependent: d.into(),
+            plugin: format!("{d}.esp"),
+            required: q.into(),
+            master: format!("{q}.esm"),
+        };
+        let reqs = [
+            r("UsesFw", "Fw"),
+            r("UsesA", "UsesFw"),
+            r("PatchX", "PatchY"),
+            r("PatchY", "PatchX"),
+        ];
+        assert_eq!(dependents_of(&reqs, &["fw"]), ["UsesFw", "UsesA"]);
+        assert_eq!(dependents_of(&reqs, &["PatchX"]), ["PatchY"]);
+        assert!(dependents_of(&reqs, &["UsesA"]).is_empty());
     }
 
     #[test]

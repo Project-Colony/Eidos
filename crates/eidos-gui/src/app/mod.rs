@@ -95,6 +95,26 @@ pub(crate) enum Pane {
     Plugins,
 }
 
+/// A disable waiting for the user: the newest saves use `plugins`, which the
+/// `targets` mods (indices into `app.mods`) provide, and enabled `dependents`
+/// (rows outside `targets`) list plugins of the targets as masters.
+#[derive(Debug, Clone)]
+pub(crate) struct DisableConfirm {
+    pub(crate) targets: Vec<usize>,
+    pub(crate) plugins: Vec<String>,
+    pub(crate) dependents: Vec<usize>,
+}
+
+/// A QuickAutoClean run in progress: the plugin, xEdit's scratch folder under
+/// `<instance>/logs/`, and the source file it cleans when it was stat'd (`None`
+/// on a reclean of a copy, which keeps the source already recorded).
+#[derive(Debug, Clone)]
+pub(crate) struct Cleaning {
+    pub(crate) plugin: String,
+    pub(crate) scratch: PathBuf,
+    pub(crate) source: Option<eidos_instance::PluginSource>,
+}
+
 /// An installed collection with a newer revision on Nexus.
 #[derive(Debug, Clone)]
 pub(crate) struct CollectionNotice {
@@ -178,6 +198,9 @@ pub(crate) struct App {
     /// while this window shows its old copy, and saving that copy would erase
     /// what it wrote, so `save_mods` refuses when the file no longer matches.
     pub(crate) modlist_seen: std::cell::Cell<Option<u64>>,
+    /// Undo and redo for the mod list. A `RefCell` because the plugin-state
+    /// writers that also record into it take `&App`.
+    pub(crate) history: std::cell::RefCell<crate::history::History>,
     /// Cached ESP/ESM load order for the Plugins tab (recomputed on demand).
     pub(crate) plugins: Option<PluginList>,
     /// The same guard for `plugins`: a hash of the profile's plugin state files
@@ -257,11 +280,15 @@ pub(crate) struct App {
     pub(crate) meta_cache: HashMap<String, RowMeta>,
     /// Two-click guard for the destructive per-mod "Remove" action.
     pub(crate) confirm_remove: Option<usize>,
+    /// A disable held back because the newest saves use the mods' plugins.
+    pub(crate) disable_confirm: Option<DisableConfirm>,
     /// The mod whose info dialog is open (None = closed), its active tab, and the
     /// note text being edited.
     pub(crate) info_mod: Option<usize>,
     /// Generated receipts are read once when the mod information dialog opens.
     pub(crate) info_provenance: String,
+    /// Mods this one requires, and mods that require it, read once on open.
+    pub(crate) info_requirements: (Vec<String>, Vec<String>),
     pub(crate) info_tab: InfoTab,
     pub(crate) notes_edit: String,
     /// Collapsed separators, keyed by display name (MO2 keys by display name too).
@@ -657,6 +684,10 @@ pub(crate) struct App {
     /// is set, the window is blocked behind the lock overlay until it exits (or the
     /// user clicks Unlock). `None` = nothing running / not locked.
     pub(crate) running: Option<RunningState>,
+    /// Plugins waiting for QuickAutoClean, one run at a time.
+    pub(crate) clean_queue: std::collections::VecDeque<String>,
+    /// The clean the tracked run is doing, if it is one.
+    pub(crate) cleaning: Option<Cleaning>,
     /// The `eidos` binary lacks CAP_SYS_ADMIN (setcap wiped by a rebuild), so FUSE
     /// passthrough cannot engage even if asked for. Harmless by itself - the
     /// capability is optional and passthrough is off by default - so this only
@@ -802,4 +833,7 @@ pub(crate) struct RowMeta {
     /// say", which have to look identical: a mod installed from a folder never
     /// had a game recorded, and warning about that would flag half a list.
     pub(crate) other_game: Option<String>,
+    /// The plugins this mod holds a generated copy of (cleaned or light-flagged),
+    /// with the size and date of the file each was made from.
+    pub(crate) plugin_sources: Vec<eidos_instance::PluginSource>,
 }

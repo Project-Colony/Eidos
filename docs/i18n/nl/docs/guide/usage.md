@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=92ef50801ef60cd7ea02e2a2f2538c313e3aeca1 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
 
 # Eidos gebruiken
 
@@ -19,6 +19,8 @@ eidos sort skyrimse               # de laadvolgorde van de plugins met LOOT sort
 eidos play skyrimse               # tonen wat er gekoppeld zou worden
 eidos play skyrimse -- <command>  # <command> draaien met de mods over het spel gekoppeld
 eidos check skyrimse              # gezondheidscontroles zonder het venster (--json voor scripts)
+eidos sessions skyrimse           # de vastgelegde spel- en toolruns, nieuwste eerst
+eidos sessions skyrimse diff      # wat er veranderd is sinds de laatste run die met code 0 eindigde
 eidos collection skyrimse <link>  # een Nexus-collectie installeren zoals de auteur haar gebouwd heeft
 eidos nexus update skyrimse --apply  # de Nexus-bestanden installeren die de jouwe vervingen
 eidos pack skyrimse backup.eidos  # de hele instantie in één bestand, om ze elders heen te verhuizen
@@ -158,6 +160,10 @@ de start benoemt hem in het log van de run (de `logs/run-*.log` van de instantie
 bij een start vanuit het venster, de console van Steam bij een start via Steam),
 één keer telkens wanneer die verzameling bestanden verandert. Om hem te spelen,
 kopieer je hem en zijn co-save naar de map `saves/` van het profiel.
+
+### Wat er veranderd is sinds de laatste goede run
+
+Elke run via `eidos play` of `eidos tool run`, gestart vanuit het venster, een terminal of Steam, schrijft een record naar `<instance>/logs/sessions/`: het profiel, elke ingeschakelde mod met versie en Nexus-bestands-id's, de pluginvolgorde, een checksum van elke profiel-INI, de versie van het spelprogramma, de Eidos-versie, de exitcode en de saves die de run aanmaakte. De 50 nieuwste blijven bewaard, en `logs/` zit niet in een ingepakte instantie. `eidos sessions <instance> diff` vergelijkt de nieuwste spelrun met exitcode 0 met de huidige stand; `diff <id>` kiest een ander record uit de lijst. Eidos herkent hier nog geen crashes, en een spel dat onder Proton crashte kan toch met code 0 eindigen: hoort de gekozen run daarbij, noem dan met `diff <id>` een eerdere.
 
 ### Geen bevoorrechte stap nodig
 
@@ -528,6 +534,13 @@ ene. Tijdens een sleep opent een ingeklapte groep als je erop blijft rusten,
 zodat een mod erin gelaten kan worden zonder de sleep eerst op te geven - rusten,
 niet er even langs strijken.
 
+Ctrl+Z maakt de laatste wijziging in de modlijst of de laadvolgorde ongedaan: een
+vinkje, een verplaatsing, een batchgewijze uitschakeling, een LOOT-sortering. Ctrl+Shift+Z voert die opnieuw uit.
+Het venster bewaart 50 stappen en vergeet ze bij F5, aan het eind van een spel- of
+toolrun, bij een profielwissel en wanneer een ander Eidos-proces de lijst wijzigt.
+Een mod installeren, hernoemen of verwijderen verandert de mappen op schijf, dus
+ongedaan maken voorbij zo'n stap wordt geweigerd.
+
 ### Wat de lijst je over een mod vertelt
 
 Twee adviserende vlaggen, allebei een teken met de uitleg bij het zweven. **No
@@ -542,6 +555,17 @@ ene manager ingestaan hebt stil aankomt in de andere.
 De indelingscontrole is bewust ruimhartig: een `Root/`-boom telt, een onleesbare
 map telt, een lege telt. Een verkeerde waarschuwing in een lijst van vijfhonderd
 rijen is erger dan een ontbrekende.
+
+### Een mod uitzetten die je saves of andere mods nodig hebben
+
+Voordat een mod wordt uitgezet of verwijderd, leest Eidos de pluginlijsten van de
+drie nieuwste saves van het profiel. Gebruikt een ervan een plugin uit die mod,
+dan noemt een balk boven de lijst de plugins en wacht op "Disable anyway" of
+"Cancel" (Esc annuleert ook). Remove zet dezelfde namen in zijn melding om
+nogmaals te klikken. Alleen saves van Skyrim en Fallout 4 worden gelezen; andere
+games zetten de mod uit zonder te vragen.
+
+Het tabblad General van Information bij een mod toont de mods die ze nodig heeft en de mods die haar nodig hebben, gelezen uit de masters van de ingeschakelde plugins. Een mod uitzetten die anderen nodig hebben toont dezelfde balk met "Disable them too", wat ook elke mod uitzet die haar nodig heeft en de mods die die weer nodig hebben, of "Keep them enabled". De kaart voor ontbrekende masters op het tabblad Health heeft "Enable what provides them": die schakelt de mod in die elke ontbrekende master bevat en vinkt een masterplugin aan die wel aanwezig is maar niet is aangevinkt.
 
 ### Een mod back-uppen voor je eraan komt
 
@@ -560,10 +584,15 @@ beantwoord door DEZELFDE lagenstapel waaruit de koppeling bedient, dus whiteouts
 en verborgen bestanden worden gerespecteerd en het tabblad kan niet in
 tegenspraak zijn met wat het spel zal zien. Filter op naam, versmal tot alleen
 betwiste bestanden, zoek met de kolommen Size en Modified uit wat waar staat, en
-toon elke rij met Reveal in een bestandsbeheerder. **Plugins** is de
+toon elke rij met Reveal in een bestandsbeheerder. De `meta.ini`, `readme.txt`,
+`fomod/` en `Root/` in de bovenste map van een mod blijven buiten Data, in dit
+tabblad en in de koppeling: de eerste drie zijn voor de modbeheerder, en `Root/`
+gaat naar de spelmap. Een bestand dat het spel of een hulpprogramma onder een
+van die namen schrijft, komt in de Overwrite terecht en blijft zichtbaar.
+**Plugins** is de
 ESP/ESM/ESL-laadvolgorde (omschakelen, met de hand herordenen, of sorteren met
 LOOT en het verslag na de sortering lezen, waarvan de adviezenlinks in je browser
-openen). **Conflicts** legt de winnaars en verliezers per bestand uit.
+openen). De kop telt de ingeschakelde plugins per indexruimte tegen de limiet van het spel, bijvoorbeeld `full 231/254, light 512/4096`, en wordt oranje zodra er een vol is. Na een LOOT-sortering laat een volledige plugin waarvan alle nieuwe records in het light-bereik passen dat bij aanwijzen zien, en het menu van zijn rij bevat Flag as light. Eidos schrijft een kopie met de light-vlag in een nieuwe mod met de naam `<plugin> (light)`, onderaan de modlijst (de hoogste prioriteit), en laat het origineel ongemoeid, dus die mod uitzetten maakt het ongedaan. Eidos weigert als een van de drie nieuwste saves van het profiel de plugin als volledige plugin laadt. Alleen saves van Skyrim en Fallout 4 worden gelezen, dus bij Starfield wordt geen save gecontroleerd. LOOT controleert alleen recordbereiken: bekijk een plugin die cellen of worldspaces toevoegt in xEdit voordat je hem markeert. **Conflicts** legt de winnaars en verliezers per bestand uit.
 **Overwrite** maakt in één stap een echte mod van wat het spel geschreven heeft.
 **Saves** ontleedt de kop van elke save - personage, niveau, locatie, speeltijd -
 en vergelijkt de erin gebakken pluginlijst met je huidige, met een knop die de

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=92ef50801ef60cd7ea02e2a2f2538c313e3aeca1 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
 
 # Používání Eidosu
 
@@ -19,6 +19,8 @@ eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
 eidos check skyrimse              # kontroly zdraví bez okna (--json pro skripty)
+eidos sessions skyrimse           # zaznamenaná spuštění hry a nástrojů, nejnovější první
+eidos sessions skyrimse diff      # co se změnilo od posledního spuštění, které skončilo kódem 0
 eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
 eidos nexus update skyrimse --apply  # install the Nexus files that replaced yours
 eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
@@ -148,6 +150,10 @@ skrytý, dokud jsou savy profilu připojené. Nic ho nemaže: spuštění ho jme
 v logu běhu (`logs/run-*.log` dané instance při spuštění z okna, konzole Steamu
 při spuštění ze Steamu), a to jednou pokaždé, když se ta sada souborů změní.
 Chcete-li ho hrát, zkopírujte jej i s jeho co-savem do složky `saves/` profilu.
+
+### Co se změnilo od posledního úspěšného spuštění
+
+Každé spuštění přes `eidos play` nebo `eidos tool run`, z okna, terminálu nebo Steamu, zapíše záznam do `<instance>/logs/sessions/`: profil, každý zapnutý mod s verzí a ID souborů z Nexusu, pořadí pluginů, kontrolní součet každého INI profilu, verzi spustitelného souboru hry, verzi Eidos, návratový kód a uložené hry, které spuštění vytvořilo. Uchovává se 50 nejnovějších a `logs/` se do zabalené instance nedostane. `eidos sessions <instance> diff` porovná poslední spuštění hry s kódem 0 se současným stavem; `diff <id>` vybere jiný záznam ze seznamu. Eidos tu zatím pády nepozná a hra, která spadla pod Protonem, může skončit kódem 0 i tak: pokud vybrané spuštění patří mezi ně, zadejte dřívější přes `diff <id>`.
 
 ### Žádný privilegovaný krok
 
@@ -492,6 +498,12 @@ jste se nedívali.
 Během tažení se zastavením nad sbalenou skupinou skupina otevře, takže mód lze
 pustit dovnitř, aniž byste tažení nejdřív opustili - zastavením, ne přejetím.
 
+Ctrl+Z vrátí poslední změnu seznamu modů nebo pořadí načítání: zaškrtnutí, přesun, hromadné vypnutí, řazení pomocí LOOT.
+Ctrl+Shift+Z ji provede znovu. Okno si pamatuje 50 kroků a zapomene je po F5, na
+konci běhu hry nebo nástroje, při přepnutí profilu a když seznam změní jiný
+proces Eidos. Instalace, přejmenování nebo odebrání modu mění složky na disku,
+takže vrácení za takový krok je odmítnuto.
+
 ### Co vám seznam o módu řekne
 
 Dva poradní příznaky, oba glyf s vysvětlením po najetí myší. **No valid game
@@ -505,6 +517,16 @@ který jste se zaručili v jednom správci, dorazí tichý i do druhého.
 Kontrola rozvržení je záměrně velkorysá: strom `Root/` se počítá, nečitelná
 složka se počítá, prázdná se počítá. Chybné varování na seznamu o pěti stech
 řádcích je horší než chybějící.
+
+### Vypnutí módu, který vaše uložené hry nebo jiné módy potřebují
+
+Než se mód vypne nebo odebere, Eidos přečte seznamy pluginů tří nejnovějších
+uložených her profilu. Když některá z nich používá plugin z tohoto módu, lišta nad
+seznamem tyto pluginy vyjmenuje a čeká na „Disable anyway" nebo „Cancel" (Esc
+také ruší). Remove přidá stejné názvy do své zprávy s výzvou kliknout znovu. Čtou
+se jen uložené hry Skyrimu a Falloutu 4; u ostatních her se mód vypne bez ptaní.
+
+Karta General v Information u módu uvádí módy, které potřebuje, a módy, které potřebují jeho, a to podle masterů zapnutých pluginů. Vypnutí módu, který jiné potřebují, ukáže stejnou lištu s tlačítky „Disable them too", které vypne i každý mód, jenž ho potřebuje, i módy, které potřebují ty, nebo „Keep them enabled". Karta chybějících masterů na kartě Health má tlačítko "Enable what provides them": zapne mod, který každý chybějící master obsahuje, a zaškrtne master plugin, který je přítomen, ale nezaškrtnut.
 
 ### Záloha módu, než na něj sáhnete
 
@@ -521,10 +543,14 @@ místo rekurzivní procházky každého zapnutého módu. Odpovídá na něj TÝ
 vrstev, ze kterého se obsluhuje připojení, takže whiteouty a skryté soubory jsou
 respektovány a záložka se nemůže rozejít s tím, co uvidí hra. Filtrujte podle
 názvu, zužte jen na sporné soubory, roztřiďte, co kde je, sloupci Size a
-Modified, a kterýkoli řádek ukažte pomocí Reveal ve správci souborů. **Plugins**
+Modified, a kterýkoli řádek ukažte pomocí Reveal ve správci souborů. `meta.ini`,
+`readme.txt`, `fomod/` a `Root/` v kořeni módu zůstávají mimo Data, v této
+záložce i v připojení: první tři patří správci módů a `Root/` jde místo toho do
+složky hry. Soubor, který hra nebo nástroj zapíše pod některým z těchto jmen,
+skončí v Overwrite a zůstane viditelný. **Plugins**
 je pořadí načítání ESP/ESM/ESL (přepínání, ruční přeuspořádání, nebo řazení
 LOOTem a čtení zprávy po seřazení, jejíž odkazy na rady se otevírají ve vašem
-prohlížeči). **Conflicts** vysvětluje vítěze a poražené u jednotlivých souborů.
+prohlížeči). Jeho záhlaví počítá zapnuté pluginy v každém indexovém prostoru proti limitu hry, například `full 231/254, light 512/4096`, a když je některý prostor plný, zoranžoví. Po seřazení LOOTem plný plugin, jehož nové záznamy se všechny vejdou do rozsahu light, to ukáže při najetí myší a jeho nabídka na řádku obsahuje Flag as light. Eidos zapíše kopii s příznakem light do nového módu `<plugin> (light)` na konec seznamu módů (nejvyšší priorita) a originál nechá být, takže vypnutím toho módu se změna vrátí. Eidos odmítne, když některá ze tří nejnovějších uložených her profilu načítá plugin jako plný. Čtou se jen savy Skyrimu a Falloutu 4, takže na Starfieldu se žádný sav nekontroluje. LOOT kontroluje jen rozsahy záznamů: plugin, který přidává buňky nebo worldspaces, si před označením prohlédněte v xEditu. **Conflicts** vysvětluje vítěze a poražené u jednotlivých souborů.
 **Overwrite** promění to, co hra zapsala, v jednom kroku ve skutečný mód.
 **Saves** rozebere hlavičku každého savu - postava, úroveň, místo, odehraný
 čas - a porovná seznam pluginů zapečený uvnitř s vaším současným, s tlačítkem, které

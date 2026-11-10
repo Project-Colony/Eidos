@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
 
 # Инструменты: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -33,6 +33,29 @@ Fallout. Поиск останавливается на четвёртом ур�
 вручную - пользовательская запись с тем же названием перекрывает всё найденное
 автоматически.
 
+## Очистка плагина, который LOOT помечает как грязный
+
+После сортировки LOOT вкладка Diagnostics перечисляет плагины, которые LOOT
+помечает как грязные (dirty), для игр, у которых есть и xEdit, и данные LOOT об
+очистке (Skyrim LE, SE и VR, Enderal SE, Fallout 3, New Vegas, Fallout 4 и 4 VR,
+Oblivion, Starfield). Если Eidos находит xEdit, зарегистрированный в Executables
+или лежащий в любом месте инстанции, где Eidos ищет инструменты, на карточке
+есть Clean all, а у каждого грязного плагина в меню его строки есть Clean with
+QuickAutoClean; иначе карточка предлагает добавить xEdit в Executables. Eidos не
+скачивает xEdit. Он запускает режим QuickAutoClean программы xEdit на одном
+плагине за раз, через объединённый вид, с `-qac -autoexit -autoload`. xEdit
+сохраняет очищенный плагин поверх загруженного, а в объединённом виде это новый
+файл в Overwrite; Eidos переносит его в мод с именем `Cleaned plugins`, который
+создаётся включённым в конце списка, где он выигрывает все конфликты. В плагин в
+его собственном моде или в папке Data игры ничего не записывается. Чтобы
+отменить очистку, отключите `Cleaned plugins` или скройте в нём один файл.
+
+Резервные копии, кэш и журнал xEdit попадают в `<instance>/logs/qac-<time>/`, за
+пределы объединённого вида, а строка состояния показывает числа из этого
+журнала. После удачной очистки Eidos удаляет эту папку, после неудачной
+оставляет её. Размер и дату плагина, из которого сделана каждая копия, Eidos
+записывает в `Cleaned plugins/meta.ini`. Когда этот плагин меняется, вкладка Health сообщает, что копия устарела, и предлагает её скрыть.
+
 ## Как добавить
 
 В GUI: **Tools -> Executables**, затем Add. Из командной строки:
@@ -42,7 +65,10 @@ eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse                       # list what is registered
 eidos tool skyrimse run BodySlide         # run it through the merged view
 eidos tool skyrimse run BodySlide --print # show the command without running it
+eidos tool skyrimse run "SSEEdit QuickAutoClean" --output-mod "Cleaned plugins" -- -qac -autoexit -autoload Dawnguard.esm
 ```
+
+`--output-mod <mod>` собирает вывод этого запуска в `mods/<mod>`, что бы ни говорила собственная настройка инструмента.
 
 Расширитель скриптов, бинарник игры и лаунчер определяются автоматически;
 регистрировать нужно только дополнительные инструменты.

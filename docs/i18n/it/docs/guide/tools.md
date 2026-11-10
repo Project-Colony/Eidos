@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
 
 # Strumenti: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -32,6 +32,29 @@ Se uno strumento sta altrove, o vuoi argomenti diversi, aggiungilo a mano - una
 voce utente con lo stesso titolo prevale su qualunque cosa trovata
 automaticamente.
 
+## Pulire un plugin che LOOT segnala come sporco
+
+Dopo un ordinamento LOOT, la scheda Diagnostics elenca i plugin che LOOT segnala
+come sporchi, per i giochi che hanno sia un xEdit sia i dati di pulizia di LOOT
+(Skyrim LE, SE e VR, Enderal SE, Fallout 3, New Vegas, Fallout 4 e 4 VR,
+Oblivion, Starfield). Quando Eidos trova xEdit, registrato in Executables o in
+qualunque punto dell'istanza in cui cerca gli strumenti, il riquadro ha Clean
+all e ogni plugin sporco ha Clean with QuickAutoClean nel menu della sua riga;
+altrimenti il riquadro dice di aggiungere xEdit in Executables. Eidos non
+scarica xEdit. Esegue la modalità QuickAutoClean di xEdit su un plugin alla
+volta, attraverso la vista unita, con `-qac -autoexit -autoload`. xEdit salva il
+plugin pulito sopra quello che ha caricato, e nella vista unita questo è un file
+nuovo nell'Overwrite; Eidos lo sposta in una mod chiamata `Cleaned plugins`,
+creata attiva in fondo alla lista, dove vince ogni conflitto. Il plugin nella
+sua mod, o nella cartella Data del gioco, non viene mai scritto. Per annullare
+una pulizia, disattiva `Cleaned plugins` o nascondi un suo file.
+
+I backup, la cache e il log di xEdit finiscono in `<instance>/logs/qac-<time>/`,
+fuori dalla vista unita, e la riga di stato riporta i numeri di quel log. Eidos
+cancella quella cartella dopo una pulizia riuscita e la tiene dopo una fallita.
+Eidos annota in `Cleaned plugins/meta.ini` la dimensione e la data del plugin da
+cui è stata fatta ogni copia. Quando quel plugin cambia, la scheda Health segnala la copia come obsoleta e propone di nasconderla.
+
 ## Aggiungerne uno
 
 Nella GUI: **Tools -> Executables**, poi Add. Da riga di comando:
@@ -41,7 +64,10 @@ eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse                       # elencare ciò che è registrato
 eidos tool skyrimse run BodySlide         # eseguirlo attraverso la vista unita
 eidos tool skyrimse run BodySlide --print # mostrare il comando senza eseguirlo
+eidos tool skyrimse run "SSEEdit QuickAutoClean" --output-mod "Cleaned plugins" -- -qac -autoexit -autoload Dawnguard.esm
 ```
+
+`--output-mod <mod>` cattura l'output di quell'esecuzione in `mods/<mod>`, qualunque sia l'impostazione propria dello strumento.
 
 Lo script extender, l'eseguibile del gioco e il lanciatore vengono rilevati
 automaticamente; solo gli strumenti aggiuntivi vanno registrati.

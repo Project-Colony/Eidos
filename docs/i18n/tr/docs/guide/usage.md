@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=92ef50801ef60cd7ea02e2a2f2538c313e3aeca1 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
 
 # Eidos kullanımı
 
@@ -19,6 +19,8 @@ eidos sort skyrimse               # eklenti yükleme sırasını LOOT ile sıral
 eidos play skyrimse               # neyin bağlanacağını göster
 eidos play skyrimse -- <command>  # <command>'ı modlar oyunun üzerine bağlanmış halde çalıştır
 eidos check skyrimse              # pencere olmadan sağlık denetimleri (betikler için --json)
+eidos sessions skyrimse           # kaydedilmiş oyun ve araç çalıştırmaları, en yeni başta
+eidos sessions skyrimse diff      # çıkış kodu 0 ile biten son çalıştırmadan beri neyin değiştiği
 eidos collection skyrimse <link>  # bir Nexus koleksiyonunu yazarının kurduğu gibi kur
 eidos nexus update skyrimse --apply  # sizinkilerin yerini alan Nexus dosyalarını kur
 eidos pack skyrimse backup.eidos  # bütün örnek tek bir dosyada, başka yere taşımak için
@@ -157,6 +159,10 @@ dosya kümesi her değiştiğinde bir kez, onu çalıştırmanın günlüğünde
 (pencereden bir başlatma için örneğin `logs/run-*.log` dosyası, Steam'den bir
 başlatma için Steam'in konsolu). Onu oynamak için kaydı ve ona eşlik eden
 co-save dosyasını profilin `saves/` klasörüne kopyalayın.
+
+### Son iyi çalıştırmadan beri neyin değiştiği
+
+`eidos play` veya `eidos tool run` ile yapılan her çalıştırma, pencereden, terminalden ya da Steam'den başlasın, `<instance>/logs/sessions/` altına bir kayıt yazar: profil, etkin her mod ile sürümü ve Nexus dosya kimlikleri, eklenti sırası, her profil INI dosyasının sağlama toplamı, oyun yürütülebilir dosyasının sürümü, Eidos sürümü, çıkış kodu ve çalıştırmanın oluşturduğu kayıtlar. En yeni 50 kayıt tutulur ve `logs/` paketlenen bir örneğe girmez. `eidos sessions <instance> diff`, çıkış kodu 0 ile biten en yeni oyun çalıştırmasını mevcut durumla karşılaştırır; `diff <id>` listeden başka bir kaydı seçer. Eidos burada henüz çökmeleri algılamaz ve Proton altında çöken bir oyun yine de 0 koduyla çıkabilir: seçilen çalıştırma böyleyse `diff <id>` ile daha eskisini belirtin.
 
 ### Ayrıcalıklı adım gerekmez
 
@@ -513,6 +519,13 @@ sürükleme sırasında katlanmış bir grubun üzerinde beklemek onu açar, bö
 mod önce sürüklemeyi bırakmadan içine bırakılabilir - beklemek, üzerinden geçip
 gitmek değil.
 
+Ctrl+Z mod listesindeki ya da yükleme sırasındaki son değişikliği geri alır: bir işaret,
+bir taşıma, toplu bir devre dışı bırakma, bir LOOT sıralaması. Ctrl+Shift+Z onu yeniden yapar. Pencere 50 adım tutar ve
+bunları F5'te, bir oyun ya da araç çalıştırmasının sonunda, profil değişiminde ve
+başka bir Eidos süreci listeyi değiştirdiğinde unutur. Bir modu kurmak, yeniden
+adlandırmak ya da kaldırmak diskteki klasörleri değiştirir, bu yüzden bunlardan
+birinin ötesine geçen bir geri alma reddedilir.
+
 ### Listenin bir mod hakkında söyledikleri
 
 İki uyarı bayrağı; ikisi de üzerine gelince açıklaması çıkan birer simge. **No
@@ -527,6 +540,17 @@ böylece bir yöneticide kefil olduğunuz bir mod diğerine sessiz gelir.
 Yerleşim denetimi bilerek cömerttir: bir `Root/` ağacı sayılır, okunamayan bir
 klasör sayılır, boş olan sayılır. Beş yüz satırlık bir listede yanlış bir uyarı,
 eksik olandan kötüdür.
+
+### Kayıtlarınızın veya başka modların kullandığı bir modu kapatmak
+
+Bir mod kapatılmadan ya da kaldırılmadan önce Eidos, profilin en yeni üç
+kaydının eklenti listelerini okur. Bunlardan biri o moddan bir eklenti
+kullanıyorsa, listenin üstündeki bir çubuk eklentilerin adını verir ve
+"Disable anyway" ya da "Cancel" bekler (Esc de iptal eder). Remove, yeniden
+tıklamayı isteyen iletisine aynı adları ekler. Yalnızca Skyrim ve Fallout 4
+kayıtları okunur; diğer oyunlarda mod sormadan kapatılır.
+
+Bir modun Information bölümündeki General sekmesi, o modun ihtiyaç duyduğu modları ve ona ihtiyaç duyan modları, etkin eklentilerin master'larından okuyarak listeler. Başkalarının ihtiyaç duyduğu bir modu kapatmak aynı çubuğu gösterir; "Disable them too" ona ihtiyaç duyan her modu ve onlara ihtiyaç duyan modları da kapatır, "Keep them enabled" ise yalnızca seçileni kapatır. Health sekmesindeki eksik master kartında "Enable what provides them" düğmesi vardır: eksik her master'ı içeren modu etkinleştirir ve mevcut ama işaretsiz bir master eklentisini işaretler.
 
 ### Bir moda dokunmadan önce onu yedeklemek
 
@@ -544,10 +568,14 @@ düğüme sahip katman başına bir dizin okuması eder. Bağlamanın hizmet ett
 katman yığını tarafından yanıtlanır, yani whiteout'lar ve gizli dosyalar gözetilir
 ve sekme, oyunun göreceğiyle çelişemez. Ada göre süzün, yalnızca çekişmeli
 dosyalara daraltın, Size ve Modified sütunlarıyla neyin nerede olduğunu ayıklayın
-ve herhangi bir satırı Reveal ile bir dosya yöneticisinde gösterin. **Plugins**,
+ve herhangi bir satırı Reveal ile bir dosya yöneticisinde gösterin. Bir modun en
+üst düzeydeki `meta.ini`, `readme.txt`, `fomod/` ve `Root/` öğeleri Data'ya
+girmez, ne bu sekmede ne de bağlamada: ilk üçü mod yöneticisi içindir, `Root/`
+ise oyun klasörüne gider. Oyunun ya da bir aracın bu adlardan biriyle yazdığı
+dosya Overwrite'a düşer ve görünür kalır. **Plugins**,
 ESP/ESM/ESL yükleme sırasıdır (açıp kapatın, elle yeniden sıralayın ya da LOOT
 ile sıralayıp sıralama sonrası raporu okuyun; oradaki öneri bağlantıları
-tarayıcınızda açılır). **Conflicts**, dosya başına kazananları ve kaybedenleri
+tarayıcınızda açılır). Başlığı, etkin eklentileri her dizin alanında oyunun sınırına karşı sayar, örneğin `full 231/254, light 512/4096`, ve biri dolunca turuncuya döner. Bir LOOT sıralamasından sonra, yeni kayıtlarının hepsi light aralığına sığan tam bir eklenti bunu fareyle üzerine gelince söyler ve satır menüsünde Flag as light bulunur. Eidos, light bayrağı açık bir kopyayı `<plugin> (light)` adlı yeni bir moda yazar, bu modu mod listesinin en altına (en yüksek öncelik) koyar ve özgün dosyaya dokunmaz; o modu kapatmak işlemi geri alır. Profilin en yeni üç kaydından biri eklentiyi tam eklenti olarak yüklüyorsa Eidos reddeder. Yalnızca Skyrim ve Fallout 4 kayıtları okunur; Starfield'da hiçbir kayıt denetlenmez. LOOT yalnızca kayıt aralıklarını denetler: hücre ya da worldspace ekleyen bir eklentiyi işaretlemeden önce xEdit'te inceleyin. **Conflicts**, dosya başına kazananları ve kaybedenleri
 açıklar. **Overwrite**, oyunun yazdığını tek adımda gerçek bir moda dönüştürür.
 **Saves**, her kaydın başlığını ayrıştırır - karakter, seviye, konum, oynanma
 süresi - ve içine gömülü eklenti listesini geçerli listenizle karşılaştırır;

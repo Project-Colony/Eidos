@@ -1300,6 +1300,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::CreateBackup(..)
         | Message::RestoreBackup(..)) => profiles::handle(app, m),
         m @ (Message::ToggleMod(..)
+        | Message::Undo
+        | Message::Redo
+        | Message::ConfirmDisable
+        | Message::ConfirmDisableWithDependents
+        | Message::CancelDisable
         | Message::SendToFirstConflict(..)
         | Message::SendToLastConflict(..)
         | Message::SendToPriorityStart(..)
@@ -1386,6 +1391,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::PluginSendToPriorityChanged(..)
         | Message::PluginSendToPriorityCommit
         | Message::PluginsSetAll(..)
+        | Message::CleanPlugins(..)
+        | Message::FlagPluginLight(..)
         | Message::SelectPlugin(..)
         | Message::SelectPluginToggle(..)
         | Message::SelectPluginExtend(..)
@@ -1652,6 +1659,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::SavesCopyToProfile(..)
         | Message::SelectSave(..)
         | Message::FixSaveMods
+        | Message::EnableMissingMasters
         | Message::RestorePreSessionPlugins
         | Message::AcceptPluginState
         | Message::ConfirmDeleteSave(..)) => saves::handle(app, m),
@@ -1877,6 +1885,14 @@ fn normalize_fomod_step(w: &mut FomodWizard) {
 /// defect (stale meta rows, the other game's merged Data tree), so there must
 /// be exactly ONE copy of it.
 pub(crate) fn open_instance(app: &mut App, inst: Instance) {
+    // A clean belongs to the instance it was asked from: the rest of its queue
+    // must not run xEdit here, and one still running there (after Unlock)
+    // reports nothing here.
+    app.clean_queue.clear();
+    app.cleaning = app
+        .cleaning
+        .take()
+        .filter(|c| c.scratch.starts_with(&inst.root));
     app.created = Some(inst);
     // Another instance's LOOT verdicts must not decorate this one's plugins.
     app.loot_meta = None;

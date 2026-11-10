@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=92ef50801ef60cd7ea02e2a2f2538c313e3aeca1 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
 
 # Używanie Eidos
 
@@ -19,6 +19,8 @@ eidos sort skyrimse               # posortować kolejność wczytywania wtyczek 
 eidos play skyrimse               # pokazać, co zostałoby zamontowane
 eidos play skyrimse -- <command>  # uruchomić <command> z modami zamontowanymi nad grą
 eidos check skyrimse              # kontrole kondycji bez okna (--json dla skryptów)
+eidos sessions skyrimse           # zapisane uruchomienia gry i narzędzi, od najnowszego
+eidos sessions skyrimse diff      # co się zmieniło od ostatniego uruchomienia zakończonego kodem 0
 eidos collection skyrimse <link>  # zainstalować kolekcję Nexusa tak, jak zbudował ją jej autor
 eidos nexus update skyrimse --apply  # zainstalować pliki z Nexusa, które zastąpiły twoje
 eidos pack skyrimse backup.eidos  # cała instancja w jednym pliku, żeby przenieść ją gdzie indziej
@@ -157,6 +159,10 @@ wymienia go z nazwy w logu przebiegu (`logs/run-*.log` instancji przy
 uruchomieniu z okna, konsola Steama przy uruchomieniu ze Steama), jeden raz przy
 każdej zmianie tego zestawu plików. Żeby w niego zagrać, skopiuj go razem z
 towarzyszącym mu plikiem co-save do folderu `saves/` profilu.
+
+### Co się zmieniło od ostatniego udanego uruchomienia
+
+Każde uruchomienie przez `eidos play` lub `eidos tool run`, z okna, terminala albo Steama, zapisuje wpis w `<instance>/logs/sessions/`: profil, każdy włączony mod z wersją i identyfikatorami plików Nexusa, kolejność pluginów, sumę kontrolną każdego INI profilu, wersję pliku wykonywalnego gry, wersję Eidos, kod wyjścia i zapisy gry utworzone podczas uruchomienia. Zachowuje się 50 najnowszych, a `logs/` nie trafia do spakowanej instancji. `eidos sessions <instance> diff` porównuje ostatnie uruchomienie gry zakończone kodem 0 z bieżącym stanem; `diff <id>` wybiera inny wpis z listy. Eidos nie wykrywa tu jeszcze awarii, a gra, która padła pod Protonem, może mimo to zakończyć się kodem 0: jeśli wybrane uruchomienie do nich należy, podaj wcześniejsze przez `diff <id>`.
 
 ### Żaden krok z uprawnieniami nie jest potrzebny
 
@@ -519,6 +525,12 @@ przeciągania zatrzymanie się nad zwiniętą grupą otwiera ją, więc mod da s
 upuścić w środku bez porzucania przeciągania - zatrzymanie się, nie przemknięcie
 obok.
 
+Ctrl+Z cofa ostatnią zmianę listy modów lub kolejności ładowania: zaznaczenie,
+przesunięcie, zbiorcze wyłączenie, sortowanie LOOT. Ctrl+Shift+Z ją przywraca. Okno pamięta 50 kroków i zapomina je po
+F5, po zakończeniu uruchomienia gry lub narzędzia, po zmianie profilu i gdy inny
+proces Eidos zmieni listę. Instalacja, zmiana nazwy lub usunięcie moda zmienia
+foldery na dysku, więc cofnięcie poza taki krok zostaje odrzucone.
+
 ### Co lista mówi ci o modzie
 
 Dwie flagi doradcze, obie w postaci znaku z wyjaśnieniem po najechaniu. **No
@@ -532,6 +544,17 @@ poręczyłeś w jednym menedżerze, przychodzi cichy w drugim.
 Sprawdzenie układu jest celowo hojne: drzewo `Root/` się liczy, nieczytelny
 folder się liczy, pusty się liczy. Błędne ostrzeżenie na liście pięciuset wierszy
 jest gorsze niż brakujące.
+
+### Wyłączanie moda, którego używają twoje zapisy lub inne mody
+
+Zanim mod zostanie wyłączony lub usunięty, Eidos czyta listy pluginów trzech
+najnowszych zapisów profilu. Gdy któryś z nich używa pluginu z tego moda, pasek
+nad listą wymienia te pluginy i czeka na „Disable anyway" albo „Cancel" (Esc też
+anuluje). Remove dopisuje te same nazwy do swojego komunikatu o ponownym
+kliknięciu. Czytane są tylko zapisy Skyrima i Fallouta 4; w innych grach mod
+wyłącza się bez pytania.
+
+Karta General w Information moda wymienia mody, których potrzebuje, i mody, które potrzebują jego, na podstawie masterów włączonych pluginów. Wyłączenie moda, którego potrzebują inne, pokazuje ten sam pasek z przyciskiem „Disable them too", który wyłącza też każdy mod go potrzebujący oraz mody potrzebujące tamtych, albo „Keep them enabled". Karta brakujących masterów na karcie Health ma przycisk "Enable what provides them": włącza moda, który zawiera każdy brakujący master, i zaznacza plugin master, który jest obecny, ale niezaznaczony.
 
 ### Kopia moda, zanim go dotkniesz
 
@@ -550,9 +573,13 @@ warstw, z którego serwuje montowanie, więc whiteouty i pliki ukryte są
 respektowane, a zakładka nie może być niezgodna z tym, co zobaczy gra. Filtruj
 po nazwie, zawęź do samych plików spornych, rozeznaj, co jest gdzie, po kolumnach
 Size i Modified, i pokaż dowolny wiersz w menedżerze plików przez Reveal.
-**Plugins** to kolejność wczytywania ESP/ESM/ESL (przełączanie, ręczne
+Pliki `meta.ini` i `readme.txt` oraz katalogi `fomod/` i `Root/` z najwyższego
+poziomu moda nie trafiają do Data, ani w tej zakładce, ani w montowaniu: trzy
+pierwsze są dla menedżera modów, a `Root/` idzie do katalogu gry. Plik, który
+gra lub narzędzie zapisze pod jedną z tych nazw, ląduje w Overwrite i pozostaje
+widoczny. **Plugins** to kolejność wczytywania ESP/ESM/ESL (przełączanie, ręczne
 przestawianie albo sortowanie LOOT-em i lektura raportu po sortowaniu, którego
-odnośniki z poradami otwierają się w twojej przeglądarce). **Conflicts**
+odnośniki z poradami otwierają się w twojej przeglądarce). Jego nagłówek zlicza włączone wtyczki w każdej przestrzeni indeksów względem limitu gry, na przykład `full 231/254, light 512/4096`, i robi się pomarańczowy, gdy któraś jest pełna. Po sortowaniu LOOT-em pełny plugin, którego nowe rekordy w całości mieszczą się w zakresie light, pokazuje to po najechaniu kursorem, a menu jego wiersza zawiera Flag as light. Eidos zapisuje kopię z flagą light w nowym modzie o nazwie `<plugin> (light)` na dole listy modów (najwyższy priorytet) i nie rusza oryginału, więc wyłączenie tego moda cofa zmianę. Eidos odmawia, gdy któryś z trzech najnowszych zapisów profilu wczytuje plugin jako pełny plugin. Odczytywane są tylko zapisy Skyrima i Fallouta 4, więc w Starfieldzie żaden zapis nie jest sprawdzany. LOOT sprawdza tylko zakresy rekordów: plugin, który dodaje komórki albo worldspace'y, obejrzyj w xEdit przed oznaczeniem. **Conflicts**
 wyjaśnia wygranych i przegranych plik po pliku. **Overwrite** zamienia to, co
 gra zapisała, w prawdziwy mod jednym krokiem. **Saves** rozbiera nagłówek każdego
 zapisu - postać, poziom, lokacja, czas gry - i porównuje wpieczoną w niego listę

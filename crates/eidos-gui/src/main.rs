@@ -44,6 +44,7 @@ mod fomod;
 #[cfg(test)]
 mod gui_verification;
 mod health;
+mod history;
 mod i18n;
 mod installers;
 mod message;

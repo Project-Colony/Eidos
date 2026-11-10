@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=9c3cd95af478e293899252a1bd712a8f3ad9f51d -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -34,6 +34,31 @@ Liegt ein Tool woanders, oder wollen Sie andere Argumente, tragen Sie es von
 Hand ein - ein eigener Eintrag mit demselben Titel überschreibt alles
 automatisch Gefundene.
 
+## Ein Plugin bereinigen, das LOOT als verschmutzt meldet
+
+Nach einer LOOT-Sortierung listet der Tab Diagnostics die Plugins auf, die LOOT
+als verschmutzt (dirty) meldet, für die Spiele, die sowohl ein xEdit als auch
+LOOT-Bereinigungsdaten haben (Skyrim LE, SE und VR, Enderal SE, Fallout 3, New
+Vegas, Fallout 4 und 4 VR, Oblivion, Starfield). Findet Eidos xEdit, eingetragen
+unter Executables oder an einer der Stellen der Instanz, an denen es nach Tools
+sucht, hat die Karte Clean all, und jedes verschmutzte Plugin hat Clean with
+QuickAutoClean im Menü seiner Zeile; andernfalls sagt die Karte, dass Sie xEdit
+unter Executables hinzufügen sollen. Eidos lädt xEdit nicht herunter. Es startet
+den QuickAutoClean-Modus von xEdit für jeweils ein Plugin, über den
+zusammengeführten Blick, mit `-qac -autoexit -autoload`. xEdit speichert das
+bereinigte Plugin über das geladene, was im zusammengeführten Blick eine neue
+Datei im Overwrite ist; Eidos verschiebt sie in einen Mod namens `Cleaned
+plugins`, der aktiviert am Ende der Liste angelegt wird, wo er jeden Konflikt
+gewinnt. Das Plugin in seinem eigenen Mod oder im Data-Ordner des Spiels wird
+nie geschrieben. Deaktivieren Sie `Cleaned plugins` oder blenden Sie eine Datei
+darin aus, um eine Bereinigung rückgängig zu machen.
+
+Backups, Cache und Log von xEdit landen in `<instance>/logs/qac-<time>/`,
+außerhalb des zusammengeführten Blicks, und die Statuszeile meldet die Zahlen
+aus diesem Log. Eidos löscht diesen Ordner nach einer gelungenen Bereinigung und
+behält ihn nach einer fehlgeschlagenen. Eidos vermerkt Größe und Datum des
+Plugins, aus dem jede Kopie entstand, in `Cleaned plugins/meta.ini`. Ändert sich dieses Plugin, meldet der Health-Tab die Kopie als veraltet und bietet an, sie auszublenden.
+
 ## Eines hinzufügen
 
 In der GUI: **Tools -> Executables**, dann Add. Von der Kommandozeile:
@@ -43,7 +68,10 @@ eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse                       # list what is registered
 eidos tool skyrimse run BodySlide         # run it through the merged view
 eidos tool skyrimse run BodySlide --print # show the command without running it
+eidos tool skyrimse run "SSEEdit QuickAutoClean" --output-mod "Cleaned plugins" -- -qac -autoexit -autoload Dawnguard.esm
 ```
+
+`--output-mod <mod>` fängt die Ausgabe dieses Laufs in `mods/<mod>` ab, unabhängig von der eigenen Einstellung des Tools.
 
 Der Script Extender, die Spielbinärdatei und der Launcher werden automatisch
 erkannt; nur zusätzliche Tools müssen eingetragen werden.

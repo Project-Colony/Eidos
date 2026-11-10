@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=92ef50801ef60cd7ea02e2a2f2538c313e3aeca1 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
 
 # Utiliser Eidos
 
@@ -20,6 +20,8 @@ eidos sort skyrimse               # trier l'ordre de chargement des plugins avec
 eidos play skyrimse               # afficher ce qui serait monté
 eidos play skyrimse -- <command>  # exécuter <command> avec les mods montés sur le jeu
 eidos check skyrimse              # contrôles de santé sans la fenêtre (--json pour les scripts)
+eidos sessions skyrimse           # les lancements du jeu et des outils enregistrés, du plus récent au plus ancien
+eidos sessions skyrimse diff      # ce qui a changé depuis le dernier lancement terminé avec le code 0
 eidos collection skyrimse <link>  # installer une collection Nexus comme son auteur l'a construite
 eidos nexus update skyrimse --apply  # installer les fichiers Nexus qui ont remplacé les vôtres
 eidos pack skyrimse backup.eidos  # toute l'instance dans un seul fichier, pour la déplacer ailleurs
@@ -168,6 +170,10 @@ supprime : le lancement la nomme dans le log de l'exécution (le
 de Steam pour un lancement par Steam), une fois à chaque changement de cet
 ensemble de fichiers. Pour y jouer, copiez-la avec son co-save dans le dossier
 `saves/` du profil.
+
+### Ce qui a changé depuis le dernier bon lancement
+
+Chaque lancement par `eidos play` ou `eidos tool run`, depuis la fenêtre, un terminal ou Steam, écrit un enregistrement dans `<instance>/logs/sessions/` : le profil, chaque mod activé avec sa version et ses identifiants de fichier Nexus, l'ordre des plugins, une somme de contrôle de chaque INI du profil, la version de l'exécutable du jeu, la version d'Eidos, le code de sortie et les sauvegardes créées pendant le lancement. Les 50 plus récents sont conservés, et `logs/` n'entre pas dans une instance empaquetée. `eidos sessions <instance> diff` compare le dernier lancement du jeu terminé avec le code 0 à l'état actuel ; `diff <id>` choisit un autre enregistrement de la liste. Eidos ne détecte pas encore les plantages ici, et un jeu planté sous Proton peut quand même sortir avec le code 0 : si le lancement choisi en fait partie, indiquez-en un plus ancien avec `diff <id>`.
 
 ### Aucune étape privilégiée n'est nécessaire
 
@@ -555,6 +561,14 @@ celui-là. Pendant un glisser-déposer, s'arrêter sur un groupe replié l'ouvre
 bien qu'un mod peut être déposé dedans sans abandonner le glissement d'abord -
 s'arrêter, pas passer dessus.
 
+Ctrl+Z annule la dernière modification de la liste des mods ou de l'ordre de
+chargement : une case cochée, un déplacement, une désactivation groupée, un tri
+LOOT. Ctrl+Shift+Z la rétablit. La fenêtre
+garde 50 étapes et les oublie sur F5, à la fin d'un lancement de jeu ou d'outil,
+au changement de profil et quand un autre processus Eidos modifie la liste.
+Installer, renommer ou supprimer un mod change les dossiers sur le disque : une
+annulation qui remonte avant l'une de ces opérations est refusée.
+
 ### Ce que la liste vous dit d'un mod
 
 Deux drapeaux consultatifs, chacun un glyphe avec l'explication au survol. **No
@@ -571,6 +585,18 @@ La vérification de la disposition est délibérément généreuse : une arbores
 `Root/` compte, un dossier illisible compte, un dossier vide compte. Un
 avertissement erroné sur une liste de cinq cents lignes est pire qu'un
 avertissement manquant.
+
+### Désactiver un mod que vos sauvegardes ou d'autres mods utilisent
+
+Avant de désactiver ou de supprimer un mod, Eidos lit les listes de plugins des
+trois sauvegardes les plus récentes du profil. Quand l'une d'elles utilise un
+plugin de ce mod, une barre au-dessus de la liste nomme les plugins et attend
+« Disable anyway » ou « Cancel » (Échap annule aussi). Remove ajoute les mêmes
+noms à son message demandant de cliquer encore. Seules les sauvegardes de Skyrim
+et de Fallout 4 sont lues ; pour les autres jeux, le mod est désactivé sans
+question.
+
+L'onglet General de « Information » d'un mod liste les mods dont il a besoin et les mods qui ont besoin de lui, lus dans les masters des plugins activés. Désactiver un mod dont d'autres ont besoin affiche la même barre avec « Disable them too », qui désactive aussi chaque mod qui en a besoin et les mods qui ont besoin de ceux-là, ou « Keep them enabled ». La carte des masters manquants de l'onglet Health propose « Enable what provides them » : elle active le mod qui contient chaque master manquant et coche un plugin master présent mais décoché.
 
 ### Sauvegarder un mod avant d'y toucher
 
@@ -589,10 +615,15 @@ la MÊME pile de couches que celle depuis laquelle le montage sert, donc les
 whiteouts et les fichiers masqués sont respectés et l'onglet ne peut pas
 contredire ce que le jeu verra. Filtrez par nom, restreignez aux seuls fichiers
 disputés, démêlez ce qui est où avec les colonnes Size et Modified, et faites
-Reveal sur n'importe quelle ligne dans un gestionnaire de fichiers. **Plugins**,
+Reveal sur n'importe quelle ligne dans un gestionnaire de fichiers. Les
+`meta.ini`, `readme.txt`, `fomod/` et `Root/` placés à la racine d'un mod
+restent hors de Data, dans cet onglet comme dans le montage : les trois premiers
+servent au gestionnaire de mods, et `Root/` va dans le dossier du jeu. Un
+fichier que le jeu ou un outil écrit sous l'un de ces noms arrive dans
+l'Overwrite et reste visible. **Plugins**,
 c'est l'ordre de chargement des ESP/ESM/ESL (activer, réordonner à la main, ou
 trier avec LOOT et lire le rapport d'après-tri, dont les liens de conseils
-s'ouvrent dans votre navigateur). **Conflicts** explique les gagnants et les
+s'ouvrent dans votre navigateur). Son en-tête compte les plugins actifs de chaque espace d'index face à la limite du jeu, par exemple `full 231/254, light 512/4096`, et devient orange quand l'un est plein. Après un tri LOOT, un plugin complet dont tous les nouveaux enregistrements tiennent dans la plage légère l'indique au survol, et le menu de sa ligne contient Flag as light. Eidos écrit une copie portant le drapeau léger dans un nouveau mod nommé `<plugin> (light)`, en bas de la liste des mods (la priorité la plus haute), et laisse l'original intact : désactiver ce mod annule l'opération. Eidos refuse quand l'une des trois sauvegardes les plus récentes du profil charge le plugin comme plugin complet. Seules les sauvegardes de Skyrim et de Fallout 4 sont lues : sous Starfield, aucune sauvegarde n'est vérifiée. LOOT ne vérifie que les plages d'enregistrements : avant de marquer un plugin qui ajoute des cellules ou des worldspaces, examinez-le dans xEdit. **Conflicts** explique les gagnants et les
 perdants fichier par fichier. **Overwrite** transforme ce que le jeu a écrit en
 un vrai mod en une seule étape. **Saves** analyse l'en-tête de chaque sauvegarde
 - personnage, niveau, lieu, temps de jeu - et compare la liste de plugins qui y

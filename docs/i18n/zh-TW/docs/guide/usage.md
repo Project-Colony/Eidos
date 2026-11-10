@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=92ef50801ef60cd7ea02e2a2f2538c313e3aeca1 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6c67645eac5ead220cf768d85f53b6c57be42f8e -->
 
 # 使用 Eidos
 
@@ -18,6 +18,8 @@ eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
 eidos check skyrimse              # 不開視窗跑健康檢查(腳本用 --json)
+eidos sessions skyrimse           # 依由新到舊列出已記錄的遊戲與工具執行
+eidos sessions skyrimse diff      # 顯示自上次以結束碼 0 結束的執行以來的變化
 eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
 eidos nexus update skyrimse --apply  # install the Nexus files that replaced yours
 eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
@@ -116,6 +118,10 @@ Steam Cloud 下載、一次沒有透過 Eidos 的啟動 - 在設定檔的存檔�
 遮住。沒有任何東西會刪掉它:啟動時會在這次執行的日誌裡指名它(從視窗啟動是實例的
 `logs/run-*.log`,從 Steam 啟動則是 Steam 的主控台),那組檔案每變動一次就提一次。
 要玩它,就把它連同它的 co-save 一起複製到設定檔的 `saves/` 資料夾裡。
+
+### 自上次正常執行以來的變化
+
+無論從視窗、終端機還是 Steam 啟動，每次透過 `eidos play` 或 `eidos tool run` 的執行都會在 `<instance>/logs/sessions/` 寫入一筆記錄：設定檔、每個啟用的 mod 及其版本和 Nexus 檔案 ID、外掛順序、每個設定檔 INI 的檢查碼、遊戲執行檔的版本、Eidos 版本、結束碼，以及這次執行建立的存檔。保留最新的 50 筆，`logs/` 不會進入打包的執行個體。`eidos sessions <instance> diff` 會把最近一次以結束碼 0 結束的遊戲執行與目前狀態比較；`diff <id>` 從清單中選另一筆記錄。Eidos 目前不偵測當機，在 Proton 下當機的遊戲仍可能以結束碼 0 結束：若選中的執行屬於這種情況，請用 `diff <id>` 指定更早的一筆。
 
 ### 不需要任何特權步驟
 
@@ -398,6 +404,10 @@ Ctrl+F 把游標放進篩選框。按下一個字母會跳到下一個以它開�
 中,停在一個摺疊的群組上會把它展開,所以模組可以直接丟進去,不必先放棄這次拖曳 -
 是停住,不是掠過。
 
+Ctrl+Z 復原對模組清單或載入順序的上一次變更:一次勾選、一次移動、一次批次停用、一次 LOOT 排序。Ctrl+Shift+Z 重做。
+視窗保留 50 步,在按 F5、遊戲或工具執行結束、切換設定檔以及另一個 Eidos 程序變更清單時
+清除。安裝、重新命名或移除模組會改變磁碟上的資料夾,所以越過這類操作的復原會被拒絕。
+
 ### 清單會告訴你關於一個模組的什麼事
 
 兩個提示性旗標,都是一個字符,滑鼠停留就有說明。**No valid game data** 表示模組
@@ -409,6 +419,15 @@ Ctrl+F 把游標放進篩選框。按下一個字母會跳到下一個以它開�
 
 這個版面檢查刻意放寬:一棵 `Root/` 樹算數,一個讀不到的資料夾算數,一個空的也
 算數。在一份五百列的清單上,一個錯誤的警告比一個漏掉的警告更糟。
+
+### 停用存檔或其他模組用到的模組
+
+在停用或移除一個模組之前,Eidos 會讀取該設定檔最新三個存檔的外掛列表。只要其中一個
+存檔用到了這個模組裡的外掛,列表上方就會出現一條提示列,列出這些外掛,並等待你按
+「Disable anyway」或「Cancel」(按 Esc 也會取消)。Remove 會把同樣的外掛名稱加進它
+要求再點一次的訊息裡。只讀取 Skyrim 和 Fallout 4 的存檔;其他遊戲不詢問,直接停用。
+
+模組的 Information 裡的 General 分頁會列出它需要的模組和需要它的模組,依據已啟用外掛的主檔案讀取。停用其他模組需要的模組時會出現同樣的提示列:「Disable them too」會同時停用所有需要它的模組,以及需要那些模組的模組;「Keep them enabled」則只停用所選的。 Health 分頁上的缺少主檔案卡片有 "Enable what provides them":它會啟用包含每個缺失主檔案的模組,並勾選存在但未勾選的主外掛。
 
 ### 動它之前先備份一個模組
 
@@ -422,9 +441,10 @@ Ctrl+F 把游標放進篩選框。按下一個字母會跳到下一個以它開�
 擁有它的層各讀一次目錄,而不是遞迴走過每一個啟用的模組。回答它的是掛載本身服務所
 用的「同一套」層堆疊,所以 whiteout 與隱藏檔案都被遵守,這個分頁不可能和遊戲將會
 看到的東西說法不一。可以依名稱篩選、縮小到只看有爭議的檔案、用 Size 與 Modified
-欄位理清什麼在哪裡,還能把任一列在檔案管理器裡 Reveal 出來。**Plugins** 是
+欄位理清什麼在哪裡,還能把任一列在檔案管理器裡 Reveal 出來。
+模組最上層的 `meta.ini`、`readme.txt`、`fomod/` 與 `Root/` 不會進入 Data,這個分頁和掛載裡都一樣:前三個是給模組管理器用的,`Root/` 則改放到遊戲資料夾。遊戲或工具以這些名稱寫入的檔案會落在 Overwrite,並保持可見。**Plugins** 是
 ESP/ESM/ESL 的載入順序(切換、手動重新排序,或用 LOOT 排序並閱讀排序後的報告,
-報告裡的建議連結會在你的瀏覽器開啟)。**Conflicts** 說明每個檔案的贏家與輸家。
+報告裡的建議連結會在你的瀏覽器開啟)。它的標題列依索引空間統計已啟用的外掛數量,並與遊戲的上限對照,例如 `full 231/254, light 512/4096`,某個空間滿了就變成橙色。LOOT 排序之後,新紀錄全部落在 light 範圍內的完整外掛會在滑鼠停留時說明這一點,它那一列的選單裡也會出現 Flag as light。Eidos 會把帶 light 旗標的副本寫進一個名為 `<plugin> (light)` 的新模組,放在模組清單最底部(優先順序最高),原外掛不動,所以停用這個模組就能復原。如果該設定檔最新三個存檔中有一個把這個外掛當作完整外掛載入,Eidos 會拒絕。只會讀取 Skyrim 和 Fallout 4 的存檔,所以在 Starfield 上不會檢查任何存檔。LOOT 只檢查紀錄範圍:會新增儲存格或世界空間的外掛,標記之前先在 xEdit 裡看一下。**Conflicts** 說明每個檔案的贏家與輸家。
 **Overwrite** 一步就把遊戲寫出來的東西變成真正的模組。**Saves** 解析每份存檔的
 標頭 - 角色、等級、位置、遊玩時間 - 並把烘進存檔的外掛清單和你目前的比對,還附一個
 按鈕啟用它需要的模組,因為只點名它們然後丟給你自己處理,是無聊的那一半。

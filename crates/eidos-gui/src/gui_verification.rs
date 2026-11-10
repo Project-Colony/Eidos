@@ -884,6 +884,67 @@ fn the_plugin_filter_keeps_full_list_indices_and_holds_the_drag() {
     );
 }
 
+/// The #120 pattern: the dirty-plugin card's one slot holds the Clean button,
+/// the add-xEdit line or the cleaning status, so a label below the card never
+/// moves when a clean starts or ends under the pointer.
+#[test]
+fn the_dirty_plugin_card_keeps_one_height_with_xedit_without_it_and_while_cleaning() {
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    let names = vec!["Dirty.esp".to_string(), "Other.esp".to_string()];
+    let mut below = |slot: DirtySlot| {
+        let card = DirtyCard {
+            names: names.clone(),
+            slot,
+        };
+        let col = Column::new()
+            .push(dirty_plugins_card(&card))
+            .push(text("below the card"));
+        label(col.into(), &mut renderer, "below the card", 0).y
+    };
+    let with_xedit = below(DirtySlot::Clean(2));
+    assert_eq!(
+        below(DirtySlot::AddXedit),
+        with_xedit,
+        "the add-xEdit line changed the card height"
+    );
+    let long = "A plugin name long enough to wrap onto a second line if the slot let it grow.esp"
+        .to_string();
+    assert_eq!(
+        below(DirtySlot::Cleaning {
+            plugin: long,
+            left: 1
+        }),
+        with_xedit,
+        "the cleaning status changed the card height"
+    );
+    // The slot is one tool_btn tall: the button is neither clipped nor padded out.
+    let button = label(
+        Column::new()
+            .push(crate::widgets::tool_btn(
+                "Clean all 2",
+                Message::CleanPlugins(names.clone()),
+            ))
+            .push(text("below the button"))
+            .into(),
+        &mut renderer,
+        "below the button",
+        0,
+    )
+    .y - label(
+        Column::new().push(text("below the button")).into(),
+        &mut renderer,
+        "below the button",
+        0,
+    )
+    .y;
+    assert!(
+        (button - crate::theme::scaled(DIRTY_SLOT_H)).abs() < 1.0,
+        "tool_btn is {button} px, the slot {} px",
+        crate::theme::scaled(DIRTY_SLOT_H)
+    );
+}
+
 /// The flags under a selected Executables entry stay on one line each at the
 /// dialog's 720 px cap, and an entry that starts the game offers no Desktop
 /// shortcut: from the desktop it would only hand the game to its store.
@@ -1068,4 +1129,51 @@ fn the_nxm_register_button_stays_put_when_the_status_line_changes() {
         exec: "/home/someone/Applications/eidos-portable/bin/eidos-gui".into(),
     });
     assert_eq!(label(crate::view(&app), &mut renderer, register, 0), before);
+}
+
+/// The disable confirmation answers a click or Space on a row. It floats over
+/// the list, so no row moves under the pointer, and a second click at the same
+/// spot cancels it instead of toggling the row that slid there (#120).
+#[test]
+fn the_disable_confirmation_never_moves_the_mod_rows() {
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    let mods_dir = app.created.as_ref().unwrap().mods_dir();
+    app.mods = ["Alpha", "Beta"]
+        .into_iter()
+        .map(|name| ModEntry {
+            name: name.into(),
+            enabled: true,
+            path: mods_dir.join(name),
+            unmanaged: false,
+        })
+        .collect();
+    let mut renderer = renderer();
+    let before = label(crate::view(&app), &mut renderer, "Beta", 0);
+    app.disable_confirm = Some(DisableConfirm {
+        targets: vec![0],
+        plugins: (1..=9)
+            .map(|n| format!("A long plugin name {n}.esp"))
+            .collect(),
+        dependents: Vec::new(),
+    });
+    assert_eq!(label(crate::view(&app), &mut renderer, "Beta", 0), before);
+    let drawn = positions(crate::view(&app), &mut renderer).labels;
+    assert!(
+        drawn.iter().any(|(s, _)| s == t("disable_anyway")),
+        "the confirmation is drawn: {drawn:?}"
+    );
+    let (_, messages) = frame(
+        crate::view(&app),
+        &mut renderer,
+        Cache::new(),
+        &click(),
+        before,
+        Some("disable-confirm"),
+    );
+    assert!(
+        messages.iter().any(|m| matches!(m, Message::CancelDisable))
+            && !messages.iter().any(|m| matches!(m, Message::ToggleMod(_))),
+        "{messages:?}"
+    );
 }
