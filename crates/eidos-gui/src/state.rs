@@ -1671,12 +1671,17 @@ pub(crate) fn finish_run(app: &mut App) {
         }
     }
     if let Some(done) = app.cleaning.take() {
+        let stopped = run.stopped.then(|| app.status.clone());
         // Back for the call only: `finish_clean` names this run's log.
         app.running = Some(run);
         let go_on = finish_clean(app, done);
         app.running = None;
-        if !go_on {
+        if !go_on || stopped.is_some() {
             app.clean_queue.clear();
+        }
+        // The user stopped xEdit: the status says so and the rest of the queue waits.
+        if let Some(said) = stopped {
+            app.status = said;
         }
     }
     if !app.clean_queue.is_empty() {

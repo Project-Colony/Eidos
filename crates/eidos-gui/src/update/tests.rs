@@ -7392,6 +7392,35 @@ mod cleaning {
     }
 
     #[test]
+    fn a_stopped_clean_says_stopped_and_ends_the_queue() {
+        let (mut app, root) = list_app(&[]);
+        app.tools = vec![qac()];
+        let mut cmd = std::process::Command::new("sleep");
+        cmd.arg("30");
+        start_run(&mut app, "SSEEdit QuickAutoClean".into(), cmd);
+        app.cleaning = Some(Cleaning {
+            plugin: "Dirty.esp".into(),
+            scratch: root.join("logs/qac-5"),
+            source: None,
+        });
+        app.clean_queue = ["Next.esp".to_string()].into();
+        let _ = update_inner(&mut app, Message::StopRun);
+        let _ = update_inner(&mut app, Message::StopRun);
+        super::finish_tracked_run(&mut app);
+        assert!(app.cleaning.is_none() && app.clean_queue.is_empty());
+        assert_eq!(
+            app.status.as_deref(),
+            Some(
+                tf(
+                    "status_run_stopped",
+                    &[("title", &"SSEEdit QuickAutoClean")]
+                )
+                .as_str()
+            )
+        );
+    }
+
+    #[test]
     fn a_refused_clean_keeps_the_cli_reason() {
         let (mut app, root) = list_app(&[]);
         app.tools = vec![qac()];
