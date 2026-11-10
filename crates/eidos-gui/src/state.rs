@@ -1679,7 +1679,7 @@ pub(crate) fn finish_run(app: &mut App) {
         if !go_on || stopped.is_some() {
             app.clean_queue.clear();
         }
-        // The user stopped xEdit: the status says so and the rest of the queue waits.
+        // The user stopped xEdit: the status says so and the rest of the queue is dropped.
         if let Some(said) = stopped {
             app.status = said;
         }

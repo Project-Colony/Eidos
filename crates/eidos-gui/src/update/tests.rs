@@ -7393,8 +7393,9 @@ mod cleaning {
 
     #[test]
     fn a_stopped_clean_says_stopped_and_ends_the_queue() {
-        let (mut app, root) = list_app(&[]);
-        app.tools = vec![qac()];
+        let (mut app, root) = list_app(&["Cleaned plugins"]);
+        // No tool: a regression that lets the queue go on cannot spawn a real run.
+        app.tools = vec![];
         let mut cmd = std::process::Command::new("sleep");
         cmd.arg("30");
         start_run(&mut app, "SSEEdit QuickAutoClean".into(), cmd);
@@ -7403,6 +7404,11 @@ mod cleaning {
             scratch: root.join("logs/qac-5"),
             source: None,
         });
+        // xEdit saved before the stop: finish_clean succeeds, only the stop ends the queue.
+        let scratch = root.join("logs/qac-5");
+        fs::create_dir_all(&scratch).unwrap();
+        fs::write(scratch.join(QAC_LOG), "[00:03] Done: Removing \"Identical to Master\" records, Processed Records: 9, Removed Records: 1, Elapsed Time: 00:01\n[00:04] Saving: Dirty.esp\n").unwrap();
+        fs::write(root.join("mods/Cleaned plugins/Dirty.esp"), b"clean").unwrap();
         app.clean_queue = ["Next.esp".to_string()].into();
         let _ = update_inner(&mut app, Message::StopRun);
         let _ = update_inner(&mut app, Message::StopRun);
