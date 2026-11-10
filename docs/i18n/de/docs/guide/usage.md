@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9edf3d6b69ec44472fa3178d3a034b7c70924776 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=dcc5ac23a71da786415a389b9c6a1e2b062cb25c -->
 
 # Eidos verwenden
 
@@ -521,6 +521,8 @@ angewendet und gespeichert; es gibt keinen Save-Knopf.
 Diese liegen in `~/.config/Colony/Eidos/preferences.json`. Das Theme, das ein
 älteres Eidos in `settings.ini` gespeichert hat, wird beim ersten Mal übernommen.
 
+**About -> Version** enthält die Release-Prüfung, standardmäßig an. Beim Start, höchstens einmal am Tag, fragt Eidos GitHub nach dem neuesten Release von `Project-Colony/Eidos`. Ist es neuer als die laufende Kopie, zeigt die Menüleiste nach Help `Eidos 1.24.0 is available: release notes`, und der Link öffnet die Seite dieses Releases mit seinem Changelog. Eidos lädt sich nie selbst herunter und ersetzt sich nie selbst. Im Offline-Modus entfällt die Prüfung. Für eine Kopie, die ein Paketmanager unter `/usr` installiert hat, ist sie aus, denn der Paketmanager aktualisiert sie; `/usr/local`, wohin `install.sh --system` Eidos legt, gilt als Ihre eigene Installation.
+
 ### Spalten, Sortierung und Gruppierung
 
 Die Liste zeichnet von Haus aus vier Spalten und bietet acht an: Category,
@@ -742,7 +744,7 @@ Wenn Sie nach Updates suchen, fragt Eidos bei Nexus auch die neueste Revision je
 ### Offline-Modus
 
 **Preferences -> Nexus -> Offline** hält Eidos davon ab, Nexus überhaupt zu
-kontaktieren. Update-Prüfungen, Anmeldung, Downloads und Collections sagen das,
+kontaktieren, und lässt die tägliche Release-Prüfung auf GitHub aus. Update-Prüfungen, Anmeldung, Downloads und Collections sagen das,
 statt mit einem Verbindungsfehler zu scheitern. Es ist aus, solange Sie es nicht
 einschalten - eine von einem älteren Eidos geschriebene Einstellungsdatei hat
 keinen solchen Schlüssel, und einen fehlenden als "an" zu lesen würde jedem, der

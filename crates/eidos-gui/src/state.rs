@@ -464,6 +464,10 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         pending_update: None,
         auto_install_since: std::time::SystemTime::now(),
         auto_install_tried: std::collections::HashSet::new(),
+        eidos_release: None,
+        package_managed: eidos_nexus::release::package_managed(
+            &std::env::current_exe().unwrap_or_default(),
+        ),
         update_target: None,
         confirm_delete_download: None,
         identifying_download: None,
@@ -624,10 +628,28 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     } else {
         Task::none()
     };
+    app.eidos_release =
+        eidos_nexus::release::notice(&app.prefs, app.package_managed, env!("CARGO_PKG_VERSION"));
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let release =
+        if !cfg!(test) && eidos_nexus::release::check_due(&app.prefs, app.package_managed, now) {
+            // Stamped before the request, so a window closed mid-request still
+            // counts toward the daily limit. A failed save costs one more check.
+            app.prefs.release_checked_at = now;
+            let _ = app.prefs.save();
+            Task::perform(
+                smol::unblock(eidos_nexus::release::latest_version),
+                Message::EidosReleaseChecked,
+            )
+        } else {
+            Task::none()
+        };
     // `eidos-gui --collection <nxm://...>`: the nxm handler hands a collection
     // link here rather than trying to install one itself, because reading it
     // needs the mod list this window holds.
-    let startup = Task::batch([startup, read_nxm_handler()]);
+    let startup = Task::batch([startup, read_nxm_handler(), release]);
     let collection = launch_args
         .iter()
         .position(|a| a == "--collection")

@@ -284,6 +284,13 @@ pub struct Settings {
     /// Install a Nexus download as soon as it finishes while the window is
     /// open. Off unless turned on.
     pub auto_install_downloads: bool,
+    /// Ask GitHub at start, once a day at most, whether a newer Eidos is out.
+    /// On unless turned off.
+    pub release_check: bool,
+    /// Unix seconds of the last release request, 0 for never.
+    pub release_checked_at: u64,
+    /// The newest version GitHub reported, without the `v`.
+    pub release_latest: Option<String>,
     /// Multiplier on how fast the mod list scrolls when a drag rests on one of
     /// its edges. 1.0 is the tuned default; the range a user can pick from is
     /// the GUI's business, this only stores what they picked.
@@ -332,6 +339,9 @@ impl Default for Settings {
             lock_gui: true,
             retain_install_backup: false,
             auto_install_downloads: false,
+            release_check: true,
+            release_checked_at: 0,
+            release_latest: None,
             drag_scroll_speed: 1.0,
             split: 0.6,
             remember_window: true,
@@ -480,6 +490,14 @@ impl Settings {
                     s.auto_install_downloads =
                         matches!(v.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on")
                 }
+                "release_check" => {
+                    s.release_check = !matches!(
+                        v.to_ascii_lowercase().as_str(),
+                        "false" | "0" | "no" | "off"
+                    )
+                }
+                "release_checked_at" => s.release_checked_at = v.parse().unwrap_or(0),
+                "release_latest" if !v.is_empty() => s.release_latest = Some(v.to_string()),
                 "retain_install_backup" => {
                     s.retain_install_backup = matches!(v, "true" | "1" | "yes" | "on")
                 }
@@ -516,6 +534,15 @@ impl Settings {
         }
         if self.auto_install_downloads {
             out.push_str("auto_install_downloads=true\n");
+        }
+        if !self.release_check {
+            out.push_str("release_check=false\n");
+        }
+        if self.release_checked_at != 0 {
+            out.push_str(&format!("release_checked_at={}\n", self.release_checked_at));
+        }
+        if let Some(v) = &self.release_latest {
+            out.push_str(&format!("release_latest={v}\n"));
         }
         if let Some(dir) = &self.tools_dir {
             out.push_str(&format!("tools_dir={dir}\n"));
@@ -780,6 +807,9 @@ mod tests {
             lock_gui: false,
             retain_install_backup: true,
             auto_install_downloads: true,
+            release_check: false,
+            release_checked_at: 1_731_200_000,
+            release_latest: Some("1.24.0".into()),
             drag_scroll_speed: 1.0,
             split: 0.6,
             remember_window: false,
@@ -908,6 +938,9 @@ mod tests {
             lock_gui: false,
             retain_install_backup: true,
             auto_install_downloads: true,
+            release_check: false,
+            release_checked_at: 1_731_200_000,
+            release_latest: Some("1.24.0".into()),
             drag_scroll_speed: 1.0,
             split: 0.6,
             remember_window: false,
@@ -916,6 +949,20 @@ mod tests {
         let loaded = Settings::parse(&fs::read_to_string(&path).unwrap());
         assert_eq!(loaded, s);
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn the_release_check_is_on_by_default_and_round_trips() {
+        let s = Settings::parse("[eidos]\n");
+        assert!(s.release_check && s.release_checked_at == 0 && s.release_latest.is_none());
+        assert!(!Settings::parse("release_check=off\n").release_check);
+        let s = Settings {
+            release_check: false,
+            release_checked_at: 1_731_200_000,
+            release_latest: Some("1.24.0".into()),
+            ..Settings::default()
+        };
+        assert_eq!(Settings::parse(&s.to_ini()), s);
     }
 
     #[test]

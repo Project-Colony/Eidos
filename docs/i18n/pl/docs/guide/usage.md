@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9edf3d6b69ec44472fa3178d3a034b7c70924776 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=dcc5ac23a71da786415a389b9c6a1e2b062cb25c -->
 
 # Używanie Eidos
 
@@ -487,6 +487,8 @@ Są przechowywane w `~/.config/Colony/Eidos/preferences.json`. Motyw, który
 starszy Eidos trzymał w `settings.ini`, zostaje przeniesiony przy pierwszym
 uruchomieniu.
 
+**About -> Version** zawiera sprawdzanie wydań, domyślnie włączone. Przy starcie, najwyżej raz dziennie, Eidos pyta GitHuba o najnowsze wydanie `Project-Colony/Eidos`. Jeśli jest nowsze niż uruchomiona kopia, pasek menu pokazuje po Help `Eidos 1.24.0 is available: release notes`, a odnośnik otwiera stronę tego wydania z listą zmian. Eidos nigdy sam się nie pobiera ani nie podmienia. W trybie offline sprawdzanie jest pomijane. Jest wyłączone dla kopii zainstalowanej w `/usr` przez menedżer pakietów, który ją aktualizuje; `/usr/local`, gdzie `install.sh --system` umieszcza Eidos, liczy się jako twoja własna instalacja.
+
 ### Kolumny, sortowanie i grupowanie
 
 Lista rysuje z pudełka cztery kolumny, a oferuje osiem: Category, Content,
@@ -690,7 +692,7 @@ Gdy sprawdzasz aktualizacje, Eidos pyta też Nexusa o najnowszą rewizję każde
 ### Tryb offline
 
 **Preferences -> Nexus -> Offline** całkiem powstrzymuje Eidos przed kontaktem z
-Nexusem. Sprawdzanie aktualizacji, logowanie, pobierania i kolekcje mówią o tym,
+Nexusem i pomija codzienne sprawdzanie wydań na GitHubie. Sprawdzanie aktualizacji, logowanie, pobierania i kolekcje mówią o tym,
 zamiast padać z błędem połączenia. Jest wyłączony, dopóki go nie włączysz - plik
 ustawień zapisany przez starszy Eidos nie ma takiego klucza, a odczytanie
 brakującego jako „włączony" odcięłoby sieć każdemu, kto aktualizuje.

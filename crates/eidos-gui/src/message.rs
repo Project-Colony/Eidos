@@ -324,6 +324,10 @@ pub(crate) enum Message {
     ToggleOffline(bool),
     /// Install a Nexus download as soon as it finishes.
     ToggleAutoInstall(bool),
+    /// Ask GitHub once a day at most whether a newer Eidos is out.
+    ToggleReleaseCheck(bool),
+    /// The release check's answer: the newest version, without the `v`.
+    EidosReleaseChecked(Result<String, String>),
     /// Editing the preferred-CDN list. Saved as it is typed.
     PreferredServersChanged(String),
     OpenPluginMenu(usize),

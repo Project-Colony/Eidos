@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9edf3d6b69ec44472fa3178d3a034b7c70924776 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=dcc5ac23a71da786415a389b9c6a1e2b062cb25c -->
 
 # Eidos kullanımı
 
@@ -483,6 +483,8 @@ düğmesi yoktur.
 Bunlar `~/.config/Colony/Eidos/preferences.json` içinde durur. Daha eski bir
 Eidos'un `settings.ini` içinde tuttuğu tema ilk seferde aktarılır.
 
+**About -> Version**, varsayılan olarak açık olan sürüm denetimini içerir. Eidos başlarken, günde en fazla bir kez, GitHub'a `Project-Colony/Eidos` deposunun en son sürümünü sorar. Bu sürüm çalışan kopyadan yeniyse menü çubuğunda Help'in ardından `Eidos 1.24.0 is available: release notes` görünür ve bağlantı o sürümün değişiklik günlüğünü içeren sayfasını açar. Eidos kendini asla indirmez ya da değiştirmez. Çevrimdışı kipte denetim atlanır. Bir paket yöneticisinin `/usr` altına kurduğu kopyada kapalıdır, çünkü onu paket yöneticisi günceller; `install.sh --system` komutunun Eidos'u koyduğu `/usr/local` sizin kendi kurulumunuz sayılır.
+
 ### Sütunlar, sıralama ve gruplama
 
 Liste kutudan çıktığı gibi dört sütun çizer ve sekiz sunar: Category, Content,
@@ -687,7 +689,7 @@ Güncellemeleri denetlediğinizde Eidos, Nexus'a bu örnekte kurulu her koleksiy
 ### Çevrimdışı kip
 
 **Preferences -> Nexus -> Offline**, Eidos'un Nexus'la hiç bağlantı kurmasını
-durdurur. Güncelleme denetimleri, oturum açma, indirmeler ve koleksiyonlar bir
+durdurur ve GitHub'daki günlük sürüm denetimini atlar. Güncelleme denetimleri, oturum açma, indirmeler ve koleksiyonlar bir
 bağlantı hatasıyla başarısız olmak yerine bunu söyler. Siz açmadıkça kapalıdır -
 daha eski bir Eidos'un yazdığı bir ayar dosyasında böyle bir anahtar yoktur ve
 eksik olanı "açık" diye okumak, yükseltme yapan herkesin ağını keserdi.

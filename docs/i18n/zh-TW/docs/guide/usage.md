@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9edf3d6b69ec44472fa3178d3a034b7c70924776 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=dcc5ac23a71da786415a389b9c6a1e2b062cb25c -->
 
 # 使用 Eidos
 
@@ -374,6 +374,8 @@ Mod list、Nexus 與 About。每項變更都會立即套用並儲存;沒有儲�
 這些設定存放在 `~/.config/Colony/Eidos/preferences.json`。舊版 Eidos 存在
 `settings.ini` 裡的主題,會在第一次啟動時沿用過來。
 
+**About -> Version** 裡有版本檢查,預設開啟。啟動時,每天最多一次,Eidos 會向 GitHub 詢問 `Project-Colony/Eidos` 的最新版本。如果它比正在執行的這一份新,選單列會在 Help 後面顯示 `Eidos 1.24.0 is available: release notes`,點這個連結會開啟該版本的頁面與它的變更記錄。Eidos 從不自己下載或取代自己。離線模式下不做這項檢查。由套件管理員裝在 `/usr` 下的副本也不做檢查,因為由套件管理員負責更新;`install.sh --system` 放置 Eidos 的 `/usr/local` 算作你自己的安裝。
+
 ### 欄位、排序與分組
 
 清單開箱畫出四個欄位,總共提供八個:Category、Content、Version、Author、
@@ -526,7 +528,7 @@ Eidos 自己下載檔案。免費帳號則開啟檔案頁面,在那裡 Mod Manag
 
 ### 離線模式
 
-**Preferences -> Nexus -> Offline** 會讓 Eidos 完全不去接觸 Nexus。更新檢查、登入、
+**Preferences -> Nexus -> Offline** 會讓 Eidos 完全不去接觸 Nexus,也會跳過每天一次的 GitHub 版本檢查。更新檢查、登入、
 下載與合集都會直說,而不是以連線錯誤失敗。除非你打開它,否則它是關的 - 舊版 Eidos
 寫出的設定檔沒有這個鍵,而把一個缺少的鍵讀成「開」,會切斷每一個升級者的網路。
 

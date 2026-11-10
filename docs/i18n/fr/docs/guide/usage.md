@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9edf3d6b69ec44472fa3178d3a034b7c70924776 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=dcc5ac23a71da786415a389b9c6a1e2b062cb25c -->
 
 # Utiliser Eidos
 
@@ -521,6 +521,8 @@ s'enregistre aussitôt ; il n'y a pas de bouton Save.
 Ces réglages vivent dans `~/.config/Colony/Eidos/preferences.json`. Le thème
 qu'un Eidos plus ancien gardait dans `settings.ini` est repris la première fois.
 
+**About -> Version** contient la vérification des versions, activée par défaut. Au démarrage, une fois par jour au plus, Eidos demande à GitHub la dernière version de `Project-Colony/Eidos`. Si elle est plus récente que la copie en cours d'exécution, la barre de menus affiche `Eidos 1.24.0 is available: release notes` après Help, et le lien ouvre la page de cette version avec son journal des modifications. Eidos ne se télécharge et ne se remplace jamais lui-même. La vérification est sautée en mode hors ligne. Elle est désactivée pour une copie installée sous `/usr` par un gestionnaire de paquets, qui la met à jour ; `/usr/local`, où `install.sh --system` place Eidos, compte comme votre propre installation.
+
 ### Colonnes, tri et regroupement
 
 La liste dessine quatre colonnes d'origine et en propose huit : Category,
@@ -743,7 +745,7 @@ Quand vous lancez la recherche de mises à jour, Eidos demande aussi à Nexus la
 
 ### Mode hors ligne
 
-**Preferences -> Nexus -> Offline** empêche complètement Eidos de contacter Nexus.
+**Preferences -> Nexus -> Offline** empêche complètement Eidos de contacter Nexus et saute la vérification quotidienne des versions sur GitHub.
 Les vérifications de mise à jour, la connexion, les téléchargements et les
 collections le disent au lieu d'échouer sur une erreur de connexion. C'est
 désactivé sauf si vous l'activez - un fichier de réglages écrit par un Eidos plus

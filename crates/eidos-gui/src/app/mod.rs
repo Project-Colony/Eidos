@@ -584,6 +584,11 @@ pub(crate) struct App {
     pub(crate) auto_install_since: std::time::SystemTime,
     /// Downloads already opened, or left to another flow, this session.
     pub(crate) auto_install_tried: std::collections::HashSet<String>,
+    /// A newer Eidos release to link after Help in the menu bar.
+    pub(crate) eidos_release: Option<String>,
+    /// This copy lives under `/usr`, so its package manager updates it. Read
+    /// once at start.
+    pub(crate) package_managed: bool,
     /// The folder an update is being installed over, so its collision prompt
     /// ticks the backup box (see `backup_default`).
     pub(crate) update_target: Option<String>,

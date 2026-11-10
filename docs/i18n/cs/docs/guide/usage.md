@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9edf3d6b69ec44472fa3178d3a034b7c70924776 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=dcc5ac23a71da786415a389b9c6a1e2b062cb25c -->
 
 # Používání Eidosu
 
@@ -462,6 +462,8 @@ tlačítko Uložit není.
 Tyto předvolby žijí v `~/.config/Colony/Eidos/preferences.json`. Motiv, který
 starší Eidos držel v `settings.ini`, se napoprvé přenese.
 
+**About -> Version** obsahuje kontrolu vydání, ve výchozím stavu zapnutou. Při spuštění, nejvýše jednou denně, se Eidos zeptá GitHubu na poslední vydání `Project-Colony/Eidos`. Je-li novější než běžící kopie, panel nabídek ukáže za Help `Eidos 1.24.0 is available: release notes` a odkaz otevře stránku toho vydání s jeho seznamem změn. Eidos se nikdy sám nestahuje ani nenahrazuje. V režimu offline se kontrola vynechá. Je vypnutá u kopie, kterou do `/usr` nainstaloval správce balíčků, protože ten ji aktualizuje; `/usr/local`, kam Eidos dává `install.sh --system`, se počítá jako vaše vlastní instalace.
+
 ### Sloupce, řazení a seskupování
 
 Seznam ve výchozím stavu kreslí čtyři sloupce a nabízí osm: Category, Content,
@@ -658,7 +660,7 @@ Když spustíte Zkontrolovat aktualizace, Eidos se také zeptá Nexusu na nejnov
 
 ### Režim offline
 
-**Preferences -> Nexus -> Offline** Eidosu zcela zabrání kontaktovat Nexus.
+**Preferences -> Nexus -> Offline** Eidosu zcela zabrání kontaktovat Nexus a vynechá denní kontrolu vydání na GitHubu.
 Kontroly aktualizací, přihlášení, stahování a kolekce to řeknou, místo aby
 selhaly chybou spojení. Je vypnutý, dokud jej nezapnete - soubor nastavení
 zapsaný starším Eidosem takový klíč nemá a číst chybějící jako „zapnuto" by

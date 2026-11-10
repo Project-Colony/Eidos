@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9edf3d6b69ec44472fa3178d3a034b7c70924776 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=dcc5ac23a71da786415a389b9c6a1e2b062cb25c -->
 
 # Eidos 사용하기
 
@@ -433,6 +433,8 @@ Accessibility가 먼저 오고, 그다음 Mod list, Nexus, About이 옵니다. �
 이 설정은 `~/.config/Colony/Eidos/preferences.json`에 저장됩니다. 예전 Eidos가
 `settings.ini`에 두던 테마는 처음 한 번 옮겨집니다.
 
+**About -> Version**에 릴리스 확인이 있으며 기본으로 켜져 있습니다. 시작할 때 하루 한 번까지, Eidos는 GitHub에 `Project-Colony/Eidos`의 최신 릴리스를 묻습니다. 실행 중인 사본보다 새로우면 메뉴 막대의 Help 뒤에 `Eidos 1.24.0 is available: release notes`가 표시되고, 링크는 변경 내역이 담긴 그 릴리스의 페이지를 엽니다. Eidos는 스스로를 내려받거나 교체하지 않습니다. 오프라인 모드에서는 확인을 건너뜁니다. 패키지 관리자가 `/usr` 아래에 설치한 사본에서는 꺼져 있으며, 업데이트는 패키지 관리자가 합니다. `install.sh --system`이 Eidos를 두는 `/usr/local`은 직접 설치한 것으로 칩니다.
+
 ### 열, 정렬, 그룹
 
 목록은 기본으로 네 개의 열을 그리고 여덟 개를 제공합니다: Category, Content,
@@ -616,7 +618,7 @@ Skyrim 컬렉션을 열면, 구성 항목들을 엉뚱한 모드 목록에 맞�
 
 ### 오프라인 모드
 
-**Preferences -> Nexus -> Offline**은 Eidos가 Nexus에 접촉하는 일을 아예 멈춥니다.
+**Preferences -> Nexus -> Offline**은 Eidos가 Nexus에 접촉하는 일을 아예 멈추고, GitHub에서 하루 한 번 하는 릴리스 확인도 건너뜁니다.
 업데이트 확인, 로그인, 내려받기, 컬렉션은 연결 오류로 실패하는 대신 그렇다고
 말합니다. 켜지 않는 한 꺼져 있습니다 - 예전 Eidos가 쓴 설정 파일에는 그런 키가
 없고, 없는 것을 "켜짐"으로 읽으면 업그레이드하는 모두의 네트워크를 끊게 됩니다.

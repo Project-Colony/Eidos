@@ -308,3 +308,40 @@ fn turning_auto_install_on_starts_from_now() {
     let _ = update_inner(&mut app, Message::ToggleAutoInstall(false));
     assert!(!app.prefs.auto_install_downloads);
 }
+
+#[test]
+fn a_newer_eidos_release_shows_its_link_and_is_remembered() {
+    let mut app = app_for_game("skyrimse");
+    app.package_managed = false;
+    let _ = update_inner(&mut app, Message::EidosReleaseChecked(Ok("99.0.0".into())));
+    assert_eq!(app.eidos_release.as_deref(), Some("99.0.0"));
+    assert_eq!(app.prefs.release_latest.as_deref(), Some("99.0.0"));
+    let _ = update_inner(
+        &mut app,
+        Message::EidosReleaseChecked(Ok(env!("CARGO_PKG_VERSION").into())),
+    );
+    assert_eq!(app.eidos_release, None);
+    app.status = None;
+    let _ = update_inner(
+        &mut app,
+        Message::EidosReleaseChecked(Err("HTTP 403".into())),
+    );
+    assert_eq!(app.eidos_release, None);
+    assert!(
+        app.status.is_none(),
+        "a failed check is not worth a status line"
+    );
+}
+
+#[test]
+fn turning_the_release_check_off_hides_the_link() {
+    let mut app = app_for_game("skyrimse");
+    app.package_managed = false;
+    app.prefs.release_latest = Some("99.0.0".into());
+    app.eidos_release = Some("99.0.0".into());
+    let _ = update_inner(&mut app, Message::ToggleReleaseCheck(false));
+    assert!(!app.prefs.release_check);
+    assert_eq!(app.eidos_release, None);
+    let _ = update_inner(&mut app, Message::ToggleReleaseCheck(true));
+    assert_eq!(app.eidos_release.as_deref(), Some("99.0.0"));
+}

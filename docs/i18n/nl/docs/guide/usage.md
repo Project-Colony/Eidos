@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9edf3d6b69ec44472fa3178d3a034b7c70924776 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=dcc5ac23a71da786415a389b9c6a1e2b062cb25c -->
 
 # Eidos gebruiken
 
@@ -495,6 +495,8 @@ is geen Save-knop.
 Deze staan in `~/.config/Colony/Eidos/preferences.json`. Het thema dat een oudere
 Eidos in `settings.ini` bewaarde, wordt de eerste keer overgenomen.
 
+**About -> Version** bevat de releasecontrole, standaard aan. Bij het starten vraagt Eidos GitHub hoogstens één keer per dag naar de nieuwste release van `Project-Colony/Eidos`. Is die nieuwer dan de draaiende kopie, dan toont de menubalk na Help `Eidos 1.24.0 is available: release notes`, en de link opent de pagina van die release met de changelog. Eidos downloadt of vervangt zichzelf nooit. In offlinemodus wordt de controle overgeslagen. Ze staat uit voor een kopie die een pakketbeheerder onder `/usr` installeerde, want die werkt hem bij; `/usr/local`, waar `install.sh --system` Eidos neerzet, telt als je eigen installatie.
+
 ### Kolommen, sorteren en groeperen
 
 De lijst tekent standaard vier kolommen en biedt er acht: Category, Content,
@@ -706,7 +708,7 @@ Als u op updates controleert, vraagt Eidos Nexus ook om de nieuwste revisie van 
 
 ### Offlinemodus
 
-**Preferences -> Nexus -> Offline** laat Eidos Nexus helemaal niet meer benaderen.
+**Preferences -> Nexus -> Offline** laat Eidos Nexus helemaal niet meer benaderen en slaat de dagelijkse releasecontrole op GitHub over.
 Updatecontroles, aanmelden, downloads en collecties zeggen dat, in plaats van te
 falen met een verbindingsfout. Het staat uit tenzij je het aanzet - een
 instellingenbestand dat door een oudere Eidos geschreven is heeft zo'n sleutel

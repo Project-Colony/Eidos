@@ -1177,3 +1177,51 @@ fn the_disable_confirmation_never_moves_the_mod_rows() {
         "{messages:?}"
     );
 }
+
+/// The release link arrives from a worker after the window is up. It sits after
+/// Help, where nothing follows it, so no menu item or mod row moves.
+#[test]
+fn the_eidos_release_link_never_moves_the_menu_or_the_mod_rows() {
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    let mods_dir = app.created.as_ref().unwrap().mods_dir();
+    app.mods = ["Alpha", "Beta"]
+        .into_iter()
+        .map(|name| ModEntry {
+            name: name.into(),
+            enabled: true,
+            path: mods_dir.join(name),
+            unmanaged: false,
+        })
+        .collect();
+    let mut renderer = renderer();
+    let help = label(crate::view(&app), &mut renderer, t("menu_help"), 0);
+    let beta = label(crate::view(&app), &mut renderer, "Beta", 0);
+    app.eidos_release = Some("99.0.0".into());
+    let link = tf("menu_eidos_release", &[("version", &"99.0.0")]);
+    assert_eq!(
+        label(crate::view(&app), &mut renderer, t("menu_help"), 0),
+        help
+    );
+    assert_eq!(label(crate::view(&app), &mut renderer, "Beta", 0), beta);
+    let at = label(crate::view(&app), &mut renderer, &link, 0);
+    assert!(
+        at.x > help.x && (at.y - help.y).abs() < 1.0,
+        "the link sits after Help on the menu bar"
+    );
+    let (_, messages) = frame(
+        crate::view(&app),
+        &mut renderer,
+        Cache::new(),
+        &click(),
+        at,
+        Some("eidos-release"),
+    );
+    let want = eidos_nexus::release::notes_url("99.0.0");
+    assert!(
+        messages
+            .iter()
+            .any(|m| matches!(m, Message::OpenUrl(u) if *u == want)),
+        "{messages:?}"
+    );
+}

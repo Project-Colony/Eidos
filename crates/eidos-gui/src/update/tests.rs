@@ -7974,3 +7974,12 @@ fn the_downloads_tick_runs_on_every_tab_only_with_the_option_and_an_instance() {
     app.created = None;
     assert!(!crate::subscription::watches_downloads(&app));
 }
+
+#[test]
+fn a_release_answer_disarms_no_confirmation() {
+    let app = nav_app(&[]);
+    assert!(is_ambient(
+        &app,
+        &Message::EidosReleaseChecked(Ok("99.0.0".into()))
+    ));
+}

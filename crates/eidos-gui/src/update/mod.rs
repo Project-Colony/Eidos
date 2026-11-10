@@ -1117,6 +1117,7 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         // A worker's answer arriving, not a click.
         | Message::Placed(..)
         | Message::ModTracked(..)
+        | Message::EidosReleaseChecked(..)
         // Same for the answers of the nxm handler worker (read, register).
         | Message::NxmHandlerRead(..)
         | Message::NxmRegistered(..)
@@ -1562,6 +1563,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::ToggleRememberWindow(..)
         | Message::ToggleOffline(..)
         | Message::ToggleAutoInstall(..)
+        | Message::ToggleReleaseCheck(..)
+        | Message::EidosReleaseChecked(..)
         | Message::PreferredServersChanged(..)
         | Message::DefaultGameChanged(..)
         | Message::ToggleLockGui(..)

@@ -536,11 +536,27 @@ impl Sections<'_> {
     }
 
     fn version<'a>(&self) -> Element<'a, Message> {
+        let app = self.app;
+        // Fixed for the session: `package_managed` is read once at start.
+        let check = if app.package_managed {
+            self.note(t("settings_release_check_managed").to_string())
+        } else {
+            functional_toggle(
+                &self.typo,
+                t("settings_release_check"),
+                t("settings_release_check_desc"),
+                app.prefs.release_check,
+                Message::ToggleReleaseCheck(!app.prefs.release_check),
+            )
+        };
         self.section(
             "version",
             t("settings_section_version"),
             t("settings_version_desc"),
-            [self.info("Eidos", env!("CARGO_PKG_VERSION").to_string())],
+            [
+                self.info("Eidos", env!("CARGO_PKG_VERSION").to_string()),
+                check,
+            ],
         )
     }
 }

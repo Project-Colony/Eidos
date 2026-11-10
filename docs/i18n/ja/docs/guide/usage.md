@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9edf3d6b69ec44472fa3178d3a034b7c70924776 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=dcc5ac23a71da786415a389b9c6a1e2b062cb25c -->
 
 # Eidos の使い方
 
@@ -440,6 +440,8 @@ Diagnostics のタブと、実行対象を選べる Run ボタン。
 これらは `~/.config/Colony/Eidos/preferences.json` に保存されます。以前の Eidos が
 `settings.ini` に保存していたテーマは、初回に引き継がれます。
 
+**About -> Version** にはリリース確認があり、既定で有効です。起動時に、1 日 1 回まで、Eidos は GitHub に `Project-Colony/Eidos` の最新リリースを問い合わせます。実行中のコピーより新しければ、メニューバーの Help の後ろに `Eidos 1.24.0 is available: release notes` が表示され、そのリンクで変更履歴の載ったリリースページが開きます。Eidos が自分自身をダウンロードしたり置き換えたりすることはありません。オフラインモードでは確認を行いません。パッケージマネージャーが `/usr` 以下に入れたコピーでは無効で、更新はパッケージマネージャーが行います。`install.sh --system` が Eidos を置く `/usr/local` は、自分で入れたものとして扱います。
+
 ### 列、並べ替え、グループ化
 
 一覧は最初から四列を描き、八列を用意しています。Category、Content、Version、
@@ -630,8 +632,8 @@ MOD 一覧と突き合わせる代わりに名前を挙げて断ります。そ�
 
 ### オフラインモード
 
-**Preferences -> Nexus -> Offline** は Eidos が Nexus に接続すること自体をやめさせ
-ます。更新確認、サインイン、ダウンロード、コレクションは、接続エラーで失敗する
+**Preferences -> Nexus -> Offline** は Eidos が Nexus に接続すること自体をやめさせ、
+GitHub への 1 日 1 回のリリース確認も省きます。更新確認、サインイン、ダウンロード、コレクションは、接続エラーで失敗する
 代わりにそう言います。自分で入れない限り無効です - 古い Eidos が書いた設定
 ファイルにはこのキーがなく、無いものを「有効」と読めば、更新した人全員の
 ネットワークを切ってしまいます。

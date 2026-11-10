@@ -83,6 +83,7 @@ mod account;
 pub mod collections;
 mod files;
 pub mod oauth;
+pub mod release;
 mod requirements;
 pub use account::{sync_account_flags, AccountFlags};
 pub use files::*;

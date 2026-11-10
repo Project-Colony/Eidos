@@ -137,6 +137,31 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(tf("status_prefs_save_failed", &[("error", &e)]));
             }
         }
+        Message::ToggleReleaseCheck(on) => {
+            app.prefs.release_check = on;
+            if let Err(e) = app.prefs.save() {
+                app.status = Some(tf("status_prefs_save_failed", &[("error", &e)]));
+            }
+            app.eidos_release = eidos_nexus::release::notice(
+                &app.prefs,
+                app.package_managed,
+                env!("CARGO_PKG_VERSION"),
+            );
+        }
+        Message::EidosReleaseChecked(Ok(v)) => {
+            app.prefs.release_latest = Some(v);
+            if let Err(e) = app.prefs.save() {
+                app.status = Some(tf("status_prefs_save_failed", &[("error", &e)]));
+            }
+            app.eidos_release = eidos_nexus::release::notice(
+                &app.prefs,
+                app.package_managed,
+                env!("CARGO_PKG_VERSION"),
+            );
+        }
+        Message::EidosReleaseChecked(Err(e)) => {
+            eidos_log::warn!("Eidos release check failed: {e}");
+        }
         Message::PreferredServersChanged(t) => {
             app.typing = true;
             // Stored as typed, so there is nothing to save by hand. The field

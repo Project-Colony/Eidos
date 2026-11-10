@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9edf3d6b69ec44472fa3178d3a034b7c70924776 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=dcc5ac23a71da786415a389b9c6a1e2b062cb25c -->
 
 # Usare Eidos
 
@@ -508,6 +508,8 @@ alcun pulsante Save.
 Stanno in `~/.config/Colony/Eidos/preferences.json`. Il tema che un Eidos più
 vecchio teneva in `settings.ini` viene trasferito la prima volta.
 
+**About -> Version** contiene il controllo delle release, attivo per impostazione predefinita. All'avvio, al massimo una volta al giorno, Eidos chiede a GitHub l'ultima release di `Project-Colony/Eidos`. Se è più recente della copia in esecuzione, la barra dei menu mostra `Eidos 1.24.0 is available: release notes` dopo Help, e il link apre la pagina di quella release con il suo changelog. Eidos non si scarica né si sostituisce mai da solo. In modalità offline il controllo viene saltato. È disattivato per una copia installata sotto `/usr` da un gestore di pacchetti, che la aggiorna; `/usr/local`, dove `install.sh --system` mette Eidos, conta come una tua installazione.
+
 ### Colonne, ordinamento e raggruppamento
 
 L'elenco disegna quattro colonne di serie e ne offre otto: Category, Content,
@@ -725,7 +727,7 @@ Quando controllate gli aggiornamenti, Eidos chiede a Nexus anche l'ultima revisi
 ### Modalità offline
 
 **Preferences -> Nexus -> Offline** impedisce del tutto a Eidos di contattare
-Nexus. Il controllo degli aggiornamenti, l'accesso, i download e le collezioni
+Nexus e salta il controllo giornaliero delle release su GitHub. Il controllo degli aggiornamenti, l'accesso, i download e le collezioni
 lo dicono invece di fallire con un errore di connessione. È disattivata a meno
 che tu non l'attivi - un file di impostazioni scritto da un Eidos più vecchio
 non ha quella chiave, e leggerne una mancante come "attiva" taglierebbe la rete

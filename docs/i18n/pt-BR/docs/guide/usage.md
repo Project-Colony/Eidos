@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9edf3d6b69ec44472fa3178d3a034b7c70924776 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=dcc5ac23a71da786415a389b9c6a1e2b062cb25c -->
 
 # Usar o Eidos
 
@@ -487,6 +487,8 @@ botão de salvar.
 Isso fica em `~/.config/Colony/Eidos/preferences.json`. O tema que um Eidos mais
 antigo guardava em `settings.ini` é trazido na primeira vez.
 
+**About -> Version** traz a verificação de versões, ligada por padrão. Ao iniciar, no máximo uma vez por dia, o Eidos pergunta ao GitHub qual é a última versão de `Project-Colony/Eidos`. Quando ela é mais nova que a cópia em execução, a barra de menus mostra `Eidos 1.24.0 is available: release notes` depois de Help, e o link abre a página dessa versão com o changelog. O Eidos nunca se baixa nem se substitui sozinho. A verificação é pulada no modo offline. Ela fica desligada para uma cópia instalada em `/usr` por um gerenciador de pacotes, que é quem a atualiza; `/usr/local`, onde `install.sh --system` coloca o Eidos, conta como uma instalação sua.
+
 ### Colunas, ordenação e agrupamento
 
 A lista desenha quatro colunas de saída e oferece oito: Category, Content,
@@ -692,7 +694,7 @@ Ao verificar atualizações, o Eidos também pergunta à Nexus pela última revi
 ### Modo offline
 
 **Preferences -> Nexus -> Offline** faz o Eidos parar de contatar o Nexus por
-completo. Verificações de atualização, login, downloads e coleções dizem isso em
+completo e pula a verificação diária de versões no GitHub. Verificações de atualização, login, downloads e coleções dizem isso em
 vez de falhar com um erro de conexão. Vem desligado a menos que você ligue - um
 arquivo de configuração escrito por um Eidos mais antigo não tem essa chave, e
 ler uma chave ausente como "ligada" cortaria a rede de todo mundo que atualiza.

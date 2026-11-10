@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=9edf3d6b69ec44472fa3178d3a034b7c70924776 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=dcc5ac23a71da786415a389b9c6a1e2b062cb25c -->
 
 # 使用 Eidos
 
@@ -365,6 +365,8 @@ Conflicts / Overwrite / Saves / Downloads / Diagnostics 各标签页,以及一�
 这些设置保存在 `~/.config/Colony/Eidos/preferences.json` 里。更早的 Eidos 存在
 `settings.ini` 里的主题会在第一次启动时被迁移过来。
 
+**About -> Version** 里有版本检查,默认开启。启动时,每天最多一次,Eidos 会向 GitHub 询问 `Project-Colony/Eidos` 的最新版本。如果它比正在运行的这一份新,菜单栏会在 Help 后面显示 `Eidos 1.24.0 is available: release notes`,点这个链接会打开该版本的页面和它的更新日志。Eidos 从不自己下载或替换自己。离线模式下不做这项检查。由包管理器装在 `/usr` 下的副本也不做检查,因为由包管理器负责更新;`install.sh --system` 放置 Eidos 的 `/usr/local` 算作你自己的安装。
+
 ### 列、排序与分组
 
 列表开箱画四列,一共提供八列:Category、Content、Version、Author、Installed、Nexus
@@ -511,7 +513,7 @@ Eidos 自己下载文件。免费账户则打开文件页面,在那里 Mod Manag
 
 ### 离线模式
 
-**Preferences -> Nexus -> Offline** 让 Eidos 完全不去联系 Nexus。更新检查、登录、下载和
+**Preferences -> Nexus -> Offline** 让 Eidos 完全不去联系 Nexus,也跳过每天一次的 GitHub 版本检查。更新检查、登录、下载和
 合集都会这么说明,而不是以一个连接错误失败。它默认是关的,除非你打开 - 更早的 Eidos
 写出的设置文件里没有这个键,而把缺失的键读成"开",会把每一个升级上来的人的网络都掐断。
 

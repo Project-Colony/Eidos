@@ -472,6 +472,15 @@ change applies and saves at once; there is no Save button.
 These live in `~/.config/Colony/Eidos/preferences.json`. The theme an older
 Eidos kept in `settings.ini` is carried over the first time.
 
+**About -> Version** holds the release check, on by default. At start, at most
+once a day, Eidos asks GitHub for the latest release of `Project-Colony/Eidos`.
+When it is newer than the running copy, the menu bar shows `Eidos 1.24.0 is
+available: release notes` after Help, and the link opens that release's page
+with its changelog. Eidos never downloads or replaces itself. The check is
+skipped in offline mode. It is off for a copy installed under `/usr` by a
+package manager, which updates it; `/usr/local`, where `install.sh --system`
+puts Eidos, counts as your own install.
+
 ### Columns, sorting and grouping
 
 The list draws four columns out of the box and offers eight: Category, Content,
@@ -675,8 +684,8 @@ When you run Check for updates, Eidos also asks Nexus for the latest revision of
 
 ### Offline mode
 
-**Preferences -> Nexus -> Offline** stops Eidos contacting Nexus at all. Update
-checks, sign-in, downloads and collections say so instead of failing with a
+**Preferences -> Nexus -> Offline** stops Eidos contacting Nexus at all, and
+skips the daily release check on GitHub. Update checks, sign-in, downloads and collections say so instead of failing with a
 connection error. It is off unless you turn it on - a settings file written by an
 older Eidos has no such key, and reading a missing one as "on" would cut the
 network for everybody who upgrades.
