@@ -125,12 +125,23 @@ pub fn install_stop_handler() {
 /// run: the terminal sends SIGINT to the whole foreground group, and an interactive
 /// shell uses it to cancel a line, so it must not end the run. Call after
 /// [`install_stop_handler`]; SIGTERM still stops the run.
+///
+/// A handler that does nothing, not `SIG_IGN`: an ignored signal stays ignored
+/// across exec, and bash passes an inherited ignore on to every command it runs,
+/// so Ctrl+C would do nothing inside the shell. A caught signal goes back to the
+/// default on exec.
 pub fn ignore_interrupt() {
-    // SAFETY: setting a disposition to SIG_IGN touches no memory.
+    // SAFETY: a zeroed sigaction with an empty mask and a handler that does nothing.
     unsafe {
-        libc::signal(libc::SIGINT, libc::SIG_IGN);
+        let mut action: libc::sigaction = std::mem::zeroed();
+        action.sa_sigaction = on_interrupt as extern "C" fn(libc::c_int) as libc::sighandler_t;
+        action.sa_flags = libc::SA_RESTART;
+        libc::sigemptyset(&mut action.sa_mask);
+        libc::sigaction(libc::SIGINT, &action, std::ptr::null_mut());
     }
 }
+
+extern "C" fn on_interrupt(_: libc::c_int) {}
 
 /// `(state, ppid)` from a `/proc/<pid>/stat` line. The fields are read after the
 /// LAST `)`, because the command name between the parentheses may hold spaces
