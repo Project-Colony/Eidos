@@ -655,6 +655,8 @@ pub(crate) fn run_through_view(
                 .unwrap_or_else(|| inst.root_overwrite_dir()),
         ),
         root_readonly_overwrite: runtime_root.as_ref().map(|_| inst.root_overwrite_dir()),
+        readonly_overwrite: None,
+        union_views: vec![],
     };
     // Taken immediately before the run so the capture below can tell what THIS
     // run produced from what was already in the Overwrite.

@@ -128,9 +128,10 @@ pub struct LayerStack {
     /// clone must dirty the index every clone reads. See [`OwIndex`].
     ow: std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<OwIndex>>>>,
     /// Leave [`is_mod_metadata`] paths of the lower layers out of this view,
-    /// for the Data union only. The Overwrite still serves them. The guards sit
-    /// before the `readonly_overwrite` branch because the Data union never has
-    /// a shared read-only Overwrite: only the root union does.
+    /// for the Data union only. The writable Overwrite still serves them. The
+    /// guards sit before the `readonly_overwrite` branch, so a test run's
+    /// read-only Overwrite counts as a lower layer and its metadata names are
+    /// hidden too.
     hide_mod_metadata: bool,
 }
 
