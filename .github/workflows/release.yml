@@ -210,7 +210,7 @@ jobs:
           b=eidos-linux-bundle
           mkdir "$b"
           # A license file still holding its placeholder must never ship.
-          ! grep -l 'TODO(owner)' packaging/licenses/microsoft-runtimes/* || { echo '::error::Microsoft runtime license text missing'; exit 1; }
+          ! grep -l 'TODO(owner)' packaging/licenses/microsoft-runtimes/* || { echo '::error::Microsoft runtime license notice unfinished'; exit 1; }
           # The Microsoft installers and runtime Eidos installs into a prefix
           # (vcrun2022, .NET 8, .NET 10), checked against the pins the code
           # carries (runtime.rs: the_shipped_runtimes_match_the_manifest_and_provenance).
