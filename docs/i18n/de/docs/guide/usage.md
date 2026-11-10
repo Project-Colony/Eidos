@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6cb461a699ad08a043eb07cf3a74e53a26fd4fdd -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ec0c271afdcb461fe960aaff69daf0a71dbb550a -->
 
 # Eidos verwenden
 
@@ -770,6 +770,8 @@ ab, statt die Mitglieder gegen die falsche Mod-Liste abzugleichen, wo jedes
 trägt.
 
 Wenn Sie nach Updates suchen, fragt Eidos bei Nexus auch die neueste Revision jeder in dieser Instanz installierten Kollektion ab. Eine Zeile über der Modliste nennt jede Kollektion mit neuerer Revision und zählt die hinzugekommenen (+), aktualisierten (~) und entfernten (-) Mods; die Namen erscheinen beim Darüberfahren. Die Zahlen fehlen, wenn das Rezept der installierten Revision nicht mehr im Cache liegt. **Aktualisieren** öffnet die neuere Revision im Kollektionsbereich, wo *Install this collection* sie ausführt. Die Liste wird bei jeder Prüfung neu aufgebaut und nicht gespeichert.
+
+Eidos behält die Regeln jeder installierten Kollektion nach der Installation. Wenn ein späteres Ziehen zwei ihrer Mods gegen eine Reihenfolgeregel (vor oder nach) stellt, zeigt der Tab **Diagnostics** eine Karte für diese Kollektion, die das erste solche Paar nennt und die Regeln zählt, die nicht mehr erfüllt sind. Nur Mods, die im aktuellen Profil aktiviert sind, zählen, und Regeln in einer Schleife werden übersprungen, weil keine Reihenfolge sie erfüllen kann. **Restore collection order** bringt die Mods der Kollektion zurück in eine Reihenfolge, die jede Regel erfüllt, behält Ihre eigene Reihenfolge überall, wo die Regeln es zulassen, und lässt die Mods, die nicht zur Kollektion gehören, an ihrem Platz. Strg+Z macht das rückgängig. `eidos check` meldet denselben Befund als `collection_order_broken`. Die Prüfung braucht das Rezept der Revision in `collections/`, daher wird eine Kollektion, deren Rezept aus dem Cache entfernt wurde, nicht geprüft.
 
 ### Offline-Modus
 

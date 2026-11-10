@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6cb461a699ad08a043eb07cf3a74e53a26fd4fdd -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ec0c271afdcb461fe960aaff69daf0a71dbb550a -->
 
 # Utiliser Eidos
 
@@ -772,6 +772,8 @@ jeu plutôt que de rapprocher les membres de la mauvaise liste de mods, où chaq
 « installé » et chaque « manquant » serait du bruit déguisé en réponse.
 
 Quand vous lancez la recherche de mises à jour, Eidos demande aussi à Nexus la dernière révision de chaque collection installée dans cette instance. Une ligne au-dessus de la liste des mods nomme chaque collection dont une révision plus récente existe et compte les mods ajoutés (+), mis à jour (~) et retirés (-) ; survolez-la pour voir leurs noms. Les comptes manquent quand la recette de la révision installée n'est plus en cache. **Mettre à jour** ouvre la révision récente dans le volet des collections, où *Install this collection* l'exécute. La liste est refaite à chaque vérification et n'est pas enregistrée.
+
+Eidos garde les règles de chaque collection installée après l'installation. Quand un glisser-déposer ultérieur place deux de ses mods à l'encontre d'une règle d'ordre (avant ou après), l'onglet **Diagnostics** affiche une carte pour cette collection, qui nomme la première paire concernée et compte les règles qui ne sont plus respectées. Seuls les mods activés dans le profil actuel comptent, et les règles prises dans une boucle sont ignorées, car aucun ordre ne peut les respecter. **Restaurer l'ordre de la collection** remet les mods de la collection dans un ordre qui respecte chaque règle, garde votre propre ordre partout où les règles le permettent et laisse à leur place les mods qui ne font pas partie de la collection. Ctrl+Z annule l'opération. `eidos check` signale le même constat sous le code `collection_order_broken`. Le contrôle a besoin de la recette de la révision dans `collections/` : une collection dont la recette en cache a été supprimée n'est pas contrôlée.
 
 ### Mode hors ligne
 

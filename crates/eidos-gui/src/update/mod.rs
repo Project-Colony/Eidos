@@ -1619,6 +1619,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::CollectionBrowseSearch
         | Message::CollectionBrowseFetched { .. }
         | Message::CollectionBrowsePick(..)
+        | Message::RestoreCollectionOrder(..)
         | Message::CollectionInstall
         | Message::CollectionInstallChecked { .. }) => nexus::handle(app, m),
         m @ (Message::ShowCategoriesDialog(..)

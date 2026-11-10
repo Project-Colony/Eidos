@@ -712,6 +712,8 @@ would be noise wearing the shape of an answer.
 
 When you run Check for updates, Eidos also asks Nexus for the latest revision of each collection installed in this instance. A line above the mod list names every collection with a newer revision and counts the mods added (+), updated (~) and dropped (-); hover it for their names. The counts are missing when the installed revision's recipe is no longer cached. **Update** opens the newer revision in the collection pane, where *Install this collection* runs it. The list is rebuilt on every check and is not saved.
 
+Eidos keeps each installed collection's rules after the install. When a later drag puts two of its mods against a before or after rule, the **Diagnostics** tab shows one card for that collection, naming the first such pair and counting the rules that no longer hold. Only mods enabled in the current profile count, and rules caught in a loop are skipped, because no order can keep them. **Restore collection order** moves the collection's mods back into an order that keeps every rule, keeps your own order wherever the rules allow, and leaves the mods that are not in the collection where they are. Ctrl+Z undoes it. `eidos check` lists the same finding as `collection_order_broken`. The check needs the revision's recipe in `collections/`, so a collection whose cached recipe was removed is not checked.
+
 ### Offline mode
 
 **Preferences -> Nexus -> Offline** stops Eidos contacting Nexus at all, and

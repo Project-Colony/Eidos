@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6cb461a699ad08a043eb07cf3a74e53a26fd4fdd -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ec0c271afdcb461fe960aaff69daf0a71dbb550a -->
 
 # Používání Eidosu
 
@@ -684,6 +684,8 @@ spároval s nesprávným seznamem módů, kde by každé „nainstalovaný" a ka
 „chybějící" byl šum ve tvaru odpovědi.
 
 Když spustíte Zkontrolovat aktualizace, Eidos se také zeptá Nexusu na nejnovější revizi každé kolekce nainstalované v této instanci. Řádek nad seznamem modů uvádí každou kolekci s novější revizí a počty přidaných (+), aktualizovaných (~) a vyřazených (-) modů; jejich jména se zobrazí po najetí myší. Počty chybí, když recept nainstalované revize už není v mezipaměti. **Aktualizovat** otevře novější revizi v panelu kolekce, kde ji spustí *Install this collection*. Seznam se při každé kontrole sestaví znovu a neukládá se.
+
+Eidos si pravidla každé nainstalované kolekce ponechává i po instalaci. Když pozdější přetažení postaví dva její mody proti pravidlu pořadí (před nebo po), karta **Diagnostics** ukáže pro tuto kolekci jednu kartu, která uvede první takovou dvojici a spočítá pravidla, která už neplatí. Počítají se jen mody zapnuté v aktuálním profilu a pravidla zachycená ve smyčce se přeskakují, protože je žádné pořadí nemůže splnit. **Restore collection order** vrátí mody kolekce do pořadí, které splňuje každé pravidlo, zachová vaše vlastní pořadí všude, kde to pravidla dovolí, a mody, které do kolekce nepatří, nechá na místě. Ctrl+Z to vrátí zpět. `eidos check` hlásí totéž zjištění jako `collection_order_broken`. Kontrola potřebuje recept revize v `collections/`, takže kolekce, jejíž recept byl z mezipaměti odstraněn, se nekontroluje.
 
 ### Režim offline
 

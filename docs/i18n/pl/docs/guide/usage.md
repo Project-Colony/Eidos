@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6cb461a699ad08a043eb07cf3a74e53a26fd4fdd -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ec0c271afdcb461fe960aaff69daf0a71dbb550a -->
 
 # Używanie Eidos
 
@@ -716,6 +716,8 @@ członków z niewłaściwą listą modów, gdzie każde „zainstalowany" i każ
 „brakujący" byłoby szumem w kształcie odpowiedzi.
 
 Gdy sprawdzasz aktualizacje, Eidos pyta też Nexusa o najnowszą rewizję każdej kolekcji zainstalowanej w tej instancji. Wiersz nad listą modów podaje każdą kolekcję z nowszą rewizją i liczbę modów dodanych (+), zaktualizowanych (~) i usuniętych (-); po najechaniu kursorem widać ich nazwy. Liczb brakuje, gdy przepis zainstalowanej rewizji nie jest już w pamięci podręcznej. **Aktualizuj** otwiera nowszą rewizję w panelu kolekcji, gdzie uruchamia ją *Install this collection*. Lista jest budowana od nowa przy każdym sprawdzeniu i nie jest zapisywana.
+
+Eidos zachowuje reguły każdej zainstalowanej kolekcji po instalacji. Gdy późniejsze przeciągnięcie ustawi dwa jej mody wbrew regule kolejności (przed lub po), karta **Diagnostics** pokazuje jedną kartę dla tej kolekcji, która podaje pierwszą taką parę i liczy reguły, które przestały być spełnione. Liczą się tylko mody włączone w bieżącym profilu, a reguły uwięzione w pętli są pomijane, bo żadna kolejność nie może ich spełnić. **Restore collection order** przywraca mody kolekcji do kolejności, która spełnia każdą regułę, zachowuje twoją własną kolejność wszędzie, gdzie reguły na to pozwalają, i zostawia na miejscu mody spoza kolekcji. Ctrl+Z to cofa. `eidos check` zgłasza to samo ustalenie jako `collection_order_broken`. Sprawdzenie potrzebuje przepisu rewizji w `collections/`, więc kolekcja, której przepis usunięto z pamięci podręcznej, nie jest sprawdzana.
 
 ### Tryb offline
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6cb461a699ad08a043eb07cf3a74e53a26fd4fdd -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ec0c271afdcb461fe960aaff69daf0a71dbb550a -->
 
 # Eidos kullanımı
 
@@ -713,6 +713,8 @@ eşleştirmektense adını vererek reddeder - o listede her "kurulu" ve her "eks
 yanıt kılığına girmiş gürültü olurdu.
 
 Güncellemeleri denetlediğinizde Eidos, Nexus'a bu örnekte kurulu her koleksiyonun en son revizyonunu da sorar. Mod listesinin üstündeki bir satır, daha yeni revizyonu olan her koleksiyonu adıyla verir ve eklenen (+), güncellenen (~) ve çıkarılan (-) mod sayısını gösterir; adlar için üzerine gelin. Kurulu revizyonun tarifi artık önbellekte değilse sayılar görünmez. **Güncelle**, yeni revizyonu koleksiyon panelinde açar; orada *Install this collection* onu çalıştırır. Liste her denetimde yeniden kurulur ve kaydedilmez.
+
+Eidos, kurulu her koleksiyonun kurallarını kurulumdan sonra da saklar. Sonradan yapılan bir sürükleme, mod'larından ikisini bir sıralama kuralına (önce veya sonra) aykırı biçimde yerleştirirse, **Diagnostics** sekmesi o koleksiyon için tek bir kart gösterir; kart bu türden ilk çifti adıyla verir ve artık uyulmayan kuralları sayar. Yalnızca geçerli profilde etkin olan mod'lar sayılır; bir döngüye takılan kurallar ise atlanır, çünkü hiçbir sıra onlara uyamaz. **Restore collection order**, koleksiyonun mod'larını her kurala uyan bir sıraya geri koyar, kuralların izin verdiği her yerde sizin sıranızı korur ve koleksiyonda olmayan mod'ları yerinde bırakır. Ctrl+Z bunu geri alır. `eidos check` aynı bulguyu `collection_order_broken` olarak listeler. Denetim, revizyonun `collections/` içindeki tarifine ihtiyaç duyar; bu yüzden önbellekteki tarifi silinmiş bir koleksiyon denetlenmez.
 
 ### Çevrimdışı kip
 

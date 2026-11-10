@@ -135,6 +135,16 @@ pub struct Order {
 /// the order would depend on hash iteration and a re-run could reshuffle mods
 /// the rules said nothing about.
 pub fn order(count: usize, edges: &[Edge]) -> Order {
+    order_ranked(
+        count,
+        edges,
+        &(0..count).map(|i| (i, i)).collect::<Vec<_>>(),
+    )
+}
+
+/// [`order`] with the tiebreak given: among the members that could come next,
+/// the one with the lowest `rank` goes first, and cycles are listed by rank.
+fn order_ranked(count: usize, edges: &[Edge], rank: &[(usize, usize)]) -> Order {
     let mut incoming = vec![0usize; count];
     let mut out: Vec<Vec<usize>> = vec![Vec::new(); count];
     for e in edges {
@@ -147,8 +157,8 @@ pub fn order(count: usize, edges: &[Edge]) -> Order {
     let mut ready: Vec<usize> = (0..count).filter(|i| incoming[*i] == 0).collect();
     let mut sequence = Vec::with_capacity(count);
     while !ready.is_empty() {
-        // Lowest original index first: the stable tiebreak.
-        ready.sort_unstable();
+        // Lowest rank first: the stable tiebreak.
+        ready.sort_unstable_by_key(|n| rank[*n]);
         let n = ready.remove(0);
         sequence.push(n);
         for &m in &out[n] {
@@ -159,11 +169,71 @@ pub fn order(count: usize, edges: &[Edge]) -> Order {
         }
     }
     // Whatever still has an incoming edge is in a cycle, or downstream of one.
-    let cycles: Vec<usize> = (0..count).filter(|i| !sequence.contains(i)).collect();
+    let mut cycles: Vec<usize> = (0..count).filter(|i| !sequence.contains(i)).collect();
+    cycles.sort_unstable_by_key(|n| rank[*n]);
     // They still have to go somewhere, and their own order is the only
     // defensible one left.
     sequence.extend(cycles.iter().copied());
     Order { sequence, cycles }
+}
+
+/// The before/after rules of `c` that `enabled` breaks, as (earlier folder,
+/// later folder), in edge order.
+///
+/// `folders` maps member index -> installed folder; `enabled` is the enabled
+/// folder names, lowest priority first. A rule is left out when no order can
+/// keep it (a cycle), when an end was never installed or is off in this
+/// profile, or when both ends share one folder.
+pub fn broken_pairs(
+    c: &Collection,
+    folders: &[(usize, String)],
+    enabled: &[String],
+) -> Vec<(String, String)> {
+    let (edges, _) = edges(c);
+    let cycles = order(c.mods.len(), &edges).cycles;
+    let folder = |i: usize| folders.iter().find(|(m, _)| *m == i).map(|(_, f)| f);
+    let at = |f: &String| enabled.iter().position(|n| n == f);
+    let mut out: Vec<(String, String)> = Vec::new();
+    for e in &edges {
+        if cycles.contains(&e.earlier) || cycles.contains(&e.later) {
+            continue;
+        }
+        let (Some(a), Some(b)) = (folder(e.earlier), folder(e.later)) else {
+            continue;
+        };
+        if a == b {
+            continue;
+        }
+        let (Some(ia), Some(ib)) = (at(a), at(b)) else {
+            continue;
+        };
+        let pair = (a.clone(), b.clone());
+        if ia > ib && !out.contains(&pair) {
+            out.push(pair);
+        }
+    }
+    out
+}
+
+/// `list` with the collection's members re-sorted so every before/after rule
+/// holds. Members keep the order `list` gives them wherever the rules allow,
+/// and every other entry stays where it is.
+pub fn restore_order(c: &Collection, folders: &[(usize, String)], list: &[String]) -> Vec<String> {
+    let (edges, _) = edges(c);
+    let rank: Vec<(usize, usize)> = (0..c.mods.len())
+        .map(|i| {
+            let pos = folders
+                .iter()
+                .find(|(m, _)| *m == i)
+                .and_then(|(_, f)| list.iter().position(|n| n == f));
+            (pos.unwrap_or(list.len() + i), i)
+        })
+        .collect();
+    merge(
+        list,
+        folders,
+        &order_ranked(c.mods.len(), &edges, &rank).sequence,
+    )
 }
 
 /// Rewrite an existing mod list so the collection's members sit in `sequence`,
@@ -390,5 +460,66 @@ mod tests {
             (2usize, "Other Mod".to_string()),
         ];
         assert_eq!(merge(&list, &members, &[0, 1, 2]), list);
+    }
+
+    fn ruled(names: &[&str], rules: &[(&str, &str)]) -> (Collection, Vec<(usize, String)>) {
+        let mut c = collection(names);
+        c.mod_rules = rules
+            .iter()
+            .map(|(a, b)| rule(a, RuleType::Before, b))
+            .collect();
+        (
+            c,
+            names
+                .iter()
+                .enumerate()
+                .map(|(i, n)| (i, n.to_string()))
+                .collect(),
+        )
+    }
+
+    fn s(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn broken_pairs_name_the_rules_a_later_drag_broke() {
+        let (c, folders) = ruled(&["A", "B", "C"], &[("A", "B"), ("B", "C")]);
+        assert!(broken_pairs(&c, &folders, &s(&["A", "B", "C"])).is_empty());
+        assert_eq!(
+            broken_pairs(&c, &folders, &s(&["mine", "B", "A", "C"])),
+            [("A".to_string(), "B".to_string())]
+        );
+    }
+
+    #[test]
+    fn broken_pairs_skip_cycles_and_members_that_are_off_or_missing() {
+        let (c, folders) = ruled(&["A", "B", "C", "D"], &[("A", "B"), ("B", "A"), ("C", "D")]);
+        assert!(
+            broken_pairs(&c, &folders, &s(&["B", "A"])).is_empty(),
+            "a loop of rules"
+        );
+        assert!(
+            broken_pairs(&c, &folders, &s(&["B", "A", "C"])).is_empty(),
+            "D is off in this profile"
+        );
+        let only_d = vec![(3usize, "D".to_string())];
+        assert!(
+            broken_pairs(&c, &only_d, &s(&["D", "C"])).is_empty(),
+            "C was never installed"
+        );
+    }
+
+    #[test]
+    fn restore_order_moves_only_what_the_rules_need() {
+        let (c, folders) = ruled(&["A", "B", "C"], &[("A", "B")]);
+        // C moved above A on purpose, B above A by mistake; mine-* are not members.
+        let list = s(&["mine-1", "C", "B", "mine-2", "A"]);
+        assert_eq!(
+            restore_order(&c, &folders, &list),
+            s(&["mine-1", "C", "A", "mine-2", "B"])
+        );
+        let good = s(&["C", "A", "B"]);
+        assert_eq!(restore_order(&c, &folders, &good), good);
     }
 }

@@ -872,6 +872,53 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             c.error = None;
             return update(app, Message::CollectionFetch);
         }
+        Message::RestoreCollectionOrder(slug) => {
+            let Some(root) = app.created.as_ref().map(|i| i.root.clone()) else {
+                return Task::none();
+            };
+            let found = eidos_collections::state::installed(&root)
+                .into_iter()
+                .find(|st| st.slug == slug)
+                .and_then(|st| {
+                    let c =
+                        eidos_collections::driver::cached_collection(&root, &st.slug, st.revision)?;
+                    Some((c, st))
+                });
+            let Some((c, st)) = found else {
+                app.status = Some(tf(
+                    "status_collection_order_unreadable",
+                    &[("collection", &slug)],
+                ));
+                return Task::none();
+            };
+            let collection = if c.info.name.is_empty() {
+                slug
+            } else {
+                c.info.name.clone()
+            };
+            let names: Vec<String> = app.mods.iter().map(|m| m.name.clone()).collect();
+            let folders = eidos_collections::install::installed_folders(&c, &st);
+            let new = eidos_collections::rules::restore_order(&c, &folders, &names);
+            if new == names {
+                app.status = Some(tf(
+                    "status_collection_order_unchanged",
+                    &[("collection", &collection)],
+                ));
+                return Task::none();
+            }
+            let moved = new.iter().zip(&names).filter(|(a, b)| a != b).count();
+            // A sort, so every entry is kept and only moved; the selection follows by name.
+            let held = hold_mod_selection(app);
+            app.mods
+                .sort_by_cached_key(|m| new.iter().position(|n| *n == m.name));
+            put_mod_selection(app, held);
+            if mods_changed(app) {
+                app.status = Some(tf(
+                    "status_collection_order_restored",
+                    &[("n", &moved), ("collection", &collection)],
+                ));
+            }
+        }
         Message::CollectionOpenMod(i) => {
             let Some(c) = app.collection.as_ref() else {
                 return Task::none();

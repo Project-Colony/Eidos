@@ -864,6 +864,9 @@ pub(crate) enum Message {
     },
     /// View a listed collection: its latest revision on the Link pane.
     CollectionBrowsePick(usize),
+    /// Put the members of the installed collection with this slug back into an
+    /// order that keeps its before/after rules.
+    RestoreCollectionOrder(String),
     // ---- Instance manager (MO2's Manage Instances) ----
     ShowInstanceManager,
     CloseInstanceManager,

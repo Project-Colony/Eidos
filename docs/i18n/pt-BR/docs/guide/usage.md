@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6cb461a699ad08a043eb07cf3a74e53a26fd4fdd -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ec0c271afdcb461fe960aaff69daf0a71dbb550a -->
 
 # Usar o Eidos
 
@@ -718,6 +718,8 @@ vez de cruzar os membros com a lista de mods errada, onde cada "instalado" e
 cada "faltando" seria ruído com forma de resposta.
 
 Ao verificar atualizações, o Eidos também pergunta à Nexus pela última revisão de cada coleção instalada nesta instância. Uma linha acima da lista de mods nomeia cada coleção com revisão mais nova e conta os mods adicionados (+), atualizados (~) e removidos (-); passe o mouse para ver os nomes. As contagens somem quando a receita da revisão instalada não está mais no cache. **Atualizar** abre a revisão nova no painel de coleções, onde *Install this collection* a executa. A lista é refeita a cada verificação e não é salva.
+
+O Eidos guarda as regras de cada coleção instalada depois da instalação. Quando um arrasto posterior coloca dois de seus mods contra uma regra de ordem (antes ou depois), a aba **Diagnostics** mostra um cartão para essa coleção, que nomeia o primeiro par afetado e conta as regras que não valem mais. Só contam os mods ativados no perfil atual, e regras presas em um ciclo são ignoradas, porque nenhuma ordem consegue cumpri-las. **Restore collection order** devolve os mods da coleção a uma ordem que cumpre todas as regras, mantém a sua própria ordem onde as regras permitem e deixa no lugar os mods que não fazem parte da coleção. Ctrl+Z desfaz isso. `eidos check` lista o mesmo achado como `collection_order_broken`. A verificação precisa da receita da revisão em `collections/`, então uma coleção cuja receita em cache foi removida não é verificada.
 
 ### Modo offline
 

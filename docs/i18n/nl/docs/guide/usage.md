@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6cb461a699ad08a043eb07cf3a74e53a26fd4fdd -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ec0c271afdcb461fe960aaff69daf0a71dbb550a -->
 
 # Eidos gebruiken
 
@@ -734,6 +734,8 @@ toenaam in plaats van de leden aan de verkeerde modlijst te koppelen, waar elke
 "installed" en elke "missing" ruis zou zijn in de vorm van een antwoord.
 
 Als u op updates controleert, vraagt Eidos Nexus ook om de nieuwste revisie van elke collectie die in deze instantie is geïnstalleerd. Een regel boven de modlijst noemt elke collectie met een nieuwere revisie en telt de toegevoegde (+), bijgewerkte (~) en vervallen (-) mods; houd de muis erboven voor de namen. De aantallen ontbreken als het recept van de geïnstalleerde revisie niet meer in de cache staat. **Bijwerken** opent de nieuwere revisie in het collectiepaneel, waar *Install this collection* hem uitvoert. De lijst wordt bij elke controle opnieuw opgebouwd en niet bewaard.
+
+Eidos bewaart de regels van elke geïnstalleerde collectie na de installatie. Als een latere sleepactie twee van haar mods tegen een volgorderegel (voor of na) in plaatst, toont het tabblad **Diagnostics** één kaart voor die collectie, die het eerste zulke paar noemt en de regels telt die niet meer kloppen. Alleen mods die in het huidige profiel zijn ingeschakeld tellen mee, en regels die in een lus zitten worden overgeslagen, omdat geen volgorde ze kan naleven. **Restore collection order** zet de mods van de collectie terug in een volgorde die elke regel naleeft, houdt uw eigen volgorde aan waar de regels dat toelaten en laat de mods die niet bij de collectie horen op hun plaats. Ctrl+Z maakt het ongedaan. `eidos check` meldt dezelfde bevinding als `collection_order_broken`. De controle heeft het recept van de revisie in `collections/` nodig, dus een collectie waarvan het recept uit de cache is verwijderd, wordt niet gecontroleerd.
 
 ### Offlinemodus
 

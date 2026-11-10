@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6cb461a699ad08a043eb07cf3a74e53a26fd4fdd -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ec0c271afdcb461fe960aaff69daf0a71dbb550a -->
 
 # Usare Eidos
 
@@ -752,6 +752,8 @@ nome invece di confrontare i membri con l'elenco di mod sbagliato, dove ogni
 "installato" e ogni "mancante" sarebbe rumore con la forma di una risposta.
 
 Quando controllate gli aggiornamenti, Eidos chiede a Nexus anche l'ultima revisione di ogni collezione installata in questa istanza. Una riga sopra l'elenco delle mod indica ogni collezione con una revisione più recente e conta le mod aggiunte (+), aggiornate (~) e rimosse (-); passateci sopra il mouse per vederne i nomi. I conteggi mancano se la ricetta della revisione installata non è più in cache. **Aggiorna** apre la revisione più recente nel pannello delle collezioni, dove *Install this collection* la esegue. L'elenco viene rifatto a ogni controllo e non viene salvato.
+
+Eidos conserva le regole di ogni collezione installata dopo l'installazione. Quando un trascinamento successivo mette due delle sue mod contro una regola d'ordine (prima o dopo), la scheda **Diagnostics** mostra una scheda per quella collezione, che nomina la prima coppia interessata e conta le regole che non valgono più. Contano solo le mod attivate nel profilo corrente, e le regole prese in un ciclo vengono saltate, perché nessun ordine può rispettarle. **Restore collection order** riporta le mod della collezione in un ordine che rispetta ogni regola, mantiene il vostro ordine ovunque le regole lo consentano e lascia al loro posto le mod che non fanno parte della collezione. Ctrl+Z lo annulla. `eidos check` riporta lo stesso risultato come `collection_order_broken`. Il controllo ha bisogno della ricetta della revisione in `collections/`, quindi una collezione la cui ricetta in cache è stata rimossa non viene controllata.
 
 ### Modalità offline
 

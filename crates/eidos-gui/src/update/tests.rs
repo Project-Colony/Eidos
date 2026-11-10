@@ -8525,3 +8525,91 @@ fn move_mod_below_acts_by_name_and_ignores_a_stale_card() {
     assert_eq!(names(&app.mods), ["Other", "Master", "Patch"]);
     let _ = fs::remove_dir_all(root);
 }
+
+/// A cached recipe and install state for `slug` revision 1: `members` are
+/// (name, mod id, file id), each installed as a folder of its own name.
+fn write_ruled(root: &Path, slug: &str, members: &[(&str, u64, u64)], before: &[(&str, &str)]) {
+    use eidos_collections::state::{self, InstallState, Status};
+    let mods: Vec<serde_json::Value> = members
+        .iter()
+        .map(|(n, m, f)| {
+            serde_json::json!({"name": n, "source": {"type": "nexus", "modId": m, "fileId": f}})
+        })
+        .collect();
+    let rules: Vec<serde_json::Value> = before
+        .iter()
+        .map(|(a, b)| {
+            serde_json::json!({"source": {"fileExpression": a}, "type": "before", "reference": {"fileExpression": b}})
+        })
+        .collect();
+    let text = serde_json::json!({
+        "info": {"name": "Cities", "domainName": "skyrimspecialedition"},
+        "mods": mods,
+        "modRules": rules,
+    })
+    .to_string();
+    let dir = state::revision_dir(root, slug, 1);
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("collection.json"), &text).unwrap();
+    let md5 = eidos_nexus::md5_file(&dir.join("collection.json")).unwrap();
+    fs::write(dir.with_extension("payload-complete"), md5).unwrap();
+    let mut st = InstallState {
+        slug: slug.to_string(),
+        revision: 1,
+        game_domain: "skyrimspecialedition".to_string(),
+        ..InstallState::default()
+    };
+    for m in &eidos_collections::read(&text).unwrap().collection.mods {
+        st.set(
+            &state::key_for(m, "skyrimspecialedition"),
+            Status::Installed(m.name.clone()),
+        );
+    }
+    st.save(&InstallState::path(root, slug, 1)).unwrap();
+}
+
+#[test]
+fn a_broken_collection_order_gets_a_last_card_and_restore_puts_it_back() {
+    // history_app saves the list and reloads it, so the history has its baseline.
+    let (mut app, root) = history_app(&["B", "Mine", "A"]);
+    write_ruled(
+        &root,
+        "abc123",
+        &[("A", 1, 10), ("B", 2, 20)],
+        &[("A", "B")],
+    );
+    let restore = |m: &Message| matches!(m, Message::RestoreCollectionOrder(s) if s == "abc123");
+    let cards = crate::modinfo::diagnostics(&app);
+    let last = cards.last().expect("cards");
+    assert!(
+        last.actions.iter().any(|(_, m)| restore(m)),
+        "the card is last: {}",
+        last.title
+    );
+    assert!(last.title.contains("Cities"), "{}", last.title);
+    let _ = update(&mut app, Message::RestoreCollectionOrder("abc123".into()));
+    assert_eq!(names(&app.mods), ["A", "Mine", "B"]);
+    let on_disk: Vec<String> = app
+        .created
+        .as_ref()
+        .unwrap()
+        .modlist()
+        .into_iter()
+        .map(|m| m.name)
+        .collect();
+    assert_eq!(on_disk, ["A", "Mine", "B"]);
+    assert!(crate::modinfo::diagnostics(&app)
+        .iter()
+        .all(|d| !d.actions.iter().any(|(_, m)| restore(m))));
+    let _ = update(&mut app, Message::Undo);
+    assert_eq!(names(&app.mods), ["B", "Mine", "A"]);
+    let _ = update(&mut app, Message::RestoreCollectionOrder("gone".into()));
+    assert_eq!(
+        app.status,
+        Some(tf(
+            "status_collection_order_unreadable",
+            &[("collection", &"gone")]
+        ))
+    );
+    let _ = fs::remove_dir_all(root);
+}

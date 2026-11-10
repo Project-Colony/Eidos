@@ -707,6 +707,22 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         });
     }
 
+    // Last, so the card leaving after Restore moves nothing below it.
+    if let Some(inst) = app.created.as_ref() {
+        let mods = app
+            .mods
+            .iter()
+            .rev()
+            .filter(|m| m.is_active() && !m.is_unmanaged())
+            .map(|m| (m.name.clone(), m.path.clone()))
+            .collect::<Vec<_>>();
+        out.extend(
+            eidos::check::collections::collection_order_findings(&inst.root, &mods)
+                .iter()
+                .map(crate::health::finding_card),
+        );
+    }
+
     out
 }
 
