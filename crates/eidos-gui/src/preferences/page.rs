@@ -176,10 +176,17 @@ impl Sections<'_> {
             Some(H::Unset) => t("settings_nxm_status_unset").to_string(),
             Some(H::Unknown) => t("settings_nxm_status_unknown").to_string(),
         };
+        // The line fills the row, so the button stays on the right edge while
+        // the line goes from empty to a path after each Register.
         Row::new()
             .spacing(8)
             .align_y(Alignment::Center)
-            .push(text(line).size(self.typo.sz(12)).font(self.typo.regular))
+            .push(
+                text(line)
+                    .size(self.typo.sz(12))
+                    .font(self.typo.regular)
+                    .width(Length::Fill),
+            )
             .push(
                 button(
                     text(t("settings_nxm_register"))

@@ -994,3 +994,21 @@ fn collection_notices_never_move_the_mod_rows() {
         "the notice is drawn: {drawn:?}"
     );
 }
+
+/// The nxm status line is empty until the first read answers and changes after
+/// every Register, so the button must not move with it.
+#[test]
+fn the_nxm_register_button_stays_put_when_the_status_line_changes() {
+    let _look = crate::test_support::look_lock();
+    let mut app = crate::test_support::nav_app(&[]);
+    app.settings_open = true;
+    app.settings_tab = SettingsTab::Nexus;
+    app.settings_expanded.insert("downloads".into());
+    let mut renderer = renderer();
+    let register = t("settings_nxm_register");
+    let before = label(crate::view(&app), &mut renderer, register, 0);
+    app.nxm_handler = Some(eidos::nxm_handler::NxmHandler::Eidos {
+        exec: "/home/someone/Applications/eidos-portable/bin/eidos-gui".into(),
+    });
+    assert_eq!(label(crate::view(&app), &mut renderer, register, 0), before);
+}
