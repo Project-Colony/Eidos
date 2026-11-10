@@ -48,13 +48,14 @@ pub(crate) fn game_executables(game: &DetectedGame) -> eidos_instance::GameExecu
 /// Variables a store sets on the process it starts. Steam exports the first two.
 /// Heroic exports the `HEROIC_*` pair for every wrapper command, Legendary games
 /// included (it launches them for Heroic, source `epic`). The bare `legendary`
-/// CLI exports no marker of its own, so a hand-run `legendary launch` still looks
-/// like a plain shell.
-const STORE_MARKERS: [&str; 4] = [
+/// CLI exports no marker of its own, so a window it opened sets
+/// [`STORE_STARTED_VAR`] on the `eidos tool` child instead.
+const STORE_MARKERS: [&str; 5] = [
     "SteamGameId",
     "SteamAppId",
     "HEROIC_APP_NAME",
     "HEROIC_APP_RUNNER",
+    STORE_STARTED_VAR,
 ];
 
 /// True when any variable name in `keys` is a store marker.
@@ -852,6 +853,8 @@ mod root_tool_tests {
         assert!(k(&["SteamAppId"]));
         assert!(k(&["HEROIC_APP_NAME", "HEROIC_APP_RUNNER"]));
         assert!(k(&["HEROIC_APP_RUNNER"]));
+        // A window bare legendary opened: no store variable, only the window's own.
+        assert!(k(&["PATH", "EIDOS_STORE_STARTED"]));
         assert!(!k(&["PATH", "HOME", "STEAM_COMPAT_DATA_PATH"]));
     }
 

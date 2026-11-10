@@ -815,9 +815,18 @@ pub(crate) fn open_executables_dialog(app: &App) -> Option<ExecutablesDialogStat
 /// Proton and runs it through the merged view (same single-process requirement
 /// as `play`). Returned unspawned so `start_run` can route its output to a log.
 /// `inst_arg` is [`instance_arg`]'s output: the id or the portable folder.
-pub(crate) fn tool_command(inst_arg: &str, title: &str) -> std::process::Command {
+/// `store_started` (the window a store opened) lets the CLI run a game entry
+/// even when the store, like bare legendary, exported no variable of its own.
+pub(crate) fn tool_command(
+    inst_arg: &str,
+    title: &str,
+    store_started: bool,
+) -> std::process::Command {
     let mut cmd = eidos_command();
     cmd.arg("tool").arg(inst_arg).arg("run").arg(title);
+    if store_started {
+        cmd.env(eidos::STORE_STARTED_VAR, "1");
+    }
     cmd
 }
 
@@ -4549,8 +4558,13 @@ mod cli_lookup_tests {
     #[test]
     fn cli_children_carry_the_marker_when_the_cli_is_this_binary() {
         let (bin, marker) = find_eidos_binary();
-        let cmd = tool_command("skyrimse", "SSEEdit");
+        let cmd = tool_command("skyrimse", "SSEEdit", false);
         assert_eq!(cmd.get_program(), bin.as_os_str());
+        assert_eq!(cmd.get_envs().count(), 0, "a plain window marks nothing");
+        let marked = tool_command("skyrimse", "SKSE", true);
+        assert!(marked
+            .get_envs()
+            .any(|(k, v)| k == eidos::STORE_STARTED_VAR && v == Some(std::ffi::OsStr::new("1"))));
         let args: Vec<String> = cmd
             .get_args()
             .map(|a| a.to_string_lossy().into_owned())

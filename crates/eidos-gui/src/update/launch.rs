@@ -150,7 +150,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 // A game entry outside a store-started window takes the hand-off below.
                 // The owned arg ends the immutable borrow before `start_run`.
                 if let Some(arg) = instance_arg(app) {
-                    let cmd = tool_command(&arg, &title);
+                    let cmd = tool_command(&arg, &title, !app.launch_command.is_empty());
                     start_run(app, title, cmd);
                 } else {
                     app.status = Some(t("status_create_or_open_instance").to_string());
