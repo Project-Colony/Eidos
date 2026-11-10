@@ -303,12 +303,12 @@ impl Profile {
     /// saves the user deleted stay deleted. Nothing before the profile is
     /// seeded (the `.seeded` marker).
     ///
-    /// A name the profile lacks counts when it was written after seeding and no
+    /// A save already imported as `orphan-<secs>-<name>` never counts. A name
+    /// the profile lacks counts when it was written after seeding and no
     /// profile of this instance pushed that name; older names are the set the
     /// user deleted. A name the profile has counts when the prefix copy is
-    /// newer with other bytes, no profile of this instance pushed that content
-    /// (they all bind over the same prefix Saves), and it was not imported yet
-    /// as `orphan-<secs>-<name>`.
+    /// newer with other bytes and no profile of this instance pushed that
+    /// content (they all bind over the same prefix Saves).
     pub fn hidden_prefix_saves(&self, prefix_saves: &Path) -> Vec<String> {
         let saves = self.saves_dir();
         let Ok(seeded) = fs::metadata(saves.join(".seeded")).and_then(|m| m.modified()) else {
@@ -329,17 +329,26 @@ impl Profile {
                     return None;
                 }
                 let md = e.metadata().ok()?;
+                // Imported already: a clash with the save or one of its
+                // co-saves wrote it as `orphan-<secs>-<name>`. A stat, so it
+                // goes before the reads below.
+                if saves
+                    .join(format!("orphan-{}-{name}", mtime_secs(&md)))
+                    .exists()
+                {
+                    return None;
+                }
                 let modified = md.modified().ok()?;
                 let ours = saves.join(&name);
                 let shown = match fs::metadata(&ours) {
                     Err(_) => modified > seeded && !pushed.contains(name.as_str()),
+                    // shortcut: a newer copy another profile pushed is read and
+                    // hashed on every listing; key it by size and mtime if the
+                    // Saves tab stalls on large saves.
                     Ok(own) => {
                         own.modified().is_ok_and(|t| modified > t)
                             && differs(&e.path(), &ours, md.len(), own.len())
                             && save_sync_key(&e.path()).is_ok_and(|k| !keys.contains(&k))
-                            && !saves
-                                .join(format!("orphan-{}-{name}", mtime_secs(&md)))
-                                .exists()
                     }
                 };
                 shown.then_some(name)
@@ -599,6 +608,23 @@ mod hidden_prefix_tests {
         assert_eq!(
             fs::read(saves.join(format!("orphan-{secs}-quicksave.skse"))).unwrap(),
             b"other"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_save_imported_for_its_cosave_clash_is_not_listed_again() {
+        let (root, prof, prefix) = fixture("cosave");
+        stamped(&prof.saves_dir().join("Deck.skse"), b"older cosave", T + 10);
+        stamped(&prefix.join("Deck.ess"), b"deck", T + 20);
+        stamped(&prefix.join("Deck.skse"), b"deck cosave", T + 20);
+        let deck = vec!["Deck.ess".to_string()];
+        assert!(prof.hidden_prefix_saves(&prefix).contains(&deck[0]));
+        let done = prof.import_prefix_saves(&prefix, &deck).unwrap();
+        assert_eq!((done.copied, done.renamed), (0, 1));
+        assert!(
+            !prof.hidden_prefix_saves(&prefix).contains(&deck[0]),
+            "listed again after its import"
         );
         fs::remove_dir_all(root).unwrap();
     }
