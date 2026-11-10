@@ -19,7 +19,7 @@
 //! explicit path argument still wins over the variable: what the user typed
 //! last is what they mean.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::exit;
 
 use eidos_instance::Instance;
@@ -119,14 +119,19 @@ fn try_resolve_from(arg: &str, env_instance: Option<std::ffi::OsString>) -> Resu
 /// `nxm://` handler follow the user to it. Registry trouble is never a reason
 /// to fail the command that did the actual work.
 pub(crate) fn remember_use(inst: &Instance, game_id: &str) {
-    let mut reg = eidos_instance::Registry::load();
+    remember_use_in(&eidos_instance::registry_path(), inst, game_id);
+}
+
+/// [`remember_use`] on an explicit registry file.
+pub(crate) fn remember_use_in(registry: &Path, inst: &Instance, game_id: &str) {
+    let mut reg = eidos_instance::Registry::load_from(registry);
     let r = if inst.root == Instance::global(game_id).root {
         eidos_instance::InstanceRef::Global(game_id.to_string())
     } else {
         eidos_instance::InstanceRef::Portable(inst.root.clone())
     };
     reg.set_last(r);
-    let _ = reg.save();
+    let _ = reg.save_to(registry);
 }
 
 #[cfg(test)]
@@ -165,6 +170,26 @@ mod tests {
         let t = try_resolve_from(&root.display().to_string(), None).unwrap();
         assert_eq!(t.game_id, "skyrimse");
         assert_eq!(t.inst.root, std::fs::canonicalize(&root).unwrap());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_handoff_makes_its_instance_the_one_the_store_window_opens() {
+        let root = std::env::temp_dir().join(format!("eidos-remember-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let make = |name: &str| {
+            let inst = Instance::portable(root.join(name));
+            inst.create().unwrap();
+            inst.ensure_manifest("skyrimse", eidos_instance::InstanceKind::Portable)
+                .unwrap();
+            inst
+        };
+        let (a, b) = (make("a"), make("b"));
+        let reg = root.join("instances.ini");
+        remember_use_in(&reg, &a, "skyrimse");
+        remember_use_in(&reg, &b, "skyrimse");
+        let first = eidos_instance::Registry::load_from(&reg).candidates_for("skyrimse");
+        assert_eq!(first[0].root, b.root);
         let _ = std::fs::remove_dir_all(&root);
     }
 

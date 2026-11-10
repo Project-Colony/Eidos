@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=631027d4686fac9eb78728b23a8024d0c5000909 -->
 
 # ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -345,6 +345,15 @@ Windows のツールは `HKLM\Software\Bethesda Softworks\<game>` の
 ない場合、このコマンドは何も起動せず、何を設定するかを表示します。
 ショートカットはメッセージを出さないので、同じコマンドをターミナルで実行して
 読んでください。
+
+プロファイルごとに、ゲーム用のショートカットを持てます。プロファイルを右クリック
+して **Desktop shortcut** を選ぶと、そのエントリは
+`eidos tool <instance> run "<game>" --profile <name>` を実行します。このコマンド
+はウィンドウでプロファイルを選んだときと同じくそのプロファイルをアクティブにし、
+そのあとストアにゲームの起動を頼みます。ストアが開く Eidos のウィンドウにはその
+プロファイルが表示されます。`--profile` はどの `eidos tool ... run` でも使え、
+ツールが起動する前にプロファイルを選択します。
+`--print` と一緒なら何も選択しません。
 
 ## それ自体が Steam のアプリであるツール
 

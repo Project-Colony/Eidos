@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=631027d4686fac9eb78728b23a8024d0c5000909 -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -309,6 +309,12 @@ Eidos 1.22 或更早版本替其中某一項建立的捷徑仍然能用:和在�
 `eidos tool <instance> run <title>` 一樣,它會請商店啟動遊戲,就像 Run 在不是
 由商店開啟的視窗裡做的那樣。商店的設定缺少時,這個指令什麼也不啟動,並印出要
 設定什麼。捷徑不會顯示任何訊息,所以要看它,就在終端機裡執行同一個指令。
+
+每個設定檔都可以有自己的遊戲捷徑。在設定檔上按右鍵並選擇 **Desktop shortcut**：
+這個項目會執行 `eidos tool <instance> run "<game>" --profile <name>`，它會像在視
+窗裡選取該設定檔那樣把它設為目前的設定檔，然後請商店啟動遊戲。商店開啟的 Eidos
+視窗顯示的就是這個設定檔。`--profile` 適用於任何 `eidos tool ... run`，會在工具
+啟動前選取設定檔；與 `--print` 一起使用時，它什麼也不選。
 
 ## 本身就是獨立 Steam 應用程式的工具
 

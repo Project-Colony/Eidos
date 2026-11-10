@@ -667,7 +667,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let Some(tool) = state.selected.and_then(|i| state.merged.get(i)).cloned() else {
                 return Task::none();
             };
-            match write_desktop_entry(inst, game.def.id, &tool) {
+            match write_desktop_entry(inst, game.def.id, &tool, None) {
                 Ok(path) => {
                     app.status = Some(tf("status_shortcut_written", &[("path", &path.display())]));
                 }

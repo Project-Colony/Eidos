@@ -1219,10 +1219,14 @@ pub(crate) fn build_preview(path: &Path) -> Preview {
 /// `~/.local/share/applications`, not the desktop: that is where a launcher
 /// belongs on a freedesktop system, and it is what makes the entry appear in the
 /// application menu and in a search.
+///
+/// With `profile`, the entry adds `--profile <name>`, which makes that profile
+/// the active one before the run, and gets a file of its own.
 pub(crate) fn write_desktop_entry(
     inst: &Instance,
     game_id: &str,
     tool: &eidos_instance::Tool,
+    profile: Option<&str>,
 ) -> std::io::Result<PathBuf> {
     let dir = eidos_paths::desktop_entries_dir();
     std::fs::create_dir_all(&dir)?;
@@ -1265,6 +1269,15 @@ pub(crate) fn write_desktop_entry(
         h2 ^= u64::from(*b);
         h2 = h2.wrapping_mul(0x100000001b3);
     }
+    // A profile continues the hash after a separator byte, so each profile gets
+    // its own file and a shortcut without one keeps the 1.23.0 name.
+    let profile = profile.map(clean);
+    if let Some(p) = &profile {
+        for b in std::iter::once(0).chain(p.bytes()) {
+            h2 ^= u64::from(b);
+            h2 = h2.wrapping_mul(0x100000001b3);
+        }
+    }
     let path = dir.join(format!(
         "eidos-{}-{}{:08x}.desktop",
         clean(game_id),
@@ -1297,12 +1310,24 @@ pub(crate) fn write_desktop_entry(
     if let Some(marker) = marker {
         exec = format!("{exec} {marker}");
     }
+    let (name, comment, exec_tail) = match &profile {
+        None => (
+            title.clone(),
+            format!("Run {title} through Eidos, in the {game_id} instance"),
+            String::new(),
+        ),
+        Some(p) => (
+            format!("{title} ({p})"),
+            format!("Start {title} with the {p} profile through its store, with Eidos"),
+            format!(" --profile {}", q(p)),
+        ),
+    };
     let body = format!(
         "[Desktop Entry]\n\
          Type=Application\n\
-         Name={title}\n\
-         Comment=Run {title} through Eidos, in the {game_id} instance\n\
-         Exec={exec} tool {} run {}\n\
+         Name={name}\n\
+         Comment={comment}\n\
+         Exec={exec} tool {} run {}{exec_tail}\n\
          Terminal=false\n\
          Categories=Game;Utility;\n\
          StartupNotify=false\n",
@@ -4414,7 +4439,7 @@ mod tests {
             exe: PathBuf::from("/x/SSEEdit.exe"),
             ..Default::default()
         };
-        let path = write_desktop_entry(&inst, "skyrimse", &tool).unwrap();
+        let path = write_desktop_entry(&inst, "skyrimse", &tool, None).unwrap();
         let body = fs::read_to_string(&path).unwrap();
 
         assert!(path.starts_with(home.join("applications")));
@@ -4431,6 +4456,49 @@ mod tests {
         );
         assert!(body.contains("tool "), "{body}");
         assert!(body.contains("run \"SSEEdit\""), "{body}");
+
+        match prev {
+            // SAFETY: as above.
+            Some(v) => unsafe { std::env::set_var("XDG_DATA_HOME", v) },
+            None => unsafe { std::env::remove_var("XDG_DATA_HOME") },
+        }
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_profile_shortcut_passes_the_profile_as_one_argument() {
+        use eidos_instance::Tool;
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.join("Eidos Skyrim"));
+        inst.create().unwrap();
+        let home = root.join("fakehome");
+        fs::create_dir_all(&home).unwrap();
+        let prev = std::env::var_os("XDG_DATA_HOME");
+        // SAFETY: single-threaded here, and restored below.
+        unsafe { std::env::set_var("XDG_DATA_HOME", &home) };
+
+        let game = Tool {
+            title: "Skyrim Special Edition".into(),
+            exe: "SkyrimSE.exe".into(),
+            ..Default::default()
+        };
+        let p = write_desktop_entry(&inst, "skyrimse", &game, Some("Survival 100%")).unwrap();
+        let body = fs::read_to_string(&p).unwrap();
+        assert!(
+            body.contains("Name=Skyrim Special Edition (Survival 100%)\n"),
+            "{body}"
+        );
+        assert!(
+            body.contains(" run \"Skyrim Special Edition\" --profile \"Survival 100%%\"\n"),
+            "{body}"
+        );
+        let other = write_desktop_entry(&inst, "skyrimse", &game, Some("Other")).unwrap();
+        let plain = write_desktop_entry(&inst, "skyrimse", &game, None).unwrap();
+        assert!(
+            p != other && p != plain && other != plain,
+            "one file per profile"
+        );
+        assert!(!fs::read_to_string(&plain).unwrap().contains("--profile"));
 
         match prev {
             // SAFETY: as above.

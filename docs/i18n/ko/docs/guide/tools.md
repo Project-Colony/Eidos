@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=631027d4686fac9eb78728b23a8024d0c5000909 -->
 
 # 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -346,6 +346,14 @@ Steam은 그것을 결코 실행하지 않습니다. 그것 없이는 xEdit, Wry
 열지 않은 창에서 Run이 하는 것과 같습니다. 스토어 설정이 없으면 명령은 아무것도
 시작하지 않고 무엇을 설정할지 출력합니다. 바로가기는 메시지를 보여주지
 않으므로, 같은 명령을 터미널에서 실행해 읽으세요.
+
+프로필마다 게임용 바로가기를 따로 둘 수 있습니다. 프로필을 오른쪽 클릭하고
+**Desktop shortcut**을 고르면, 그 항목은
+`eidos tool <instance> run "<game>" --profile <name>`을 실행합니다. 이 명령은
+창에서 프로필을 고를 때처럼 그 프로필을 활성 프로필로 만든 다음, 스토어에 게임
+시작을 요청합니다. 스토어가 여는 Eidos 창은 그 프로필을 보여줍니다.
+`--profile`은 모든 `eidos tool ... run`에서 쓸 수 있고 도구가 시작되기 전에
+프로필을 선택합니다. `--print`와 함께 쓰면 아무것도 선택하지 않습니다.
 
 ## 자기가 곧 Steam 앱인 도구
 

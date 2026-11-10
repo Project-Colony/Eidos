@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=631027d4686fac9eb78728b23a8024d0c5000909 -->
 
 # Strumenti: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -392,6 +392,14 @@ chiede allo store di avviare il gioco, come fa Run in una finestra che nessuno
 store ha aperto. Quando manca l'impostazione dello store, il comando non avvia
 nulla e stampa cosa impostare. Un collegamento non mostra alcun messaggio,
 quindi esegui lo stesso comando in un terminale per leggerlo.
+
+Un profilo può avere un suo collegamento per il gioco. Fai clic destro sul
+profilo e scegli **Desktop shortcut**: la voce esegue
+`eidos tool <instance> run "<game>" --profile <name>`, che rende attivo quel
+profilo, come quando lo scegli nella finestra, e poi chiede allo store di
+avviare il gioco. La finestra di Eidos che lo store apre mostra quel profilo.
+`--profile` funziona con qualsiasi `eidos tool ... run` e seleziona il profilo
+prima che lo strumento parta; con `--print` non seleziona niente.
 
 ## Uno strumento che è un'app Steam a sé
 

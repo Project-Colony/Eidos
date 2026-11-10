@@ -1295,6 +1295,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::ProfileCopyCommit
         | Message::ProfileDeleteConfirm(..)
         | Message::ProfileDeleteCommit(..)
+        | Message::ProfileDesktopShortcut(..)
         | Message::ShowBackupsDialog
         | Message::CloseBackupsDialog
         | Message::CreateBackup(..)

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=631027d4686fac9eb78728b23a8024d0c5000909 -->
 
 # Herramientas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -399,6 +399,14 @@ tienda que inicie el juego, como hace Run en una ventana que no abrió ninguna
 tienda. Cuando falta el ajuste de la tienda, la orden no inicia nada y muestra
 qué poner. Un acceso directo no muestra ningún mensaje, así que ejecuta la misma
 orden en una terminal para leerlo.
+
+Un perfil puede tener su propio acceso directo para el juego. Haz clic derecho
+en el perfil y elige **Desktop shortcut**: la entrada ejecuta
+`eidos tool <instance> run "<game>" --profile <name>`, que convierte ese perfil
+en el activo, igual que elegirlo en la ventana, y luego pide a la tienda que
+inicie el juego. La ventana de Eidos que abre la tienda muestra ese perfil.
+`--profile` funciona con cualquier `eidos tool ... run` y selecciona el perfil
+antes de que arranque la herramienta; con `--print` no selecciona nada.
 
 ## Una herramienta que es su propia aplicación de Steam
 

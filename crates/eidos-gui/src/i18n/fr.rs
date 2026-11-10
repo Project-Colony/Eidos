@@ -845,6 +845,7 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("status_tools_save_failed", "Impossible d'enregistrer les exécutables : {error}"),
     ("status_shortcut_written", "Raccourci écrit dans {path}"),
     ("status_shortcut_failed", "Impossible d'écrire le raccourci : {error}"),
+    ("status_profile_shortcut_no_game", "Aucune entrée de la liste Lancer ne démarre {game} : un raccourci n'aurait rien à démarrer. Ajoutez l'exécutable du jeu dans Exécutables."),
     // ---- Profiles, downloads and saves ----
     ("status_switch_while_running", "{title} tourne : impossible de changer de profil avant sa fermeture."),
     ("status_switch_profile_failed", "Impossible de changer de profil : {error}."),

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=631027d4686fac9eb78728b23a8024d0c5000909 -->
 
 # Ferramentas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -390,6 +390,14 @@ digitado num terminal, ele pede à loja que inicie o jogo, como o Run faz numa
 janela que nenhuma loja abriu. Quando a configuração da loja está faltando, o
 comando não inicia nada e mostra o que definir. Um atalho não mostra mensagem
 nenhuma, então rode o mesmo comando num terminal para lê-la.
+
+Um perfil pode ter seu próprio atalho para o jogo. Clique com o botão direito no
+perfil e escolha **Desktop shortcut**: o atalho roda
+`eidos tool <instance> run "<game>" --profile <name>`, que torna esse perfil o
+ativo, como escolhê-lo na janela, e depois pede à loja que inicie o jogo. A
+janela do Eidos que a loja abre mostra esse perfil. `--profile` funciona com
+qualquer `eidos tool ... run` e seleciona o perfil antes de a ferramenta
+iniciar; com `--print`, não seleciona nada.
 
 ## Uma ferramenta que é um app Steam à parte
 

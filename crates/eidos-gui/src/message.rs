@@ -638,6 +638,8 @@ pub(crate) enum Message {
     ProfileDeleteConfirm(String),
     /// Second click: actually delete the armed profile (`Instance::delete_profile`).
     ProfileDeleteCommit(String),
+    /// Write a desktop shortcut that starts the game with this profile.
+    ProfileDesktopShortcut(String),
     // ---- drag-and-drop reorder (MO2 row drag) ----
     /// Begin a potential drag from row `i` (also selects it).
     DragStart(usize),

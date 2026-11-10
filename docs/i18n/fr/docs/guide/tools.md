@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=631027d4686fac9eb78728b23a8024d0c5000909 -->
 
 # Outils : xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -401,6 +401,14 @@ boutique de démarrer le jeu, comme Run dans une fenêtre qu'aucune boutique n'a
 ouverte. Quand le réglage de la boutique manque, la commande ne démarre rien et
 affiche quoi régler. Un raccourci n'affiche aucun message : lancez la même
 commande dans un terminal pour le lire.
+
+Un profil peut avoir son propre raccourci pour le jeu. Faites un clic droit sur
+le profil et choisissez **Desktop shortcut** : l'entrée exécute
+`eidos tool <instance> run "<game>" --profile <name>`, qui fait de ce profil le
+profil actif, comme le choisir dans la fenêtre, puis demande à la boutique de
+démarrer le jeu. La fenêtre d'Eidos que la boutique ouvre affiche ce profil.
+`--profile` fonctionne avec tout `eidos tool ... run` et sélectionne le profil
+avant que l'outil démarre ; avec `--print`, il ne sélectionne rien.
 
 ## Un outil qui est sa propre application Steam
 

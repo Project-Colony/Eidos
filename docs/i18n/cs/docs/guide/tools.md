@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=631027d4686fac9eb78728b23a8024d0c5000909 -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -375,6 +375,14 @@ v Eidosu 1.22 nebo starším, funguje dál: stejně jako
 spustil, tak jako Run v okně, které neotevřel žádný obchod. Když nastavení
 v obchodě chybí, příkaz nic nespustí a vypíše, co nastavit. Zástupce žádnou
 zprávu neukáže, proto si ji přečtěte spuštěním stejného příkazu v terminálu.
+
+Profil může mít pro hru vlastního zástupce. Klikněte na profil pravým tlačítkem
+a zvolte **Desktop shortcut**: položka spustí
+`eidos tool <instance> run "<game>" --profile <name>`, což z tohoto profilu
+udělá aktivní profil, stejně jako jeho výběr v okně, a pak požádá obchod, aby
+hru spustil. Okno Eidosu, které obchod otevře, ukazuje tento profil. `--profile`
+funguje s každým `eidos tool ... run` a vybere profil dřív, než se nástroj
+spustí; s `--print` nevybere nic.
 
 ## Nástroj, který je vlastní aplikací na Steamu
 

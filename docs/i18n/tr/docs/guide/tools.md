@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=631027d4686fac9eb78728b23a8024d0c5000909 -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -392,6 +392,14 @@ mağazadan oyunu başlatmasını ister; hiçbir mağazanın açmadığı bir pen
 Run'ın yaptığı gibi. Mağazadaki ayar eksikse komut hiçbir şey başlatmaz ve
 neyin ayarlanacağını yazdırır. Kısayol hiçbir ileti göstermez, bu yüzden okumak
 için aynı komutu bir terminalde çalıştırın.
+
+Bir profilin oyun için kendi kısayolu olabilir. Profile sağ tıklayıp
+**Desktop shortcut** seçeneğini seçin: kısayol
+`eidos tool <instance> run "<game>" --profile <name>` komutunu çalıştırır; bu
+komut, pencerede seçmekle aynı şekilde o profili etkin profil yapar ve ardından
+mağazadan oyunu başlatmasını ister. Mağazanın açtığı Eidos penceresi o profili
+gösterir. `--profile` her `eidos tool ... run` ile çalışır ve profili araç
+başlamadan önce seçer; `--print` ile hiçbir şey seçmez.
 
 ## Kendi başına bir Steam uygulaması olan araç
 

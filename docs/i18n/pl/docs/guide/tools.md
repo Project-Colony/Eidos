@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=631027d4686fac9eb78728b23a8024d0c5000909 -->
 
 # Narzędzia: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -386,6 +386,14 @@ wpisane w terminalu prosi sklep o uruchomienie gry, tak samo jak Run w oknie,
 którego nie otworzył żaden sklep. Gdy brakuje ustawienia w sklepie, polecenie
 niczego nie uruchamia i wypisuje, co ustawić. Skrót nie pokazuje żadnego
 komunikatu, więc uruchom to samo polecenie w terminalu, żeby go przeczytać.
+
+Profil może mieć własny skrót do gry. Kliknij profil prawym przyciskiem myszy i
+wybierz **Desktop shortcut**: skrót uruchamia
+`eidos tool <instance> run "<game>" --profile <name>`, co czyni ten profil
+aktywnym, tak jak wybranie go w oknie, a potem prosi sklep o uruchomienie gry.
+Okno Eidos, które otwiera sklep, pokazuje ten profil. `--profile` działa z
+każdym `eidos tool ... run` i wybiera profil, zanim narzędzie wystartuje; z
+`--print` niczego nie wybiera.
 
 ## Narzędzie, które jest własną aplikacją Steam
 

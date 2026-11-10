@@ -845,6 +845,7 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("status_tools_save_failed", "Could not save executables: {error}"),
     ("status_shortcut_written", "Shortcut written to {path}"),
     ("status_shortcut_failed", "Could not write the shortcut: {error}"),
+    ("status_profile_shortcut_no_game", "No Run list entry starts {game}, so a shortcut would have nothing to start. Add the game's executable in Executables."),
     // ---- Profiles, downloads and saves ----
     ("status_switch_while_running", "{title} is running: profiles cannot be switched until it exits."),
     ("status_switch_profile_failed", "Cannot switch profiles: {error}."),

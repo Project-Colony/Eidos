@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=631027d4686fac9eb78728b23a8024d0c5000909 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -402,6 +402,14 @@ Terminal bittet sie den Store, das Spiel zu starten, so wie Run in einem
 Fenster, das kein Store geöffnet hat. Fehlt die Einstellung im Store, startet
 der Befehl nichts und gibt aus, was zu setzen ist. Eine Verknüpfung zeigt keine
 Meldung; führen Sie denselben Befehl in einem Terminal aus, um sie zu lesen.
+
+Ein Profil kann eine eigene Verknüpfung für das Spiel haben. Klicken Sie mit der
+rechten Maustaste auf das Profil und wählen Sie **Desktop shortcut**: Der
+Eintrag führt `eidos tool <instance> run "<game>" --profile <name>` aus, was
+dieses Profil zum aktiven macht, wie es die Auswahl im Fenster tut, und bittet
+dann den Store, das Spiel zu starten. Das Eidos-Fenster, das der Store öffnet,
+zeigt dieses Profil. `--profile` funktioniert mit jedem `eidos tool ... run` und
+wählt das Profil aus, bevor das Tool startet; mit `--print` wählt es nichts aus.
 
 ## Ein Tool, das eine eigene Steam-App ist
 

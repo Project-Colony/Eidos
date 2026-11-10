@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=631027d4686fac9eb78728b23a8024d0c5000909 -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -311,6 +311,13 @@ Eidos 1.22 或更早版本给其中某一项建的快捷方式仍然能用:和�
 `eidos tool <instance> run <title>` 一样,它会请商店启动游戏,就像 Run 在不是
 由商店打开的窗口里做的那样。商店的设置缺失时,这条命令什么也不启动,并打印要
 设置什么。快捷方式不显示任何消息,所以要看它,就在终端里运行同一条命令。
+
+每个配置文件都可以有自己的游戏快捷方式。右键点击配置文件并选择
+**Desktop shortcut**：这个条目运行
+`eidos tool <instance> run "<game>" --profile <name>`，它会像在窗口里选中该配置
+文件那样把它设为当前配置文件，然后请商店启动游戏。商店打开的 Eidos 窗口显示的就
+是这个配置文件。`--profile` 适用于任何 `eidos tool ... run`，会在工具启动前选中
+配置文件；与 `--print` 一起使用时，它什么也不选。
 
 ## 自成一个 Steam 应用的工具
 

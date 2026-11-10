@@ -370,6 +370,14 @@ start the game, as Run does in a window no store opened. When the store's
 setting is missing, the command starts nothing and prints what to set. A
 shortcut shows no message, so run the same command in a terminal to read it.
 
+A profile can have its own shortcut for the game. Right-click the profile and
+choose **Desktop shortcut**: the entry runs
+`eidos tool <instance> run "<game>" --profile <name>`, which makes that profile
+the active one, as picking it in the window does, and then asks the store to
+start the game. The Eidos window the store opens shows that profile. `--profile`
+works with any `eidos tool ... run` and selects the profile before the tool
+starts; with `--print` it selects nothing.
+
 ## A tool that is its own Steam app
 
 The Creation Kit is a separate Steam application and wants its own AppID; a few

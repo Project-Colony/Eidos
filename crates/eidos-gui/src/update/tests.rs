@@ -7749,3 +7749,22 @@ mod cleaning {
         assert!(app.status.as_deref().unwrap().contains("Game"));
     }
 }
+
+#[test]
+fn a_profile_shortcut_without_a_game_entry_says_so() {
+    let (mut app, root) = list_app(&[]);
+    app.tools.clear();
+    let _ = update_inner(&mut app, Message::ProfileDesktopShortcut("Default".into()));
+    assert_eq!(
+        app.status.as_deref(),
+        Some(
+            tf(
+                "status_profile_shortcut_no_game",
+                &[("game", &"Skyrim Special Edition")]
+            )
+            .as_str()
+        )
+    );
+    assert!(app.profile_menu.is_none());
+    let _ = fs::remove_dir_all(root);
+}

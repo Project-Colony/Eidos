@@ -1177,3 +1177,30 @@ fn the_disable_confirmation_never_moves_the_mod_rows() {
         "{messages:?}"
     );
 }
+
+/// The profile menu's Desktop shortcut row is drawn whether or not a Run list
+/// entry starts the game, so Delete below it never moves.
+#[test]
+fn the_profile_menu_keeps_the_shortcut_row_in_place() {
+    let _look = crate::test_support::look_lock();
+    let (mut app, root) = crate::test_support::list_app(&[]);
+    app.tools = vec![eidos_instance::Tool {
+        title: "Skyrim Special Edition".into(),
+        exe: "SkyrimSE.exe".into(),
+        ..Default::default()
+    }];
+    let mut renderer = renderer();
+    let menu = |app: &App| crate::modinfo::profile_menu_card(app, "Default");
+    let row = label(menu(&app), &mut renderer, t("exe_desktop_shortcut"), 0);
+    let delete = label(menu(&app), &mut renderer, t("common_delete"), 0);
+    app.tools.clear(); // no game entry: the row stays, the click explains
+    assert_eq!(
+        label(menu(&app), &mut renderer, t("exe_desktop_shortcut"), 0),
+        row
+    );
+    assert_eq!(
+        label(menu(&app), &mut renderer, t("common_delete"), 0),
+        delete
+    );
+    let _ = fs::remove_dir_all(root);
+}
