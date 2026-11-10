@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::exit;
 
 use eidos_games::DetectedGame;
-use eidos_instance::{Instance, InstanceKind};
+use eidos_instance::{Instance, InstanceKind, ROOT_CONTROL_FILES};
 use eidos_launch::{launch, LaunchSpec};
 
 use crate::*;
@@ -350,7 +350,7 @@ pub(crate) fn run_through_view(
     game_id: &str,
     game: &DetectedGame,
     inst: &Instance,
-    command: Vec<String>,
+    mut command: Vec<String>,
     env: Vec<(String, String)>,
     cwd: Option<std::path::PathBuf>,
     opts: ToolOpts<'_>,
@@ -398,7 +398,7 @@ pub(crate) fn run_through_view(
     // post-run step. Re-reading `inst.active()` after the game exits re-reads the
     // manifest - and a profile switched in the GUI mid-game then received the
     // PLAYED profile's captures, corrupting a profile that was never run.
-    let prof = inst.active();
+    let real = inst.active();
     let mut launch_game = game.clone();
     launch_game.data_path = game
         .mod_data_path_for_launch(&eidos_games::home(), &command)
@@ -428,7 +428,7 @@ pub(crate) fn run_through_view(
     // `ListTrust::judge` only says Suspect when the directory is unreadable, or
     // when a non-empty list kept nothing, or on a loss past both its floors - so
     // this cannot fire on a deliberate mass-disable.
-    let (_, trust) = prof.modlist_checked();
+    let (_, trust) = real.modlist_checked();
     if let Some(why) = trust.reason() {
         eidos_log::warn!(
             "eidos play: refusing to start - the mod list cannot be trusted: {why}\n\
@@ -454,9 +454,9 @@ pub(crate) fn run_through_view(
         "falloutnv" => "New Vegas",
         _ => game.def.name,
     };
-    match inst.write_mo2_ini(mo2_game_name, &game.install_path, &prof.name) {
+    match inst.write_mo2_ini(mo2_game_name, &game.install_path, &real.name) {
         Ok(eidos_instance::Mo2Ini::Foreign { path, profile })
-            if profile.as_deref() != Some(prof.name.as_str()) =>
+            if profile.as_deref() != Some(real.name.as_str()) =>
         {
             let selects = match profile {
                 Some(p) => format!("selects profile '{p}'"),
@@ -467,8 +467,8 @@ pub(crate) fn run_through_view(
                  reads that, not '{}', the profile this run uses. Select '{}' in MO2, or \
                  remove the file so Eidos writes its own.",
                 path.display(),
-                prof.name,
-                prof.name
+                real.name,
+                real.name
             );
         }
         Ok(_) => {}
@@ -479,23 +479,32 @@ pub(crate) fn run_through_view(
 
     // Recover the selected profile before any preparation can replace runtime
     // files from an interrupted session. Completed output moves are idempotent.
-    const ROOT_CONTROL_FILES: &[&str] = &[
-        "Morrowind.ini",
-        "Oblivion.ini",
-        "OblivionPrefs.ini",
-        "plugins.txt",
-    ];
-    let recovery = prof
+    let recovery = real
         .recover_ini_session()
         .and_then(|()| {
-            prof.merge_runtime_root_outputs(&inst.root_overwrite_dir(), ROOT_CONTROL_FILES)
+            real.merge_runtime_root_outputs(&inst.root_overwrite_dir(), ROOT_CONTROL_FILES)
         })
-        .and_then(|()| recover_timestamp_order(game_id, game, inst, &prof));
+        .and_then(|()| recover_timestamp_order(game_id, game, inst, &real));
     if let Err(e) = recovery {
         eidos_log::warn!("eidos: refusing to launch: pending profile capture failed: {e}");
         exit(1);
     }
-    let mut plugin_bind = prepare_plugins(game_id, game, inst, &prof);
+    // A requested test run (A36) gets its working copy here, and every later
+    // step runs on it. Tools and utility runs are never test runs.
+    let test = records_game_launch(&opts)
+        .then(|| crate::test_run::take(inst, game_id, game, &real))
+        .transpose()
+        .unwrap_or_else(|e| {
+            eidos_log::warn!("eidos: refusing to launch: could not prepare the test run: {e}");
+            exit(1)
+        })
+        .flatten();
+    let prof = if test.is_some() {
+        inst.test_run_profile()
+    } else {
+        real.clone()
+    };
+    let mut plugin_bind = prepare_plugins(game_id, game, inst, &prof, test.is_none());
     if game
         .plugin_spec()
         .is_some_and(|s| s.mechanism == eidos_plugins::LoadOrderMechanism::Timestamp)
@@ -560,7 +569,7 @@ pub(crate) fn run_through_view(
             eidos_log::warn!("eidos: refusing to launch: timestamp projection failed: {e}");
             exit(1)
         });
-    let save_bind = prepare_saves(game, &prof).unwrap_or_else(|error| {
+    let save_bind = prepare_saves(game, &real).unwrap_or_else(|error| {
         eidos_log::warn!("eidos: refusing to launch: could not prepare profile saves: {error}");
         exit(1);
     });
@@ -586,8 +595,19 @@ pub(crate) fn run_through_view(
 
     let env = run_env(game, inst, opts, env, true);
 
-    let root_layers = inst.root_layers();
-    if runtime_root.is_some() {
+    let root_layers = prof.root_layers();
+    if test.is_some() {
+        // shortcut: run_env still scans the active profile's Root DLLs in a variant run; a missing n,b DLL falls back to builtin, revisit if a variant run picks up a wrong override.
+        crate::test_run::retarget_loader(
+            game.def,
+            &game.install_path,
+            &root_layers,
+            &inst.root_overwrite_dir(),
+            &mut command,
+        );
+    }
+    // Root mode and a test run mount it read-only below their own Root upper.
+    if runtime_root.is_some() || test.is_some() {
         std::fs::create_dir_all(inst.root_overwrite_dir()).unwrap_or_else(|e| {
             eidos_log::warn!("eidos: cannot create root output directory: {e}");
             exit(1)
@@ -628,7 +648,7 @@ pub(crate) fn run_through_view(
             eidos_log::warn!("eidos: refusing to launch: OMOD shader preparation failed: {error}");
             exit(1);
         });
-    let spec = LaunchSpec {
+    let mut spec = LaunchSpec {
         readonly_data_binds: shader_session
             .as_ref()
             .map_or_else(Vec::new, |s| s.mappings().to_vec()),
@@ -661,7 +681,23 @@ pub(crate) fn run_through_view(
                 .unwrap_or_else(|| inst.root_overwrite_dir()),
         ),
         root_readonly_overwrite: runtime_root.as_ref().map(|_| inst.root_overwrite_dir()),
+        readonly_overwrite: None,
+        union_views: vec![],
     };
+    if let Some(run) = &test {
+        let docs = run.docs.as_deref().filter(|_| runtime_root.is_none());
+        let mounts = crate::test_run::test_mounts(inst, docs, save_bind.as_ref());
+        spec.overwrite = mounts.overwrite;
+        spec.readonly_overwrite = Some(mounts.readonly_overwrite);
+        spec.root_overwrite = Some(mounts.root_overwrite);
+        spec.root_readonly_overwrite = Some(mounts.root_readonly_overwrite);
+        spec.union_views = mounts.union_views;
+        spec.binds = mounts
+            .binds
+            .into_iter()
+            .chain(plugin_bind.clone())
+            .collect();
+    }
     // Taken immediately before the run so the capture below can tell what THIS
     // run produced from what was already in the Overwrite.
     let tool_run = opts
@@ -698,6 +734,15 @@ pub(crate) fn run_through_view(
             exit(1);
         }
     }
+    // Eidos refuses nothing after this: the test run begins. A refusal above
+    // leaves its request waiting for the next Run, and the log says why.
+    if test.is_some() {
+        if let Err(e) = inst.mark_test_run_started(crate::sessions::now()) {
+            eidos_log::warn!("eidos: refusing to launch: could not begin the test run: {e}");
+            drop(shader_session);
+            exit(1);
+        }
+    }
     let game_run = records_game_launch(&opts);
     let started = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -717,7 +762,9 @@ pub(crate) fn run_through_view(
     crate::sessions::finish(session, &result, inst, &prof);
     // A crash under Proton can still exit 0; a crash log written since the start says otherwise.
     // A stopped run is never clean: Steam's wrapper chain may turn the SIGTERM into exit 0.
+    // A test run says nothing about the full list.
     if game_run
+        && test.is_none()
         && matches!(&result, Ok(s) if s.success())
         && !eidos_launch::stop_requested()
         && !crate::check::crash::crashed_since(game, &inst.overwrite_dir(), started)
@@ -731,7 +778,18 @@ pub(crate) fn run_through_view(
             eidos_log::warn!("eidos: could not remove session-owned shader files: {error}");
         }
     }
+    // A test run's Root output waits in test-run/ for the review; only the
+    // working copy's INIs come back, from its own receipt.
+    if runtime_root.is_some() && test.is_some() {
+        if let Err(e) = prof.recover_ini_session() {
+            eidos_log::warn!(
+                "eidos: test run INI capture failed: {e}; the receipt stays in {} for the review",
+                prof.dir().display()
+            );
+        }
+    }
     let root_capture_failed = runtime_root.is_some()
+        && test.is_none()
         && match prof
             .merge_runtime_root_outputs(&inst.root_overwrite_dir(), ROOT_CONTROL_FILES)
             .and_then(|()| prof.recover_ini_session())
@@ -782,7 +840,13 @@ pub(crate) fn run_through_view(
     // (`prof`, not a fresh `inst.active()`: the captures belong to the profile
     // that was PLAYED, whatever the GUI switched to since.)
     if let Some(prepared) = inis.filter(|p| !p.root_mode) {
-        if let Ok(n) = prof.capture_inis(&prepared.docs, prepared.ini_files) {
+        // A test run's INI writes went to the My Games view's upper.
+        let written = if test.is_some() {
+            inst.test_docs_upper()
+        } else {
+            prepared.docs.clone()
+        };
+        if let Ok(n) = prof.capture_inis(&written, prepared.ini_files) {
             if n > 0 {
                 eidos_log::info!(
                     "eidos: captured {n} INI(s) back into profile '{}'",
@@ -824,8 +888,9 @@ pub(crate) fn run_through_view(
     // landed in the profile - there is nothing to capture and nothing to revert.
     // What remains is the backstop: a session that wrecked the active set (a
     // crash artifact written straight into the profile) is flagged against the
-    // pre-session snapshot, loudly, with the restore one GUI click away.
-    if plugin_bind.is_some() {
+    // pre-session snapshot, loudly, with the restore one GUI click away. A test
+    // run's plugin state waits for the review.
+    if plugin_bind.is_some() && test.is_none() {
         let post_loss = eidos_plugins::GameSpec::for_id(game_id)
             .and_then(|spec| prof.plugin_loss_since_snapshot(&spec));
         if let Some(reason) = post_loss {
@@ -842,8 +907,10 @@ pub(crate) fn run_through_view(
     // session: without this sync the cloud backs up a save set frozen at the
     // pre-Eidos era (observed: two saves from 2024, nothing since). One-way,
     // never deleting - the prefix is a backup target, not an authority.
+    // A test run's saves are not the profile's until the review keeps them.
     if let Some((prof_saves, prefix_saves)) = save_bind
         .as_ref()
+        .filter(|_| test.is_none())
         .filter(|(_, destination)| steam_cloud_save_target(game, destination))
     {
         match sync_saves_for_cloud(prof_saves, prefix_saves) {
@@ -855,6 +922,19 @@ pub(crate) fn run_through_view(
                 eidos_log::warn!("eidos: WARNING - could not sync saves for Steam Cloud: {e}")
             }
         }
+    }
+    if test.is_some() {
+        // The code `sessions::finish` recorded, so a stopped run reads 143.
+        let code = result.as_ref().ok().map(|status| {
+            crate::sessions::recorded_exit(exit_code(status), eidos_launch::stop_requested())
+        });
+        if let Err(e) = inst.end_test_run(code, crate::sessions::now()) {
+            eidos_log::warn!("eidos: could not record how the test run ended: {e}");
+        }
+        eidos_log::info!(
+            "{}",
+            crate::test_run::summary_line(&inst.test_run_writes(), &inst.test_run_dir())
+        );
     }
 
     if provenance_failed || timestamp_capture_failed {
@@ -1088,7 +1168,7 @@ pub(crate) fn forced_dll_overrides(
     Some(("WINEDLLOVERRIDES".to_string(), value))
 }
 
-fn steam_cloud_save_target(game: &DetectedGame, destination: &Path) -> bool {
+pub(crate) fn steam_cloud_save_target(game: &DetectedGame, destination: &Path) -> bool {
     if !game.is_steam() {
         return false;
     }

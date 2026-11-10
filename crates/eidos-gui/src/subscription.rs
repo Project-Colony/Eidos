@@ -332,6 +332,13 @@ pub(crate) fn subscription(app: &App) -> iced::Subscription<Message> {
         // And the copy step after it, which holds the instance lock: Ctrl+R
         // could not launch, and Delete would arm a removal it cannot do.
         && app.place_job.is_none()
+        // A selection changed behind the Test run dialog would change what
+        // "only the selected mods" starts, and Ctrl+R would start a normal run.
+        // Behind the review, Ctrl+R would start one over the files it lists.
+        && app.test_dialog.is_none()
+        && app.test_review.is_none()
+        // Behind the bisect panel, a selection would change the always-on mods.
+        && !app.bisect_open
     {
         subs.push(shortcuts);
     }

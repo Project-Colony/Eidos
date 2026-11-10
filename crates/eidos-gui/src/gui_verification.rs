@@ -1567,3 +1567,361 @@ fn the_prefix_rows_keep_their_place_without_a_prefix() {
     let _ = fs::remove_dir_all(root_with);
     let _ = fs::remove_dir_all(root_without);
 }
+
+/// The Test run button sits between the spacer and Run with a label that never
+/// changes, so neither a tool pick (which disables it) nor a waiting request
+/// moves Run.
+#[test]
+fn the_run_button_does_not_move_with_the_test_run_slot() {
+    let _look = crate::test_support::look_lock();
+    let (mut app, root) = crate::test_support::list_app(&["Keep"]);
+    let mut renderer = renderer();
+    let at = |app: &App, r: &mut iced::Renderer| label(crate::view(app), r, t("main_run"), 0);
+    let plain = at(&app, &mut renderer);
+    app.tool_choice = Some("Some tool".into());
+    assert_eq!(
+        at(&app, &mut renderer),
+        plain,
+        "a tool pick disabled the slot and moved Run"
+    );
+    app.tool_choice = None;
+    app.created
+        .as_ref()
+        .unwrap()
+        .request_test_run(&eidos_instance::TestRun {
+            profile: "Default".into(),
+            game: "skyrimse".into(),
+            requested: 1,
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(
+        at(&app, &mut renderer),
+        plain,
+        "a waiting request moved Run"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// The choices, a selection and the Steam Cloud note never change the dialog's
+/// height: the note has a fixed slot that stays empty without it.
+#[test]
+fn the_test_dialog_keeps_one_height_across_choices_and_the_cloud_note() {
+    let _look = crate::test_support::look_lock();
+    let (mut app, root) = crate::test_support::list_app(&["Keep"]);
+    let mut renderer = renderer();
+    let mut below = |app: &App, choice: TestChoice| {
+        let col = Column::new()
+            .push(test_dialog(app, choice))
+            .push(text("below the dialog"));
+        label(col.into(), &mut renderer, "below the dialog", 0).y
+    };
+    let base = below(&app, TestChoice::Profile);
+    for choice in [TestChoice::Vanilla, TestChoice::Selected] {
+        assert_eq!(below(&app, choice), base, "{choice:?} changed the height");
+    }
+    // Enables "only selected", whose label carries {n}.
+    app.selected_mods = [0].into_iter().collect();
+    assert_eq!(
+        below(&app, TestChoice::Selected),
+        base,
+        "a selection changed the height"
+    );
+    // A Steam copy with a saves path: the cloud note shows.
+    app.games[0].compatdata = Some(root.join("compat"));
+    assert_eq!(
+        below(&app, TestChoice::Profile),
+        base,
+        "the cloud note changed the height"
+    );
+    // Panics when the note is missing from the slot.
+    let _ = label(
+        test_dialog(&app, TestChoice::Profile),
+        &mut renderer,
+        t("test_cloud_note"),
+        0,
+    );
+    // The French note, the longer one, fits the slot at the dialog's inner
+    // width (its 560 px cap less 2 x 20 px padding).
+    let fr = crate::i18n::t_in(colony_ui::i18n::Locale::Fr, "test_cloud_note");
+    let note = positions(
+        container(text(fr).size(sz(11))).width(520.0).into(),
+        &mut renderer,
+    )
+    .labels[0]
+        .1
+        .height;
+    assert!(
+        note <= crate::theme::scaled(30.0),
+        "the French note is {note} px tall"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// Files, notes, the crash line, an unfinished run's header and the armed line
+/// never change the review's height: each has a fixed slot.
+#[test]
+fn the_review_keeps_one_height() {
+    use eidos_instance::TestRunWrites;
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    let run = eidos_instance::TestRun {
+        exit: Some(0),
+        ..Default::default()
+    };
+    let mut below = |review: &TestReview| {
+        let col = Column::new()
+            .push(review_dialog(review))
+            .push(text("below the review"));
+        label(col.into(), &mut renderer, "below the review", 0).y
+    };
+    let empty = TestReview::new(TestRunWrites::default(), run.clone(), None);
+    let base = below(&empty);
+    let many = TestRunWrites {
+        saves: (0..300).map(|i| format!("Save{i}.ess")).collect(),
+        saves_replacing: 3,
+        saves_deleted: 2,
+        plugins: vec!["plugins.txt".into()],
+        plugins_offered: true,
+        output: vec!["Data/x".into()],
+        output_deleted: 4,
+        logs: vec!["SKSE/a.log".into()],
+        ..Default::default()
+    };
+    let mut full = TestReview::new(
+        many,
+        eidos_instance::TestRun {
+            exit: None,
+            mods: Some(vec![]),
+            cloud: true,
+            ..run.clone()
+        },
+        Some("/very/long/path/to/a/crash/log/that/would/wrap/crash-2026-11-10-12-00-00.log".into()),
+    );
+    assert_eq!(
+        below(&full),
+        base,
+        "files, notes and the crash line changed the height"
+    );
+    full.armed = true;
+    full.line = Some(tf("review_armed_line", &[("n", &300)]));
+    assert_eq!(below(&full), base, "the armed line changed the height");
+    // The French header of an unfinished run, the longest, fits its slot at the
+    // dialog's inner width (its 560 px cap less 2 x 20 px padding).
+    let fr = crate::i18n::t_in(colony_ui::i18n::Locale::Fr, "review_interrupted");
+    let header = positions(
+        container(text(fr).size(sz(12))).width(520.0).into(),
+        &mut renderer,
+    )
+    .labels[0]
+        .1
+        .height;
+    assert!(
+        header <= crate::theme::scaled(REVIEW_HEADER_H),
+        "the French header is {header} px tall"
+    );
+}
+
+/// Setup, Ready, Running, Answer and Result fill one fixed stage area, so the
+/// bottom row (Hide) never moves.
+#[test]
+fn the_bisect_panel_keeps_its_bottom_row_in_place() {
+    use eidos_instance::{Answer, Bisect, TestRun};
+    let _look = crate::test_support::look_lock();
+    let names = ["A", "B", "C", "D", "E", "F", "G", "H"];
+    let (mut app, root) = crate::test_support::list_app(&names);
+    let inst = app.created.clone().unwrap();
+    let mut renderer = renderer();
+    let mut hide_y = |app: &App| label(bisect_panel(app), &mut renderer, t("bisect_hide"), 0).y;
+    app.bisect_open = true;
+    app.bisect_universe = bisect_universe(&app);
+    let setup = hide_y(&app); // Setup: no search yet
+    assert_eq!(bisect_stage(&app), BisectStage::Setup);
+    app.bisect_pinned = (0..60)
+        .map(|i| format!("A selected mod with a long name {i}"))
+        .collect();
+    assert_eq!(
+        hide_y(&app),
+        setup,
+        "a long always-on list moved the bottom row"
+    );
+    let mut b = Bisect::new("Default", vec![], names.map(String::from).to_vec(), 1);
+    app.bisect = Some(b.clone());
+    assert_eq!(bisect_stage(&app), BisectStage::Ready);
+    assert_eq!(hide_y(&app), setup, "Ready moved the bottom row");
+    b.begin_step(vec!["A".into(), "B".into(), "C".into(), "D".into()]);
+    app.bisect = Some(b.clone());
+    inst.request_test_run(&TestRun {
+        profile: "Default".into(),
+        game: "skyrimse".into(),
+        mods: Some(vec!["A".into()]),
+        bisect: true,
+        requested: 1,
+        ..Default::default()
+    })
+    .unwrap();
+    load_test_state(&mut app, false);
+    assert_eq!(bisect_stage(&app), BisectStage::Running);
+    assert_eq!(hide_y(&app), setup, "Running moved the bottom row");
+    inst.begin_test_run(&inst.profile("Default"), "skyrimse", &[], None, false, 2)
+        .unwrap();
+    inst.end_test_run(Some(1), 3).unwrap();
+    load_test_state(&mut app, false);
+    assert_eq!(bisect_stage(&app), BisectStage::Answer);
+    assert_eq!(app.bisect_step, (Some(BisectHint::Exit(1)), 0));
+    assert_eq!(hide_y(&app), setup, "Answer moved the bottom row");
+    // A crash log with a path of over 200 characters, so the run wrote a file.
+    let skse = inst.test_docs_upper().join("SKSE");
+    std::fs::create_dir_all(&skse).unwrap();
+    let crash = skse.join(format!("crash-{}.log", "x".repeat(200)));
+    std::fs::write(&crash, "crash").unwrap();
+    load_test_state(&mut app, false);
+    assert_eq!(app.bisect_step, (Some(BisectHint::Crash(crash)), 1));
+    assert_eq!(hide_y(&app), setup, "the crash line moved the bottom row");
+    app.bisect_armed = Some(BisectArm::Answer(Answer::Bad));
+    assert_eq!(hide_y(&app), setup, "the confirm line moved the bottom row");
+    app.bisect_armed = Some(BisectArm::Stop);
+    assert_eq!(hide_y(&app), setup, "the armed Stop moved the bottom row");
+    app.bisect_armed = None;
+    app.bisect_line = Some(tf("review_failed", &[("error", &"x".repeat(300))]));
+    assert_eq!(hide_y(&app), setup, "a failure line moved the bottom row");
+    app.bisect_line = None;
+    for _ in 0..3 {
+        b.answer(Answer::Bad);
+        b.begin_step(vec!["A".into()]);
+    }
+    b.answer(Answer::Bad);
+    app.bisect = Some(b.clone());
+    assert_eq!(bisect_stage(&app), BisectStage::Result);
+    assert_eq!(hide_y(&app), setup, "Result moved the bottom row");
+    b.profile = "Other".into();
+    app.bisect = Some(b);
+    assert_eq!(bisect_stage(&app), BisectStage::OtherProfile);
+    assert_eq!(
+        hide_y(&app),
+        setup,
+        "another profile's search moved the bottom row"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// The French Setup (with a long always-on list) and Ready stages keep their
+/// action button inside the fixed stage area, at the default and the largest
+/// text size: the area clips, so a button below it could not be pressed.
+#[test]
+fn the_french_bisect_actions_fit_the_stage_area() {
+    use colony_ui::i18n::Locale;
+    use colony_ui::typography::{FontSize, TextSize};
+    let _look = crate::test_support::look_lock();
+    let (mut app, root) = crate::test_support::list_app(&["A", "B", "C"]);
+    app.bisect_universe = bisect_universe(&app);
+    app.bisect_pinned = (0..60).map(|i| format!("A selected mod {i}")).collect();
+    let mut renderer = renderer();
+    let fr = |key| crate::i18n::t_in(Locale::Fr, key);
+    let ready = eidos_instance::Bisect::new("Default", vec![], app.bisect_universe.0.clone(), 0);
+    let mut asking = ready.clone();
+    asking.begin_step(vec!["A".into(), "B".into()]);
+    for (font, text) in [
+        (FontSize::Default, TextSize::Default),
+        (FontSize::Large, TextSize::XLarge),
+    ] {
+        let mut look = crate::preferences::UiPreferences::default();
+        look.standard.font_size = font;
+        look.standard.text_size_a11y = text;
+        look.standard.apply();
+        for (search, action) in [
+            (None, fr("bisect_start").to_string()),
+            (
+                Some(ready.clone()),
+                fr("bisect_run_step").replace("{n}", "1"),
+            ),
+        ] {
+            app.bisect = search;
+            let panel = crate::i18n::with_locale(Locale::Fr, || bisect_panel(&app));
+            let drawn = positions(panel, &mut renderer).labels;
+            let at = |s: &str| drawn.iter().find(|(l, _)| l == s).unwrap().1;
+            let (button, hide) = (at(&action), at(fr("bisect_hide")));
+            // Hide's own padding (6), the card spacing (10) and the status slot lie between them.
+            assert!(
+                button.y + button.height + 6.0
+                    <= hide.y - 26.0 - crate::theme::scaled(BISECT_SLOT_H),
+                "{font:?} x {text:?}: {action} at {button:?}, Hide at {hide:?}"
+            );
+        }
+        // The Answer stage, with a crash hint and files to throw away: every
+        // button sits inside the stage area on one line (none squeezed), none
+        // on top of another.
+        app.bisect = Some(asking.clone());
+        app.test_state = Some((
+            eidos_instance::TestRun {
+                bisect: true,
+                ended: Some(3),
+                ..Default::default()
+            },
+            eidos_instance::TestState::Ended,
+        ));
+        app.bisect_step = (Some(BisectHint::Crash("/c/".repeat(70).into())), 12);
+        assert_eq!(bisect_stage(&app), BisectStage::Answer);
+        let panel = crate::i18n::with_locale(Locale::Fr, || bisect_panel(&app));
+        let drawn = positions(panel, &mut renderer).labels;
+        let at = |s: &str| drawn.iter().find(|(l, _)| l == s).unwrap().1;
+        let hide = at(fr("bisect_hide"));
+        let buttons = [
+            "bisect_good",
+            "bisect_bad",
+            "bisect_unsure",
+            "bisect_repeat",
+            "bisect_review",
+        ]
+        .map(|k| at(fr(k)));
+        for (i, b) in buttons.iter().enumerate() {
+            assert!(
+                b.y + b.height + 6.0 <= hide.y - 26.0 - crate::theme::scaled(BISECT_SLOT_H)
+                    && b.x + b.width <= 540.0
+                    && b.height <= hide.height,
+                "{font:?} x {text:?}: answer button {i} at {b:?}, Hide at {hide:?}"
+            );
+            for c in &buttons[i + 1..] {
+                let apart = b.x + b.width <= c.x
+                    || c.x + c.width <= b.x
+                    || b.y + b.height <= c.y
+                    || c.y + c.height <= b.y;
+                assert!(apart, "{font:?} x {text:?}: {b:?} overlaps {c:?}");
+            }
+        }
+        let written = drawn
+            .iter()
+            .find(|(l, _)| l == &fr("bisect_writes").replace("{n}", "12"))
+            .unwrap()
+            .1;
+        // The slot's fixed height caps the measured text: a line that does
+        // not fit reports exactly the slot's height.
+        assert!(
+            written.height < crate::theme::scaled(BISECT_FILES_H),
+            "{font:?} x {text:?}: the files line is {} px tall",
+            written.height
+        );
+        // The longest French lines of the status slot fit it.
+        for line in [
+            fr("bisect_stop_line").replace("{n}", "12"),
+            fr("bisect_confirm_answer").replace("{n}", "1200"),
+            fr("review_armed_line").replace("{n}", "1200"),
+        ] {
+            let h = positions(
+                container(crate::theme::text(line.clone()).size(sz(12)))
+                    .width(520.0)
+                    .into(),
+                &mut renderer,
+            )
+            .labels[0]
+                .1
+                .height;
+            assert!(
+                h <= crate::theme::scaled(BISECT_SLOT_H),
+                "{font:?} x {text:?}: {line} is {h} px tall"
+            );
+        }
+        app.test_state = None;
+    }
+    let _ = std::fs::remove_dir_all(root);
+}

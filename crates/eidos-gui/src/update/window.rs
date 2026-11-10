@@ -62,6 +62,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.selected_mods.clear();
                 app.drag_state = None;
                 app.status = Some(t("status_refreshed").to_string());
+                load_test_state(app, true);
             }
             load_tools(app);
             // F5 is also the "I just ran setcap" recheck for the warning banner.

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=9bcb3911834069a7876af50486e7493e4e753c25 -->
 
 # Utiliser Eidos
 
@@ -180,6 +180,20 @@ remplace jamais une sauvegarde du profil.
 ### Ce qui a changé depuis le dernier bon lancement
 
 Chaque lancement par `eidos play` ou `eidos tool run`, depuis la fenêtre, un terminal ou Steam, écrit un enregistrement dans `<instance>/logs/sessions/` : le profil, chaque mod activé avec sa version et ses identifiants de fichier Nexus, l'ordre des plugins, une somme de contrôle de chaque INI du profil, la version de l'exécutable du jeu, la version d'Eidos, le code de sortie et les sauvegardes créées pendant le lancement. Les 50 plus récents sont conservés, et `logs/` n'entre pas dans une instance empaquetée. `eidos sessions <instance> diff` compare le dernier lancement du jeu terminé avec le code 0 à l'état actuel ; `diff <id>` choisit un autre enregistrement de la liste. Eidos ne détecte pas encore les plantages ici, et un jeu planté sous Proton peut quand même sortir avec le code 0 : si le lancement choisi en fait partie, indiquez-en un plus ancien avec `diff <id>`.
+
+### Parties test
+
+Le bouton Partie test, à côté de Lancer, démarre le jeu comme Lancer, mais tout ce que le jeu écrit va dans `<instance>/test-run/` au lieu de votre profil, de l'Overwrite et du préfixe : les sauvegardes nouvelles ou modifiées, les changements d'INI, `plugins.txt`, les fichiers écrits dans Data ou dans le dossier du jeu, et les journaux de `Documents/My Games/<game>`. Vous pouvez tester avec les mods du profil, sans aucun mod, ou seulement avec les mods sélectionnés dans la liste, plus les mods dont les plugins leur servent de maîtres.
+
+Quand le jeu se ferme, Eidos range ces fichiers en cinq groupes (sauvegardes, changements d'INI, état des plugins, sortie de l'Overwrite, journaux) et vous demande de garder ou de jeter chacun d'eux. Garder les sauvegardes ne supprime jamais une sauvegarde du profil, même si le jeu l'a supprimée pendant la partie. Jeter quoi que ce soit demande un second appui. Si Eidos ou l'ordinateur s'arrête pendant une partie test, les fichiers restent dans `test-run/` et la liste s'ouvre la prochaine fois que vous ouvrez l'instance ou appuyez sur F5.
+
+Quand la fenêtre n'a pas été démarrée par la boutique du jeu, Partie test confie le jeu à cette boutique (Steam, Heroic ou Legendary), comme Lancer, et la partie que lance la boutique est la partie test. Une partie test ne couvre que les dossiers cités plus haut : les autres écritures du jeu, comme le registre Wine, vont là où elles vont toujours. Les sauvegardes d'une partie test n'arrivent dans Steam Cloud qu'une fois que vous les avez gardées puis avez joué une partie normale.
+
+### Trouver le mod à l'origine d'un problème
+
+Le bouton Trouver le mod à l'origine d'un problème, dans Diagnostics, cherche le mod qui cause un problème que vous savez reproduire, par exemple un plantage à un endroit précis. Chaque étape est une partie test avec la moitié des suspects restants, les maîtres dont ils ont besoin et les mods que vous gardez toujours actifs (les mods sélectionnés dans la liste au moment de commencer, et le mod qui fournit le script extender). Après chaque partie, vous indiquez si le problème s'est produit ; « Je ne sais pas » répartit les suspects autrement, et Relancer refait l'étape. Répondre, ou appuyer sur Relancer, jette les fichiers que l'étape a écrits, après un second appui. Pour en garder certains, appuyez d'abord sur Voir les fichiers : la même liste qu'après une partie test s'ouvre. Quand le jeu a planté et qu'un crash logger a écrit un journal, ou que le jeu est sorti avec un code d'erreur, Eidos met en avant le bouton « Oui, il s'est produit » comme réponse probable. 200 suspects demandent environ 8 parties.
+
+La recherche est enregistrée dans `<instance>/bisect.json`, vous pouvez donc fermer Eidos entre deux étapes. Le bouton Arrêter la recherche l'abandonne après un second appui. Le résultat nomme le mod, ou l'ensemble de mods qui ont besoin des maîtres les uns des autres, et il est conservé dans `<instance>/logs/bisect-<time>.txt`. Les mods générés (une sortie de Nemesis ou de DynDOLOD, un Bashed Patch) sont construits pour la liste complète et peuvent échouer avec la moitié : gardez-les toujours actifs, ou laissez-les désactivés pendant toute la recherche.
 
 ### Aucune étape privilégiée n'est nécessaire
 

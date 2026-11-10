@@ -27,6 +27,7 @@ mod prereqs;
 mod resolve;
 mod sessions;
 mod sort;
+mod test_run;
 #[cfg(test)]
 mod tests;
 mod tools;

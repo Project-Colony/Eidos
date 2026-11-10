@@ -24,6 +24,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+mod bisect;
 mod categories;
 mod export;
 mod launch_record;
@@ -36,7 +37,9 @@ mod provenance;
 mod registry;
 mod sessions;
 pub mod settings;
+mod test_run;
 mod tools;
+pub use bisect::*;
 pub use categories::{
     format_categories, parse_all, parse_primary, Category, CategoryFactory, NexusCategory,
 };
@@ -48,8 +51,8 @@ pub use mo2_ini::{mo2_executables, Mo2Executable, Mo2Ini, Mo2Skip};
 pub use mod_backup::{backup_mod, reserve_mod_backup};
 pub use profile::{
     cosave_siblings, format_stamp, instance_sync_keys, is_save_data, is_save_listing,
-    read_text_lossy, save_sync_key, untweak_ini, write_text, Backup, BackupKind, ListTrust,
-    Profile, SaveEntry, SavesImport, TweakedKey,
+    merge_output_tree, read_text_lossy, save_sync_key, untweak_ini, write_text, Backup, BackupKind,
+    ListTrust, Profile, SaveEntry, SavesImport, TweakedKey,
 };
 pub use provenance::{
     GeneratedInput, GeneratedOutput, GeneratedReceipt, GeneratedRun, ToolExecutable,
@@ -57,12 +60,23 @@ pub use provenance::{
 pub use registry::{registry_path, InstanceRef, Registry};
 pub use sessions::{SessionMod, SessionRecord, KEEP_SESSIONS};
 pub use settings::Settings;
+pub use test_run::*;
 pub use tools::{
     default_args, default_output_mod, default_prereqs, default_tools, default_tools_in,
     default_tools_in_view, edits_inis, is_mod_folder_name, merge_tools, prefix_tool, read_tools,
     root_executable, root_executable_source, tool_for_exe, tool_search_roots, write_tools,
     GameExecutables, Runner, Tool, PREFIX_TOOLS,
 };
+
+/// The files a root-mode game reads beside its executable that the profile owns:
+/// a Root capture leaves them in the profile's `runtime-root` instead of moving
+/// them to the shared Overwrite.
+pub const ROOT_CONTROL_FILES: &[&str] = &[
+    "Morrowind.ini",
+    "Oblivion.ini",
+    "OblivionPrefs.ini",
+    "plugins.txt",
+];
 
 /// Where an instance is stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -977,14 +991,7 @@ impl Instance {
     /// contribute nothing, so an ordinary load order returns an empty vec and no
     /// second mount happens at all.
     pub fn root_layers(&self) -> Vec<PathBuf> {
-        // `modlist()` is display order (lowest priority first); the union wants
-        // highest first, so walk it in reverse.
-        self.modlist()
-            .into_iter()
-            .rev()
-            .filter(|m| m.is_active())
-            .filter_map(|m| find_root_dir(&m.path))
-            .collect()
+        self.active().root_layers()
     }
 
     /// Downloaded mod archives land here (`<root>/downloads/`), each with its

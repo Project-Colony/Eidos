@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=9bcb3911834069a7876af50486e7493e4e753c25 -->
 
 # Eidos gebruiken
 
@@ -170,6 +170,20 @@ naar het profiel en vervangt nooit een save van het profiel.
 ### Wat er veranderd is sinds de laatste goede run
 
 Elke run via `eidos play` of `eidos tool run`, gestart vanuit het venster, een terminal of Steam, schrijft een record naar `<instance>/logs/sessions/`: het profiel, elke ingeschakelde mod met versie en Nexus-bestands-id's, de pluginvolgorde, een checksum van elke profiel-INI, de versie van het spelprogramma, de Eidos-versie, de exitcode en de saves die de run aanmaakte. De 50 nieuwste blijven bewaard, en `logs/` zit niet in een ingepakte instantie. `eidos sessions <instance> diff` vergelijkt de nieuwste spelrun met exitcode 0 met de huidige stand; `diff <id>` kiest een ander record uit de lijst. Eidos herkent hier nog geen crashes, en een spel dat onder Proton crashte kan toch met code 0 eindigen: hoort de gekozen run daarbij, noem dan met `diff <id>` een eerdere.
+
+### Testruns
+
+De knop Test run naast Run start het spel zoals Run dat doet, maar alles wat het spel schrijft gaat naar `<instance>/test-run/` in plaats van naar je profiel, de Overwrite en het prefix: nieuwe en gewijzigde saves, INI-wijzigingen, `plugins.txt`, bestanden die in Data of de spelmap worden geschreven, en de logs in `Documents/My Games/<game>`. Je kunt testen met de mods van het profiel, zonder enige mod, of alleen met de mods die in de lijst geselecteerd zijn plus de mods waarvan ze de plugins als master nodig hebben.
+
+Als het spel stopt, toont Eidos die bestanden in vijf groepen (saves, INI-wijzigingen, pluginstatus, Overwrite-uitvoer, logs) en vraagt per groep of je die houdt of weggooit. Saves houden verwijdert nooit een save uit het profiel, ook niet een die het spel tijdens de run verwijderde. Iets weggooien vraagt een tweede klik. Stopt Eidos of de computer tijdens een testrun, dan blijven de bestanden in `test-run/` en opent de lijst de volgende keer dat je de instantie opent of op F5 drukt.
+
+Is het venster niet door de winkel van het spel gestart, dan geeft Test run het spel door aan die winkel (Steam, Heroic of Legendary), zoals Run doet, en de run die de winkel start is de testrun. Een testrun dekt alleen de mappen hierboven: andere schrijfacties van het spel, zoals in het Wine-register, gaan waar ze altijd heen gaan. Saves uit een testrun komen pas in Steam Cloud nadat je ze houdt en een normale run speelt.
+
+### De mod achter een probleem vinden
+
+De knop Find the mod behind a problem in Diagnostics zoekt de mod die een probleem veroorzaakt dat je kunt reproduceren, zoals een crash op een bepaalde plek. Elke stap is een testrun met de helft van de overgebleven verdachten, de masters die ze nodig hebben en de mods die je altijd aan houdt (de mods die bij de start in de lijst geselecteerd zijn, en de mod die de script extender levert). Na elke run antwoord je of het probleem optrad; Not sure verdeelt de verdachten anders en Run it again herhaalt de stap. Een antwoord, of Run it again, gooit de bestanden die de stap schreef weg na een tweede klik. Wil je er een paar houden, druk dan eerst op See the files: dat opent dezelfde lijst als na een testrun. Crashte het spel en schreef een crash logger een log, of eindigde het spel met een foutcode, dan markeert Eidos Yes als waarschijnlijk antwoord. 200 verdachten kosten ongeveer 8 runs.
+
+De zoektocht wordt bewaard in `<instance>/bisect.json`, dus je kunt Eidos tussen de stappen sluiten. Stop the search laat hem vallen na een tweede klik. Het resultaat noemt de mod, of de groep mods die elkaars masters nodig hebben, en wordt bewaard in `<instance>/logs/bisect-<time>.txt`. Gegenereerde mods (uitvoer van Nemesis of DynDOLOD, een Bashed Patch) zijn gebouwd voor de volledige lijst en kunnen met de helft ervan mislukken: houd ze altijd aan, of laat ze de hele zoektocht uit.
 
 ### Geen bevoorrechte stap nodig
 

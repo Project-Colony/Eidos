@@ -239,6 +239,30 @@ pub(crate) struct App {
     /// Run is waiting on "Run first / Play anyway": a flagged generator's output
     /// is out of date.
     pub(crate) play_prompt: Option<PlayPrompt>,
+    /// The open Test run dialog and the choice it shows.
+    pub(crate) test_dialog: Option<TestChoice>,
+    /// The instance's test run as the last press read it. The view reads this,
+    /// never `test_run_state`, whose lock probe can sleep for 100 ms.
+    pub(crate) test_state: Option<(eidos_instance::TestRun, eidos_instance::TestState)>,
+    /// The open review of an ended test run.
+    pub(crate) test_review: Option<TestReview>,
+    /// The bisect search (A37) as `bisect.json` held it when the window last
+    /// read it, and whether its panel is showing.
+    pub(crate) bisect: Option<eidos_instance::Bisect>,
+    pub(crate) bisect_open: bool,
+    /// The enabled managed mods and the plugin rows, read when the panel opens
+    /// and after each step, so the view never walks plugin headers.
+    pub(crate) bisect_universe: (Vec<String>, Vec<eidos_plugins::Plugin>),
+    /// The mods Setup shows as always on and Start pins, read when the panel
+    /// opens: finding the extender's mod reads every mod's `Root` folder.
+    pub(crate) bisect_pinned: Vec<String>,
+    /// The first press of an answer, Run it again or Stop; the second acts.
+    pub(crate) bisect_armed: Option<BisectArm>,
+    /// The ended step's hint and how many files an answer throws away, read
+    /// with the test state so the view walks no folder.
+    pub(crate) bisect_step: (Option<BisectHint>, usize),
+    /// The panel's status slot when nothing is armed: why the last press failed.
+    pub(crate) bisect_line: Option<String>,
     /// Drift states the user chose to play with, for this window only:
     /// `(receipt id, hash of the inputs)`. Never saved.
     pub(crate) play_anyway: Vec<(String, u64)>,

@@ -67,6 +67,22 @@ pub(crate) fn right_pane<'a>(app: &App) -> Element<'a, Message> {
                 .padding(8),
         )
         .push(Space::new().width(Length::Fill))
+        // Always here with one label, so Run never moves; a tool is never a test run.
+        .push(
+            button(text(t("main_test_run")).size(sz(15)))
+                .padding(10)
+                .on_press_maybe(
+                    (app.created.is_some()
+                        && app.running.is_none()
+                        && selected_game(app).is_some()
+                        && app
+                            .tool_choice
+                            .as_deref()
+                            .is_none_or(|t| picks_the_game(app, t)))
+                    .then_some(Message::OpenTestRun),
+                )
+                .style(button::secondary),
+        )
         // While a run Stop can end is tracked, Run would only say it is still
         // running, so the button ends it instead.
         .push(if app.running.as_ref().is_some_and(|r| r.stoppable) {
@@ -617,6 +633,35 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         // events, so without this a click anywhere ON the report fell through to
         // the scrim behind it and dismissed the thing the user was reading.
         let dialog = container(mouse_area(loot_report_dialog(report)).on_press(Message::Noop))
+            .center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
+    }
+
+    // Under the review: a step refused for a waiting review opens it on top.
+    if app.bisect_open {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::BisectHide)
+            .on_right_press(Message::BisectHide);
+        let dialog =
+            container(mouse_area(bisect_panel(app)).on_press(Message::Noop)).center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
+    }
+
+    if let Some(choice) = app.test_dialog {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::CloseTestDialog)
+            .on_right_press(Message::CloseTestDialog);
+        let dialog = container(mouse_area(test_dialog(app, choice)).on_press(Message::Noop))
+            .center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
+    }
+
+    // A click outside is Decide later: it changes nothing on disk.
+    if let Some(review) = &app.test_review {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::ReviewLater)
+            .on_right_press(Message::ReviewLater);
+        let dialog = container(mouse_area(review_dialog(review)).on_press(Message::Noop))
             .center(Length::Fill);
         layers = layers.push(scrim).push(dialog);
     }
