@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f4111e41cc9dfecb83a8395affe2370c96b62e55 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
 
 # Narzędzia: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -350,6 +350,12 @@ w nim swój profil.
 PGPatcher kończy pracę z błędem, gdy profil nie ma żadnego włączonego moda, oraz
 gdy jego folder wyjściowy jest folderem włączonego moda, tak samo jak pod MO2.
 
+## Własne programy Wine w prefiksie gry
+
+Menu Plik uruchamia cztery programy Wine w prefiksie gry: winecfg, regedit, menedżer plików Wine i program do odinstalowywania. Startują jak każde narzędzie, z wersją Protona lub Wine, która uruchamia narzędzia gry, z podmontowanymi modami, a okno na nie czeka. **Prefix drive_c** otwiera dysk `C:` prefiksu w menedżerze plików. Wiersz jest wyszarzony, dopóki prefiks nie ma danego programu, co następuje przy pierwszym uruchomieniu gry ze sklepu.
+
+Eidos sam zapisuje jedną wartość rejestru, `installed path` gry w `HKLM\Software\Bethesda Softworks\<game>`, przed każdym uruchomieniem narzędzia, jeśli jest błędna. Zmiana wprowadzona w regedit wraca na miejsce przy następnym uruchomieniu narzędzia.
+
 ## Ścieżka gry w prefiksie
 
 Narzędzia windowsowe znajdują swoją grę, czytając
@@ -386,6 +392,14 @@ wpisane w terminalu prosi sklep o uruchomienie gry, tak samo jak Run w oknie,
 którego nie otworzył żaden sklep. Gdy brakuje ustawienia w sklepie, polecenie
 niczego nie uruchamia i wypisuje, co ustawić. Skrót nie pokazuje żadnego
 komunikatu, więc uruchom to samo polecenie w terminalu, żeby go przeczytać.
+
+Profil może mieć własny skrót do gry. Kliknij profil prawym przyciskiem myszy i
+wybierz **Desktop shortcut**: skrót uruchamia
+`eidos tool <instance> run "<game>" --profile <name>`, co czyni ten profil
+aktywnym, tak jak wybranie go w oknie, a potem prosi sklep o uruchomienie gry.
+Okno Eidos, które otwiera sklep, pokazuje ten profil. `--profile` działa z
+każdym `eidos tool ... run` i wybiera profil, zanim narzędzie wystartuje; z
+`--print` niczego nie wybiera.
 
 ## Narzędzie, które jest własną aplikacją Steam
 

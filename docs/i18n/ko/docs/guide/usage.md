@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=b64d28c8573bb396699a2cd48c4a7a8f0b3c1d4e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=0433d51887d1d1997dd785a7a18f7a4be58dfcd5 -->
 
 # Eidos 사용하기
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # 기존 MO2 프로필의 순서 + 플러�
 eidos sort skyrimse               # 플러그인 로드 순서를 LOOT로 정렬
 eidos play skyrimse               # 무엇이 마운트될지 보기
 eidos play skyrimse -- <command>  # 게임 위에 모드를 마운트한 채 <command> 실행
+eidos shell skyrimse              # 병합된 뷰에서 셸 실행, 쓰기는 Overwrite에 저장
 eidos check skyrimse              # 창 없이 상태 검사 (스크립트용 --json)
 eidos sessions skyrimse           # 기록된 게임과 도구 실행을 최신순으로
 eidos sessions skyrimse diff      # 종료 코드 0으로 끝난 마지막 실행 이후 바뀐 내용
@@ -35,6 +36,10 @@ eidos unpack backup.eidos <folder>   # 다른 기계에서 되돌려 놓기
 `eidos check <instance>`는 창을 열지 않고 **Diagnostics** 탭의 프리픽스, 플러그인, 빠진 마스터, 스크립트 익스텐더 검사를 돌립니다. 그래서 SSH나 Game Mode에서도 돌릴 수 있고 버그 보고에 넣을 수 있습니다. **Copy report**와 같은 시스템 줄을 출력한 다음, 발견 사항마다 한 줄씩 출력합니다. 홈 폴더는 `~`로, 로그인 이름은 `<user>`로 표시됩니다. 종료 코드는 문제가 없으면 0(조언만 있어도 0), 문제가 하나라도 있으면 1, Eidos가 검사하지 못했으면 2입니다. 검사하지 못하는 경우는 잘못된 인수, 열 수 없는 인스턴스, 감지되지 않는 게임입니다.
 
 `eidos check <instance> --json`은 대신 JSON 객체 하나를 출력합니다. 최상위 필드는 `eidos`(버전), `game`, `instance`, `system`(`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`, `max_map_count`, `open_files_hard`), `findings`입니다. `max_map_count`와 `open_files_hard`는 숫자이며, Eidos가 읽지 못했을 때는 `null`입니다. 각 발견 사항은 `code`, `level`(`problem` 또는 `advice`), 그리고 그 `args`로 이루어지며, 각 코드의 문장은 Diagnostics 탭에 나옵니다.
+
+### 병합된 뷰의 셸
+
+`eidos shell <instance>`는 게임이 보는 모습 그대로의 게임 폴더에서 `$SHELL`(없으면 `/bin/sh`)을 시작합니다. 활성화된 모든 모드가 `Data` 위에 마운트되고, Root 모드는 게임 루트 위에 마운트되며, 거기에 쓰이는 모든 것은 Overwrite에 들어갑니다. `eidos shell <instance> -- <command>`는 대신 명령 하나만 실행합니다. 예를 들어 `eidos shell skyrimse -- ls Data/meshes`나 NifSkope 같은 네이티브 도구입니다. 이 실행은 게임 세션처럼 인스턴스 잠금을 유지하므로 종료할 때까지 창이 변경을 저장할 수 없고, `eidos sessions`에는 `shell`이라는 이름으로 기록되며 게임 실행으로는 기록되지 않습니다. 명령 실행 중 Ctrl+C는 Stop과 같은 방식으로 실행을 멈춥니다. Eidos가 명령을 끝내고, 세션을 수집하고, 마운트를 해제합니다. 대화형 셸에서 Ctrl+C는 평소처럼 셸의 것입니다. 실행을 끝내려면 `exit`를 입력합니다.
 
 ### 인스턴스: 전역과 휴대용
 
@@ -421,8 +426,9 @@ Conflicts / Overwrite / Saves / Downloads / Diagnostics 탭과 실행 대상 선
 Accessibility가 먼저 오고, 그다음 Mod list, Nexus, About이 옵니다. 모든 변경은
 즉시 적용되고 저장됩니다. Save 버튼은 없습니다.
 
-- **General**: Eidos가 여는 게임, 창 크기, 인터페이스 언어, 도구 폴더, 그리고
-  게임을 실행하는 방식. 창은 영어와 프랑스어를 지원합니다. **System**은
+- **General**: Eidos가 여는 게임, 창 크기, 인터페이스 언어, 도구 폴더, 게임을
+  실행하는 방식, 그리고 창이 뒤에 있는 동안 긴 작업이 끝나면 데스크톱 알림으로
+  알릴지 여부. 창은 영어와 프랑스어를 지원합니다. **System**은
   `LC_ALL`, `LC_MESSAGES`, `LANG`을 따르며, 변경은 즉시 적용됩니다. `eidos`
   명령줄은 언제나 영어로 답합니다.
 - **Appearance**: 테마(25개 계열, 57개 팔레트, 기본값은 Eidos의 양피지), 강조
@@ -658,6 +664,8 @@ GUI를 통해 게임을 실행하려면 게임의 Steam 실행 옵션을 실행 
 Eidos는 그 게임의 인스턴스로 열립니다 - 마지막으로 쓴 것이므로 휴대용 인스턴스도
 전역 인스턴스와 똑같이 다시 찾아집니다. Run을 클릭하면 병합된 뷰를 통해
 실행됩니다.
+
+**Start the game at once when a store opens Eidos**를 켜 두면(Preferences, General, Running a game) Eidos는 그 클릭을 건너뜁니다. Health를 확인하고 창을 띄우지 않은 채 게임을 시작합니다. Health에 문제가 있을 때, 모드 목록에 확인이 필요할 때, 플레이 전에 실행하도록 설정한 도구의 출력이 오래되었을 때는 평소처럼 창이 열립니다. 한 번만 창을 보려면 명령 앞에 `EIDOS_WINDOW=1`을 붙이세요: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Steam 밖에서 Run은 Proton이나 Wine으로 게임을 직접 시작하지 않습니다. 그 사본을 가진 스토어에 시작을 요청하고, 스토어가 Eidos를 시작합니다:
 

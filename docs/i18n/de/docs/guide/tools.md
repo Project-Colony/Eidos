@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f4111e41cc9dfecb83a8395affe2370c96b62e55 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -363,6 +363,12 @@ PGPatcher bricht mit einem Fehler ab, wenn das Profil keinen aktivierten Mod hat
 und wenn sein Ausgabeordner der Ordner eines aktivierten Mods ist, so wie unter
 MO2.
 
+## Wines eigene Programme im Prefix des Spiels
+
+Das Menü Datei startet vier Programme von Wine im Prefix des Spiels: winecfg, regedit, den Wine-Dateimanager und die Deinstallation. Sie starten wie jedes Werkzeug, mit dem Proton- oder Wine-Build, der die Werkzeuge des Spiels ausführt, bei eingehängten Mods, und das Fenster wartet auf sie. **Prefix drive_c** öffnet das Laufwerk `C:` des Prefix in Ihrem Dateimanager. Eine Zeile bleibt grau, bis das Prefix das Programm enthält. Das geschieht, wenn der Store das Spiel zum ersten Mal startet.
+
+Eidos schreibt selbst einen einzigen Registrywert, den `installed path` des Spiels unter `HKLM\Software\Bethesda Softworks\<game>`, vor jedem Werkzeuglauf, wenn er falsch ist. Eine Änderung daran in regedit wird beim nächsten Werkzeuglauf zurückgesetzt.
+
 ## Der Spielpfad im Präfix
 
 Windows-Tools finden ihr Spiel, indem sie
@@ -402,6 +408,14 @@ Terminal bittet sie den Store, das Spiel zu starten, so wie Run in einem
 Fenster, das kein Store geöffnet hat. Fehlt die Einstellung im Store, startet
 der Befehl nichts und gibt aus, was zu setzen ist. Eine Verknüpfung zeigt keine
 Meldung; führen Sie denselben Befehl in einem Terminal aus, um sie zu lesen.
+
+Ein Profil kann eine eigene Verknüpfung für das Spiel haben. Klicken Sie mit der
+rechten Maustaste auf das Profil und wählen Sie **Desktop shortcut**: Der
+Eintrag führt `eidos tool <instance> run "<game>" --profile <name>` aus, was
+dieses Profil zum aktiven macht, wie es die Auswahl im Fenster tut, und bittet
+dann den Store, das Spiel zu starten. Das Eidos-Fenster, das der Store öffnet,
+zeigt dieses Profil. `--profile` funktioniert mit jedem `eidos tool ... run` und
+wählt das Profil aus, bevor das Tool startet; mit `--print` wählt es nichts aus.
 
 ## Ein Tool, das eine eigene Steam-App ist
 

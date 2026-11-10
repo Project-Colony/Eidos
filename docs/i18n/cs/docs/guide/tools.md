@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f4111e41cc9dfecb83a8395affe2370c96b62e55 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -339,6 +339,12 @@ vlastní profil.
 PGPatcher skončí s chybou, když profil nemá žádný zapnutý mod, a když je jeho
 výstupní složka složkou zapnutého modu, stejně jako pod MO2.
 
+## Vlastní programy Wine v prefixu hry
+
+Nabídka Soubor spouští čtyři programy Wine v prefixu hry: winecfg, regedit, správce souborů Wine a odinstalační program. Startují jako každý nástroj, se sestavením Protonu nebo Wine, které spouští nástroje hry, s připojenými módy, a okno na ně čeká. **Prefix drive_c** otevře disk `C:` prefixu ve správci souborů. Řádek je šedý, dokud prefix daný program nemá, což nastane při prvním spuštění hry z obchodu.
+
+Eidos sám zapisuje jedinou hodnotu registru, `installed path` hry pod `HKLM\Software\Bethesda Softworks\<game>`, před každým během nástroje, když je chybná. Změna provedená v regeditu se při příštím běhu nástroje vrátí.
+
 ## Cesta ke hře v prefixu
 
 Windowsové nástroje najdou svou hru přečtením
@@ -375,6 +381,14 @@ v Eidosu 1.22 nebo starším, funguje dál: stejně jako
 spustil, tak jako Run v okně, které neotevřel žádný obchod. Když nastavení
 v obchodě chybí, příkaz nic nespustí a vypíše, co nastavit. Zástupce žádnou
 zprávu neukáže, proto si ji přečtěte spuštěním stejného příkazu v terminálu.
+
+Profil může mít pro hru vlastního zástupce. Klikněte na profil pravým tlačítkem
+a zvolte **Desktop shortcut**: položka spustí
+`eidos tool <instance> run "<game>" --profile <name>`, což z tohoto profilu
+udělá aktivní profil, stejně jako jeho výběr v okně, a pak požádá obchod, aby
+hru spustil. Okno Eidosu, které obchod otevře, ukazuje tento profil. `--profile`
+funguje s každým `eidos tool ... run` a vybere profil dřív, než se nástroj
+spustí; s `--print` nevybere nic.
 
 ## Nástroj, který je vlastní aplikací na Steamu
 

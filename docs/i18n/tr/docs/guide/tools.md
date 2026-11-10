@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f4111e41cc9dfecb83a8395affe2370c96b62e55 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -356,6 +356,12 @@ kendi profilini bulur.
 PGPatcher, profilde etkin hiçbir mod olmadığında ve çıktı klasörü etkin bir
 modun klasörü olduğunda, MO2 altında olduğu gibi bir hatayla durur.
 
+## Wine'ın kendi programları, oyunun önekinde
+
+Dosya menüsü, oyunun önekinde Wine'ın dört programını çalıştırır: winecfg, regedit, Wine dosya gezgini ve kaldırıcı. Diğer araçlar gibi, oyunun araçlarını çalıştıran Proton veya Wine sürümüyle, modlar bağlanmış olarak başlarlar ve pencere onları bekler. **Prefix drive_c**, önekin `C:` sürücüsünü dosya yöneticinizde açar. Önekte o program olana kadar satır gri kalır; bu, mağaza oyunu ilk kez başlattığında olur.
+
+Eidos kayıt defterine kendisi yalnızca bir değer yazar: `HKLM\Software\Bethesda Softworks\<game>` altındaki oyunun `installed path` değeri. Yanlışsa her araç çalıştırmasından önce düzeltir. regedit'te bu değerde yaptığınız değişiklik bir sonraki araç çalıştırmasında geri konur.
+
 ## Önekteki oyun yolu
 
 Windows araçları oyunlarını `HKLM\Software\Bethesda Softworks\<game>`
@@ -392,6 +398,14 @@ mağazadan oyunu başlatmasını ister; hiçbir mağazanın açmadığı bir pen
 Run'ın yaptığı gibi. Mağazadaki ayar eksikse komut hiçbir şey başlatmaz ve
 neyin ayarlanacağını yazdırır. Kısayol hiçbir ileti göstermez, bu yüzden okumak
 için aynı komutu bir terminalde çalıştırın.
+
+Bir profilin oyun için kendi kısayolu olabilir. Profile sağ tıklayıp
+**Desktop shortcut** seçeneğini seçin: kısayol
+`eidos tool <instance> run "<game>" --profile <name>` komutunu çalıştırır; bu
+komut, pencerede seçmekle aynı şekilde o profili etkin profil yapar ve ardından
+mağazadan oyunu başlatmasını ister. Mağazanın açtığı Eidos penceresi o profili
+gösterir. `--profile` her `eidos tool ... run` ile çalışır ve profili araç
+başlamadan önce seçer; `--print` ile hiçbir şey seçmez.
 
 ## Kendi başına bir Steam uygulaması olan araç
 

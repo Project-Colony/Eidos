@@ -26,6 +26,8 @@ mod tools;
 mod window;
 mod wizard;
 
+pub(crate) use launch::{start_directly, wait_direct_run};
+
 /// Open `archive` on a worker thread, reporting 7-Zip's percentage as it goes.
 ///
 /// Everything here used to happen inline in `update()`. The work is identical;
@@ -1085,6 +1087,10 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
     match m {
         Message::PointerAt(_)
         | Message::WindowResized(_)
+        // The user switching to another window decides nothing here; as an
+        // action it would disarm a confirmation and be dropped behind an
+        // open installer.
+        | Message::WindowFocused(_)
         // Grabbing the divider resizes the window's furniture; it is not the
         // user deciding anything about the row a confirmation is armed on.
         | Message::SplitGrab
@@ -1295,6 +1301,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::ProfileCopyCommit
         | Message::ProfileDeleteConfirm(..)
         | Message::ProfileDeleteCommit(..)
+        | Message::ProfileDesktopShortcut(..)
         | Message::ShowBackupsDialog
         | Message::CloseBackupsDialog
         | Message::CreateBackup(..)
@@ -1565,6 +1572,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::PreferredServersChanged(..)
         | Message::DefaultGameChanged(..)
         | Message::ToggleLockGui(..)
+        | Message::ToggleStartDirectly(..)
+        | Message::ToggleNotifyWhenAway(..)
         | Message::ToolsDirChanged(..)
         | Message::BrowseToolsDir) => preferences::handle(app, m),
         m @ (Message::IdentifyDownload(..)
@@ -1688,6 +1697,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::SplitGrab
         | Message::AnimationTick
         | Message::WindowResized(..)
+        | Message::WindowFocused(..)
         | Message::CycleFocus
         | Message::SelectAllInFocus
         | Message::KeyNav(..)

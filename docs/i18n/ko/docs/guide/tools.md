@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f4111e41cc9dfecb83a8395affe2370c96b62e55 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
 
 # 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -312,6 +312,12 @@ Eidos는 무언가를 시작할 때만 자기 파일을 쓰므로, 두 번의 �
 PGPatcher는 프로필에 켜진 모드가 하나도 없을 때와, 출력 폴더가 켜진 모드의
 폴더일 때 MO2에서와 마찬가지로 오류를 내고 멈춥니다.
 
+## 게임 프리픽스 안의 Wine 자체 프로그램
+
+파일 메뉴는 게임 프리픽스에서 Wine 프로그램 네 가지를 실행합니다. winecfg, regedit, Wine 파일 탐색기, 제거 프로그램입니다. 다른 도구와 똑같이 게임의 도구를 실행하는 Proton 또는 Wine 빌드로, 모드를 마운트한 상태에서 시작되며, 창은 프로그램이 끝나기를 기다립니다. **Prefix drive_c**는 프리픽스의 `C:` 드라이브를 파일 관리자에서 엽니다. 프리픽스에 해당 프로그램이 없는 동안에는 행이 회색으로 표시되며, 스토어가 게임을 처음 실행하면 생깁니다.
+
+Eidos가 직접 쓰는 레지스트리 값은 `HKLM\Software\Bethesda Softworks\<game>` 아래 게임의 `installed path` 하나뿐이며, 값이 틀렸을 때 도구를 실행할 때마다 먼저 고칩니다. regedit에서 이 값을 바꿔도 다음 도구 실행 때 되돌려집니다.
+
 ## 프리픽스 안의 게임 경로
 
 Windows 도구는 `HKLM\Software\Bethesda Softworks\<game>`의 `installed path`를
@@ -346,6 +352,14 @@ Steam은 그것을 결코 실행하지 않습니다. 그것 없이는 xEdit, Wry
 열지 않은 창에서 Run이 하는 것과 같습니다. 스토어 설정이 없으면 명령은 아무것도
 시작하지 않고 무엇을 설정할지 출력합니다. 바로가기는 메시지를 보여주지
 않으므로, 같은 명령을 터미널에서 실행해 읽으세요.
+
+프로필마다 게임용 바로가기를 따로 둘 수 있습니다. 프로필을 오른쪽 클릭하고
+**Desktop shortcut**을 고르면, 그 항목은
+`eidos tool <instance> run "<game>" --profile <name>`을 실행합니다. 이 명령은
+창에서 프로필을 고를 때처럼 그 프로필을 활성 프로필로 만든 다음, 스토어에 게임
+시작을 요청합니다. 스토어가 여는 Eidos 창은 그 프로필을 보여줍니다.
+`--profile`은 모든 `eidos tool ... run`에서 쓸 수 있고 도구가 시작되기 전에
+프로필을 선택합니다. `--print`와 함께 쓰면 아무것도 선택하지 않습니다.
 
 ## 자기가 곧 Steam 앱인 도구
 

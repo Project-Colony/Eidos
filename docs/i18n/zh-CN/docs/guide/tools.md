@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=f4111e41cc9dfecb83a8395affe2370c96b62e55 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=3d91df837e327b34cecc9a76827dfbf53c540272 -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -281,6 +281,12 @@ Eidos 只在启动某个东西时写它自己的文件，所以在两次启动�
 当配置文件中没有任何已启用的模组，或输出文件夹就是某个已启用模组的文件夹时，
 PGPatcher 会报错并停止，和在 MO2 下一样。
 
+## 游戏前缀中的 Wine 自带程序
+
+“文件”菜单会在游戏的前缀中运行 Wine 的四个程序：winecfg、regedit、Wine 文件管理器和卸载程序。它们和其他工具一样启动，使用运行游戏工具的 Proton 或 Wine 版本，并挂载好模组，窗口会等它们结束。**Prefix drive_c** 会在文件管理器中打开前缀的 `C:` 盘。前缀里还没有某个程序时，对应的行显示为灰色，商店第一次启动游戏后就会有。
+
+Eidos 自己只写一个注册表值，即 `HKLM\Software\Bethesda Softworks\<game>` 下游戏的 `installed path`，每次运行工具前如果它不对就改正。你在 regedit 里对它做的修改，会在下一次运行工具时被改回来。
+
 ## 前缀里的游戏路径
 
 Windows 工具靠读 `HKLM\Software\Bethesda Softworks\<game>` 的
@@ -311,6 +317,13 @@ Eidos 1.22 或更早版本给其中某一项建的快捷方式仍然能用:和�
 `eidos tool <instance> run <title>` 一样,它会请商店启动游戏,就像 Run 在不是
 由商店打开的窗口里做的那样。商店的设置缺失时,这条命令什么也不启动,并打印要
 设置什么。快捷方式不显示任何消息,所以要看它,就在终端里运行同一条命令。
+
+每个配置文件都可以有自己的游戏快捷方式。右键点击配置文件并选择
+**Desktop shortcut**：这个条目运行
+`eidos tool <instance> run "<game>" --profile <name>`，它会像在窗口里选中该配置
+文件那样把它设为当前配置文件，然后请商店启动游戏。商店打开的 Eidos 窗口显示的就
+是这个配置文件。`--profile` 适用于任何 `eidos tool ... run`，会在工具启动前选中
+配置文件；与 `--print` 一起使用时，它什么也不选。
 
 ## 自成一个 Steam 应用的工具
 

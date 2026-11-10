@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=b64d28c8573bb396699a2cd48c4a7a8f0b3c1d4e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=0433d51887d1d1997dd785a7a18f7a4be58dfcd5 -->
 
 # Usare Eidos
 
@@ -19,6 +19,7 @@ eidos import skyrimse <mo2-profile>  # adottare ordine e stato dei plugin di un 
 eidos sort skyrimse               # ordinare il caricamento dei plugin con LOOT
 eidos play skyrimse               # mostrare cosa verrebbe montato
 eidos play skyrimse -- <command>  # eseguire <command> con le mod montate sopra il gioco
+eidos shell skyrimse              # una shell nella vista unita, le scritture finiscono in Overwrite
 eidos check skyrimse              # controlli di salute senza la finestra (--json per gli script)
 eidos sessions skyrimse           # le esecuzioni registrate di gioco e strumenti, dalla più recente
 eidos sessions skyrimse diff      # cosa è cambiato dall'ultima esecuzione terminata con codice 0
@@ -36,6 +37,10 @@ completano l'insieme; esegui `eidos` senza argomenti per l'elenco completo.
 `eidos check <instance>` esegue i controlli su prefisso, plugin, master mancanti e script extender della scheda **Diagnostics** senza aprire la finestra, così possono girare via SSH o in Game Mode e finire in una segnalazione di bug. Stampa le stesse righe di sistema di **Copy report**, poi una riga per ogni rilevazione, con la tua cartella home mostrata come `~` e il tuo nome utente come `<user>`. Il codice di uscita è 0 quando non è stato trovato alcun problema (i soli consigli danno comunque 0), 1 quando è stato trovato almeno un problema e 2 quando Eidos non ha potuto controllare: argomenti errati, un'istanza che non riesce ad aprire o un gioco che non rileva.
 
 `eidos check <instance> --json` stampa invece un unico oggetto JSON. I suoi campi di primo livello sono `eidos` (la versione), `game`, `instance`, `system` (`proton`, `flatpak_steam`, `passthrough`, `session`, `distro`, `kernel`, `dev_fuse`, `fusermount3`, `max_map_count`, `open_files_hard`) e `findings`. `max_map_count` e `open_files_hard` sono numeri, oppure `null` quando Eidos non è riuscito a leggerli. Ogni rilevazione è un `code`, un `level` (`problem` o `advice`) e i suoi `args`; la scheda Diagnostics mostra la frase per ogni codice.
+
+### Una shell nella vista unita
+
+`eidos shell <instance>` avvia la tua `$SHELL` (o `/bin/sh`) nella cartella del gioco come la vedrebbe il gioco: ogni mod attiva montata sopra `Data`, le mod Root sopra la radice del gioco, e tutto ciò che vi viene scritto finisce nell'Overwrite. `eidos shell <instance> -- <command>` esegue invece un solo comando, per esempio `eidos shell skyrimse -- ls Data/meshes` o uno strumento nativo come NifSkope. L'esecuzione tiene il blocco dell'istanza come una sessione di gioco, quindi la finestra non può salvare modifiche finché non esci, e compare in `eidos sessions` con il nome `shell`, mai come avvio del gioco. Ctrl+C su un comando ferma l'esecuzione come Stop: Eidos termina il comando, cattura la sessione e smonta la vista. Nella shell interattiva Ctrl+C resta alla shell, come al solito; digita `exit` per terminare l'esecuzione.
 
 ### Istanze: globali e portatili
 
@@ -494,8 +499,9 @@ Mod list, Nexus e About. Ogni modifica si applica e si salva subito; non c'è
 alcun pulsante Save.
 
 - **General**: il gioco che Eidos apre, la dimensione della finestra, la lingua
-  dell'interfaccia, la cartella degli strumenti e il modo in cui un gioco viene
-  eseguito. La finestra parla inglese e francese; **System** segue `LC_ALL`,
+  dell'interfaccia, la cartella degli strumenti, il modo in cui un gioco viene
+  eseguito e se una notifica del desktop avvisa quando un lavoro lungo finisce
+  mentre la finestra è in secondo piano. La finestra parla inglese e francese; **System** segue `LC_ALL`,
   `LC_MESSAGES` o `LANG`, e la modifica si applica subito. La riga di comando
   `eidos` risponde sempre in inglese.
 - **Appearance**: il tema (25 famiglie, 57 palette, la pergamena di Eidos per
@@ -771,6 +777,8 @@ gioco al percorso assoluto del binario (Steam non vede `~/.cargo/bin` nel PATH):
 Eidos si apre sull'istanza di quel gioco - quella che hai usato per ultima, così
 un'istanza portatile viene ritrovata proprio come quella globale; clicca Run per
 avviarlo attraverso la vista unita.
+
+Con **Start the game at once when a store opens Eidos** attivo (Preferences, General, Running a game), Eidos salta quel clic: controlla Health e avvia il gioco senza mostrare la sua finestra. La finestra si apre come al solito quando Health segnala un problema, quando la lista delle mod richiede attenzione o quando uno strumento impostato per girare prima di giocare ha un output non aggiornato. Per avere la finestra in un solo avvio, metti `EIDOS_WINDOW=1` davanti al comando: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Fuori da Steam, Run non avvia il gioco da sé con Proton o Wine. Chiede allo
 store a cui appartiene la copia di avviarlo, e lo store avvia Eidos:

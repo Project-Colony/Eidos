@@ -101,6 +101,45 @@ fn hand_off(app: &App) -> String {
     }
 }
 
+/// A store opened this window with the game's command and the user asked for
+/// no window (A30): check Health, then press Run as the window would. True
+/// when a run started; false leaves the window to open, with the reason in
+/// the status or the prompt when there is one.
+pub(crate) fn start_directly(app: &mut App, force_window: bool) -> bool {
+    // The command must name this window's game: `eidos-gui --collection <link>`
+    // from the nxm handler also arrives with arguments.
+    let named_by_store =
+        app.selected.is_some() && identify_game(&app.games, &app.launch_command) == app.selected;
+    if !named_by_store || !app.prefs.start_game_directly || force_window {
+        return false;
+    }
+    app.diag_dirty = true;
+    refresh_diagnostics(app);
+    if app.diag.iter().any(|d| d.level == DiagLevel::Problem) {
+        let game = selected_game(app).map_or("", |g| g.def.name);
+        app.status = Some(tf("status_direct_start_held", &[("game", &game)]));
+        return false;
+    }
+    let _ = handle(app, Message::Run);
+    app.running.is_some()
+}
+
+/// Block until the run [`start_directly`] started ends, and give its exit code:
+/// `128 + signal` when a signal ended it, 1 when nothing is known.
+pub(crate) fn wait_direct_run(app: &App) -> i32 {
+    use std::os::unix::process::ExitStatusExt;
+    let Some(run) = &app.running else {
+        return 1;
+    };
+    while !run.done.load(std::sync::atomic::Ordering::SeqCst) {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let status = run.outcome.lock().ok().and_then(|s| *s);
+    status
+        .and_then(|s| s.code().or_else(|| s.signal().map(|n| 128 + n)))
+        .unwrap_or(1)
+}
+
 /// The `update` arms for this group. [`update_inner`] routes only these
 /// messages here.
 pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {

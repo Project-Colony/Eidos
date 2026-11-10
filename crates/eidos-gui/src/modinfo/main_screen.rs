@@ -807,6 +807,12 @@ pub(crate) fn profile_menu_card<'a>(app: &App, name: &str) -> Element<'a, Messag
             ))
         }
     }
+    // Always drawn, so Delete below never moves; without a game entry the click
+    // says why there is nothing to start.
+    col = col.push(menu_item(
+        t("exe_desktop_shortcut"),
+        Message::ProfileDesktopShortcut(name.to_string()),
+    ));
 
     col = col.push(menu_sep());
     // Take over an existing MO2 profile's mod order + load order, so a migrating
