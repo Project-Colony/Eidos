@@ -201,6 +201,54 @@ fn finish_adopts_a_matching_portable_folder() {
 }
 
 #[test]
+fn the_wizard_adopts_a_new_list_folder_and_leaves_an_existing_instance_alone() {
+    let finish = |root: &Path| {
+        let mut app = app_for_game("skyrimse");
+        app.games[0].install_path = root.join("store");
+        app.screen = Screen::Summary;
+        app.kind = InstanceKind::Portable;
+        app.name = "List".into();
+        app.portable_path = root.display().to_string();
+        let _ = update_inner(&mut app, Message::Finish);
+        app
+    };
+    let game_in = |root: &Path, folder: &str| {
+        fs::create_dir_all(root.join(folder)).unwrap();
+        fs::write(root.join(folder).join("SkyrimSE.exe"), b"x").unwrap();
+    };
+    let fresh = std::env::temp_dir().join(format!("eidos-list-fresh-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&fresh);
+    game_in(&fresh, "Stock Game");
+    game_in(&fresh, "store");
+    let app = finish(&fresh);
+    assert_eq!(
+        Instance::portable(fresh.clone())
+            .read_manifest()
+            .unwrap()
+            .base_game
+            .as_deref(),
+        Some("Stock Game")
+    );
+    assert_eq!(
+        app.status.as_deref(),
+        Some(tf("status_adopted_stock_game", &[("folder", &"Stock Game")]).as_str())
+    );
+    let known = temp_portable("skyrimse");
+    game_in(&known, "Stock Game");
+    game_in(&known, "store");
+    let app = finish(&known);
+    assert!(app.created.is_some(), "the existing instance opens");
+    assert_eq!(
+        Instance::portable(known.clone())
+            .read_manifest()
+            .unwrap()
+            .base_game,
+        None
+    );
+    let _ = (fs::remove_dir_all(fresh), fs::remove_dir_all(known));
+}
+
+#[test]
 fn switching_instance_drops_the_previous_games_merged_view() {
     // The Data tab is memoised per directory against `view_generation`, so a
     // switch that does not bump it answers every already-listed directory out

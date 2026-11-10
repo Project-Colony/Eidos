@@ -27,6 +27,7 @@ mod prereqs;
 mod resolve;
 mod sessions;
 mod sort;
+pub mod stock_game;
 #[cfg(test)]
 mod tests;
 mod tools;

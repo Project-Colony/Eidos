@@ -158,6 +158,9 @@ pub(crate) fn cmd_init(id: &str, folder: Option<&str>, game_path: Option<&str>) 
             eidos_log::warn!("Cannot create this instance: {error}");
             exit(1);
         });
+    // Only a folder Eidos has never opened runs from a list's game copy: an
+    // existing instance keeps the game files it had.
+    let fresh = inst.read_manifest().is_none();
     if let Err(error) = inst
         .create()
         .and_then(|()| inst.ensure_installation(id, kind, &game.selection_id()))
@@ -165,6 +168,9 @@ pub(crate) fn cmd_init(id: &str, folder: Option<&str>, game_path: Option<&str>) 
         eidos_log::warn!("Cannot create this instance: {error}");
         exit(1);
     }
+    let list_copy = fresh
+        .then(|| crate::stock_game::adopt_list_copy(&game, &inst))
+        .flatten();
     if kind == InstanceKind::Portable {
         let mut reg = eidos_instance::Registry::load();
         reg.set_last(eidos_instance::InstanceRef::Portable(inst.root.clone()));
@@ -204,6 +210,9 @@ pub(crate) fn cmd_init(id: &str, folder: Option<&str>, game_path: Option<&str>) 
         InstanceKind::Global => id.to_string(),
         InstanceKind::Portable => inst.root.display().to_string(),
     };
+    if let Some(folder) = list_copy {
+        println!("  game files: {folder} (this list's copy; eidos stock-game {inst_arg} store switches to the store install)");
+    }
     if game.is_steam() {
         println!("\nThen: `eidos play {inst_arg} -- %command%` (as a Steam launch option).");
     } else {

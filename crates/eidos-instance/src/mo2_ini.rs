@@ -93,6 +93,13 @@ impl Instance {
             })
     }
 
+    /// The `gamePath` of the foreign `ModOrganizer.ini`, decoded: the game
+    /// folder the list was set up with, in Windows form.
+    pub fn foreign_mo2_game_path(&self) -> Option<String> {
+        let text = fs::read(self.foreign_mo2_ini()?).ok()?;
+        ini_field(&String::from_utf8_lossy(&text), "gamePath")
+    }
+
     fn mo2_ini_text(
         &self,
         game_name: &str,
@@ -696,5 +703,25 @@ size=5
             "gamePath=@ByteArray(Z:\\\\mnt\\\\Jeux\\\\SteamLibrary\\\\steamapps\\\\common\\\\Skyrim Special Edition)\n"
         ));
         assert!(text.contains("mod_directory=Z:\\\\mnt\\\\Jeux\\\\Eidos-Skyrim\\\\mods\n"));
+    }
+
+    #[test]
+    fn the_game_path_of_a_foreign_ini_is_read_and_an_eidos_one_is_ignored() {
+        let inst = Instance::portable(temp("gamepath"));
+        fs::create_dir_all(&inst.root).unwrap();
+        assert_eq!(inst.foreign_mo2_game_path(), None);
+        fs::write(
+            inst.root.join("modorganizer.ini"),
+            "[General]\r\ngamePath=@ByteArray(C:\\\\Lists\\\\Tuxborn\\\\Stock Folder)\r\n",
+        )
+        .unwrap();
+        assert_eq!(
+            inst.foreign_mo2_game_path().as_deref(),
+            Some("C:\\Lists\\Tuxborn\\Stock Folder")
+        );
+        fs::remove_file(inst.root.join("modorganizer.ini")).unwrap();
+        inst.write_mo2_ini("Skyrim Special Edition", Path::new("/g"), "Default")
+            .unwrap();
+        assert_eq!(inst.foreign_mo2_game_path(), None);
     }
 }

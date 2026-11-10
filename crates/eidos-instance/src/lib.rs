@@ -632,17 +632,33 @@ impl Instance {
         canon(root).starts_with(canon(install))
     }
 
-    /// The name of a `Stock Game` or `Game Root` folder directly inside `root`
-    /// (matched without regard to case), the layout Wabbajack lists install a
-    /// patched copy of the game into. Eidos launches the Steam install, so the
-    /// files in such a folder have to become a `Root/` mod by hand.
+    /// The folder directly inside `root` that holds a Wabbajack list's copy of
+    /// the game: the one the last component of a foreign `ModOrganizer.ini`'s
+    /// `gamePath` names, else a `Stock Game` or `Game Root` folder. Names are
+    /// matched without regard to case.
     pub fn stock_game_folder(root: &Path) -> Option<String> {
-        fs::read_dir(root)
+        let dirs: Vec<String> = fs::read_dir(root)
             .ok()?
             .flatten()
             .filter(|e| e.path().is_dir())
             .map(|e| e.file_name().to_string_lossy().into_owned())
-            .find(|n| n.eq_ignore_ascii_case("Stock Game") || n.eq_ignore_ascii_case("Game Root"))
+            .collect();
+        // Built directly: `portable` may redirect a moved global instance.
+        let game_path = Instance {
+            root: root.to_path_buf(),
+        }
+        .foreign_mo2_game_path();
+        let named = game_path
+            .as_deref()
+            .and_then(|p| p.rsplit(['\\', '/']).find(|c| !c.is_empty()));
+        named
+            .and_then(|want| dirs.iter().find(|n| n.eq_ignore_ascii_case(want)))
+            .or_else(|| {
+                dirs.iter().find(|n| {
+                    n.eq_ignore_ascii_case("Stock Game") || n.eq_ignore_ascii_case("Game Root")
+                })
+            })
+            .cloned()
     }
 
     /// Open an existing folder as an instance, requiring it to be
@@ -1950,6 +1966,34 @@ mod tests {
             Some("GAME ROOT")
         );
         assert_eq!(Instance::stock_game_folder(&inst.root.join("nope")), None);
+    }
+
+    #[test]
+    fn stock_game_folder_prefers_the_folder_named_by_a_foreign_game_path() {
+        let inst = tmp_instance();
+        let root = inst.root.clone();
+        fs::create_dir(root.join("Stock Folder")).unwrap();
+        fs::create_dir(root.join("Game Root")).unwrap();
+        let game_path = |p: &str| {
+            let ini = format!("[General]\r\ngamePath=@ByteArray({p})\r\n");
+            fs::write(root.join("modorganizer.ini"), ini).unwrap();
+        };
+        game_path("C:\\\\Lists\\\\Tuxborn\\\\Stock Folder");
+        assert_eq!(
+            Instance::stock_game_folder(&root).as_deref(),
+            Some("Stock Folder")
+        );
+        // Any case, either separator, a trailing one.
+        game_path("Z:/home/lin/Tuxborn/STOCK FOLDER/");
+        assert_eq!(
+            Instance::stock_game_folder(&root).as_deref(),
+            Some("Stock Folder")
+        );
+        game_path("C:\\\\Lists\\\\Tuxborn\\\\Missing");
+        assert_eq!(
+            Instance::stock_game_folder(&root).as_deref(),
+            Some("Game Root")
+        );
     }
 
     #[test]
