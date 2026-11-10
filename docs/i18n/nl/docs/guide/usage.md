@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=8d159f908b8d8b7994f5c1fc06c1aeeb75a63153 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=edf3fcdb40d8d2ba82a15e04d8944a98b9e31f0f -->
 
 # Eidos gebruiken
 
@@ -594,7 +594,7 @@ van die namen schrijft, komt in de Overwrite terecht en blijft zichtbaar.
 **Plugins** is de
 ESP/ESM/ESL-laadvolgorde (omschakelen, met de hand herordenen, of sorteren met
 LOOT en het verslag na de sortering lezen, waarvan de adviezenlinks in je browser
-openen). De kop telt de ingeschakelde plugins per indexruimte tegen de limiet van het spel, bijvoorbeeld `full 231/254, light 512/4096`, en wordt oranje zodra er een vol is. Na een LOOT-sortering laat een volledige plugin waarvan alle nieuwe records in het light-bereik passen dat bij aanwijzen zien, en het menu van zijn rij bevat Flag as light. Eidos schrijft een kopie met de light-vlag in een nieuwe mod met de naam `<plugin> (light)`, onderaan de modlijst (de hoogste prioriteit), en laat het origineel ongemoeid, dus die mod uitzetten maakt het ongedaan. Eidos weigert als een van de drie nieuwste saves van het profiel de plugin als volledige plugin laadt. LOOT controleert alleen recordbereiken: bekijk een plugin die cellen of worldspaces toevoegt in xEdit voordat je hem markeert. **Conflicts** legt de winnaars en verliezers per bestand uit.
+openen). De kop telt de ingeschakelde plugins per indexruimte tegen de limiet van het spel, bijvoorbeeld `full 231/254, light 512/4096`, en wordt oranje zodra er een vol is. Na een LOOT-sortering laat een volledige plugin waarvan alle nieuwe records in het light-bereik passen dat bij aanwijzen zien, en het menu van zijn rij bevat Flag as light. Eidos schrijft een kopie met de light-vlag in een nieuwe mod met de naam `<plugin> (light)`, onderaan de modlijst (de hoogste prioriteit), en laat het origineel ongemoeid, dus die mod uitzetten maakt het ongedaan. Eidos weigert als een van de drie nieuwste saves van het profiel de plugin als volledige plugin laadt. Alleen saves van Skyrim en Fallout 4 worden gelezen, dus bij Starfield wordt geen save gecontroleerd. LOOT controleert alleen recordbereiken: bekijk een plugin die cellen of worldspaces toevoegt in xEdit voordat je hem markeert. **Conflicts** legt de winnaars en verliezers per bestand uit.
 **Overwrite** maakt in één stap een echte mod van wat het spel geschreven heeft.
 **Saves** ontleedt de kop van elke save - personage, niveau, locatie, speeltijd -
 en vergelijkt de erin gebakken pluginlijst met je huidige, met een knop die de

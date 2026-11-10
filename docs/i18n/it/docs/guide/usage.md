@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=8d159f908b8d8b7994f5c1fc06c1aeeb75a63153 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=edf3fcdb40d8d2ba82a15e04d8944a98b9e31f0f -->
 
 # Usare Eidos
 
@@ -610,7 +610,7 @@ servono al gestore di mod, e `Root/` va invece nella cartella del gioco. Un file
 che il gioco o uno strumento scrive con uno di quei nomi finisce nell'Overwrite
 e resta visibile. **Plugins** è l'ordine di caricamento ESP/ESM/ESL (attivare,
 riordinare a mano, oppure ordinare con LOOT e leggere il rapporto successivo,
-i cui link ai consigli si aprono nel tuo browser). La sua intestazione conta i plugin attivi di ogni spazio di indici rispetto al limite del gioco, per esempio `full 231/254, light 512/4096`, e diventa arancione quando uno è pieno. Dopo un ordinamento con LOOT, un plugin completo i cui nuovi record rientrano tutti nell'intervallo light lo segnala al passaggio del mouse, e il menu della sua riga contiene Flag as light. Eidos scrive una copia con il flag light in una nuova mod chiamata `<plugin> (light)`, in fondo all'elenco delle mod (la priorità più alta), e lascia intatto l'originale, quindi disattivare quella mod annulla l'operazione. Eidos rifiuta quando uno dei tre salvataggi più recenti del profilo carica il plugin come plugin completo. LOOT controlla solo gli intervalli dei record: prima di marcare un plugin che aggiunge celle o worldspace, esaminalo in xEdit. **Conflicts** spiega
+i cui link ai consigli si aprono nel tuo browser). La sua intestazione conta i plugin attivi di ogni spazio di indici rispetto al limite del gioco, per esempio `full 231/254, light 512/4096`, e diventa arancione quando uno è pieno. Dopo un ordinamento con LOOT, un plugin completo i cui nuovi record rientrano tutti nell'intervallo light lo segnala al passaggio del mouse, e il menu della sua riga contiene Flag as light. Eidos scrive una copia con il flag light in una nuova mod chiamata `<plugin> (light)`, in fondo all'elenco delle mod (la priorità più alta), e lascia intatto l'originale, quindi disattivare quella mod annulla l'operazione. Eidos rifiuta quando uno dei tre salvataggi più recenti del profilo carica il plugin come plugin completo. Vengono letti solo i salvataggi di Skyrim e Fallout 4, quindi su Starfield nessun salvataggio viene controllato. LOOT controlla solo gli intervalli dei record: prima di marcare un plugin che aggiunge celle o worldspace, esaminalo in xEdit. **Conflicts** spiega
 vincitori e perdenti file per file. **Overwrite** trasforma in un passo quello
 che il gioco ha scritto in una vera mod. **Saves** analizza l'intestazione di
 ogni salvataggio - personaggio, livello, luogo, tempo di gioco - e confronta

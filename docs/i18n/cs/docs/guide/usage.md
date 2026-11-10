@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=8d159f908b8d8b7994f5c1fc06c1aeeb75a63153 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=edf3fcdb40d8d2ba82a15e04d8944a98b9e31f0f -->
 
 # Používání Eidosu
 
@@ -552,7 +552,7 @@ složky hry. Soubor, který hra nebo nástroj zapíše pod některým z těchto 
 skončí v Overwrite a zůstane viditelný. **Plugins**
 je pořadí načítání ESP/ESM/ESL (přepínání, ruční přeuspořádání, nebo řazení
 LOOTem a čtení zprávy po seřazení, jejíž odkazy na rady se otevírají ve vašem
-prohlížeči). Jeho záhlaví počítá zapnuté pluginy v každém indexovém prostoru proti limitu hry, například `full 231/254, light 512/4096`, a když je některý prostor plný, zoranžoví. Po seřazení LOOTem plný plugin, jehož nové záznamy se všechny vejdou do rozsahu light, to ukáže při najetí myší a jeho nabídka na řádku obsahuje Flag as light. Eidos zapíše kopii s příznakem light do nového módu `<plugin> (light)` na konec seznamu módů (nejvyšší priorita) a originál nechá být, takže vypnutím toho módu se změna vrátí. Eidos odmítne, když některá ze tří nejnovějších uložených her profilu načítá plugin jako plný. LOOT kontroluje jen rozsahy záznamů: plugin, který přidává buňky nebo worldspaces, si před označením prohlédněte v xEditu. **Conflicts** vysvětluje vítěze a poražené u jednotlivých souborů.
+prohlížeči). Jeho záhlaví počítá zapnuté pluginy v každém indexovém prostoru proti limitu hry, například `full 231/254, light 512/4096`, a když je některý prostor plný, zoranžoví. Po seřazení LOOTem plný plugin, jehož nové záznamy se všechny vejdou do rozsahu light, to ukáže při najetí myší a jeho nabídka na řádku obsahuje Flag as light. Eidos zapíše kopii s příznakem light do nového módu `<plugin> (light)` na konec seznamu módů (nejvyšší priorita) a originál nechá být, takže vypnutím toho módu se změna vrátí. Eidos odmítne, když některá ze tří nejnovějších uložených her profilu načítá plugin jako plný. Čtou se jen savy Skyrimu a Falloutu 4, takže na Starfieldu se žádný sav nekontroluje. LOOT kontroluje jen rozsahy záznamů: plugin, který přidává buňky nebo worldspaces, si před označením prohlédněte v xEditu. **Conflicts** vysvětluje vítěze a poražené u jednotlivých souborů.
 **Overwrite** promění to, co hra zapsala, v jednom kroku ve skutečný mód.
 **Saves** rozebere hlavičku každého savu - postava, úroveň, místo, odehraný
 čas - a porovná seznam pluginů zapečený uvnitř s vaším současným, s tlačítkem, které
