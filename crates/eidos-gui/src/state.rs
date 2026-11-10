@@ -60,6 +60,10 @@ pub(crate) fn refresh_meta_cache(app: &mut App) {
         app.meta_cache.insert(
             name,
             RowMeta {
+                requirements: meta
+                    .nexus_requirements()
+                    .and_then(|j| serde_json::from_str(&j).ok()),
+                ignored_requirements: meta.ignored_requirements(),
                 version: meta.version(),
                 mod_id: meta.mod_id(),
                 installed_files: meta.installed_files(),

@@ -725,6 +725,10 @@ pub(crate) enum FilterField {
 /// Nexus action). Cached so a search keystroke doesn't re-read every file.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct RowMeta {
+    /// What Nexus last said this mod requires, from `meta.ini`. `None`: never fetched.
+    pub(crate) requirements: Option<eidos_nexus::Requirements>,
+    /// Requirement keys (`<domain>:<mod_id>`, `offsite:<name>`, `dlc:<name>`) the user dismissed.
+    pub(crate) ignored_requirements: Vec<String>,
     pub(crate) version: Option<String>,
     pub(crate) mod_id: Option<u64>,
     pub(crate) installed_files: Vec<(u64, u64)>,

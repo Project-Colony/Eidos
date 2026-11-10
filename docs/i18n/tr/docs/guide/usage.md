@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=3aeca7667489ec40f76ca60dfbf22f1741b0a038 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6154de7966f87f9a76224fae06c041b45c862b54 -->
 
 # Eidos kullanımı
 
@@ -667,7 +667,7 @@ yeteneği, eksik master'lar (tek başına en güvenilir çökme belirtisi), etki
 hiçbir eklentinin yüklemeyeceği arşivler, mod listesinin hâlâ mods klasörüyle
 eşleşip eşleşmediği ve - bir çalıştırmadan sonra - script extender'ın kendi
 günlüğünün, eklenti DLL'lerinin her biri hakkında ne söylediği; bu da "SKSE
-eklentilerim yüklendi mi?" sorusunu bir çıkarımdan bir kanıta çevirir.
+eklentilerim yüklendi mi?" sorusunu bir çıkarımdan bir kanıta çevirir. Güncelleme denetimi her modun Nexus gereksinimlerini de okur. Diagnostics, eksik veya devre dışı bir gerekli modu listeler; başka yoldan karşılanan bir gereksinim için Ignore vardır.
 
 Oyunu GUI üzerinden başlatmak için oyunun Steam başlatma seçeneğini ikili
 dosyanın mutlak yoluna ayarlayın (Steam, PATH'te `~/.cargo/bin`'i görmez):

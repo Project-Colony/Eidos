@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=3aeca7667489ec40f76ca60dfbf22f1741b0a038 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6154de7966f87f9a76224fae06c041b45c862b54 -->
 
 # Eidos verwenden
 
@@ -722,7 +722,7 @@ fehlende Master (der mit Abstand verlässlichste Absturzvorbote), Archive, die
 kein aktives Plugin laden wird, ob die Mod-Liste noch zum mods-Ordner passt, und
 - nach einem Lauf - was das Log des Script Extenders selbst über jede seiner
 Plugin-DLLs sagt, was aus "sind meine SKSE-Plugins geladen?" statt einer
-Vermutung einen Beleg macht.
+Vermutung einen Beleg macht. Die Update-Prüfung liest auch die Nexus-Voraussetzungen jeder Mod. Diagnostics listet eine benötigte Mod auf, die fehlt oder deaktiviert ist; mit Ignore lässt sich eine Voraussetzung ausblenden, die anders erfüllt ist.
 
 Um das Spiel durch die GUI zu starten, setzen Sie die Steam-Startoption des
 Spiels auf den absoluten Pfad der Binärdatei (Steam sieht `~/.cargo/bin` im PATH

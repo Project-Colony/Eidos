@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=3aeca7667489ec40f76ca60dfbf22f1741b0a038 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6154de7966f87f9a76224fae06c041b45c862b54 -->
 
 # 使用 Eidos
 
@@ -495,7 +495,7 @@ MO2 自己的(`categories.dat` 和 `nexuscatmap.dat`),所以共享的实例保�
 **Diagnostics** 跑实时健康检查:首先是启动能力,缺失的 master(单一最可靠的崩溃预测
 指标),没有任何活动插件会加载的档案,模组列表是否仍与 mods 文件夹一致,以及 - 在一次
 运行之后 - 脚本扩展器自己的日志对它每一个插件 DLL 说了什么,这把"我的 SKSE 插件加载了
-吗?"从一次推断变成了证据。
+吗?"从一次推断变成了证据。检查更新时还会读取每个 mod 在 Nexus 上的前置要求。Diagnostics 会列出缺失或已禁用的前置 mod,已通过其他方式满足的要求可用 Ignore 忽略。
 
 要通过 GUI 启动游戏,把该游戏的 Steam 启动选项设成这个二进制的绝对路径(Steam 看不到
 PATH 上的 `~/.cargo/bin`):

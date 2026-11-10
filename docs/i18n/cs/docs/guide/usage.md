@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=3aeca7667489ec40f76ca60dfbf22f1741b0a038 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6154de7966f87f9a76224fae06c041b45c862b54 -->
 
 # Používání Eidosu
 
@@ -639,7 +639,7 @@ uložené odpovědi znovu, a když už nesedí, odmítne instalaci a vypíše zm
 chybějící mastery (nejspolehlivější jediný předpovídač pádů), archivy, které
 nenačte žádný aktivní plugin, jestli seznam módů pořád odpovídá složce mods, a -
 po běhu - co vlastní log script extenderu říká o každé z jeho pluginových DLL,
-což z otázky „načetly se moje SKSE pluginy?" dělá místo dohadu důkaz.
+což z otázky „načetly se moje SKSE pluginy?" dělá místo dohadu důkaz. Kontrola aktualizací také načte požadavky každého modu na Nexusu. Diagnostics uvede požadovaný mod, který chybí nebo je vypnutý, a tlačítkem Ignore lze zahodit požadavek splněný jinak.
 
 Chcete-li hru spouštět skrz GUI, nastavte parametr spuštění hry ve Steamu na
 absolutní cestu k binárce (Steam nevidí `~/.cargo/bin` v PATH):

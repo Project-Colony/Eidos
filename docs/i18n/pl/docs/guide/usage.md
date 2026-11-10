@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=3aeca7667489ec40f76ca60dfbf22f1741b0a038 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6154de7966f87f9a76224fae06c041b45c862b54 -->
 
 # Używanie Eidos
 
@@ -671,7 +671,7 @@ do uruchomienia, brakujące pliki master (najbardziej niezawodny pojedynczy
 zwiastun crasha), archiwa, których żadna aktywna wtyczka nie wczyta, czy lista
 modów wciąż zgadza się z folderem modów i - po przebiegu - co własny log script
 extendera mówi o każdej z jego wtyczek DLL, co zamienia „czy moje wtyczki SKSE
-się wczytały?" z domysłu w dowód.
+się wczytały?" z domysłu w dowód. Sprawdzanie aktualizacji odczytuje też wymagania każdego moda z Nexusa. Diagnostics wymienia wymagany mod, którego brakuje lub który jest wyłączony; przyciskiem Ignore można ukryć wymaganie spełnione w inny sposób.
 
 Żeby uruchomić grę przez GUI, ustaw opcję uruchamiania gry w Steamie na ścieżkę
 bezwzględną pliku wykonywalnego (Steam nie widzi `~/.cargo/bin` w PATH):

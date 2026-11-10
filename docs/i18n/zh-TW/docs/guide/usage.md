@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=3aeca7667489ec40f76ca60dfbf22f1741b0a038 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6154de7966f87f9a76224fae06c041b45c862b54 -->
 
 # 使用 Eidos
 
@@ -511,7 +511,7 @@ MO2 自己的(`categories.dat` 與 `nexuscatmap.dat`),所以共用的實例只�
 **Diagnostics** 會跑即時的健康檢查:首要是啟動能力、缺少的 master(最可靠的單一
 當機預測指標)、沒有任何啟用外掛會載入的封裝檔、模組清單是否仍與 mods 資料夾相符,
 以及 - 在一次執行之後 - script extender 自己的日誌對它每一個外掛 DLL 說了什麼,這把
-「我的 SKSE 外掛載入了嗎?」從推測變成證據。
+「我的 SKSE 外掛載入了嗎?」從推測變成證據。檢查更新時也會讀取每個 mod 在 Nexus 上的前置需求。Diagnostics 會列出缺少或已停用的前置 mod,已用其他方式滿足的需求可用 Ignore 忽略。
 
 要透過 GUI 啟動遊戲,把該遊戲的 Steam 啟動選項設成執行檔的絕對路徑(Steam 看不到
 PATH 上的 `~/.cargo/bin`):

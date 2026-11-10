@@ -861,3 +861,137 @@ fn nexus_files_rows_mark_installed_and_successor() {
         .windows(2)
         .all(|w| w[0].file.uploaded_timestamp >= w[1].file.uploaded_timestamp));
 }
+
+mod requirement_tests {
+    use super::*;
+    use eidos_nexus::{Requirement, Requirements};
+
+    fn req(domain: &str, mod_id: u64, name: &str) -> Requirement {
+        Requirement {
+            domain: domain.into(),
+            mod_id,
+            name: name.into(),
+            notes: String::new(),
+        }
+    }
+
+    /// "Needs" requires skyrimspecialedition:1 (absent) and :2 ("Dep", disabled).
+    fn setup(reqs: Requirements) -> (Vec<ModEntry>, HashMap<String, RowMeta>) {
+        let mut list = mods(&["Needs", "Dep"]);
+        list[1].enabled = false;
+        let mut meta = HashMap::new();
+        meta.insert(
+            "Needs".to_string(),
+            RowMeta {
+                requirements: Some(reqs),
+                ..RowMeta::default()
+            },
+        );
+        meta.insert(
+            "Dep".to_string(),
+            RowMeta {
+                mod_id: Some(2),
+                ..RowMeta::default()
+            },
+        );
+        (list, meta)
+    }
+
+    fn skyrim_se() -> &'static eidos_games::GameDef {
+        eidos_games::GameDef::for_id("skyrimse").unwrap()
+    }
+
+    fn two_mods() -> Requirements {
+        Requirements {
+            mods: vec![
+                req("skyrimspecialedition", 1, "Absent"),
+                req("skyrimspecialedition", 2, "Dep"),
+            ],
+            dlc: vec![],
+        }
+    }
+
+    #[test]
+    fn a_missing_or_disabled_requirement_is_a_problem_with_actions() {
+        let (mods, meta) = setup(two_mods());
+        let out = requirement_checks(skyrim_se(), &mods, &meta, &[], false);
+        assert_eq!(
+            out.iter().filter(|d| d.level == DiagLevel::Problem).count(),
+            2
+        );
+        assert!(out.iter().all(|d| d
+            .actions
+            .iter()
+            .any(|(_, m)| matches!(m, Message::IgnoreRequirement { .. }))));
+        assert!(out.iter().all(|d| !d
+            .actions
+            .iter()
+            .any(|(_, m)| matches!(m, Message::RequirementDownload { .. }))));
+        assert!(out[0].title.contains("not installed"), "{}", out[0].title);
+        assert!(out[1].title.contains("disabled"), "{}", out[1].title);
+        // Premium adds Download for the absent one only.
+        let out = requirement_checks(skyrim_se(), &mods, &meta, &[], true);
+        let dl = |d: &Diagnostic| {
+            d.actions
+                .iter()
+                .any(|(_, m)| matches!(m, Message::RequirementDownload { .. }))
+        };
+        assert!(dl(&out[0]) && !dl(&out[1]));
+    }
+
+    #[test]
+    fn an_enabled_copy_by_mod_id_or_merged_file_satisfies_it() {
+        let (mut mods, mut meta) = setup(two_mods());
+        mods[1].enabled = true;
+        meta.get_mut("Dep").unwrap().installed_files = vec![(1, 10)];
+        assert!(requirement_checks(skyrim_se(), &mods, &meta, &[], false).is_empty());
+    }
+
+    #[test]
+    fn an_ignored_requirement_raises_nothing() {
+        let (mods, mut meta) = setup(two_mods());
+        meta.get_mut("Needs").unwrap().ignored_requirements = vec!["skyrimspecialedition:1".into()];
+        let out = requirement_checks(skyrim_se(), &mods, &meta, &[], false);
+        let keys: Vec<_> = out
+            .iter()
+            .flat_map(|d| &d.actions)
+            .filter_map(|(_, m)| match m {
+                Message::IgnoreRequirement { key, .. } => Some(key.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(keys, ["skyrimspecialedition:2"]);
+    }
+
+    #[test]
+    fn a_dlc_requirement_matching_a_present_plugin_is_silent() {
+        let (mods, meta) = setup(Requirements {
+            mods: vec![],
+            dlc: vec!["Dawnguard".into(), "Far Harbor: needs the quest".into()],
+        });
+        let out = requirement_checks(skyrim_se(), &mods, &meta, &["Dawnguard.esm".into()], false);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].level, DiagLevel::Advice);
+        assert!(out[0].title.contains("Far Harbor"), "{}", out[0].title);
+    }
+
+    #[test]
+    fn an_off_site_requirement_is_advice_with_its_name_and_no_link() {
+        let (mods, meta) = setup(Requirements {
+            mods: vec![req("", 0, "VC++ Redistributable")],
+            dlc: vec![],
+        });
+        let out = requirement_checks(skyrim_se(), &mods, &meta, &[], true);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].level, DiagLevel::Advice);
+        assert!(
+            out[0].title.contains("VC++ Redistributable"),
+            "{}",
+            out[0].title
+        );
+        assert!(matches!(
+            out[0].actions.as_slice(),
+            [(_, Message::IgnoreRequirement { key, .. })] if key == "offsite:VC++ Redistributable"
+        ));
+    }
+}

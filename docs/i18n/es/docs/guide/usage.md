@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=3aeca7667489ec40f76ca60dfbf22f1741b0a038 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6154de7966f87f9a76224fae06c041b45c862b54 -->
 
 # Usar Eidos
 
@@ -692,7 +692,7 @@ lanzamiento ante todo, los masters ausentes (el predictor de fallos más fiable 
 existe), los archivos que ningún plugin activo cargará, si la lista de mods sigue
 coincidiendo con la carpeta de mods y - tras una ejecución - qué dice el propio
 registro del script extender sobre cada una de sus DLL de plugin, lo que convierte
-«¿se cargaron mis plugins de SKSE?» de una inferencia en una evidencia.
+«¿se cargaron mis plugins de SKSE?» de una inferencia en una evidencia. Buscar actualizaciones también lee los requisitos de cada mod en Nexus. Diagnostics lista el mod requerido que falta o está desactivado, con Ignore para un requisito cubierto de otra forma.
 
 Para lanzar el juego a través de la interfaz gráfica, pon la opción de lanzamiento
 de Steam del juego con la ruta absoluta del binario (Steam no ve `~/.cargo/bin` en

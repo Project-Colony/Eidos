@@ -629,7 +629,7 @@ answers and refuses, listing the changes, when they no longer fit.
 masters (the single most reliable crash predictor), archives no active plugin
 will load, whether the mod list still matches the mods folder, and - after a
 run - what the script extender's own log says about each of its plugin DLLs, which
-turns "did my SKSE plugins load?" from an inference into evidence.
+turns "did my SKSE plugins load?" from an inference into evidence. Check for updates also reads each mod's Nexus requirements. Diagnostics lists a required mod that is missing or disabled, with Ignore for a requirement met another way.
 
 To launch the game through the GUI, set the game's Steam launch option to the
 binary's absolute path (Steam doesn't see `~/.cargo/bin` on PATH):

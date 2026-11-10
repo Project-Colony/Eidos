@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=3aeca7667489ec40f76ca60dfbf22f1741b0a038 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6154de7966f87f9a76224fae06c041b45c862b54 -->
 
 # Eidos gebruiken
 
@@ -687,7 +687,7 @@ ontbrekende masters (de betrouwbaarste crashvoorspeller die er is), archieven di
 geen enkele actieve plugin zal laden, of de modlijst nog overeenkomt met de
 mods-map, en - na een run - wat het eigen log van de script extender over elk van
 zijn plugin-DLL's zegt, wat "zijn mijn SKSE-plugins geladen?" van een
-gevolgtrekking in bewijs verandert.
+gevolgtrekking in bewijs verandert. Op updates controleren leest ook de Nexus-vereisten van elke mod. Diagnostics toont een vereiste mod die ontbreekt of is uitgeschakeld, met Ignore voor een vereiste die op een andere manier is vervuld.
 
 Om het spel via de GUI te starten, zet je de Steam-opstartoptie van het spel op
 het absolute pad van het binaire bestand (Steam ziet `~/.cargo/bin` niet in

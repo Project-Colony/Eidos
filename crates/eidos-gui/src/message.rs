@@ -458,6 +458,25 @@ pub(crate) enum Message {
     CheckUpdates,
     /// The update check finished: the summary, or an error.
     UpdatesChecked(Result<eidos_nexus::UpdateCheckResult, String>),
+    /// The requirements refresh that rides on an update check finished for the
+    /// instance at this root: how many mods it looked up, or the error.
+    RequirementsRefreshed(PathBuf, Result<usize, String>),
+    /// Health: stop listing this requirement (`key`) of the mod in `folder`.
+    IgnoreRequirement {
+        folder: String,
+        key: String,
+    },
+    /// Health: find the required mod's main file and fetch it.
+    RequirementDownload {
+        domain: String,
+        mod_id: u64,
+    },
+    /// The answer: the one main file, or `None` when Nexus lists none or several.
+    RequirementFilePicked {
+        domain: String,
+        mod_id: u64,
+        file_id: Option<u64>,
+    },
     // ---- menu bar wiring ----
     /// Show / hide the About box (Help menu).
     ShowAbout,

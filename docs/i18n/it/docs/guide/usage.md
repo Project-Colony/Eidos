@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=3aeca7667489ec40f76ca60dfbf22f1741b0a038 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6154de7966f87f9a76224fae06c041b45c862b54 -->
 
 # Usare Eidos
 
@@ -706,7 +706,7 @@ di avviare, i master mancanti (il singolo predittore di crash più affidabile),
 gli archivi che nessun plugin attivo caricherà, se l'elenco delle mod
 corrisponde ancora alla cartella mods e - dopo una sessione - cosa dice il log
 dello script extender su ciascuna delle sue DLL plugin, cosa che trasforma "i
-miei plugin SKSE si sono caricati?" da deduzione in prova.
+miei plugin SKSE si sono caricati?" da deduzione in prova. Il controllo degli aggiornamenti legge anche i requisiti Nexus di ogni mod. Diagnostics elenca un mod richiesto che manca o è disattivato, con Ignore per un requisito soddisfatto in altro modo.
 
 Per avviare il gioco attraverso la GUI, imposta l'opzione di avvio Steam del
 gioco al percorso assoluto del binario (Steam non vede `~/.cargo/bin` nel PATH):

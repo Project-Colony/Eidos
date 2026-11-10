@@ -287,16 +287,117 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             app.update_in_progress = true;
             app.status = Some(t("status_checking_nexus_updates").to_string());
+            let reqs_inst = inst.clone();
+            let root = inst.root.clone();
+            return Task::batch([
+                Task::perform(
+                    // One `mod_info` request per stale mod, one after another:
+                    // tens of seconds on a freshly rebuilt list, so on the blocking
+                    // pool, never on the executor that runs the timers.
+                    smol::unblock(move || {
+                        let nexus = eidos_nexus::Nexus::connect()?;
+                        eidos_nexus::check_updates(&nexus, &inst, def)
+                    }),
+                    Message::UpdatesChecked,
+                ),
+                // Health reads these; GraphQL, so outside the v1 budget above.
+                Task::perform(
+                    smol::unblock(move || {
+                        let nexus = eidos_nexus::Nexus::connect()?;
+                        eidos_nexus::refresh_requirements(&nexus, &reqs_inst, def)
+                    }),
+                    move |r| Message::RequirementsRefreshed(root.clone(), r),
+                ),
+            ]);
+        }
+        Message::RequirementsRefreshed(root, result) => {
+            if app.created.as_ref().is_none_or(|i| i.root != root) {
+                return Task::none();
+            }
+            match result {
+                Ok(_) => {
+                    app.meta_cache.clear();
+                    refresh_meta_cache(app);
+                    app.diag_dirty = true;
+                }
+                Err(e) => {
+                    app.status = Some(tf("health_requirements_failed", &[("error", &e)]));
+                }
+            }
+        }
+        Message::IgnoreRequirement { folder, key } => {
+            let Some(inst) = app.created.as_ref() else {
+                return Task::none();
+            };
+            let saved = edit_mod_meta(inst, &folder, |meta| {
+                let mut keys = meta.ignored_requirements();
+                if !keys.contains(&key) {
+                    keys.push(key);
+                    meta.set_ignored_requirements(&keys);
+                }
+            });
+            if let Err(e) = saved {
+                app.status = Some(tf("status_meta_save_failed", &[("error", &e)]));
+                return Task::none();
+            }
+            invalidate_meta(app, &folder);
+            refresh_meta_cache(app);
+            app.diag_dirty = true;
+        }
+        Message::RequirementDownload { domain, mod_id } => {
+            let d = domain.clone();
             return Task::perform(
-                // One `mod_info` request per stale mod, one after another:
-                // tens of seconds on a freshly rebuilt list, so on the blocking
-                // pool, never on the executor that runs the timers.
                 smol::unblock(move || {
                     let nexus = eidos_nexus::Nexus::connect()?;
-                    eidos_nexus::check_updates(&nexus, &inst, def)
+                    let info = nexus.mod_info(&d, mod_id)?;
+                    nexus
+                        .mod_files(&info.gate, &d, mod_id)
+                        .map(|f| main_file_id(&f))
                 }),
-                Message::UpdatesChecked,
+                move |r| Message::RequirementFilePicked {
+                    domain: domain.clone(),
+                    mod_id,
+                    // A failed lookup falls back to the files page like a
+                    // mod with no single main file.
+                    file_id: r.ok().flatten(),
+                },
             );
+        }
+        Message::RequirementFilePicked {
+            domain,
+            mod_id,
+            file_id,
+        } => {
+            let Some(file_id) = file_id else {
+                return update(
+                    app,
+                    Message::OpenUrl(format!(
+                        "https://www.nexusmods.com/{domain}/mods/{mod_id}?tab=files"
+                    )),
+                );
+            };
+            let Some(root) = app.created.as_ref().map(|i| i.root.clone()) else {
+                return Task::none();
+            };
+            // The keyless link, as Fetch missing sends it.
+            let link = format!("nxm://{domain}/mods/{mod_id}/files/{file_id}");
+            match eidos_command()
+                .arg("nxm")
+                .arg(&link)
+                .env("EIDOS_INSTANCE", &root)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+            {
+                Ok(_) => app.status = Some(t("status_requirement_download_started").to_string()),
+                Err(e) => {
+                    app.status = Some(tf(
+                        "status_start_failed",
+                        &[("name", &"eidos nxm"), ("error", &e)],
+                    ));
+                }
+            }
         }
         Message::UpdatesChecked(result) => {
             app.update_in_progress = false;
@@ -659,4 +760,38 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         _ => unreachable!("routed by update_inner"),
     }
     Task::none()
+}
+
+/// The mod's one main file, when Nexus lists exactly one (category 1).
+pub(crate) fn main_file_id(files: &eidos_nexus::ModFiles) -> Option<u64> {
+    match files
+        .files
+        .iter()
+        .filter(|f| f.category_id == 1)
+        .collect::<Vec<_>>()[..]
+    {
+        [f] => Some(f.file_id),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_one_main_file_is_fetched_without_asking() {
+        let f = |id, cat| eidos_nexus::NexusFile {
+            file_id: id,
+            category_id: cat,
+            ..Default::default()
+        };
+        let files = |v| eidos_nexus::ModFiles {
+            files: v,
+            updates: vec![],
+        };
+        assert_eq!(main_file_id(&files(vec![f(5, 1), f(6, 3)])), Some(5));
+        assert_eq!(main_file_id(&files(vec![f(5, 1), f(6, 1)])), None);
+        assert_eq!(main_file_id(&files(vec![f(6, 3)])), None);
+    }
 }

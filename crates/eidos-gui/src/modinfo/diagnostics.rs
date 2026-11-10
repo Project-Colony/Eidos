@@ -313,6 +313,20 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         None => {}
     }
 
+    if let Some(game) = selected_game(app) {
+        let names: Vec<String> = plugins
+            .map(|l| l.plugins.iter().map(|p| p.name.clone()).collect())
+            .unwrap_or_default();
+        let premium = app.nexus_account.as_ref().is_some_and(|a| a.is_premium);
+        out.extend(requirement_checks(
+            game.def,
+            &app.mods,
+            &app.meta_cache,
+            &names,
+            premium,
+        ));
+    }
+
     // ENB + Community Shaders both injecting into D3D11.
     if let (Some(game), Some(inst)) = (selected_game(app), app.created.as_ref()) {
         let mods = app
@@ -648,6 +662,142 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         out.extend(script_extender_diagnostic(game));
     }
 
+    out
+}
+
+/// Lowercased letters and digits only, so `Far Harbor` and `FarHarbor.esm` meet.
+fn plain(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+/// Mods that Nexus says an enabled mod needs and the list lacks, from the
+/// requirements cached in each `meta.ini`. Reads only what it is given.
+pub(crate) fn requirement_checks(
+    game: &eidos_games::GameDef,
+    mods: &[ModEntry],
+    meta: &HashMap<String, RowMeta>,
+    plugins: &[String],
+    premium: bool,
+) -> Vec<Diagnostic> {
+    let stems: Vec<String> = plugins
+        .iter()
+        .map(|p| plain(p.rsplit_once('.').map_or(p.as_str(), |(stem, _)| stem)))
+        .collect();
+    let mut out = Vec::new();
+    for m in mods.iter().filter(|m| m.is_active() && !m.is_unmanaged()) {
+        let Some(row) = meta.get(&m.name) else {
+            continue;
+        };
+        let Some(reqs) = row.requirements.as_ref() else {
+            continue;
+        };
+        let who = m.display_name();
+        let ignore = |key: String| {
+            (
+                t("diag_requirement_ignore").to_string(),
+                Message::IgnoreRequirement {
+                    folder: m.name.clone(),
+                    key,
+                },
+            )
+        };
+        for r in &reqs.mods {
+            if r.mod_id == 0 {
+                // Hosted outside Nexus: Eidos cannot see whether it is installed.
+                let key = format!("offsite:{}", r.name);
+                if row.ignored_requirements.contains(&key) {
+                    continue;
+                }
+                let required = if r.name.is_empty() {
+                    t("diag_requirement_offsite_unnamed").to_string()
+                } else {
+                    r.name.clone()
+                };
+                let args: [(&str, &dyn std::fmt::Display); 2] =
+                    [("mod", &who), ("required", &required)];
+                out.push(Diagnostic {
+                    level: DiagLevel::Advice,
+                    title: tf("diag_requirement_offsite", &args),
+                    detail: tf("diag_requirement_offsite_detail", &args),
+                    actions: vec![ignore(key)],
+                });
+                continue;
+            }
+            let key = format!("{}:{}", r.domain, r.mod_id);
+            if row.ignored_requirements.contains(&key) {
+                continue;
+            }
+            let mut found = mods.iter().filter(|o| {
+                meta.get(&o.name).is_some_and(|om| {
+                    let name = om.game_name.as_deref();
+                    game.nexus_domain_for(name) == Some(r.domain.as_str())
+                        && (om.mod_id == Some(r.mod_id)
+                            || om.installed_files.iter().any(|(id, _)| *id == r.mod_id))
+                })
+            });
+            let first = found.next();
+            if first.is_some_and(|f| f.is_active()) || found.any(|o| o.is_active()) {
+                continue;
+            }
+            let required = if r.name.is_empty() {
+                tf("diag_requirement_unnamed", &[("id", &r.mod_id)])
+            } else {
+                r.name.clone()
+            };
+            let args: [(&str, &dyn std::fmt::Display); 2] =
+                [("mod", &who), ("required", &required)];
+            let missing = first.is_none();
+            let mut actions = vec![(
+                t("diag_requirement_open").to_string(),
+                Message::OpenUrl(format!(
+                    "https://www.nexusmods.com/{}/mods/{}",
+                    r.domain, r.mod_id
+                )),
+            )];
+            // Only a premium account can fetch; a disabled copy needs enabling.
+            if premium && missing {
+                actions.push((
+                    t("diag_requirement_download").to_string(),
+                    Message::RequirementDownload {
+                        domain: r.domain.clone(),
+                        mod_id: r.mod_id,
+                    },
+                ));
+            }
+            actions.push(ignore(key));
+            out.push(Diagnostic {
+                level: DiagLevel::Problem,
+                title: tf(
+                    if missing {
+                        "diag_requirement_missing"
+                    } else {
+                        "diag_requirement_disabled"
+                    },
+                    &args,
+                ),
+                detail: tf("diag_requirement_detail", &args),
+                actions,
+            });
+        }
+        for d in &reqs.dlc {
+            // The entry reads `Name` or `Name: notes`.
+            let name = d.split(':').next().unwrap_or(d).trim();
+            let key = format!("dlc:{name}");
+            if row.ignored_requirements.contains(&key) || stems.contains(&plain(name)) {
+                continue;
+            }
+            let args: [(&str, &dyn std::fmt::Display); 2] = [("mod", &who), ("dlc", &name)];
+            out.push(Diagnostic {
+                level: DiagLevel::Advice,
+                title: tf("diag_requirement_dlc", &args),
+                detail: tf("diag_requirement_dlc_detail", &args),
+                actions: vec![ignore(key)],
+            });
+        }
+    }
     out
 }
 
