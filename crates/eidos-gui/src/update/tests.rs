@@ -8476,8 +8476,17 @@ fn test_start_writes_the_request_then_runs_like_run() {
         .starts_with(t("status_test_prefix")));
     assert!(app.test_dialog.is_none());
     let _ = update_inner(&mut app, Message::OpenTestRun);
+    assert_eq!(
+        app.test_state.as_ref().map(|s| s.1),
+        Some(eidos_instance::TestState::Requested),
+        "the press reads the state the dialog shows"
+    );
     let _ = update_inner(&mut app, Message::TestCancelRequest);
     assert!(app.created.as_ref().unwrap().test_run().is_none());
+    assert!(
+        app.test_state.is_none(),
+        "cancel refreshes what the dialog shows"
+    );
     assert_eq!(app.status.as_deref(), Some(t("status_test_cancelled")));
     let _ = fs::remove_dir_all(root);
 }

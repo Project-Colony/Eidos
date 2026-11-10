@@ -5,7 +5,10 @@ use super::*;
 
 pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
     match message {
-        Message::OpenTestRun => app.test_dialog = Some(TestChoice::Profile),
+        Message::OpenTestRun => {
+            app.test_state = app.created.as_ref().and_then(Instance::test_run_state);
+            app.test_dialog = Some(TestChoice::Profile);
+        }
         Message::TestChoose(choice) => app.test_dialog = Some(choice),
         Message::CloseTestDialog => app.test_dialog = None,
         Message::TestStart => {
@@ -43,6 +46,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     Ok(()) => t("status_test_cancelled").to_string(),
                     Err(e) => e.to_string(),
                 });
+            app.test_state = app.created.as_ref().and_then(Instance::test_run_state);
         }
         _ => {}
     }

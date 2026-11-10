@@ -241,6 +241,9 @@ pub(crate) struct App {
     pub(crate) play_prompt: Option<PlayPrompt>,
     /// The open Test run dialog and the choice it shows.
     pub(crate) test_dialog: Option<TestChoice>,
+    /// The instance's test run as the last press read it. The view reads this,
+    /// never `test_run_state`, whose lock probe can sleep for 100 ms.
+    pub(crate) test_state: Option<(eidos_instance::TestRun, eidos_instance::TestState)>,
     /// Drift states the user chose to play with, for this window only:
     /// `(receipt id, hash of the inputs)`. Never saved.
     pub(crate) play_anyway: Vec<(String, u64)>,

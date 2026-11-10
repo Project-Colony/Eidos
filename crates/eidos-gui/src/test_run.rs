@@ -53,7 +53,7 @@ pub(crate) fn test_dialog<'a>(app: &App, choice: TestChoice) -> Element<'a, Mess
         .spacing(10)
         .push(text(t("main_test_run")).size(sz(18)))
         .push(line(t("test_dialog_body").to_string()));
-    card = match app.created.as_ref().and_then(Instance::test_run_state) {
+    card = match &app.test_state {
         Some((run, TestState::Requested)) => card
             .push(line(tf("test_waiting", &[("profile", &run.profile)])))
             .push(
