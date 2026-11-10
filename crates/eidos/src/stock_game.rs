@@ -1,6 +1,8 @@
 //! The game files an instance runs: the store install, or a copy of the game
 //! kept in the instance folder.
 
+use std::fs::{self, File};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 
@@ -196,6 +198,219 @@ pub fn set_base(game: &DetectedGame, inst: &Instance, folder: Option<&str>) -> R
         .map_err(|e| e.to_string())?;
     inst.edit_manifest(|m| m.base_game = folder.map(str::to_owned))
         .map_err(|e| e.to_string())
+}
+
+/// How a freeze copies the install.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CopyKind {
+    /// `FICLONE`: the copy shares the install's blocks until a file changes.
+    Reflink,
+    /// A byte copy on the same filesystem, which cannot share blocks.
+    Full,
+    /// A byte copy onto another filesystem.
+    OtherFilesystem,
+}
+
+/// A reflink whenever the probe clone works, else a full copy. The probe
+/// decides, not `st_dev`: two btrfs subvolumes (`@home`, `@games`) report
+/// different `st_dev` on one filesystem, and a clone between them works.
+pub fn copy_kind(same_filesystem: bool, clone_works: bool) -> CopyKind {
+    match (clone_works, same_filesystem) {
+        (true, _) => CopyKind::Reflink,
+        (false, true) => CopyKind::Full,
+        (false, false) => CopyKind::OtherFilesystem,
+    }
+}
+
+/// What freezing the install would copy, how, and the space it has.
+#[derive(Debug, Clone)]
+pub struct FreezePlan {
+    pub from: PathBuf,
+    pub to: PathBuf,
+    pub bytes: u64,
+    pub files: u64,
+    pub kind: CopyKind,
+    /// The instance's filesystem, None when Eidos does not know its name.
+    pub fs: Option<&'static str>,
+    /// Free bytes on the instance's filesystem, None when statvfs fails.
+    pub free: Option<u64>,
+}
+
+impl FreezePlan {
+    /// Whether the copy fits in the free space. A reflink copy shares the
+    /// install's blocks, and an unknown free space does not refuse.
+    pub fn fits(&self) -> bool {
+        self.kind == CopyKind::Reflink || self.free.is_none_or(|f| f >= self.bytes)
+    }
+}
+
+/// Bytes and count of the regular files under `dir`; links are not followed.
+pub fn tree_size(dir: &Path) -> io::Result<(u64, u64)> {
+    let mut total = (0, 0);
+    tally(dir, &mut total, &mut None)?;
+    Ok(total)
+}
+
+/// Adds the regular files under `dir` to `total` and keeps the first one in `first`.
+fn tally(dir: &Path, total: &mut (u64, u64), first: &mut Option<PathBuf>) -> io::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let path = entry?.path();
+        let meta = fs::symlink_metadata(&path)?;
+        if meta.is_dir() {
+            tally(&path, total, first)?;
+        } else if meta.is_file() {
+            *total = (total.0 + meta.len(), total.1 + 1);
+            first.get_or_insert(path);
+        }
+    }
+    Ok(())
+}
+
+/// What freezing the game at `install` into `inst` would copy, how, and the
+/// space left. Writes only the reflink probe's file, and removes it.
+pub fn freeze_plan(install: &Path, inst: &Instance) -> io::Result<FreezePlan> {
+    use std::os::unix::fs::MetadataExt;
+    let (mut total, mut sample) = ((0, 0), None);
+    tally(install, &mut total, &mut sample)?;
+    let same_filesystem = fs::metadata(install)?.dev() == fs::metadata(&inst.root)?.dev();
+    let clone_works = sample.is_some_and(|s| reflink_probe(&s, &inst.root));
+    Ok(FreezePlan {
+        from: install.to_path_buf(),
+        to: inst.root.join(FROZEN_COPY),
+        bytes: total.0,
+        files: total.1,
+        kind: copy_kind(same_filesystem, clone_works),
+        fs: fs_magic(&inst.root).and_then(fs_name),
+        free: eidos_transfer::free_bytes(&inst.root),
+    })
+}
+
+/// The name of the filesystem whose statfs magic is `magic`.
+pub fn fs_name(magic: i64) -> Option<&'static str> {
+    Some(match magic {
+        0xEF53 => "ext4",
+        0x9123683E => "btrfs",
+        0x58465342 => "XFS",
+        0xCA451A4E => "bcachefs",
+        0x2FC12FC1 => "ZFS",
+        0xF2F52010 => "F2FS",
+        0x01021994 => "tmpfs",
+        0x7366746E => "NTFS",
+        0x65735546 => "FUSE",
+        _ => return None,
+    })
+}
+
+/// The statfs magic of the filesystem holding `path`.
+fn fs_magic(path: &Path) -> Option<i64> {
+    use std::os::unix::ffi::OsStrExt;
+    let c = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
+    // SAFETY: libc::statfs is plain data, for which all zeros is a valid value.
+    let mut buf: libc::statfs = unsafe { std::mem::zeroed() };
+    // SAFETY: `c` is NUL-terminated and outlives the call, which writes only into `buf`.
+    let ok = unsafe { libc::statfs(c.as_ptr(), &mut buf) } == 0;
+    // Through u32: every magic is 32 bits, and a 32-bit target's f_type is signed.
+    ok.then_some(buf.f_type as u32 as i64)
+}
+
+/// Whether `sample` clones into `dir`, tried on a probe file that is removed
+/// again. Any error answers false.
+fn reflink_probe(sample: &Path, dir: &Path) -> bool {
+    let probe = dir.join(".eidos-reflink-probe.eidos-tmp");
+    let Ok(src) = File::open(sample) else {
+        return false;
+    };
+    let Ok(dst) = File::options().write(true).create_new(true).open(&probe) else {
+        return false;
+    };
+    let cloned = clone_file(&src, &dst).is_ok();
+    let removed = fs::remove_file(&probe).is_ok();
+    cloned && removed
+}
+
+/// `dst` made to share the blocks of `src` (`FICLONE`).
+fn clone_file(src: &File, dst: &File) -> io::Result<()> {
+    use std::os::fd::AsRawFd;
+    // SAFETY: both descriptors stay open for the call, and FICLONE reads only the source fd it is passed.
+    match unsafe { libc::ioctl(dst.as_raw_fd(), libc::FICLONE, src.as_raw_fd()) } {
+        0 => Ok(()),
+        _ => Err(io::Error::last_os_error()),
+    }
+}
+
+/// Copy the tree `from` into `to`, which must not exist: folders with their
+/// mode, regular files with their mode and mtime (Oblivion and the Fallout 3
+/// era games order plugins by time), symlinks as symlinks with the same target.
+/// With `reflink`, each file is cloned (`FICLONE`), or copied when the clone
+/// fails. Other file types are skipped with a warning. `stop` is asked before
+/// each file; true ends the copy with `Interrupted`. The regular files copied.
+pub fn copy_tree(
+    from: &Path,
+    to: &Path,
+    reflink: bool,
+    stop: &dyn Fn() -> bool,
+) -> io::Result<u64> {
+    let mut counts = (0, 0);
+    copy_dir(from, to, reflink, stop, &mut counts)?;
+    if counts.1 > 0 {
+        eidos_log::warn!(
+            "Skipped {} items under {} that are not files, folders or links",
+            counts.1,
+            from.display()
+        );
+    }
+    Ok(counts.0)
+}
+
+/// [`copy_tree`] for one folder; `counts` is (files copied, items skipped).
+fn copy_dir(
+    from: &Path,
+    to: &Path,
+    reflink: bool,
+    stop: &dyn Fn() -> bool,
+    counts: &mut (u64, u64),
+) -> io::Result<()> {
+    let mode = fs::metadata(from)?.permissions();
+    fs::create_dir(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let (src, dst) = (entry.path(), to.join(entry.file_name()));
+        let meta = fs::symlink_metadata(&src)?;
+        if meta.is_dir() {
+            copy_dir(&src, &dst, reflink, stop, counts)?;
+            continue;
+        }
+        if !meta.is_file() && !meta.is_symlink() {
+            counts.1 += 1;
+            continue;
+        }
+        if stop() {
+            return Err(io::Error::new(io::ErrorKind::Interrupted, "stopped"));
+        }
+        if meta.is_symlink() {
+            std::os::unix::fs::symlink(fs::read_link(&src)?, &dst)?;
+        } else {
+            copy_file(&src, &dst, &meta, reflink)?;
+            counts.0 += 1;
+        }
+    }
+    // Set last, so a read-only source folder still takes its files.
+    fs::set_permissions(to, mode)
+}
+
+/// One regular file, cloned when `reflink` and the clone works, else copied,
+/// then given the source's mode and mtime.
+fn copy_file(src: &Path, dst: &Path, meta: &fs::Metadata, reflink: bool) -> io::Result<()> {
+    let cloned = reflink
+        && File::open(src)
+            .and_then(|s| clone_file(&s, &File::options().write(true).create_new(true).open(dst)?))
+            .is_ok();
+    if !cloned {
+        fs::copy(src, dst)?;
+    }
+    let file = File::open(dst)?;
+    file.set_modified(meta.modified()?)?;
+    file.set_permissions(meta.permissions())
 }
 
 const USAGE: &str =
@@ -449,6 +664,139 @@ mod tests {
             (f.list_folder.as_deref(), f.frozen),
             (Some("Stock Game"), None)
         );
+        let _ = fs::remove_dir_all(t);
+    }
+
+    /// A small game folder in `dir`: an executable (0o755, dated 2016-10-27), a
+    /// plugin in Data and a symlink. Its regular files' size in bytes.
+    fn game_tree(dir: &Path) -> u64 {
+        use std::os::unix::fs::PermissionsExt;
+        fs::create_dir_all(dir.join("Data")).unwrap();
+        fs::write(dir.join("SkyrimSE.exe"), b"MZ game").unwrap();
+        fs::write(dir.join("Data/Skyrim.esm"), b"TES4 plugin bytes").unwrap();
+        let exe = fs::File::options()
+            .write(true)
+            .open(dir.join("SkyrimSE.exe"))
+            .unwrap();
+        exe.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_477_526_400))
+            .unwrap();
+        exe.set_permissions(fs::Permissions::from_mode(0o755))
+            .unwrap();
+        std::os::unix::fs::symlink("SkyrimSE.exe", dir.join("link")).unwrap();
+        (b"MZ game".len() + b"TES4 plugin bytes".len()) as u64
+    }
+
+    #[test]
+    fn copy_tree_keeps_files_dirs_links_modes_and_times() {
+        use std::os::unix::fs::PermissionsExt;
+        let t = temp("copy-tree");
+        let (from, to) = (t.join("from"), t.join("to"));
+        game_tree(&from);
+        let n = copy_tree(&from, &to, false, &|| false).unwrap();
+        assert_eq!(n, 2);
+        assert_eq!(
+            fs::read(to.join("Data/Skyrim.esm")).unwrap(),
+            fs::read(from.join("Data/Skyrim.esm")).unwrap()
+        );
+        let (a, b) = (
+            fs::metadata(from.join("SkyrimSE.exe")).unwrap(),
+            fs::metadata(to.join("SkyrimSE.exe")).unwrap(),
+        );
+        assert_eq!(
+            (a.permissions().mode() & 0o777, a.modified().unwrap()),
+            (b.permissions().mode() & 0o777, b.modified().unwrap())
+        );
+        assert_eq!(
+            fs::read_link(to.join("link")).unwrap(),
+            Path::new("SkyrimSE.exe")
+        );
+        assert!(
+            copy_tree(&from, &to, false, &|| false).is_err(),
+            "to exists"
+        );
+        // reflink = true gives the same tree whatever the filesystem (FICLONE, or a plain copy per file)
+        let to2 = to.with_extension("reflink");
+        assert_eq!(copy_tree(&from, &to2, true, &|| false).unwrap(), 2);
+        assert_eq!(
+            fs::read(to2.join("Data/Skyrim.esm")).unwrap(),
+            fs::read(from.join("Data/Skyrim.esm")).unwrap()
+        );
+        assert_eq!(
+            fs::metadata(to2.join("SkyrimSE.exe"))
+                .unwrap()
+                .modified()
+                .unwrap(),
+            a.modified().unwrap()
+        );
+        assert_eq!(
+            fs::read_link(to2.join("link")).unwrap(),
+            Path::new("SkyrimSE.exe")
+        );
+        let _ = fs::remove_dir_all(t);
+    }
+
+    #[test]
+    fn a_stopped_copy_returns_interrupted() {
+        let t = temp("copy-stop");
+        let (from, to) = (t.join("from"), t.join("to"));
+        game_tree(&from);
+        let calls = std::cell::Cell::new(0);
+        let err = copy_tree(&from, &to, false, &|| {
+            calls.set(calls.get() + 1);
+            calls.get() > 1
+        })
+        .unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::Interrupted);
+        let _ = fs::remove_dir_all(t);
+    }
+
+    #[test]
+    fn the_copy_kind_needs_one_filesystem_and_a_working_clone() {
+        assert_eq!(copy_kind(true, true), CopyKind::Reflink);
+        assert_eq!(copy_kind(true, false), CopyKind::Full);
+        assert_eq!(copy_kind(false, false), CopyKind::OtherFilesystem);
+        assert_eq!(
+            copy_kind(false, true),
+            CopyKind::Reflink,
+            "btrfs subvolumes: one filesystem, two st_dev"
+        );
+        assert_eq!(fs_name(0xEF53), Some("ext4"));
+        assert_eq!(fs_name(0x9123683E), Some("btrfs"));
+        assert_eq!(fs_name(1), None);
+    }
+
+    #[test]
+    fn freeze_plan_counts_the_install_and_never_fits_a_full_copy_into_less_space() {
+        let t = temp("plan");
+        let install = t.join("game");
+        let expected_bytes = game_tree(&install);
+        let inst = copy_instance(&t);
+        let p = freeze_plan(&install, &inst).unwrap();
+        assert_eq!(
+            (p.files, p.bytes, p.to.clone()),
+            (2, expected_bytes, inst.root.join("Stock Game"))
+        );
+        assert_eq!(p.from, install);
+        assert_eq!(tree_size(&install).unwrap(), (expected_bytes, 2));
+        assert!(!inst.root.join(".eidos-reflink-probe.eidos-tmp").exists());
+        assert!(!FreezePlan {
+            kind: CopyKind::Full,
+            free: Some(p.bytes - 1),
+            ..p.clone()
+        }
+        .fits());
+        assert!(FreezePlan {
+            kind: CopyKind::Full,
+            free: None,
+            ..p.clone()
+        }
+        .fits());
+        assert!(FreezePlan {
+            kind: CopyKind::Reflink,
+            free: Some(0),
+            ..p
+        }
+        .fits());
         let _ = fs::remove_dir_all(t);
     }
 

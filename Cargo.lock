@@ -1113,6 +1113,7 @@ dependencies = [
  "eidos-plugins",
  "eidos-sevenzip",
  "eidos-transfer",
+ "libc",
  "roxmltree 0.21.2",
  "serde",
  "serde_json",
