@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6154de7966f87f9a76224fae06c041b45c862b54 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ae7cbbab8d37d90f52b713a0b2fae9406ba13279 -->
 
 # Eidos gebruiken
 
@@ -249,6 +249,17 @@ een zakelijke regel van Nexus, en geen hoeveelheid opnieuw proberen komt eraan
 voorbij. Haal ze op via de knop van de site en draai de opdracht opnieuw: er
 wordt bij elke run in `downloads/` naar die leden gezocht, zodat de collectie
 afgemaakt wordt naarmate jij ze aanlevert.
+
+In het venster krijgt een gratis account in het collectiepaneel
+*Fetch the N missing required files, one by one* in plaats van het ophalen in
+partijen. Het opent op Nexus de pagina van het eerste ontbrekende verplichte
+bestand, wacht tot dat bestand in `downloads/` aankomt en opent dan het
+volgende. De downloadknop van de pagina druk je nog steeds zelf in, voor elk
+bestand. Het paneel toont hoe ver het is (*3 of 12*), met *Skip* en *Stop*.
+Komt er in plaats daarvan een ander bestand van dezelfde mod binnen, dan noemt
+het paneel beide bestands-id's en blijft het wachten op het bestand dat de
+collectie vastlegt. Optionele leden doen niet mee en houden hun eigen knop
+*Open*.
 
 Nog niet toegepast, en in het verslag benoemd in plaats van overgeslagen:
 **binaire patches**, **bestandsoverrides**, en leden waarvan de bestanden binnen

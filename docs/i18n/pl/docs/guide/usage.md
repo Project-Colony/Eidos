@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6154de7966f87f9a76224fae06c041b45c862b54 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ae7cbbab8d37d90f52b713a0b2fae9406ba13279 -->
 
 # Używanie Eidos
 
@@ -246,6 +246,16 @@ pobrał go sam. To reguła biznesowa Nexusa i żadna liczba ponowień jej nie
 obejdzie. Pobierz ich przyciskiem w serwisie i uruchom polecenie ponownie: tych
 członków szuka się w `downloads/` przy każdym uruchomieniu, więc kolekcja domyka
 się w miarę, jak ich dostarczasz.
+
+W oknie darmowe konto dostaje w panelu kolekcji przycisk
+*Fetch the N missing required files, one by one* zamiast pobierania partiami.
+Otwiera on na Nexusie stronę pierwszego brakującego wymaganego pliku, czeka, aż
+ten plik trafi do `downloads/`, a potem otwiera następny. Przycisk pobierania
+na stronie nadal naciskasz sam, przy każdym pliku. Panel pokazuje postęp
+(*3 of 12*) oraz *Skip* i *Stop*. Jeśli zamiast niego przyjdzie inny plik tego
+samego moda, panel podaje oba identyfikatory plików i dalej czeka na ten, który
+wskazuje kolekcja. Członkowie opcjonalni nie biorą w tym udziału i zachowują
+własny przycisk *Open*.
 
 Jeszcze niestosowane, a wymienione z nazwy w raporcie zamiast pominięte:
 **poprawki binarne**, **nadpisania plików** oraz członkowie, których pliki

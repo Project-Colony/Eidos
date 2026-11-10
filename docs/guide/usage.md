@@ -231,6 +231,16 @@ rule, and no amount of retrying gets past it. Fetch them through the site's
 button and run the command again: those members are looked for in `downloads/`
 on every run, so the collection finishes as you supply it.
 
+In the window, a free account gets
+*Fetch the N missing required files, one by one* in the collection pane in
+place of the batch fetch. It opens the first missing required file's page on
+Nexus, waits for that file to land in `downloads/`, then opens the next. You
+still press the page's download button for each file. The pane shows how far
+along it is (*3 of 12*), with *Skip* and *Stop*. When another file of the same
+mod lands instead, the pane names both file ids and keeps waiting for the
+pinned one. Optional members are not part of it and keep their own *Open*
+button.
+
 Not applied yet, and named in the report rather than passed over: **binary
 patches**, **file overrides**, and members whose files travel inside the
 collection archive (`bundle`). Members the collection expects you to fetch by

@@ -473,6 +473,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 error: None,
                 confirm_fetch: false,
                 asked: std::collections::HashSet::new(),
+                walk: None,
             });
             if app
                 .collection
@@ -543,6 +544,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // A different revision is a different member list; what the previous
             // one asked for says nothing about this one.
             c.asked.clear();
+            c.walk = None;
             let request_link = c.link.clone();
             let Some(instance) = app.created.as_ref().map(|i| i.root.clone()) else {
                 return Task::none();
@@ -592,11 +594,48 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // Mod Manager Download button there fires the nxm:// link that the
             // registered handler already knows how to service, so the existing
             // download, sidecar and install pipeline runs unchanged.
-            let url = format!(
-                "https://www.nexusmods.com/{}/mods/{}?tab=files&file_id={}",
-                m.domain, m.mod_id, m.file_id
-            );
+            let url = eidos_nexus::file_page_url(&m.domain, m.mod_id, m.file_id);
             return update(app, Message::OpenUrl(url));
+        }
+        Message::CollectionWalkStart => {
+            let (Some(inst), Some(c)) = (app.created.as_ref(), app.collection.as_mut()) else {
+                return Task::none();
+            };
+            let Some(rev) = c.revision.as_ref() else {
+                return Task::none();
+            };
+            // Read from the directory, not the listed rows: a filtered list would
+            // let an old archive pass for a new arrival.
+            let seen = fs::read_dir(inst.downloads_dir())
+                .into_iter()
+                .flatten()
+                .flatten()
+                .filter_map(|e| e.file_name().into_string().ok())
+                .collect();
+            let mut walk = CollectionWalk {
+                queue: walk_queue(rev, &c.states),
+                at: 0,
+                seen,
+            };
+            let step = walk_next(&mut walk, &c.states);
+            c.walk = Some(walk);
+            return walk_apply(app, step);
+        }
+        Message::CollectionWalkSkip => {
+            let Some(c) = app.collection.as_mut() else {
+                return Task::none();
+            };
+            let Some(walk) = c.walk.as_mut() else {
+                return Task::none();
+            };
+            walk.at += 1;
+            let step = walk_next(walk, &c.states);
+            return walk_apply(app, step);
+        }
+        Message::CollectionWalkStop => {
+            if let Some(c) = app.collection.as_mut() {
+                c.walk = None;
+            }
         }
         Message::CollectionFetchMissing => {
             let Some(c) = app.collection.as_ref() else {
@@ -760,6 +799,71 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         _ => unreachable!("routed by update_inner"),
     }
     Task::none()
+}
+
+/// One look at `downloads/` for the walk, from `DownloadTick`.
+pub(super) fn walk_tick(app: &mut App) -> Task<Message> {
+    if app.collection.as_ref().is_none_or(|c| c.walk.is_none()) {
+        return Task::none();
+    }
+    recompute_collection_states(app);
+    let Some(c) = app.collection.as_mut() else {
+        return Task::none();
+    };
+    let (Some(walk), Some(rev)) = (c.walk.as_mut(), c.revision.as_ref()) else {
+        return Task::none();
+    };
+    // shortcut: read from the listed rows, so a Downloads filter hiding a wrong
+    // file keeps it from being named; scan the directory if that bites.
+    let fresh: Vec<&DownloadRow> = app
+        .downloads
+        .iter()
+        .filter(|r| {
+            !walk.seen.contains(&r.name)
+                && !matches!(
+                    r.state,
+                    DownloadState::Downloading | DownloadState::Stalled | DownloadState::Paused
+                )
+        })
+        .collect();
+    let arrived: Vec<(u64, u64)> = fresh
+        .iter()
+        .filter_map(|r| Some((r.mod_id?, r.file_id?)))
+        .collect();
+    // Each arrival is judged once: the next member can be another file of the
+    // same mod, and the file that landed for this one must not count against it.
+    walk.seen.extend(fresh.iter().map(|r| r.name.clone()));
+    let step = walk_step(walk, rev, &c.states, &arrived);
+    walk_apply(app, step)
+}
+
+/// What a walk step does to the window.
+fn walk_apply(app: &mut App, step: WalkStep) -> Task<Message> {
+    match step {
+        WalkStep::Wait => Task::none(),
+        WalkStep::Open(i) => update(app, Message::CollectionOpenMod(i)),
+        WalkStep::Wrong { want, got } => {
+            app.status = Some(tf(
+                "collection_walk_wrong",
+                &[("want", &want), ("got", &got)],
+            ));
+            Task::none()
+        }
+        WalkStep::Done => {
+            let Some(c) = app.collection.as_mut() else {
+                return Task::none();
+            };
+            // Skipped members are not counted: they are not in downloads.
+            let n = c.walk.take().map_or(0, |w| {
+                w.queue
+                    .iter()
+                    .filter(|&&i| c.states.get(i) != Some(&MemberState::Missing))
+                    .count()
+            });
+            app.status = Some(tf("collection_walk_done", &[("n", &n)]));
+            Task::none()
+        }
+    }
 }
 
 /// The mod's one main file, when Nexus lists exactly one (category 1).

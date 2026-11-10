@@ -99,6 +99,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     }
                 }
             }
+            let walk = nexus::walk_tick(app);
             // An update's new file has landed: install it over its folder, once
             // no other install is under way.
             // shortcut: matched on the listed rows, so a Downloads filter hiding
@@ -122,8 +123,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             if let Some(path) = arrived.filter(|_| !install_busy(app)) {
                 let folder = app.pending_update.take().expect("matched above").folder;
                 app.update_target = Some(folder.clone());
-                return open_mod_archive(app, path, folder, false);
+                return Task::batch([walk, open_mod_archive(app, path, folder, false)]);
             }
+            return walk;
         }
         Message::DeleteDownload(name) => {
             app.confirm_delete_download = Some(name);

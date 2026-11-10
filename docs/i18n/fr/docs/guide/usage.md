@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6154de7966f87f9a76224fae06c041b45c862b54 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ae7cbbab8d37d90f52b713a0b2fae9406ba13279 -->
 
 # Utiliser Eidos
 
@@ -262,6 +262,17 @@ et aucune quantité de réessais n'en vient à bout. Récupérez-les avec le bou
 site et relancez la commande : ces membres sont cherchés dans `downloads/` à
 chaque exécution, si bien que la collection s'achève à mesure que vous la
 fournissez.
+
+Dans la fenêtre, un compte gratuit a dans le panneau de la collection le bouton
+*Fetch the N missing required files, one by one* à la place de la récupération
+par lots. Il ouvre sur Nexus la page du premier fichier requis manquant, attend
+que ce fichier arrive dans `downloads/`, puis ouvre le suivant. C'est toujours
+vous qui appuyez sur le bouton de téléchargement de la page, pour chaque
+fichier. Le panneau indique où il en est (*3 of 12*), avec *Skip* et *Stop*. Si
+un autre fichier du même mod arrive à sa place, le panneau donne les deux
+identifiants de fichier et continue d'attendre celui que la collection désigne.
+Les membres facultatifs n'en font pas partie et gardent leur propre bouton
+*Open*.
 
 Pas encore appliqués, et nommés dans le rapport plutôt que passés sous silence :
 les **patchs binaires**, les **surcharges de fichiers**, et les membres dont les

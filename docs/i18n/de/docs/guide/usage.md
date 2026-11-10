@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6154de7966f87f9a76224fae06c041b45c862b54 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ae7cbbab8d37d90f52b713a0b2fae9406ba13279 -->
 
 # Eidos verwenden
 
@@ -260,6 +260,16 @@ Wiederholungen kommt daran vorbei. Holen Sie sie über den seiteneigenen Knopf u
 führen Sie den Befehl noch einmal aus: nach diesen Mitgliedern wird bei jedem
 Lauf in `downloads/` gesucht, sodass die Collection in dem Maße fertig wird, wie
 Sie sie beliefern.
+
+Im Fenster bekommt ein kostenloses Konto im Collection-Bereich statt des
+Sammelabrufs den Knopf *Fetch the N missing required files, one by one*. Er
+öffnet die Nexus-Seite der ersten fehlenden Pflichtdatei, wartet, bis diese
+Datei in `downloads/` ankommt, und öffnet dann die nächste. Den Download-Knopf
+der Seite drücken Sie weiterhin bei jeder Datei selbst. Der Bereich zeigt den
+Stand (*3 of 12*) mit *Skip* und *Stop*. Kommt stattdessen eine andere Datei
+derselben Mod an, nennt der Bereich beide Datei-IDs und wartet weiter auf die
+vorgegebene. Optionale Mitglieder gehören nicht dazu und behalten ihren eigenen
+Knopf *Open*.
 
 Noch nicht angewendet und im Bericht benannt statt übergangen: **Binärpatches**,
 **Datei-Überschreibungen** und Mitglieder, deren Dateien im Archiv der Collection

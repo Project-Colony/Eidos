@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6154de7966f87f9a76224fae06c041b45c862b54 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ae7cbbab8d37d90f52b713a0b2fae9406ba13279 -->
 
 # 使用 Eidos
 
@@ -182,6 +182,13 @@ eidos collection skyrimse rqhcxy --dry-run     # 读一遍它,说出将会发生
 自己去取。这是 Nexus 的一条商业规则,重试多少次也绕不过去。用站点的那个按钮把它们取
 下来,再跑一遍这条命令:这些成员每一次运行都会在 `downloads/` 里找一遍,所以你供上
 多少,合集就跟着完成多少。
+
+在窗口里,免费账号在合集面板中看到的是
+*Fetch the N missing required files, one by one*,取代分批获取。它在 Nexus 上打开
+第一个缺少的必需文件的页面,等这个文件落进 `downloads/`,再打开下一个。每个文件页面上
+的下载按钮仍然由你自己按。面板显示进度 (*3 of 12*),并提供 *Skip* 和 *Stop*。如果落
+下来的是同一个模组的另一个文件,面板会写出两个文件 id,并继续等待合集指定的那个。可选
+成员不在其中,保留各自的 *Open* 按钮。
 
 尚未施加、并且在报告里被点名而不是被略过的:**二进制补丁**、**文件覆盖**,以及那些
 文件随合集压缩包一起走的成员(`bundle`)。合集指望你手工去取的成员(`browse`、

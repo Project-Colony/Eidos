@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6154de7966f87f9a76224fae06c041b45c862b54 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ae7cbbab8d37d90f52b713a0b2fae9406ba13279 -->
 
 # Eidos kullanımı
 
@@ -244,6 +244,16 @@ getirmeniz için tam sayfa URL'siyle birlikte raporlanır. Bu bir Nexus iş
 kuralıdır ve ne kadar yeniden denerseniz deneyin aşılmaz. Onları sitenin
 düğmesiyle getirin ve komutu yeniden çalıştırın: o üyeler her koşuda
 `downloads/` içinde aranır, yani koleksiyon siz sağladıkça tamamlanır.
+
+Pencerede ücretsiz bir hesap, koleksiyon panelinde toplu getirme yerine
+*Fetch the N missing required files, one by one* düğmesini görür. Bu düğme
+eksik zorunlu dosyaların ilkinin Nexus sayfasını açar, o dosyanın `downloads/`
+içine gelmesini bekler, sonra bir sonrakini açar. Her dosya için sayfanın
+indirme düğmesine yine siz basarsınız. Panel ne kadar ilerlendiğini (*3 of 12*)
+*Skip* ve *Stop* ile birlikte gösterir. Onun yerine aynı modun başka bir
+dosyası gelirse panel iki dosya kimliğini de yazar ve koleksiyonun belirlediği
+dosyayı beklemeyi sürdürür. İsteğe bağlı üyeler buna dahil değildir ve kendi
+*Open* düğmelerini korur.
 
 Henüz uygulanmayan ve göz ardı edilmek yerine raporda adı geçenler: **ikili
 yamalar**, **dosya geçersiz kılmaları** ve dosyaları koleksiyon arşivinin içinde

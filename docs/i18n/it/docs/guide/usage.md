@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6154de7966f87f9a76224fae06c041b45c862b54 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ae7cbbab8d37d90f52b713a0b2fae9406ba13279 -->
 
 # Usare Eidos
 
@@ -255,6 +255,16 @@ di Nexus, e nessuna quantità di tentativi riesce a superarla. Scaricali dal
 pulsante del sito ed esegui di nuovo il comando: quei membri vengono cercati in
 `downloads/` a ogni esecuzione, così la collezione si completa man mano che li
 fornisci.
+
+Nella finestra, un account gratuito trova nel pannello della collezione
+*Fetch the N missing required files, one by one* al posto dello scaricamento a
+blocchi. Apre su Nexus la pagina del primo file obbligatorio mancante, aspetta
+che quel file arrivi in `downloads/` e poi apre il successivo. Il pulsante di
+download della pagina lo premi comunque tu, per ogni file. Il pannello mostra a
+che punto è (*3 of 12*), con *Skip* e *Stop*. Se al suo posto arriva un altro
+file della stessa mod, il pannello indica entrambi gli id dei file e continua ad
+aspettare quello fissato dalla collezione. I membri facoltativi restano fuori e
+mantengono il proprio pulsante *Open*.
 
 Non ancora applicate, e nominate nel rapporto invece che passate sotto silenzio:
 le **patch binarie**, le **sovrascritture di file** e i membri i cui file

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6154de7966f87f9a76224fae06c041b45c862b54 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ae7cbbab8d37d90f52b713a0b2fae9406ba13279 -->
 
 # Usar Eidos
 
@@ -250,6 +250,16 @@ para que lo obtengas tú. Ésa es una regla de negocio de Nexus, y no hay reinte
 que valga para saltársela. Consíguelos con el botón del sitio y vuelve a ejecutar
 la orden: esos miembros se buscan en `downloads/` en cada ejecución, así que la
 colección se termina a medida que tú la vas surtiendo.
+
+En la ventana, una cuenta gratuita recibe en el panel de la colección
+*Fetch the N missing required files, one by one* en lugar de la descarga por
+lotes. Abre en Nexus la página del primer fichero obligatorio que falta, espera
+a que ese fichero llegue a `downloads/` y luego abre el siguiente. El botón de
+descarga de la página lo sigues pulsando tú en cada fichero. El panel muestra
+por dónde va (*3 of 12*), con *Skip* y *Stop*. Si en su lugar llega otro
+fichero del mismo mod, el panel nombra los dos id de fichero y sigue esperando
+el que fija la colección. Los miembros opcionales quedan fuera y conservan su
+propio botón *Open*.
 
 Todavía no se aplican, y se nombran en el informe en vez de pasarse por alto: los
 **parches binarios**, las **sobrescrituras de ficheros** y los miembros cuyos

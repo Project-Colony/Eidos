@@ -1342,6 +1342,7 @@ fn a_collection_member_is_matched_against_what_the_instance_already_has() {
         error: None,
         confirm_fetch: false,
         asked: std::collections::HashSet::new(),
+        walk: None,
     });
     recompute_collection_states(&mut app);
 
@@ -1384,6 +1385,7 @@ fn the_join_does_not_claim_more_than_it_knows() {
             error: None,
             confirm_fetch: false,
             asked: std::collections::HashSet::new(),
+            walk: None,
         });
         recompute_collection_states(app);
         app.collection.as_ref().unwrap().states.clone()
@@ -1569,6 +1571,7 @@ fn collection_matching_uses_every_exact_merged_source_and_rejects_same_version_f
         error: None,
         confirm_fetch: false,
         asked: HashSet::new(),
+        walk: None,
     });
     recompute_collection_states(&mut app);
     assert_eq!(
@@ -1664,6 +1667,7 @@ fn fetching_the_missing_members_takes_two_clicks() {
         error: None,
         confirm_fetch: false,
         asked: std::collections::HashSet::new(),
+        walk: None,
     });
     recompute_collection_states(&mut app);
     assert!(
@@ -1709,6 +1713,7 @@ fn a_member_already_asked_for_is_not_asked_for_twice() {
         // member `missing` until the sidecar lands, so without this set the
         // pane would spawn the same transfers again on the next click.
         asked: all.into_iter().collect(),
+        walk: None,
     });
     recompute_collection_states(&mut app);
 
@@ -1720,6 +1725,122 @@ fn a_member_already_asked_for_is_not_asked_for_twice() {
     let s = app.status.clone().unwrap_or_default();
     assert!(s.contains("already started"), "{s}");
     assert!(s.contains("Look up again"), "and how to retry: {s}");
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn walk_opens_the_next_member_once_the_awaited_file_lands() {
+    use MemberState::{Downloaded, Installed, Missing};
+    let rev = captured_revision();
+    let m0 = &rev.mods[0];
+    let mut w = CollectionWalk {
+        queue: vec![0, 2],
+        at: 0,
+        seen: HashSet::new(),
+    };
+    assert_eq!(
+        walk_step(&mut w, &rev, &[Missing, Installed, Missing], &[]),
+        WalkStep::Wait
+    );
+    assert_eq!(
+        walk_step(
+            &mut w,
+            &rev,
+            &[Downloaded, Installed, Missing],
+            &[(m0.mod_id, m0.file_id)]
+        ),
+        WalkStep::Open(2)
+    );
+    assert_eq!(
+        walk_step(&mut w, &rev, &[Downloaded, Installed, Downloaded], &[]),
+        WalkStep::Done
+    );
+}
+
+#[test]
+fn walk_flags_a_different_file_of_the_same_mod_and_keeps_waiting() {
+    let rev = captured_revision();
+    let m0 = &rev.mods[0];
+    let mut w = CollectionWalk {
+        queue: vec![0],
+        at: 0,
+        seen: HashSet::new(),
+    };
+    let got = m0.file_id + 1;
+    assert_eq!(
+        walk_step(&mut w, &rev, &[MemberState::Missing], &[(m0.mod_id, got)]),
+        WalkStep::Wrong {
+            want: m0.file_id,
+            got
+        }
+    );
+    assert_eq!(w.at, 0);
+}
+
+#[test]
+fn walk_queues_missing_required_members_only() {
+    use MemberState::{Installed, Missing};
+    // rev.mods: 0 required, 1 optional, 2 required, 3 required
+    let mut rev = captured_revision();
+    rev.mods.push(rev.mods[0].clone());
+    rev.mods[1].optional = true;
+    assert_eq!(
+        walk_queue(&rev, &[Missing, Missing, Installed, Missing]),
+        [0, 3]
+    );
+}
+
+/// The tick end to end, on the two steps that open nothing: a wrong file is
+/// named and holds the counter, and the last file landing ends the walk.
+#[test]
+fn the_walk_names_a_wrong_file_then_offers_the_install_when_the_last_one_lands() {
+    let rev = captured_revision();
+    let (mod_id, want) = (rev.mods[2].mod_id, rev.mods[2].file_id);
+    let (mut app, root) = collection_app(&[], &[]);
+    app.collection = Some(CollectionState {
+        install_check: None,
+        runtime: None,
+        link: String::new(),
+        revision: Some(rev),
+        states: Vec::new(),
+        loading: false,
+        error: None,
+        confirm_fetch: false,
+        asked: HashSet::new(),
+        walk: Some(CollectionWalk {
+            queue: vec![2],
+            at: 0,
+            seen: HashSet::new(),
+        }),
+    });
+    let dl = app.created.as_ref().unwrap().downloads_dir();
+    let land = |name: &str, file_id: u64| {
+        fs::write(dl.join(name), b"x").unwrap();
+        fs::write(
+            dl.join(format!("{name}.meta")),
+            format!("[General]\ngameName=SkyrimSE\nmodID={mod_id}\nfileID={file_id}\n"),
+        )
+        .unwrap();
+    };
+
+    land("newest.7z", want + 1);
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert_eq!(
+        app.status,
+        Some(tf(
+            "collection_walk_wrong",
+            &[("want", &want), ("got", &(want + 1))]
+        ))
+    );
+    assert_eq!(
+        app.collection.as_ref().unwrap().walk.as_ref().unwrap().at,
+        0
+    );
+
+    land("pinned.7z", want);
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(app.collection.as_ref().unwrap().walk.is_none());
+    assert_eq!(app.status, Some(tf("collection_walk_done", &[("n", &1)])));
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -4157,6 +4278,7 @@ fn collection_runtime_mismatch_requires_a_current_explicit_continuation() {
         error: None,
         confirm_fetch: false,
         asked: Default::default(),
+        walk: None,
     });
     let mismatch = eidos_collections::recipe::RuntimeCheck::Mismatch {
         observed: "1.7.104.0".into(),

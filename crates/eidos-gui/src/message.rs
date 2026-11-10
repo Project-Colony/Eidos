@@ -754,6 +754,12 @@ pub(crate) enum Message {
     CollectionOpenMod(usize),
     /// Ask the nxm handler to fetch every missing member, one at a time.
     CollectionFetchMissing,
+    /// A free account: open each missing required member's page in turn and
+    /// wait for its file in `downloads/`.
+    CollectionWalkStart,
+    /// Move to the next member without waiting for this one.
+    CollectionWalkSkip,
+    CollectionWalkStop,
     // ---- Instance manager (MO2's Manage Instances) ----
     ShowInstanceManager,
     CloseInstanceManager,

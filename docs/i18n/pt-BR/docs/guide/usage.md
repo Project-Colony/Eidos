@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6154de7966f87f9a76224fae06c041b45c862b54 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ae7cbbab8d37d90f52b713a0b2fae9406ba13279 -->
 
 # Usar o Eidos
 
@@ -244,6 +244,16 @@ membro é reportado com a URL exata da página dele para você mesmo buscá-lo. 
 cima dela. Busque-os pelo botão do site e rode o comando de novo: esses membros
 são procurados em `downloads/` a cada execução, então a coleção vai se
 completando conforme você os fornece.
+
+Na janela, uma conta gratuita ganha no painel da coleção
+*Fetch the N missing required files, one by one* no lugar da busca em lotes.
+Ele abre no Nexus a página do primeiro arquivo obrigatório que falta, espera
+esse arquivo chegar em `downloads/` e então abre o próximo. O botão de download
+da página continua sendo você quem aperta, em cada arquivo. O painel mostra em
+que ponto está (*3 of 12*), com *Skip* e *Stop*. Se chegar outro arquivo do
+mesmo mod no lugar, o painel cita os dois ids de arquivo e continua esperando o
+que a coleção fixa. Membros opcionais ficam de fora e mantêm o próprio botão
+*Open*.
 
 Ainda não aplicados, e nomeados no relatório em vez de deixados de lado:
 **patches binários**, **overrides de arquivo**, e os membros cujos arquivos

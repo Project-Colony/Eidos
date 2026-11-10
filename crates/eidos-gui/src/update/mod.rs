@@ -1559,6 +1559,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::CollectionFetched(..)
         | Message::CollectionOpenMod(..)
         | Message::CollectionFetchMissing
+        | Message::CollectionWalkStart
+        | Message::CollectionWalkSkip
+        | Message::CollectionWalkStop
         | Message::CollectionInstall
         | Message::CollectionInstallChecked { .. }) => nexus::handle(app, m),
         m @ (Message::ShowCategoriesDialog(..)
@@ -2150,6 +2153,57 @@ pub(crate) fn next_fetch_batch(
         .collect();
     let left = queued.len().saturating_sub(limit);
     (queued.into_iter().take(limit).collect(), left)
+}
+
+/// The members a free account's walk fetches: missing and required, in
+/// collection order. A missing optional member keeps its row's Open button.
+pub(crate) fn walk_queue(
+    rev: &eidos_nexus::collections::CollectionRevision,
+    states: &[MemberState],
+) -> Vec<usize> {
+    rev.mods
+        .iter()
+        .zip(states)
+        .enumerate()
+        .filter(|(_, (m, s))| **s == MemberState::Missing && !m.optional)
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// One look at the walk. `arrived` holds the `(mod_id, file_id)` of finished
+/// downloads the walk had not seen yet.
+pub(crate) fn walk_step(
+    walk: &mut CollectionWalk,
+    rev: &eidos_nexus::collections::CollectionRevision,
+    states: &[MemberState],
+    arrived: &[(u64, u64)],
+) -> WalkStep {
+    let Some(&i) = walk.queue.get(walk.at) else {
+        return WalkStep::Done;
+    };
+    if states.get(i) != Some(&MemberState::Missing) {
+        walk.at += 1;
+        return walk_next(walk, states);
+    }
+    let m = &rev.mods[i];
+    arrived
+        .iter()
+        .find(|(mod_id, file_id)| *mod_id == m.mod_id && *file_id != m.file_id)
+        .map_or(WalkStep::Wait, |&(_, got)| WalkStep::Wrong {
+            want: m.file_id,
+            got,
+        })
+}
+
+/// The first member from `walk.at` on that is still missing, or `Done`.
+pub(crate) fn walk_next(walk: &mut CollectionWalk, states: &[MemberState]) -> WalkStep {
+    while let Some(&i) = walk.queue.get(walk.at) {
+        if states.get(i) == Some(&MemberState::Missing) {
+            return WalkStep::Open(i);
+        }
+        walk.at += 1;
+    }
+    WalkStep::Done
 }
 
 pub(crate) fn recompute_collection_states(app: &mut App) {

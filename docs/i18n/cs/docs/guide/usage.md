@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6154de7966f87f9a76224fae06c041b45c862b54 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=ae7cbbab8d37d90f52b713a0b2fae9406ba13279 -->
 
 # Používání Eidosu
 
@@ -233,6 +233,15 @@ nahlásí přesná URL jeho stránky, abyste si jej stáhli sami. To je obchodn�
 pravidlo Nexusu a žádné množství opakovaných pokusů se přes ně nedostane.
 Stáhněte je tlačítkem na webu a spusťte příkaz znovu: tito členové se při každém
 běhu hledají v `downloads/`, takže se kolekce dokončuje tak, jak ji dodáváte.
+
+V okně dostane bezplatný účet v panelu kolekce místo hromadného stažení
+tlačítko *Fetch the N missing required files, one by one*. Otevře stránku
+prvního chybějícího povinného souboru na Nexusu, počká, až soubor dorazí do
+`downloads/`, a pak otevře další. Tlačítko ke stažení na stránce u každého
+souboru stisknete pořád vy. Panel ukazuje, kde právě je (*3 of 12*), a nabízí
+*Skip* a *Stop*. Když místo něj dorazí jiný soubor téhož módu, panel uvede obě
+id souborů a dál čeká na ten předepsaný. Volitelní členové do toho nepatří a
+ponechávají si vlastní tlačítko *Open*.
 
 Zatím se nepoužijí a ve zprávě se jmenují, místo aby se mlčky přešly: **binární
 patche**, **přepisy souborů** a členové, jejichž soubory cestují uvnitř archivu
