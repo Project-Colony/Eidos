@@ -55,19 +55,22 @@ fn send(summary: String, body: String) {
     });
 }
 
-/// What tests would have sent, so no test reaches the session bus.
+// What tests would have sent, so no test reaches the session bus. Per thread:
+// each test runs on its own, so two tests that notify cannot drain each other.
 #[cfg(test)]
-static SENT: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
+thread_local! {
+    static SENT: std::cell::RefCell<Vec<(String, String)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
 
 #[cfg(test)]
 fn send(summary: String, body: String) {
-    SENT.lock().unwrap().push((summary, body));
+    SENT.with_borrow_mut(|s| s.push((summary, body)));
 }
 
-/// Drain the notifications sent so far.
+/// Drain the notifications this thread sent so far.
 #[cfg(test)]
 pub(crate) fn take_sent() -> Vec<(String, String)> {
-    std::mem::take(&mut *SENT.lock().unwrap())
+    SENT.take()
 }
 
 #[cfg(test)]
