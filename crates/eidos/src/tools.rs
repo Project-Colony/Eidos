@@ -57,6 +57,24 @@ pub(crate) fn launches_the_game(execs: eidos_instance::GameExecutables<'_>, exe:
         .any(|g| g.eq_ignore_ascii_case(name))
 }
 
+/// Variables a store sets on the process it starts. Steam exports the first two.
+/// Heroic exports the `HEROIC_*` pair for every wrapper command, Legendary games
+/// included (it launches them for Heroic, source `epic`). The bare `legendary`
+/// CLI exports no marker of its own, so a hand-run `legendary launch` still looks
+/// like a plain shell.
+const STORE_MARKERS: [&str; 4] = [
+    "SteamGameId",
+    "SteamAppId",
+    "HEROIC_APP_NAME",
+    "HEROIC_APP_RUNNER",
+];
+
+/// True when any variable name in `keys` is a store marker.
+fn store_started_in(keys: impl IntoIterator<Item = String>) -> bool {
+    keys.into_iter()
+        .any(|k| STORE_MARKERS.contains(&k.as_str()))
+}
+
 /// A game entry run from a plain shell is refused: the game starts through the
 /// store that owns the copy. Inside a store-started process it runs as before.
 fn game_entry_refusal(runs_game: bool, store_started: bool) -> Option<&'static str> {
@@ -321,10 +339,8 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 exe.clone()
             });
             let runs_game = launches_the_game(game_executables(&game), &tool.exe);
-            // shortcut: only Steam's variables mark a store-started process, add Heroic's when known.
-            let store_started = ["SteamGameId", "SteamAppId"]
-                .iter()
-                .any(|k| std::env::var_os(k).is_some());
+            let store_started =
+                store_started_in(std::env::vars_os().filter_map(|(k, _)| k.into_string().ok()));
             if let Some(msg) = game_entry_refusal(runs_game, store_started) {
                 eidos_log::info!("{msg}");
                 exit(1);
@@ -559,6 +575,8 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 env.push(("SteamAppId".to_string(), id.to_string()));
                 env.push(("SteamGameId".to_string(), id.to_string()));
             }
+            // `tool_name: None` makes `run_through_view` treat this as a game run: it
+            // records the launch start, the clean launch and crash detection.
             let opts = crate::launch::ToolOpts {
                 prereqs: &prereqs,
                 output_mod: output_mod.as_deref(),
@@ -837,6 +855,16 @@ mod root_tool_tests {
         assert!(launches_the_game(execs, Path::new("SkyrimSELauncher.exe")));
         assert!(!launches_the_game(execs, Path::new("/t/SSEEdit.exe")));
         assert!(!launches_the_game(execs, Path::new("/t/SkyrimSE.exe.bak")));
+    }
+
+    #[test]
+    fn store_markers_cover_steam_and_heroic() {
+        let k = |a: &[&str]| store_started_in(a.iter().map(|s| s.to_string()));
+        assert!(k(&["PATH", "SteamGameId"]));
+        assert!(k(&["SteamAppId"]));
+        assert!(k(&["HEROIC_APP_NAME", "HEROIC_APP_RUNNER"]));
+        assert!(k(&["HEROIC_APP_RUNNER"]));
+        assert!(!k(&["PATH", "HOME", "STEAM_COMPAT_DATA_PATH"]));
     }
 
     #[test]
