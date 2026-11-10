@@ -289,6 +289,9 @@ pub(crate) struct App {
     pub(crate) info_provenance: String,
     /// Mods this one requires, and mods that require it, read once on open.
     pub(crate) info_requirements: (Vec<String>, Vec<String>),
+    /// What the last Replace changed in this mod, and the conflict partners it
+    /// gained or lost, read once on open.
+    pub(crate) info_update: Option<(eidos_instance::UpdateReport, crate::modinfo::ConflictDelta)>,
     pub(crate) info_tab: InfoTab,
     pub(crate) notes_edit: String,
     /// Collapsed separators, keyed by display name (MO2 keys by display name too).

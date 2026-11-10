@@ -679,6 +679,19 @@ the mod was installed with, then the prompt offers Replace with "Keep a backup o
 the existing mod" ticked, whatever you chose at the last prompt. Replace keeps
 the mod's priority and enabled state.
 
+Before a Replace swaps a mod's folder, Eidos compares the old folder with the
+new one by file name and size and reads the headers of the plugins in both. This
+covers Update, a collection update, and Replace picked at the install prompt.
+The status line then counts the files added, removed and changed in size, and
+names every master the new version needs that the old one did not. The
+**General** tab of "Information..." ends with a **Last update** section listing
+the versions, the plugins added or removed, the masters added or removed, the
+plugins whose ESM, ESL or ESH flag changed, the mods this one now shares files
+with or no longer does, and the files. A file rewritten at the same size is not
+listed. The report is kept in `logs/updates/<mod>.json` in the instance, which
+`eidos pack` leaves out; a fresh install or a Merge into the folder removes it.
+`eidos install --replace` prints the same counts on a `changes:` line.
+
 A folder that holds several Nexus files, such as a main file with an optional
 file merged into it, is refused: replacing it with the new main file would drop
 the others. Update those by hand.

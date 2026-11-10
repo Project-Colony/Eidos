@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ec0c271afdcb461fe960aaff69daf0a71dbb550a -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6715cbae156a6c792d2cef7feb1a8557c348cc0b -->
 
 # Eidos gebruiken
 
@@ -699,6 +699,21 @@ Vanaf daar is het de gewone installatie: een FOMOD opent met de antwoorden
 waarmee de mod geïnstalleerd werd, daarna biedt de vraag Replace aan met "Keep a
 backup of the existing mod" aangevinkt, wat je bij de vorige vraag ook koos.
 Replace behoudt de prioriteit van de mod en of hij aanstaat.
+
+Voordat een Replace de map van een mod verwisselt, vergelijkt Eidos de oude map
+met de nieuwe op bestandsnaam en grootte en leest het de headers van de plugins
+in beide. Dit geldt voor Update, voor een collectie-update en voor Replace
+gekozen in de installatievraag. De statusregel telt daarna de toegevoegde,
+verwijderde en in grootte gewijzigde bestanden en noemt elke master die de
+nieuwe versie nodig heeft en de oude niet. Het tabblad **General** van
+"Information..." eindigt met een sectie **Last update** met de versies, de
+toegevoegde of verwijderde plugins, de toegevoegde of vervallen masters, de
+plugins waarvan de ESM-, ESL- of ESH-vlag veranderde, de mods waarmee deze nu
+bestanden deelt of niet meer deelt, en de bestanden. Een bestand dat met
+dezelfde grootte is herschreven, staat er niet in. Het rapport staat in
+`logs/updates/<mod>.json` in de instantie, die `eidos pack` weglaat; een verse
+installatie of een Merge in de map verwijdert het. `eidos install --replace`
+toont dezelfde aantallen op een regel `changes:`.
 
 Een map met meerdere Nexus-bestanden, zoals een hoofdbestand met een optioneel
 bestand erin samengevoegd, wordt geweigerd: hem vervangen door het nieuwe

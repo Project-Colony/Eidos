@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ec0c271afdcb461fe960aaff69daf0a71dbb550a -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6715cbae156a6c792d2cef7feb1a8557c348cc0b -->
 
 # 使用 Eidos
 
@@ -508,6 +508,8 @@ Eidos 自己下载文件。免费账户则打开文件页面,在那里 Mod Manag
 压缩包到达 `downloads/` 时安装开始。之后就是平常的安装:FOMOD 以模组安装时的答案打开,
 随后的询问提供 Replace,并勾选 "Keep a backup of the existing mod",不论你上次询问时
 选了什么。Replace 保留模组的优先级和启用状态。
+
+Replace 替换模组文件夹之前，Eidos 会按文件名和大小比较旧文件夹与新文件夹，并读取两边插件的头部。Update、合集更新以及在安装询问中选择的 Replace 都适用。随后状态行会统计新增、删除和大小改变的文件数，并列出新版本需要而旧版本不需要的每个 master。“Information...”的 **General** 标签页末尾有一个 **Last update** 部分，列出版本、新增或删除的插件、新增或不再需要的 master、ESM、ESL 或 ESH 标志改变的插件、该模组现在共享或不再共享文件的模组，以及文件。以相同大小重写的文件不会列出。报告保存在实例的 `logs/updates/<mod>.json` 中，`eidos pack` 不会打包它；全新安装或向该文件夹 Merge 会删除它。`eidos install --replace` 会在 `changes:` 行输出同样的数字。
 
 包含多个 Nexus 文件的文件夹(例如混入了一个可选文件的主文件)会被拒绝:用新的主文件
 替换它会丢掉其他文件。这些请手动更新。

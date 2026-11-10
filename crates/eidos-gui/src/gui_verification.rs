@@ -1009,6 +1009,42 @@ fn executables_flags_fit_on_their_lines() {
     let _ = fs::remove_dir_all(root);
 }
 
+/// The Last update section closes the General tab: every row the tab had keeps
+/// its place when a report exists.
+#[test]
+fn the_last_update_section_closes_the_general_tab() {
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    let folder = app.created.as_ref().unwrap().mods_dir().join("Sky UI");
+    fs::create_dir_all(&folder).unwrap();
+    app.mods = vec![ModEntry {
+        name: "Sky UI".into(),
+        enabled: true,
+        path: folder,
+        unmanaged: false,
+    }];
+    app.info_mod = Some(0);
+    app.info_tab = InfoTab::General;
+    let mut renderer = renderer();
+    let before = positions(crate::modinfo::mod_info_dialog(&app, 0), &mut renderer).labels;
+    app.info_update = Some((
+        eidos_instance::UpdateReport {
+            added: vec!["a.esp".into(), "b.dds".into()],
+            ..Default::default()
+        },
+        Default::default(),
+    ));
+    let after = positions(crate::modinfo::mod_info_dialog(&app, 0), &mut renderer).labels;
+    for (text, bounds) in &before {
+        assert!(
+            after.iter().any(|(t, b)| t == text && b.y == bounds.y),
+            "{text} moved"
+        );
+    }
+    let added = tf("info_update_files_added", &[("n", &2)]);
+    assert!(after.iter().any(|(t, _)| *t == added), "{after:?}");
+}
+
 /// The Nexus files tab of the 660 px mod info card: every file keeps its Open
 /// button, the successor its Update button, each whole on one line and inside
 /// the card. Fixed columns used to take 560 px before the buttons, which iced

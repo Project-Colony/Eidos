@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ec0c271afdcb461fe960aaff69daf0a71dbb550a -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6715cbae156a6c792d2cef7feb1a8557c348cc0b -->
 
 # Usar Eidos
 
@@ -707,6 +707,21 @@ siempre: un FOMOD se abre con las respuestas con las que se instaló el mod, y
 luego el aviso ofrece Replace con «Keep a backup of the existing mod» marcado,
 elijas lo que elijas en el aviso anterior. Replace conserva la prioridad del mod
 y si está activado.
+
+Antes de que un Replace cambie la carpeta de un mod, Eidos compara la carpeta
+antigua con la nueva por nombre y tamaño de archivo y lee las cabeceras de los
+plugins de ambas. Esto cubre Update, una actualización de colección y Replace
+elegido en el aviso de instalación. La línea de estado cuenta después los
+archivos añadidos, eliminados y con tamaño cambiado, y nombra cada master que
+necesita la versión nueva y no necesitaba la anterior. La pestaña **General** de
+«Information...» termina con una sección **Last update** que lista las
+versiones, los plugins añadidos o eliminados, los masters añadidos o
+descartados, los plugins cuyo indicador ESM, ESL o ESH ha cambiado, los mods con
+los que este comparte archivos desde ahora o ya no los comparte, y los archivos.
+Un archivo reescrito con el mismo tamaño no aparece. El informe se guarda en
+`logs/updates/<mod>.json` dentro de la instancia, que `eidos pack` deja fuera;
+una instalación nueva o un Merge en la carpeta lo borra. `eidos install
+--replace` imprime las mismas cuentas en una línea `changes:`.
 
 Una carpeta que contiene varios archivos de Nexus, como un archivo principal con
 uno opcional fusionado dentro, se rechaza: reemplazarla por el nuevo archivo

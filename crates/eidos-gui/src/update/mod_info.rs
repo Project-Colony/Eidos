@@ -32,6 +32,16 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     .get(i)
                     .map(|m| mod_requirement_lines(app, &m.name))
                     .unwrap_or_default();
+                app.info_update = app.created.as_ref().and_then(|inst| {
+                    let m = app.mods.get(i)?;
+                    let r = eidos_instance::load_update_report(&inst.root, &m.name)?;
+                    let delta = app
+                        .conflicts
+                        .as_ref()
+                        .map(|map| conflict_delta(&r, map, (i + 1) as u32))
+                        .unwrap_or_default();
+                    Some((r, delta))
+                });
                 app.info_mod = Some(i);
                 app.info_tab = InfoTab::General;
             }

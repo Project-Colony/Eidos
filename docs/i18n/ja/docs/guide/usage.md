@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ec0c271afdcb461fe960aaff69daf0a71dbb550a -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6715cbae156a6c792d2cef7feb1a8557c348cc0b -->
 
 # Eidos の使い方
 
@@ -625,6 +625,8 @@ Mod Manager Download がファイルを送り返し、書庫が `downloads/` に
 インストールしたときの答えで開き、続く確認では「Keep a backup of the existing mod」に
 チェックが入った状態で Replace を選べます。前回の確認で何を選んでいても同じです。
 Replace は MOD の優先度と、有効かどうかを保ちます。
+
+Replace が MOD のフォルダーを入れ替える前に、Eidos は古いフォルダーと新しいフォルダーをファイル名とサイズで比べ、両方のプラグインのヘッダーを読みます。対象は Update、コレクションの更新、インストール時の確認で選んだ Replace です。そのあとステータス行に、追加・削除・サイズ変更のファイル数と、新しい版だけが必要とするマスターの名前が出ます。「Information...」の **General** タブの末尾には **Last update** 欄があり、バージョン、追加または削除されたプラグイン、追加または不要になったマスター、ESM・ESL・ESH フラグが変わったプラグイン、この MOD が新たにファイルを共有するようになった、または共有しなくなった MOD、そしてファイルが並びます。同じサイズで書き換えられたファイルは載りません。レポートはインスタンス内の `logs/updates/<mod>.json` に保存され、`eidos pack` はこれを含めません。新規インストールやフォルダーへの Merge で削除されます。`eidos install --replace` は同じ件数を `changes:` の行に出力します。
 
 複数の Nexus ファイルを抱えるフォルダ(メインファイルにオプションのファイルを混ぜ込んだ
 ものなど)は断ります。新しいメインファイルで置き換えると、ほかのファイルが失われる

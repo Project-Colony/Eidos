@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ec0c271afdcb461fe960aaff69daf0a71dbb550a -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6715cbae156a6c792d2cef7feb1a8557c348cc0b -->
 
 # Eidos 사용하기
 
@@ -611,6 +611,8 @@ Tracked 플래그를 그 모드 자신의 Nexus 도메인 기준으로 맞춥니
 설치할 때의 답으로 열리고, 이어지는 확인 창은 "Keep a backup of the existing mod"가
 체크된 상태로 Replace를 제시합니다. 지난번 확인 창에서 무엇을 골랐든 마찬가지입니다.
 Replace는 모드의 우선순위와 활성화 여부를 유지합니다.
+
+Replace가 모드 폴더를 바꾸기 전에 Eidos는 옛 폴더와 새 폴더를 파일 이름과 크기로 비교하고, 양쪽 플러그인의 헤더를 읽습니다. Update, 컬렉션 업데이트, 설치 확인 창에서 고른 Replace가 모두 해당합니다. 그러면 상태 줄에 추가·삭제·크기가 바뀐 파일 수가 표시되고, 새 버전만 필요로 하는 마스터의 이름이 나옵니다. "Information..."의 **General** 탭 끝에는 **Last update** 구역이 있어 버전, 추가되거나 삭제된 플러그인, 추가되거나 더는 필요 없는 마스터, ESM·ESL·ESH 플래그가 바뀐 플러그인, 이 모드가 이제 파일을 공유하거나 더는 공유하지 않는 모드, 그리고 파일을 나열합니다. 같은 크기로 다시 쓴 파일은 나오지 않습니다. 보고서는 인스턴스의 `logs/updates/<mod>.json`에 저장되며 `eidos pack`은 이를 포함하지 않습니다. 새로 설치하거나 폴더에 Merge하면 삭제됩니다. `eidos install --replace`는 같은 수치를 `changes:` 줄에 출력합니다.
 
 Nexus 파일 여러 개를 담은 폴더(예: 선택 파일을 섞어 넣은 메인 파일)는 거부됩니다. 새
 메인 파일로 대체하면 나머지 파일이 사라지기 때문입니다. 그런 폴더는 직접 업데이트하세요.

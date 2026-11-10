@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ec0c271afdcb461fe960aaff69daf0a71dbb550a -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6715cbae156a6c792d2cef7feb1a8557c348cc0b -->
 
 # Používání Eidosu
 
@@ -650,6 +650,19 @@ Odtud jde o obvyklou instalaci: FOMOD se otevře s odpověďmi, se kterými byl 
 nainstalován, a potom dotaz nabídne Replace se zaškrtnutým „Keep a backup of the
 existing mod", ať jste při minulém dotazu zvolili cokoli. Replace zachová
 prioritu módu i to, zda je zapnutý.
+
+Než Replace vymění složku módu, Eidos porovná starou složku s novou podle názvů
+a velikostí souborů a přečte hlavičky pluginů v obou. Týká se to Update,
+aktualizace kolekce i Replace zvoleného v dotazu při instalaci. Stavový řádek
+pak spočítá přidané, odebrané a ve velikosti změněné soubory a jmenuje každý
+master, který nová verze potřebuje a stará ne. Karta **General** v
+„Information..." končí sekcí **Last update**, která uvádí verze, přidané nebo
+odebrané pluginy, přidané nebo zrušené mastery, pluginy se změněným příznakem
+ESM, ESL nebo ESH, módy, s nimiž tento mód nově sdílí soubory nebo je už
+nesdílí, a soubory. Soubor přepsaný se stejnou velikostí se neuvádí. Hlášení je
+uloženo v `logs/updates/<mod>.json` v instanci, kterou `eidos pack` vynechává;
+čerstvá instalace nebo Merge do složky ho smaže. `eidos install --replace`
+vypíše stejné počty na řádku `changes:`.
 
 Složka, která obsahuje několik souborů z Nexusu, třeba hlavní soubor s
 přimíchaným volitelným souborem, je odmítnuta: nahrazení novým hlavním souborem

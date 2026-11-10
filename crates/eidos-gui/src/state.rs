@@ -338,6 +338,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         info_mod: None,
         info_provenance: String::new(),
         info_requirements: Default::default(),
+        info_update: None,
         info_tab: InfoTab::General,
         notes_edit: String::new(),
         collapsed: HashSet::new(),

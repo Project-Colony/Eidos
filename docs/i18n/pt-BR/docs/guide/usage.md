@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ec0c271afdcb461fe960aaff69daf0a71dbb550a -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6715cbae156a6c792d2cef7feb1a8557c348cc0b -->
 
 # Usar o Eidos
 
@@ -685,6 +685,21 @@ abre com as respostas com que o mod foi instalado, e depois o aviso oferece
 Replace com "Keep a backup of the existing mod" marcado, seja qual for a sua
 escolha no aviso anterior. Replace mantém a prioridade do mod e se ele está
 ativado.
+
+Antes que um Replace troque a pasta de um mod, o Eidos compara a pasta antiga
+com a nova por nome e tamanho de arquivo e lê os cabeçalhos dos plugins das
+duas. Isso vale para Update, para a atualização de uma coleção e para o Replace
+escolhido no aviso de instalação. A linha de status então conta os arquivos
+adicionados, removidos e com tamanho alterado, e nomeia cada master que a versão
+nova precisa e a antiga não precisava. A aba **General** de "Information..."
+termina com uma seção **Last update** que lista as versões, os plugins
+adicionados ou removidos, os masters adicionados ou abandonados, os plugins cujo
+indicador ESM, ESL ou ESH mudou, os mods com que este passou a compartilhar
+arquivos ou deixou de compartilhar, e os arquivos. Um arquivo reescrito com o
+mesmo tamanho não aparece. O relatório fica em `logs/updates/<mod>.json` na
+instância, que o `eidos pack` deixa de fora; uma instalação nova ou um Merge na
+pasta o apaga. `eidos install --replace` imprime as mesmas contagens em uma
+linha `changes:`.
 
 Uma pasta que contém vários arquivos do Nexus, como um arquivo principal com um
 opcional mesclado dentro, é recusada: substituí-la pelo novo arquivo principal

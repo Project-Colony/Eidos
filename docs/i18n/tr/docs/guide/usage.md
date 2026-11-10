@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ec0c271afdcb461fe960aaff69daf0a71dbb550a -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6715cbae156a6c792d2cef7feb1a8557c348cc0b -->
 
 # Eidos kullanımı
 
@@ -678,6 +678,19 @@ vardığında kurulum başlar. Oradan sonrası alışılmış kurulumdur: bir FO
 kurulduğu cevaplarla açılır, ardından soru penceresi "Keep a backup of the
 existing mod" işaretli olarak Replace seçeneğini sunar; bir önceki pencerede ne
 seçmiş olursanız olun. Replace, modun önceliğini ve etkin olup olmadığını korur.
+
+Bir Replace modun klasörünü değiştirmeden önce Eidos eski klasörü yenisiyle
+dosya adı ve boyutuna göre karşılaştırır ve ikisindeki eklentilerin başlıklarını
+okur. Bu, Update, bir koleksiyon güncellemesi ve kurulum sorusunda seçilen
+Replace için geçerlidir. Durum satırı ardından eklenen, silinen ve boyutu
+değişen dosyaları sayar, yeni sürümün gerek duyduğu ama eskisinin duymadığı her
+master'ı adıyla anar. "Information..." penceresindeki **General** sekmesi bir
+**Last update** bölümüyle biter; bölümde sürümler, eklenen veya silinen
+eklentiler, eklenen veya bırakılan master'lar, ESM, ESL ya da ESH bayrağı
+değişen eklentiler, bu modun artık dosya paylaştığı veya paylaşmadığı modlar ve
+dosyalar listelenir. Aynı boyutla yeniden yazılan dosya listelenmez. Rapor,
+instance içindeki `logs/updates/<mod>.json` dosyasında tutulur; `eidos pack` bunu dışarıda bırakır. Yeni bir kurulum ya da klasöre Merge raporu siler. `eidos
+install --replace` aynı sayıları `changes:` satırında yazdırır.
 
 Birkaç Nexus dosyası barındıran bir klasör, örneğin içine isteğe bağlı bir dosya
 karıştırılmış bir ana dosya, reddedilir: onu yeni ana dosyayla değiştirmek

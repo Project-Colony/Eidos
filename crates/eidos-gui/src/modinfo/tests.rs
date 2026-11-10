@@ -1397,3 +1397,53 @@ fn sources_and_the_extenders_own_winning_scripts_say_nothing() {
     ]);
     assert!(extender_script_checks(&map, "skse64_loader.exe", "SKSE", false).is_empty());
 }
+
+#[test]
+fn conflict_delta_names_the_mods_an_update_starts_and_stops_sharing_files_with() {
+    use eidos_conflicts::{ConflictMap, FileNode};
+    let node = |winner, alternatives: Vec<u32>| FileNode {
+        winner,
+        alternatives,
+        display_path: String::new(),
+    };
+    let mut map = ConflictMap::default();
+    map.files
+        .insert("textures/a.dds".into(), node(1, vec![2, 0]));
+    map.files.insert("meshes/b.nif".into(), node(3, vec![]));
+    map.names = [(1, "Updated"), (2, "Other"), (3, "Third")]
+        .into_iter()
+        .map(|(o, n)| (o, n.to_string()))
+        .collect();
+    let report = eidos_instance::UpdateReport {
+        added: vec!["Textures/A.dds".into()],
+        removed: vec!["meshes/b.nif".into()],
+        ..Default::default()
+    };
+    let d = conflict_delta(&report, &map, 1);
+    assert_eq!(
+        d.gained,
+        [("Other".to_string(), 1)],
+        "the game's own copy does not count"
+    );
+    assert_eq!(d.lost, [("Third".to_string(), 1)]);
+}
+
+#[test]
+fn the_status_after_a_replace_counts_the_changes_and_names_new_masters() {
+    let r = eidos_instance::UpdateReport {
+        added: vec!["a".into(), "b".into()],
+        removed: vec!["c".into()],
+        masters_added: vec!["Dawnguard.esm".into()],
+        ..Default::default()
+    };
+    let s = crate::i18n::with_locale(colony_ui::i18n::Locale::En, || update_status(&r));
+    assert_eq!(
+        s,
+        " Files added: 2, removed: 1, changed size: 0. New masters: Dawnguard.esm."
+    );
+    let plain = eidos_instance::UpdateReport::default();
+    assert!(
+        !crate::i18n::with_locale(colony_ui::i18n::Locale::En, || update_status(&plain))
+            .contains("masters")
+    );
+}

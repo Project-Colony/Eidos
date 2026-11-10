@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=ec0c271afdcb461fe960aaff69daf0a71dbb550a -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6715cbae156a6c792d2cef7feb1a8557c348cc0b -->
 
 # Utiliser Eidos
 
@@ -735,6 +735,21 @@ l'installation habituelle : un FOMOD s'ouvre sur les réponses avec lesquelles l
 mod a été installé, puis la fenêtre propose Replace avec « Keep a backup of the
 existing mod » coché, quel que soit votre choix à la fenêtre précédente. Replace
 garde la priorité du mod et son état activé ou non.
+
+Avant qu'un Replace ne remplace le dossier d'un mod, Eidos compare l'ancien
+dossier au nouveau par nom et taille de fichier, et lit les en-têtes des plugins
+des deux. Cela couvre Update, une mise à jour de collection et Replace choisi à
+la fenêtre d'installation. La ligne d'état compte ensuite les fichiers ajoutés,
+supprimés et de taille modifiée, et nomme chaque master dont la nouvelle version
+a besoin et pas l'ancienne. L'onglet **Général** de « Information... » se
+termine par une section **Dernière mise à jour** qui liste les versions, les
+plugins ajoutés ou supprimés, les masters ajoutés ou abandonnés, les plugins
+dont l'indicateur ESM, ESL ou ESH a changé, les mods avec lesquels celui-ci
+partage désormais des fichiers ou n'en partage plus, et les fichiers. Un fichier
+réécrit à la même taille n'est pas listé. Le rapport est gardé dans
+`logs/updates/<mod>.json` de l'instance, que `eidos pack` laisse de côté ; une
+nouvelle installation ou un Merge dans le dossier le supprime. `eidos install
+--replace` affiche les mêmes totaux sur une ligne `changes:`.
 
 Un dossier qui contient plusieurs fichiers Nexus, par exemple un fichier
 principal avec un fichier optionnel fusionné dedans, est refusé : le remplacer
