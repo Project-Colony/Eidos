@@ -6626,6 +6626,22 @@ fn the_missing_masters_card_enables_the_mod_that_holds_the_master() {
     );
 }
 
+#[test]
+fn a_master_no_mod_provides_is_named_without_an_enabled_count() {
+    let (mut app, _root) = list_app(&["Needs"]);
+    let mut a = plugin_row("A.esp", "Needs");
+    a.masters = vec!["Gone.esm".into()];
+    app.plugins = Some(PluginList {
+        plugins: vec![a],
+        ..Default::default()
+    });
+    let _ = update(&mut app, Message::EnableMissingMasters);
+    assert_eq!(
+        app.status.as_deref(),
+        Some(tf("status_masters_unprovided", &[("list", &"Gone.esm")]).as_str())
+    );
+}
+
 fn history_app(names: &[&str]) -> (App, PathBuf) {
     let (mut app, root) = list_app(names);
     app.created

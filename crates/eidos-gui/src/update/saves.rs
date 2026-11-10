@@ -303,20 +303,22 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     commit_plugin_order(app, &spec);
                 }
             }
-            let mut status = tf(
-                "status_enabled_masters",
-                &[("mods", &mods_on), ("plugins", &plugins_on)],
-            );
+            let mut said = Vec::new();
+            if mods_on + plugins_on > 0 {
+                said.push(tf(
+                    "status_enabled_masters",
+                    &[("mods", &mods_on), ("plugins", &plugins_on)],
+                ));
+            }
             if !unprovided.is_empty() {
                 unprovided.sort();
                 unprovided.dedup();
-                status.push(' ');
-                status.push_str(&tf(
+                said.push(tf(
                     "status_masters_unprovided",
                     &[("list", &unprovided.join(", "))],
                 ));
             }
-            app.status = Some(status);
+            app.status = Some(said.join(" ")).filter(|s| !s.is_empty());
         }
         Message::RestorePreSessionPlugins => {
             // Same gates as every other mutation: the plugins dir is bind-mounted
