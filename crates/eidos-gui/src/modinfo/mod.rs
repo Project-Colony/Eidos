@@ -155,6 +155,16 @@ pub(crate) fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> 
             app.info_provenance.clone(),
         ));
     }
+    let (requires, required_by) = &app.info_requirements;
+    if !requires.is_empty() {
+        col = col.push(info_kv(t("info_requires"), requires.join("; ")));
+    }
+    if !required_by.is_empty() {
+        col = col.push(info_kv(t("info_required_by"), required_by.join("; ")));
+    }
+    if !requires.is_empty() || !required_by.is_empty() {
+        col = col.push(info_kv("", t("info_requirements_note").to_string()));
+    }
     // A page for mods that are not on Nexus. Without it every such mod is a dead
     // end in the interface: "Visit on Nexus" only appears when a Nexus id
     // exists, so a LoversLab or GitHub mod has nowhere to go from here.
@@ -192,6 +202,34 @@ pub(crate) fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> 
     .push(info_kv(t("common_folder"), m.path.display().to_string()))
     .push(url_row)
     .into()
+}
+
+/// The "Requires" and "Required by" lines for one mod, built on dialog-open from
+/// the plugin masters. Only mods that are rows of the list are named.
+pub(crate) fn mod_requirement_lines(app: &App, name: &str) -> (Vec<String>, Vec<String>) {
+    let Some(list) = app.plugins.clone().or_else(|| compute_plugins(app)) else {
+        return Default::default();
+    };
+    let known = |n: &str| app.mods.iter().any(|m| m.name == n);
+    let line = |other: &str, r: &eidos_plugins::ModRequirement| {
+        tf(
+            "info_requirement",
+            &[
+                ("mod", &other),
+                ("plugin", &r.plugin),
+                ("master", &r.master),
+            ],
+        )
+    };
+    let (mut requires, mut required_by) = (Vec::new(), Vec::new());
+    for r in list.mod_requirements() {
+        if r.dependent == name && known(&r.required) {
+            requires.push(line(&r.required, &r));
+        } else if r.required == name && known(&r.dependent) {
+            required_by.push(line(&r.dependent, &r));
+        }
+    }
+    (requires, required_by)
 }
 
 /// Build the receipt text on dialog-open, never by reading the journal every frame.

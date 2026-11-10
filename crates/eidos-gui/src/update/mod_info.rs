@@ -27,6 +27,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     .get(i)
                     .map(|m| generated_summary(app, &m.name))
                     .unwrap_or_default();
+                app.info_requirements = app
+                    .mods
+                    .get(i)
+                    .map(|m| mod_requirement_lines(app, &m.name))
+                    .unwrap_or_default();
                 app.info_mod = Some(i);
                 app.info_tab = InfoTab::General;
             }

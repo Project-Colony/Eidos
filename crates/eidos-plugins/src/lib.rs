@@ -715,6 +715,30 @@ impl PluginList {
         out
     }
 
+    /// Mod-to-mod links read from the masters of enabled plugins: one entry per
+    /// (plugin, master) whose master comes from another mod. The list holds one
+    /// winner per name, so an overridden provider never shows up.
+    pub fn mod_requirements(&self) -> Vec<ModRequirement> {
+        let mut out = Vec::new();
+        for p in self.plugins.iter().filter(|p| p.enabled) {
+            for m in &p.masters {
+                let Some(provider) = self.plugins.iter().find(|q| q.name.eq_ignore_ascii_case(m))
+                else {
+                    continue;
+                };
+                if !provider.origin_mod.is_empty() && provider.origin_mod != p.origin_mod {
+                    out.push(ModRequirement {
+                        dependent: p.origin_mod.clone(),
+                        plugin: p.name.clone(),
+                        required: provider.origin_mod.clone(),
+                        master: provider.name.clone(),
+                    });
+                }
+            }
+        }
+        out
+    }
+
     /// Set a plugin's enabled state by name (case-insensitive). Returns whether it
     /// matched. Call `refresh` afterwards to recompute indexes.
     pub fn set_enabled(&mut self, name: &str, enabled: bool) -> bool {
@@ -1315,6 +1339,15 @@ fn topo_stable(plugins: &[Plugin], base: &[usize], tier: &[u8]) -> Vec<usize> {
     result
 }
 
+/// A mod that needs another mod, through a plugin master.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModRequirement {
+    pub dependent: String,
+    pub plugin: String,
+    pub required: String,
+    pub master: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1745,6 +1778,32 @@ mod tests {
         assert_eq!(by("Normal.esp"), Some("01".to_string())); // second normal
         assert_eq!(by("Light.esl"), Some("FE:000".to_string())); // first light
         assert_eq!(by("Off.esp"), None); // disabled
+    }
+
+    #[test]
+    fn mod_requirements_link_mods_through_plugin_masters() {
+        let mut a = p("A.esp", &["Skyrim.esm", "b.ESM", "A2.esp"]);
+        a.origin_mod = "ModA".into();
+        let mut a2 = p("A2.esp", &[]);
+        a2.origin_mod = "ModA".into();
+        let mut b = p("B.esm", &[]);
+        b.origin_mod = "ModB".into();
+        let mut d = p("D.esp", &["B.esm"]);
+        d.origin_mod = "ModD".into();
+        d.enabled = false;
+        let list = PluginList {
+            plugins: vec![p("Skyrim.esm", &[]), b, a2, a, d],
+            ..Default::default()
+        };
+        assert_eq!(
+            list.mod_requirements(),
+            [ModRequirement {
+                dependent: "ModA".into(),
+                plugin: "A.esp".into(),
+                required: "ModB".into(),
+                master: "B.esm".into(),
+            }]
+        );
     }
 
     #[test]

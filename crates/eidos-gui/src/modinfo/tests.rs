@@ -995,3 +995,18 @@ mod requirement_tests {
         ));
     }
 }
+
+#[test]
+fn mod_information_lists_what_a_mod_requires_and_what_requires_it() {
+    let (mut app, _root) = list_app(&["ModA", "ModB"]);
+    let mut a = plugin_row("A.esp", "ModA");
+    a.masters = vec!["B.esm".into()];
+    app.plugins = Some(PluginList {
+        plugins: vec![plugin_row("B.esm", "ModB"), a],
+        ..Default::default()
+    });
+    let _ = update(&mut app, Message::ShowModInfo(0));
+    assert_eq!(app.info_requirements.0, ["ModB (A.esp needs B.esm)"]);
+    let _ = update(&mut app, Message::ShowModInfo(1));
+    assert_eq!(app.info_requirements.1, ["ModA (A.esp needs B.esm)"]);
+}
