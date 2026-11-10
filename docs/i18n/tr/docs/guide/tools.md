@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=631027d4686fac9eb78728b23a8024d0c5000909 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=4cb3ab1260fe32bf41a1a9fdf03479f0c1d74b50 -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -355,6 +355,12 @@ kendi profilini bulur.
 
 PGPatcher, profilde etkin hiçbir mod olmadığında ve çıktı klasörü etkin bir
 modun klasörü olduğunda, MO2 altında olduğu gibi bir hatayla durur.
+
+## Wine'ın kendi programları, oyunun önekinde
+
+Dosya menüsü, oyunun önekinde Wine'ın dört programını çalıştırır: winecfg, regedit, Wine dosya gezgini ve kaldırıcı. Diğer araçlar gibi, oyunun araçlarını çalıştıran Proton veya Wine sürümüyle, modlar bağlanmış olarak başlarlar ve pencere onları bekler. **Prefix drive_c**, önekin `C:` sürücüsünü dosya yöneticinizde açar. Önekte o program olana kadar satır gri kalır; bu, mağaza oyunu ilk kez başlattığında olur.
+
+Eidos kayıt defterine kendisi yalnızca bir değer yazar: `HKLM\Software\Bethesda Softworks\<game>` altındaki oyunun `installed path` değeri. Yanlışsa her araç çalıştırmasından önce düzeltir. regedit'te bu değerde yaptığınız değişiklik bir sonraki araç çalıştırmasında geri konur.
 
 ## Önekteki oyun yolu
 

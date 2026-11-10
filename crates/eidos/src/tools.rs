@@ -69,6 +69,12 @@ fn store_started_in(keys: impl IntoIterator<Item = String>) -> bool {
 /// A game entry run from a plain shell (a desktop shortcut made with 1.22, say)
 /// goes to the store that owns the copy, as Run does in a window no store
 /// opened. Inside a store-started process it runs as before.
+/// The generator-receipt name of a run: only a tool, not the game and not a
+/// prefix program.
+fn receipt_name(title: &str, runs_game: bool, utility: bool) -> Option<&str> {
+    (!runs_game && !utility).then_some(title)
+}
+
 fn hands_off_to_store(runs_game: bool, store_started: bool) -> bool {
     runs_game && !store_started
 }
@@ -400,6 +406,13 @@ pub(crate) fn cmd_tool(args: &[String]) {
                     .into_iter()
                     .find(|t| named(t)),
             };
+            // Wine's own programs in the game's prefix, when no tool has the title.
+            let listed = tool.is_some();
+            let tool = tool.or_else(|| {
+                game.prefix()
+                    .and_then(|p| eidos_instance::prefix_tool(&p, title))
+            });
+            let utility = !listed && tool.is_some();
             let Some(tool) = tool else {
                 eidos_log::info!("No tool named '{title}'. List them: eidos tool {id}");
                 exit(1);
@@ -716,9 +729,9 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 prereqs: &prereqs,
                 output_mod: output_mod.as_deref(),
                 // A game start is session output, not generated output: no receipt.
-                tool_name: (!runs_game).then_some(title),
-                executable: (!runs_game).then_some(&source_exe),
-                utility: None,
+                tool_name: receipt_name(title, runs_game, utility),
+                executable: receipt_name(title, runs_game, utility).and(Some(&source_exe)),
+                utility: utility.then_some(title),
                 env: &tool.env,
                 interactive: false,
             };
@@ -1033,6 +1046,13 @@ mod root_tool_tests {
             "a refused name changes nothing"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_prefix_program_leaves_no_generator_receipt() {
+        assert_eq!(receipt_name("SSEEdit", false, false), Some("SSEEdit"));
+        assert_eq!(receipt_name("SKSE", true, false), None);
+        assert_eq!(receipt_name("regedit", false, true), None);
     }
 
     #[test]

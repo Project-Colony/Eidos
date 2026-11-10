@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=631027d4686fac9eb78728b23a8024d0c5000909 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=4cb3ab1260fe32bf41a1a9fdf03479f0c1d74b50 -->
 
 # Narzędzia: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -349,6 +349,12 @@ w nim swój profil.
 
 PGPatcher kończy pracę z błędem, gdy profil nie ma żadnego włączonego moda, oraz
 gdy jego folder wyjściowy jest folderem włączonego moda, tak samo jak pod MO2.
+
+## Własne programy Wine w prefiksie gry
+
+Menu Plik uruchamia cztery programy Wine w prefiksie gry: winecfg, regedit, menedżer plików Wine i program do odinstalowywania. Startują jak każde narzędzie, z wersją Protona lub Wine, która uruchamia narzędzia gry, z podmontowanymi modami, a okno na nie czeka. **Prefix drive_c** otwiera dysk `C:` prefiksu w menedżerze plików. Wiersz jest wyszarzony, dopóki prefiks nie ma danego programu, co następuje przy pierwszym uruchomieniu gry ze sklepu.
+
+Eidos sam zapisuje jedną wartość rejestru, `installed path` gry w `HKLM\Software\Bethesda Softworks\<game>`, przed każdym uruchomieniem narzędzia, jeśli jest błędna. Zmiana wprowadzona w regedit wraca na miejsce przy następnym uruchomieniu narzędzia.
 
 ## Ścieżka gry w prefiksie
 

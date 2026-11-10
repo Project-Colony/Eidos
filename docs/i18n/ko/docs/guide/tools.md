@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=631027d4686fac9eb78728b23a8024d0c5000909 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=4cb3ab1260fe32bf41a1a9fdf03479f0c1d74b50 -->
 
 # 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -311,6 +311,12 @@ Eidos는 무언가를 시작할 때만 자기 파일을 쓰므로, 두 번의 �
 
 PGPatcher는 프로필에 켜진 모드가 하나도 없을 때와, 출력 폴더가 켜진 모드의
 폴더일 때 MO2에서와 마찬가지로 오류를 내고 멈춥니다.
+
+## 게임 프리픽스 안의 Wine 자체 프로그램
+
+파일 메뉴는 게임 프리픽스에서 Wine 프로그램 네 가지를 실행합니다. winecfg, regedit, Wine 파일 탐색기, 제거 프로그램입니다. 다른 도구와 똑같이 게임의 도구를 실행하는 Proton 또는 Wine 빌드로, 모드를 마운트한 상태에서 시작되며, 창은 프로그램이 끝나기를 기다립니다. **Prefix drive_c**는 프리픽스의 `C:` 드라이브를 파일 관리자에서 엽니다. 프리픽스에 해당 프로그램이 없는 동안에는 행이 회색으로 표시되며, 스토어가 게임을 처음 실행하면 생깁니다.
+
+Eidos가 직접 쓰는 레지스트리 값은 `HKLM\Software\Bethesda Softworks\<game>` 아래 게임의 `installed path` 하나뿐이며, 값이 틀렸을 때 도구를 실행할 때마다 먼저 고칩니다. regedit에서 이 값을 바꿔도 다음 도구 실행 때 되돌려집니다.
 
 ## 프리픽스 안의 게임 경로
 

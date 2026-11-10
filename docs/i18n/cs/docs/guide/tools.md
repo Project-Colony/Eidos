@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=631027d4686fac9eb78728b23a8024d0c5000909 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=4cb3ab1260fe32bf41a1a9fdf03479f0c1d74b50 -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -338,6 +338,12 @@ vlastní profil.
 
 PGPatcher skončí s chybou, když profil nemá žádný zapnutý mod, a když je jeho
 výstupní složka složkou zapnutého modu, stejně jako pod MO2.
+
+## Vlastní programy Wine v prefixu hry
+
+Nabídka Soubor spouští čtyři programy Wine v prefixu hry: winecfg, regedit, správce souborů Wine a odinstalační program. Startují jako každý nástroj, se sestavením Protonu nebo Wine, které spouští nástroje hry, s připojenými módy, a okno na ně čeká. **Prefix drive_c** otevře disk `C:` prefixu ve správci souborů. Řádek je šedý, dokud prefix daný program nemá, což nastane při prvním spuštění hry z obchodu.
+
+Eidos sám zapisuje jedinou hodnotu registru, `installed path` hry pod `HKLM\Software\Bethesda Softworks\<game>`, před každým během nástroje, když je chybná. Změna provedená v regeditu se při příštím běhu nástroje vrátí.
 
 ## Cesta ke hře v prefixu
 

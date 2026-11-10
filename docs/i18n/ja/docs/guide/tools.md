@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=631027d4686fac9eb78728b23a8024d0c5000909 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=4cb3ab1260fe32bf41a1a9fdf03479f0c1d74b50 -->
 
 # ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -309,6 +309,12 @@ Eidos が自分のファイルを書くのは何かを起動するときだけ�
 
 PGPatcher は、プロファイルに有効な MOD が一つもないときと、出力フォルダーが
 有効な MOD のフォルダーであるときに、MO2 の下と同じくエラーで停止します。
+
+## ゲームのプレフィックスで動く Wine 自身のプログラム
+
+File メニューは、ゲームのプレフィックスで Wine のプログラムを 4 つ実行します。winecfg、regedit、Wine のファイルエクスプローラー、アンインストーラーです。他のツールと同じように、ゲームのツールを動かす Proton または Wine のビルドで、Mod をマウントした状態で起動し、ウィンドウは終了を待ちます。**Prefix drive_c** は、プレフィックスの `C:` ドライブをファイルマネージャーで開きます。プレフィックスにそのプログラムがない間は行が灰色になります。ストアが初めてゲームを起動すると揃います。
+
+Eidos が自分でレジストリに書く値は 1 つだけで、`HKLM\Software\Bethesda Softworks\<game>` にあるゲームの `installed path` です。ツールを実行するたびに、値が誤っていれば書き直します。regedit でこの値を変えても、次のツール実行で元に戻ります。
 
 ## プレフィックスの中のゲームパス
 

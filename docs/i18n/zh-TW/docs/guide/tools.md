@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=631027d4686fac9eb78728b23a8024d0c5000909 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=4cb3ab1260fe32bf41a1a9fdf03479f0c1d74b50 -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -278,6 +278,12 @@ Eidos 只在啟動某個東西時寫它自己的檔案，所以在兩次啟動�
 
 當設定檔中沒有任何已啟用的模組，或輸出資料夾就是某個已啟用模組的資料夾時，
 PGPatcher 會報錯並停止，和在 MO2 下一樣。
+
+## 遊戲前綴中的 Wine 內建程式
+
+「檔案」選單會在遊戲的前綴中執行 Wine 的四個程式：winecfg、regedit、Wine 檔案總管和解除安裝程式。它們和其他工具一樣啟動，使用執行遊戲工具的 Proton 或 Wine 版本，並掛載好模組，視窗會等它們結束。**Prefix drive_c** 會在檔案管理員中開啟前綴的 `C:` 磁碟。前綴裡還沒有某個程式時，對應的列顯示為灰色，商店第一次啟動遊戲後就會有。
+
+Eidos 自己只寫一個登錄值，即 `HKLM\Software\Bethesda Softworks\<game>` 下遊戲的 `installed path`，每次執行工具前如果不對就改正。你在 regedit 裡對它做的修改，會在下次執行工具時被改回來。
 
 ## 前綴裡的遊戲路徑
 

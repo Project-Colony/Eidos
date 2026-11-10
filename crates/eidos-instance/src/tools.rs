@@ -538,6 +538,27 @@ pub fn default_tools_in_view(
     v
 }
 
+/// Wine's own programs the File menu runs in the game's prefix.
+pub const PREFIX_TOOLS: [&str; 4] = ["winecfg", "regedit", "explorer", "uninstaller"];
+
+/// One of [`PREFIX_TOOLS`] (ASCII case-insensitive) as a tool, when the prefix
+/// holds its executable; `None` for any other title or a prefix without it.
+pub fn prefix_tool(prefix: &Path, title: &str) -> Option<Tool> {
+    let title = PREFIX_TOOLS
+        .iter()
+        .find(|t| t.eq_ignore_ascii_case(title))?;
+    let windows = prefix.join("drive_c/windows");
+    let exe = [windows.join("system32"), windows]
+        .into_iter()
+        .map(|d| d.join(format!("{title}.exe")))
+        .find(|e| e.is_file())?;
+    Some(Tool {
+        title: (*title).to_string(),
+        exe,
+        ..Default::default()
+    })
+}
+
 /// The arguments a well-known tool needs that nobody could guess, by title.
 ///
 /// Sibling of [`default_prereqs`] and same rule: this only SEEDS a tool Eidos
@@ -620,6 +641,34 @@ mod tests {
         let d = std::env::temp_dir().join(format!("eidos-tools-dir-{}-{}", std::process::id(), n));
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn prefix_tool_finds_wine_programs_in_the_prefix() {
+        let pfx = tmp_dir();
+        let windows = pfx.join("drive_c/windows");
+        fs::create_dir_all(windows.join("system32")).unwrap();
+        fs::write(windows.join("system32/winecfg.exe"), b"").unwrap();
+        fs::write(windows.join("regedit.exe"), b"").unwrap();
+        assert_eq!(
+            prefix_tool(&pfx, "winecfg").unwrap().exe,
+            pfx.join("drive_c/windows/system32/winecfg.exe")
+        );
+        let r = prefix_tool(&pfx, "REGEDIT").unwrap();
+        assert_eq!(
+            (r.title.as_str(), r.exe.clone()),
+            ("regedit", pfx.join("drive_c/windows/regedit.exe"))
+        );
+        assert!(
+            prefix_tool(&pfx, "explorer").is_none(),
+            "not in this prefix yet"
+        );
+        assert!(
+            prefix_tool(&pfx, "notepad").is_none(),
+            "not one of the four"
+        );
+        assert!(prefix_tool(&pfx.join("gone"), "winecfg").is_none());
+        let _ = fs::remove_dir_all(pfx);
     }
 
     #[test]

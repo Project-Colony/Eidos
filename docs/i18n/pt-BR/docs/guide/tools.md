@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=631027d4686fac9eb78728b23a8024d0c5000909 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=4cb3ab1260fe32bf41a1a9fdf03479f0c1d74b50 -->
 
 # Ferramentas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -353,6 +353,12 @@ ali o próprio perfil.
 
 O PGPatcher para com um erro quando o perfil não tem nenhum mod ativado e quando
 a pasta de saída é a pasta de um mod ativado, como faz no MO2.
+
+## Os programas próprios do Wine no prefixo do jogo
+
+O menu Arquivo executa quatro programas do Wine no prefixo do jogo: winecfg, regedit, o explorador de arquivos do Wine e o desinstalador. Eles iniciam como qualquer ferramenta, com a versão do Proton ou do Wine que executa as ferramentas do jogo, com os mods montados, e a janela espera por eles. **Prefix drive_c** abre a unidade `C:` do prefixo no seu gerenciador de arquivos. Uma linha fica esmaecida até o prefixo ter esse programa, o que acontece na primeira vez que a loja inicia o jogo.
+
+O Eidos escreve por conta própria um único valor do registro, o `installed path` do jogo em `HKLM\Software\Bethesda Softworks\<game>`, antes de cada execução de ferramenta quando ele está errado. Uma alteração feita nele no regedit é refeita na próxima execução.
 
 ## O caminho do jogo no prefixo
 

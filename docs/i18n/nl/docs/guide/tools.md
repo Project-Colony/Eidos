@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=631027d4686fac9eb78728b23a8024d0c5000909 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=4cb3ab1260fe32bf41a1a9fdf03479f0c1d74b50 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -355,6 +355,12 @@ zijn eigen profiel.
 
 PGPatcher stopt met een fout als het profiel geen ingeschakelde mod heeft, en
 als zijn uitvoermap de map van een ingeschakelde mod is, net als onder MO2.
+
+## De eigen programma's van Wine in het prefix van het spel
+
+Het menu Bestand start vier programma's van Wine in het prefix van het spel: winecfg, regedit, de bestandsverkenner van Wine en het verwijderprogramma. Ze starten zoals elk hulpmiddel, met de Proton- of Wine-build die de hulpmiddelen van het spel draait, met de mods gemount, en het venster wacht erop. **Prefix drive_c** opent het station `C:` van het prefix in uw bestandsbeheerder. Een rij blijft grijs tot het prefix dat programma heeft, wat gebeurt wanneer de winkel het spel voor het eerst start.
+
+Eidos schrijft zelf één registerwaarde, het `installed path` van het spel onder `HKLM\Software\Bethesda Softworks\<game>`, voor elke run van een hulpmiddel als die onjuist is. Een wijziging daarin via regedit wordt bij de volgende run teruggezet.
 
 ## Het spelpad in het prefix
 

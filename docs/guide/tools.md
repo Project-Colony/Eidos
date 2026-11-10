@@ -336,6 +336,12 @@ profile there.
 PGPatcher stops with an error when the profile has no enabled mod, and when
 its output folder is the folder of an enabled mod, as it does under MO2.
 
+## Wine's own programs in the game's prefix
+
+The File menu runs four of Wine's programs in the game's prefix: winecfg, regedit, the Wine file explorer and the uninstaller. They start like any tool, with the Proton or Wine build that runs the game's tools, with the mods mounted, and the window waits for them. **Prefix drive_c** opens the prefix's `C:` drive in your file manager. A row is greyed out until the prefix has that program, which happens the first time the store starts the game.
+
+Eidos writes one registry value itself, the game's `installed path` under `HKLM\Software\Bethesda Softworks\<game>`, before every tool run when it is wrong. A change made to it in regedit is put back at the next tool run.
+
 ## The game path in the prefix
 
 Windows tools find their game by reading
