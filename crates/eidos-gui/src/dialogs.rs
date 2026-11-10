@@ -1336,6 +1336,9 @@ fn output_mod_field<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> 
         .into()
 }
 
+const INI_CARD_WIDTH: f32 = 760.0;
+const INI_CARD_PADDING: f32 = 18.0;
+
 /// The INI editor (MO2 ships one as a bundled tool plugin).
 ///
 /// Worth more on Linux than it is on Windows: the copy the game reads lives deep
@@ -1389,21 +1392,34 @@ pub(crate) fn ini_editor_dialog<'a>(app: &App, state: &'a IniEditorState) -> Ele
 
     // Say what this file IS before the user changes it: which one, whether it
     // exists yet, and that the game reads a deployed copy rather than this path.
-    let note = if state.unreadable {
-        tf("ini_unreadable", &[("file", &state.current)])
-    } else if state.current == eidos_instance::LAUNCH_ENV_FILE {
-        t("launch_env_note").to_string()
-    } else if state.missing {
-        // shortcut: root-mode Oblivion also shows this line, though its INI is seeded from the game folder itself
-        let key = if state.files.first() == Some(&state.current) {
-            "ini_missing_main"
+    let note_for = |file: &String, missing: bool, unreadable: bool| {
+        if unreadable {
+            tf("ini_unreadable", &[("file", file)])
+        } else if file == eidos_instance::LAUNCH_ENV_FILE {
+            t("launch_env_note").to_string()
+        } else if missing {
+            // shortcut: root-mode Oblivion also shows this line, though its INI is seeded from the game folder itself
+            let key = if state.files.first() == Some(file) {
+                "ini_missing_main"
+            } else {
+                "ini_missing"
+            };
+            tf(key, &[("file", file)])
         } else {
-            "ini_missing"
-        };
-        tf(key, &[("file", &state.current)])
-    } else {
-        t("ini_note").to_string()
+            t("ini_note").to_string()
+        }
     };
+    let note = note_for(&state.current, state.missing, state.unreadable);
+    // One height for every note a tab can show, measured in the current font and
+    // text size, so picking another tab never moves the Save row and the wider
+    // dyslexia font never cuts a note.
+    let note_slot = std::iter::once(&state.current)
+        .chain(&state.files)
+        .flat_map(|f| {
+            [(false, false), (true, false), (false, true)].map(|(m, u)| note_for(f, m, u))
+        })
+        .map(|n| text_height(&n, sz(10), INI_CARD_WIDTH - 2.0 * INI_CARD_PADDING))
+        .fold(0.0, f32::max);
 
     let mut actions = Row::new().spacing(8).align_y(iced::Alignment::Center);
     actions = actions
@@ -1440,21 +1456,16 @@ pub(crate) fn ini_editor_dialog<'a>(app: &App, state: &'a IniEditorState) -> Ele
         .push(header)
         .push(tabs)
         .push(editor)
-        // One height for every note, so picking another tab never moves the
-        // Save row: two lines of sz(10) (iced's 1.3 line height) at scale 1,
-        // more as the text grows, since the card's width does not.
         .push(
             container(text(note).size(sz(10)))
-                .height(Length::Fixed(
-                    (2.0 * colony_ui::font_scale()).ceil() * 1.3 * sz(10),
-                ))
+                .height(Length::Fixed(note_slot))
                 .clip(true),
         )
         .push(actions);
 
     container(card)
-        .width(Length::Fixed(760.0))
-        .padding(18)
+        .width(Length::Fixed(INI_CARD_WIDTH))
+        .padding(INI_CARD_PADDING)
         .style(card_style)
         .into()
 }
