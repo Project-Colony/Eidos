@@ -1131,7 +1131,8 @@ pub(crate) fn dirty_card(app: &App) -> Option<DirtyCard> {
         .map(|(meta, list)| {
             list.plugins
                 .iter()
-                .filter(|p| p.enabled)
+                // Not from the Overwrite: xEdit would save over that file itself.
+                .filter(|p| p.enabled && p.origin_mod != "overwrite")
                 .filter(|p| {
                     meta.get(&p.name.to_ascii_lowercase())
                         .is_some_and(|b| b.needs_cleaning())

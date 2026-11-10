@@ -848,7 +848,7 @@ pub(crate) fn qac_tool(app: &App) -> Option<&Tool> {
 }
 
 /// The plugin at this row of the plugin list when its row menu offers Clean:
-/// LOOT flags it dirty and Eidos found an xEdit.
+/// LOOT flags it dirty, it is not in the Overwrite, and Eidos found an xEdit.
 pub(crate) fn plugin_clean_target(app: &App, row: usize) -> Option<String> {
     let p = app.plugins.as_ref()?.plugins.get(row)?;
     let dirty = app
@@ -856,7 +856,7 @@ pub(crate) fn plugin_clean_target(app: &App, row: usize) -> Option<String> {
         .as_ref()?
         .get(&p.name.to_ascii_lowercase())
         .is_some_and(|b| b.needs_cleaning());
-    (dirty && qac_tool(app).is_some()).then(|| p.name.clone())
+    (dirty && p.origin_mod != "overwrite" && qac_tool(app).is_some()).then(|| p.name.clone())
 }
 
 /// `eidos tool <instance> run <xEdit> --output-mod "Cleaned plugins" -- -qac ...`
@@ -882,13 +882,19 @@ pub(crate) fn start_next_clean(app: &mut App) {
     };
     // A reclean of a copy keeps the source its first clean recorded.
     let list = app.plugins.clone().or_else(|| compute_plugins(app));
-    let source = list
-        .as_ref()
-        .and_then(|l| {
-            l.plugins
-                .iter()
-                .find(|p| p.name.eq_ignore_ascii_case(&plugin))
-        })
+    let row = list.as_ref().and_then(|l| {
+        l.plugins
+            .iter()
+            .find(|p| p.name.eq_ignore_ascii_case(&plugin))
+    });
+    // xEdit would save over the Overwrite's file itself, and the capture would
+    // then move it out and drop the scratch that holds its only backup.
+    if row.is_some_and(|p| p.origin_mod == "overwrite") {
+        app.clean_queue.clear();
+        app.status = Some(tf("status_clean_in_overwrite", &[("plugin", &plugin)]));
+        return;
+    }
+    let source = row
         .filter(|p| !p.origin_mod.eq_ignore_ascii_case(CLEANED_MOD))
         .and_then(|p| eidos_instance::PluginSource::of(&p.name, &p.path));
     let stamp = std::time::SystemTime::now()

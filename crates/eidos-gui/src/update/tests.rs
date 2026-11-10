@@ -7261,6 +7261,53 @@ mod cleaning {
     }
 
     #[test]
+    fn a_dirty_plugin_in_the_overwrite_is_never_cleaned() {
+        // xEdit would save over the Overwrite's file, and its backup leaves with the scratch.
+        let (mut app, root) = list_app(&["Base"]);
+        fs::create_dir_all(root.join("overwrite")).unwrap();
+        fs::write(root.join("overwrite/Dirty.esp"), tes4_header(0)).unwrap();
+        app.plugins = compute_plugins(&app);
+        assert_eq!(
+            app.plugins.as_ref().unwrap().plugins[0].origin_mod,
+            "overwrite"
+        );
+        app.loot_meta = Some(HashMap::from([(
+            "dirty.esp".to_string(),
+            eidos_loot::PluginMetadataBundle {
+                dirty_info: vec![eidos_loot::LootDirtyInfo {
+                    crc: 1,
+                    cleaning_utility: "SSEEdit".into(),
+                    itm_count: 3,
+                    deleted_reference_count: 0,
+                    deleted_navmesh_count: 0,
+                }],
+                ..Default::default()
+            },
+        )]));
+        app.tools = vec![qac()];
+        assert_eq!(plugin_clean_target(&app, 0), None);
+        assert_eq!(dirty_card(&app), None);
+        let refused = tf("status_clean_in_overwrite", &[("plugin", &"Dirty.esp")]);
+        // Behind a harmless run, so a missing guard queues instead of spawning xEdit.
+        start_run(
+            &mut app,
+            "Game".into(),
+            std::process::Command::new("/bin/true"),
+        );
+        let _ = update(&mut app, Message::CleanPlugins(vec!["Dirty.esp".into()]));
+        assert!(app.clean_queue.is_empty());
+        assert_eq!(app.status.as_deref(), Some(refused.as_str()));
+        // The queue's own guard, reached with no xEdit so nothing can spawn past it.
+        app.running = None;
+        app.tools.clear();
+        app.clean_queue = ["Dirty.esp".to_string(), "Next.esp".to_string()].into();
+        start_next_clean(&mut app);
+        assert!(app.clean_queue.is_empty() && app.cleaning.is_none());
+        assert_eq!(app.status.as_deref(), Some(refused.as_str()));
+        assert!(root.join("overwrite/Dirty.esp").is_file());
+    }
+
+    #[test]
     fn clean_requests_queue_behind_a_running_program_without_duplicates() {
         let (mut app, _root) = list_app(&[]);
         app.tools = vec![qac()];

@@ -881,6 +881,18 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(t("status_no_qac").into());
                 return Task::none();
             }
+            // Refused here too, so a request queued behind a run says why at once.
+            let in_overwrite = names.iter().find(|n| {
+                app.plugins.as_ref().is_some_and(|l| {
+                    l.plugins
+                        .iter()
+                        .any(|p| p.origin_mod == "overwrite" && p.name.eq_ignore_ascii_case(n))
+                })
+            });
+            if let Some(name) = in_overwrite {
+                app.status = Some(tf("status_clean_in_overwrite", &[("plugin", name)]));
+                return Task::none();
+            }
             for name in names {
                 let busy = app
                     .clean_queue

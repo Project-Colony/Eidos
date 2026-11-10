@@ -514,6 +514,7 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("status_flag_light_exists", "Le mod '{mod}' existe déjà. Supprimez-le pour marquer {plugin} à nouveau."),
     ("status_flag_light_failed", "Impossible de marquer {plugin} : {error}"),
     ("status_flag_light_in_overwrite", "Non marqué : {plugin} est dans l'Overwrite, qui passe au-dessus de tous les mods. Transformez d'abord l'Overwrite en mod."),
+    ("status_clean_in_overwrite", "Non nettoyé : {plugin} est dans l'Overwrite, où xEdit réécrirait le fichier lui-même. Transformez d'abord l'Overwrite en mod."),
     ("status_clean_failed", "QuickAutoClean n'a laissé aucun journal pour {plugin} : le nettoyage n'a pas eu lieu. Le journal du lancement est dans {log}. Les plugins suivants n'ont pas été nettoyés."),
     ("status_clean_not_captured", "QuickAutoClean a enregistré {plugin}, mais la copie n'est pas arrivée dans 'Cleaned plugins'. Le journal du lancement est dans {log}. Les plugins suivants n'ont pas été nettoyés."),
     ("status_running_locked", "{title} est lancé : Eidos est verrouillé jusqu'à sa fermeture (ou cliquez sur Déverrouiller)."),
