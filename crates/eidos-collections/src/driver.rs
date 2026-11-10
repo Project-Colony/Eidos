@@ -107,6 +107,9 @@ pub struct RealHooks<'a> {
     pub nexus: &'a eidos_nexus::Nexus,
     pub inst: &'a Instance,
     pub game: &'a eidos_games::DetectedGame,
+    /// The store install's root and Data, for `recipe::map_exclusions` only: an
+    /// absolute exclusion names an install, never this instance's game copy.
+    pub exclusion_roots: (&'a Path, &'a Path),
     pub game_id: String,
     /// Where per-member progress goes. The terminal prints it; the window
     /// stores it for its dialog.
@@ -668,7 +671,7 @@ fn nexus_page(m: &Mod, collection_domain: &str) -> Option<(String, u64)> {
 impl Hooks for RealHooks<'_> {
     fn validate_recipe(&mut self, c: &Collection) -> Result<(), String> {
         for m in &c.mods {
-            crate::recipe::map_exclusions(m, &self.game.install_path, &self.game.data_path)?;
+            crate::recipe::map_exclusions(m, self.exclusion_roots.0, self.exclusion_roots.1)?;
         }
         Ok(())
     }
@@ -701,7 +704,7 @@ impl Hooks for RealHooks<'_> {
             ));
         }
         let mapped =
-            crate::recipe::map_exclusions(m, &self.game.install_path, &self.game.data_path)?;
+            crate::recipe::map_exclusions(m, self.exclusion_roots.0, self.exclusion_roots.1)?;
         crate::recipe::verify_receipt(&mapped, &self.payload_root, &path, &self.owner_marker(m))
     }
 
@@ -744,11 +747,14 @@ impl Hooks for RealHooks<'_> {
     }
 
     fn obtain(&mut self, m: &Mod) -> Obtained {
-        let mapped =
-            match crate::recipe::map_exclusions(m, &self.game.install_path, &self.game.data_path) {
-                Ok(m) => m,
-                Err(e) => return Obtained::Failed(e),
-            };
+        let mapped = match crate::recipe::map_exclusions(
+            m,
+            self.exclusion_roots.0,
+            self.exclusion_roots.1,
+        ) {
+            Ok(m) => m,
+            Err(e) => return Obtained::Failed(e),
+        };
         let m = &mapped;
         if m.source.kind == SourceType::Bundle {
             return match crate::recipe::bundle_source(m, &self.payload_root) {
@@ -875,11 +881,14 @@ impl Hooks for RealHooks<'_> {
         let name = folder.to_string();
         let renamed_to = (name != safe(&m.name)).then(|| name.clone());
 
-        let mapped =
-            match crate::recipe::map_exclusions(m, &self.game.install_path, &self.game.data_path) {
-                Ok(m) => m,
-                Err(e) => return Installed::Failed(e),
-            };
+        let mapped = match crate::recipe::map_exclusions(
+            m,
+            self.exclusion_roots.0,
+            self.exclusion_roots.1,
+        ) {
+            Ok(m) => m,
+            Err(e) => return Installed::Failed(e),
+        };
         let marker = self.owner_marker(m);
         // A member folder replaced by a new revision, or by a repair, can hold
         // files its receipt never saw (an edited INI, files moved in by Sync to

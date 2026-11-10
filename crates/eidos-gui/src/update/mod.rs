@@ -505,13 +505,15 @@ fn collection_on_worker(
 
     state.validate_revision(&rev.slug, rev.revision_number, &rev.game_domain)?;
 
-    let game = &collection_game(inst, game);
+    let install = game;
+    let game = &collection_game(inst, install);
     let total = c.mods.len().max(1);
     let mut say = |_line: String| {};
     let mut hooks = eidos_collections::driver::RealHooks {
         nexus: &nexus,
         inst,
         game,
+        exclusion_roots: (&install.install_path, &install.data_path),
         game_id: game_id.to_string(),
         payload_root: dir.clone(),
         allow_runtime_mismatch: approved
