@@ -817,27 +817,37 @@ fn launch_mounted(spec: &LaunchSpec, layers: Vec<PathBuf>) -> std::io::Result<Ex
     // A stop request ends the whole tree while this thread keeps waiting, so the
     // union stays mounted until the last process of the run is gone.
     let done = AtomicBool::new(false);
-    let status = std::thread::scope(|scope| {
-        scope.spawn(|| {
-            while !done.load(Ordering::SeqCst) {
-                if STOP.load(Ordering::SeqCst) {
-                    // SAFETY: getpid always succeeds.
-                    terminate_descendants(unsafe { libc::getpid() }, STOP_GRACE);
-                    return;
+    // A stop that landed during the mount setup above starts nothing; the teardown
+    // below still runs.
+    let status = if STOP.load(Ordering::SeqCst) {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Interrupted,
+            "stopped before the program started",
+        ))
+    } else {
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                while !done.load(Ordering::SeqCst) {
+                    if STOP.load(Ordering::SeqCst) {
+                        // Every pass, not once: the program may fork just after the stop,
+                        // and anything forked during a pass is caught by the next one.
+                        // SAFETY: getpid always succeeds.
+                        terminate_descendants(unsafe { libc::getpid() }, STOP_GRACE);
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
                 }
-                std::thread::sleep(Duration::from_millis(100));
-            }
-        });
-        let status = cmd.status();
+            });
+            let status = cmd.status();
 
-        // Wait for any reparented descendants to finish before unmounting, so a process
-        // that outlived its direct parent doesn't get ENOTCONN on the union mid-run (and
-        // the caller's capture_inis runs only once the real workload is gone). The direct
-        // child has already been reaped by `Command::status`.
-        reap_descendants();
-        done.store(true, Ordering::SeqCst);
-        status
-    });
+            // Wait for any reparented descendants to finish before unmounting, so a process
+            // that outlived its direct parent doesn't get ENOTCONN on the union mid-run (and
+            // the caller's capture_inis runs only once the real workload is gone). The direct
+            // child has already been reaped by `Command::status`.
+            reap_descendants();
+            done.store(true, Ordering::SeqCst);
+            status
+        })
+    };
 
     let cleanup = projections.cleanup();
     let root_cleanup = root_binds.cleanup();
