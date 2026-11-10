@@ -182,15 +182,27 @@ pub fn scan_installed(home: &Path) -> Vec<InstalledApp> {
     apps
 }
 
-/// `buildid` from `<library>/steamapps/appmanifest_<app_id>.acf`; None outside a Steam library.
-pub fn steam_build_id(install_path: &Path, app_id: u32) -> Option<String> {
+/// `<library>/steamapps/appmanifest_<app_id>.acf`; None outside a Steam library.
+fn steam_app_manifest(install_path: &Path, app_id: u32) -> Option<String> {
     let common = install_path.parent()?;
     let steamapps = common.parent()?;
     if common.file_name()? != "common" || steamapps.file_name()? != "steamapps" {
         return None;
     }
-    let acf = fs::read_to_string(steamapps.join(format!("appmanifest_{app_id}.acf"))).ok()?;
-    kv_first(&acf, "buildid")
+    fs::read_to_string(steamapps.join(format!("appmanifest_{app_id}.acf"))).ok()
+}
+
+/// `buildid` from `<library>/steamapps/appmanifest_<app_id>.acf`; None outside a Steam library.
+pub fn steam_build_id(install_path: &Path, app_id: u32) -> Option<String> {
+    kv_first(&steam_app_manifest(install_path, app_id)?, "buildid")
+}
+
+/// `StateFlags` from the same `appmanifest` as [`steam_build_id`]: 4 alone means
+/// fully installed, other bits an update, download or validation under way.
+pub fn steam_state_flags(install_path: &Path, app_id: u32) -> Option<u32> {
+    kv_first(&steam_app_manifest(install_path, app_id)?, "StateFlags")?
+        .parse()
+        .ok()
 }
 
 /// Installed games that we support, with their on-disk paths resolved.
@@ -305,17 +317,35 @@ mod tests {
         )
     }
 
-    #[test]
-    fn reads_the_build_id_from_the_app_manifest() {
-        let t = Tmp::new();
+    /// A Steam library holding Skyrim SE, and its install path.
+    fn steam_install(t: &Tmp) -> PathBuf {
         let steamapps = t.0.join("lib/steamapps");
         let install = steamapps.join("common/Skyrim Special Edition");
         fs::create_dir_all(&install).unwrap();
         fs::write(
             steamapps.join("appmanifest_489830.acf"),
-            "\"AppState\"\n{\n\t\"appid\"\t\t\"489830\"\n\t\"buildid\"\t\t\"15012345\"\n}\n",
+            "\"AppState\"\n{\n\t\"appid\"\t\t\"489830\"\n\t\"StateFlags\"\t\t\"1026\"\n\t\"buildid\"\t\t\"15012345\"\n}\n",
         )
         .unwrap();
+        install
+    }
+
+    #[test]
+    fn state_flags_come_from_the_appmanifest() {
+        let t = Tmp::new();
+        let install = steam_install(&t);
+        assert_eq!(steam_state_flags(&install, 489830), Some(1026));
+        assert_eq!(steam_state_flags(&install, 72850), None);
+        assert_eq!(
+            steam_state_flags(Path::new("/games/gog/Skyrim"), 489830),
+            None
+        );
+    }
+
+    #[test]
+    fn reads_the_build_id_from_the_app_manifest() {
+        let t = Tmp::new();
+        let install = steam_install(&t);
         assert_eq!(
             steam_build_id(&install, 489830).as_deref(),
             Some("15012345")
