@@ -57,6 +57,7 @@ pub fn graphics_facts(
 ) -> GraphicsFacts {
     let cs_game = matches!(game.def.id, "skyrimse" | "enderalse");
     let overwrite = inst.overwrite_dir();
+    let files = crate::stock_game::game_files(game, inst);
     let options = launch_options.unwrap_or("");
     let nvapi_set = std::env::var("PROTON_ENABLE_NVAPI").is_ok_and(|v| v == "1")
         || options.contains("PROTON_ENABLE_NVAPI=1");
@@ -90,7 +91,7 @@ pub fn graphics_facts(
 
     let (mut upscaling, mut prefs_ini, mut display_tweaks_ini) = (false, None, None);
     if cs_game {
-        let data = merged_data(&game.data_path, mods, &overwrite);
+        let data = merged_data(&files.data, mods, &overwrite);
         upscaling = !data.list_dir("Shaders/Upscaling").is_empty();
         display_tweaks_ini = data
             .resolve("SKSE/Plugins/SSEDisplayTweaks.ini")
@@ -100,7 +101,7 @@ pub fn graphics_facts(
         prefs_ini = read_text_lossy(&p).map(|(t, _)| (p, t));
     }
 
-    let root = merged_root(&game.install_path, mods, &overwrite);
+    let root = merged_root(&files.root, mods, &overwrite);
     let enblocal = root.resolve("enblocal.ini").and_then(|p| {
         let (text, _) = read_text_lossy(&p)?;
         let origin = root.origin(&p);
@@ -183,7 +184,8 @@ pub fn fix_enb_linux_version(
     inst: &Instance,
     mods: &[(String, PathBuf)],
 ) -> io::Result<PathBuf> {
-    let root = merged_root(&game.install_path, mods, &inst.overwrite_dir());
+    let files = crate::stock_game::game_files(game, inst);
+    let root = merged_root(&files.root, mods, &inst.overwrite_dir());
     let winner = root
         .resolve("enblocal.ini")
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "enblocal.ini"))?;

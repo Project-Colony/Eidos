@@ -96,7 +96,8 @@ pub fn bodyslide_facts(
     };
     // BodySlide runs under Proton: no prefix, no BodySlide run to check.
     if let Some(prefix) = game.prefix() {
-        facts.config = merged_data(&game.data_path, mods, &inst.overwrite_dir()).resolve(CONFIG);
+        let files = crate::stock_game::game_files(game, inst);
+        facts.config = merged_data(&files.data, mods, &inst.overwrite_dir()).resolve(CONFIG);
         let xml = facts
             .config
             .as_ref()

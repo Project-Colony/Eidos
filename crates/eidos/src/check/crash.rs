@@ -48,8 +48,9 @@ pub fn crash_findings(
     };
     let log = parse_crash_log(&path, &String::from_utf8_lossy(&bytes));
 
-    let data = merged_data(&game.data_path, mods, &overwrite);
-    let root = merged_root(&game.install_path, mods, &overwrite);
+    let files = crate::stock_game::game_files(game, inst);
+    let data = merged_data(&files.data, mods, &overwrite);
+    let root = merged_root(&files.root, mods, &overwrite);
     let plugins_dir = extender(game.def.id).map(|e| e.plugins_dir);
     let modules = log.modules.iter().filter_map(|dll| {
         let in_data = plugins_dir.and_then(|dir| data.resolve(&format!("{dir}/{dll}")));

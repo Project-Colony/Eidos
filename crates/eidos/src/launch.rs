@@ -791,6 +791,7 @@ pub(crate) fn run_through_view(
     if game_run {
         let build = crate::check::extender::current_build(
             game,
+            &files,
             &crate::check::active_mods(inst),
             &inst.overwrite_dir(),
         );

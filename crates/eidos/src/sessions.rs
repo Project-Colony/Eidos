@@ -50,6 +50,7 @@ pub(crate) fn capture(
     // The winning `Root/` executable, the same value `logs/launch.ini` records.
     let game_version = crate::check::extender::current_build(
         game,
+        &crate::stock_game::game_files(game, inst),
         &crate::check::active_mods(inst),
         &inst.overwrite_dir(),
     )

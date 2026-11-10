@@ -270,8 +270,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 // stops at startup; the loader-missing case has its own note.
                 let extender_note = eidos_gamefeatures::preflight::extender_facts(
                     game.def,
-                    &game.data_path,
-                    &game.install_path,
+                    &files.data,
+                    &files.root,
                     &eidos::check::active_mods(inst),
                     &inst.overwrite_dir(),
                 )

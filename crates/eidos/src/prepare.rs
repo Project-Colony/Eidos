@@ -22,7 +22,7 @@ pub(crate) fn prepare_omod_shaders(
         return Ok(None);
     }
     let mut layers = prof.load_order();
-    layers.push(game.data_path.clone());
+    layers.push(crate::stock_game::game_files(game, inst).data);
     eidos_gamefeatures::omod_shaders::prepare(layers, inst.overwrite_dir(), &prof.dir(), cancel)
 }
 
@@ -31,10 +31,11 @@ fn runtime_diagnostics(
     inst: &Instance,
 ) -> Vec<eidos_gamefeatures::preflight::PreflightDiagnostic> {
     let mods = crate::check::active_mods(inst);
+    let files = crate::stock_game::game_files(game, inst);
     eidos_gamefeatures::preflight::scan_extender_plugins(
         game.def,
-        &game.data_path,
-        &game.install_path,
+        &files.data,
+        &files.root,
         &mods,
         &inst.overwrite_dir(),
     )

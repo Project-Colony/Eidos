@@ -340,9 +340,11 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         out.extend(patch_order_checks(list, map));
     }
 
+    // Read once: it reads the manifest.
+    let files = game_files(app);
     // ENB + Community Shaders both injecting into D3D11.
     if let (Some(game), Some(inst), Some(files)) =
-        (selected_game(app), app.created.as_ref(), game_files(app))
+        (selected_game(app), app.created.as_ref(), files.as_ref())
     {
         let mods = app
             .mods
@@ -358,8 +360,8 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         );
         for d in eidos_gamefeatures::preflight::scan_extender_plugins(
             game.def,
-            &game.data_path,
-            &game.install_path,
+            &files.data,
+            &files.root,
             &mods,
             &inst.overwrite_dir(),
         ) {
@@ -382,7 +384,7 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         }
         for d in eidos_gamefeatures::preflight::scan_fontconfig(
             game.def,
-            &game.data_path,
+            &files.data,
             &mods,
             &inst.overwrite_dir(),
         ) {
@@ -683,13 +685,14 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         }
         out.extend(orphan_archive_diagnostics(app, game.def.id));
         out.extend(script_extender_diagnostic(game));
-        if let (Some(se), Some(row), Some(map)) = (
+        if let (Some(se), Some(row), Some(map), Some(files)) = (
             game.def.script_extender.as_ref(),
             eidos_gamefeatures::preflight::extender(game.def.id),
             app.conflicts.as_ref(),
+            files.as_ref(),
         ) {
             let label = row.plugins_dir.split('/').next().unwrap_or_default();
-            let in_game = game.install_path.join(se.loader).is_file();
+            let in_game = files.root.join(se.loader).is_file();
             out.extend(extender_script_checks(map, se.loader, label, in_game));
         }
     }
@@ -823,7 +826,7 @@ pub(crate) fn patch_order_checks(
 
 /// Mods whose loose Papyrus scripts beat the script extender's own copies.
 /// `extender`: the label from `extender(id).plugins_dir` up to its first '/'.
-/// `loader_in_game`: `game.install_path.join(loader).is_file()`, from the caller.
+/// `loader_in_game`: `files.root.join(loader).is_file()`, from the caller.
 /// Loose `.pex` only: `map.files` does not hold archive members.
 pub(crate) fn extender_script_checks(
     map: &eidos_conflicts::ConflictMap,
