@@ -93,6 +93,18 @@ pub fn read() -> NxmHandler {
     classify(&id, text.as_deref(), program_exists)
 }
 
+/// The handler's desktop entry. The program is quoted, so a space in the
+/// install path stays part of it ([`exec_program`] reads it back).
+// shortcut: a path holding `"`, `` ` ``, `$`, `\` or `%` needs the spec's
+// escapes, which exec_program does not undo; add both if one is ever reported.
+fn desktop_entry(exe: &Path, marker: &str) -> String {
+    format!(
+        "[Desktop Entry]\nType=Application\nName=Eidos (Nexus nxm handler)\n\
+         Exec=\"{}\"{marker} nxm %u\nMimeType=x-scheme-handler/nxm;\nNoDisplay=true\nTerminal=false\n",
+        exe.display()
+    )
+}
+
 /// Writes the desktop entry and makes it the default `nxm` handler.
 pub fn register() -> Result<PathBuf, String> {
     let (exe, needs_marker) = crate::this_exe();
@@ -104,12 +116,8 @@ pub fn register() -> Result<PathBuf, String> {
     let apps = eidos_paths::desktop_entries_dir();
     std::fs::create_dir_all(&apps).map_err(|e| format!("{}: {e}", apps.display()))?;
     let desktop = apps.join(DESKTOP_ID);
-    let body = format!(
-        "[Desktop Entry]\nType=Application\nName=Eidos (Nexus nxm handler)\n\
-         Exec={}{marker} nxm %u\nMimeType=x-scheme-handler/nxm;\nNoDisplay=true\nTerminal=false\n",
-        exe.display()
-    );
-    std::fs::write(&desktop, body).map_err(|e| format!("{}: {e}", desktop.display()))?;
+    std::fs::write(&desktop, desktop_entry(&exe, &marker))
+        .map_err(|e| format!("{}: {e}", desktop.display()))?;
     // Best effort: some desktops only see a new entry after the cache refresh.
     let _ = std::process::Command::new("update-desktop-database")
         .arg(&apps)
@@ -139,6 +147,23 @@ mod tests {
             Some("/home/a b/eidos-gui")
         );
         assert_eq!(exec_program("Name=x\n"), None);
+    }
+
+    #[test]
+    fn the_entry_keeps_a_path_with_spaces_whole() {
+        let exe = Path::new("/home/a b/Eidos Portable/eidos-gui");
+        let entry = desktop_entry(exe, " --eidos-cli");
+        assert!(
+            entry.contains("Exec=\"/home/a b/Eidos Portable/eidos-gui\" --eidos-cli nxm %u\n"),
+            "{entry}"
+        );
+        assert_eq!(
+            classify("eidos-nxm.desktop", Some(&entry), |p| p
+                == exe.to_str().unwrap()),
+            NxmHandler::Eidos {
+                exec: exe.display().to_string()
+            }
+        );
     }
 
     #[test]

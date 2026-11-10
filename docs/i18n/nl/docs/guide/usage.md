@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=8f2f3753bc2eba9abdae3089db4819478264fd4e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=8d159f908b8d8b7994f5c1fc06c1aeeb75a63153 -->
 
 # Eidos gebruiken
 
@@ -671,8 +671,13 @@ hoofdbestand zou de andere kwijtraken. Werk die met de hand bij.
 met een premium-account elk nieuw bestand en installeert het met
 `--replace --backup` over zijn map. Met een gratis account drukt het in plaats
 daarvan `OPEN <url>` af voor elke bestandspagina. Mappen die meerdere bestanden
-samenvoegen worden met de reden overgeslagen, en de opdracht eindigt met 1 als
-een update mislukte.
+samenvoegen worden met de reden overgeslagen. Een FOMOD-mod zonder opgeslagen
+antwoorden, zoals een die geïnstalleerd is voordat Eidos ze bewaarde, wordt niet
+opnieuw geïnstalleerd met de standaardwaarden van het installatieprogramma: die
+update mislukt met een melding om de mod één keer vanuit het venster bij te
+werken, dat de antwoorden dan opslaat. Een FOMOD waarvan het
+installatieprogramma niets te kiezen geeft, wordt gewoon geïnstalleerd. De
+opdracht eindigt met 1 als een update mislukte.
 
 ### Nexus-collecties
 

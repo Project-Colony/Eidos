@@ -1017,6 +1017,43 @@ mod requirement_tests {
         assert!(out[0].title.contains("Far Harbor"), "{}", out[0].title);
     }
 
+    /// 1500 mods, each needing the two before it and one that is absent: one
+    /// map lookup per requirement, not a scan of the list (Health reruns this
+    /// after every toggle, on the UI thread).
+    #[test]
+    fn a_large_list_finds_each_requirement_by_lookup() {
+        let n = 1500u64;
+        let names: Vec<String> = (0..n).map(|i| format!("Mod {i}")).collect();
+        let list = mods(&names.iter().map(String::as_str).collect::<Vec<_>>());
+        let mut meta = HashMap::new();
+        for i in 0..n {
+            let mut reqs: Vec<Requirement> = (1..=2)
+                .filter(|d| i >= *d)
+                .map(|d| req("skyrimspecialedition", 10_000 + i - d, ""))
+                .collect();
+            reqs.push(req("skyrimspecialedition", 1, "Absent"));
+            meta.insert(
+                names[i as usize].clone(),
+                RowMeta {
+                    mod_id: Some(10_000 + i),
+                    requirements: Some(Requirements {
+                        mods: reqs,
+                        dlc: vec![],
+                    }),
+                    ..RowMeta::default()
+                },
+            );
+        }
+        let start = std::time::Instant::now();
+        let out = requirement_checks(skyrim_se(), &list, &meta, &[], false);
+        println!(
+            "REQUIREMENT_CHECKS mods={n} us={}",
+            start.elapsed().as_micros()
+        );
+        assert_eq!(out.len(), n as usize, "only the absent one, once per mod");
+        assert!(out.iter().all(|d| d.title.contains("Absent")));
+    }
+
     #[test]
     fn an_off_site_requirement_is_advice_with_its_name_and_no_link() {
         let (mods, meta) = setup(Requirements {

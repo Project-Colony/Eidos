@@ -1881,7 +1881,10 @@ pub fn check_updates(
 
 /// Fetch the Nexus requirements of every mod in `inst` that has a Nexus id and a
 /// known domain, and cache each answer in its `meta.ini`. Returns how many mods
-/// were looked up. Nothing is written when a request fails.
+/// were looked up. A domain's answers are written once all its requests came
+/// back; a failed request or write stops the refresh, and what was written
+/// before it stays. Each write takes the instance lock and fails while another
+/// thread of this process holds it, so never run this beside [`check_updates`].
 pub fn refresh_requirements(
     nexus: &Nexus,
     inst: &eidos_instance::Instance,

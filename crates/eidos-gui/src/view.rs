@@ -1802,16 +1802,19 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
             .height(Length::Fixed(20.0))
             .align_y(iced::alignment::Vertical::Center);
 
-    let mut inner = Column::new().spacing(6).push(profile);
-    for n in &app.collection_notices {
-        inner = inner.push(collection_notice_row(n));
-    }
-    let inner = inner
+    let mut inner = Column::new()
+        .spacing(6)
+        .push(profile)
         .push(search)
         .push(legend)
         .push(header)
-        .push(list_area)
-        .push(overwrite);
+        .push(list_area);
+    // Under the list, not above it: they arrive seconds after Check for
+    // updates, and above the list each one pushed every row down a line.
+    for n in &app.collection_notices {
+        inner = inner.push(collection_notice_row(n));
+    }
+    let inner = inner.push(overwrite);
 
     // The two panes share the width by a ratio the user drags, not by a constant.
     // A thousandth of the window is finer than a pixel on any screen this runs on.
@@ -1824,7 +1827,7 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         .into()
 }
 
-/// One line above the mod list: an installed collection has a newer revision.
+/// One line under the mod list: an installed collection has a newer revision.
 fn collection_notice_row<'a>(n: &CollectionNotice) -> Element<'a, Message> {
     let mut label = tf(
         "collection_revision_available",
@@ -1851,7 +1854,7 @@ fn collection_notice_row<'a>(n: &CollectionNotice) -> Element<'a, Message> {
         tooltip(
             line,
             text(hover.trim_end().to_string()).size(sz(12)),
-            tooltip::Position::Bottom,
+            tooltip::Position::Top,
         )
         .style(container::bordered_box)
         .into()

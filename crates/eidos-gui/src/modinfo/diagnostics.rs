@@ -714,6 +714,22 @@ pub(crate) fn requirement_checks(
         .iter()
         .map(|p| plain(p.rsplit_once('.').map_or(p.as_str(), |(stem, _)| stem)))
         .collect();
+    // (domain, mod id) of every Nexus mod in the list, by its own id and the
+    // ids of the files merged into it -> whether one copy is enabled. Built
+    // once, so a requirement is a lookup rather than a scan of the list.
+    let mut present: HashMap<(&str, u64), bool> = HashMap::new();
+    for o in mods {
+        let Some(om) = meta.get(&o.name) else {
+            continue;
+        };
+        let Some(domain) = game.nexus_domain_for(om.game_name.as_deref()) else {
+            continue;
+        };
+        let ids = om.mod_id.into_iter();
+        for id in ids.chain(om.installed_files.iter().map(|(id, _)| *id)) {
+            *present.entry((domain, id)).or_default() |= o.is_active();
+        }
+    }
     let mut out = Vec::new();
     for m in mods.iter().filter(|m| m.is_active() && !m.is_unmanaged()) {
         let Some(row) = meta.get(&m.name) else {
@@ -758,16 +774,8 @@ pub(crate) fn requirement_checks(
             if row.ignored_requirements.contains(&key) {
                 continue;
             }
-            let mut found = mods.iter().filter(|o| {
-                meta.get(&o.name).is_some_and(|om| {
-                    let name = om.game_name.as_deref();
-                    game.nexus_domain_for(name) == Some(r.domain.as_str())
-                        && (om.mod_id == Some(r.mod_id)
-                            || om.installed_files.iter().any(|(id, _)| *id == r.mod_id))
-                })
-            });
-            let first = found.next();
-            if first.is_some_and(|f| f.is_active()) || found.any(|o| o.is_active()) {
+            let found = present.get(&(r.domain.as_str(), r.mod_id)).copied();
+            if found == Some(true) {
                 continue;
             }
             let required = if r.name.is_empty() {
@@ -777,7 +785,7 @@ pub(crate) fn requirement_checks(
             };
             let args: [(&str, &dyn std::fmt::Display); 2] =
                 [("mod", &who), ("required", &required)];
-            let missing = first.is_none();
+            let missing = found.is_none();
             let mut actions = vec![(
                 t("diag_requirement_open").to_string(),
                 Message::OpenUrl(format!(

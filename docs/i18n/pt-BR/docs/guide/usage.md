@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=8f2f3753bc2eba9abdae3089db4819478264fd4e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=8d159f908b8d8b7994f5c1fc06c1aeeb75a63153 -->
 
 # Usar o Eidos
 
@@ -657,8 +657,12 @@ perderia os outros. Atualize esses à mão.
 `eidos nexus update skyrimse --apply` faz a mesma verificação e, em uma conta
 premium, baixa cada arquivo novo e o instala sobre a pasta dele com
 `--replace --backup`. Em uma conta gratuita, imprime `OPEN <url>` para cada
-página de arquivo. Pastas que mesclam vários arquivos são puladas com o motivo,
-e o comando sai com 1 se alguma atualização falhou.
+página de arquivo. Pastas que mesclam vários arquivos são puladas com o motivo.
+Um mod FOMOD sem respostas salvas, como um instalado antes de o Eidos guardá-las,
+não é reinstalado com os padrões do instalador: essa atualização falha com uma
+mensagem pedindo para atualizar o mod uma vez pela janela, que salva as
+respostas. Um FOMOD cujo instalador não oferece nada para escolher é instalado
+normalmente. O comando sai com 1 se alguma atualização falhou.
 
 ### Coleções do Nexus
 

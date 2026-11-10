@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=8f2f3753bc2eba9abdae3089db4819478264fd4e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=8d159f908b8d8b7994f5c1fc06c1aeeb75a63153 -->
 
 # Utiliser Eidos
 
@@ -706,8 +706,13 @@ la main.
 compte Premium, télécharge chaque nouveau fichier et l'installe sur son dossier
 avec `--replace --backup`. Avec un compte gratuit, il affiche plutôt
 `OPEN <url>` pour chaque page de fichier. Les dossiers qui fusionnent plusieurs
-fichiers sont sautés avec la raison, et la commande sort avec le code 1 si une
-mise à jour a échoué.
+fichiers sont sautés avec la raison. Un mod FOMOD sans réponses enregistrées,
+par exemple installé avant qu'Eidos ne les garde, n'est pas réinstallé avec les
+valeurs par défaut de l'installateur : cette mise à jour échoue avec un message
+qui demande de mettre à jour le mod une fois depuis la fenêtre, qui enregistre
+alors les réponses. Un FOMOD dont l'installateur ne propose aucun choix
+s'installe normalement. La commande sort avec le code 1 si une mise à jour a
+échoué.
 
 ### Collections Nexus
 

@@ -39,8 +39,9 @@ use eidos::nxm_handler::NxmHandler;
 use eidos_gamefeatures::RegistryStatus;
 use eidos_games::DetectedGame;
 
+use crate::message::Message;
 use crate::modinfo::{DiagLevel, Diagnostic};
-use crate::{t, tf, Message};
+use crate::{t, tf};
 
 /// [`eidos::check::prefix_facts`], with the registry read through
 /// [`registry_status_memo`]. `None` when the game has no prefix path at all.

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=8f2f3753bc2eba9abdae3089db4819478264fd4e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=8d159f908b8d8b7994f5c1fc06c1aeeb75a63153 -->
 
 # Eidos verwenden
 
@@ -703,7 +703,12 @@ gingen die anderen verloren. Aktualisieren Sie diese von Hand.
 bei einem Premium-Konto jede neue Datei herunter und installiert sie mit
 `--replace --backup` über ihren Ordner. Bei einem kostenlosen Konto gibt es
 stattdessen für jede Dateiseite `OPEN <url>` aus. Ordner, die mehrere Dateien
-zusammenführen, werden mit Begründung übersprungen, und der Befehl endet mit 1,
+zusammenführen, werden mit Begründung übersprungen. Ein FOMOD-Mod ohne
+gespeicherte Antworten, etwa einer, der installiert wurde, bevor Eidos sie
+aufbewahrte, wird nicht mit den Vorgaben des Installers neu installiert: Dieses
+Update schlägt fehl, mit dem Hinweis, den Mod einmal aus dem Fenster zu
+aktualisieren, das die Antworten dann speichert. Ein FOMOD, dessen Installer
+nichts zur Auswahl stellt, wird wie gewohnt installiert. Der Befehl endet mit 1,
 wenn ein Update fehlgeschlagen ist.
 
 ### Nexus-Collections

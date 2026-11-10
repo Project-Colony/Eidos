@@ -72,10 +72,6 @@ pub(crate) fn fetch_nexus_files(app: &mut App, domain: String, mod_id: u64) -> T
     )
 }
 
-fn cell<'a>(s: impl iced::widget::text::IntoFragment<'a>, w: f32) -> Element<'a, Message> {
-    text(s).size(sz(12)).width(Length::Fixed(w)).into()
-}
-
 pub(crate) fn info_nexus_files<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a, Message> {
     let Some((domain, mod_id)) = nexus_files_target(app, i) else {
         return Space::new().into();
@@ -107,25 +103,26 @@ pub(crate) fn info_nexus_files<'a>(app: &App, i: usize, m: &ModEntry) -> Element
         };
         let when =
             std::time::UNIX_EPOCH + std::time::Duration::from_secs(r.file.uploaded_timestamp);
+        // Name, mark and buttons on one line, the facts under the name. Fixed
+        // columns overran the card, and the buttons at the end were cut off.
+        let facts = format!(
+            "{}  ·  {}  ·  {:.1} MiB  ·  {}",
+            t(&format!("nexus_file_cat_{}", r.file.category_id)),
+            r.file.version,
+            r.file.size_in_bytes as f64 / 1_048_576.0,
+            format_mtime(when)
+        );
         let mut row = Row::new()
             .spacing(8)
             .align_y(iced::Alignment::Center)
-            .push(cell(r.file.name.clone(), 150.0))
-            .push(cell(
-                t(&format!("nexus_file_cat_{}", r.file.category_id)),
-                80.0,
-            ))
-            .push(cell(r.file.version.clone(), 60.0))
-            .push(cell(
-                format!("{:.1} MiB", r.file.size_in_bytes as f64 / 1_048_576.0),
-                70.0,
-            ))
-            .push(cell(format_mtime(when), 110.0))
-            .push(cell(mark, 90.0))
-            .push(tool_btn(
-                t("nexus_file_open"),
-                Message::OpenUrl(file_page_url(&domain, mod_id, r.file.file_id)),
-            ));
+            .push(
+                Column::new()
+                    .width(Length::Fill)
+                    .push(text(r.file.name.clone()).size(sz(12)))
+                    .push(text(facts).size(sz(11)).color(text_muted())),
+            )
+            .push(text(mark).size(sz(12)));
+        // Before Open, so every Open button lines up on the right edge.
         if r.successor {
             row = row.push(tool_btn(
                 t("nexus_file_update"),
@@ -137,6 +134,10 @@ pub(crate) fn info_nexus_files<'a>(app: &App, i: usize, m: &ModEntry) -> Element
                 },
             ));
         }
+        row = row.push(tool_btn(
+            t("nexus_file_open"),
+            Message::OpenUrl(file_page_url(&domain, mod_id, r.file.file_id)),
+        ));
         col = col.push(row);
     }
     col.into()

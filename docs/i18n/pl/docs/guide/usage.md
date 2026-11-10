@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=8f2f3753bc2eba9abdae3089db4819478264fd4e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=8d159f908b8d8b7994f5c1fc06c1aeeb75a63153 -->
 
 # Używanie Eidos
 
@@ -654,8 +654,13 @@ plikiem głównym zgubiłoby pozostałe. Zaktualizuj je ręcznie.
 `eidos nexus update skyrimse --apply` robi to samo sprawdzenie, a potem na
 koncie premium pobiera każdy nowy plik i instaluje go na jego folderze z
 `--replace --backup`. Na darmowym koncie wypisuje zamiast tego `OPEN <url>` dla
-każdej strony pliku. Foldery łączące kilka plików są pomijane z podaniem powodu,
-a polecenie kończy się kodem 1, jeśli któraś aktualizacja się nie powiodła.
+każdej strony pliku. Foldery łączące kilka plików są pomijane z podaniem powodu.
+Mod FOMOD bez zapisanych odpowiedzi, na przykład zainstalowany, zanim Eidos
+zaczął je przechowywać, nie jest instalowany ponownie z domyślnymi ustawieniami
+instalatora: ta aktualizacja kończy się błędem z prośbą, by raz zaktualizować
+moda z okna, które zapisze odpowiedzi. FOMOD, którego instalator nie daje nic do
+wyboru, instaluje się normalnie. Polecenie kończy się kodem 1, jeśli któraś
+aktualizacja się nie powiodła.
 
 ### Kolekcje Nexusa
 

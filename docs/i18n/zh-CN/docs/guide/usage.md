@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=8f2f3753bc2eba9abdae3089db4819478264fd4e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=8d159f908b8d8b7994f5c1fc06c1aeeb75a63153 -->
 
 # 使用 Eidos
 
@@ -483,8 +483,10 @@ Eidos 自己下载文件。免费账户则打开文件页面,在那里 Mod Manag
 
 `eidos nexus update skyrimse --apply` 做同样的检查,然后在 premium 账户上下载每个新
 文件,并用 `--replace --backup` 安装到它的文件夹上。在免费账户上则改为为每个文件页面
-打印 `OPEN <url>`。合并了多个文件的文件夹会被跳过并说明原因,只要有一个更新失败,
-命令就以 1 退出。
+打印 `OPEN <url>`。合并了多个文件的文件夹会被跳过并说明原因。没有保存答案的 FOMOD
+模组(例如在 Eidos 开始保存答案之前安装的)不会用安装器的默认值重新安装:这次更新会
+失败,并提示你在窗口中更新该模组一次,窗口会保存答案。安装器没有任何可选项的 FOMOD
+照常安装。只要有一个更新失败,命令就以 1 退出。
 
 ### Nexus 合集
 

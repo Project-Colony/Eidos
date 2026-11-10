@@ -199,8 +199,10 @@ fn update_args(args: &[String]) -> Result<(String, bool), String> {
 
 /// Install each update's successor file over its folder: a free account gets
 /// the file page to download from, a premium one the download and the install
-/// (FOMOD answers replayed, the old folder kept as a backup). Each step is a
-/// child `eidos` that takes the instance lock itself. False if any failed.
+/// (FOMOD answers replayed, the old folder kept as a backup). A FOMOD that
+/// offers a choice and has no recorded answers is refused, not installed with
+/// its defaults: nobody is there to choose. Each step is a child `eidos` that
+/// takes the instance lock itself. False if any failed.
 fn apply_updates(
     nexus: &eidos_nexus::Nexus,
     id: &str,
@@ -258,6 +260,7 @@ fn apply_updates(
                         update.name.as_ref(),
                         "--replace".as_ref(),
                         "--backup".as_ref(),
+                        "--no-fomod-defaults".as_ref(),
                     ]))
                 },
             );
