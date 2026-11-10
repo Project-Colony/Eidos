@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=1a9e5e4095bb00bb6fb1ec10982d81c21bd292bc -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=9bcb3911834069a7876af50486e7493e4e753c25 -->
 
 # Używanie Eidos
 
@@ -169,6 +169,20 @@ zastępuje zapisu profilu.
 ### Co się zmieniło od ostatniego udanego uruchomienia
 
 Każde uruchomienie przez `eidos play` lub `eidos tool run`, z okna, terminala albo Steama, zapisuje wpis w `<instance>/logs/sessions/`: profil, każdy włączony mod z wersją i identyfikatorami plików Nexusa, kolejność pluginów, sumę kontrolną każdego INI profilu, wersję pliku wykonywalnego gry, wersję Eidos, kod wyjścia i zapisy gry utworzone podczas uruchomienia. Zachowuje się 50 najnowszych, a `logs/` nie trafia do spakowanej instancji. `eidos sessions <instance> diff` porównuje ostatnie uruchomienie gry zakończone kodem 0 z bieżącym stanem; `diff <id>` wybiera inny wpis z listy. Eidos nie wykrywa tu jeszcze awarii, a gra, która padła pod Protonem, może mimo to zakończyć się kodem 0: jeśli wybrane uruchomienie do nich należy, podaj wcześniejsze przez `diff <id>`.
+
+### Przebiegi testowe
+
+Przycisk Test run obok Run uruchamia grę tak samo jak Run, ale wszystko, co gra zapisuje, trafia do `<instance>/test-run/` zamiast do twojego profilu, Overwrite i prefiksu: nowe i zmienione zapisy, zmiany w INI, `plugins.txt`, pliki zapisane w Data lub w folderze gry oraz logi w `Documents/My Games/<game>`. Możesz testować z modami profilu, bez żadnego moda albo tylko z modami zaznaczonymi na liście i modami, których pluginy są dla nich plikami master.
+
+Gdy gra się zamknie, Eidos pokazuje te pliki w pięciu grupach (zapisy, zmiany w INI, stan pluginów, wynik w Overwrite, logi) i pyta, czy każdą zachować, czy wyrzucić. Zachowanie zapisów nigdy nie usuwa zapisu z profilu, nawet takiego, który gra usunęła w trakcie przebiegu. Wyrzucenie czegokolwiek wymaga drugiego kliknięcia. Jeśli Eidos lub komputer zatrzyma się w trakcie przebiegu testowego, pliki zostają w `test-run/`, a lista otwiera się przy następnym otwarciu instancji albo po naciśnięciu F5.
+
+Gdy okna nie uruchomił sklep gry, Test run przekazuje grę temu sklepowi (Steam, Heroic albo Legendary), tak jak Run, a uruchomienie, które wykona sklep, jest przebiegiem testowym. Przebieg testowy obejmuje tylko wymienione wyżej foldery: inne zapisy gry, na przykład do rejestru Wine, trafiają tam, gdzie zawsze. Zapisy z przebiegu testowego trafiają do Steam Cloud dopiero wtedy, gdy je zachowasz i zagrasz normalny przebieg.
+
+### Szukanie moda, który powoduje problem
+
+Przycisk Find the mod behind a problem w Diagnostics szuka moda, który powoduje problem dający się odtworzyć, na przykład awarię w określonym miejscu. Każdy krok to przebieg testowy z połową pozostałych podejrzanych, plikami master, których potrzebują, i modami, które trzymasz zawsze włączone (mody zaznaczone na liście w chwili startu oraz mod, który dostarcza script extender). Po każdym przebiegu odpowiadasz, czy problem wystąpił; Not sure dzieli podejrzanych inaczej, a Run it again powtarza krok. Odpowiedź albo Run it again wyrzuca pliki zapisane przez krok, po drugim kliknięciu. Żeby część z nich zachować, najpierw naciśnij See the files: otwiera tę samą listę co po przebiegu testowym. Gdy gra uległa awarii, a crash logger zapisał log, albo gra zakończyła się kodem błędu, Eidos oznacza Yes jako prawdopodobną odpowiedź. 200 podejrzanych to około 8 przebiegów.
+
+Wyszukiwanie jest zapisywane w `<instance>/bisect.json`, więc między krokami możesz zamknąć Eidos. Stop the search porzuca je po drugim kliknięciu. Wynik wskazuje moda albo zestaw modów, które potrzebują nawzajem swoich plików master, i jest zachowywany w `<instance>/logs/bisect-<time>.txt`. Mody generowane (wynik Nemesis lub DynDOLOD, Bashed Patch) są budowane dla pełnej listy i mogą zawieść z jej połową: trzymaj je zawsze włączone albo zostaw wyłączone przez całe wyszukiwanie.
 
 ### Żaden krok z uprawnieniami nie jest potrzebny
 

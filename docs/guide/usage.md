@@ -172,6 +172,20 @@ into the profile and never replaces a profile save.
 
 Every run through `eidos play` or `eidos tool run`, started from the window, a terminal or Steam, writes a record to `<instance>/logs/sessions/`: the profile, each enabled mod with its version and Nexus file ids, the plugin order, a checksum of each profile INI, the game executable's version, the Eidos version, the exit code and the saves the run created. The 50 newest are kept, and `logs/` stays out of a packed instance. `eidos sessions <instance> diff` compares the newest game run that exited with code 0 against the current state; `diff <id>` picks another record from the list. Eidos does not detect crashes here yet, and a game that crashed under Proton can still exit with code 0: if the run it picks was one of those, name an earlier one with `diff <id>`.
 
+### Test runs
+
+The Test run button next to Run starts the game the way Run does, but everything the game writes goes to `<instance>/test-run/` instead of your profile, the Overwrite and the prefix: new and changed saves, INI changes, `plugins.txt`, files written into Data or the game folder, and the logs in `Documents/My Games/<game>`. You can test with the profile's mods, without any mod, or with only the mods selected in the list plus the mods whose plugins they need as masters.
+
+When the game exits, Eidos lists those files in five groups (saves, INI changes, plugin state, Overwrite output, logs) and asks you to keep or throw away each one. Keeping saves never deletes a save from the profile, even one the game deleted during the run. Throwing anything away takes a second press. If Eidos or the computer stops during a test run, the files stay in `test-run/` and the list opens the next time you open the instance or press F5.
+
+When the window was not started by the game's store, Test run hands the game to that store (Steam, Heroic or Legendary), as Run does, and the run the store starts is the test run. A test run only covers the folders listed above: other writes of the game, such as the Wine registry, go where they always go. Saves from a test run reach Steam Cloud only after you keep them and play a normal run.
+
+### Finding the mod behind a problem
+
+The Find the mod behind a problem button in Diagnostics looks for the mod that causes a problem you can reproduce, such as a crash at a given place. Each step is a test run with half of the remaining suspects, the masters they need and the mods you keep always on (the mods selected in the list when you start, and the mod that provides the script extender). After each run you answer whether the problem happened; Not sure splits the suspects differently, and Run it again repeats the step. Answering, or pressing Run it again, throws away the files the step wrote, after a second press. To keep some of them, press See the files first: it opens the same list as after a test run. When the game crashed and a crash logger wrote a log, or the game exited with an error code, Eidos marks Yes as the likely answer. 200 suspects take about 8 runs.
+
+The search is saved in `<instance>/bisect.json`, so you can close Eidos between steps. Stop the search drops it after a second press. The result names the mod, or the set of mods that need each other's masters, and is kept in `<instance>/logs/bisect-<time>.txt`. Generated mods (a Nemesis or DynDOLOD output, a Bashed Patch) are built for the full list and can fail with half of it: keep them always on, or leave them off for the whole search.
+
 ### No privileged step required
 
 Eidos runs fully rootless. It mounts in a private user + mount namespace, so no
