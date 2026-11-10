@@ -1337,6 +1337,7 @@ dependencies = [
  "libc",
  "md-5",
  "ring",
+ "serde",
  "serde_json",
  "sha2",
  "ureq",

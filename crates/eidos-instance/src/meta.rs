@@ -332,6 +332,51 @@ impl ModMeta {
         );
     }
 
+    /// The Nexus requirements last fetched for this mod, as the JSON of
+    /// `eidos_nexus::Requirements`. `{"mods":[],"dlc":[]}` means checked and none
+    /// found; `None` means never checked.
+    pub fn nexus_requirements(&self) -> Option<String> {
+        match &qt_items(self.raw("eidosNexusRequirements")?)[..] {
+            [json] if !json.is_empty() => Some(json.clone()),
+            _ => None,
+        }
+    }
+
+    /// Quoted the way QSettings writes it back unchanged (see collection_owner).
+    pub fn set_nexus_requirements(&mut self, json: &str) {
+        self.set(
+            "eidosNexusRequirements",
+            &if json.is_empty() {
+                String::new()
+            } else {
+                qt_quote(json)
+            },
+        );
+    }
+
+    /// Requirements the user chose to ignore, as `"<domain>:<mod_id>"`.
+    pub fn ignored_requirements(&self) -> Vec<String> {
+        let Some(raw) = self.raw("eidosIgnoredRequirements") else {
+            return Vec::new();
+        };
+        serde_json::from_str(&json_list_value(raw)).unwrap_or_default()
+    }
+
+    /// An empty list removes the key, so a mod with no ignores carries nothing.
+    pub fn set_ignored_requirements(&mut self, keys: &[String]) {
+        if keys.is_empty() {
+            let before = self.general.len();
+            self.general
+                .retain(|(k, _)| !k.eq_ignore_ascii_case("eidosIgnoredRequirements"));
+            self.dirty |= self.general.len() != before;
+            return;
+        }
+        self.set(
+            "eidosIgnoredRequirements",
+            &qt_quote(&serde_json::to_string(keys).expect("strings serialize")),
+        );
+    }
+
     /// A `[General]` string value, unquoted and with empty treated as absent.
     fn string(&self, key: &str) -> Option<String> {
         self.raw(key).map(unquote).filter(|s| !s.is_empty())
@@ -1466,6 +1511,28 @@ mod tests {
         m.set("repository", "Nexus"); // unchanged
         assert!(!m.is_dirty());
         let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn requirement_cache_and_ignores_round_trip() {
+        let p = tmp_ini("[General]\nmodid=1\n");
+        let mut m = ModMeta::default();
+        m.set_nexus_requirements(r#"{"mods":[],"dlc":[]}"#);
+        m.set_ignored_requirements(&["skyrimspecialedition:12604".to_string()]);
+        m.write(&p).unwrap();
+        let mut back = ModMeta::read(&p);
+        assert_eq!(
+            back.nexus_requirements().as_deref(),
+            Some(r#"{"mods":[],"dlc":[]}"#)
+        );
+        assert_eq!(back.ignored_requirements(), ["skyrimspecialedition:12604"]);
+        back.set_ignored_requirements(&[]);
+        back.write(&p).unwrap();
+        assert!(ModMeta::read(&p).ignored_requirements().is_empty());
+        assert!(!fs::read_to_string(&p)
+            .unwrap()
+            .contains("eidosIgnoredRequirements"));
+        assert_eq!(ModMeta::default().nexus_requirements(), None);
     }
 
     /// The owner marker and the fragment record read the same before and after

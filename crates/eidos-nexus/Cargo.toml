@@ -12,6 +12,7 @@ edition.workspace = true
 # owns none of its transfers, so pausing one means signalling it.
 libc.workspace = true
 ureq = { workspace = true, features = ["json"] }
+serde.workspace = true
 serde_json.workspace = true
 # PKCE S256: a published transform with a published test vector. Hand-rolling a
 # hash to save a dependency would trade an audited 200 lines for our own.

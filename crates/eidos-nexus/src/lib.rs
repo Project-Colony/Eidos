@@ -82,7 +82,9 @@ fn api_url(link: &str) -> Option<String> {
 pub mod collections;
 mod files;
 pub mod oauth;
+mod requirements;
 pub use files::*;
+pub use requirements::{Requirement, Requirements};
 
 /// A parsed `nxm://` mod-file link (MO2's `NXMUrl`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1432,6 +1434,25 @@ impl Nexus {
         collections::from_payload(&v, &c.slug, self.adult)
     }
 
+    /// What the Nexus pages of `ids` (all on `domain`) require, 50 mods per
+    /// request (Nexus GraphQL v2). Outside the v1 budget, like
+    /// [`Self::collection_revision`]. The query needs no token; the session's is
+    /// sent anyway, as everywhere else. Mods Nexus does not know are absent from
+    /// the result.
+    pub fn mod_requirements(
+        &self,
+        domain: &str,
+        ids: &[u64],
+    ) -> Result<Vec<(u64, Requirements)>, String> {
+        let Credential::Bearer(token) = &self.credential;
+        let mut out = Vec::new();
+        for chunk in ids.chunks(50) {
+            let v = oauth::graphql(Some(token), &requirements::query_body(domain, chunk))?;
+            out.extend(requirements::from_payload(&v, self.adult)?);
+        }
+        Ok(out)
+    }
+
     /// Where to download a collection revision's ARCHIVE from.
     ///
     /// This is the whole feature's foundation. Everything that makes a
@@ -1856,6 +1877,66 @@ pub fn check_updates(
     result.hourly_remaining = rl.hourly_remaining;
     result.daily_remaining = rl.daily_remaining;
     Ok(result)
+}
+
+/// Fetch the Nexus requirements of every mod in `inst` that has a Nexus id and a
+/// known domain, and cache each answer in its `meta.ini`. Returns how many mods
+/// were looked up. Nothing is written when a request fails.
+pub fn refresh_requirements(
+    nexus: &Nexus,
+    inst: &eidos_instance::Instance,
+    game: &eidos_gamedef::GameDef,
+) -> Result<usize, String> {
+    // domain -> mod id -> (folder, metadata read before the request)
+    type Folders = Vec<(String, eidos_instance::ModMeta)>;
+    let mut wanted: std::collections::BTreeMap<&str, std::collections::BTreeMap<u64, Folders>> =
+        Default::default();
+    for m in inst.modlist() {
+        let meta = inst.mod_meta(&m.name);
+        let Some(mod_id) = meta.mod_id() else {
+            continue;
+        };
+        let game_name = meta.game_name().filter(|n| !n.is_empty());
+        let Some(domain) = game.nexus_domain_for(game_name.as_deref()) else {
+            continue;
+        };
+        wanted
+            .entry(domain)
+            .or_default()
+            .entry(mod_id)
+            .or_default()
+            .push((m.name.clone(), meta));
+    }
+    let mut written = 0;
+    for (domain, by_id) in wanted {
+        let ids: Vec<u64> = by_id.keys().copied().collect();
+        for (id, reqs) in nexus.mod_requirements(domain, &ids)? {
+            for (name, snapshot) in by_id.get(&id).into_iter().flatten() {
+                apply_requirements(inst, name, snapshot, &reqs)
+                    .map_err(|e| format!("Could not save requirements for '{name}': {e}"))?;
+                written += 1;
+            }
+        }
+    }
+    Ok(written)
+}
+
+/// Store `reqs` in the mod's `meta.ini` under the instance lock, on a fresh
+/// copy, and only if the folder still identifies the same Nexus mod. A replaced
+/// folder is left alone. Ignores the user set meanwhile are untouched.
+fn apply_requirements(
+    inst: &eidos_instance::Instance,
+    name: &str,
+    snapshot: &eidos_instance::ModMeta,
+    reqs: &Requirements,
+) -> io::Result<()> {
+    let _lock = inst.try_lock("saving Nexus requirements")?;
+    let mut meta = eidos_instance::ModMeta::read_checked(&inst.meta_path(name))?;
+    if meta.mod_id() != snapshot.mod_id() || meta.game_name() != snapshot.game_name() {
+        return Ok(());
+    }
+    meta.set_nexus_requirements(&serde_json::to_string(reqs).expect("requirements serialize"));
+    meta.write(&inst.meta_path(name))
 }
 
 /// The folder's Nexus file ids for `mod_id`, when its installed version differs
@@ -3700,6 +3781,37 @@ mod download_integrity_tests {
 #[cfg(test)]
 mod update_metadata_integrity_tests {
     use super::*;
+
+    #[test]
+    fn refreshing_requirements_keeps_the_users_ignores() {
+        let root = std::env::temp_dir().join(format!("eidos-req-meta-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let inst = eidos_instance::Instance::portable(root.clone());
+        inst.create().unwrap();
+        fs::create_dir_all(inst.mods_dir().join("M")).unwrap();
+        let path = inst.meta_path("M");
+        fs::write(
+            &path,
+            "[General]\nmodid=42\neidosIgnoredRequirements=\"[\\\"skyrimspecialedition:12604\\\"]\"\n",
+        )
+        .unwrap();
+        let snapshot = inst.mod_meta("M");
+        let reqs = Requirements::default();
+        apply_requirements(&inst, "M", &snapshot, &reqs).unwrap();
+        assert_eq!(
+            inst.mod_meta("M").ignored_requirements(),
+            ["skyrimspecialedition:12604"]
+        );
+        assert_eq!(
+            inst.mod_meta("M").nexus_requirements().as_deref(),
+            Some(r#"{"mods":[],"dlc":[]}"#)
+        );
+        // A folder replaced by another mod is left alone.
+        fs::write(&path, "[General]\nmodid=43\n").unwrap();
+        apply_requirements(&inst, "M", &snapshot, &reqs).unwrap();
+        assert!(inst.mod_meta("M").nexus_requirements().is_none());
+        let _ = fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn a_network_reply_preserves_newer_edits_and_refuses_a_replaced_mod() {
