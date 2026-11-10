@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=bc1c18f7029d1b12bcae46d861626848edfafb5a -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f7ac3d9d2dac9f4ad012ebffdc62272cb0bdb7f4 -->
 
 # Narzędzia: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -73,6 +73,19 @@ wymienia FNIS.
 
 Narzędzia w **wyłączonym** modzie nie da się przepisać, bo jego plików też nie ma
 w widoku. Eidos to mówi i uruchamia je z jego własnego folderu, zamiast udawać.
+
+## Narzędzia z listy Mod Organizer 2
+
+Lista Wabbajack albo inna instancja MO2 otwarta jako instancja Eidos zachowuje swój `ModOrganizer.ini`, a skonfigurowane tam pliki wykonywalne można skopiować do `tools.ini`:
+
+```sh
+eidos tool /path/to/list import-mo2           # pokazuje, co zostałoby dodane
+eidos tool /path/to/list import-mo2 --write   # dodaje je
+```
+
+W oknie okno Pliki wykonywalne ma przycisk **Importuj z ModOrganizer.ini**, z polem do odznaczenia przy każdym wpisie. Nic nie jest zapisywane, dopóki nie klikniesz Zapisz.
+
+Ścieżki na `Z:` są ścieżkami Linuksa i zostają bez zmian. Ścieżka na innej literze dysku jest przenoszona do folderu listy, jeśli zawiera nazwę tego folderu (`D:\Lists\MyList\tools\SSEEdit.exe` staje się `<list>/tools/SSEEdit.exe`), w pliku wykonywalnym, katalogu roboczym i argumentach. Loader rozszerzenia skryptów i plik gry stają się zwykłymi nazwami, więc uruchamiają się z folderu gry, na który Eidos nakłada widok, tak jak wpisy wbudowane. Wpisy wskazujące gdzie indziej (systemowy program Windows, narzędzie spoza listy) są pokazane jako pominięte, z powodem, a tytuł, który już jest w `tools.ini`, nigdy nie jest zastępowany.
 
 ## Kierowanie wyjścia narzędzia do własnego moda
 

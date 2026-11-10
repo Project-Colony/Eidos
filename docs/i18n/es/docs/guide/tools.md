@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=bc1c18f7029d1b12bcae46d861626848edfafb5a -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f7ac3d9d2dac9f4ad012ebffdc62272cb0bdb7f4 -->
 
 # Herramientas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -77,6 +77,19 @@ FNIS.
 Una herramienta dentro de un mod **desactivado** no se puede reescribir, porque
 sus archivos tampoco están en la vista. Eidos lo dice y la ejecuta desde su propia
 carpeta en vez de fingir.
+
+## Herramientas de una lista de Mod Organizer 2
+
+Una lista de Wabbajack u otra instancia de MO2 abierta como instancia de Eidos conserva su `ModOrganizer.ini`, y los ejecutables configurados ahí se pueden copiar a `tools.ini`:
+
+```sh
+eidos tool /path/to/list import-mo2           # muestra lo que se añadiría
+eidos tool /path/to/list import-mo2 --write   # las añade
+```
+
+En la ventana, el diálogo de Ejecutables tiene **Importar desde ModOrganizer.ini**, con una casilla que se puede desmarcar en cada entrada. No se guarda nada hasta que pulsa Guardar.
+
+Las rutas en `Z:` son rutas de Linux y se quedan como están. Una ruta en otra letra de unidad pasa a la carpeta de la lista cuando nombra esa carpeta (`D:\Lists\MyList\tools\SSEEdit.exe` pasa a ser `<list>/tools/SSEEdit.exe`), tanto en el ejecutable como en el directorio de trabajo y en los argumentos. El cargador del extensor de scripts y el binario del juego pasan a ser nombres simples, así que se ejecutan desde la carpeta del juego sobre la que Eidos monta la vista, como las entradas integradas. Las entradas que apuntan a otro sitio (un programa del sistema de Windows, una herramienta fuera de la lista) se muestran como omitidas con el motivo, y un título que ya esté en `tools.ini` nunca se reemplaza.
 
 ## Enviar la salida de una herramienta a su propio mod
 

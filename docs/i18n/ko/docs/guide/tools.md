@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=bc1c18f7029d1b12bcae46d861626848edfafb5a -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f7ac3d9d2dac9f4ad012ebffdc62272cb0bdb7f4 -->
 
 # 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -69,6 +69,19 @@ MO2도 같은 이유로 같은 재작성을 합니다 - 그쪽 주석은 FNIS를
 
 **비활성화된** 모드 안의 도구는 다시 쓸 수 없는데, 그 파일들이 뷰에도 없기
 때문입니다. Eidos는 그렇다고 말하고, 아닌 척하는 대신 자기 폴더에서 실행합니다.
+
+## Mod Organizer 2 목록의 도구
+
+Wabbajack 목록이나 Eidos 인스턴스로 연 다른 MO2 인스턴스에는 `ModOrganizer.ini`가 남아 있고, 거기에 설정된 실행 파일을 `tools.ini`로 복사할 수 있습니다.
+
+```sh
+eidos tool /path/to/list import-mo2           # 추가될 내용을 표시
+eidos tool /path/to/list import-mo2 --write   # 추가
+```
+
+창에서는 실행 파일 대화상자에 **ModOrganizer.ini에서 가져오기**가 있으며, 항목마다 체크를 해제할 수 있습니다. 저장을 누르기 전에는 아무것도 저장되지 않습니다.
+
+`Z:`의 경로는 Linux 경로이므로 그대로 둡니다. 다른 드라이브 문자의 경로는 목록 폴더 이름이 들어 있으면 그 폴더 아래로 옮겨집니다(`D:\Lists\MyList\tools\SSEEdit.exe`는 `<list>/tools/SSEEdit.exe`가 됩니다). 실행 파일, 작업 디렉터리, 인수 모두 해당합니다. 스크립트 확장기의 로더와 게임 실행 파일은 단순한 이름이 되어, 기본 제공 항목처럼 Eidos가 뷰를 얹는 게임 폴더에서 실행됩니다. 다른 곳을 가리키는 항목(Windows 시스템 프로그램, 목록 밖의 도구)은 이유와 함께 건너뜀으로 표시되며, `tools.ini`에 이미 있는 제목은 절대 바꾸지 않습니다.
 
 ## 도구의 출력을 자기 모드로 보내기
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=bc1c18f7029d1b12bcae46d861626848edfafb5a -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f7ac3d9d2dac9f4ad012ebffdc62272cb0bdb7f4 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -75,6 +75,19 @@ FNIS.
 Ein Tool in einem **deaktivierten** Mod kann nicht umgeschrieben werden, weil
 seine Dateien auch nicht im Blick liegen. Eidos sagt das und startet es aus
 seinem eigenen Ordner, statt so zu tun als ob.
+
+## Werkzeuge aus einer Mod-Organizer-2-Liste
+
+Eine Wabbajack-Liste oder eine andere MO2-Instanz, die als Eidos-Instanz geöffnet wird, behält ihre `ModOrganizer.ini`. Die dort eingerichteten Programme lassen sich in `tools.ini` übernehmen:
+
+```sh
+eidos tool /path/to/list import-mo2           # zeigt, was hinzukäme
+eidos tool /path/to/list import-mo2 --write   # fügt es hinzu
+```
+
+Im Fenster hat der Dialog Programme die Schaltfläche **Aus ModOrganizer.ini importieren**, mit einem Kästchen zum Abwählen für jeden Eintrag. Gespeichert wird erst, wenn Sie auf Speichern klicken.
+
+Pfade auf `Z:` sind Linux-Pfade und bleiben unverändert. Ein Pfad auf einem anderen Laufwerksbuchstaben wird unter den Ordner der Liste verschoben, wenn er diesen Ordner nennt (`D:\Lists\MyList\tools\SSEEdit.exe` wird zu `<list>/tools/SSEEdit.exe`), und zwar in der ausführbaren Datei, im Arbeitsverzeichnis und in den Argumenten. Der Loader des Script Extenders und die Spieldatei werden zu schlichten Namen und laufen so aus dem Spielordner, über den Eidos die Ansicht legt, wie die eingebauten Einträge. Einträge, die woanders hinzeigen (ein Windows-Systemprogramm, ein Werkzeug außerhalb der Liste), erscheinen mit Begründung als übersprungen, und ein Titel, den `tools.ini` schon enthält, wird nie ersetzt.
 
 ## Die Ausgabe eines Tools in einen eigenen Mod schicken
 

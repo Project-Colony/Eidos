@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=bc1c18f7029d1b12bcae46d861626848edfafb5a -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f7ac3d9d2dac9f4ad012ebffdc62272cb0bdb7f4 -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -64,6 +64,19 @@ MO2 也做同樣的改寫,理由相同 - 它自己的註解點名了 FNIS。
 
 位於**已停用**模組裡的工具無法被改寫,因為它的檔案同樣不在檢視裡。Eidos 會直
 說,並從它自己的資料夾執行,而不是假裝沒事。
+
+## 來自 Mod Organizer 2 清單的工具
+
+以 Eidos 執行個體開啟的 Wabbajack 清單或其他 MO2 執行個體會保留自己的 `ModOrganizer.ini`，其中設定的可執行檔可以複製到 `tools.ini`：
+
+```sh
+eidos tool /path/to/list import-mo2           # 顯示將要新增的內容
+eidos tool /path/to/list import-mo2 --write   # 新增
+```
+
+在視窗中，「可執行檔」對話方塊有 **從 ModOrganizer.ini 匯入** 按鈕，每個項目都有可取消勾選的核取方塊。按下儲存之前不會寫入任何內容。
+
+`Z:` 上的路徑是 Linux 路徑，維持原樣。其他磁碟機代號上的路徑如果包含清單資料夾的名稱，就會移到清單資料夾底下（`D:\Lists\MyList\tools\SSEEdit.exe` 變成 `<list>/tools/SSEEdit.exe`），可執行檔、工作目錄與引數都照此處理。指令碼擴充器的載入器與遊戲主程式會變成單純的檔名，因此和內建項目一樣，從 Eidos 掛載檢視的遊戲資料夾執行。指向其他位置的項目（Windows 系統程式、清單之外的工具）會連同原因列為已略過，`tools.ini` 中已有的標題則永遠不會被取代。
 
 ## 把工具的輸出送進它自己的模組
 

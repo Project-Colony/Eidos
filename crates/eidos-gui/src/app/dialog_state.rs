@@ -29,9 +29,18 @@ pub(crate) struct ExecutablesDialogState {
     pub(crate) mod_names: Vec<String>,
     /// A Steam AppID to launch this tool under, as typed (empty = the game's).
     pub(crate) app_id: String,
+    /// The review list of an MO2 import, with a tick for each row to add.
+    pub(crate) mo2_import: Option<Vec<(eidos_instance::Mo2Executable, bool)>>,
 }
 
 impl ExecutablesDialogState {
+    /// Whether the user already has a tool called `title` (ignoring case).
+    pub(crate) fn title_taken(&self, title: &str) -> bool {
+        self.merged[..self.user_len]
+            .iter()
+            .any(|t| t.title.eq_ignore_ascii_case(title))
+    }
+
     /// Load the buffers from the selected tool (or clear them when nothing is set).
     pub(crate) fn load_buffers(&mut self) {
         match self.selected.and_then(|i| self.merged.get(i)) {

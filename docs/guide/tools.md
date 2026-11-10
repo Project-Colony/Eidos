@@ -69,6 +69,19 @@ A tool in a **disabled** mod cannot be rewritten, because its files are not in
 the view either. Eidos says so and runs it from its own folder rather than
 pretending.
 
+## Tools from a Mod Organizer 2 list
+
+A Wabbajack list or another MO2 instance opened as an Eidos instance keeps its `ModOrganizer.ini`, and the executables configured there can be copied into `tools.ini`:
+
+```sh
+eidos tool /path/to/list import-mo2           # show what would be added
+eidos tool /path/to/list import-mo2 --write   # add them
+```
+
+In the window, the Executables dialog has **Import from ModOrganizer.ini**, with a box to untick for each entry; nothing is saved until you press Save.
+
+Paths on `Z:` are Linux paths and stay as they are. A path on another drive letter moves under the list's folder when it names that folder (`D:\Lists\MyList\tools\SSEEdit.exe` becomes `<list>/tools/SSEEdit.exe`), in the executable, the working directory and the arguments. The script extender's loader and the game binary become plain names, so they run from the game folder Eidos mounts over, like the built-in entries. Entries that point elsewhere (a Windows system program, a tool outside the list) are listed as skipped with the reason, and a title already in `tools.ini` is never replaced.
+
 ## Sending a tool's output to its own mod
 
 A generator - FNIS, Nemesis, BodySlide, DynDOLOD, Synthesis - writes hundreds of

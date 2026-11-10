@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=bc1c18f7029d1b12bcae46d861626848edfafb5a -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f7ac3d9d2dac9f4ad012ebffdc62272cb0bdb7f4 -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -70,6 +70,19 @@ FNIS.
 
 Nástroj ve **vypnutém** módu přepsat nelze, protože jeho soubory nejsou ani v
 pohledu. Eidos to řekne a spustí ho z jeho vlastní složky, místo aby předstíral.
+
+## Nástroje ze seznamu Mod Organizer 2
+
+Seznam Wabbajack nebo jiná instance MO2 otevřená jako instance Eidos si ponechává svůj `ModOrganizer.ini` a spustitelné soubory nastavené v něm lze zkopírovat do `tools.ini`:
+
+```sh
+eidos tool /path/to/list import-mo2           # ukáže, co by se přidalo
+eidos tool /path/to/list import-mo2 --write   # přidá je
+```
+
+V okně má dialog Spustitelné soubory tlačítko **Importovat z ModOrganizer.ini** a u každé položky políčko, které lze odškrtnout. Dokud nestisknete Uložit, nic se neukládá.
+
+Cesty na `Z:` jsou cesty Linuxu a zůstávají beze změny. Cesta na jiném písmenu jednotky se přesune do složky seznamu, pokud tuto složku jmenuje (`D:\Lists\MyList\tools\SSEEdit.exe` se stane `<list>/tools/SSEEdit.exe`), ve spustitelném souboru, pracovní složce i argumentech. Zavaděč rozšíření skriptů a binárka hry se změní na prosté názvy, takže se spouštějí ze složky hry, přes kterou Eidos připojuje pohled, stejně jako vestavěné položky. Položky mířící jinam (systémový program Windows, nástroj mimo seznam) se vypíšou jako přeskočené s důvodem a název, který už v `tools.ini` je, se nikdy nenahradí.
 
 ## Posílání výstupu nástroje do jeho vlastního módu
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=bc1c18f7029d1b12bcae46d861626848edfafb5a -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f7ac3d9d2dac9f4ad012ebffdc62272cb0bdb7f4 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -73,6 +73,19 @@ MO2 herschrijft net zo, om dezelfde reden - zijn eigen commentaar noemt FNIS.
 Een tool in een **uitgeschakelde** mod kan niet herschreven worden, omdat zijn
 bestanden ook niet in de weergave zitten. Eidos zegt dat en draait hem vanuit
 zijn eigen map in plaats van te doen alsof.
+
+## Hulpmiddelen uit een Mod Organizer 2-lijst
+
+Een Wabbajack-lijst of een andere MO2-instantie die als Eidos-instantie is geopend, houdt zijn `ModOrganizer.ini`, en de uitvoerbare bestanden die daar staan kunnen naar `tools.ini` worden gekopieerd:
+
+```sh
+eidos tool /path/to/list import-mo2           # toont wat er zou worden toegevoegd
+eidos tool /path/to/list import-mo2 --write   # voegt ze toe
+```
+
+In het venster heeft het dialoogvenster Uitvoerbare bestanden **Importeren uit ModOrganizer.ini**, met per item een vakje om uit te zetten. Er wordt niets opgeslagen tot u op Opslaan drukt.
+
+Paden op `Z:` zijn Linux-paden en blijven zoals ze zijn. Een pad op een andere stationsletter gaat onder de map van de lijst als het die map noemt (`D:\Lists\MyList\tools\SSEEdit.exe` wordt `<list>/tools/SSEEdit.exe`), in het uitvoerbare bestand, de werkmap en de argumenten. De loader van de script extender en het spelbestand worden gewone namen, zodat ze starten vanuit de spelmap waarover Eidos de weergave legt, net als de ingebouwde items. Items die ergens anders heen wijzen (een Windows-systeemprogramma, een hulpmiddel buiten de lijst) staan als overgeslagen in de lijst, met de reden, en een titel die al in `tools.ini` staat wordt nooit vervangen.
 
 ## De uitvoer van een tool naar een eigen mod sturen
 

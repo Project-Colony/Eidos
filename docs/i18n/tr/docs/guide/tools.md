@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=bc1c18f7029d1b12bcae46d861626848edfafb5a -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f7ac3d9d2dac9f4ad012ebffdc62272cb0bdb7f4 -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -72,6 +72,19 @@ MO2 da aynı nedenle aynı değiştirmeyi yapar - kendi yorum satırı FNIS'i an
 **Devre dışı** bir moddaki araç için bu değiştirme yapılamaz, çünkü dosyaları
 görünümde de değildir. Eidos bunu söyler ve numara yapmak yerine aracı kendi
 klasöründen çalıştırır.
+
+## Mod Organizer 2 listesinden araçlar
+
+Eidos örneği olarak açılan bir Wabbajack listesi ya da başka bir MO2 örneği `ModOrganizer.ini` dosyasını korur ve orada tanımlı çalıştırılabilir dosyalar `tools.ini` içine kopyalanabilir:
+
+```sh
+eidos tool /path/to/list import-mo2           # nelerin ekleneceğini gösterir
+eidos tool /path/to/list import-mo2 --write   # ekler
+```
+
+Pencerede Çalıştırılabilir Dosyalar iletişim kutusunda **ModOrganizer.ini'den içe aktar** düğmesi vardır; her girdi için işareti kaldırılabilen bir kutu bulunur. Kaydet'e basana kadar hiçbir şey kaydedilmez.
+
+`Z:` üzerindeki yollar Linux yollarıdır ve olduğu gibi kalır. Başka bir sürücü harfindeki yol, listenin klasörünün adını içeriyorsa o klasörün altına taşınır (`D:\Lists\MyList\tools\SSEEdit.exe`, `<list>/tools/SSEEdit.exe` olur); bu çalıştırılabilir dosyada, çalışma dizininde ve bağımsız değişkenlerde geçerlidir. Betik genişleticinin yükleyicisi ile oyunun ikili dosyası düz ada dönüşür, böylece yerleşik girdiler gibi Eidos'un görünümü bağladığı oyun klasöründen çalışırlar. Başka yere işaret eden girdiler (bir Windows sistem programı, liste dışındaki bir araç) nedeniyle birlikte atlanmış olarak listelenir, `tools.ini` içinde zaten bulunan bir başlık ise hiçbir zaman değiştirilmez.
 
 ## Bir aracın çıktısını kendi moduna göndermek
 

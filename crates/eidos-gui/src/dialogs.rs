@@ -170,10 +170,55 @@ pub(crate) fn executables_dialog<'a>(
             can_move_down(state),
         ));
 
-    let left = Column::new().spacing(6).push(list_pane).push(list_actions);
+    let mut left = Column::new().spacing(6).push(list_pane).push(list_actions);
+    if app
+        .created
+        .as_ref()
+        .is_some_and(|i| i.foreign_mo2_ini().is_some())
+    {
+        left = left.push(tool_btn(t("exe_import_mo2"), Message::ExecImportMo2));
+    }
 
     // The editor pane (only meaningful for a selected user tool).
-    let editor: Element<'a, Message> = if state.selected_is_user() {
+    let editor: Element<'a, Message> = if let Some(rows) = &state.mo2_import {
+        let mut list = Column::new().spacing(6);
+        for (i, (entry, checked)) in rows.iter().enumerate() {
+            let title = entry.title.as_str();
+            let skip = match &entry.result {
+                Err(eidos_instance::Mo2Skip::Unplaced(path)) => {
+                    Some(tf("exe_import_unplaced", &[("path", path)]))
+                }
+                Err(eidos_instance::Mo2Skip::NotFound(path)) => {
+                    Some(tf("exe_import_missing", &[("path", path)]))
+                }
+                Ok(tool) if state.title_taken(&tool.title) => {
+                    Some(tf("exe_import_title_taken", &[("title", &tool.title)]))
+                }
+                Ok(_) => None,
+            };
+            list = list.push(match skip {
+                Some(reason) => Column::new()
+                    .push(text(title).size(sz(12)))
+                    .push(text(reason).size(sz(10)))
+                    .into(),
+                None => Element::from(
+                    checkbox(*checked)
+                        .label(title)
+                        .on_toggle(move |_| Message::ExecImportToggle(i)),
+                ),
+            });
+        }
+        Column::new()
+            .spacing(8)
+            .push(scrollable(list).height(Length::Fixed(240.0)))
+            .push(
+                Row::new()
+                    .spacing(4)
+                    .push(tool_btn(t("exe_import_add"), Message::ExecImportApply))
+                    .push(tool_btn(t("common_cancel"), Message::ExecImportCancel)),
+            )
+            .into()
+    } else if state.selected_is_user() {
         Column::new()
             .spacing(8)
             .push(exe_field(

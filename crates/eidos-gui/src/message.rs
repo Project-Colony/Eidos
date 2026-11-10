@@ -154,6 +154,12 @@ pub(crate) enum Message {
     ClosePlayPrompt,
     ExecTogglePinned,
     ExecMakeShortcut,
+    /// Executables dialog: list the entries of a foreign `ModOrganizer.ini`,
+    /// tick or untick one, add the ticked ones, or drop the list.
+    ExecImportMo2,
+    ExecImportToggle(usize),
+    ExecImportApply,
+    ExecImportCancel,
     /// Copy a mod's folder aside as `<name>_backup`, before editing it.
     ModBackup(usize),
     /// Copy a backup's contents back over the mod it came from. Two clicks.

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=bc1c18f7029d1b12bcae46d861626848edfafb5a -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=f7ac3d9d2dac9f4ad012ebffdc62272cb0bdb7f4 -->
 
 # ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -70,6 +70,19 @@ MO2 も同じ理由で同じ書き換えをしています - そのコメント�
 
 **無効な** MOD の中のツールは書き換えられません。そのファイルもビューに
 無いからです。Eidos はそう伝えたうえで、取り繕わずに元のフォルダから実行します。
+
+## Mod Organizer 2 のリストのツール
+
+Wabbajack のリストや、Eidos のインスタンスとして開いた別の MO2 インスタンスには `ModOrganizer.ini` が残っています。そこに設定された実行ファイルを `tools.ini` にコピーできます。
+
+```sh
+eidos tool /path/to/list import-mo2           # 追加される内容を表示
+eidos tool /path/to/list import-mo2 --write   # 追加する
+```
+
+ウィンドウでは、実行ファイルのダイアログに **ModOrganizer.ini からインポート** があり、項目ごとにチェックを外せます。保存を押すまで何も保存されません。
+
+`Z:` のパスは Linux のパスで、そのまま使われます。別のドライブ文字のパスは、リストのフォルダー名を含んでいればそのフォルダーの下に移されます (`D:\Lists\MyList\tools\SSEEdit.exe` は `<list>/tools/SSEEdit.exe` になります)。実行ファイル、作業ディレクトリ、引数のすべてが対象です。スクリプトエクステンダーのローダーとゲーム本体は単なる名前になり、組み込みの項目と同じく、Eidos がビューを重ねるゲームフォルダーから実行されます。それ以外を指す項目 (Windows のシステムプログラム、リスト外のツール) は理由付きでスキップとして表示され、`tools.ini` に既にあるタイトルは置き換えられません。
 
 ## ツールの出力を専用の MOD へ送る
 

@@ -761,6 +761,7 @@ pub(crate) fn open_executables_dialog(app: &App) -> Option<ExecutablesDialogStat
         prereqs: String::new(),
         output_mod: String::new(),
         app_id: String::new(),
+        mo2_import: None,
         // Separators head groups and unmanaged rows are the game's own content -
         // neither is a folder output can be written into. MO2 filters the same
         // set out of this combo.

@@ -6186,3 +6186,67 @@ fn a_flagged_generator_asks_before_play_once_per_drift_state() {
     assert!(app.play_prompt.is_none());
     let _ = fs::remove_dir_all(root);
 }
+
+#[test]
+fn importing_mo2_executables_adds_checked_rows_with_new_titles_only() {
+    let (mut app, root) = list_app(&[]);
+    fs::create_dir_all(root.join("tools")).unwrap();
+    fs::write(root.join("tools/a.exe"), b"").unwrap();
+    fs::write(root.join("tools/b.exe"), b"").unwrap();
+    let z = |n: &str| format!("Z:{}", root.join("tools").join(n).display());
+    fs::write(
+        root.join("ModOrganizer.ini"),
+        format!(
+            "[customExecutables]\n1\\title=SSEEdit\n1\\binary={}\n2\\title=Other\n2\\binary={}\nsize=2\n",
+            z("a.exe"),
+            z("b.exe")
+        ),
+    )
+    .unwrap();
+    app.created
+        .as_ref()
+        .unwrap()
+        .save_tools(&[eidos_instance::Tool {
+            title: "SSEEdit".into(),
+            exe: "/bin/true".into(),
+            ..Default::default()
+        }])
+        .unwrap();
+    let _ = update_inner(&mut app, Message::ShowExecutablesDialog);
+    let _ = update_inner(&mut app, Message::ExecImportMo2);
+    let rows = app
+        .executables
+        .as_ref()
+        .unwrap()
+        .mo2_import
+        .as_ref()
+        .unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(
+        rows.iter().filter(|(_, checked)| *checked).count(),
+        1,
+        "SSEEdit's title is taken"
+    );
+    let before = fs::read_to_string(root.join("tools.ini")).unwrap();
+    let _ = update_inner(&mut app, Message::ExecImportApply);
+    let state = app.executables.as_ref().unwrap();
+    assert!(state.mo2_import.is_none());
+    assert_eq!(
+        state.merged[..state.user_len]
+            .iter()
+            .filter(|t| t.title == "Other")
+            .count(),
+        1
+    );
+    assert_eq!(
+        state.selected,
+        Some(1),
+        "the first added row, after the existing SSEEdit"
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("tools.ini")).unwrap(),
+        before,
+        "nothing saved yet"
+    );
+    let _ = fs::remove_dir_all(root);
+}

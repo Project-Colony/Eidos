@@ -1506,7 +1506,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::ExecToggleHidden
         | Message::ExecToggleCheckBeforePlay
         | Message::ExecTogglePinned
-        | Message::ExecMakeShortcut) => tools::handle(app, m),
+        | Message::ExecMakeShortcut
+        | Message::ExecImportMo2
+        | Message::ExecImportToggle(..)
+        | Message::ExecImportApply
+        | Message::ExecImportCancel) => tools::handle(app, m),
         m @ (Message::TogglePreferences
         | Message::SettingsTabSelected(..)
         | Message::NexusSignInStart
