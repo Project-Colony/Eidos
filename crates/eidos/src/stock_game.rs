@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::exit;
 
 use eidos_games::DetectedGame;
-use eidos_instance::{is_copy_folder_name, GameFiles, Instance};
+use eidos_instance::{is_copy_folder_name, GameFiles, Instance, InstanceKind};
 
 /// The folder a freeze copies the store install into.
 pub const FROZEN_COPY: &str = "Stock Game";
@@ -504,6 +504,16 @@ pub fn freeze(
     if !plan.fits() {
         return Err(no_space(&plan));
     }
+    // A central instance gets its manifest on first launch. Without one the
+    // finished copy would read as a list's own folder, which delete leaves.
+    inst.ensure_manifest(game.def.id, InstanceKind::Global)
+        .map_err(|e| format!("Could not write the instance manifest: {e}"))?;
+    if inst.read_manifest().is_none() {
+        return Err(format!(
+            "{} cannot be read, so the copy could not be recorded; fix it, then freeze again",
+            inst.manifest_path().display()
+        ));
+    }
     let tmp = unfinished_path(inst);
     let unfinished = |why: String| {
         format!(
@@ -795,7 +805,6 @@ fn print_facts(arg: &str, game: &DetectedGame, inst: &Instance) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use eidos_instance::InstanceKind;
     use std::fs;
     use std::path::PathBuf;
 
@@ -1101,6 +1110,30 @@ mod tests {
         assert!(inst.root.join("Stock Game/Data/Skyrim.esm").is_file());
         assert!(!unfinished_path(&inst).exists());
         assert_eq!(tree_size(&game.install_path).unwrap().1, 2);
+        let _ = fs::remove_dir_all(t);
+    }
+
+    #[test]
+    fn a_freeze_records_the_copy_in_an_instance_never_launched() {
+        let t = temp("freeze-new");
+        let (game, _, _) = steam_freeze(&t);
+        let inst = Instance::portable(t.join("central"));
+        fs::create_dir_all(&inst.root).unwrap();
+        freeze(&game, &inst, &|| false).unwrap();
+        let m = inst.read_manifest().unwrap();
+        assert_eq!(
+            (m.game_id.as_str(), m.kind),
+            ("skyrimse", InstanceKind::Global)
+        );
+        assert_eq!(m.frozen_copy.as_deref(), Some("Stock Game"));
+        // A manifest Eidos cannot read is refused before anything is copied.
+        let inst = Instance::portable(t.join("damaged"));
+        fs::create_dir_all(&inst.root).unwrap();
+        fs::write(inst.manifest_path(), "[eidos]\nkind=global\n").unwrap();
+        assert!(freeze(&game, &inst, &|| false)
+            .unwrap_err()
+            .contains("cannot be read"));
+        assert!(!inst.root.join("Stock Game").exists() && !unfinished_path(&inst).exists());
         let _ = fs::remove_dir_all(t);
     }
 
