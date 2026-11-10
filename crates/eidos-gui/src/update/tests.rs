@@ -8668,22 +8668,31 @@ fn a_test_run_that_wrote_nothing_closes_on_one_press() {
 
 #[test]
 fn an_unfinished_test_run_opens_the_review_on_open() {
-    let (mut app, root) = ended_test_app();
-    // The manifest without `ended`, as a killed `eidos play` leaves it.
-    let inst = app.created.clone().unwrap();
-    let mut run = inst.test_run().unwrap();
-    run.ended = None;
-    run.exit = None;
-    fs::write(
-        inst.test_run_dir().join("test-run.json"),
-        serde_json::to_vec(&run).unwrap(),
-    )
-    .unwrap();
-    open_instance(&mut app, inst);
-    let review = app.test_review.as_ref().unwrap();
-    assert_eq!((review.run.exit, review.run.ended.is_some()), (None, true));
-    assert_eq!(review.writes.saves, ["new.ess"]);
-    let _ = fs::remove_dir_all(root);
+    // Both ways a window opens an instance: the switcher, and a window
+    // starting up on the last-used one (or the one a store opened).
+    for starting in [false, true] {
+        let (mut app, root) = ended_test_app();
+        // The manifest without `ended`, as a killed `eidos play` leaves it.
+        let inst = app.created.clone().unwrap();
+        let mut run = inst.test_run().unwrap();
+        run.ended = None;
+        run.exit = None;
+        fs::write(
+            inst.test_run_dir().join("test-run.json"),
+            serde_json::to_vec(&run).unwrap(),
+        )
+        .unwrap();
+        if starting {
+            let i = app.selected.unwrap();
+            open_existing(&mut app, i, inst);
+        } else {
+            open_instance(&mut app, inst);
+        }
+        let review = app.test_review.as_ref().expect("no review on open");
+        assert_eq!((review.run.exit, review.run.ended.is_some()), (None, true));
+        assert_eq!(review.writes.saves, ["new.ess"]);
+        let _ = fs::remove_dir_all(root);
+    }
 }
 
 #[test]

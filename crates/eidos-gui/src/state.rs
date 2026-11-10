@@ -562,21 +562,6 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
             }
             inst.exists().then_some((i, inst))
         });
-    let open_existing = |app: &mut App, i: usize, inst: Instance| {
-        let id = app.games[i].def.id;
-        // No-op when a manifest exists (every registry-found portable has
-        // one); stamps the legacy manifest-less global otherwise.
-        let _ = inst.ensure_manifest(id, InstanceKind::Global);
-        let _ = inst.ensure_profiles();
-        remember_open(&inst, id);
-        app.selected = Some(i);
-        app.created = Some(inst);
-        // Through `reload_mods`, which also records what `modlist.txt` held: a
-        // window Steam opened is exactly the one most likely to sit next to
-        // another, and without the record its first save could not tell.
-        reload_mods(app);
-        app.screen = Screen::Main;
-    };
     if let Some((i, inst)) = pinned {
         open_existing(&mut app, i, inst);
         if auto.is_some() {
@@ -666,6 +651,27 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         None => startup,
     };
     (app, startup)
+}
+
+/// Open the instance a starting window restores: the last-used one,
+/// `EIDOS_INSTANCE`, or the one a store opened.
+pub(crate) fn open_existing(app: &mut App, i: usize, inst: Instance) {
+    let id = app.games[i].def.id;
+    // No-op when a manifest exists (every registry-found portable has
+    // one); stamps the legacy manifest-less global otherwise.
+    let _ = inst.ensure_manifest(id, InstanceKind::Global);
+    let _ = inst.ensure_profiles();
+    remember_open(&inst, id);
+    app.selected = Some(i);
+    app.created = Some(inst);
+    // Through `reload_mods`, which also records what `modlist.txt` held: a
+    // window Steam opened is exactly the one most likely to sit next to
+    // another, and without the record its first save could not tell.
+    reload_mods(app);
+    app.screen = Screen::Main;
+    // A test run that ended, or died with Eidos or the computer, while no
+    // window was open is closed and reviewed now, as `open_instance` does.
+    load_test_state(app, true);
 }
 
 /// A store started this window with the game's command: name the store, and
