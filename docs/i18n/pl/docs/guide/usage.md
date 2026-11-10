@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=74980544e8dd9f3d8b015a80d84aaf7ead98adf3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=3c1c9a598adcf33acbf8489fda3b3333709f133d -->
 
 # Używanie Eidos
 
@@ -602,6 +602,8 @@ bo nazwanie ich i zostawienie cię z tym to ta nudna połowa.
 Po najechaniu na wtyczkę widać, skąd pochodzi, jej autora, wersję nagłówka i formularza, pierwsze 300 znaków opisu, jej mastery oraz, po sortowaniu LOOT, komunikaty LOOT. W Skyrimie, Skyrimie SE, Skyrimie VR i Enderalu SE gra czyta też plik INI nazwany jak załadowana wtyczka; kolumna INI oznacza takie wtyczki, a kliknięcie otwiera ten plik tylko do odczytu.
 
 Wiersz `.exe` w zakładce Data ma przyciski Add tool, który otwiera edytor Executables z już wypełnionym plikiem (nic nie jest zapisywane do czasu kliknięcia Save), oraz Run, który uruchamia plik jednorazowo przez połączony widok, jak zarejestrowane narzędzie. Zapisz drzewo zapisuje całe scalone drzewo Data do pliku tekstowego, po jednej linii na plik wraz z modem, który go dostarcza, bez folderu domowego i nazwy użytkownika, na potrzeby zgłoszenia błędu.
+
+Zapisy, które Steam Cloud pobiera z innego urządzenia albo które zapisuje uruchomienie bez Eidos, trafiają do własnego folderu zapisów gry, który zapisy profilu przykrywają, dopóki gra działa. Zakładka Saves liczy je w wierszu pod swoim nagłówkiem, a Import kopiuje każdy z nich razem z plikiem co-save do profilu. Zapis, którego nazwy profil już używa, jest importowany jako `orphan-<time>-<name>`; nic w profilu nie zostaje zastąpione.
 
 „Information..." otwiera okno dla pojedynczego moda: ogólne, konflikty, drzewo
 plików, poprawki INI, notatki. Z drzewa plików (i z drzewa Data) każdy plik można

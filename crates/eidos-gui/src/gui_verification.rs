@@ -1301,3 +1301,36 @@ fn an_ini_restore_point_never_moves_the_other_columns() {
         heading
     );
 }
+
+#[test]
+fn the_hidden_saves_notice_never_moves_the_save_rows() {
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    app.saves = vec![eidos_instance::SaveEntry {
+        filename: "Save1.ess".into(),
+        path: PathBuf::from("/p/Save1.ess"),
+        size: 10,
+        mtime: std::time::UNIX_EPOCH,
+    }];
+    let mut renderer = renderer();
+    let row = label(
+        crate::modinfo::saves_panel(&app),
+        &mut renderer,
+        "Save1.ess",
+        0,
+    );
+    app.hidden_saves = vec!["Deck.ess".into()];
+    assert_eq!(
+        label(
+            crate::modinfo::saves_panel(&app),
+            &mut renderer,
+            "Save1.ess",
+            0
+        ),
+        row
+    );
+    assert!(positions(crate::modinfo::saves_panel(&app), &mut renderer)
+        .labels
+        .iter()
+        .any(|(s, _)| s == t("saves_import")));
+}

@@ -794,6 +794,9 @@ pub(crate) enum Message {
     SavesCopyToProfile(String),
     /// Re-scan the saves directory (the tick, while the tab is open).
     SavesTick,
+    /// Copy the prefix saves the profile does not hold into it, never replacing
+    /// one of its saves.
+    SavesImportHidden,
     /// Push every Overwrite file back to the mod that already provides that path
     /// (MO2's "Sync to Mods"). Two clicks: the first arms.
     OverwriteSyncToMods,

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=74980544e8dd9f3d8b015a80d84aaf7ead98adf3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=3c1c9a598adcf33acbf8489fda3b3333709f133d -->
 
 # Eidos verwenden
 
@@ -645,6 +645,8 @@ benennen und Sie damit sitzenzulassen ist die langweilige Hälfte.
 Beim Überfahren eines Plugins erscheinen seine Herkunft, sein Autor, die Header- und die Formularversion, die ersten 300 Zeichen der Beschreibung, seine Master und nach einer LOOT-Sortierung die Meldungen von LOOT. Bei Skyrim, Skyrim SE, Skyrim VR und Enderal SE liest das Spiel zusätzlich eine INI, die nach einem geladenen Plugin benannt ist; die Spalte INI markiert diese Plugins, und ein Klick öffnet die Datei schreibgeschützt.
 
 Eine `.exe`-Zeile im Data-Tab hat Add tool, das den Executables-Editor mit dieser Datei vorausgefüllt öffnet (gespeichert wird erst mit Save), und Run, das die Datei einmal durch die zusammengeführte Ansicht startet, wie ein registriertes Tool. „Baum speichern“ schreibt den gesamten zusammengeführten Data-Baum in eine Textdatei, eine Zeile pro Datei mit dem Mod, der sie liefert, ohne Ihren Home-Ordner und Benutzernamen, für einen Fehlerbericht.
+
+Spielstände, die Steam Cloud von einem anderen Gerät herunterlädt oder die ein Start ohne Eidos schreibt, landen im eigenen Speicherordner des Spiels, den die Spielstände des Profils überdecken, solange das Spiel läuft. Der Saves-Tab zählt sie in der Zeile unter seiner Überschrift, und Import kopiert jeden mit seinem Co-Save ins Profil. Ein Spielstand, dessen Namen das Profil schon verwendet, wird als `orphan-<time>-<name>` importiert; im Profil wird nichts ersetzt.
 
 "Information..." öffnet einen Dialog je Mod: Allgemeines, Konflikte, Dateibaum,
 INI-Anpassungen, Notizen. Aus dem Dateibaum (und aus dem Data-Baum) kann jede

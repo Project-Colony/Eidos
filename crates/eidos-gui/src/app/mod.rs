@@ -555,6 +555,9 @@ pub(crate) struct App {
     // ---- Saves tab (the details pane is the reason for the parse) ----
     /// The active profile's save files (newest first), lazily loaded.
     pub(crate) saves: Vec<SaveEntry>,
+    /// Prefix saves the profile does not hold (Steam Cloud from another device,
+    /// a launch without Eidos), by name; the Saves tab offers to import them.
+    pub(crate) hidden_saves: Vec<String>,
     /// Two-click guard for a save deletion (the save's index in `saves`).
     pub(crate) confirm_delete_save: Option<usize>,
     /// The save whose details pane is open, an index into `saves`.

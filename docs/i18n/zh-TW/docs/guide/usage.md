@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=74980544e8dd9f3d8b015a80d84aaf7ead98adf3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=3c1c9a598adcf33acbf8489fda3b3333709f133d -->
 
 # 使用 Eidos
 
@@ -462,6 +462,8 @@ ESP/ESM/ESL 的載入順序(切換、手動重新排序,或用 LOOT 排序並閱
 將滑鼠停在外掛上,會顯示它的來源、作者、標頭版本與表單版本、說明的前 300 個字元、它的主檔,以及在 LOOT 排序之後 LOOT 的訊息。 在 Skyrim、Skyrim SE、Skyrim VR 與 Enderal SE 上,遊戲還會讀取與已載入外掛同名的 INI;INI 欄會標出這些外掛,點擊即以唯讀方式開啟該檔案。
 
 Data 分頁中的 `.exe` 列有 Add tool 和 Run 兩個按鈕。Add tool 會開啟 Executables 編輯器並填入該檔案(按下 Save 之前不會儲存任何內容);Run 會像已註冊的工具一樣,透過合併檢視把它執行一次。「儲存樹狀」會把合併後的整個 Data 樹寫入文字檔，每個檔案一行，並註明提供它的 Mod，其中已移除您的家目錄與使用者名稱，可用於錯誤回報。
+
+Steam Cloud 從其他裝置下載的存檔,或沒有透過 Eidos 的啟動寫下的存檔,會落進遊戲自己的存檔資料夾,而遊戲執行期間設定檔的存檔會蓋住這個資料夾。Saves 分頁在標題下方那一行顯示它們的數量,Import 會把每個存檔連同它的 co-save 一起複製到設定檔裡。設定檔裡已有同名存檔的,會以 `orphan-<time>-<name>` 匯入;設定檔裡的任何內容都不會被取代。
 
 「Information...」會開啟每個模組專屬的對話框:general、conflicts、filetree、
 INI tweaks、notes。在 filetree 裡(以及在 Data 樹裡),任何檔案都可以被**隱藏** -

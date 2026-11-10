@@ -1664,6 +1664,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::SavesTick
         | Message::SavesDeleteSelected
         | Message::SavesCopyToProfile(..)
+        | Message::SavesImportHidden
         | Message::SelectSave(..)
         | Message::FixSaveMods
         | Message::EnableMissingMasters
@@ -1940,6 +1941,7 @@ pub(crate) fn open_instance(app: &mut App, inst: Instance) {
     // old instance.
     app.plugins = None;
     app.saves = Vec::new();
+    app.hidden_saves = Vec::new();
     app.confirm_delete_save = None;
     app.downloads = Vec::new();
     app.confirm_delete_download = None;

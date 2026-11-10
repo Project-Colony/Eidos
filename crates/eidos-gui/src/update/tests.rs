@@ -7836,3 +7836,28 @@ fn a_saved_tree_answer_disarms_nothing() {
         &Message::DataTreeSaved(Err("disk full".into()))
     ));
 }
+
+#[test]
+fn importing_hidden_saves_copies_them_into_the_profile_and_clears_the_notice() {
+    let (mut app, root) = list_app(&[]);
+    app.games[0].compatdata = Some(root.join("compatdata"));
+    let prefix = app.games[0].saves_path().unwrap();
+    let saves = app.created.as_ref().unwrap().active().saves_dir();
+    let stamp = |path: &std::path::Path, secs: u64| {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, b"save").unwrap();
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs))
+            .unwrap();
+    };
+    stamp(&saves.join(".seeded"), 1_700_000_000);
+    stamp(&prefix.join("Deck.ess"), 1_700_000_100);
+    crate::modinfo::load_saves(&mut app);
+    assert_eq!(app.hidden_saves, vec!["Deck.ess".to_string()]);
+    let _ = update_inner(&mut app, Message::SavesImportHidden);
+    assert!(app.hidden_saves.is_empty());
+    assert!(app.saves.iter().any(|s| s.filename == "Deck.ess"));
+}

@@ -498,10 +498,10 @@ pub(crate) fn sync_saves_for_cloud(
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(e),
             Ok(d) if src_mtime > d => {
-                let key = manifest_key(&dst)?;
+                let key = eidos_instance::save_sync_key(&dst)?;
                 if !manifest.contains(&key)
                     && !siblings
-                        .get_or_insert_with(|| instance_sync_keys(prof_saves))
+                        .get_or_insert_with(|| eidos_instance::instance_sync_keys(prof_saves))
                         .contains(&key)
                 {
                     preserve_diverged_save(&dst, d, prof_saves)?;
@@ -517,7 +517,7 @@ pub(crate) fn sync_saves_for_cloud(
         if let Ok(f) = std::fs::File::options().write(true).open(&dst) {
             let _ = f.set_modified(src_mtime);
         }
-        new_entries.push(manifest_key(&dst)?);
+        new_entries.push(eidos_instance::save_sync_key(&dst)?);
         n += 1;
     }
     if !new_entries.is_empty() {
@@ -526,59 +526,6 @@ pub(crate) fn sync_saves_for_cloud(
         let _ = std::fs::write(&manifest_path, body);
     }
     Ok(n)
-}
-
-/// Every content key any profile of this instance has pushed to the prefix:
-/// `prof_saves` is `<instance>/profiles/<name>/saves`, and all those profiles
-/// bind over the same prefix Saves dir.
-fn instance_sync_keys(prof_saves: &std::path::Path) -> std::collections::HashSet<String> {
-    let Some(profiles) = prof_saves.parent().and_then(|p| p.parent()) else {
-        return Default::default();
-    };
-    std::fs::read_dir(profiles)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter_map(|e| std::fs::read_to_string(e.path().join("saves/.cloud-sync-manifest")).ok())
-        .flat_map(|t| t.lines().map(String::from).collect::<Vec<_>>())
-        .collect()
-}
-
-/// Prefix saves the profile bind will hide for good: written after the profile
-/// was seeded (the `.seeded` marker's mtime), absent from the profile, and never
-/// pushed there by any profile of this instance. A Steam Cloud download from
-/// another device or a launch without Eidos lands here, and nothing pulls it in:
-/// seeding is one-time so saves the user deleted stay deleted. Older names are
-/// that deleted set, so they are not reported.
-fn hidden_prefix_saves(
-    prof_saves: &std::path::Path,
-    prefix_saves: &std::path::Path,
-) -> Vec<String> {
-    let Ok(seeded) = std::fs::metadata(prof_saves.join(".seeded")).and_then(|m| m.modified())
-    else {
-        return Vec::new(); // not seeded yet: the next seed adopts everything
-    };
-    let pushed: std::collections::HashSet<String> = instance_sync_keys(prof_saves)
-        .into_iter()
-        .filter_map(|k| k.split_once('\t').map(|(name, _)| name.to_string()))
-        .collect();
-    std::fs::read_dir(prefix_saves)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter_map(|e| {
-            let name = e.file_name().into_string().ok()?;
-            let newer = e
-                .metadata()
-                .and_then(|m| m.modified())
-                .is_ok_and(|t| t > seeded);
-            (eidos_instance::is_save_listing(&name)
-                && newer
-                && !pushed.contains(&name)
-                && !prof_saves.join(&name).exists())
-            .then_some(name)
-        })
-        .collect()
 }
 
 /// Whether the hidden set differs from the one the last launch warned about,
@@ -601,20 +548,6 @@ fn hidden_saves_changed(prof_saves: &std::path::Path, hidden: &[String]) -> bool
     }
     let _ = std::fs::write(record, body);
     true
-}
-
-/// Content provenance: matching sizes and second-resolution mtimes cannot prove
-/// the prefix still holds our previous copy. A stdlib hash change merely causes
-/// a conservative rescue on the first sync after an upgrade.
-fn manifest_key(path: &std::path::Path) -> std::io::Result<String> {
-    use std::hash::{Hash, Hasher};
-    let mut hash = std::collections::hash_map::DefaultHasher::new();
-    std::fs::read(path)?.hash(&mut hash);
-    Ok(format!(
-        "{}\t{:016x}",
-        path.file_name().unwrap_or_default().to_string_lossy(),
-        hash.finish()
-    ))
 }
 
 /// Preserve an unknown prefix save and all same-stem save data before replacing
@@ -724,17 +657,18 @@ pub(crate) fn prepare_saves(
             prof.name
         );
     }
-    let hidden = hidden_prefix_saves(&prof.saves_dir(), &source);
+    let hidden = prof.hidden_prefix_saves(&source);
     if hidden_saves_changed(&prof.saves_dir(), &hidden) {
         eidos_log::warn!(
             "eidos play: {} save(s) in {} are not in profile '{}' (another device, a launch \
              without Eidos or another instance wrote them) and stay hidden while its saves \
-             are bound; copy them into {} to play them: {}",
+             are bound: {}. Import on the Saves tab copies them into {} and renames any whose \
+             name the profile already uses",
             hidden.len(),
             source.display(),
             prof.name,
-            prof.saves_dir().display(),
-            hidden.join(", ")
+            hidden.join(", "),
+            prof.saves_dir().display()
         );
     }
     Ok(Some((prof.saves_dir(), source)))
@@ -1321,31 +1255,12 @@ mod rescue_tests {
     }
 
     #[test]
-    fn prefix_saves_made_after_seeding_outside_the_instance_are_reported() {
-        let root = std::env::temp_dir().join(format!("eidos-hidden-saves-{}", std::process::id()));
+    fn hidden_saves_are_warned_once_per_change() {
+        let root = std::env::temp_dir().join(format!("eidos-hidden-warned-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let saves = root.join("profiles/Main/saves");
-        let prefix = root.join("prefix");
-        let t = 1_700_000_000;
-        stamped(&saves.join(".seeded"), b"done", t);
-        stamped(&saves.join("Kept.ess"), b"kept", t + 10);
-        // Seeded then deleted by the user: older than the marker, stays deleted.
-        stamped(&prefix.join("Deleted.ess"), b"deleted", t - 10);
-        stamped(&prefix.join("Kept.ess"), b"kept", t + 10);
-        // A sibling profile's own push, not a stranger's.
-        let pushed = root.join("profiles/Other/saves");
-        stamped(&prefix.join("Other.ess"), b"other", t + 10);
-        fs::create_dir_all(&pushed).unwrap();
-        fs::write(
-            pushed.join(".cloud-sync-manifest"),
-            "Other.ess\t0000000000000000\n",
-        )
-        .unwrap();
-        // Made on a Steam Deck and downloaded by Steam Cloud.
-        stamped(&prefix.join("Deck.ess"), b"deck", t + 10);
-        stamped(&prefix.join("Deck.skse"), b"deck cosave", t + 10);
-        let hidden = hidden_prefix_saves(&saves, &prefix);
-        assert_eq!(hidden, vec!["Deck.ess".to_string()]);
+        fs::create_dir_all(&saves).unwrap();
+        let hidden = vec!["Deck.ess".to_string()];
         // Warned once per change, not on every launch.
         assert!(hidden_saves_changed(&saves, &hidden));
         assert!(!hidden_saves_changed(&saves, &hidden));

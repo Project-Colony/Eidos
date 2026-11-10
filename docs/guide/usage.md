@@ -585,6 +585,8 @@ Hovering a plugin shows where it comes from, its author, its header and form ver
 
 An `.exe` row in Data has Add tool, which opens the Executables editor with that file filled in (nothing is saved until you press Save), and Run, which runs it once through the merged view like a registered tool. Save tree writes the whole merged Data tree to a text file, one line per file with the mod that provides it, with your home folder and user name removed, for a bug report.
 
+Saves that Steam Cloud downloads from another device, or that a launch without Eidos writes, land in the game's own save folder, which the profile's saves cover while the game runs. The Saves tab counts them on the line under its heading, and Import copies each one with its co-save into the profile. A save whose name the profile already uses is imported as `orphan-<time>-<name>`; nothing in the profile is replaced.
+
 "Information..." opens a per-mod dialog: general, conflicts, filetree, INI
 tweaks, notes. From the filetree (and from the Data tree) any file can be
 **hidden** - renamed to `<name>.mohidden`, which drops it out of the virtual view

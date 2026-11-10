@@ -455,6 +455,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         view_menu_open: false,
         about_open: false,
         saves: Vec::new(),
+        hidden_saves: Vec::new(),
         confirm_delete_save: None,
         selected_save: None,
         save_info: None,
@@ -3345,6 +3346,7 @@ pub(crate) fn switch_to_profile(app: &mut App, name: &str) -> bool {
     bump_views(app);
     // Saves are per-profile; drop the cache so the Saves tab reloads.
     app.saves = Vec::new();
+    app.hidden_saves = Vec::new();
     app.confirm_delete_save = None;
     // The LOOT badges were computed against the OLD profile's load order.
     app.loot_meta = None;

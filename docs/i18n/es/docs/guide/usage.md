@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=74980544e8dd9f3d8b015a80d84aaf7ead98adf3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=3c1c9a598adcf33acbf8489fda3b3333709f133d -->
 
 # Usar Eidos
 
@@ -621,6 +621,8 @@ porque nombrarlos y dejarte a ti el resto es la mitad aburrida.
 Al pasar el cursor sobre un plugin se muestran su origen, su autor, la versión de cabecera y de formulario, los primeros 300 caracteres de su descripción, sus masters y, tras una ordenación con LOOT, los mensajes de LOOT. En Skyrim, Skyrim SE, Skyrim VR y Enderal SE el juego también lee un INI con el nombre de un plugin cargado; la columna INI marca esos plugins y un clic abre el archivo en modo de solo lectura.
 
 Una fila `.exe` en Data tiene Add tool, que abre el editor de Executables con ese archivo ya rellenado (nada se guarda hasta pulsar Save), y Run, que lo ejecuta una vez a través de la vista combinada como una herramienta registrada. Guardar árbol escribe todo el árbol Data combinado en un archivo de texto, una línea por archivo con el mod que lo aporta, sin su carpeta personal ni su nombre de usuario, para un informe de error.
+
+Las partidas que Steam Cloud descarga desde otro dispositivo, o que escribe un lanzamiento sin Eidos, llegan a la carpeta de partidas del propio juego, que las partidas del perfil cubren mientras el juego se ejecuta. La pestaña Saves las cuenta en la línea bajo su título, e Import copia cada una con su co-save al perfil. Una partida cuyo nombre ya usa el perfil se importa como `orphan-<time>-<name>`; no se reemplaza nada del perfil.
 
 «Information...» abre un diálogo por mod: general, conflictos, árbol de archivos,
 ajustes INI, notas. Desde el árbol de archivos (y desde el árbol Data) cualquier

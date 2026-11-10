@@ -154,10 +154,54 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
         bar.into()
     });
 
-    let mut list = Column::new()
-        .spacing(6)
-        .push(header)
-        .push(text(dir.display().to_string()).size(sz(10)));
+    // The folder line doubles as the hidden-saves slot: one line of fixed
+    // height, so the notice appearing never moves the save rows.
+    let mut folder = Row::new()
+        .spacing(8)
+        .height(Length::Fixed(scaled(26.0)))
+        .align_y(iced::Alignment::Center)
+        .push(
+            container(
+                text(dir.display().to_string())
+                    .size(sz(10))
+                    .wrapping(iced::widget::text::Wrapping::None),
+            )
+            .width(Length::Fill)
+            .clip(true),
+        );
+    if !app.hidden_saves.is_empty() {
+        let mut names = app
+            .hidden_saves
+            .iter()
+            .take(10)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n");
+        if app.hidden_saves.len() > 10 {
+            names.push('\n');
+            names.push_str(&tf(
+                "plugins_and_more",
+                &[("n", &(app.hidden_saves.len() - 10))],
+            ));
+        }
+        folder = folder
+            .push(tooltip(
+                text(tf("saves_hidden_notice", &[("n", &app.hidden_saves.len())]))
+                    .size(sz(11))
+                    .wrapping(iced::widget::text::Wrapping::None),
+                container(text(names).size(sz(11)))
+                    .padding(6)
+                    .style(card_style),
+                tooltip::Position::Bottom,
+            ))
+            .push(
+                button(text(t("saves_import")).size(sz(11)))
+                    .padding(4)
+                    .on_press(Message::SavesImportHidden),
+            );
+    }
+
+    let mut list = Column::new().spacing(6).push(header).push(folder);
     if let Some(bar) = batch {
         list = list.push(bar);
     }
@@ -315,6 +359,13 @@ pub(crate) fn load_saves(app: &mut App) {
     app.saves = match &app.created {
         Some(inst) => inst.savegames(),
         None => Vec::new(),
+    };
+    app.hidden_saves = match (
+        &app.created,
+        selected_game(app).and_then(|g| g.saves_path()),
+    ) {
+        (Some(inst), Some(path)) => inst.active().hidden_prefix_saves(&path),
+        _ => Vec::new(),
     };
     app.confirm_delete_save = None;
     // Indices just moved; a selection kept across the reload could point at a

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=74980544e8dd9f3d8b015a80d84aaf7ead98adf3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=3c1c9a598adcf33acbf8489fda3b3333709f133d -->
 
 # Eidos kullanımı
 
@@ -598,6 +598,8 @@ gerisini size bırakmak işin sıkıcı yarısıdır.
 Bir eklentinin üzerine gelince kaynağı, yazarı, başlık ve form sürümü, açıklamasının ilk 300 karakteri, master dosyaları ve LOOT sıralamasından sonra LOOT iletileri görünür. Skyrim, Skyrim SE, Skyrim VR ve Enderal SE'de oyun, yüklenen bir eklentinin adını taşıyan bir INI dosyasını da okur; INI sütunu bu eklentileri işaretler ve tıklamak dosyayı salt okunur açar.
 
 Data sekmesindeki bir `.exe` satırında Add tool ve Run bulunur. Add tool, Executables düzenleyicisini o dosya doldurulmuş olarak açar (Save'e basana kadar hiçbir şey kaydedilmez). Run, dosyayı kayıtlı bir araç gibi birleşik görünüm üzerinden bir kez çalıştırır. Ağacı kaydet, birleştirilmiş Data ağacının tamamını bir metin dosyasına yazar; her dosya için bir satır ve dosyayı sağlayan mod yer alır, ana klasörünüz ve kullanıcı adınız çıkarılır, hata raporu içindir.
+
+Steam Cloud'un başka bir cihazdan indirdiği ya da Eidos olmadan yapılan bir başlatmanın yazdığı kayıtlar, oyunun kendi kayıt klasörüne iner; oyun çalışırken profilin kayıtları bu klasörün üzerini örter. Saves sekmesi bunları başlığının altındaki satırda sayar, Import da her birini co-save dosyasıyla birlikte profile kopyalar. Adını profilin zaten kullandığı bir kayıt `orphan-<time>-<name>` olarak içe aktarılır; profildeki hiçbir şey değiştirilmez.
 
 "Information...", mod başına bir iletişim kutusu açar: genel, çakışmalar, dosya
 ağacı, INI ayarlamaları, notlar. Dosya ağacından (ve Data ağacından) herhangi bir
