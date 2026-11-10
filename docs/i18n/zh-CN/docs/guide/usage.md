@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=28cada8f5976ca2734f3bcdf3e7f48913c15e05b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=f0691af21e1c6f78e20f42b440dc4cf9e4328a67 -->
 
 # 使用 Eidos
 
@@ -486,8 +486,15 @@ PATH 上的 `~/.cargo/bin`):
 ```
 
 Eidos 会在这款游戏的实例上打开 - 你上次用的那一个,所以便携实例和全局实例一样能被重新
-找到;点 Run 让它穿过合并视图启动。(如果你在 Steam 之外按下 Run 按钮,它会显示这一行
-的确切内容,并带上正在运行的二进制的真实路径。)
+找到;点 Run 让它穿过合并视图启动。
+
+在 Steam 之外,Run 不会自己用 Proton 或 Wine 启动游戏。它请拥有这份副本的商店来启动,再由商店启动 Eidos:
+
+- Steam:设好上面的启动选项后,运行 `steam -applaunch <appid>`。Steam 没开时会先启动 Steam。
+- Heroic(GOG 或 Epic 副本,原生版或 Flatpak 版):当 Eidos 是 Heroic 里该游戏设置中的一个包装器(wrapper),可执行文件为 `eidos-gui` 的绝对路径且不带参数时,它会收到一个 `heroic://launch` 链接。Heroic 没开时会先启动 Heroic。
+- 单独的 Legendary:当 `~/.config/legendary/config.ini` 在游戏的 `[<app>]` 段或 `[default]` 下有 `wrapper =` 加 `eidos-gui` 的绝对路径时,运行 `legendary launch <app>`。
+
+随后 Eidos 会在你上次用的实例上打开第二个窗口,你在那里点 Run。第一个窗口不跟踪这次运行,所以玩完后在它里面按 F5 重新载入列表。商店的设置缺失,或脚本扩展器的 loader 不在游戏可执行文件旁边时,Run 什么也不启动,并显示要在哪里设置什么,带上正在运行的二进制的真实路径。
 
 Bethesda 各作在 Steam 里的 `%command%` 通常指向 `<Game>Launcher.exe`。Eidos 从不运行
 它:那个 launcher 是一个独立的设置程序,它会重新扫描 `Data` 并重写 `plugins.txt`,把

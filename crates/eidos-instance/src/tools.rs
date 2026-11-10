@@ -301,6 +301,20 @@ pub struct GameExecutables<'a> {
     pub known_tools: &'a [(&'a str, &'a str)],
 }
 
+impl GameExecutables<'_> {
+    /// True when `exe` is the script-extender loader, the vanilla launcher or the
+    /// game binary, by file name and ignoring ASCII case.
+    pub fn launches_the_game(&self, exe: &Path) -> bool {
+        let Some(name) = exe.file_name().and_then(|n| n.to_str()) else {
+            return false;
+        };
+        [self.script_extender, self.launcher, self.binary]
+            .into_iter()
+            .flatten()
+            .any(|g| g.eq_ignore_ascii_case(name))
+    }
+}
+
 /// The extra places a known tool might be, for one instance: its own mods pool,
 /// and the shared tools directory the user configured.
 ///

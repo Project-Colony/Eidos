@@ -630,8 +630,26 @@ binary's absolute path (Steam doesn't see `~/.cargo/bin` on PATH):
 
 Eidos opens on the game's instance - the one you last used, so a portable
 instance is found again just like the global one; click Run to launch it
-through the merged view. (The Run button shows this exact line, with the
-running binary's real path, if you press it outside Steam.)
+through the merged view.
+
+Outside Steam, Run does not start the game through Proton or Wine itself. It
+asks the store that owns the copy to start it, and the store starts Eidos:
+
+- Steam runs `steam -applaunch <appid>` when the launch option above is set.
+  Steam starts first if it is closed.
+- Heroic (a GOG or Epic copy, native or Flatpak) gets a `heroic://launch` link
+  when Eidos is a wrapper in the game's settings in Heroic, with the absolute
+  path of `eidos-gui` as the executable and no arguments. Heroic starts first if
+  it is closed.
+- Legendary on its own runs `legendary launch <app>` when
+  `~/.config/legendary/config.ini` has `wrapper =` and the absolute path of
+  `eidos-gui` under the game's `[<app>]` section, or under `[default]`.
+
+Eidos then opens a second window on the instance you used last, and you click
+Run there. The first window does not follow that run, so press F5 in it after
+playing to reload its lists. When the store's setting is missing, or the script
+extender's loader is not next to the game's executable, Run starts nothing and
+shows what to set and where, with the running binary's real path.
 
 Steam's `%command%` for the Bethesda titles usually points at
 `<Game>Launcher.exe`. Eidos never runs it: the launcher is a separate settings

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=28cada8f5976ca2734f3bcdf3e7f48913c15e05b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=f0691af21e1c6f78e20f42b440dc4cf9e4328a67 -->
 
 # Eidos kullanımı
 
@@ -650,8 +650,27 @@ dosyanın mutlak yoluna ayarlayın (Steam, PATH'te `~/.cargo/bin`'i görmez):
 
 Eidos o oyunun örneğinde açılır - en son kullandığınızda, yani taşınabilir bir
 örnek de global olan gibi yeniden bulunur; birleşik görünüm üzerinden başlatmak
-için Run'a tıklayın. (Run düğmesine Steam dışında basarsanız, düğme çalışan ikili
-dosyanın gerçek yoluyla tam olarak bu satırı gösterir.)
+için Run'a tıklayın.
+
+Steam dışında Run oyunu kendisi Proton ya da Wine ile başlatmaz. Kopyanın sahibi
+olan mağazadan onu başlatmasını ister, mağaza da Eidos'u başlatır:
+
+- Steam, yukarıdaki başlatma seçeneği ayarlıysa `steam -applaunch <appid>`
+  çalıştırır. Steam kapalıysa önce Steam açılır.
+- Heroic (GOG ya da Epic kopyası, yerel ya da Flatpak), Eidos oyunun Heroic'teki
+  ayarlarında, çalıştırılabilir dosya olarak `eidos-gui`'nin mutlak yolu ve hiç
+  argüman olmadan bir wrapper olduğunda bir `heroic://launch` bağlantısı alır.
+  Heroic kapalıysa önce Heroic açılır.
+- Tek başına Legendary, `~/.config/legendary/config.ini` dosyasında oyunun
+  `[<app>]` bölümünde ya da `[default]` altında `wrapper =` ve `eidos-gui`'nin
+  mutlak yolu varsa `legendary launch <app>` çalıştırır.
+
+Eidos ardından en son kullandığınız örnekte ikinci bir pencere açar ve Run'a
+orada tıklarsınız. İlk pencere o çalıştırmayı izlemez; listelerini yeniden
+yüklemek için oynadıktan sonra orada F5'e basın. Mağazadaki ayar eksikse ya da
+script extender'ın loader'ı oyunun çalıştırılabilir dosyasının yanında değilse,
+Run hiçbir şey başlatmaz ve neyin nereye ayarlanacağını, çalışan ikili dosyanın
+gerçek yoluyla gösterir.
 
 Bethesda oyunları için Steam'in `%command%` değeri genellikle
 `<Game>Launcher.exe`'yi gösterir. Eidos onu asla çalıştırmaz: başlatıcı, `Data`'yı

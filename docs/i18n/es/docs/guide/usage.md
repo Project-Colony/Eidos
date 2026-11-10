@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=28cada8f5976ca2734f3bcdf3e7f48913c15e05b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=f0691af21e1c6f78e20f42b440dc4cf9e4328a67 -->
 
 # Usar Eidos
 
@@ -674,8 +674,27 @@ el PATH):
 
 Eidos se abre en la instancia de ese juego - la última que usaste, así que una
 instancia portátil se vuelve a encontrar igual que la global; pulsa Run para
-lanzarlo a través de la vista combinada. (El botón Run muestra esta línea exacta,
-con la ruta real del binario en ejecución, si lo pulsas fuera de Steam.)
+lanzarlo a través de la vista combinada.
+
+Fuera de Steam, Run no inicia el juego por su cuenta con Proton o Wine. Pide a
+la tienda dueña de la copia que lo inicie, y la tienda inicia Eidos:
+
+- Steam ejecuta `steam -applaunch <appid>` cuando la opción de lanzamiento de
+  arriba está puesta. Si Steam está cerrado, se abre primero.
+- Heroic (una copia de GOG o Epic, nativa o Flatpak) recibe un enlace
+  `heroic://launch` cuando Eidos es un wrapper en los ajustes del juego en
+  Heroic, con la ruta absoluta de `eidos-gui` como ejecutable y sin argumentos.
+  Si Heroic está cerrado, se abre primero.
+- Legendary por sí solo ejecuta `legendary launch <app>` cuando
+  `~/.config/legendary/config.ini` tiene `wrapper =` y la ruta absoluta de
+  `eidos-gui` en la sección `[<app>]` del juego, o en `[default]`.
+
+Eidos abre entonces una segunda ventana en la instancia que usaste por última
+vez, y pulsas Run allí. La primera ventana no sigue esa partida, así que pulsa
+F5 en ella después de jugar para recargar sus listas. Cuando falta el ajuste de
+la tienda, o el loader del script extender no está junto al ejecutable del
+juego, Run no inicia nada y muestra qué poner y dónde, con la ruta real del
+binario en ejecución.
 
 El `%command%` de Steam para los títulos de Bethesda suele apuntar a
 `<Game>Launcher.exe`. Eidos nunca lo ejecuta: el launcher es una aplicación de

@@ -45,18 +45,6 @@ pub(crate) fn game_executables(game: &DetectedGame) -> eidos_instance::GameExecu
     }
 }
 
-/// True when `exe` is the script-extender loader, the vanilla launcher or the
-/// game binary, by file name and ignoring ASCII case.
-pub(crate) fn launches_the_game(execs: eidos_instance::GameExecutables<'_>, exe: &Path) -> bool {
-    let Some(name) = exe.file_name().and_then(|n| n.to_str()) else {
-        return false;
-    };
-    [execs.script_extender, execs.launcher, execs.binary]
-        .into_iter()
-        .flatten()
-        .any(|g| g.eq_ignore_ascii_case(name))
-}
-
 /// Variables a store sets on the process it starts. Steam exports the first two.
 /// Heroic exports the `HEROIC_*` pair for every wrapper command, Legendary games
 /// included (it launches them for Heroic, source `epic`). The bare `legendary`
@@ -338,7 +326,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 }
                 exe.clone()
             });
-            let runs_game = launches_the_game(game_executables(&game), &tool.exe);
+            let runs_game = game_executables(&game).launches_the_game(&tool.exe);
             let store_started =
                 store_started_in(std::env::vars_os().filter_map(|(k, _)| k.into_string().ok()));
             if let Some(msg) = game_entry_refusal(runs_game, store_started) {
@@ -849,12 +837,12 @@ mod root_tool_tests {
             script_extender: Some("skse64_loader.exe"),
             known_tools: &[],
         };
-        assert!(launches_the_game(execs, Path::new("skse64_loader.exe")));
-        assert!(launches_the_game(execs, Path::new("/g/SKSE64_LOADER.EXE")));
-        assert!(launches_the_game(execs, Path::new("SkyrimSE.exe")));
-        assert!(launches_the_game(execs, Path::new("SkyrimSELauncher.exe")));
-        assert!(!launches_the_game(execs, Path::new("/t/SSEEdit.exe")));
-        assert!(!launches_the_game(execs, Path::new("/t/SkyrimSE.exe.bak")));
+        assert!(execs.launches_the_game(Path::new("skse64_loader.exe")));
+        assert!(execs.launches_the_game(Path::new("/g/SKSE64_LOADER.EXE")));
+        assert!(execs.launches_the_game(Path::new("SkyrimSE.exe")));
+        assert!(execs.launches_the_game(Path::new("SkyrimSELauncher.exe")));
+        assert!(!execs.launches_the_game(Path::new("/t/SSEEdit.exe")));
+        assert!(!execs.launches_the_game(Path::new("/t/SkyrimSE.exe.bak")));
     }
 
     #[test]

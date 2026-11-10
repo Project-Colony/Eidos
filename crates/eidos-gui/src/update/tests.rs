@@ -5616,6 +5616,51 @@ fn run_is_blocked_before_spawning_while_the_mod_list_cannot_be_trusted() {
 }
 
 #[test]
+fn run_without_a_launch_option_or_game_tool_shows_the_hint_without_overrides() {
+    let (mut app, root) = list_app(&[]);
+    app.tools.clear();
+    let _ = update_inner(&mut app, Message::Run);
+    assert!(app.running.is_none());
+    let status = app.status.clone().unwrap_or_default();
+    assert!(status.contains("%command%"), "{status}");
+    assert!(!status.contains("WINEDLLOVERRIDES"), "{status}");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_game_entry_outside_a_store_window_takes_the_hand_off_not_a_tool_run() {
+    // Steam copy without `compatdata`: the hint comes before any read or spawn.
+    let (mut app, root) = list_app(&[]);
+    app.tools = vec![eidos_instance::Tool {
+        title: "SKSE".into(),
+        exe: "skse64_loader.exe".into(),
+        ..Default::default()
+    }];
+    app.tool_choice = Some("SKSE".into());
+    let _ = update_inner(&mut app, Message::Run);
+    assert!(app.running.is_none());
+    let status = app.status.clone().unwrap_or_default();
+    assert!(status.contains("%command%"), "{status}");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn the_hand_off_pick_is_taken_once() {
+    let (app, root) = list_app(&[]);
+    let inst = app.created.as_ref().unwrap();
+    crate::state::remember_handoff_pick(inst, Some("SKSE"));
+    assert_eq!(
+        crate::state::take_handoff_pick(inst).as_deref(),
+        Some("SKSE")
+    );
+    assert_eq!(crate::state::take_handoff_pick(inst), None);
+    crate::state::remember_handoff_pick(inst, Some("SKSE"));
+    crate::state::remember_handoff_pick(inst, None);
+    assert_eq!(crate::state::take_handoff_pick(inst), None);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn setup_prereqs_is_refused_while_a_run_is_tracked() {
     // winetricks and the running game share one prefix.
     let (mut app, root) = list_app(&["Keep"]);

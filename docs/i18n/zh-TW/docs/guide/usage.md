@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=28cada8f5976ca2734f3bcdf3e7f48913c15e05b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=f0691af21e1c6f78e20f42b440dc4cf9e4328a67 -->
 
 # 使用 Eidos
 
@@ -502,8 +502,15 @@ PATH 上的 `~/.cargo/bin`):
 ```
 
 Eidos 會在該遊戲的實例上開啟 - 你上次用的那一個,所以可攜實例和全域實例一樣會被再
-找到;點 Run 就會穿過合併檢視啟動它。(如果你在 Steam 之外按下 Run 按鈕,它會顯示
-這一行,帶著執行中執行檔的真實路徑。)
+找到;點 Run 就會穿過合併檢視啟動它。
+
+在 Steam 之外,Run 不會自己用 Proton 或 Wine 啟動遊戲。它請擁有這份副本的商店來啟動,再由商店啟動 Eidos:
+
+- Steam:設好上面的啟動選項後,執行 `steam -applaunch <appid>`。Steam 沒開時會先啟動 Steam。
+- Heroic(GOG 或 Epic 副本,原生版或 Flatpak 版):當 Eidos 是 Heroic 裡該遊戲設定中的一個包裝器(wrapper),執行檔為 `eidos-gui` 的絕對路徑且不帶參數時,它會收到一個 `heroic://launch` 連結。Heroic 沒開時會先啟動 Heroic。
+- 單獨的 Legendary:當 `~/.config/legendary/config.ini` 在遊戲的 `[<app>]` 區段或 `[default]` 下有 `wrapper =` 加上 `eidos-gui` 的絕對路徑時,執行 `legendary launch <app>`。
+
+接著 Eidos 會在你上次用的實例上開啟第二個視窗,你在那裡點 Run。第一個視窗不會追蹤這次執行,所以玩完後在它裡面按 F5 重新載入清單。商店的設定缺少,或 script extender 的 loader 不在遊戲執行檔旁邊時,Run 什麼也不啟動,並顯示要在哪裡設定什麼,帶著執行中執行檔的真實路徑。
 
 Bethesda 那幾款作品的 Steam `%command%` 通常指向 `<Game>Launcher.exe`。Eidos 從不
 執行它:那個啟動器是一支獨立的設定程式,它會重新掃描 `Data` 並改寫 `plugins.txt`,

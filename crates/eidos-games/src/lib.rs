@@ -19,7 +19,9 @@ use std::path::{Path, PathBuf};
 
 mod paths;
 mod stores;
-pub use stores::{select_installation, GameSource, Store};
+pub use stores::{
+    heroic_wrappers, legendary_wrapper, plain_app_id, select_installation, GameSource, Store,
+};
 mod steam_config;
 pub use steam_config::steam_launch_options;
 mod proton;

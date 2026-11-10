@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=28cada8f5976ca2734f3bcdf3e7f48913c15e05b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=f0691af21e1c6f78e20f42b440dc4cf9e4328a67 -->
 
 # Utiliser Eidos
 
@@ -700,9 +700,28 @@ le chemin absolu du binaire (Steam ne voit pas `~/.cargo/bin` dans le PATH) :
 
 Eidos s'ouvre sur l'instance de ce jeu - celle que vous avez utilisée en dernier,
 si bien qu'une instance portable est retrouvée tout comme la globale ; cliquez
-sur Run pour le lancer à travers la vue fusionnée. (Le bouton Run affiche
-exactement cette ligne, avec le vrai chemin du binaire en cours d'exécution, si
-vous l'actionnez hors de Steam.)
+sur Run pour le lancer à travers la vue fusionnée.
+
+Hors de Steam, Run ne démarre pas le jeu lui-même avec Proton ou Wine. Il
+demande à la boutique qui possède la copie de le démarrer, et la boutique
+démarre Eidos :
+
+- Steam exécute `steam -applaunch <appid>` quand l'option de lancement ci-dessus
+  est réglée. Steam démarre d'abord s'il est fermé.
+- Heroic (une copie GOG ou Epic, native ou Flatpak) reçoit un lien
+  `heroic://launch` quand Eidos est un wrapper dans les réglages du jeu dans
+  Heroic, avec le chemin absolu de `eidos-gui` comme exécutable et aucun
+  argument. Heroic démarre d'abord s'il est fermé.
+- Legendary seul exécute `legendary launch <app>` quand
+  `~/.config/legendary/config.ini` contient `wrapper =` et le chemin absolu de
+  `eidos-gui` dans la section `[<app>]` du jeu, ou dans `[default]`.
+
+Eidos ouvre alors une deuxième fenêtre sur l'instance utilisée en dernier, et
+vous cliquez sur Run dans celle-ci. La première fenêtre ne suit pas cette
+partie : appuyez sur F5 dans celle-ci après avoir joué pour recharger ses
+listes. Quand le réglage de la boutique manque, ou que le loader de l'extenseur
+de scripts n'est pas à côté de l'exécutable du jeu, Run ne démarre rien et
+indique quoi régler et où, avec le vrai chemin du binaire en cours d'exécution.
 
 Le `%command%` de Steam pour les titres Bethesda pointe le plus souvent sur
 `<Game>Launcher.exe`. Eidos ne l'exécute jamais : le launcher est une application

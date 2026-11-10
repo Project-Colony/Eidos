@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=28cada8f5976ca2734f3bcdf3e7f48913c15e05b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=f0691af21e1c6f78e20f42b440dc4cf9e4328a67 -->
 
 # Používání Eidosu
 
@@ -623,8 +623,26 @@ absolutní cestu k binárce (Steam nevidí `~/.cargo/bin` v PATH):
 
 Eidos se otevře na instanci té hry - té, kterou jste použili naposledy, takže
 přenosná instance se najde znovu stejně jako globální; kliknutím na Run ji
-spustíte skrz sloučený pohled. (Tlačítko Run ukáže přesně tento řádek, se
-skutečnou cestou ke spuštěné binárce, pokud jej stisknete mimo Steam.)
+spustíte skrz sloučený pohled.
+
+Mimo Steam Run nespouští hru sám přes Proton nebo Wine. Požádá obchod, kterému
+kopie patří, aby ji spustil, a obchod spustí Eidos:
+
+- Steam spustí `steam -applaunch <appid>`, když je nastavena výše uvedená volba
+  spuštění. Je-li Steam zavřený, spustí se nejdřív Steam.
+- Heroic (kopie z GOG nebo Epic, nativní nebo Flatpak) dostane odkaz
+  `heroic://launch`, když je Eidos wrapperem v nastavení hry v Heroicu, s
+  absolutní cestou k `eidos-gui` jako spustitelným souborem a bez argumentů.
+  Je-li Heroic zavřený, spustí se nejdřív Heroic.
+- Samotný Legendary spustí `legendary launch <app>`, když
+  `~/.config/legendary/config.ini` obsahuje `wrapper =` a absolutní cestu k
+  `eidos-gui` v sekci hry `[<app>]` nebo v `[default]`.
+
+Eidos pak otevře druhé okno na instanci, kterou jste použili naposledy, a v něm
+kliknete na Run. První okno tento běh nesleduje, proto v něm po hraní stiskněte
+F5, aby se znovu načetly jeho seznamy. Když nastavení v obchodě chybí nebo
+loader script extenderu neleží vedle spustitelného souboru hry, Run nic nespustí
+a ukáže, co a kde nastavit, se skutečnou cestou ke spuštěné binárce.
 
 `%command%` ze Steamu u titulů Bethesdy obvykle ukazuje na
 `<Game>Launcher.exe`. Eidos jej nikdy nespouští: launcher je samostatná

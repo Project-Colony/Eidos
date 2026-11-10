@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=28cada8f5976ca2734f3bcdf3e7f48913c15e05b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=f0691af21e1c6f78e20f42b440dc4cf9e4328a67 -->
 
 # Eidos verwenden
 
@@ -703,9 +703,29 @@ nicht):
 
 Eidos öffnet sich auf der Instanz des Spiels - der zuletzt benutzten, sodass eine
 portable Instanz genauso wiedergefunden wird wie die globale; klicken Sie auf
-Run, um es durch den zusammengeführten Blick zu starten. (Der Run-Knopf zeigt
-genau diese Zeile, mit dem echten Pfad der laufenden Binärdatei, wenn Sie ihn
-außerhalb von Steam drücken.)
+Run, um es durch den zusammengeführten Blick zu starten.
+
+Außerhalb von Steam startet Run das Spiel nicht selbst über Proton oder Wine. Es
+bittet den Store, dem die Kopie gehört, sie zu starten, und der Store startet
+Eidos:
+
+- Steam führt `steam -applaunch <appid>` aus, wenn die Startoption oben gesetzt
+  ist. Ist Steam geschlossen, startet es zuerst.
+- Heroic (eine GOG- oder Epic-Kopie, nativ oder als Flatpak) bekommt einen
+  `heroic://launch`-Link, wenn Eidos in den Einstellungen des Spiels in Heroic
+  ein Wrapper ist, mit dem absoluten Pfad von `eidos-gui` als ausführbarer Datei
+  und ohne Argumente. Ist Heroic geschlossen, startet es zuerst.
+- Legendary allein führt `legendary launch <app>` aus, wenn
+  `~/.config/legendary/config.ini` im Abschnitt `[<app>]` des Spiels oder unter
+  `[default]` die Zeile `wrapper =` mit dem absoluten Pfad von `eidos-gui`
+  enthält.
+
+Eidos öffnet dann ein zweites Fenster auf der zuletzt benutzten Instanz, und Sie
+klicken dort auf Run. Das erste Fenster verfolgt diesen Lauf nicht; drücken Sie
+darin nach dem Spielen F5, um seine Listen neu zu laden. Fehlt die Einstellung
+im Store oder liegt der Loader des Script Extenders nicht neben der ausführbaren
+Datei des Spiels, startet Run nichts und zeigt, was wo zu setzen ist, mit dem
+echten Pfad der laufenden Binärdatei.
 
 Steams `%command%` zeigt bei den Bethesda-Titeln meist auf `<Game>Launcher.exe`.
 Eidos führt ihn nie aus: der Launcher ist eine eigene Einstellungs-App, die

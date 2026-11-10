@@ -543,7 +543,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     if let Some((i, inst)) = pinned {
         open_existing(&mut app, i, inst);
         if auto.is_some() {
-            app.status = Some(t("status_launched_from_steam").to_string());
+            opened_by_store(&mut app, i);
         }
     } else if let Some(i) = auto {
         app.selected = Some(i);
@@ -555,7 +555,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
             });
         if let Some(inst) = found {
             open_existing(&mut app, i, inst);
-            app.status = Some(t("status_launched_from_steam").to_string());
+            opened_by_store(&mut app, i);
         }
     } else if let Some(k) = app.known.first() {
         // Standalone: open the last-used instance if it still exists, else the
@@ -610,6 +610,37 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         None => startup,
     };
     (app, startup)
+}
+
+/// A store started this window with the game's command: name the store, and
+/// preselect the Run list entry the window that handed the game over had picked.
+fn opened_by_store(app: &mut App, i: usize) {
+    let store = app.games[i].source_name();
+    app.status = Some(tf("status_launched_from_steam", &[("store", &store)]));
+    app.tool_choice = app.created.as_ref().and_then(take_handoff_pick);
+}
+
+/// Where Run's hand-off leaves its Run list pick for the window the store opens.
+fn handoff_pick_path(inst: &Instance) -> PathBuf {
+    inst.root.join("handoff-pick.txt")
+}
+
+/// Record the Run list entry picked when Run handed the game to its store;
+/// `None` (the game itself) clears an older pick.
+pub(crate) fn remember_handoff_pick(inst: &Instance, pick: Option<&str>) {
+    let path = handoff_pick_path(inst);
+    let _ = match pick {
+        Some(title) => fs::write(path, title),
+        None => fs::remove_file(path),
+    };
+}
+
+/// The pick [`remember_handoff_pick`] left, once: reading it removes it.
+pub(crate) fn take_handoff_pick(inst: &Instance) -> Option<String> {
+    let path = handoff_pick_path(inst);
+    let pick = fs::read_to_string(&path).ok();
+    let _ = fs::remove_file(path);
+    pick.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
 /// Reload the tool list for the open instance (user `tools.ini` + per-game

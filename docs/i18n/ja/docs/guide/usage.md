@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=28cada8f5976ca2734f3bcdf3e7f48913c15e05b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=f0691af21e1c6f78e20f42b440dc4cf9e4328a67 -->
 
 # Eidos の使い方
 
@@ -599,8 +599,15 @@ GUI からゲームを起動するには、そのゲームの Steam 起動オプ
 
 Eidos はそのゲームのインスタンスで開きます - 最後に使ったものなので、ポータブル
 インスタンスもグローバルと同じように見つかります。Run を押せば統合ビュー越しに
-起動します。(Steam の外で Run を押すと、この行そのものが、動いている実行
-ファイルの実際のパス入りで表示されます。)
+起動します。
+
+Steam の外では、Run は Proton や Wine でゲームを自分で起動しません。そのコピーを持つストアに起動を頼み、ストアが Eidos を起動します。
+
+- Steam は、上の起動オプションが設定されていれば `steam -applaunch <appid>` を実行します。Steam が閉じていれば先に Steam が起動します。
+- Heroic (GOG または Epic のコピー、ネイティブ版でも Flatpak 版でも) は、Heroic のゲーム設定で Eidos がラッパー (wrapper) になっていて、実行ファイルが `eidos-gui` の絶対パスで引数がないとき、`heroic://launch` リンクを受け取ります。Heroic が閉じていれば先に Heroic が起動します。
+- Legendary 単体は、`~/.config/legendary/config.ini` のゲームの `[<app>]` セクションか `[default]` に `wrapper =` と `eidos-gui` の絶対パスがあるとき、`legendary launch <app>` を実行します。
+
+すると Eidos は最後に使ったインスタンスで 2 つ目のウィンドウを開くので、そちらで Run を押します。最初のウィンドウはその実行を追わないため、遊び終えたらそのウィンドウで F5 を押してリストを読み直してください。ストアの設定がない場合や、スクリプトエクステンダーのローダーがゲームの実行ファイルの隣にない場合、Run は何も起動せず、何をどこに設定するかを、動いている実行ファイルの実際のパス入りで表示します。
 
 Bethesda のタイトルでは、Steam の `%command%` はたいてい `<Game>Launcher.exe` を
 指しています。Eidos はそれを実行しません。あのランチャーは `Data` を再走査して

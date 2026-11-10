@@ -1,4 +1,6 @@
-//! Read-only Heroic/Legendary installed manifests. No account or library-cache reads.
+//! Read-only Heroic/Legendary installed manifests and the per-game launch
+//! settings (Heroic's wrapper list, legendary's `wrapper`). No account or
+//! library-cache reads.
 
 use std::fs::File;
 use std::io::Read;
@@ -154,6 +156,81 @@ pub fn select_installation<'a>(
     matches.next().is_none().then_some(selected)
 }
 
+/// Not empty, only ASCII letters, digits, `_` and `-`: usable as it is in a
+/// file name and in a URI.
+pub fn plain_app_id(id: &str) -> bool {
+    !id.is_empty()
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
+}
+
+/// Heroic's config roots: native, then Flatpak.
+fn heroic_roots(home: &Path) -> [PathBuf; 2] {
+    [
+        home.join(".config/heroic"),
+        home.join(".var/app/com.heroicgameslauncher.hgl/config/heroic"),
+    ]
+}
+
+/// For each Heroic root holding settings for `app_name`, the `(exe, args)`
+/// pairs of the game's `wrapperOptions`, in order.
+pub fn heroic_wrappers(home: &Path, app_name: &str) -> Vec<Vec<(String, String)>> {
+    if !plain_app_id(app_name) {
+        return Vec::new();
+    }
+    heroic_roots(home)
+        .iter()
+        .filter_map(|root| {
+            let settings = json(&root.join("GamesConfig").join(format!("{app_name}.json")))?;
+            let settings = settings.get(app_name).unwrap_or(&settings);
+            Some(
+                settings
+                    .get("wrapperOptions")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|w| {
+                        let exe = w.get("exe")?.as_str()?.to_owned();
+                        let args = w.get("args").and_then(Value::as_str).unwrap_or("");
+                        Some((exe, args.to_owned()))
+                    })
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
+/// `~/.config/legendary/config.ini` and the `wrapper` legendary uses for
+/// `app_name`: the game's section, else `[default]`.
+pub fn legendary_wrapper(home: &Path, app_name: &str) -> (PathBuf, Option<String>) {
+    // shortcut: LEGENDARY_CONFIG_PATH and XDG_CONFIG_HOME are not followed, as detect_stores does not follow them; read them when a user's legendary lives elsewhere.
+    let file = home.join(".config/legendary/config.ini");
+    let text = std::fs::read_to_string(&file).unwrap_or_default();
+    let (mut section, mut app, mut default) = ("", None, None);
+    for line in text.lines().map(str::trim) {
+        if line.starts_with('#') || line.starts_with(';') {
+            continue;
+        }
+        if let Some(name) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
+            section = name.trim();
+            continue;
+        }
+        let Some((key, value)) = line.split_once(['=', ':']) else {
+            continue;
+        };
+        if key.trim().eq_ignore_ascii_case("wrapper") {
+            let value = Some(value.trim().to_owned());
+            if section == app_name {
+                app = value;
+            } else if section == "default" {
+                default = value;
+            }
+        }
+    }
+    (file, app.or(default))
+}
+
 fn json(path: &Path) -> Option<Value> {
     const LIMIT: u64 = 16 * 1024 * 1024;
     let file = File::open(path).ok()?;
@@ -170,12 +247,7 @@ fn json(path: &Path) -> Option<Value> {
 /// The prefix Heroic's settings name for a game, and the runner when
 /// `wineVersion.bin` is an absolute path to an existing file.
 fn prefix(root: &Path, id: &str, native: bool) -> Option<(PathBuf, Option<ProtonRun>)> {
-    if native
-        || id.is_empty()
-        || !id
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
-    {
+    if native || !plain_app_id(id) {
         return None;
     }
     let settings = json(&root.join("GamesConfig").join(format!("{id}.json")))?;
@@ -286,11 +358,7 @@ fn append_manifest(out: &mut Vec<DetectedGame>, file: &Path, store: Store, heroi
 
 pub(super) fn detect_stores(home: &Path) -> Vec<DetectedGame> {
     let mut out = Vec::new();
-    let roots = [
-        home.join(".config/heroic"),
-        home.join(".var/app/com.heroicgameslauncher.hgl/config/heroic"),
-    ];
-    for root in &roots {
+    for root in &heroic_roots(home) {
         append_manifest(
             &mut out,
             &root.join("gog_store/installed.json"),

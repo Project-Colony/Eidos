@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=28cada8f5976ca2734f3bcdf3e7f48913c15e05b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=f0691af21e1c6f78e20f42b440dc4cf9e4328a67 -->
 
 # Eidos gebruiken
 
@@ -668,8 +668,27 @@ PATH):
 
 Eidos opent op de instantie van dat spel - de laatst gebruikte, dus een draagbare
 instantie wordt net zo goed teruggevonden als de globale; klik op Run om het door
-de samengevoegde weergave te starten. (De Run-knop toont precies deze regel, met
-het echte pad van het draaiende binaire bestand, als je erop drukt buiten Steam.)
+de samengevoegde weergave te starten.
+
+Buiten Steam start Run het spel niet zelf via Proton of Wine. Het vraagt de
+winkel die de kopie bezit om het te starten, en de winkel start Eidos:
+
+- Steam draait `steam -applaunch <appid>` als de opstartoptie hierboven is
+  ingesteld. Is Steam gesloten, dan start Steam eerst.
+- Heroic (een GOG- of Epic-kopie, native of Flatpak) krijgt een
+  `heroic://launch`-link als Eidos een wrapper is in de instellingen van het
+  spel in Heroic, met het absolute pad van `eidos-gui` als uitvoerbaar bestand
+  en zonder argumenten. Is Heroic gesloten, dan start Heroic eerst.
+- Legendary op zichzelf draait `legendary launch <app>` als
+  `~/.config/legendary/config.ini` in de sectie `[<app>]` van het spel, of onder
+  `[default]`, `wrapper =` met het absolute pad van `eidos-gui` bevat.
+
+Eidos opent dan een tweede venster op de instantie die je het laatst gebruikte,
+en daar klik je op Run. Het eerste venster volgt die sessie niet, dus druk
+daarin na het spelen op F5 om zijn lijsten opnieuw te laden. Ontbreekt de
+instelling in de winkel, of staat de loader van de script extender niet naast
+het uitvoerbare bestand van het spel, dan start Run niets en toont het wat je
+waar moet instellen, met het echte pad van het draaiende binaire bestand.
 
 De `%command%` van Steam wijst bij de Bethesda-titels meestal naar
 `<Game>Launcher.exe`. Eidos draait die nooit: de launcher is een aparte

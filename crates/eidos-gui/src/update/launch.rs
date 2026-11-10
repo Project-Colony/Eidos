@@ -3,6 +3,96 @@
 
 use super::*;
 
+/// True when the Run list entry `title` starts the game: the script-extender
+/// loader, the vanilla launcher or the game binary.
+fn picks_the_game(app: &App, title: &str) -> bool {
+    let Some(game) = selected_game(app) else {
+        return false;
+    };
+    app.tools
+        .iter()
+        .find(|t| t.title.eq_ignore_ascii_case(title))
+        .is_some_and(|t| game_executables(game).launches_the_game(&t.exe))
+}
+
+/// Run in a window no store opened (A28): ask the store that owns the copy to
+/// start the game, or say what to set first. Returns the status to show.
+fn hand_off(app: &App) -> String {
+    use eidos::check::launch_option::{launch_handoff, Handoff};
+    let (Some(game), Some(inst)) = (selected_game(app), &app.created) else {
+        return t("status_create_or_open_instance").to_string();
+    };
+    let loader_found = game.def.script_extender.as_ref().is_none_or(|se| {
+        eidos_instance::root_executable(
+            &game.install_path,
+            &inst.root_layers(),
+            &inst.root_overwrite_dir(),
+            se.loader,
+        )
+        .is_some()
+    });
+    let this_exe = std::env::current_exe().unwrap_or_else(|_| "eidos-gui".into());
+    let search_path: Vec<std::path::PathBuf> = std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).collect())
+        .unwrap_or_default();
+    let (store, name) = (game.source_name(), game.def.name);
+    match launch_handoff(
+        game,
+        loader_found,
+        &this_exe,
+        &eidos_games::home(),
+        &search_path,
+    ) {
+        Handoff::Start { store: via, argv } => {
+            // shortcut: Flatpak Steam has no steam on PATH, so the spawn fails and the status says so; use flatpak run com.valvesoftware.Steam when a user asks.
+            match std::process::Command::new(&argv[0])
+                .args(&argv[1..])
+                .spawn()
+            {
+                Ok(_) => {
+                    remember_handoff_pick(inst, app.tool_choice.as_deref());
+                    tf(
+                        "status_handed_to_store",
+                        &[("store", &via), ("game", &name)],
+                    )
+                }
+                Err(e) => tf(
+                    "status_handoff_failed",
+                    &[("store", &via), ("error", &e), ("game", &name)],
+                ),
+            }
+        }
+        Handoff::SetSteamOption { line } => {
+            tf("status_set_steam_launch_option", &[("line", &line)])
+        }
+        Handoff::SetHeroicWrapper { exe, args } => tf(
+            "status_set_heroic_wrapper",
+            &[("game", &name), ("exe", &exe), ("args", &args)],
+        ),
+        Handoff::SetLegendaryWrapper {
+            file,
+            app: section,
+            wrapper,
+        } => tf(
+            "status_set_legendary_wrapper",
+            &[
+                ("game", &name),
+                ("app", &section),
+                ("file", &file.display()),
+                ("wrapper", &wrapper),
+            ],
+        ),
+        Handoff::NoLoader { loader } => tf(
+            "status_handoff_no_loader",
+            &[("loader", &loader), ("store", &store), ("game", &name)],
+        ),
+        Handoff::ThroughStore => tf(
+            "status_launch_through_store",
+            &[("game", &name), ("store", &store)],
+        ),
+    }
+}
+
 /// The `update` arms for this group. [`update_inner`] routes only these
 /// messages here.
 pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
@@ -51,8 +141,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 reload_mods(app);
                 mod_views_changed(app);
                 app.status = Some(tf("status_launch_blocked_modlist", &[("reason", &why)]));
-            } else if let Some(title) = app.tool_choice.clone() {
+            } else if let Some(title) = app
+                .tool_choice
+                .clone()
+                .filter(|t| !(app.launch_command.is_empty() && picks_the_game(app, t)))
+            {
                 // A tool: the CLI resolves Proton itself, no Steam command needed.
+                // A game entry outside a store-started window takes the hand-off below.
                 // The owned arg ends the immutable borrow before `start_run`.
                 if let Some(arg) = instance_arg(app) {
                     let cmd = tool_command(&arg, &title);
@@ -61,24 +156,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     app.status = Some(t("status_create_or_open_instance").to_string());
                 }
             } else if let Some(prompt) = play_prompt_for(app) {
-                // Only the game gets here (a tool run took the branch above).
+                // Only the game or a game entry gets here (a tool run took the branch above).
                 app.play_prompt = Some(prompt);
-            } else if selected_game(app).is_some_and(|g| !g.is_steam())
-                && app.launch_command.is_empty()
-            {
-                app.status = Some(t("status_manual_launch_needed").into());
             } else if app.launch_command.is_empty() {
-                // Standalone: we don't have Steam's Proton command, so we cannot
-                // build the launch environment. Point the user at the option, with
-                // this binary's absolute path (Steam's launch options don't see
-                // ~/.cargo/bin on PATH) and native d3dcompiler forced so the game's
-                // shader compilation works under Proton. Eidos merges that with any
-                // mod-shipped DLL overrides at launch.
-                let exe = std::env::current_exe()
-                    .ok()
-                    .and_then(|p| p.to_str().map(str::to_string))
-                    .unwrap_or_else(|| "eidos-gui".to_string());
-                app.status = Some(tf("status_set_steam_launch_option", &[("exe", &exe)]));
+                // No game runs outside its store: the store that owns the copy
+                // starts it through its Eidos setting, and when that setting is
+                // missing the status says what to set and where.
+                app.status = Some(hand_off(app));
             } else if let (Some(game), Some(inst)) = (selected_game(app), &app.created) {
                 let id = game.def.id;
                 let game_name = game.def.name.to_string();
