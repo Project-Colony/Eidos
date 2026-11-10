@@ -3,6 +3,7 @@
 //! them. The window writes the request, the next matching `eidos play` begins
 //! it on a working copy of the profile, and the run's end is recorded here.
 
+use std::collections::HashSet;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -86,7 +87,8 @@ pub struct TestRunWrites {
     pub plugins_offered: bool,
     /// `Data/<path>` and `Root/<path>`.
     pub output: Vec<String>,
-    /// Overwrite files the game deleted; keeping the output deletes them.
+    /// Overwrite files the game deleted, a cleared folder's included; keeping
+    /// the output deletes them.
     pub output_deleted: usize,
     pub logs: Vec<String>,
 }
@@ -148,6 +150,53 @@ fn is_whiteout(rel: &str) -> bool {
 /// A union's own bookkeeping: a whiteout or an opacity marker.
 fn is_marker(rel: &str) -> bool {
     is_whiteout(rel) || leaf(rel).starts_with(OPAQUE_MARKER)
+}
+
+/// How many files merging `upper` (its `files_under`) into `shared` deletes,
+/// matched without case as the merge does: a whiteout's target, or every file
+/// of the folder it names, and the old files of a folder made opaque, except
+/// `kept` ones and the paths the upper writes back. A marker that deletes none
+/// of them still counts one, since it hides a mod's files from then on.
+fn deleted_by(upper: &[String], shared: &Path, kept: impl Fn(&str) -> bool) -> usize {
+    let markers: Vec<&String> = upper.iter().filter(|f| is_marker(f)).collect();
+    if markers.is_empty() {
+        return 0;
+    }
+    let written: HashSet<String> = upper
+        .iter()
+        .filter(|f| !is_marker(f))
+        .map(|f| f.to_ascii_lowercase())
+        .collect();
+    let old: Vec<String> = files_under(shared)
+        .into_iter()
+        .filter(|f| !is_marker(f) && !kept(f))
+        .map(|f| f.to_ascii_lowercase())
+        .filter(|f| !written.contains(f))
+        .collect();
+    let mut gone = HashSet::new();
+    for m in markers {
+        let m = m.to_ascii_lowercase();
+        let (dir, name) = m.rsplit_once('/').unwrap_or(("", &m));
+        // A whiteout deletes its target; an opacity marker empties its folder.
+        let target = match name.strip_prefix(WHITEOUT_PREFIX) {
+            Some(t) if dir.is_empty() => t.to_string(),
+            Some(t) => format!("{dir}/{t}"),
+            None => dir.to_string(),
+        };
+        let mut hit = old
+            .iter()
+            .filter(|f| {
+                target.is_empty()
+                    || **f == target
+                    || f.strip_prefix(&target).is_some_and(|r| r.starts_with('/'))
+            })
+            .peekable();
+        if hit.peek().is_none() {
+            gone.insert(m);
+        }
+        gone.extend(hit.cloned());
+    }
+    gone.len()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -368,17 +417,14 @@ impl Instance {
                 })
                 .collect();
         }
-        let mut tally = |prefix: &str, files: Vec<String>| {
-            for f in files {
-                if is_whiteout(&f) {
-                    w.output_deleted += 1;
-                } else if !is_marker(&f) {
-                    w.output.push(format!("{prefix}/{f}"));
-                }
+        let mut tally = |prefix: &str, files: &[String]| {
+            for f in files.iter().filter(|f| !is_marker(f)) {
+                w.output.push(format!("{prefix}/{f}"));
             }
         };
-        tally("Data", files_under(&self.test_data_upper()));
-        let control = |f: &String| {
+        let data = files_under(&self.test_data_upper());
+        tally("Data", &data);
+        let control = |f: &str| {
             let name = f.strip_prefix(WHITEOUT_PREFIX).unwrap_or(f);
             !f.contains('/')
                 && ROOT_CONTROL_FILES
@@ -389,7 +435,9 @@ impl Instance {
             .into_iter()
             .filter(|f| !control(f))
             .collect();
-        tally("Root", root);
+        tally("Root", &root);
+        w.output_deleted = deleted_by(&data, &self.overwrite_dir(), |_| false)
+            + deleted_by(&root, &self.root_overwrite_dir(), control);
         w.logs = files_under(&self.test_docs_upper())
             .into_iter()
             .filter(|f| {
@@ -638,6 +686,16 @@ mod tests {
         put(inst.test_data_upper().join("SKSE/x.log"), "log");
         put(inst.test_data_upper().join(".eidoswh.gone.txt"), "");
         put(inst.overwrite_dir().join("gone.txt"), "gone");
+        // The game cleared a folder and recreated it: opacity, not whiteouts.
+        put(inst.overwrite_dir().join("cache/old.txt"), "old");
+        put(inst.test_data_upper().join("cache/.eidoswh_opaque"), "");
+        put(inst.test_data_upper().join("cache/new.txt"), "new");
+        // A deleted folder is one whiteout for every file under it.
+        put(inst.overwrite_dir().join("Foo/a.txt"), "a");
+        put(inst.overwrite_dir().join("Foo/b.txt"), "b");
+        put(inst.test_data_upper().join(".eidoswh.foo"), "");
+        put(inst.root_overwrite_dir().join("Logs/r.txt"), "r");
+        put(test.dir().join("runtime-root/Logs/.eidoswh_opaque"), "");
         put(test.dir().join("runtime-root/Root.txt"), "root");
         put(test.dir().join("runtime-root/plugins.txt"), "*A.esp\n");
         put(inst.test_docs_upper().join("SKSE/skse64.log"), "log");
@@ -666,8 +724,12 @@ mod tests {
             (w.plugins.as_slice(), w.plugins_offered),
             (["plugins.txt".to_string()].as_slice(), true)
         );
-        assert_eq!(w.output, ["Data/SKSE/x.log", "Root/Root.txt"]);
-        assert_eq!(w.output_deleted, 1);
+        assert_eq!(
+            w.output,
+            ["Data/SKSE/x.log", "Data/cache/new.txt", "Root/Root.txt"]
+        );
+        // gone.txt, cache/old.txt, Foo/a.txt, Foo/b.txt, Logs/r.txt.
+        assert_eq!(w.output_deleted, 5);
         assert_eq!(w.logs, ["SKSE/skse64.log"]);
         inst.finish_test_run(&[TestGroup::Saves, TestGroup::Output])
             .unwrap();
@@ -687,6 +749,10 @@ mod tests {
         );
         assert!(inst.overwrite_dir().join("SKSE/x.log").is_file());
         assert!(!inst.overwrite_dir().join("gone.txt").exists());
+        assert!(!inst.overwrite_dir().join("cache/old.txt").exists());
+        assert!(inst.overwrite_dir().join("cache/new.txt").is_file());
+        assert!(!inst.overwrite_dir().join("Foo").exists());
+        assert!(!inst.root_overwrite_dir().join("Logs/r.txt").exists());
         assert!(inst.root_overwrite_dir().join("Root.txt").is_file());
         assert!(!inst.root_overwrite_dir().join("plugins.txt").exists());
         assert!(!docs_real.join("SKSE/skse64.log").exists());
