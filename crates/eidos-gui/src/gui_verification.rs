@@ -105,7 +105,14 @@ impl core::widget::Operation for Positions {
     }
 }
 fn positions(element: Element<'_, Message>, renderer: &mut iced::Renderer) -> Positions {
-    let mut ui = UserInterface::build(element, SIZE, Cache::new(), renderer);
+    positions_in(element, renderer, SIZE)
+}
+fn positions_in(
+    element: Element<'_, Message>,
+    renderer: &mut iced::Renderer,
+    size: Size,
+) -> Positions {
+    let mut ui = UserInterface::build(element, size, Cache::new(), renderer);
     let mut out = Positions::default();
     ui.operate(renderer, &mut out);
     out
@@ -1223,5 +1230,32 @@ fn the_eidos_release_link_never_moves_the_menu_or_the_mod_rows() {
             .iter()
             .any(|m| matches!(m, Message::OpenUrl(u) if *u == want)),
         "{messages:?}"
+    );
+
+    // Largest text (Large x XLarge, 1.68) in an 800 px window: the link no
+    // longer fits after Help. It is cut at the edge; the bar keeps one line.
+    let mut big = crate::preferences::UiPreferences::default();
+    big.standard.font_size = colony_ui::typography::FontSize::Large;
+    big.standard.text_size_a11y = colony_ui::typography::TextSize::XLarge;
+    big.standard.apply();
+    let narrow = Size::new(800.0, 800.0);
+    let at = |app: &App, renderer: &mut iced::Renderer, name: &str| {
+        positions_in(crate::view(app), renderer, narrow)
+            .labels
+            .into_iter()
+            .find(|(s, _)| s == name)
+            .unwrap_or_else(|| panic!("Missing label {name}"))
+            .1
+    };
+    app.eidos_release = None;
+    let help = at(&app, &mut renderer, t("menu_help"));
+    let beta = at(&app, &mut renderer, "Beta");
+    app.eidos_release = Some("99.0.0".into());
+    assert_eq!(at(&app, &mut renderer, t("menu_help")), help);
+    assert_eq!(at(&app, &mut renderer, "Beta"), beta);
+    let link = at(&app, &mut renderer, &link);
+    assert!(
+        link.x + link.width >= narrow.width - 20.0 && link.height <= help.height + 1.0,
+        "the link runs to the window edge on one line: {link:?}, Help {help:?}"
     );
 }
