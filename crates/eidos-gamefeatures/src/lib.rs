@@ -52,8 +52,8 @@ pub use runtime::{
 
 mod savegame;
 pub use savegame::{
-    missing_plugins, newest_saves, parse_save, read_screenshot, read_screenshot_with, KnownPlugin,
-    MissingPlugin, ModFolder, SaveCompression, SaveEngine, SaveInfo, SaveParseError,
+    missing_from, missing_plugins, newest_saves, parse_save, read_screenshot, read_screenshot_with,
+    KnownPlugin, MissingPlugin, ModFolder, SaveCompression, SaveEngine, SaveInfo, SaveParseError,
     SavePluginState, Screenshot,
 };
 

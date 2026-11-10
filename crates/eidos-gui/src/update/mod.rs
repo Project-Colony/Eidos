@@ -1637,6 +1637,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::SavesCopyToProfile(..)
         | Message::SelectSave(..)
         | Message::FixSaveMods
+        | Message::EnableMissingMasters
         | Message::RestorePreSessionPlugins
         | Message::AcceptPluginState
         | Message::ConfirmDeleteSave(..)) => saves::handle(app, m),

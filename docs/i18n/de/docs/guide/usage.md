@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=89e0315937ba7d0824bfd151b34a2cb715f41e50 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c754761ce9acdcd37539c930a19c9a429336c0e7 -->
 
 # Eidos verwenden
 
@@ -575,7 +575,7 @@ oder "Cancel" (Esc bricht ebenfalls ab). Remove fügt dieselben Namen seiner
 Meldung zum erneuten Klicken hinzu. Gelesen werden nur Spielstände von Skyrim und
 Fallout 4; andere Spiele deaktivieren ohne Rückfrage.
 
-Der Reiter General unter Information einer Mod listet die Mods auf, die sie braucht, und die Mods, die sie brauchen, gelesen aus den Masters der aktiven Plugins. Wer eine Mod deaktiviert, die andere brauchen, sieht dieselbe Leiste mit "Disable them too", was auch jede Mod deaktiviert, die sie braucht, und die Mods, die diese brauchen, oder mit "Keep them enabled".
+Der Reiter General unter Information einer Mod listet die Mods auf, die sie braucht, und die Mods, die sie brauchen, gelesen aus den Masters der aktiven Plugins. Wer eine Mod deaktiviert, die andere brauchen, sieht dieselbe Leiste mit "Disable them too", was auch jede Mod deaktiviert, die sie braucht, und die Mods, die diese brauchen, oder mit "Keep them enabled". Die Karte für fehlende Masters im Reiter Health hat die Schaltfläche "Enable what provides them": Sie aktiviert die Mod, die jeden fehlenden Master enthält, und hakt ein Master-Plugin an, das vorhanden, aber nicht angehakt ist.
 
 ### Eine Mod sichern, bevor Sie sie anfassen
 

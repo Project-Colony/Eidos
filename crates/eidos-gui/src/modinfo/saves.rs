@@ -436,6 +436,50 @@ pub(crate) fn clear_save_selection(app: &mut App) {
     app.save_missing = Vec::new();
 }
 
+/// The plugins in `names` that `list` will not load, each with the mods that hold
+/// a file of that name. Every mod is searched, disabled ones included: a disabled
+/// mod holding the plugin is the case the "enable what this needs" fixes exist for.
+pub(crate) fn provider_scan<'a>(
+    app: &App,
+    list: &PluginList,
+    names: impl IntoIterator<Item = &'a str>,
+) -> Vec<eidos_gamefeatures::MissingPlugin> {
+    let known: Vec<eidos_gamefeatures::KnownPlugin> = list
+        .plugins
+        .iter()
+        .map(|p| eidos_gamefeatures::KnownPlugin {
+            name: &p.name,
+            enabled: p.enabled,
+            origin_mod: &p.origin_mod,
+        })
+        .collect();
+    // Overwrite counts as a provider too (a cleaned .esp lands there).
+    let overwrite = app.created.as_ref().map(|i| i.overwrite_dir());
+    let mut mods: Vec<eidos_gamefeatures::ModFolder> = app
+        .mods
+        .iter()
+        .filter(|m| !m.is_separator())
+        .map(|m| eidos_gamefeatures::ModFolder {
+            name: &m.name,
+            path: &m.path,
+        })
+        .collect();
+    if let Some(o) = overwrite.as_deref() {
+        mods.push(eidos_gamefeatures::ModFolder {
+            name: "Overwrite",
+            path: o,
+        });
+    }
+    let data = selected_game(app).map(|g| g.data_path.clone());
+    if let Some(d) = data.as_deref() {
+        mods.push(eidos_gamefeatures::ModFolder {
+            name: t("saves_game_data"),
+            path: d,
+        });
+    }
+    eidos_gamefeatures::missing_from(names, &known, &mods, data.as_deref())
+}
+
 /// Parse the selected save's header and diff its plugin list against the profile's
 /// current one. Runs on selection only - a save header means decompressing part of
 /// the file, which is not something to do per redraw.
@@ -460,44 +504,7 @@ pub(crate) fn load_save_details(app: &mut App) {
         }),
     ));
     app.save_missing = match (&parsed, app.plugins.as_ref()) {
-        (Ok(info), Some(list)) => {
-            let known: Vec<eidos_gamefeatures::KnownPlugin> = list
-                .plugins
-                .iter()
-                .map(|p| eidos_gamefeatures::KnownPlugin {
-                    name: &p.name,
-                    enabled: p.enabled,
-                    origin_mod: &p.origin_mod,
-                })
-                .collect();
-            // Every mod, disabled ones included: a disabled mod holding the plugin
-            // is precisely the case the "enable what this save needs" fix exists
-            // for. Overwrite counts as a provider too (a cleaned .esp lands there).
-            let overwrite = app.created.as_ref().map(|i| i.overwrite_dir());
-            let mut mods: Vec<eidos_gamefeatures::ModFolder> = app
-                .mods
-                .iter()
-                .filter(|m| !m.is_separator())
-                .map(|m| eidos_gamefeatures::ModFolder {
-                    name: &m.name,
-                    path: &m.path,
-                })
-                .collect();
-            if let Some(o) = overwrite.as_deref() {
-                mods.push(eidos_gamefeatures::ModFolder {
-                    name: "Overwrite",
-                    path: o,
-                });
-            }
-            let data = selected_game(app).map(|g| g.data_path.clone());
-            if let Some(d) = data.as_deref() {
-                mods.push(eidos_gamefeatures::ModFolder {
-                    name: t("saves_game_data"),
-                    path: d,
-                });
-            }
-            eidos_gamefeatures::missing_plugins(info, &known, &mods, data.as_deref())
-        }
+        (Ok(info), Some(list)) => provider_scan(app, list, info.all_plugins()),
         _ => Vec::new(),
     };
     app.save_info = Some((path, parsed));

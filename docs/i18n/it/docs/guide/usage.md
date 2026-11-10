@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=89e0315937ba7d0824bfd151b34a2cb715f41e50 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c754761ce9acdcd37539c930a19c9a429336c0e7 -->
 
 # Usare Eidos
 
@@ -564,7 +564,7 @@ mod, una barra sopra l'elenco nomina i plugin e aspetta "Disable anyway" o
 che chiede di cliccare di nuovo. Vengono letti solo i salvataggi di Skyrim e
 Fallout 4; per gli altri giochi la mod si disattiva senza chiedere.
 
-La scheda General di Information di una mod elenca le mod di cui ha bisogno e quelle che hanno bisogno di lei, lette dai master dei plugin attivi. Disattivare una mod di cui altre hanno bisogno mostra la stessa barra con "Disable them too", che disattiva anche ogni mod che ne ha bisogno e le mod che hanno bisogno di quelle, oppure "Keep them enabled".
+La scheda General di Information di una mod elenca le mod di cui ha bisogno e quelle che hanno bisogno di lei, lette dai master dei plugin attivi. Disattivare una mod di cui altre hanno bisogno mostra la stessa barra con "Disable them too", che disattiva anche ogni mod che ne ha bisogno e le mod che hanno bisogno di quelle, oppure "Keep them enabled". La scheda dei master mancanti nella scheda Health ha "Enable what provides them": attiva la mod che contiene ogni master mancante e spunta un plugin master presente ma non spuntato.
 
 ### Fare una copia di una mod prima di toccarla
 

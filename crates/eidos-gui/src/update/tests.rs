@@ -6419,3 +6419,28 @@ mod saves_use {
         );
     }
 }
+
+#[test]
+fn the_missing_masters_card_enables_the_mod_that_holds_the_master() {
+    let (mut app, root) = list_app(&["Needs", "Provider"]);
+    app.mods[1].enabled = false;
+    fs::write(root.join("mods/Provider/B.esm"), b"x").unwrap();
+    let mut a = plugin_row("A.esp", "Needs");
+    a.masters = vec!["B.esm".into()];
+    app.plugins = Some(PluginList {
+        plugins: vec![a],
+        ..Default::default()
+    });
+    let card = diagnostics(&app)
+        .into_iter()
+        .find(|d| d.title.contains("missing a master"))
+        .unwrap();
+    assert!(matches!(card.actions[0].1, Message::EnableMissingMasters));
+    let _ = update(&mut app, Message::EnableMissingMasters);
+    assert!(app.mods[1].enabled);
+    assert!(
+        fs::read_to_string(root.join("profiles/Default/modlist.txt"))
+            .unwrap()
+            .contains("+Provider")
+    );
+}

@@ -206,6 +206,9 @@ pub(crate) enum Message {
     SelectSave(usize),
     /// Enable every mod that supplies one of the selected save's missing plugins.
     FixSaveMods,
+    /// Health card: enable the mod that holds each missing master, and tick a
+    /// master plugin that is present but unticked.
+    EnableMissingMasters,
     /// Put the pre-session `plugins.txt` back after a session damaged the active
     /// set (the Diagnostics card's one-click restore).
     RestorePreSessionPlugins,

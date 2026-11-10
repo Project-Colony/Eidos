@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=89e0315937ba7d0824bfd151b34a2cb715f41e50 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c754761ce9acdcd37539c930a19c9a429336c0e7 -->
 
 # Usar o Eidos
 
@@ -537,7 +537,7 @@ barra acima da lista nomeia os plugins e espera por "Disable anyway" ou "Cancel"
 de novo. Só os saves de Skyrim e Fallout 4 são lidos; nos outros jogos o mod é
 desativado sem perguntar.
 
-A aba General de Information de um mod lista os mods de que ele precisa e os mods que precisam dele, lidos dos masters dos plugins ativos. Desativar um mod de que outros precisam mostra a mesma barra com "Disable them too", que também desativa cada mod que precisa dele e os mods que precisam desses, ou "Keep them enabled".
+A aba General de Information de um mod lista os mods de que ele precisa e os mods que precisam dele, lidos dos masters dos plugins ativos. Desativar um mod de que outros precisam mostra a mesma barra com "Disable them too", que também desativa cada mod que precisa dele e os mods que precisam desses, ou "Keep them enabled". O cartão de masters ausentes na aba Health tem "Enable what provides them": ele ativa o mod que contém cada master ausente e marca um plugin master que está presente, mas desmarcado.
 
 ### Fazer backup de um mod antes de mexer nele
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=89e0315937ba7d0824bfd151b34a2cb715f41e50 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c754761ce9acdcd37539c930a19c9a429336c0e7 -->
 
 # Používání Eidosu
 
@@ -509,7 +509,7 @@ seznamem tyto pluginy vyjmenuje a čeká na „Disable anyway" nebo „Cancel" (
 také ruší). Remove přidá stejné názvy do své zprávy s výzvou kliknout znovu. Čtou
 se jen uložené hry Skyrimu a Falloutu 4; u ostatních her se mód vypne bez ptaní.
 
-Karta General v Information u módu uvádí módy, které potřebuje, a módy, které potřebují jeho, a to podle masterů zapnutých pluginů. Vypnutí módu, který jiné potřebují, ukáže stejnou lištu s tlačítky „Disable them too", které vypne i každý mód, jenž ho potřebuje, i módy, které potřebují ty, nebo „Keep them enabled".
+Karta General v Information u módu uvádí módy, které potřebuje, a módy, které potřebují jeho, a to podle masterů zapnutých pluginů. Vypnutí módu, který jiné potřebují, ukáže stejnou lištu s tlačítky „Disable them too", které vypne i každý mód, jenž ho potřebuje, i módy, které potřebují ty, nebo „Keep them enabled". Karta chybějících masterů na kartě Health má tlačítko "Enable what provides them": zapne mod, který každý chybějící master obsahuje, a zaškrtne master plugin, který je přítomen, ale nezaškrtnut.
 
 ### Záloha módu, než na něj sáhnete
 

@@ -239,6 +239,85 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 )
             });
         }
+        Message::EnableMissingMasters => {
+            let Some(spec) = selected_game(app).and_then(|g| g.plugin_spec()) else {
+                return Task::none();
+            };
+            let computed;
+            let Some(list) = (match app.plugins.as_ref() {
+                Some(l) => Some(l),
+                None => {
+                    computed = compute_plugins(app);
+                    computed.as_ref()
+                }
+            }) else {
+                return Task::none();
+            };
+            let wanted: Vec<String> = list.missing_masters().into_iter().map(|(_, m)| m).collect();
+            // The mod to enable per absent master: the last non-backup provider, the
+            // copy highest in priority and so the one that would win.
+            let mut unprovided: Vec<String> = Vec::new();
+            let mut to_enable: HashSet<String> = HashSet::new();
+            for m in provider_scan(app, list, wanted.iter().map(String::as_str)) {
+                if m.state != eidos_gamefeatures::SavePluginState::Absent {
+                    continue;
+                }
+                let pick = m.providers.iter().rev().find(|p| {
+                    app.mods
+                        .iter()
+                        .any(|e| &e.name == *p && !e.is_separator() && !e.is_backup())
+                });
+                match pick {
+                    Some(p) => {
+                        to_enable.insert(p.clone());
+                    }
+                    None => unprovided.push(m.name),
+                }
+            }
+            let mut mods_on = 0usize;
+            for m in app.mods.iter_mut() {
+                if !m.enabled && to_enable.contains(&m.name) {
+                    m.enabled = true;
+                    mods_on += 1;
+                }
+            }
+            if mods_on > 0 && !mods_changed(app) {
+                return Task::none(); // a refused save left its reason in the status
+            }
+            // mods_changed dropped the list; judge the masters against the new set.
+            let mut plugins_on = 0usize;
+            if let Some(mut list) = app.plugins.take().or_else(|| compute_plugins(app)) {
+                for name in &wanted {
+                    if list
+                        .plugins
+                        .iter()
+                        .any(|p| p.name.eq_ignore_ascii_case(name) && !p.enabled)
+                        && list.set_enabled(name, true)
+                    {
+                        plugins_on += 1;
+                    }
+                }
+                list.refresh(&spec);
+                app.plugins = Some(list);
+                if plugins_on > 0 {
+                    commit_plugin_order(app, &spec);
+                }
+            }
+            let mut status = tf(
+                "status_enabled_masters",
+                &[("mods", &mods_on), ("plugins", &plugins_on)],
+            );
+            if !unprovided.is_empty() {
+                unprovided.sort();
+                unprovided.dedup();
+                status.push(' ');
+                status.push_str(&tf(
+                    "status_masters_unprovided",
+                    &[("list", &unprovided.join(", "))],
+                ));
+            }
+            app.status = Some(status);
+        }
         Message::RestorePreSessionPlugins => {
             // Same gates as every other mutation: the plugins dir is bind-mounted
             // into a running session, and restoring under the game's feet races

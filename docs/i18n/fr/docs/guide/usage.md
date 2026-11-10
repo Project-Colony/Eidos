@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=89e0315937ba7d0824bfd151b34a2cb715f41e50 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c754761ce9acdcd37539c930a19c9a429336c0e7 -->
 
 # Utiliser Eidos
 
@@ -577,7 +577,7 @@ noms à son message demandant de cliquer encore. Seules les sauvegardes de Skyri
 et de Fallout 4 sont lues ; pour les autres jeux, le mod est désactivé sans
 question.
 
-L'onglet General de « Information » d'un mod liste les mods dont il a besoin et les mods qui ont besoin de lui, lus dans les masters des plugins activés. Désactiver un mod dont d'autres ont besoin affiche la même barre avec « Disable them too », qui désactive aussi chaque mod qui en a besoin et les mods qui ont besoin de ceux-là, ou « Keep them enabled ».
+L'onglet General de « Information » d'un mod liste les mods dont il a besoin et les mods qui ont besoin de lui, lus dans les masters des plugins activés. Désactiver un mod dont d'autres ont besoin affiche la même barre avec « Disable them too », qui désactive aussi chaque mod qui en a besoin et les mods qui ont besoin de ceux-là, ou « Keep them enabled ». La carte des masters manquants de l'onglet Health propose « Enable what provides them » : elle active le mod qui contient chaque master manquant et coche un plugin master présent mais décoché.
 
 ### Sauvegarder un mod avant d'y toucher
 

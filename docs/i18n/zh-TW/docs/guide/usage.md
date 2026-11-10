@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=89e0315937ba7d0824bfd151b34a2cb715f41e50 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c754761ce9acdcd37539c930a19c9a429336c0e7 -->
 
 # 使用 Eidos
 
@@ -411,7 +411,7 @@ Ctrl+F 把游標放進篩選框。按下一個字母會跳到下一個以它開�
 「Disable anyway」或「Cancel」(按 Esc 也會取消)。Remove 會把同樣的外掛名稱加進它
 要求再點一次的訊息裡。只讀取 Skyrim 和 Fallout 4 的存檔;其他遊戲不詢問,直接停用。
 
-模組的 Information 裡的 General 分頁會列出它需要的模組和需要它的模組,依據已啟用外掛的主檔案讀取。停用其他模組需要的模組時會出現同樣的提示列:「Disable them too」會同時停用所有需要它的模組,以及需要那些模組的模組;「Keep them enabled」則只停用所選的。
+模組的 Information 裡的 General 分頁會列出它需要的模組和需要它的模組,依據已啟用外掛的主檔案讀取。停用其他模組需要的模組時會出現同樣的提示列:「Disable them too」會同時停用所有需要它的模組,以及需要那些模組的模組;「Keep them enabled」則只停用所選的。 Health 分頁上的缺少主檔案卡片有 "Enable what provides them":它會啟用包含每個缺失主檔案的模組,並勾選存在但未勾選的主外掛。
 
 ### 動它之前先備份一個模組
 

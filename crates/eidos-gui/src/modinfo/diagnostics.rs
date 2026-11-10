@@ -287,7 +287,10 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                     level: DiagLevel::Problem,
                     title: tf("diag_missing_masters", &[("n", &missing.len())]),
                     detail: tf("diag_missing_masters_detail", &[("list", &detail)]),
-                    actions: Vec::new(),
+                    actions: vec![(
+                        t("diag_enable_missing_masters").into(),
+                        Message::EnableMissingMasters,
+                    )],
                 });
             } else {
                 out.push(Diagnostic {

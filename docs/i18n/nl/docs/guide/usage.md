@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=89e0315937ba7d0824bfd151b34a2cb715f41e50 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c754761ce9acdcd37539c930a19c9a429336c0e7 -->
 
 # Eidos gebruiken
 
@@ -547,7 +547,7 @@ dan noemt een balk boven de lijst de plugins en wacht op "Disable anyway" of
 nogmaals te klikken. Alleen saves van Skyrim en Fallout 4 worden gelezen; andere
 games zetten de mod uit zonder te vragen.
 
-Het tabblad General van Information bij een mod toont de mods die ze nodig heeft en de mods die haar nodig hebben, gelezen uit de masters van de ingeschakelde plugins. Een mod uitzetten die anderen nodig hebben toont dezelfde balk met "Disable them too", wat ook elke mod uitzet die haar nodig heeft en de mods die die weer nodig hebben, of "Keep them enabled".
+Het tabblad General van Information bij een mod toont de mods die ze nodig heeft en de mods die haar nodig hebben, gelezen uit de masters van de ingeschakelde plugins. Een mod uitzetten die anderen nodig hebben toont dezelfde balk met "Disable them too", wat ook elke mod uitzet die haar nodig heeft en de mods die die weer nodig hebben, of "Keep them enabled". De kaart voor ontbrekende masters op het tabblad Health heeft "Enable what provides them": die schakelt de mod in die elke ontbrekende master bevat en vinkt een masterplugin aan die wel aanwezig is maar niet is aangevinkt.
 
 ### Een mod back-uppen voor je eraan komt
 

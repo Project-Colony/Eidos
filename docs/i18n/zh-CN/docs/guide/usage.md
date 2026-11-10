@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=89e0315937ba7d0824bfd151b34a2cb715f41e50 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c754761ce9acdcd37539c930a19c9a429336c0e7 -->
 
 # 使用 Eidos
 
@@ -397,7 +397,7 @@ Ctrl+F 把光标放进过滤框。敲一个字母跳到下一个以它开头的�
 "Disable anyway" 或 "Cancel"(按 Esc 也会取消)。Remove 会把同样的插件名加进它
 要求再点一次的提示里。只读取 Skyrim 和 Fallout 4 的存档;其他游戏不询问,直接停用。
 
-模组的 Information 里的 General 标签页会列出它需要的模组和需要它的模组,依据已启用插件的主文件读取。停用其他模组需要的模组时会出现同样的提示栏:"Disable them too"会同时停用所有需要它的模组,以及需要那些模组的模组;"Keep them enabled"则只停用所选的。
+模组的 Information 里的 General 标签页会列出它需要的模组和需要它的模组,依据已启用插件的主文件读取。停用其他模组需要的模组时会出现同样的提示栏:"Disable them too"会同时停用所有需要它的模组,以及需要那些模组的模组;"Keep them enabled"则只停用所选的。 Health 标签页上的缺少主文件卡片有 "Enable what provides them":它会启用包含每个缺失主文件的模组,并勾选存在但未勾选的主插件。
 
 ### 动一个模组之前先给它做备份
 

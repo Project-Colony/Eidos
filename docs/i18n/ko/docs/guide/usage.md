@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=89e0315937ba7d0824bfd151b34a2cb715f41e50 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c754761ce9acdcd37539c930a19c9a429336c0e7 -->
 
 # Eidos 사용하기
 
@@ -478,7 +478,7 @@ as valid"가 어느 쪽이든 잠재웁니다. MO2 자신의 `validated=` 키를
 취소됩니다). Remove는 다시 클릭하라는 메시지에 같은 이름을 덧붙입니다. Skyrim과
 Fallout 4 세이브만 읽으며, 다른 게임에서는 묻지 않고 끕니다.
 
-모드의 Information, General 탭에는 그 모드가 필요로 하는 모드와 그 모드를 필요로 하는 모드가 활성 플러그인의 마스터에서 읽혀 나열됩니다. 다른 모드가 필요로 하는 모드를 끄면 같은 막대가 나타나며, "Disable them too"는 그것을 필요로 하는 모든 모드와 그 모드들을 필요로 하는 모드까지 함께 끄고, "Keep them enabled"는 대상만 끕니다.
+모드의 Information, General 탭에는 그 모드가 필요로 하는 모드와 그 모드를 필요로 하는 모드가 활성 플러그인의 마스터에서 읽혀 나열됩니다. 다른 모드가 필요로 하는 모드를 끄면 같은 막대가 나타나며, "Disable them too"는 그것을 필요로 하는 모든 모드와 그 모드들을 필요로 하는 모드까지 함께 끄고, "Keep them enabled"는 대상만 끕니다. Health 탭의 누락된 마스터 카드에는 "Enable what provides them"이 있습니다. 누락된 각 마스터를 가진 모드를 켜고, 있지만 체크되지 않은 마스터 플러그인을 체크합니다.
 
 ### 손대기 전에 모드 백업하기
 

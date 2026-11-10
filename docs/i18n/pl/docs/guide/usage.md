@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=89e0315937ba7d0824bfd151b34a2cb715f41e50 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c754761ce9acdcd37539c930a19c9a429336c0e7 -->
 
 # Używanie Eidos
 
@@ -537,7 +537,7 @@ anuluje). Remove dopisuje te same nazwy do swojego komunikatu o ponownym
 kliknięciu. Czytane są tylko zapisy Skyrima i Fallouta 4; w innych grach mod
 wyłącza się bez pytania.
 
-Karta General w Information moda wymienia mody, których potrzebuje, i mody, które potrzebują jego, na podstawie masterów włączonych pluginów. Wyłączenie moda, którego potrzebują inne, pokazuje ten sam pasek z przyciskiem „Disable them too", który wyłącza też każdy mod go potrzebujący oraz mody potrzebujące tamtych, albo „Keep them enabled".
+Karta General w Information moda wymienia mody, których potrzebuje, i mody, które potrzebują jego, na podstawie masterów włączonych pluginów. Wyłączenie moda, którego potrzebują inne, pokazuje ten sam pasek z przyciskiem „Disable them too", który wyłącza też każdy mod go potrzebujący oraz mody potrzebujące tamtych, albo „Keep them enabled". Karta brakujących masterów na karcie Health ma przycisk "Enable what provides them": włącza moda, który zawiera każdy brakujący master, i zaznacza plugin master, który jest obecny, ale niezaznaczony.
 
 ### Kopia moda, zanim go dotkniesz
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=89e0315937ba7d0824bfd151b34a2cb715f41e50 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c754761ce9acdcd37539c930a19c9a429336c0e7 -->
 
 # Eidos の使い方
 
@@ -488,7 +488,7 @@ MOD を無効にする前、または削除する前に、Eidos はプロファ�
 同じ名前を加えます。読むのは Skyrim と Fallout 4 のセーブだけで、ほかのゲームでは
 確認なしに無効になります。
 
-MOD の Information の General タブには、その MOD が必要とする MOD と、その MOD を必要とする MOD が、有効なプラグインのマスターから読み取って一覧されます。ほかの MOD が必要とする MOD を無効にすると同じバーが出て、「Disable them too」ならそれを必要とするすべての MOD と、さらにそれらを必要とする MOD も無効にし、「Keep them enabled」なら対象だけを無効にします。
+MOD の Information の General タブには、その MOD が必要とする MOD と、その MOD を必要とする MOD が、有効なプラグインのマスターから読み取って一覧されます。ほかの MOD が必要とする MOD を無効にすると同じバーが出て、「Disable them too」ならそれを必要とするすべての MOD と、さらにそれらを必要とする MOD も無効にし、「Keep them enabled」なら対象だけを無効にします。 Health タブの不足マスターカードには "Enable what provides them" があります。不足している各マスターを含む Mod を有効にし、存在するのにチェックが外れているマスタープラグインにチェックを入れます。
 
 ### 触る前に MOD を控えておく
 

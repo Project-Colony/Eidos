@@ -507,6 +507,7 @@ A mod's Information, General tab, lists the mods it requires and the mods that
 require it, read from the masters of the enabled plugins. Disabling a mod that
 others require shows the same bar with Disable them too, which also disables
 every mod that needs it and the mods that need those, or Keep them enabled.
+The missing-masters card on the Health tab has Enable what provides them: it enables the mod that holds each missing master and ticks a master plugin that is present but unticked.
 
 ### Backing a mod up before you touch it
 

@@ -842,6 +842,17 @@ pub fn missing_plugins(
     mods: &[ModFolder<'_>],
     data_dir: Option<&Path>,
 ) -> Vec<MissingPlugin> {
+    missing_from(info.all_plugins(), known, mods, data_dir)
+}
+
+/// The scan behind [`missing_plugins`], for any list of plugin names: a save's, or
+/// the masters an enabled plugin needs. Same classification, same provider search.
+pub fn missing_from<'a>(
+    names: impl IntoIterator<Item = &'a str>,
+    known: &[KnownPlugin<'_>],
+    mods: &[ModFolder<'_>],
+    data_dir: Option<&Path>,
+) -> Vec<MissingPlugin> {
     let mut by_name: HashMap<String, KnownPlugin<'_>> = HashMap::with_capacity(known.len());
     for k in known {
         by_name.insert(k.name.to_ascii_lowercase(), *k);
@@ -849,7 +860,7 @@ pub fn missing_plugins(
 
     let mut out: Vec<MissingPlugin> = Vec::new();
     let mut index: HashMap<String, usize> = HashMap::new();
-    for name in info.all_plugins() {
+    for name in names {
         let key = name.to_ascii_lowercase();
         if index.contains_key(&key) {
             continue; // a save can list the same name in both tables
