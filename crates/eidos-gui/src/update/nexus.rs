@@ -253,6 +253,23 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.nexus_files.insert(key, result);
             }
         }
+        Message::NexusPageFetched {
+            domain,
+            mod_id,
+            result,
+        } => {
+            let key = (domain, mod_id);
+            if app.nexus_page_loading.as_ref() == Some(&key) {
+                app.nexus_page_loading = None;
+                app.nexus_pages.insert(key, result);
+            }
+        }
+        Message::NexusPageRefresh => {
+            if let Some((domain, mod_id)) = app.info_mod.and_then(|i| nexus_files_target(app, i)) {
+                app.nexus_pages.remove(&(domain.clone(), mod_id));
+                return fetch_nexus_page(app, domain, mod_id);
+            }
+        }
         Message::NexusUpdate {
             folder,
             domain,

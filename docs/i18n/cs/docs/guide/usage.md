@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6715cbae156a6c792d2cef7feb1a8557c348cc0b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2d528a4f9866439b25ba6b9f89bd62b93bd37f0e -->
 
 # Používání Eidosu
 
@@ -650,6 +650,16 @@ Odtud jde o obvyklou instalaci: FOMOD se otevře s odpověďmi, se kterými byl 
 nainstalován, a potom dotaz nabídne Replace se zaškrtnutým „Keep a backup of the
 existing mod", ať jste při minulém dotazu zvolili cokoli. Replace zachová
 prioritu módu i to, zda je zapnutý.
+
+Karta **Nexus page** vedle ní ukazuje popis módu a, od nejnovější, seznam změn
+každé verze souboru na jeho stránce. Eidos obojí načte z GraphQL API Nexusu,
+které se nezapočítává do hodinového limitu požadavků, při prvním otevření karty
+a ponechá si to, dokud Eidos nezavřete nebo nestisknete **Refresh**. Obojí se
+zobrazuje jako prostý text: formátování BBCode a HTML je odstraněno, adresa
+odkazu je napsána za jeho textem a obrázky a videa jsou vynechány. **Endorse** a
+**Track** nad textem dělají totéž co nabídka pravého tlačítka módu. Stránka módu
+pro dospělé zůstane skrytá, pokud váš účet na Nexusu nezobrazuje obsah pro
+dospělé, a stránka bez hodnocení zůstane skrytá vždy.
 
 Než Replace vymění složku módu, Eidos porovná starou složku s novou podle názvů
 a velikostí souborů a přečte hlavičky pluginů v obou. Týká se to Update,

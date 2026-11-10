@@ -55,6 +55,8 @@ pub(crate) enum InfoTab {
     Notes,
     /// The mod's file list on Nexus, fetched on first open.
     NexusFiles,
+    /// The mod's Nexus description and changelog, fetched on first open.
+    NexusPage,
 }
 
 /// A keyboard navigation intent, independent of which list will answer it.
@@ -495,6 +497,10 @@ pub(crate) struct App {
     /// Nexus file lists asked for this session, by `(domain, mod id)`.
     pub(crate) nexus_files: HashMap<(String, u64), Result<eidos_nexus::ModFiles, String>>,
     pub(crate) nexus_files_loading: Option<(String, u64)>,
+    /// Nexus pages (description and changelog) asked for this session, by
+    /// `(domain, mod id)`.
+    pub(crate) nexus_pages: HashMap<(String, u64), Result<eidos_nexus::ModPage, String>>,
+    pub(crate) nexus_page_loading: Option<(String, u64)>,
     /// Enabled mods that are endorsed (recomputed in `mods_changed`).
     pub(crate) endorsed_count: usize,
     /// Enabled mods with a Nexus update available (recomputed in `mods_changed`).

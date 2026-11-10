@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6715cbae156a6c792d2cef7feb1a8557c348cc0b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2d528a4f9866439b25ba6b9f89bd62b93bd37f0e -->
 
 # Utiliser Eidos
 
@@ -735,6 +735,18 @@ l'installation habituelle : un FOMOD s'ouvre sur les réponses avec lesquelles l
 mod a été installé, puis la fenêtre propose Replace avec « Keep a backup of the
 existing mod » coché, quel que soit votre choix à la fenêtre précédente. Replace
 garde la priorité du mod et son état activé ou non.
+
+L'onglet **Page Nexus**, à côté, affiche la description du mod et, du plus
+récent au plus ancien, le journal des modifications de chaque version de fichier
+de sa page. Eidos les lit dans l'API GraphQL de Nexus, qui ne compte pas dans le
+quota horaire de requêtes, la première fois que vous ouvrez l'onglet, et les
+garde jusqu'à la fermeture d'Eidos ou jusqu'à ce que vous appuyiez sur
+**Actualiser**. Ils s'affichent en texte brut : la mise en forme BBCode et HTML
+est retirée, l'adresse d'un lien est écrite après son texte, et les images et
+les vidéos sont laissées de côté. **Recommander** et **Suivre**, au-dessus du
+texte, font ce que fait le menu du clic droit du mod. La page d'un mod pour
+adultes reste masquée tant que votre compte Nexus n'affiche pas le contenu pour
+adultes, et une page sans classification reste masquée dans tous les cas.
 
 Avant qu'un Replace ne remplace le dossier d'un mod, Eidos compare l'ancien
 dossier au nouveau par nom et taille de fichier, et lit les en-têtes des plugins

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6715cbae156a6c792d2cef7feb1a8557c348cc0b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2d528a4f9866439b25ba6b9f89bd62b93bd37f0e -->
 
 # Eidos kullanımı
 
@@ -678,6 +678,17 @@ vardığında kurulum başlar. Oradan sonrası alışılmış kurulumdur: bir FO
 kurulduğu cevaplarla açılır, ardından soru penceresi "Keep a backup of the
 existing mod" işaretli olarak Replace seçeneğini sunar; bir önceki pencerede ne
 seçmiş olursanız olun. Replace, modun önceliğini ve etkin olup olmadığını korur.
+
+Yanındaki **Nexus page** sekmesi modun açıklamasını ve, en yeniden başlayarak,
+sayfasındaki her dosya sürümünün değişiklik günlüğünü gösterir. Eidos ikisini de
+sekmeyi ilk açtığınızda Nexus'un GraphQL API'sinden okur; bu API saatlik istek
+sınırına sayılmaz. Okunan içerik Eidos kapanana ya da siz **Refresh** düğmesine
+basana kadar tutulur. İçerik düz metin olarak gösterilir: BBCode ve HTML
+biçimlendirmesi kaldırılır, bir bağlantının adresi metninin arkasına yazılır,
+resimler ve videolar dışarıda bırakılır. Metnin üstündeki **Endorse** ve
+**Track**, modun sağ tık menüsüyle aynı işi yapar. Yetişkin bir modun sayfası,
+Nexus hesabınız yetişkin içeriği göstermedikçe gizli kalır; derecelendirmesi
+olmayan bir sayfa ise her durumda gizli kalır.
 
 Bir Replace modun klasörünü değiştirmeden önce Eidos eski klasörü yenisiyle
 dosya adı ve boyutuna göre karşılaştırır ve ikisindeki eklentilerin başlıklarını

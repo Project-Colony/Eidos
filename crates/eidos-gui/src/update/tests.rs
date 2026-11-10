@@ -8613,3 +8613,40 @@ fn a_broken_collection_order_gets_a_last_card_and_restore_puts_it_back() {
     );
     let _ = fs::remove_dir_all(root);
 }
+
+#[test]
+fn opening_the_nexus_page_asks_once_and_keeps_only_the_awaited_answer() {
+    let (mut app, root) = collection_app(&[("Sky UI", 3863)], &[]);
+    app.info_mod = Some(0);
+    let key = ("skyrimspecialedition".to_string(), 3863u64);
+    let _ = update_inner(&mut app, Message::InfoSelectTab(InfoTab::NexusPage));
+    assert_eq!(app.nexus_page_loading.as_ref(), Some(&key));
+    let page = eidos_nexus::ModPage {
+        description: "Text".into(),
+        ..Default::default()
+    };
+    let reply = |mod_id| Message::NexusPageFetched {
+        domain: key.0.clone(),
+        mod_id,
+        result: Ok(page.clone()),
+    };
+    assert!(is_ambient(&app, &reply(3863)));
+    let _ = update_inner(&mut app, reply(99));
+    assert!(
+        app.nexus_pages.is_empty(),
+        "an answer nobody waits for is dropped"
+    );
+    let _ = update_inner(&mut app, reply(3863));
+    assert_eq!(app.nexus_pages.get(&key), Some(&Ok(page.clone())));
+    assert!(app.nexus_page_loading.is_none());
+    let _ = update_inner(&mut app, Message::InfoSelectTab(InfoTab::General));
+    let _ = update_inner(&mut app, Message::InfoSelectTab(InfoTab::NexusPage));
+    assert!(
+        app.nexus_page_loading.is_none(),
+        "the cached page is reused"
+    );
+    let _ = update_inner(&mut app, Message::NexusPageRefresh);
+    assert_eq!(app.nexus_page_loading.as_ref(), Some(&key));
+    assert!(!app.nexus_pages.contains_key(&key));
+    let _ = fs::remove_dir_all(root);
+}

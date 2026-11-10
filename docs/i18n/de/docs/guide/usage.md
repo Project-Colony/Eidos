@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6715cbae156a6c792d2cef7feb1a8557c348cc0b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2d528a4f9866439b25ba6b9f89bd62b93bd37f0e -->
 
 # Eidos verwenden
 
@@ -733,6 +733,18 @@ die gewohnte Installation: Ein FOMOD öffnet sich mit den Antworten, mit denen
 die Mod installiert wurde, dann bietet die Abfrage Replace mit angehaktem "Keep
 a backup of the existing mod" an, egal was Sie bei der letzten Abfrage gewählt
 haben. Replace behält die Priorität der Mod und ob sie aktiviert ist.
+
+Der Reiter **Nexus page** daneben zeigt die Beschreibung der Mod und, die
+neueste zuerst, das Changelog jeder Dateiversion auf ihrer Seite. Eidos liest
+beides beim ersten Öffnen des Reiters über die GraphQL-API von Nexus, die nicht
+auf das stündliche Anfragekontingent angerechnet wird, und behält es, bis Eidos
+geschlossen wird oder Sie **Refresh** drücken. Beides erscheint als reiner Text:
+BBCode- und HTML-Formatierung wird entfernt, die Adresse eines Links steht
+hinter seinem Text, und Bilder und Videos fallen weg. **Endorse** und **Track**
+über dem Text tun dasselbe wie das Rechtsklickmenü der Mod. Die Seite einer Mod
+für Erwachsene bleibt verborgen, solange Ihr Nexus-Konto keine Inhalte für
+Erwachsene anzeigt, und eine Seite ohne Einstufung bleibt in jedem Fall
+verborgen.
 
 Bevor ein Replace den Ordner einer Mod austauscht, vergleicht Eidos den alten
 mit dem neuen Ordner nach Dateiname und Größe und liest die Köpfe der Plugins in

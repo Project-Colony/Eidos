@@ -1128,6 +1128,7 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         | Message::NxmHandlerRead(..)
         | Message::NxmRegistered(..)
         | Message::NexusFilesFetched { .. }
+        | Message::NexusPageFetched { .. }
         | Message::RequirementsRefreshed(..)
         | Message::CollectionRevisionsChecked(..)
         | Message::RequirementFilePicked { .. }
@@ -1595,6 +1596,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::ModTrack(..)
         | Message::ModTracked(..)
         | Message::NexusFilesFetched { .. }
+        | Message::NexusPageFetched { .. }
+        | Message::NexusPageRefresh
         | Message::NexusUpdate { .. }
         | Message::CheckUpdates
         | Message::UpdatesChecked { .. }

@@ -679,6 +679,16 @@ the mod was installed with, then the prompt offers Replace with "Keep a backup o
 the existing mod" ticked, whatever you chose at the last prompt. Replace keeps
 the mod's priority and enabled state.
 
+The **Nexus page** tab beside it shows the mod's description and, newest first,
+the changelog of each file version on its page. Eidos reads both from Nexus's
+GraphQL API, which does not count against the hourly request budget, the first
+time you open the tab, and keeps them until Eidos closes or you press
+**Refresh**. They are shown as plain text: BBCode and HTML formatting is
+removed, a link's address is written after its text, and images and videos are
+left out. **Endorse** and **Track** above the text do what the mod's right-click
+menu does. The page of an adult mod stays hidden unless your Nexus account shows
+adult content, and a page with no rating stays hidden in every case.
+
 Before a Replace swaps a mod's folder, Eidos compares the old folder with the
 new one by file name and size and reads the headers of the plugins in both. This
 covers Update, a collection update, and Replace picked at the install prompt.

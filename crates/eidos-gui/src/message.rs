@@ -453,6 +453,14 @@ pub(crate) enum Message {
         mod_id: u64,
         result: Result<eidos_nexus::ModFiles, String>,
     },
+    /// A mod's Nexus page arrived (or failed), keyed like `NexusFilesFetched`.
+    NexusPageFetched {
+        domain: String,
+        mod_id: u64,
+        result: Result<eidos_nexus::ModPage, String>,
+    },
+    /// Ask Nexus again for the open mod's page.
+    NexusPageRefresh,
     /// Replace a mod's folder with the file that succeeds its installed one.
     NexusUpdate {
         folder: String,

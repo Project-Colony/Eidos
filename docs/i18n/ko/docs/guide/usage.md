@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6715cbae156a6c792d2cef7feb1a8557c348cc0b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2d528a4f9866439b25ba6b9f89bd62b93bd37f0e -->
 
 # Eidos 사용하기
 
@@ -611,6 +611,8 @@ Tracked 플래그를 그 모드 자신의 Nexus 도메인 기준으로 맞춥니
 설치할 때의 답으로 열리고, 이어지는 확인 창은 "Keep a backup of the existing mod"가
 체크된 상태로 Replace를 제시합니다. 지난번 확인 창에서 무엇을 골랐든 마찬가지입니다.
 Replace는 모드의 우선순위와 활성화 여부를 유지합니다.
+
+그 옆의 **Nexus page** 탭은 모드 설명과, 페이지에 있는 각 파일 버전의 변경 내역을 최신순으로 보여 줍니다. Eidos는 탭을 처음 열 때 둘 다 Nexus의 GraphQL API에서 읽어 오며, 이 API는 시간당 요청 한도에 포함되지 않습니다. 읽어 온 내용은 Eidos를 닫거나 **Refresh**를 누를 때까지 유지됩니다. 내용은 일반 텍스트로 표시됩니다. BBCode와 HTML 서식은 제거되고, 링크 주소는 링크 텍스트 뒤에 적히며, 이미지와 동영상은 빠집니다. 텍스트 위의 **Endorse**와 **Track**은 모드 오른쪽 클릭 메뉴와 같은 일을 합니다. 성인용 모드의 페이지는 Nexus 계정이 성인 콘텐츠를 표시하도록 설정되어 있지 않으면 숨겨지고, 등급이 없는 페이지는 어떤 경우에도 숨겨집니다.
 
 Replace가 모드 폴더를 바꾸기 전에 Eidos는 옛 폴더와 새 폴더를 파일 이름과 크기로 비교하고, 양쪽 플러그인의 헤더를 읽습니다. Update, 컬렉션 업데이트, 설치 확인 창에서 고른 Replace가 모두 해당합니다. 그러면 상태 줄에 추가·삭제·크기가 바뀐 파일 수가 표시되고, 새 버전만 필요로 하는 마스터의 이름이 나옵니다. "Information..."의 **General** 탭 끝에는 **Last update** 구역이 있어 버전, 추가되거나 삭제된 플러그인, 추가되거나 더는 필요 없는 마스터, ESM·ESL·ESH 플래그가 바뀐 플러그인, 이 모드가 이제 파일을 공유하거나 더는 공유하지 않는 모드, 그리고 파일을 나열합니다. 같은 크기로 다시 쓴 파일은 나오지 않습니다. 보고서는 인스턴스의 `logs/updates/<mod>.json`에 저장되며 `eidos pack`은 이를 포함하지 않습니다. 새로 설치하거나 폴더에 Merge하면 삭제됩니다. `eidos install --replace`는 같은 수치를 `changes:` 줄에 출력합니다.
 

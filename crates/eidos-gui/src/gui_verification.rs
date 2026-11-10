@@ -1045,18 +1045,14 @@ fn the_last_update_section_closes_the_general_tab() {
     assert!(after.iter().any(|(t, _)| *t == added), "{after:?}");
 }
 
-/// The Nexus files tab of the 660 px mod info card: every file keeps its Open
-/// button, the successor its Update button, each whole on one line and inside
-/// the card. Fixed columns used to take 560 px before the buttons, which iced
-/// then squeezed or cut off.
-#[test]
-fn nexus_file_buttons_fit_inside_the_mod_info_card() {
-    let _look = crate::test_support::look_lock();
-    let (_dir, mut app, _archive) = installers::tests::fixture();
+/// The fixture's only mod: `Sky UI`, Nexus mod 3863 on the fixture's game.
+/// Returns its `meta.ini`.
+fn sky_ui_mod(app: &mut App) -> PathBuf {
     let folder = app.created.as_ref().unwrap().mods_dir().join("Sky UI");
     fs::create_dir_all(&folder).unwrap();
+    let meta = folder.join("meta.ini");
     fs::write(
-        folder.join("meta.ini"),
+        &meta,
         "[General]\nmodid=3863\nversion=5.1\n[installedFiles]\n1\\modid=3863\n1\\fileid=101\nsize=1\n",
     )
     .unwrap();
@@ -1066,6 +1062,18 @@ fn nexus_file_buttons_fit_inside_the_mod_info_card() {
         path: folder,
         unmanaged: false,
     }];
+    meta
+}
+
+/// The Nexus files tab of the 660 px mod info card: every file keeps its Open
+/// button, the successor its Update button, each whole on one line and inside
+/// the card. Fixed columns used to take 560 px before the buttons, which iced
+/// then squeezed or cut off.
+#[test]
+fn nexus_file_buttons_fit_inside_the_mod_info_card() {
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    sky_ui_mod(&mut app);
     let file = |file_id, category_id, name: &str, version: &str| eidos_nexus::NexusFile {
         file_id,
         name: name.into(),
@@ -1111,6 +1119,104 @@ fn nexus_file_buttons_fit_inside_the_mod_info_card() {
         assert!(b.x + b.width <= 660.0 - 16.0, "past the card: {b:?}");
         assert!(b.height < line * 1.5, "wrapped: {b:?}");
     }
+}
+
+/// The Track and Refresh slots keep their place whether the mod is endorsed
+/// or tracked, in English and French, and every label fits its slot.
+#[test]
+fn the_nexus_page_buttons_keep_their_places_in_english_and_french() {
+    use colony_ui::i18n::Locale;
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    let meta = sky_ui_mod(&mut app);
+    let key = crate::modinfo::nexus_files_target(&app, 0).unwrap();
+    app.nexus_pages.insert(
+        key,
+        Ok(eidos_nexus::ModPage {
+            description: "Text".into(),
+            ..Default::default()
+        }),
+    );
+    app.info_mod = Some(0);
+    app.info_tab = InfoTab::NexusPage;
+    let mut renderer = renderer();
+    for locale in [Locale::En, Locale::Fr] {
+        let mut slots = Vec::new();
+        for flags in ["endorsed=0\ntracked=0\n", "endorsed=1\ntracked=1\n"] {
+            fs::write(&meta, format!("[General]\nmodid=3863\n{flags}")).unwrap();
+            let labels = crate::i18n::with_locale(locale, || {
+                positions(crate::modinfo::mod_info_dialog(&app, 0), &mut renderer).labels
+            });
+            let at = |key: &str| {
+                let s = crate::i18n::t_in(locale, key);
+                labels.iter().find(|(t, _)| t == s).map(|(_, b)| *b)
+            };
+            let track = at("nexus_page_track")
+                .or_else(|| at("nexus_page_untrack"))
+                .unwrap();
+            let refresh = at("nexus_page_refresh").unwrap();
+            let endorse = at("nexus_page_endorse")
+                .or_else(|| at("nexus_page_abstain"))
+                .unwrap();
+            assert!(
+                endorse.width <= crate::theme::scaled(PAGE_ENDORSE_W),
+                "{locale:?} endorse {endorse:?}"
+            );
+            assert!(
+                track.width <= crate::theme::scaled(PAGE_TRACK_W),
+                "{locale:?} track {track:?}"
+            );
+            slots.push((track.x, refresh.x));
+        }
+        assert_eq!(
+            slots[0], slots[1],
+            "{locale:?}: a flag change moved a button"
+        );
+    }
+}
+
+/// Seven tabs, Nexus page last, fit the 660 px card in English and French.
+#[test]
+fn every_mod_info_tab_fits_the_card_in_english_and_french() {
+    use colony_ui::i18n::Locale;
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    sky_ui_mod(&mut app);
+    app.info_mod = Some(0);
+    let mut renderer = renderer();
+    for locale in [Locale::En, Locale::Fr] {
+        let labels = crate::i18n::with_locale(locale, || {
+            positions(crate::modinfo::mod_info_dialog(&app, 0), &mut renderer).labels
+        });
+        let last = labels
+            .iter()
+            .find(|(t, _)| t == crate::i18n::t_in(locale, "info_tab_nexus_page"))
+            .unwrap()
+            .1;
+        assert!(last.x + last.width <= 660.0 - 16.0, "{locale:?}: {last:?}");
+    }
+}
+
+#[test]
+fn a_withheld_nexus_page_shows_the_reason_only() {
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    sky_ui_mod(&mut app);
+    let key = crate::modinfo::nexus_files_target(&app, 0).unwrap();
+    app.nexus_pages.insert(
+        key,
+        Ok(eidos_nexus::ModPage {
+            hidden: Some(eidos_nexus::HiddenReason::AdultDenied),
+            ..Default::default()
+        }),
+    );
+    app.info_mod = Some(0);
+    app.info_tab = InfoTab::NexusPage;
+    let labels = positions(crate::modinfo::mod_info_dialog(&app, 0), &mut renderer()).labels;
+    assert!(labels
+        .iter()
+        .any(|(s, _)| s == eidos_nexus::HiddenReason::AdultDenied.message()));
+    assert!(!labels.iter().any(|(s, _)| s == t("nexus_page_description")));
 }
 
 /// Collection notices arrive seconds after Check for updates, maybe while the

@@ -17,6 +17,7 @@ mod files;
 mod install;
 mod main_screen;
 mod nexus_files;
+mod nexus_page;
 mod plugins;
 mod saves;
 
@@ -28,6 +29,7 @@ pub(crate) use files::*;
 pub(crate) use install::*;
 pub(crate) use main_screen::*;
 pub(crate) use nexus_files::*;
+pub(crate) use nexus_page::*;
 pub(crate) use plugins::*;
 pub(crate) use saves::*;
 
@@ -839,6 +841,11 @@ pub(crate) fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
             InfoTab::NexusFiles,
             info_mix(app, InfoTab::NexusFiles),
         ));
+        tabs = tabs.push(info_tab_btn(
+            t("info_tab_nexus_page"),
+            InfoTab::NexusPage,
+            info_mix(app, InfoTab::NexusPage),
+        ));
     }
 
     let content = match app.info_tab {
@@ -848,6 +855,7 @@ pub(crate) fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
         InfoTab::IniTweaks => info_ini_tweaks(app, i, m),
         InfoTab::Notes => info_notes(app),
         InfoTab::NexusFiles => info_nexus_files(app, i, m),
+        InfoTab::NexusPage => info_nexus_page(app, i, m),
     };
 
     let card = Column::new()

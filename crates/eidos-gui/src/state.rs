@@ -437,6 +437,8 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         tracking: None,
         nexus_files: HashMap::new(),
         nexus_files_loading: None,
+        nexus_pages: HashMap::new(),
+        nexus_page_loading: None,
         endorsed_count: 0,
         updated_count: 0,
         nexus_hourly_left: None,

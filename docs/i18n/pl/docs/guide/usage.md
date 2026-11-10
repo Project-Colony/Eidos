@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6715cbae156a6c792d2cef7feb1a8557c348cc0b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2d528a4f9866439b25ba6b9f89bd62b93bd37f0e -->
 
 # Używanie Eidos
 
@@ -682,6 +682,16 @@ instalacja: FOMOD otwiera się z odpowiedziami, z którymi mod był instalowany,
 potem okno proponuje Replace z zaznaczonym „Keep a backup of the existing mod",
 niezależnie od wyboru w poprzednim oknie. Replace zachowuje priorytet moda i to,
 czy jest włączony.
+
+Karta **Nexus page** obok pokazuje opis moda i listę zmian każdej wersji pliku
+na jego stronie, od najnowszej. Eidos odczytuje oba z API GraphQL Nexusa, które
+nie wlicza się do godzinnego limitu zapytań, przy pierwszym otwarciu karty i
+trzyma je, dopóki nie zamkniesz Eidos albo nie naciśniesz **Refresh**. Są
+pokazane jako zwykły tekst: formatowanie BBCode i HTML jest usuwane, adres linku
+jest zapisany po jego tekście, a obrazy i filmy są pomijane. **Endorse** i
+**Track** nad tekstem robią to samo co menu prawego przycisku moda. Strona moda
+dla dorosłych pozostaje ukryta, chyba że twoje konto Nexus pokazuje treści dla
+dorosłych, a strona bez klasyfikacji pozostaje ukryta w każdym przypadku.
 
 Zanim Replace podmieni folder moda, Eidos porównuje stary folder z nowym według
 nazw i rozmiarów plików oraz czyta nagłówki pluginów w obu. Dotyczy to Update,

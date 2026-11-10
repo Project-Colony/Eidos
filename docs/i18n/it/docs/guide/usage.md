@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6715cbae156a6c792d2cef7feb1a8557c348cc0b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=2d528a4f9866439b25ba6b9f89bd62b93bd37f0e -->
 
 # Usare Eidos
 
@@ -717,6 +717,17 @@ sulle risposte con cui la mod era stata installata, poi la richiesta propone
 Replace con "Keep a backup of the existing mod" spuntato, qualunque cosa tu
 abbia scelto alla richiesta precedente. Replace mantiene la priorità della mod e
 il suo stato di attivazione.
+
+La scheda **Nexus page** accanto mostra la descrizione della mod e, dalla più
+recente, il changelog di ogni versione dei file sulla sua pagina. Eidos li legge
+dall'API GraphQL di Nexus, che non conta nel limite orario di richieste, la
+prima volta che apri la scheda, e li tiene finché non chiudi Eidos o premi
+**Refresh**. Sono mostrati come testo semplice: la formattazione BBCode e HTML
+viene rimossa, l'indirizzo di un link è scritto dopo il suo testo, e immagini e
+video sono lasciati fuori. **Endorse** e **Track** sopra il testo fanno ciò che
+fa il menu del tasto destro della mod. La pagina di una mod per adulti resta
+nascosta a meno che il tuo account Nexus non mostri i contenuti per adulti, e
+una pagina senza classificazione resta nascosta in ogni caso.
 
 Prima che un Replace sostituisca la cartella di una mod, Eidos confronta la
 cartella vecchia con quella nuova per nome e dimensione dei file e legge le
