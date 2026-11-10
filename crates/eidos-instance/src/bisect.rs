@@ -16,7 +16,8 @@ use crate::{write_atomic, Instance};
 /// all limited to `universe` and returned in `universe` order. A master no mod
 /// of `universe` provides (the game's own, the Overwrite's) adds nothing.
 pub fn with_masters(chosen: &[String], universe: &[String], plugins: &[Plugin]) -> Vec<String> {
-    let in_universe = |m: &str| universe.iter().any(|u| u == m);
+    let universe_set: HashSet<&str> = universe.iter().map(String::as_str).collect();
+    let in_universe = |m: &str| universe_set.contains(m);
     let provider: HashMap<String, &str> = plugins
         .iter()
         .map(|p| (p.name.to_ascii_lowercase(), p.origin_mod.as_str()))
@@ -100,6 +101,11 @@ impl Bisect {
         }
     }
 
+    /// `candidates` for lookups: a list can hold a thousand mods or more.
+    fn candidate_set(&self) -> HashSet<&str> {
+        self.candidates.iter().map(String::as_str).collect()
+    }
+
     /// Split `candidates` in two (rotated left by `attempt * max(1, n / 3)`,
     /// cut at `n / 2` rounded up) and give the closure under masters of the
     /// first half, then the second, that tests a candidate and leaves one out.
@@ -113,12 +119,13 @@ impl Bisect {
         let mut rotated = self.candidates.clone();
         rotated.rotate_left((self.attempt as usize % n) * (n / 3).max(1) % n);
         let (first, second) = rotated.split_at(n.div_ceil(2));
+        let candidates = self.candidate_set();
         [first, second].iter().find_map(|half| {
             let chosen: Vec<String> = self.pinned.iter().chain(*half).cloned().collect();
             let closure = with_masters(&chosen, universe, plugins);
             let tested = closure
                 .iter()
-                .filter(|m| self.candidates.contains(m))
+                .filter(|m| candidates.contains(m.as_str()))
                 .count();
             (tested > 0 && tested < n).then_some(closure)
         })
@@ -133,9 +140,10 @@ impl Bisect {
         plugins: &[Plugin],
     ) -> Option<(Vec<String>, Vec<String>)> {
         let mut on = self.usable_closure(universe, plugins)?;
+        let candidates = self.candidate_set();
         let tested = on
             .iter()
-            .filter(|m| self.candidates.contains(m))
+            .filter(|m| candidates.contains(m.as_str()))
             .cloned()
             .collect();
         // `with_masters` keeps only `universe`, so a pinned mod the profile has off

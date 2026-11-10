@@ -28,11 +28,7 @@ pub(crate) fn bisect_stage(app: &App) -> BisectStage {
     let Some(b) = &app.bisect else {
         return BisectStage::Setup;
     };
-    if app
-        .created
-        .as_ref()
-        .is_some_and(|i| i.active_profile() != b.profile)
-    {
+    if app.created.is_some() && cached_profiles(app).1 != b.profile {
         return BisectStage::OtherProfile;
     }
     let (universe, plugins) = &app.bisect_universe;
@@ -198,8 +194,10 @@ pub(crate) fn bisect_panel<'a>(app: &App) -> Element<'a, Message> {
             .style(button::primary)
     };
     let (universe, plugins) = &app.bisect_universe;
+    // Once per build: it runs the split under masters.
+    let current = bisect_stage(app);
     let stage = Column::new().spacing(10).width(Length::Fill);
-    let stage = match (bisect_stage(app), &app.bisect) {
+    let stage = match (current, &app.bisect) {
         (BisectStage::Setup, _) => {
             let probe = Bisect::new("", app.bisect_pinned.clone(), universe.clone(), 0);
             let pinned = if app.bisect_pinned.is_empty() {
@@ -344,7 +342,7 @@ pub(crate) fn bisect_panel<'a>(app: &App) -> Element<'a, Message> {
             .on_press(Message::BisectHide)
             .style(button::secondary),
     );
-    match bisect_stage(app) {
+    match current {
         BisectStage::Setup => {}
         BisectStage::Result => {
             bottom = bottom.push(primary(
