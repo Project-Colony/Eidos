@@ -125,11 +125,15 @@ pub fn system_findings(f: &SystemFacts) -> Vec<Finding> {
 mod tests {
     use super::*;
 
+    // /mnt/Jeux2 comes before /mnt/Jeux at the same depth, so a string-prefix match
+    // with the later-line tie rule would give /mnt/Jeux2 paths btrfs.
     const MOUNTS: &str = "22 1 259:2 / / rw,relatime shared:1 - ext4 /dev/nvme0n1p2 rw\n\
-40 22 259:5 / /mnt/Jeux rw,relatime shared:20 - btrfs /dev/nvme1n1p1 rw\n\
 41 22 8:1 / /mnt/Jeux2 rw shared:21 - ntfs3 /dev/sda1 rw\n\
+40 22 259:5 / /mnt/Jeux rw,relatime shared:20 - btrfs /dev/nvme1n1p1 rw\n\
 42 22 8:2 / /run/media/lin/Win\\040Games rw,nosuid shared:22 - fuseblk /dev/sda2 rw,user_id=0\n\
-43 40 8:17 / /mnt/Jeux/usb rw - exfat /dev/sdb1 rw\n";
+43 40 8:17 / /mnt/Jeux/usb rw - exfat /dev/sdb1 rw\n\
+44 43 8:18 / /mnt/Jeux/usb rw - vfat /dev/sdb2 rw\n\
+45 22 8:33 / /mnt/back\\134040slash rw - xfs /dev/sdc1 rw\n";
 
     #[test]
     fn mount_fs_type_decodes_escapes_and_matches_whole_components() {
@@ -143,7 +147,11 @@ mod tests {
             t("/run/media/lin/Win Games/SteamLibrary").as_deref(),
             Some("fuseblk")
         );
-        assert_eq!(t("/mnt/Jeux/usb/Eidos").as_deref(), Some("exfat"));
+        // The over-mount on /mnt/Jeux/usb is the later line, so it wins the tie.
+        assert_eq!(t("/mnt/Jeux/usb/Eidos").as_deref(), Some("vfat"));
+        // `\134040` is a backslash then "040", never a second escape.
+        assert_eq!(t("/mnt/back\\040slash/Games").as_deref(), Some("xfs"));
+        assert_eq!(t("/mnt/back slash/Games").as_deref(), Some("ext4"));
         assert_eq!(t("/home/lin").as_deref(), Some("ext4"));
     }
 
