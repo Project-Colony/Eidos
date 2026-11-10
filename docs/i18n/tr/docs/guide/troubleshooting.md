@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=cadcf569ba9dbf61fcde16e8cef0e9cbe719744c -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=55e68d8b6ee830b2d336ce1e96db32155a304c57 -->
 
 # Sorun giderme ve tanılama
 
@@ -122,6 +122,35 @@ birleştirilmiş çocuk haritasının `readdir` üzerinde ne kazandırdığını
 
 `EIDOS_NO_INDEX=1` dolaşmayı zorlar; iki yanıt arasındaki farkın kendisi hata
 ayıklanan şey olduğunda işe yarar.
+
+## Kapanmayan bir oyun ya da araç
+
+Bir oyun ya da araç çalışırken Run düğmesi **Stop** olur, kilit kartında da bir
+Stop düğmesi vardır. Ona iki kez basın. İkinci basış, çalıştırmanın başlattığı
+her programı sonlandırır: önce SIGTERM, 10 saniye sonra da geriye kalanlar için
+SIGKILL. Oyunun kaydetmediği her şey kaybolur. Ardından Eidos her çıkıştan sonra
+yaptığını yapar: INI ve eklenti değişiklikleri profile geri döner, araç çıktısı
+kaydedilir ve modların bağlantısı kaldırılır. **Unlock** farklıdır: pencereyi
+geri verir ve programı çalışır durumda bırakır. Bir terminalden, `eidos`
+sürecine `kill <pid>` (pid kilit kartında yazar) Stop ile aynı işi yapar.
+
+## Oyunu hangi Proton çalıştırıyor, ve bozuk bir önek
+
+Diagnostics sekmesinde bir **Proton** kartı vardır: Eidos ile Steam'in oyun için
+kullandığı sürüm, Steam'in kendi ayarı ve öneki en son çalıştıran sürüm. Öneki
+en son seçilenden daha yeni bir Proton hazırladıysa kart bir öneriye dönüşür,
+çünkü daha yeni bir önekte daha eski bir Proton, önekin Wine dosyalarını
+sıfırlayabilir ya da başlamayabilir. Steam'de oyunun Özellikler, Uyumluluk
+bölümünden en az o kadar yeni bir sürüm seçin.
+
+O karttaki **Rebuild prefix**, artık çalışmayan bir önek içindir. Ona iki kez
+basın. Eidos hiçbir şey silmez: `steamapps/compatdata/<appid>` klasörünü aynı
+klasör içinde `<appid>.eidos-backup-<date>-<time>` olarak yeniden adlandırır ve
+oyunu Steam'den bir sonraki başlatışınızda Steam yeni bir önek oluşturur. Öneki
+bir oyun, bir araç ya da herhangi bir Wine programı kullanırken bunu reddeder.
+Yalnızca eski önekte duran kayıtlar ve ayarlar yeniden adlandırılan klasörde
+kalır: ihtiyacınız olanı geri kopyalayın ve artık istemediğinizde o klasörü
+kendiniz silin.
 
 ## Bilinen sorunlar
 

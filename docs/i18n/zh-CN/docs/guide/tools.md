@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=dbfc389b04dc12924b04def193f8b07b6fe6e324 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -74,6 +74,19 @@ MO2 做的是同样的改写,理由也一样 - 它自己的注释里点名的是
 位于**已禁用**模组里的工具无法被改写,因为它的文件也不在视图里。Eidos 会照实
 说明,并从它自己的文件夹运行它,而不是假装。
 
+## 来自 Mod Organizer 2 列表的工具
+
+作为 Eidos 实例打开的 Wabbajack 列表或其他 MO2 实例会保留自己的 `ModOrganizer.ini`，其中配置的可执行文件可以复制到 `tools.ini`：
+
+```sh
+eidos tool /path/to/list import-mo2           # 显示将要添加的内容
+eidos tool /path/to/list import-mo2 --write   # 添加
+```
+
+在窗口中，“可执行文件”对话框有 **从 ModOrganizer.ini 导入** 按钮，每个条目都有一个可取消勾选的复选框。点击保存之前不会写入任何内容。
+
+`Z:` 上的路径是 Linux 路径，保持原样。其他盘符上的路径如果包含列表文件夹的名称，就会移到列表文件夹下（`D:\Lists\MyList\tools\SSEEdit.exe` 变为 `<list>/tools/SSEEdit.exe`），可执行文件、工作目录和参数都按此处理。脚本扩展器的加载器和游戏主程序会变成纯文件名，因此和内置条目一样，从 Eidos 挂载视图的游戏文件夹中运行。指向其他位置的条目（Windows 系统程序、列表之外的工具）会连同原因列为已跳过，`tools.ini` 中已有的标题则永远不会被替换。
+
 ## 把工具的输出送进它自己的模组
 
 生成器 - FNIS、Nemesis、BodySlide、DynDOLOD、Synthesis - 会写出几百个文件。
@@ -95,6 +108,12 @@ Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 
 如果目标模组是禁用的,输出照样会写出去,但游戏看不到它,于是工具在下一次运行时
 会重新生成同样的文件。遇到这种情况 Eidos 会警告。
+
+### 输出过期时
+
+Eidos 会记录工具的输出是由哪些模组、插件顺序、配置档和可执行文件生成的。其中任何一项改变,Diagnostics 标签页都会提示,卡片上还有一个 **Run <tool> again** 按钮,按当前设置重新运行该工具。
+
+对于输出过期就会弄坏游戏的生成器(例如 Pandora 或 Nemesis),可以在 `tools.ini` 里它的条目下加上 `check_before_play=1`,或在 Executables 对话框中为它打开 **Ask before playing when its output is out of date**。之后 Run 会先询问:运行该工具,还是照常游玩。选择照常游玩后,会记住到模组、插件或配置档再次改变,或窗口关闭为止。Eidos 从不自己启动该工具。
 
 ## 一个工具需要哪些 DLL,由它的名字决定
 
@@ -285,6 +304,13 @@ Windows 工具靠读 `HKLM\Software\Bethesda Softworks\<game>` 的
 
 隐藏和置顶关乎一个工具*怎么被够到*,而不是它运行什么,所以它们对每款游戏的
 默认项和你自己的条目一样适用。
+
+script extender 的 loader、启动器和游戏本体没有 Desktop shortcut 按钮。它们会
+启动游戏,而游戏总是通过它的商店启动,这件事商店自己的快捷方式已经在做。用
+Eidos 1.22 或更早版本给其中某一项建的快捷方式仍然能用:和在终端里输入的
+`eidos tool <instance> run <title>` 一样,它会请商店启动游戏,就像 Run 在不是
+由商店打开的窗口里做的那样。商店的设置缺失时,这条命令什么也不启动,并打印要
+设置什么。快捷方式不显示任何消息,所以要看它,就在终端里运行同一条命令。
 
 ## 自成一个 Steam 应用的工具
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=dbfc389b04dc12924b04def193f8b07b6fe6e324 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
 
 # Herramientas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -105,6 +105,19 @@ Una herramienta dentro de un mod **desactivado** no se puede reescribir, porque
 sus archivos tampoco están en la vista. Eidos lo dice y la ejecuta desde su propia
 carpeta en vez de fingir.
 
+## Herramientas de una lista de Mod Organizer 2
+
+Una lista de Wabbajack u otra instancia de MO2 abierta como instancia de Eidos conserva su `ModOrganizer.ini`, y los ejecutables configurados ahí se pueden copiar a `tools.ini`:
+
+```sh
+eidos tool /path/to/list import-mo2           # muestra lo que se añadiría
+eidos tool /path/to/list import-mo2 --write   # las añade
+```
+
+En la ventana, el diálogo de Ejecutables tiene **Importar desde ModOrganizer.ini**, con una casilla que se puede desmarcar en cada entrada. No se guarda nada hasta que pulsa Guardar.
+
+Las rutas en `Z:` son rutas de Linux y se quedan como están. Una ruta en otra letra de unidad pasa a la carpeta de la lista cuando nombra esa carpeta (`D:\Lists\MyList\tools\SSEEdit.exe` pasa a ser `<list>/tools/SSEEdit.exe`), tanto en el ejecutable como en el directorio de trabajo y en los argumentos. El cargador del extensor de scripts y el binario del juego pasan a ser nombres simples, así que se ejecutan desde la carpeta del juego sobre la que Eidos monta la vista, como las entradas integradas. Las entradas que apuntan a otro sitio (un programa del sistema de Windows, una herramienta fuera de la lista) se muestran como omitidas con el motivo, y un título que ya esté en `tools.ini` nunca se reemplaza.
+
 ## Enviar la salida de una herramienta a su propio mod
 
 Un generador - FNIS, Nemesis, BodySlide, DynDOLOD, Synthesis - escribe cientos de
@@ -131,6 +144,12 @@ de las dos cosas.
 Si el mod de destino está desactivado, la salida se escribe igualmente pero el
 juego no la verá, así que la herramienta regeneraría los mismos archivos en la
 siguiente ejecución. Eidos avisa cuando es el caso.
+
+### Cuando su salida está desactualizada
+
+Eidos anota con qué mods, orden de plugins, perfil y ejecutable se generó la salida de una herramienta. Cuando uno de ellos cambia, la pestaña Diagnostics lo indica, y la tarjeta trae un botón **Run <tool> again** que ejecuta la herramienta con su configuración actual.
+
+Para un generador cuya salida desactualizada rompe el juego, como Pandora o Nemesis, añada `check_before_play=1` a su entrada en `tools.ini`, o active **Ask before playing when its output is out of date** en el diálogo Executables. Run pregunta entonces primero: ejecutar la herramienta o jugar de todos modos. Jugar de todos modos se recuerda hasta que los mods, los plugins o el perfil vuelvan a cambiar, o hasta que se cierre la ventana. Eidos nunca inicia la herramienta por sí mismo.
 
 ## Las DLL que necesita una herramienta se eligen por su NOMBRE
 
@@ -370,6 +389,16 @@ nadie lee. En el diálogo de Executables:
 Ocultar y fijar tienen que ver con cómo se *llega* a una herramienta y no con lo
 que ejecuta, así que se aplican a los valores por defecto de cada juego igual que
 a tus propias entradas.
+
+El loader del script extender, el lanzador y el binario del juego no tienen
+botón Desktop shortcut. Inician el juego, y el juego siempre se inicia a través
+de su tienda, cosa que ya hace el acceso directo de la propia tienda. Un acceso
+directo creado para uno de ellos con Eidos 1.22 o anterior sigue funcionando:
+igual que `eidos tool <instance> run <title>` escrito en una terminal, pide a la
+tienda que inicie el juego, como hace Run en una ventana que no abrió ninguna
+tienda. Cuando falta el ajuste de la tienda, la orden no inicia nada y muestra
+qué poner. Un acceso directo no muestra ningún mensaje, así que ejecuta la misma
+orden en una terminal para leerlo.
 
 ## Una herramienta que es su propia aplicación de Steam
 

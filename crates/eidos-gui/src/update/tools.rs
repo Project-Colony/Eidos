@@ -393,6 +393,75 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 state.load_buffers();
             }
         }
+        Message::ExecImportMo2 => {
+            let (Some(game), Some(inst)) = (selected_game(app), app.created.as_ref()) else {
+                return Task::none();
+            };
+            // shortcut: an unreadable file lists nothing, the button only shows for a file that exists.
+            let ini = inst
+                .foreign_mo2_ini()
+                .and_then(|p| std::fs::read(p).ok())
+                .map(|b| String::from_utf8_lossy(&b).into_owned())
+                .unwrap_or_default();
+            let found = eidos_instance::mo2_executables(&ini, &inst.root, game_executables(game));
+            if let Some(state) = &mut app.executables {
+                state.mo2_import = Some(
+                    found
+                        .into_iter()
+                        .map(|e| {
+                            let ok = e
+                                .result
+                                .as_ref()
+                                .is_ok_and(|t| !state.title_taken(&t.title));
+                            (e, ok)
+                        })
+                        .collect(),
+                );
+            }
+        }
+        Message::ExecImportToggle(i) => {
+            if let Some(state) = &mut app.executables {
+                let taken = state
+                    .mo2_import
+                    .as_ref()
+                    .and_then(|rows| rows.get(i))
+                    .is_none_or(|(e, _)| {
+                        e.result
+                            .as_ref()
+                            .map_or(true, |t| state.title_taken(&t.title))
+                    });
+                if let (false, Some((_, on))) =
+                    (taken, state.mo2_import.as_mut().and_then(|r| r.get_mut(i)))
+                {
+                    *on = !*on;
+                }
+            }
+        }
+        Message::ExecImportApply => {
+            if let Some(state) = &mut app.executables {
+                state.commit_buffers();
+                let rows = state.mo2_import.take().unwrap_or_default();
+                let first = state.user_len;
+                for (entry, checked) in rows {
+                    // A title taken since the list was built, or by an earlier row, is left out.
+                    if let (true, Ok(tool)) = (checked, entry.result) {
+                        if !state.title_taken(&tool.title) {
+                            state.merged.insert(state.user_len, tool);
+                            state.user_len += 1;
+                        }
+                    }
+                }
+                if state.user_len > first {
+                    state.selected = Some(first);
+                    state.load_buffers();
+                }
+            }
+        }
+        Message::ExecImportCancel => {
+            if let Some(state) = &mut app.executables {
+                state.mo2_import = None;
+            }
+        }
         Message::DeleteExecutableTool => {
             if let Some(state) = &mut app.executables {
                 if state.selected_is_user() {
@@ -524,7 +593,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 // precedence over the default of the same title, so the tool
                 // itself still comes from the default.
                 for d in &state.merged[state.user_len..] {
-                    if (d.hidden || d.pinned)
+                    if (d.hidden || d.pinned || d.check_before_play)
                         && !user_tools
                             .iter()
                             .any(|t| t.title.eq_ignore_ascii_case(&d.title))
@@ -564,6 +633,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             if let Some(state) = app.executables.as_mut() {
                 if let Some(t) = state.selected.and_then(|i| state.merged.get_mut(i)) {
                     t.hidden = !t.hidden;
+                }
+            }
+        }
+        Message::ExecToggleCheckBeforePlay => {
+            if let Some(state) = app.executables.as_mut() {
+                if let Some(t) = state.selected.and_then(|i| state.merged.get_mut(i)) {
+                    t.check_before_play = !t.check_before_play;
                 }
             }
         }

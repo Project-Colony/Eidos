@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=dbfc389b04dc12924b04def193f8b07b6fe6e324 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -97,6 +97,19 @@ FNIS.
 Nástroj ve **vypnutém** módu přepsat nelze, protože jeho soubory nejsou ani v
 pohledu. Eidos to řekne a spustí ho z jeho vlastní složky, místo aby předstíral.
 
+## Nástroje ze seznamu Mod Organizer 2
+
+Seznam Wabbajack nebo jiná instance MO2 otevřená jako instance Eidos si ponechává svůj `ModOrganizer.ini` a spustitelné soubory nastavené v něm lze zkopírovat do `tools.ini`:
+
+```sh
+eidos tool /path/to/list import-mo2           # ukáže, co by se přidalo
+eidos tool /path/to/list import-mo2 --write   # přidá je
+```
+
+V okně má dialog Spustitelné soubory tlačítko **Importovat z ModOrganizer.ini** a u každé položky políčko, které lze odškrtnout. Dokud nestisknete Uložit, nic se neukládá.
+
+Cesty na `Z:` jsou cesty Linuxu a zůstávají beze změny. Cesta na jiném písmenu jednotky se přesune do složky seznamu, pokud tuto složku jmenuje (`D:\Lists\MyList\tools\SSEEdit.exe` se stane `<list>/tools/SSEEdit.exe`), ve spustitelném souboru, pracovní složce i argumentech. Zavaděč rozšíření skriptů a binárka hry se změní na prosté názvy, takže se spouštějí ze složky hry, přes kterou Eidos připojuje pohled, stejně jako vestavěné položky. Položky mířící jinam (systémový program Windows, nástroj mimo seznam) se vypíšou jako přeskočené s důvodem a název, který už v `tools.ini` je, se nikdy nenahradí.
+
 ## Posílání výstupu nástroje do jeho vlastního módu
 
 Generátor - FNIS, Nemesis, BodySlide, DynDOLOD, Synthesis - zapíše stovky
@@ -121,6 +134,12 @@ dosáhne stejného koncového stavu bez jednoho i druhého.
 
 Pokud je cílový mód vypnutý, výstup se zapíše, ale hra ho neuvidí, takže by
 nástroj při dalším běhu vygeneroval tytéž soubory znovu. Eidos na to upozorní.
+
+### Když je její výstup zastaralý
+
+Eidos si zaznamenává, z jakých modů, pořadí pluginů, profilu a spustitelného souboru vznikl výstup nástroje. Když se něco z toho změní, upozorní na to karta Diagnostics a karta má tlačítko **Run <tool> again**, které nástroj spustí s jeho současným nastavením.
+
+U generátoru, jehož zastaralý výstup rozbije hru, třeba Pandory nebo Nemesis, přidejte k jeho záznamu v `tools.ini` řádek `check_before_play=1`, nebo v dialogu Executables zapněte **Ask before playing when its output is out of date**. Run se pak nejdřív zeptá: spustit nástroj, nebo přesto hrát. Volba hrát přesto platí, dokud se mody, pluginy nebo profil znovu nezmění, nebo dokud se okno nezavře. Eidos nástroj nikdy nespouští sám.
 
 ## DLL, které nástroj potřebuje, se vybírají podle jeho NÁZVU
 
@@ -347,6 +366,15 @@ Executables:
 Skrývání a připínání se týkají toho, jak se k nástroji *dostanete*, ne toho, co
 spouští, takže platí i pro výchozí nástroje dané hry, nejen pro vaše vlastní
 položky.
+
+Loader script extenderu, launcher a binárka hry tlačítko Desktop shortcut
+nemají. Spouštějí hru a hra se vždy spouští přes svůj obchod, což už dělá
+zástupce samotného obchodu. Zástupce, který jste pro některý z nich vytvořili
+v Eidosu 1.22 nebo starším, funguje dál: stejně jako
+`eidos tool <instance> run <title>` zadané v terminálu požádá obchod, aby hru
+spustil, tak jako Run v okně, které neotevřel žádný obchod. Když nastavení
+v obchodě chybí, příkaz nic nespustí a vypíše, co nastavit. Zástupce žádnou
+zprávu neukáže, proto si ji přečtěte spuštěním stejného příkazu v terminálu.
 
 ## Nástroj, který je vlastní aplikací na Steamu
 

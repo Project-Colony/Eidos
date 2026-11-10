@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=bf2a3d995d27b69444b8e0497adb217856e87ce8 -->
+<!-- eidos-i18n: source=README.md sha=24a826cf58aaf1ab0e91bef4d7acfb7ebb818ed3 -->
 
 <div align="center">
 
@@ -143,8 +143,7 @@ Steam AppID を与え、Eidos をまったく開かずに統合ビュー越し�
 LOOT、`.fos` のセーブ) - [guide/fallout4.ja.md](docs/guide/fallout4.md) を
 参照。共通のゲーム記述子で組み込み済み、テスター募集中: Skyrim LE、Skyrim VR、
 Enderal SE、Fallout 3、Fallout NV、Fallout 4(+ VR)、Starfield、Oblivion、
-Morrowind(最後の二つはマウントと MOD 管理はできますが、タイムスタンプ順の
-プラグイン一覧はまだ管理していません)。
+Morrowind(ロード順はプラグインファイルの日付です。Eidos はプロファイルごとに一つの順序を保持し、ディスク上のファイルは変えずに、マウント内でその日付を見せます)。
 
 系列の追加は記述子の一行です:
 [internals/adding-games.md](../../internals/adding-games.md)。

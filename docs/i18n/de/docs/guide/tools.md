@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=dbfc389b04dc12924b04def193f8b07b6fe6e324 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -104,6 +104,19 @@ Ein Tool in einem **deaktivierten** Mod kann nicht umgeschrieben werden, weil
 seine Dateien auch nicht im Blick liegen. Eidos sagt das und startet es aus
 seinem eigenen Ordner, statt so zu tun als ob.
 
+## Werkzeuge aus einer Mod-Organizer-2-Liste
+
+Eine Wabbajack-Liste oder eine andere MO2-Instanz, die als Eidos-Instanz geöffnet wird, behält ihre `ModOrganizer.ini`. Die dort eingerichteten Programme lassen sich in `tools.ini` übernehmen:
+
+```sh
+eidos tool /path/to/list import-mo2           # zeigt, was hinzukäme
+eidos tool /path/to/list import-mo2 --write   # fügt es hinzu
+```
+
+Im Fenster hat der Dialog Programme die Schaltfläche **Aus ModOrganizer.ini importieren**, mit einem Kästchen zum Abwählen für jeden Eintrag. Gespeichert wird erst, wenn Sie auf Speichern klicken.
+
+Pfade auf `Z:` sind Linux-Pfade und bleiben unverändert. Ein Pfad auf einem anderen Laufwerksbuchstaben wird unter den Ordner der Liste verschoben, wenn er diesen Ordner nennt (`D:\Lists\MyList\tools\SSEEdit.exe` wird zu `<list>/tools/SSEEdit.exe`), und zwar in der ausführbaren Datei, im Arbeitsverzeichnis und in den Argumenten. Der Loader des Script Extenders und die Spieldatei werden zu schlichten Namen und laufen so aus dem Spielordner, über den Eidos die Ansicht legt, wie die eingebauten Einträge. Einträge, die woanders hinzeigen (ein Windows-Systemprogramm, ein Werkzeug außerhalb der Liste), erscheinen mit Begründung als übersprungen, und ein Titel, den `tools.ini` schon enthält, wird nie ersetzt.
+
 ## Die Ausgabe eines Tools in einen eigenen Mod schicken
 
 Ein Generator - FNIS, Nemesis, BodySlide, DynDOLOD, Synthesis - schreibt
@@ -130,6 +143,12 @@ ohne beides.
 Ist der Ziel-Mod deaktiviert, wird die Ausgabe zwar geschrieben, aber das Spiel
 sieht sie nicht, das Tool würde also beim nächsten Lauf dieselben Dateien neu
 erzeugen. Eidos warnt, wenn das der Fall ist.
+
+### Wenn seine Ausgabe veraltet ist
+
+Eidos merkt sich, aus welchen Mods, welcher Plugin-Reihenfolge, welchem Profil und welcher Programmdatei die Ausgabe eines Tools entstanden ist. Ändert sich eines davon, meldet das der Reiter Diagnostics, und die Karte hat einen Knopf **Run <tool> again**, der das Tool mit der jetzigen Konfiguration startet.
+
+Für einen Generator, dessen veraltete Ausgabe das Spiel kaputtmacht, etwa Pandora oder Nemesis, tragen Sie `check_before_play=1` in seinen Eintrag in `tools.ini` ein oder schalten im Dialog Executables **Ask before playing when its output is out of date** ein. Run fragt dann zuerst: das Tool starten oder trotzdem spielen. Die Entscheidung, trotzdem zu spielen, gilt, bis sich Mods, Plugins oder Profil wieder ändern oder das Fenster geschlossen wird. Eidos startet das Tool nie von selbst.
 
 ## Die DLLs, die ein Tool braucht, werden über seinen NAMEN gewählt
 
@@ -373,6 +392,16 @@ kommen, ist ein Auswahlmenü, das niemand liest. Im Executables-Dialog:
 Verstecken und Anheften betreffen, wie ein Tool *erreicht* wird, nicht was es
 startet, sie gelten also für die Voreinstellungen pro Spiel ebenso wie für Ihre
 eigenen Einträge.
+
+Der Loader des Script Extenders, der Launcher und die Spielbinärdatei haben
+keine Schaltfläche Desktop shortcut. Sie starten das Spiel, und das Spiel
+startet immer über seinen Store, was die Verknüpfung des Stores schon erledigt.
+Eine Verknüpfung, die Sie für einen davon mit Eidos 1.22 oder älter angelegt
+haben, funktioniert weiter: Wie `eidos tool <instance> run <title>` in einem
+Terminal bittet sie den Store, das Spiel zu starten, so wie Run in einem
+Fenster, das kein Store geöffnet hat. Fehlt die Einstellung im Store, startet
+der Befehl nichts und gibt aus, was zu setzen ist. Eine Verknüpfung zeigt keine
+Meldung; führen Sie denselben Befehl in einem Terminal aus, um sie zu lesen.
 
 ## Ein Tool, das eine eigene Steam-App ist
 

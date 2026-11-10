@@ -19,12 +19,16 @@ use std::path::{Path, PathBuf};
 
 mod paths;
 mod stores;
-pub use stores::{select_installation, GameSource, Store};
+pub use stores::{
+    heroic_wrappers, legendary_wrapper, plain_app_id, select_installation, GameSource, Store,
+};
 mod steam_config;
 pub use steam_config::steam_launch_options;
 mod proton;
 pub use proton::{
-    is_flatpak_steam, library_path, proton_command, steam_root, wineserver_wait_for, ProtonRun,
+    build_prefix_version, config_info_name, configured_tool_name, is_flatpak_steam,
+    is_prefix_downgrade, library_path, prefix_version, proton_command, steam_root,
+    wineserver_wait_for, ProtonRun,
 };
 
 /// A supported game. The catalog now lives in the shared `eidos-gamedef`

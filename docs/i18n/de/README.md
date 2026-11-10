@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=bf2a3d995d27b69444b8e0497adb217856e87ce8 -->
+<!-- eidos-i18n: source=README.md sha=24a826cf58aaf1ab0e91bef4d7acfb7ebb818ed3 -->
 
 <div align="center">
 
@@ -163,8 +163,7 @@ Ladereihenfolge mit Sternchen, LOOT, `.fos`-Spielstände) - siehe
 [guide/fallout4.md](docs/guide/fallout4.md). Gemäß dem gemeinsamen
 Spieldeskriptor verdrahtet und auf der Suche nach Testern: Skyrim LE, Skyrim VR,
 Enderal SE, Fallout 3, Fallout NV, Fallout 4 (+ VR), Starfield, Oblivion und
-Morrowind (die letzten beiden mounten und verwalten Mods; ihre nach Zeitstempel
-geordneten Plugin-Listen werden noch nicht verwaltet).
+Morrowind (ihre Ladereihenfolge sind die Daten der Plugin-Dateien: Eidos führt pro Profil eine Reihenfolge und zeigt diese Daten im Mount an, ohne die Dateien auf der Platte zu ändern).
 
 Eine Familie hinzuzufügen ist eine Deskriptorzeile:
 [internals/adding-games.md](../../internals/adding-games.md).

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=dbfc389b04dc12924b04def193f8b07b6fe6e324 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -100,6 +100,19 @@ MO2 da aynı nedenle aynı değiştirmeyi yapar - kendi yorum satırı FNIS'i an
 görünümde de değildir. Eidos bunu söyler ve numara yapmak yerine aracı kendi
 klasöründen çalıştırır.
 
+## Mod Organizer 2 listesinden araçlar
+
+Eidos örneği olarak açılan bir Wabbajack listesi ya da başka bir MO2 örneği `ModOrganizer.ini` dosyasını korur ve orada tanımlı çalıştırılabilir dosyalar `tools.ini` içine kopyalanabilir:
+
+```sh
+eidos tool /path/to/list import-mo2           # nelerin ekleneceğini gösterir
+eidos tool /path/to/list import-mo2 --write   # ekler
+```
+
+Pencerede Çalıştırılabilir Dosyalar iletişim kutusunda **ModOrganizer.ini'den içe aktar** düğmesi vardır; her girdi için işareti kaldırılabilen bir kutu bulunur. Kaydet'e basana kadar hiçbir şey kaydedilmez.
+
+`Z:` üzerindeki yollar Linux yollarıdır ve olduğu gibi kalır. Başka bir sürücü harfindeki yol, listenin klasörünün adını içeriyorsa o klasörün altına taşınır (`D:\Lists\MyList\tools\SSEEdit.exe`, `<list>/tools/SSEEdit.exe` olur); bu çalıştırılabilir dosyada, çalışma dizininde ve bağımsız değişkenlerde geçerlidir. Betik genişleticinin yükleyicisi ile oyunun ikili dosyası düz ada dönüşür, böylece yerleşik girdiler gibi Eidos'un görünümü bağladığı oyun klasöründen çalışırlar. Başka yere işaret eden girdiler (bir Windows sistem programı, liste dışındaki bir araç) nedeniyle birlikte atlanmış olarak listelenir, `tools.ini` içinde zaten bulunan bir başlık ise hiçbir zaman değiştirilmez.
+
 ## Bir aracın çıktısını kendi moduna göndermek
 
 Bir üreteç - FNIS, Nemesis, BodySlide, DynDOLOD, Synthesis - yüzlerce dosya
@@ -125,6 +138,12 @@ Yakalama, ikisi de olmadan aynı son duruma varır.
 Hedef mod devre dışıysa çıktı yine yazılır ama oyun onu görmez, dolayısıyla araç
 bir sonraki çalıştırmada aynı dosyaları yeniden üretir. Eidos durum böyleyken
 uyarır.
+
+### Çıktısı güncelliğini yitirdiğinde
+
+Eidos, bir aracın çıktısının hangi modlardan, hangi eklenti sırasından, hangi profilden ve hangi çalıştırılabilir dosyadan üretildiğini kaydeder. Bunlardan biri değişirse Diagnostics sekmesi bunu bildirir; kartta aracı şimdiki ayarlarıyla çalıştıran bir **Run <tool> again** düğmesi bulunur.
+
+Güncel olmayan çıktısı oyunu bozan bir üretici için, örneğin Pandora veya Nemesis, `tools.ini` içindeki girdisine `check_before_play=1` ekleyin ya da Executables penceresinde **Ask before playing when its output is out of date** seçeneğini açın. Run bu durumda önce sorar: aracı çalıştır ya da yine de oyna. Yine de oyna seçimi, modlar, eklentiler veya profil yeniden değişene ya da pencere kapanana kadar hatırlanır. Eidos aracı kendiliğinden hiç başlatmaz.
 
 ## Bir aracın gereksindiği DLL'ler ADINA göre seçilir
 
@@ -363,6 +382,16 @@ Executables iletişim kutusunda:
 Gizleme ve sabitleme, bir aracın ne çalıştırdığıyla değil ona nasıl *ulaşıldığıyla*
 ilgilidir, dolayısıyla kendi girdilerinize olduğu gibi oyun başına
 öntanımlılara da uygulanır.
+
+Script extender'ın loader'ı, başlatıcı ve oyun ikili dosyasında Desktop
+shortcut düğmesi yoktur. Bunlar oyunu başlatır ve oyun her zaman kendi mağazası
+üzerinden başlar; bunu mağazanın kendi kısayolu zaten yapar. Eidos 1.22 veya
+daha eski bir sürümle bunlardan biri için oluşturduğunuz kısayol çalışmaya
+devam eder: bir terminale yazılan `eidos tool <instance> run <title>` gibi,
+mağazadan oyunu başlatmasını ister; hiçbir mağazanın açmadığı bir pencerede
+Run'ın yaptığı gibi. Mağazadaki ayar eksikse komut hiçbir şey başlatmaz ve
+neyin ayarlanacağını yazdırır. Kısayol hiçbir ileti göstermez, bu yüzden okumak
+için aynı komutu bir terminalde çalıştırın.
 
 ## Kendi başına bir Steam uygulaması olan araç
 

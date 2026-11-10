@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=cadcf569ba9dbf61fcde16e8cef0e9cbe719744c -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=55e68d8b6ee830b2d336ce1e96db32155a304c57 -->
 
 # 排查与诊断
 
@@ -102,6 +102,16 @@ cargo run --release -p eidos-core --example listing_cost -- <mods-dir> <overwrit
 测量合并子项映射在 `readdir` 上省下了多少。
 
 `EIDOS_NO_INDEX=1` 强制走遍历,适用于正在调试的恰恰就是两种答案之间差异的时候。
+
+## 无法关闭的游戏或工具
+
+游戏或工具运行时，运行按钮 Run 会变成 **Stop**，锁定卡片上也有一个 Stop 按钮。按两次。第二次按下会结束这次运行启动的所有程序：先发 SIGTERM，10 秒后对剩下的发 SIGKILL。游戏没有保存的内容会丢失。之后 Eidos 做的事与任何退出之后相同：INI 和插件的改动回到配置档，工具的输出被记录，模组被卸载。**Unlock** 不一样：它把窗口交还给你，程序继续运行。在终端里对 `eidos` 进程执行 `kill <pid>`（pid 显示在锁定卡片上）与 Stop 效果相同。
+
+## 游戏由哪个 Proton 运行，以及损坏的前缀
+
+Diagnostics 标签页有一张 **Proton** 卡片：Eidos 和 Steam 为该游戏使用的版本、Steam 自己的设置，以及最后运行该前缀的版本。如果最后准备前缀的 Proton 比所选的更新，卡片会变成建议，因为在较新的前缀上用较旧的 Proton 可能会重置其中的 Wine 文件，或者无法启动。请在 Steam 中游戏的属性、兼容性里选择一个至少同样新的版本。
+
+该卡片上的 **Rebuild prefix** 用于已经无法使用的前缀。按两次。Eidos 不删除任何东西：它在同一文件夹里把 `steamapps/compatdata/<appid>` 重命名为 `<appid>.eidos-backup-<date>-<time>`，下次你从 Steam 启动游戏时，Steam 会创建一个新前缀。只要有游戏、工具或任何 Wine 程序在使用该前缀，它就会拒绝。只保存在旧前缀里的存档和设置会留在重命名后的文件夹中：把需要的复制回来，不再需要时请自己删除那个文件夹。
 
 ## 已知问题
 

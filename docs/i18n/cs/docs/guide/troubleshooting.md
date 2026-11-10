@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=cadcf569ba9dbf61fcde16e8cef0e9cbe719744c -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=55e68d8b6ee830b2d336ce1e96db32155a304c57 -->
 
 # Řešení potíží a diagnostika
 
@@ -118,6 +118,34 @@ potomků ušetří na `readdir`.
 
 `EIDOS_NO_INDEX=1` vynutí průchod, pro chvíle, kdy je laděným předmětem právě
 rozdíl mezi oběma odpověďmi.
+
+## Hra nebo nástroj, který se nezavře
+
+Zatímco hra nebo nástroj běží, tlačítko Run se změní na **Stop** a karta zámku
+má také tlačítko Stop. Stiskněte ho dvakrát. Druhé stisknutí ukončí každý
+program, který spuštění zahájilo: nejprve SIGTERM, po 10 sekundách SIGKILL pro
+to, co zbylo. Co hra neuložila, je ztraceno. Eidos pak udělá to, co po každém
+ukončení: změny INI a pluginů se vrátí do profilu, výstup nástrojů se zaznamená
+a mody se odpojí. **Unlock** je něco jiného: vrátí okno a nechá program běžet. Z
+terminálu udělá `kill <pid>` na proces `eidos` (pid je na kartě zámku) totéž co
+Stop.
+
+## Který Proton hru spouští, a rozbitý prefix
+
+Karta Diagnostics obsahuje kartu **Proton**: verzi, kterou Eidos a Steam pro hru
+používají, vlastní nastavení Steamu a verzi, která prefix naposledy spustila.
+Když prefix naposledy připravil novější Proton než ten vybraný, karta se změní
+na radu, protože starší Proton na novějším prefixu může resetovat jeho soubory
+Wine nebo se nespustit. Ve Steamu vyberte ve Vlastnostech hry, Kompatibilitě
+verzi alespoň stejně novou.
+
+**Rebuild prefix** na této kartě je pro prefix, který už nefunguje. Stiskněte ho
+dvakrát. Eidos nic nemaže: přejmenuje `steamapps/compatdata/<appid>` na
+`<appid>.eidos-backup-<date>-<time>` ve stejné složce a Steam vytvoří nový
+prefix, až příště spustíte hru ze Steamu. Odmítne to, dokud prefix používá hra,
+nástroj nebo jakýkoli program Wine. Uložené pozice a nastavení, které jsou jen
+ve starém prefixu, zůstanou v přejmenované složce: zkopírujte zpět, co
+potřebujete, a tu složku smažte sami, až ji už nebudete chtít.
 
 ## Známé problémy
 

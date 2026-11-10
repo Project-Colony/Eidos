@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=cadcf569ba9dbf61fcde16e8cef0e9cbe719744c -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=55e68d8b6ee830b2d336ce1e96db32155a304c57 -->
 
 # Solución de problemas y diagnóstico
 
@@ -122,6 +122,38 @@ combinados ahorra en `readdir`.
 
 `EIDOS_NO_INDEX=1` fuerza el recorrido, para cuando lo que se depura es justamente
 la diferencia entre las dos respuestas.
+
+## Un juego o una herramienta que no se cierra
+
+Mientras un juego o una herramienta se ejecuta, el botón Run pasa a ser
+**Stop**, y la tarjeta de bloqueo también tiene un botón Stop. Púlsalo dos
+veces. La segunda pulsación termina todos los programas que inició la ejecución:
+primero SIGTERM y, a los 10 segundos, SIGKILL para lo que quede. Lo que el juego
+no hubiera guardado se pierde. Después, Eidos hace lo mismo que tras cualquier
+salida: los cambios de INI y de plugins vuelven al perfil, se registra la salida
+de las herramientas y los mods se desmontan. **Unlock** es distinto: devuelve la
+ventana y deja el programa en marcha. Desde una terminal, `kill <pid>` sobre el
+proceso `eidos` (el pid aparece en la tarjeta de bloqueo) hace lo mismo que
+Stop.
+
+## Qué Proton ejecuta el juego, y un prefijo roto
+
+La pestaña Diagnostics tiene una tarjeta **Proton**: la versión que usan Eidos y
+Steam para el juego, el ajuste propio de Steam y la versión que ejecutó el
+prefijo por última vez. Cuando un Proton más reciente que el seleccionado fue el
+último en preparar el prefijo, la tarjeta pasa a ser un consejo, porque un
+Proton más antiguo sobre un prefijo más reciente puede restablecer sus archivos
+de Wine o no arrancar. Elige en Steam una versión al menos igual de reciente, en
+Propiedades del juego, Compatibilidad.
+
+**Rebuild prefix**, en esa tarjeta, es para un prefijo que ya no funciona.
+Púlsalo dos veces. Eidos no borra nada: renombra `steamapps/compatdata/<appid>`
+a `<appid>.eidos-backup-<date>-<time>` en la misma carpeta, y Steam crea un
+prefijo nuevo la próxima vez que inicies el juego desde Steam. Se niega mientras
+un juego, una herramienta o cualquier programa de Wine use el prefijo. Las
+partidas guardadas y los ajustes que solo estén en el prefijo antiguo se quedan
+en la carpeta renombrada: copia de vuelta lo que necesites y borra esa carpeta
+tú mismo cuando ya no la quieras.
 
 ## Problemas conocidos
 

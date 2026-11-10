@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=bf2a3d995d27b69444b8e0497adb217856e87ce8 -->
+<!-- eidos-i18n: source=README.md sha=24a826cf58aaf1ab0e91bef4d7acfb7ebb818ed3 -->
 
 <div align="center">
 
@@ -126,8 +126,7 @@ Root Builder 插件,也不往你的安装目录里复制任何东西。隐藏单
 archive invalidation、星号加载顺序、LOOT、`.fos` 存档) - 见
 [guide/fallout4.zh-CN.md](docs/guide/fallout4.md)。按共享的游戏描述符接好线、
 正在找测试者的有:Skyrim LE、Skyrim VR、Enderal SE、Fallout 3、Fallout NV、
-Fallout 4(+ VR)、Starfield、Oblivion 和 Morrowind(后两者能挂载并管理模组;它们按
-时间戳排序的插件列表还没有被管理起来)。
+Fallout 4(+ VR)、Starfield、Oblivion 和 Morrowind(它们的加载顺序就是插件文件的日期:Eidos 每个配置档保存一份顺序,并在挂载内显示这些日期,不改动磁盘上的文件)。
 
 增加一个游戏系列就是一行描述符:
 [internals/adding-games.md](../../internals/adding-games.md)。

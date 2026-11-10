@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=bf2a3d995d27b69444b8e0497adb217856e87ce8 -->
+<!-- eidos-i18n: source=README.md sha=24a826cf58aaf1ab0e91bef4d7acfb7ebb818ed3 -->
 
 <div align="center">
 
@@ -160,9 +160,7 @@ punta a punta (F4SE sustituido automáticamente, invalidación de archivos, orde
 de carga con asteriscos, LOOT, partidas `.fos`) - ver
 [guide/fallout4.es.md](docs/guide/fallout4.md). Cableados según el descriptor
 de juego compartido y a la espera de probadores: Skyrim LE, Skyrim VR, Enderal
-SE, Fallout 3, Fallout NV, Fallout 4 (+ VR), Starfield, Oblivion y Morrowind
-(estos dos últimos montan y gestionan mods; sus listas de plugins ordenadas por
-marca de tiempo todavía no se gestionan).
+SE, Fallout 3, Fallout NV, Fallout 4 (+ VR), Starfield, Oblivion y Morrowind (su orden de carga son las fechas de los ficheros de plugin: Eidos guarda un orden por perfil y muestra esas fechas dentro del montaje, sin cambiar los ficheros del disco).
 
 Añadir una familia es una fila de descriptor:
 [internals/adding-games.md](../../internals/adding-games.md).

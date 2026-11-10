@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=cadcf569ba9dbf61fcde16e8cef0e9cbe719744c -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=55e68d8b6ee830b2d336ce1e96db32155a304c57 -->
 
 # 문제 해결과 진단
 
@@ -114,6 +114,16 @@ cargo run --release -p eidos-core --example listing_cost -- <mods-dir> <overwrit
 
 `EIDOS_NO_INDEX=1`은 훑기를 강제합니다. 두 답의 차이 자체가 디버깅 대상일 때를 위한
 것입니다.
+
+## 닫히지 않는 게임이나 도구
+
+게임이나 도구가 실행되는 동안 Run 버튼은 **Stop**으로 바뀌고, 잠금 카드에도 Stop 버튼이 있습니다. 두 번 누르세요. 두 번째로 누르면 그 실행이 시작한 모든 프로그램을 끝냅니다. 먼저 SIGTERM을 보내고, 10초 뒤에 남은 것에 SIGKILL을 보냅니다. 게임이 저장하지 않은 내용은 사라집니다. 그다음 Eidos는 여느 종료 뒤와 같은 일을 합니다. INI와 플러그인 변경은 프로필로 돌아가고, 도구 출력은 기록되며, 모드는 마운트 해제됩니다. **Unlock**은 다릅니다. 창을 다시 쓸 수 있게 돌려주고 프로그램은 계속 실행되게 둡니다. 터미널에서 `eidos` 프로세스에 `kill <pid>`를 보내도(pid는 잠금 카드에 있습니다) Stop과 같습니다.
+
+## 어떤 Proton이 게임을 실행하는지, 그리고 망가진 프리픽스
+
+Diagnostics 탭에는 **Proton** 카드가 있습니다. Eidos와 Steam이 그 게임에 쓰는 빌드, Steam 자체 설정, 그리고 프리픽스를 마지막으로 실행한 빌드를 보여 줍니다. 선택한 것보다 새로운 Proton이 프리픽스를 마지막으로 준비했다면 카드는 조언이 됩니다. 더 새로운 프리픽스에서 더 오래된 Proton을 쓰면 Wine 파일이 초기화되거나 시작되지 않을 수 있기 때문입니다. Steam에서 게임의 속성, 호환성 항목에서 적어도 그만큼 새로운 빌드를 고르세요.
+
+그 카드의 **Rebuild prefix**는 더 이상 작동하지 않는 프리픽스를 위한 것입니다. 두 번 누르세요. Eidos는 아무것도 지우지 않습니다. 같은 폴더 안에서 `steamapps/compatdata/<appid>`의 이름을 `<appid>.eidos-backup-<date>-<time>`으로 바꾸고, 다음에 Steam에서 게임을 시작할 때 Steam이 새 프리픽스를 만듭니다. 게임, 도구 또는 다른 Wine 프로그램이 프리픽스를 쓰는 동안에는 거부합니다. 옛 프리픽스에만 있던 세이브와 설정은 이름이 바뀐 폴더에 남습니다. 필요한 것을 다시 복사하고, 더 이상 필요 없으면 그 폴더는 직접 지우세요.
 
 ## 알려진 문제
 

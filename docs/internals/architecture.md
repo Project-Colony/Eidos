@@ -291,14 +291,10 @@ that does **not** yet close:
   files at any size.
 - **Performance** must be validated with a real 1000+ plugin load order and big
   texture packs, not assumed. Reads now use a cached backing fd (`pread`), so the
-  per-read cost is gone, but path resolution still stats the real filesystem on
-  every lookup: the in-memory index the engine is designed around is not built
-  yet, so the "no lowerdir wall" property is still aspirational under a deep stack.
+  per-read cost is gone. Path resolution goes through the layer index described
+  below; only the Overwrite is read live on each lookup.
   Writable mmap is correct in a focused test but still worth re-checking under a
   real game's mmap-heavy load.
-- **Directory rename across the lower boundary.** File rename works; renaming a
-  directory that lives only in a lower layer (a recursive copy-up of the subtree)
-  is not implemented yet. usvfs itself models rename as copy + delete here.
 - **Casing beyond ASCII.** v1 folds ASCII case; Windows folds a wider Unicode
   table. This is at parity with usvfs (its tree uses ASCII `_strnicmp`), but a
   documented limitation to close later. Wine's own directory scan does fold

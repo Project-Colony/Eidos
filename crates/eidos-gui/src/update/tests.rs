@@ -5903,6 +5903,51 @@ fn run_is_blocked_before_spawning_while_the_mod_list_cannot_be_trusted() {
 }
 
 #[test]
+fn run_without_a_launch_option_or_game_tool_shows_the_hint_without_overrides() {
+    let (mut app, root) = list_app(&[]);
+    app.tools.clear();
+    let _ = update_inner(&mut app, Message::Run);
+    assert!(app.running.is_none());
+    let status = app.status.clone().unwrap_or_default();
+    assert!(status.contains("%command%"), "{status}");
+    assert!(!status.contains("WINEDLLOVERRIDES"), "{status}");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_game_entry_outside_a_store_window_takes_the_hand_off_not_a_tool_run() {
+    // Steam copy without `compatdata`: the hint comes before any read or spawn.
+    let (mut app, root) = list_app(&[]);
+    app.tools = vec![eidos_instance::Tool {
+        title: "SKSE".into(),
+        exe: "skse64_loader.exe".into(),
+        ..Default::default()
+    }];
+    app.tool_choice = Some("SKSE".into());
+    let _ = update_inner(&mut app, Message::Run);
+    assert!(app.running.is_none());
+    let status = app.status.clone().unwrap_or_default();
+    assert!(status.contains("%command%"), "{status}");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn the_hand_off_pick_is_taken_once() {
+    let (app, root) = list_app(&[]);
+    let inst = app.created.as_ref().unwrap();
+    crate::state::remember_handoff_pick(inst, Some("SKSE"));
+    assert_eq!(
+        crate::state::take_handoff_pick(inst).as_deref(),
+        Some("SKSE")
+    );
+    assert_eq!(crate::state::take_handoff_pick(inst), None);
+    crate::state::remember_handoff_pick(inst, Some("SKSE"));
+    crate::state::remember_handoff_pick(inst, None);
+    assert_eq!(crate::state::take_handoff_pick(inst), None);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn setup_prereqs_is_refused_while_a_run_is_tracked() {
     // winetricks and the running game share one prefix.
     let (mut app, root) = list_app(&["Keep"]);
@@ -5962,6 +6007,25 @@ fn finish_tracked_run(app: &mut App) {
     }
     let _ = update_inner(app, Message::PollRunning);
     assert!(app.running.is_none());
+}
+
+#[test]
+fn run_tool_keeps_the_picker_and_the_run_guards() {
+    let (mut app, root) = list_app(&["Keep"]);
+    let mut cmd = std::process::Command::new("/bin/sleep");
+    cmd.arg("30");
+    start_run(&mut app, "Game".into(), cmd);
+    app.tool_choice = None;
+    let _ = update_inner(&mut app, Message::RunTool("xEdit".into()));
+    assert_eq!(app.tool_choice, None);
+    assert_eq!(
+        app.status.as_deref(),
+        Some(tf("status_still_running", &[("title", &"Game")]).as_str())
+    );
+    let _ = update_inner(&mut app, Message::StopRun);
+    let _ = update_inner(&mut app, Message::StopRun);
+    finish_tracked_run(&mut app);
+    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
@@ -6039,7 +6103,7 @@ fn a_run_eidos_refused_says_why_in_the_status_bar() {
 }
 
 #[test]
-fn a_crashed_game_names_its_log_unless_eidos_refused_the_launch() {
+fn a_crashed_game_names_its_log_only_after_this_run_recorded_its_start() {
     let (mut app, root) = list_app(&["Keep"]);
     let compat = root.join("compatdata");
     let skse =
@@ -6048,36 +6112,64 @@ fn a_crashed_game_names_its_log_unless_eidos_refused_the_launch() {
     let log = skse.join("crash-2026-11-09-21-30-00.log");
     fs::write(&log, "Unhandled exception \"EXCEPTION_ACCESS_VIOLATION\"\n").unwrap();
     app.games[0].compatdata = Some(compat);
-    let started = std::time::SystemTime::now()
+    let inst = app.created.clone().unwrap();
+    // The previous session's record: that run crashed and wrote the log above.
+    let earlier = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs()
         - 60;
-    app.created
-        .as_ref()
-        .unwrap()
-        .record_launch_start(&Default::default(), started)
+    inst.record_launch_start(&Default::default(), earlier)
         .unwrap();
 
-    for (script, crashed) in [
-        ("exit 0", true),
+    // (script, records its start, stopped, expected status)
+    for (script, records, stop, expected) in [
+        // Refused before recording: the refusal, not the old crash.
         (
             "echo 'WARN  eidos: refusing to launch: in use' >&2; exit 1",
             false,
+            false,
+            "refusing to launch",
+        ),
+        // Failed before recording without a refusal line: the exit error.
+        (
+            "echo 'Cannot prepare this instance' >&2; exit 1",
+            false,
+            false,
+            "exited with an error",
+        ),
+        // Recorded its start, then a crash log appeared: the crash.
+        ("exit 0", true, false, "crashed"),
+        // The user stopped it: stopped, whatever log the stop left.
+        (
+            "trap 'kill $!; exit 1' TERM; sleep 30 & wait",
+            true,
+            true,
+            "was stopped",
         ),
     ] {
         let mut cmd = std::process::Command::new("/bin/sh");
         cmd.arg("-c").arg(script);
         start_run(&mut app, "Skyrim".into(), cmd);
         app.running.as_mut().unwrap().game = true;
+        if records {
+            let started = app.running.as_ref().unwrap().started;
+            inst.record_launch_start(&Default::default(), started)
+                .unwrap();
+            fs::write(&log, "Unhandled exception \"EXCEPTION_ACCESS_VIOLATION\"\n").unwrap();
+        }
+        if stop {
+            let _ = update_inner(&mut app, Message::StopRun);
+            let _ = update_inner(&mut app, Message::StopRun);
+        }
         finish_tracked_run(&mut app);
         let status = app.status.clone().unwrap_or_default();
+        assert!(status.contains(expected), "{expected}: {status}");
         assert_eq!(
             status.contains(&log.display().to_string()),
-            crashed,
+            expected == "crashed",
             "{status}"
         );
-        assert_eq!(status.contains("refusing to launch"), !crashed, "{status}");
     }
     let _ = fs::remove_dir_all(root);
 }
@@ -6254,6 +6346,241 @@ fn a_second_extract_of_the_same_archive_starts_nothing_until_the_first_ends() {
     assert!(app.extracting_archives.is_empty());
     assert_eq!(update_inner(&mut app, click()).units(), 1);
     fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn stop_takes_two_presses_then_ends_the_run() {
+    let (mut app, root) = list_app(&["Keep"]);
+    let mut cmd = std::process::Command::new("sleep");
+    cmd.arg("30");
+    start_run(&mut app, "Game".into(), cmd);
+    let pid = app.running.as_ref().unwrap().pid as libc::pid_t;
+    let _ = update_inner(&mut app, Message::StopRun);
+    assert!(app.confirm_stop);
+    assert_eq!(unsafe { libc::kill(pid, 0) }, 0, "one press kills nothing");
+    let _ = update_inner(&mut app, Message::StopRun);
+    finish_tracked_run(&mut app);
+    assert_eq!(
+        app.status.as_deref(),
+        Some(tf("status_run_stopped", &[("title", &"Game")]).as_str())
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_stopped_run_says_stopped_whatever_its_exit_code() {
+    let (mut app, root) = list_app(&["Keep"]);
+    let mut cmd = std::process::Command::new("sh");
+    cmd.args(["-c", "trap 'kill $!; exit 1' TERM; sleep 30 & wait"]); // exits 1 on SIGTERM
+    start_run(&mut app, "Game".into(), cmd);
+    let _ = update_inner(&mut app, Message::StopRun);
+    let _ = update_inner(&mut app, Message::StopRun);
+    finish_tracked_run(&mut app);
+    assert_eq!(
+        app.status.as_deref(),
+        Some(tf("status_run_stopped", &[("title", &"Game")]).as_str())
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn any_other_action_disarms_stop_and_a_prereqs_run_cannot_be_stopped() {
+    let (mut app, root) = list_app(&["Keep"]);
+    let mut cmd = std::process::Command::new("sleep");
+    cmd.arg("30");
+    start_run(&mut app, "Game".into(), cmd);
+    let pid = app.running.as_ref().unwrap().pid as libc::pid_t;
+    let _ = update_inner(&mut app, Message::StopRun);
+    assert!(app.confirm_stop);
+    let _ = update_inner(&mut app, Message::SelectTab(Tab::Data));
+    assert!(!app.confirm_stop);
+    app.running.as_mut().unwrap().stoppable = false;
+    let _ = update_inner(&mut app, Message::StopRun);
+    let _ = update_inner(&mut app, Message::StopRun);
+    assert_eq!(
+        unsafe { libc::kill(pid, 0) },
+        0,
+        "a prerequisite install is never signalled"
+    );
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    finish_tracked_run(&mut app);
+    let _ = fs::remove_dir_all(root);
+}
+
+fn prefix_app() -> (App, PathBuf, PathBuf) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static N: AtomicUsize = AtomicUsize::new(0);
+    let mut app = app_for_game("skyrimse");
+    let t = std::env::temp_dir().join(format!(
+        "eidos-rebuild-{}-{}",
+        std::process::id(),
+        N.fetch_add(1, Ordering::Relaxed)
+    ));
+    let _ = fs::remove_dir_all(&t);
+    let compat = t.join("compatdata/489830");
+    fs::create_dir_all(compat.join("pfx")).unwrap();
+    app.games[0].compatdata = Some(compat.clone());
+    (app, t, compat)
+}
+
+#[test]
+fn rebuild_prefix_takes_two_presses_and_keeps_the_old_prefix() {
+    let (mut app, t, compat) = prefix_app();
+    let _ = update_inner(&mut app, Message::RebuildPrefix);
+    assert!(compat.is_dir() && app.confirm_rebuild_prefix);
+    let _ = update_inner(&mut app, Message::RebuildPrefix);
+    assert!(!compat.exists());
+    let backups: Vec<String> = fs::read_dir(t.join("compatdata"))
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with("489830.eidos-backup-"))
+        .collect();
+    assert_eq!(backups.len(), 1);
+    assert!(app.status.as_deref().unwrap().contains(&backups[0]));
+    assert!(app.diag_dirty && !app.confirm_rebuild_prefix);
+    let _ = fs::remove_dir_all(t);
+}
+
+#[test]
+fn rebuild_prefix_waits_for_a_tracked_run() {
+    let (mut app, t, compat) = prefix_app();
+    start_run(
+        &mut app,
+        "Game".into(),
+        std::process::Command::new("/bin/true"),
+    );
+    let _ = update_inner(&mut app, Message::RebuildPrefix);
+    let _ = update_inner(&mut app, Message::RebuildPrefix);
+    assert!(compat.is_dir() && !app.confirm_rebuild_prefix);
+    assert_eq!(
+        app.status.as_deref(),
+        Some(tf("status_rebuild_prefix_wait_run", &[("title", &"Game")]).as_str())
+    );
+    app.running.take();
+    let _ = fs::remove_dir_all(t);
+}
+
+#[test]
+fn backup_stamp_is_utc_and_sortable() {
+    assert_eq!(launch::backup_stamp(1_793_448_000), "20261031-120000");
+}
+
+#[test]
+fn a_flagged_generator_asks_before_play_once_per_drift_state() {
+    let (mut app, root) = data_app(&[("meshes/test.nif", "mesh")], &[]);
+    let inst = app.created.as_ref().unwrap();
+    let plugins = crate::modinfo::compute_plugins(&app)
+        .unwrap()
+        .plugins
+        .into_iter()
+        .map(|p| (p.name, p.enabled))
+        .collect::<Vec<_>>();
+    let run = inst
+        .begin_tool_run("Gen", None, &["Gen.exe".into()], &plugins)
+        .unwrap();
+    fs::write(inst.overwrite_dir().join("Patch.esp"), b"generated").unwrap();
+    inst.finish_tool_run(run).unwrap();
+    let touch = |app: &App, files: &[(u64, u64)]| {
+        let inst = app.created.as_ref().unwrap();
+        let mut meta = inst.mod_meta("AAA");
+        meta.set_installed_files(files);
+        meta.write(&inst.meta_path("AAA")).unwrap();
+    };
+    touch(&app, &[(12, 34)]);
+    let mut gen = eidos_instance::Tool {
+        title: "Gen".into(),
+        exe: "Gen.exe".into(),
+        ..Default::default()
+    };
+    app.tools = vec![gen.clone()];
+    let _ = update_inner(&mut app, Message::Run);
+    assert!(app.play_prompt.is_none(), "an unflagged tool never prompts");
+    gen.check_before_play = true;
+    app.tools = vec![gen];
+    let _ = update_inner(&mut app, Message::Run);
+    assert_eq!(
+        app.play_prompt.as_ref().map(|p| p.tool.as_str()),
+        Some("Gen")
+    );
+    assert!(app.running.is_none());
+    let _ = update_inner(&mut app, Message::PlayAnyway);
+    assert!(app.play_prompt.is_none());
+    let _ = update_inner(&mut app, Message::Run);
+    assert!(
+        app.play_prompt.is_none(),
+        "same drift state: not asked again"
+    );
+    touch(&app, &[(12, 35)]);
+    let _ = update_inner(&mut app, Message::Run);
+    assert!(app.play_prompt.is_some(), "a new drift state asks again");
+    let _ = update_inner(&mut app, Message::ClosePlayPrompt);
+    assert!(app.play_prompt.is_none());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn importing_mo2_executables_adds_checked_rows_with_new_titles_only() {
+    let (mut app, root) = list_app(&[]);
+    fs::create_dir_all(root.join("tools")).unwrap();
+    fs::write(root.join("tools/a.exe"), b"").unwrap();
+    fs::write(root.join("tools/b.exe"), b"").unwrap();
+    let z = |n: &str| format!("Z:{}", root.join("tools").join(n).display());
+    fs::write(
+        root.join("ModOrganizer.ini"),
+        format!(
+            "[customExecutables]\n1\\title=SSEEdit\n1\\binary={}\n2\\title=Other\n2\\binary={}\nsize=2\n",
+            z("a.exe"),
+            z("b.exe")
+        ),
+    )
+    .unwrap();
+    app.created
+        .as_ref()
+        .unwrap()
+        .save_tools(&[eidos_instance::Tool {
+            title: "SSEEdit".into(),
+            exe: "/bin/true".into(),
+            ..Default::default()
+        }])
+        .unwrap();
+    let _ = update_inner(&mut app, Message::ShowExecutablesDialog);
+    let _ = update_inner(&mut app, Message::ExecImportMo2);
+    let rows = app
+        .executables
+        .as_ref()
+        .unwrap()
+        .mo2_import
+        .as_ref()
+        .unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(
+        rows.iter().filter(|(_, checked)| *checked).count(),
+        1,
+        "SSEEdit's title is taken"
+    );
+    let before = fs::read_to_string(root.join("tools.ini")).unwrap();
+    let _ = update_inner(&mut app, Message::ExecImportApply);
+    let state = app.executables.as_ref().unwrap();
+    assert!(state.mo2_import.is_none());
+    assert_eq!(
+        state.merged[..state.user_len]
+            .iter()
+            .filter(|t| t.title == "Other")
+            .count(),
+        1
+    );
+    assert_eq!(
+        state.selected,
+        Some(1),
+        "the first added row, after the existing SSEEdit"
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("tools.ini")).unwrap(),
+        before,
+        "nothing saved yet"
+    );
+    let _ = fs::remove_dir_all(root);
 }
 
 /// Two steps: a texture size (SD recommended) and a patch step. `{snow}` names

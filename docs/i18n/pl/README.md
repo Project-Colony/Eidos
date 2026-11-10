@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=bf2a3d995d27b69444b8e0497adb217856e87ce8 -->
+<!-- eidos-i18n: source=README.md sha=24a826cf58aaf1ab0e91bef4d7acfb7ebb818ed3 -->
 
 <div align="center">
 
@@ -157,9 +157,7 @@ od początku do końca (F4SE podstawiany automatycznie, unieważnianie archiwów
 kolejność wczytywania z gwiazdką, LOOT, zapisy `.fos`) - zob.
 [guide/fallout4.md](docs/guide/fallout4.md). Podłączone według wspólnego
 deskryptora gry i szukające testerów: Skyrim LE, Skyrim VR, Enderal SE,
-Fallout 3, Fallout NV, Fallout 4 (+ VR), Starfield, Oblivion i Morrowind (te dwa
-ostatnie montują się i zarządzają modami; ich listy wtyczek uporządkowane
-znacznikami czasu nie są jeszcze zarządzane).
+Fallout 3, Fallout NV, Fallout 4 (+ VR), Starfield, Oblivion i Morrowind (ich kolejność ładowania wyznaczają daty plików wtyczek: Eidos trzyma jedną kolejność na profil i pokazuje te daty wewnątrz montowania, nie zmieniając plików na dysku).
 
 Dodanie rodziny to jeden wiersz deskryptora:
 [internals/adding-games.md](../../internals/adding-games.md).

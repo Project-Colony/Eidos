@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=bf2a3d995d27b69444b8e0497adb217856e87ce8 -->
+<!-- eidos-i18n: source=README.md sha=24a826cf58aaf1ab0e91bef4d7acfb7ebb818ed3 -->
 
 <div align="center">
 
@@ -155,9 +155,7 @@ začátku do konce také (F4SE se podsune automaticky, invalidace archivů, poř
 načítání s hvězdičkami, LOOT, uložené pozice `.fos`) - viz
 [guide/fallout4.cs.md](docs/guide/fallout4.md). Zapojené podle sdíleného
 deskriptoru her a hledající testery: Skyrim LE, Skyrim VR, Enderal SE,
-Fallout 3, Fallout NV, Fallout 4 (+ VR), Starfield, Oblivion a Morrowind
-(poslední dvě se připojí a spravují módy; jejich seznamy pluginů řazené podle
-časových značek zatím spravované nejsou).
+Fallout 3, Fallout NV, Fallout 4 (+ VR), Starfield, Oblivion a Morrowind (jejich pořadí načítání určují data souborů pluginů: Eidos drží jedno pořadí na profil a data ukazuje uvnitř mountu, soubory na disku nemění).
 
 Přidání rodiny je jeden řádek deskriptoru:
 [internals/adding-games.md](../../internals/adding-games.md).

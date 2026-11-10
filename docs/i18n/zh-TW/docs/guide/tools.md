@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=dbfc389b04dc12924b04def193f8b07b6fe6e324 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=88804497cb9e6fcf73c9a60ce56ae6f7e5f0b22b -->
 
 # 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
@@ -74,6 +74,19 @@ MO2 也做同樣的改寫,理由相同 - 它自己的註解點名了 FNIS。
 位於**已停用**模組裡的工具無法被改寫,因為它的檔案同樣不在檢視裡。Eidos 會直
 說,並從它自己的資料夾執行,而不是假裝沒事。
 
+## 來自 Mod Organizer 2 清單的工具
+
+以 Eidos 執行個體開啟的 Wabbajack 清單或其他 MO2 執行個體會保留自己的 `ModOrganizer.ini`，其中設定的可執行檔可以複製到 `tools.ini`：
+
+```sh
+eidos tool /path/to/list import-mo2           # 顯示將要新增的內容
+eidos tool /path/to/list import-mo2 --write   # 新增
+```
+
+在視窗中，「可執行檔」對話方塊有 **從 ModOrganizer.ini 匯入** 按鈕，每個項目都有可取消勾選的核取方塊。按下儲存之前不會寫入任何內容。
+
+`Z:` 上的路徑是 Linux 路徑，維持原樣。其他磁碟機代號上的路徑如果包含清單資料夾的名稱，就會移到清單資料夾底下（`D:\Lists\MyList\tools\SSEEdit.exe` 變成 `<list>/tools/SSEEdit.exe`），可執行檔、工作目錄與引數都照此處理。指令碼擴充器的載入器與遊戲主程式會變成單純的檔名，因此和內建項目一樣，從 Eidos 掛載檢視的遊戲資料夾執行。指向其他位置的項目（Windows 系統程式、清單之外的工具）會連同原因列為已略過，`tools.ini` 中已有的標題則永遠不會被取代。
+
 ## 把工具的輸出送進它自己的模組
 
 產生器 - FNIS、Nemesis、BodySlide、DynDOLOD、Synthesis - 會寫出好幾百個檔案。
@@ -95,6 +108,12 @@ Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 
 如果目標模組是停用的,輸出仍然會寫出去,但遊戲看不到,於是工具下次執行時又會
 重新產生同樣的檔案。遇到這種情況 Eidos 會提出警告。
+
+### 輸出過期時
+
+Eidos 會記錄工具的輸出是由哪些模組、外掛順序、設定檔和執行檔產生的。其中任何一項改變,Diagnostics 分頁都會提示,卡片上還有一個 **Run <tool> again** 按鈕,依目前設定重新執行該工具。
+
+對於輸出過期就會弄壞遊戲的產生器(例如 Pandora 或 Nemesis),可以在 `tools.ini` 裡它的項目下加上 `check_before_play=1`,或在 Executables 對話框中為它開啟 **Ask before playing when its output is out of date**。之後 Run 會先詢問:執行該工具,還是照常遊玩。選擇照常遊玩後,會記住到模組、外掛或設定檔再次改變,或視窗關閉為止。Eidos 從不自己啟動該工具。
 
 ## 工具需要哪些 DLL,是由它的「名字」決定的
 
@@ -283,6 +302,13 @@ Proton 底下從來不跑那個安裝程式。沒有它,xEdit、Wrye Bash 與 Dy
 
 隱藏與置頂關乎的是一個工具*怎麼被找到*,而不是它執行什麼,所以它們對每款遊戲
 的預設項目和你自己的項目一樣有效。
+
+script extender 的 loader、啟動器與遊戲主程式沒有 Desktop shortcut 按鈕。它們
+會啟動遊戲,而遊戲一律透過它的商店啟動,這件事商店本身的捷徑已經在做。用
+Eidos 1.22 或更早版本替其中某一項建立的捷徑仍然能用:和在終端機裡輸入的
+`eidos tool <instance> run <title>` 一樣,它會請商店啟動遊戲,就像 Run 在不是
+由商店開啟的視窗裡做的那樣。商店的設定缺少時,這個指令什麼也不啟動,並印出要
+設定什麼。捷徑不會顯示任何訊息,所以要看它,就在終端機裡執行同一個指令。
 
 ## 本身就是獨立 Steam 應用程式的工具
 

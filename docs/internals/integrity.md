@@ -116,6 +116,7 @@ not a detector for semantic conflicts between plugin records or scripts.
 Launching a configured tool, from the CLI or window, records the tool name,
 command, executable size/mtime fingerprint when available, active profile,
 enabled mod order and versions, exact Nexus source IDs, and plugin order/state.
+A tool entry that starts the game itself (its script-extender loader, launcher or binary) records no receipt: what the game writes is session output, not generated output.
 A pending receipt is saved before launch. An interrupted run remains explicitly
 unverified after restart; later files are never attributed to it automatically.
 
@@ -127,7 +128,8 @@ retain the source data and its attribution. All receipt data lives in the
 instance's `.generated-output.json`, outside the game-visible Data layers.
 
 Open a generated mod's General tab to inspect its receipts and recorded inputs.
-Diagnostics warns when the inputs have changed. Creating this run's own output
+Diagnostics warns when the inputs have changed. Its card has a button that
+runs the tool again, as it is configured now. Creating this run's own output
 mod/plugin does not itself make the receipt stale. Unrecorded external rewrites
 invalidate file attribution rather than assigning them to an old run.
 

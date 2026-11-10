@@ -39,8 +39,6 @@ pub enum InstallError {
     Extract(String),
     /// Not a "simple" archive: no Data-relative root found.
     NotSimple,
-    /// A FOMOD scripted-installer archive (Tier 2, not yet supported).
-    NeedsFomod,
     /// A FOMOD's `ModuleConfig.xml` could not be parsed.
     Fomod(String),
     /// The FOMOD's `<moduleDependencies>` are not satisfied; MO2 refuses the install.
@@ -63,12 +61,6 @@ impl fmt::Display for InstallError {
                 write!(
                     f,
                     "not a simple archive (no recognised Data layout); manual install needed"
-                )
-            }
-            InstallError::NeedsFomod => {
-                write!(
-                    f,
-                    "this is a FOMOD scripted installer - not yet supported (Tier 2)"
                 )
             }
             InstallError::Fomod(e) => write!(f, "FOMOD parse error: {e}"),

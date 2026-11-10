@@ -1195,6 +1195,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         if !matches!(message, Message::ClearOverwrite) {
             app.confirm_clear = false;
         }
+        if !matches!(message, Message::StopRun) {
+            app.confirm_stop = false;
+        }
+        if !matches!(message, Message::RebuildPrefix) {
+            app.confirm_rebuild_prefix = false;
+        }
         if !matches!(
             message,
             Message::DeleteSave(_) | Message::ConfirmDeleteSave(_)
@@ -1432,8 +1438,13 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::FomodUnhover(..)) => install::handle(app, m),
         m @ (Message::ToolPicked(..)
         | Message::Run
+        | Message::RunTool(..)
+        | Message::PlayAnyway
+        | Message::ClosePlayPrompt
         | Message::PollRunning
         | Message::ForceUnlock
+        | Message::StopRun
+        | Message::RebuildPrefix
         | Message::CloseLootReport
         | Message::CopyLootReport
         | Message::ChangeGame
@@ -1528,8 +1539,13 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::ToolArgsAction(..)
         | Message::ExecAppIdChanged(..)
         | Message::ExecToggleHidden
+        | Message::ExecToggleCheckBeforePlay
         | Message::ExecTogglePinned
-        | Message::ExecMakeShortcut) => tools::handle(app, m),
+        | Message::ExecMakeShortcut
+        | Message::ExecImportMo2
+        | Message::ExecImportToggle(..)
+        | Message::ExecImportApply
+        | Message::ExecImportCancel) => tools::handle(app, m),
         m @ (Message::TogglePreferences
         | Message::SettingsTabSelected(..)
         | Message::NexusSignInStart

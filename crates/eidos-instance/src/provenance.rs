@@ -8,7 +8,7 @@ use std::{
     time::SystemTime,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct GeneratedInput {
     pub name: String,
     pub version: Option<String>,
@@ -385,6 +385,19 @@ impl Instance {
             .collect())
     }
 
+    /// A hash of what a generator's output depends on right now: the enabled
+    /// mods with their versions and installed files, the plugin order and the
+    /// profile. The same state hashes the same within a process, which is all
+    /// "Play anyway" needs; it is never stored.
+    pub fn generated_input_state(&self, plugins: &[(String, bool)]) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.generated_inputs().hash(&mut h);
+        plugins.hash(&mut h);
+        self.active_profile().hash(&mut h);
+        h.finish()
+    }
+
     /// A conservative comparison of the recorded inputs, not inferred dependencies.
     pub fn generated_input_drift(
         &self,
@@ -504,6 +517,24 @@ mod tests {
             .mods_dir()
             .join("Generated/.generated-output.json")
             .exists());
+    }
+
+    #[test]
+    fn the_input_state_changes_with_the_inputs() {
+        let f = Fixture::new();
+        let a = f.0.create_empty_mod("A").unwrap();
+        f.0.save_modlist(std::slice::from_ref(&a)).unwrap();
+        let plugins = vec![("A.esp".to_string(), true)];
+        let s1 = f.0.generated_input_state(&plugins);
+        assert_eq!(f.0.generated_input_state(&plugins), s1);
+        assert_ne!(
+            f.0.generated_input_state(&[("A.esp".to_string(), false)]),
+            s1
+        );
+        let mut meta = ModMeta::read(&a.path.join("meta.ini"));
+        meta.set_installed_files(&[(5, 9)]);
+        meta.write(&a.path.join("meta.ini")).unwrap();
+        assert_ne!(f.0.generated_input_state(&plugins), s1);
     }
 
     #[test]
