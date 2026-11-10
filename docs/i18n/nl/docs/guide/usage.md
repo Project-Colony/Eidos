@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6d01387ac79ccda9b47b128850123be98d1d2db3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=74980544e8dd9f3d8b015a80d84aaf7ead98adf3 -->
 
 # Eidos gebruiken
 
@@ -614,7 +614,7 @@ is de saaie helft.
 
 Als u over een plugin beweegt, ziet u waar die vandaan komt, de auteur, de header- en formulierversie, de eerste 300 tekens van de beschrijving, de masters en, na een LOOT-sortering, de berichten van LOOT. Bij Skyrim, Skyrim SE, Skyrim VR en Enderal SE leest het spel ook een INI die naar een geladen plugin is genoemd; de kolom INI markeert die plugins en een klik opent dat bestand alleen-lezen.
 
-Een `.exe`-rij in Data heeft Add tool, dat de Executables-editor opent met dat bestand al ingevuld (er wordt niets opgeslagen tot je op Save drukt), en Run, dat het bestand één keer start via de samengevoegde weergave, zoals een geregistreerde tool.
+Een `.exe`-rij in Data heeft Add tool, dat de Executables-editor opent met dat bestand al ingevuld (er wordt niets opgeslagen tot je op Save drukt), en Run, dat het bestand één keer start via de samengevoegde weergave, zoals een geregistreerde tool. Boom opslaan schrijft de hele samengevoegde Data-boom naar een tekstbestand, één regel per bestand met de mod die het levert, zonder uw thuismap en gebruikersnaam, voor een bugmelding.
 
 "Information..." opent een dialoog per mod: algemeen, conflicten, bestandsboom,
 INI-tweaks, notities. Vanuit de bestandsboom (en vanuit de Data-boom) kan elk

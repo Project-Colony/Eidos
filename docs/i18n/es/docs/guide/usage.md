@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6d01387ac79ccda9b47b128850123be98d1d2db3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=74980544e8dd9f3d8b015a80d84aaf7ead98adf3 -->
 
 # Usar Eidos
 
@@ -620,7 +620,7 @@ porque nombrarlos y dejarte a ti el resto es la mitad aburrida.
 
 Al pasar el cursor sobre un plugin se muestran su origen, su autor, la versión de cabecera y de formulario, los primeros 300 caracteres de su descripción, sus masters y, tras una ordenación con LOOT, los mensajes de LOOT. En Skyrim, Skyrim SE, Skyrim VR y Enderal SE el juego también lee un INI con el nombre de un plugin cargado; la columna INI marca esos plugins y un clic abre el archivo en modo de solo lectura.
 
-Una fila `.exe` en Data tiene Add tool, que abre el editor de Executables con ese archivo ya rellenado (nada se guarda hasta pulsar Save), y Run, que lo ejecuta una vez a través de la vista combinada como una herramienta registrada.
+Una fila `.exe` en Data tiene Add tool, que abre el editor de Executables con ese archivo ya rellenado (nada se guarda hasta pulsar Save), y Run, que lo ejecuta una vez a través de la vista combinada como una herramienta registrada. Guardar árbol escribe todo el árbol Data combinado en un archivo de texto, una línea por archivo con el mod que lo aporta, sin su carpeta personal ni su nombre de usuario, para un informe de error.
 
 «Information...» abre un diálogo por mod: general, conflictos, árbol de archivos,
 ajustes INI, notas. Desde el árbol de archivos (y desde el árbol Data) cualquier

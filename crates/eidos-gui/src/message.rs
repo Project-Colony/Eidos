@@ -591,6 +591,11 @@ pub(crate) enum Message {
     DataCollapseAll,
     /// Open a file manager on the real file behind a Data row.
     DataReveal(PathBuf),
+    /// Ask where to save the merged Data tree as a text file.
+    DataSaveTree,
+    DataSaveTreeTo(Option<PathBuf>),
+    /// The worker's answer: file count and path, or the error.
+    DataTreeSaved(Result<(usize, PathBuf), String>),
     /// Re-scan the downloads directory + reload each archive's `.meta` status.
     RefreshDownloads,
     /// Delete a downloaded archive and its `.meta` sidecar (two-click confirm).

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6d01387ac79ccda9b47b128850123be98d1d2db3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=74980544e8dd9f3d8b015a80d84aaf7ead98adf3 -->
 
 # Utiliser Eidos
 
@@ -646,7 +646,7 @@ parce que les nommer et vous laisser faire le reste, c'est la moitié ennuyeuse.
 
 Au survol d'un plugin s'affichent son origine, son auteur, sa version d'en-tête et de formulaire, les 300 premiers caractères de sa description, ses masters et, après un tri LOOT, les messages de LOOT. Sur Skyrim, Skyrim SE, Skyrim VR et Enderal SE, le jeu lit aussi un INI portant le nom d'un plugin chargé ; la colonne INI marque ces plugins, et un clic ouvre le fichier en lecture seule.
 
-Une ligne `.exe` de l'onglet Data propose Ajouter, qui ouvre l'éditeur d'exécutables avec ce fichier déjà rempli (rien n'est enregistré avant d'appuyer sur Save), et Lancer, qui le lance une fois à travers la vue fusionnée, comme un outil enregistré.
+Une ligne `.exe` de l'onglet Data propose Ajouter, qui ouvre l'éditeur d'exécutables avec ce fichier déjà rempli (rien n'est enregistré avant d'appuyer sur Save), et Lancer, qui le lance une fois à travers la vue fusionnée, comme un outil enregistré. Enregistrer l'arbre écrit tout l'arbre Data fusionné dans un fichier texte, une ligne par fichier avec le mod qui le fournit, sans votre dossier personnel ni votre nom d'utilisateur, pour un rapport de bogue.
 
 « Information... » ouvre une boîte de dialogue par mod : général, conflits,
 arborescence des fichiers, INI tweaks, notes. Depuis l'arborescence (et depuis

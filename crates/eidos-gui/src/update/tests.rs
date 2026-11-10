@@ -7798,3 +7798,12 @@ fn add_tool_from_data_opens_the_editor_prefilled_and_writes_nothing() {
         .join("tools.ini")
         .exists());
 }
+
+#[test]
+fn a_saved_tree_answer_disarms_nothing() {
+    let app = nav_app(&[]);
+    assert!(is_ambient(
+        &app,
+        &Message::DataTreeSaved(Err("disk full".into()))
+    ));
+}

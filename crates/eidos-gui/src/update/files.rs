@@ -165,6 +165,62 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let _ = std::process::Command::new("xdg-open").arg(&target).spawn();
             app.status = Some(tf("status_opened", &[("path", &target.display())]));
         }
+        Message::DataSaveTree => {
+            return Task::perform(
+                rfd::AsyncFileDialog::new()
+                    .set_title(t("data_save_tree_title"))
+                    .set_file_name("eidos-data-tree.txt")
+                    .save_file(),
+                |picked| Message::DataSaveTreeTo(picked.map(|h| h.path().to_path_buf())),
+            );
+        }
+        Message::DataSaveTreeTo(None) => {}
+        Message::DataSaveTreeTo(Some(path)) => {
+            let (Some(inst), Some(game)) = (app.created.as_ref(), crate::state::selected_game(app))
+            else {
+                return Task::none();
+            };
+            // Gathered here, as `data_stack` does, so the worker owns plain data.
+            let mut layers = inst.load_order();
+            layers.push(game.data_path.clone());
+            let overwrite = inst.overwrite_dir();
+            let mut sources = crate::view::DataSources::new();
+            sources.insert(overwrite.clone(), t("view_overwrite_source").to_string());
+            for m in app
+                .mods
+                .iter()
+                .filter(|m| m.is_active() && !m.is_unmanaged())
+            {
+                sources.insert(m.path.clone(), m.name.clone());
+            }
+            sources.insert(game.data_path.clone(), format!("[{}]", game.def.id));
+            let header = format!(
+                "# Eidos Data tree: {}, profile {}\n",
+                game.def.name,
+                inst.active_profile()
+            );
+            return Task::perform(
+                crate::background_work::run(move || {
+                    let stack = eidos_core::LayerStack::new_unindexed(layers, overwrite)
+                        .hiding_mod_metadata();
+                    let body = crate::view::merged_tree_text(&stack, &sources);
+                    let text = format!("{}{body}", eidos_log::redact(&header));
+                    std::fs::write(&path, &text)
+                        .map(|()| (body.lines().count(), path.clone()))
+                        .map_err(|e| e.to_string())
+                }),
+                Message::DataTreeSaved,
+            );
+        }
+        Message::DataTreeSaved(result) => {
+            app.status = Some(match result {
+                Ok((n, path)) => tf(
+                    "status_data_tree_saved",
+                    &[("n", &n), ("path", &path.display())],
+                ),
+                Err(error) => tf("status_data_tree_failed", &[("error", &error)]),
+            });
+        }
         Message::OverwriteToggleDir(rel) => {
             if !app.overwrite_expanded.remove(&rel) {
                 app.overwrite_expanded.insert(rel);

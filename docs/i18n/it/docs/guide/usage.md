@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6d01387ac79ccda9b47b128850123be98d1d2db3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=74980544e8dd9f3d8b015a80d84aaf7ead98adf3 -->
 
 # Usare Eidos
 
@@ -632,7 +632,7 @@ noiosa.
 
 Passando il mouse su un plugin si vedono la sua origine, l'autore, la versione dell'intestazione e del modulo, i primi 300 caratteri della descrizione, i suoi master e, dopo un ordinamento con LOOT, i messaggi di LOOT. In Skyrim, Skyrim SE, Skyrim VR ed Enderal SE il gioco legge anche un INI con il nome di un plugin caricato; la colonna INI segna quei plugin e un clic apre il file in sola lettura.
 
-Una riga `.exe` in Data ha Add tool, che apre l'editor Executables con quel file già inserito (nulla viene salvato finché non premi Save), e Run, che lo avvia una volta attraverso la vista unita come uno strumento registrato.
+Una riga `.exe` in Data ha Add tool, che apre l'editor Executables con quel file già inserito (nulla viene salvato finché non premi Save), e Run, che lo avvia una volta attraverso la vista unita come uno strumento registrato. Salva albero scrive l'intero albero Data unito in un file di testo, una riga per file con la mod che lo fornisce, senza la cartella home e il nome utente, per una segnalazione di bug.
 
 "Information..." apre una finestra per mod: generale, conflitti, albero dei
 file, modifiche agli INI, note. Dall'albero dei file (e dall'albero Data)

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6d01387ac79ccda9b47b128850123be98d1d2db3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=74980544e8dd9f3d8b015a80d84aaf7ead98adf3 -->
 
 # Používání Eidosu
 
@@ -571,7 +571,7 @@ nudná polovina.
 
 Když najedete na plugin, zobrazí se, odkud pochází, jeho autor, verze hlavičky a formuláře, prvních 300 znaků popisu, jeho master soubory a po řazení LOOT také zprávy z LOOT. Na Skyrimu, Skyrimu SE, Skyrimu VR a Enderalu SE hra čte také INI pojmenovaný podle načteného pluginu; sloupec INI tyto pluginy označuje a kliknutí otevře soubor jen pro čtení.
 
-Řádek `.exe` na kartě Data má tlačítko Add tool, které otevře editor Executables s vyplněným souborem (nic se neuloží, dokud nestisknete Save), a tlačítko Run, které soubor jednou spustí ve sloučeném pohledu jako registrovaný nástroj.
+Řádek `.exe` na kartě Data má tlačítko Add tool, které otevře editor Executables s vyplněným souborem (nic se neuloží, dokud nestisknete Save), a tlačítko Run, které soubor jednou spustí ve sloučeném pohledu jako registrovaný nástroj. Uložit strom zapíše celý sloučený strom Data do textového souboru, jeden řádek na soubor s modem, který jej poskytuje, bez vaší domovské složky a uživatelského jména, pro hlášení chyby.
 
 „Information..." otevře dialog konkrétního módu: obecné, konflikty, strom
 souborů, úpravy INI, poznámky. Ze stromu souborů (a ze stromu Data) lze

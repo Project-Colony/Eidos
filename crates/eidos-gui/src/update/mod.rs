@@ -1124,6 +1124,7 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         | Message::CollectionRevisionsChecked(..)
         | Message::RequirementFilePicked { .. }
         | Message::ArchiveExportFinished(..)
+        | Message::DataTreeSaved(..)
         | Message::ArchiveExtracted(..)
         | Message::CollectionInstallChecked { .. }
         // And the hover-to-expand timer, which fires only while a drag rests on
@@ -1464,6 +1465,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::DataExpandAll
         | Message::DataCollapseAll
         | Message::DataReveal(..)
+        | Message::DataSaveTree
+        | Message::DataSaveTreeTo(..)
+        | Message::DataTreeSaved(..)
         | Message::OverwriteToggleDir(..)
         | Message::ToggleFileHidden(..)
         | Message::ToggleIniTweak(..)

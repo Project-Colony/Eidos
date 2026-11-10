@@ -38,7 +38,8 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
                 .on_press(Message::DataToggleConflictsOnly),
         )
         .push(tool_btn(t("data_expand_all"), Message::DataExpandAll))
-        .push(tool_btn(t("data_collapse_all"), Message::DataCollapseAll));
+        .push(tool_btn(t("data_collapse_all"), Message::DataCollapseAll))
+        .push(tool_btn(t("data_save_tree"), Message::DataSaveTree));
 
     let header = Row::new()
         .spacing(6)

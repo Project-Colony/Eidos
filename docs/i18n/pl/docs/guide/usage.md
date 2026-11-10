@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=6d01387ac79ccda9b47b128850123be98d1d2db3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=74980544e8dd9f3d8b015a80d84aaf7ead98adf3 -->
 
 # Używanie Eidos
 
@@ -601,7 +601,7 @@ bo nazwanie ich i zostawienie cię z tym to ta nudna połowa.
 
 Po najechaniu na wtyczkę widać, skąd pochodzi, jej autora, wersję nagłówka i formularza, pierwsze 300 znaków opisu, jej mastery oraz, po sortowaniu LOOT, komunikaty LOOT. W Skyrimie, Skyrimie SE, Skyrimie VR i Enderalu SE gra czyta też plik INI nazwany jak załadowana wtyczka; kolumna INI oznacza takie wtyczki, a kliknięcie otwiera ten plik tylko do odczytu.
 
-Wiersz `.exe` w zakładce Data ma przyciski Add tool, który otwiera edytor Executables z już wypełnionym plikiem (nic nie jest zapisywane do czasu kliknięcia Save), oraz Run, który uruchamia plik jednorazowo przez połączony widok, jak zarejestrowane narzędzie.
+Wiersz `.exe` w zakładce Data ma przyciski Add tool, który otwiera edytor Executables z już wypełnionym plikiem (nic nie jest zapisywane do czasu kliknięcia Save), oraz Run, który uruchamia plik jednorazowo przez połączony widok, jak zarejestrowane narzędzie. Zapisz drzewo zapisuje całe scalone drzewo Data do pliku tekstowego, po jednej linii na plik wraz z modem, który go dostarcza, bez folderu domowego i nazwy użytkownika, na potrzeby zgłoszenia błędu.
 
 „Information..." otwiera okno dla pojedynczego moda: ogólne, konflikty, drzewo
 plików, poprawki INI, notatki. Z drzewa plików (i z drzewa Data) każdy plik można
