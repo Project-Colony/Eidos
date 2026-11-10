@@ -99,7 +99,10 @@ pub(crate) fn finish(
         return;
     };
     record.ended = Some(now());
-    record.exit = result.as_ref().ok().map(crate::launch::exit_code);
+    record.exit = result
+        .as_ref()
+        .ok()
+        .map(|s| recorded_exit(crate::launch::exit_code(s), eidos_launch::stop_requested()));
     let since = UNIX_EPOCH + Duration::from_secs(record.started);
     record.new_saves = prof
         .savegames()
@@ -109,6 +112,16 @@ pub(crate) fn finish(
         .collect();
     if let Err(e) = inst.write_session(&record) {
         eidos_log::warn!("eidos: could not record how this run ended: {e}");
+    }
+}
+
+/// A stopped run is never an exit-0 session, so it cannot become the last good
+/// run: Steam's wrapper chain may turn the SIGTERM into exit 0.
+pub(crate) fn recorded_exit(code: i32, stopped: bool) -> i32 {
+    if stopped && code == 0 {
+        128 + 15 // SIGTERM, as `exit_code` maps a signal exit
+    } else {
+        code
     }
 }
 

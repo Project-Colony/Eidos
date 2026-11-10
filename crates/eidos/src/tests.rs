@@ -477,3 +477,11 @@ fn the_default_diff_target_is_the_newest_game_run_that_exited_zero() {
     ];
     assert_eq!(sessions::default_target(&records).unwrap().1.started, 2);
 }
+
+#[test]
+fn a_stopped_run_is_never_recorded_as_exit_zero() {
+    assert_eq!(sessions::recorded_exit(0, true), 143);
+    assert_eq!(sessions::recorded_exit(143, true), 143);
+    assert_eq!(sessions::recorded_exit(1, true), 1);
+    assert_eq!(sessions::recorded_exit(0, false), 0);
+}
