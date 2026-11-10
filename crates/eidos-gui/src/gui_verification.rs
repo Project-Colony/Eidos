@@ -1605,3 +1605,35 @@ fn the_prefix_rows_keep_their_place_without_a_prefix() {
     let _ = fs::remove_dir_all(root_with);
     let _ = fs::remove_dir_all(root_without);
 }
+
+#[test]
+fn the_ini_editor_keeps_its_save_row_in_place_on_the_launch_env_tab() {
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    let app = crate::test_support::app_for_game("skyrimse");
+    let state = |current: &str, missing| IniEditorState {
+        files: vec![
+            "Skyrim.ini".into(),
+            "SkyrimPrefs.ini".into(),
+            "launch-env.ini".into(),
+        ],
+        current: current.into(),
+        content: iced::widget::text_editor::Content::with_text(""),
+        cp1252: false,
+        dirty: false,
+        original: String::new(),
+        missing,
+        unreadable: false,
+        on_disk: 0,
+    };
+    let ini = state("SkyrimPrefs.ini", false);
+    let env = state("launch-env.ini", true);
+    let save_y = |s: &IniEditorState, r: &mut iced::Renderer| {
+        label(crate::dialogs::ini_editor_dialog(&app, s), r, "Save", 0).y
+    };
+    assert_eq!(
+        save_y(&env, &mut renderer),
+        save_y(&ini, &mut renderer),
+        "the launch-env note moved the Save row"
+    );
+}

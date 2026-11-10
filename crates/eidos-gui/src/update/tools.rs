@@ -309,11 +309,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(t("status_open_instance_first").to_string());
                 return Task::none();
             };
-            let files: Vec<String> = game.def.ini_files.iter().map(|f| f.to_string()).collect();
-            let Some(first) = files.first().cloned() else {
-                app.status = Some(tf("status_no_managed_inis", &[("game", &game.def.name)]));
-                return Task::none();
-            };
+            let mut files: Vec<String> = game.def.ini_files.iter().map(|f| f.to_string()).collect();
+            files.push(eidos_instance::LAUNCH_ENV_FILE.to_string());
+            let first = files[0].clone();
             let inst = inst.clone();
             if let Err(e) = seed_ini_from_game(app, &first) {
                 app.status = Some(e);
@@ -399,10 +397,27 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     ed.on_disk = content_hash(&std::fs::read(&path).ok());
                     app.archive_epoch
                         .set(app.archive_epoch.get().wrapping_add(1));
-                    app.status = Some(tf(
-                        "status_ini_saved",
-                        &[("file", &ed.current), ("profile", &inst.active().name)],
-                    ));
+                    let ignored = if ed.current == eidos_instance::LAUNCH_ENV_FILE {
+                        eidos_instance::parse_launch_env(&text).1
+                    } else {
+                        Vec::new()
+                    };
+                    app.status = Some(if ignored.is_empty() {
+                        tf(
+                            "status_ini_saved",
+                            &[("file", &ed.current), ("profile", &inst.active().name)],
+                        )
+                    } else {
+                        let lines = ignored
+                            .iter()
+                            .map(usize::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        tf(
+                            "status_launch_env_ignored",
+                            &[("file", &ed.current), ("lines", &lines)],
+                        )
+                    });
                     // Morrowind.ini (and plugins.txt) live in the profile's plugin
                     // state: the cached load order and the hash its next write is
                     // checked against are both stale now, and left so that write

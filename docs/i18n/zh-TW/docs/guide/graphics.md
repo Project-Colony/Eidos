@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=1955cd62075925e7e97c47c7866e9ce2eceba1c2 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
 
 # Community Shaders、DLSS 與影格生成
 
@@ -20,6 +20,8 @@ PROTON_ENABLE_NVAPI=1 eidos-gui %command%
 而 Skyrim 不在清單裡。沒有它,CS 無法初始化 DLSS,會悄悄退回 FSR 升頻,畫面上不會有
 任何提示說明原因。在非 NVIDIA 機器上設定這個變數毫無代價,所以放心用的啟動選項就是
 上面那一行。影格生成本身是 FSR 3.1,不需要 NVAPI;只有 DLSS 升頻器需要。
+
+只想為一個設定檔設定時,把 `env=PROTON_ENABLE_NVAPI=1` 寫進該設定檔的 `launch-env.ini`(View -> INI editor,最後一個分頁)。Health 卡片也會計入這一行。
 
 ## 影格生成需要無邊框視窗
 

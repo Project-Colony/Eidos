@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=4a23f00af1300ab261cd09ad087d0f1826359112 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a8f80ad631af33e4aa35960ec9a2d9147ebc26e3 -->
 
 # Eidos kullanımı
 
@@ -795,6 +795,23 @@ yüklemek için oynadıktan sonra orada F5'e basın. Mağazadaki ayar eksikse ya
 script extender'ın loader'ı oyunun çalıştırılabilir dosyasının yanında değilse,
 Run hiçbir şey başlatmaz ve neyin nereye ayarlanacağını, çalışan ikili dosyanın
 gerçek yoluyla gösterir.
+
+### Profil başına değişkenler ve wrapper'lar
+
+Bir profil, kendi ortam değişkenlerini ve wrapper komutlarını `profiles/<ad>/launch-env.ini` içinde, satır başına bir girdi olacak şekilde taşıyabilir:
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+Bu profilin her `eidos play` çalıştırmasında (Steam'in `%command%` değeriyle ya da bir mağazanın açtığı pencerede Run ile başlatılan oyun) ve her araç çalıştırmasında geçerlidir. `eidos shell` değişkenleri alır, wrapper almaz. İlk `wrapper=` satırı en dıştakidir. `%command%` içeren bir `wrapper=` satırında komut o yere konur, Steam'in başlatma seçeneklerindeki gibi; içermeyen satırda komut sona eklenir. Wrapper'lar Eidos'un özel ad alanında çalışır, bu yüzden modları görür.
+
+Buradaki bir değişken, Eidos'un aynı ad için ayarladığı değerin yerine geçer; bir aracın `tools.ini` içindeki kendi `env=` satırı ise ikisinin de yerine geçer. `WINEDLLOVERRIDES` ise Eidos'un ENB, ReShade ve birlikte gelen DLL'ler için ayarladığı override'lardan sonra eklenir: ikisinde de adı geçen bir DLL profilin ayarını alır, diğerleri kendi ayarını korur.
+
+View -> INI editor dosyayı her oyun için son sekme olarak açar. Kaydederken Eidos'un yok saydığı satır numaralarını listeler: ne `env=AD=değer` ne de `wrapper=komut` olan satırlar. Komutsuz `eidos play <örnek>`, bir çalıştırmanın alacağı değişkenleri ve wrapper'ları listeler. Diagnostics içindeki Copy report değişkenleri ve wrapper programlarını değerleri olmadan adlandırır.
 
 Bethesda oyunları için Steam'in `%command%` değeri genellikle
 `<Game>Launcher.exe`'yi gösterir. Eidos onu asla çalıştırmaz: başlatıcı, `Data`'yı

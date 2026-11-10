@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=1955cd62075925e7e97c47c7866e9ce2eceba1c2 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
 
 # Community Shaders, DLSS, 프레임 생성
 
@@ -23,6 +23,8 @@ FSR 업스케일링으로 물러납니다. 화면에는 이유가 전혀 뜨지 
 기기에서 이 변수를 설정해도 손해가 없으므로, 안심하고 쓸 실행 옵션은 위의 한 줄이면
 충분합니다. 프레임 생성 자체는 FSR 3.1이며 NVAPI가 필요 없습니다. 필요한 것은 DLSS
 업스케일러뿐입니다.
+
+한 프로필에만 설정하려면 그 프로필의 `launch-env.ini`에 `env=PROTON_ENABLE_NVAPI=1`을 넣으세요(View -> INI editor의 마지막 탭). Health 카드도 이 줄을 반영합니다.
 
 ## 프레임 생성은 테두리 없는 창을 요구합니다
 

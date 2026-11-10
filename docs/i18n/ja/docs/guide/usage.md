@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=4a23f00af1300ab261cd09ad087d0f1826359112 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a8f80ad631af33e4aa35960ec9a2d9147ebc26e3 -->
 
 # Eidos の使い方
 
@@ -725,6 +725,23 @@ Steam の外では、Run は Proton や Wine でゲームを自分で起動し�
 - Legendary 単体は、`~/.config/legendary/config.ini` のゲームの `[<app>]` セクションか `[default]` に `wrapper =` と `eidos-gui` の絶対パスがあるとき、`legendary launch <app>` を実行します。
 
 すると Eidos は最後に使ったインスタンスで 2 つ目のウィンドウを開くので、そちらで Run を押します。最初のウィンドウはその実行を追わないため、遊び終えたらそのウィンドウで F5 を押してリストを読み直してください。ストアの設定がない場合や、スクリプトエクステンダーのローダーがゲームの実行ファイルの隣にない場合、Run は何も起動せず、何をどこに設定するかを、動いている実行ファイルの実際のパス入りで表示します。
+
+### プロファイルごとの変数とラッパー
+
+プロファイルは、独自の環境変数とラッパーコマンドを `profiles/<名前>/launch-env.ini` に1行1項目で持てます。
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+これらは、そのプロファイルのすべての `eidos play`(Steam の `%command%` で起動したゲーム、またはストアが開いたウィンドウで Run が起動したゲーム)と、すべてのツール実行に適用されます。`eidos shell` には変数だけが渡され、ラッパーは付きません。最初の `wrapper=` 行が最も外側です。`%command%` を含む `wrapper=` 行ではその位置にコマンドが入ります(Steam の起動オプションと同じです)。含まない行では末尾にコマンドが付きます。ラッパーは Eidos の専用名前空間の中で動くので、MOD が見えます。
+
+ここに書いた変数は、Eidos が同じ名前に設定する値を置き換え、`tools.ini` にあるツール自身の `env=` 行はその両方を置き換えます。`WINEDLLOVERRIDES` だけは、Eidos が ENB、ReShade、同梱 DLL のために設定するオーバーライドの後ろに追加されます。両方に名前がある DLL はプロファイルの設定になり、それ以外は元の設定のままです。
+
+View -> INI editor は、このファイルをどのゲームでも最後のタブとして開きます。保存すると、Eidos が無視する行番号(`env=NAME=value` でも `wrapper=command` でもない行)が表示されます。コマンドなしの `eidos play <インスタンス>` は、実行が受け取る変数とラッパーを一覧します。Diagnostics の Copy report には、変数名とラッパーのプログラム名が値なしで載ります。
 
 Bethesda のタイトルでは、Steam の `%command%` はたいてい `<Game>Launcher.exe` を
 指しています。Eidos はそれを実行しません。あのランチャーは `Data` を再走査して

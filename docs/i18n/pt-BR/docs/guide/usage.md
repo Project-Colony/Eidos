@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=4a23f00af1300ab261cd09ad087d0f1826359112 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a8f80ad631af33e4aa35960ec9a2d9147ebc26e3 -->
 
 # Usar o Eidos
 
@@ -800,6 +800,23 @@ aperte F5 nela depois de jogar para recarregar as listas. Quando a configuraçã
 da loja está faltando, ou o loader do script extender não está ao lado do
 executável do jogo, o Run não inicia nada e mostra o que definir e onde, com o
 caminho real do binário em execução.
+
+### Variáveis e wrappers por perfil
+
+Um perfil pode ter suas próprias variáveis de ambiente e comandos wrapper em `profiles/<nome>/launch-env.ini`, uma entrada por linha:
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+Elas valem para cada `eidos play` desse perfil (o jogo iniciado pelo `%command%` da Steam, ou pelo Run em uma janela que uma loja abriu) e para cada execução de uma ferramenta. `eidos shell` recebe as variáveis e nenhum wrapper. A primeira linha `wrapper=` é a mais externa. Uma linha `wrapper=` que contém `%command%` recebe o comando nesse lugar, como nas opções de inicialização da Steam; uma linha sem ele recebe o comando no fim. Os wrappers rodam dentro do namespace privado do Eidos, então enxergam os mods.
+
+Uma variável colocada aqui substitui o valor que o Eidos define para o mesmo nome, e a linha `env=` própria de uma ferramenta em `tools.ini` substitui os dois. `WINEDLLOVERRIDES` é acrescentada depois dos overrides que o Eidos define para ENB, ReShade e as DLLs incluídas: uma DLL citada nos dois usa a configuração do perfil e as demais mantêm a sua.
+
+View -> INI editor abre o arquivo como última aba, para todo jogo. Ao salvar, o Eidos lista os números das linhas que ignora: as que não são nem `env=NOME=valor` nem `wrapper=comando`. `eidos play <instância>` sem comando lista as variáveis que uma execução recebe e os wrappers. Copy report em Diagnostics nomeia as variáveis e os programas wrapper, sem os valores.
 
 O `%command%` do Steam para os títulos da Bethesda costuma apontar para
 `<Game>Launcher.exe`. O Eidos nunca o roda: o launcher é um aplicativo de

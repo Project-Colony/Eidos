@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=4a23f00af1300ab261cd09ad087d0f1826359112 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a8f80ad631af33e4aa35960ec9a2d9147ebc26e3 -->
 
 # Używanie Eidos
 
@@ -799,6 +799,23 @@ by przeładować jego listy. Gdy brakuje ustawienia w sklepie albo loader script
 extendera nie leży obok pliku wykonywalnego gry, Run niczego nie uruchamia i
 pokazuje, co i gdzie ustawić, z prawdziwą ścieżką działającego pliku
 wykonywalnego.
+
+### Zmienne i wrappery dla profilu
+
+Profil może mieć własne zmienne środowiskowe i polecenia wrapperów w `profiles/<nazwa>/launch-env.ini`, jeden wpis w wierszu:
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+Obowiązują przy każdym `eidos play` tego profilu (gra uruchomiona przez `%command%` Steama albo przez Run w oknie otwartym przez sklep) i przy każdym uruchomieniu narzędzia. `eidos shell` dostaje zmienne, ale nie wrapper. Pierwszy wiersz `wrapper=` jest najbardziej zewnętrzny. W wierszu `wrapper=` zawierającym `%command%` polecenie trafia w to miejsce, jak w opcjach uruchamiania Steama; w wierszu bez niego polecenie trafia na koniec. Wrappery działają w prywatnej przestrzeni nazw Eidos, więc widzą mody.
+
+Zmienna podana tutaj zastępuje wartość, którą Eidos ustawia dla tej samej nazwy, a własny wiersz `env=` narzędzia w `tools.ini` zastępuje obie. `WINEDLLOVERRIDES` jest za to dopisywana po override'ach, które Eidos ustawia dla ENB, ReShade i dołączonych DLL: DLL wymieniona w obu miejscach dostaje ustawienie profilu, pozostałe zachowują swoje.
+
+View -> INI editor otwiera plik jako ostatnią kartę, dla każdej gry. Przy zapisie Eidos podaje numery wierszy, które pomija: wierszy, które nie są ani `env=NAZWA=wartość`, ani `wrapper=polecenie`. `eidos play <instancja>` bez polecenia wypisuje zmienne, które dostanie uruchomienie, oraz wrappery. Copy report w Diagnostics podaje nazwy zmiennych i programów wrapperów, bez ich wartości.
 
 `%command%` Steama dla tytułów Bethesdy zwykle wskazuje na
 `<Game>Launcher.exe`. Eidos nigdy go nie uruchamia: launcher to osobna aplikacja

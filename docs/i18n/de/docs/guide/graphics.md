@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=1955cd62075925e7e97c47c7866e9ce2eceba1c2 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
 
 # Community Shaders, DLSS und Frame Generation
 
@@ -25,6 +25,8 @@ irgendetwas auf dem Bildschirm sagt, warum. Die Variable zu setzen kostet auf
 Nicht-NVIDIA-Rechnern nichts, also ist die gefahrlose Startoption schlicht die
 Zeile oben. Frame Generation selbst ist FSR 3.1 und braucht kein NVAPI; nur der
 DLSS-Upscaler tut es.
+
+Um sie nur für ein Profil zu setzen, tragen Sie `env=PROTON_ENABLE_NVAPI=1` in die `launch-env.ini` dieses Profils ein (View -> INI editor, letzter Tab). Die Health-Karte zählt diese Zeile ebenfalls.
 
 ## Frame Generation verlangt randloses Fenster
 

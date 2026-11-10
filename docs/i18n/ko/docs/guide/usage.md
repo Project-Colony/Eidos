@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=4a23f00af1300ab261cd09ad087d0f1826359112 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a8f80ad631af33e4aa35960ec9a2d9147ebc26e3 -->
 
 # Eidos 사용하기
 
@@ -708,6 +708,23 @@ Steam 밖에서 Run은 Proton이나 Wine으로 게임을 직접 시작하지 않
 - 단독 Legendary는 `~/.config/legendary/config.ini`의 게임 `[<app>]` 섹션이나 `[default]` 아래에 `wrapper =`와 `eidos-gui`의 절대 경로가 있을 때 `legendary launch <app>`를 실행합니다.
 
 그러면 Eidos가 마지막으로 쓴 인스턴스로 두 번째 창을 열고, 거기서 Run을 클릭합니다. 첫 번째 창은 그 실행을 따라가지 않으므로, 플레이 후 그 창에서 F5를 눌러 목록을 다시 불러오세요. 스토어 설정이 없거나 스크립트 익스텐더의 로더가 게임 실행 파일 옆에 없으면, Run은 아무것도 시작하지 않고 무엇을 어디에 설정할지를 실행 중인 바이너리의 실제 경로와 함께 보여줍니다.
+
+### 프로필별 변수와 래퍼
+
+프로필은 `profiles/<이름>/launch-env.ini`에 자체 환경 변수와 래퍼 명령을 한 줄에 하나씩 둘 수 있습니다.
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+이 값들은 해당 프로필의 모든 `eidos play`(Steam의 `%command%`로 시작한 게임, 또는 스토어가 연 창에서 Run으로 시작한 게임)와 모든 도구 실행에 적용됩니다. `eidos shell`은 변수만 받고 래퍼는 받지 않습니다. 첫 번째 `wrapper=` 줄이 가장 바깥쪽입니다. `%command%`가 들어 있는 `wrapper=` 줄에서는 그 자리에 명령이 들어가며, Steam 시작 옵션과 같습니다. 없는 줄에서는 명령이 맨 끝에 붙습니다. 래퍼는 Eidos의 비공개 네임스페이스 안에서 실행되므로 모드를 볼 수 있습니다.
+
+여기에 적은 변수는 Eidos가 같은 이름에 설정하는 값을 대체하고, `tools.ini`에 있는 도구 자체의 `env=` 줄은 둘 다 대체합니다. `WINEDLLOVERRIDES`는 예외로, Eidos가 ENB, ReShade, 번들 DLL에 설정하는 오버라이드 뒤에 추가됩니다. 양쪽에 모두 나온 DLL은 프로필의 설정을 따르고 나머지는 원래 설정을 유지합니다.
+
+View -> INI editor는 이 파일을 모든 게임에서 마지막 탭으로 엽니다. 저장하면 Eidos가 무시하는 줄 번호(`env=이름=값`도 `wrapper=명령`도 아닌 줄)를 알려 줍니다. 명령 없이 실행한 `eidos play <인스턴스>`는 실행이 받는 변수와 래퍼를 나열합니다. Diagnostics의 Copy report에는 변수 이름과 래퍼 프로그램 이름이 값 없이 들어갑니다.
 
 Bethesda 타이틀의 Steam `%command%`는 보통 `<Game>Launcher.exe`를 가리킵니다.
 Eidos는 그것을 결코 실행하지 않습니다: 그 런처는 `Data`를 다시 훑고

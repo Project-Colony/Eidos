@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=1955cd62075925e7e97c47c7866e9ce2eceba1c2 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
 
 # Community Shaders, DLSS y generación de fotogramas
 
@@ -25,6 +25,8 @@ Definir la variable no cuesta nada en máquinas sin NVIDIA, así que la opción 
 lanzamiento segura es sencillamente la línea de arriba. La generación de
 fotogramas en sí es FSR 3.1 y no necesita NVAPI; sólo lo necesita el escalador
 DLSS.
+
+Para fijarla solo en un perfil, pon `env=PROTON_ENABLE_NVAPI=1` en el `launch-env.ini` de ese perfil (View -> INI editor, última pestaña). La tarjeta de Salud también cuenta esa línea.
 
 ## La generación de fotogramas exige ventana sin bordes
 

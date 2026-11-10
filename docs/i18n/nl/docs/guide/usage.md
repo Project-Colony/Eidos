@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=4a23f00af1300ab261cd09ad087d0f1826359112 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a8f80ad631af33e4aa35960ec9a2d9147ebc26e3 -->
 
 # Eidos gebruiken
 
@@ -819,6 +819,23 @@ daarin na het spelen op F5 om zijn lijsten opnieuw te laden. Ontbreekt de
 instelling in de winkel, of staat de loader van de script extender niet naast
 het uitvoerbare bestand van het spel, dan start Run niets en toont het wat je
 waar moet instellen, met het echte pad van het draaiende binaire bestand.
+
+### Variabelen en wrappers per profiel
+
+Een profiel kan eigen omgevingsvariabelen en wrapper-commando's bevatten in `profiles/<naam>/launch-env.ini`, één regel per item:
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+Ze gelden voor elke `eidos play` van dat profiel (het spel dat door Steams `%command%` wordt gestart, of door Run in een venster dat een store opende) en voor elke tool-start. `eidos shell` krijgt de variabelen en geen wrapper. De eerste `wrapper=`-regel is de buitenste. Een `wrapper=`-regel met `%command%` krijgt het commando op die plek, zoals in Steams startopties; een regel zonder krijgt het commando aan het eind. Wrappers draaien in de private namespace van Eidos, dus ze zien de mods.
+
+Een variabele hier vervangt de waarde die Eidos voor dezelfde naam instelt, en de eigen `env=`-regel van een tool in `tools.ini` vervangt beide. `WINEDLLOVERRIDES` wordt juist toegevoegd na de overrides die Eidos instelt voor ENB, ReShade en de meegeleverde DLL's: een DLL die in beide staat krijgt de instelling van het profiel, de overige houden hun eigen.
+
+View -> INI editor opent het bestand als laatste tabblad, voor elk spel. Bij het opslaan noemt Eidos de regelnummers die het negeert: regels die noch `env=NAAM=waarde` noch `wrapper=commando` zijn. `eidos play <instantie>` zonder commando toont de variabelen die een run krijgt en de wrappers. Copy report in Diagnostics noemt de variabelen en de wrapper-programma's, zonder hun waarden.
 
 De `%command%` van Steam wijst bij de Bethesda-titels meestal naar
 `<Game>Launcher.exe`. Eidos draait die nooit: de launcher is een aparte

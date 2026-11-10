@@ -23,6 +23,8 @@ Setting the variable costs nothing on non-NVIDIA machines, so the guide-safe
 launch option is simply the line above. Frame generation itself is FSR 3.1 and
 does not need NVAPI; only the DLSS upscaler does.
 
+To set it for one profile only, put `env=PROTON_ENABLE_NVAPI=1` in that profile's `launch-env.ini` (View -> INI editor, last tab). The Health card counts that line too.
+
 ## Frame generation requires borderless windowed
 
 CS's frame generation runs on a D3D12 presentation proxy and refuses exclusive

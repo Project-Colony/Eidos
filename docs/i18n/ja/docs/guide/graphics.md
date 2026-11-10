@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=1955cd62075925e7e97c47c7866e9ce2eceba1c2 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
 
 # Community Shaders、DLSS、フレーム生成
 
@@ -23,6 +23,8 @@ Proton は、ゲームが Valve の許可リストに載っていない限り NV
 NVIDIA でないマシンでこの変数を設定しても損はないので、無難な起動オプションは上の
 一行で十分です。フレーム生成そのものは FSR 3.1 で NVAPI を必要としません。必要なのは
 DLSS アップスケーラだけです。
+
+1つのプロファイルだけに設定するには、そのプロファイルの `launch-env.ini` に `env=PROTON_ENABLE_NVAPI=1` を書きます(View -> INI editor の最後のタブ)。Health カードもこの行を数えます。
 
 ## フレーム生成にはボーダーレスウィンドウが要る
 

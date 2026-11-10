@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=4a23f00af1300ab261cd09ad087d0f1826359112 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a8f80ad631af33e4aa35960ec9a2d9147ebc26e3 -->
 
 # Používání Eidosu
 
@@ -762,6 +762,23 @@ kliknete na Run. První okno tento běh nesleduje, proto v něm po hraní stiskn
 F5, aby se znovu načetly jeho seznamy. Když nastavení v obchodě chybí nebo
 loader script extenderu neleží vedle spustitelného souboru hry, Run nic nespustí
 a ukáže, co a kde nastavit, se skutečnou cestou ke spuštěné binárce.
+
+### Proměnné a wrappery pro profil
+
+Profil může mít vlastní proměnné prostředí a příkazy wrapperů v `profiles/<název>/launch-env.ini`, jeden záznam na řádek:
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+Platí pro každé `eidos play` tohoto profilu (hra spuštěná přes `%command%` ve Steamu nebo přes Run v okně, které otevřel obchod) i pro každé spuštění nástroje. `eidos shell` dostane proměnné a žádný wrapper. První řádek `wrapper=` je nejvnější. U řádku `wrapper=`, který obsahuje `%command%`, se příkaz vloží na toto místo, jako v parametrech spuštění Steamu; u řádku bez něj se příkaz přidá na konec. Wrappery běží v soukromém jmenném prostoru Eidos, takže vidí módy.
+
+Proměnná zde nahradí hodnotu, kterou Eidos nastavuje pro stejný název, a vlastní řádek `env=` nástroje v `tools.ini` nahradí obojí. `WINEDLLOVERRIDES` se naopak přidá za overridy, které Eidos nastavuje pro ENB, ReShade a přibalené DLL: DLL uvedená v obou dostane nastavení profilu, ostatní si ponechají své.
+
+View -> INI editor otevře soubor jako poslední kartu, pro každou hru. Při uložení Eidos vypíše čísla řádků, které ignoruje: řádků, které nejsou ani `env=NÁZEV=hodnota`, ani `wrapper=příkaz`. `eidos play <instance>` bez příkazu vypíše proměnné, které spuštění dostane, a wrappery. Copy report v Diagnostics uvádí názvy proměnných a programů wrapperů, bez jejich hodnot.
 
 `%command%` ze Steamu u titulů Bethesdy obvykle ukazuje na
 `<Game>Launcher.exe`. Eidos jej nikdy nespouští: launcher je samostatná

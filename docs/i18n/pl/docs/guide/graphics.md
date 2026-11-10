@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=1955cd62075925e7e97c47c7866e9ce2eceba1c2 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
 
 # Community Shaders, DLSS i generowanie klatek
 
@@ -24,6 +24,8 @@ tłumaczyłoby dlaczego. Ustawienie zmiennej nic nie kosztuje na maszynach bez
 NVIDII, więc bezpieczną opcją uruchamiania jest po prostu powyższy wiersz. Samo
 generowanie klatek to FSR 3.1 i nie potrzebuje NVAPI; potrzebuje go tylko upscaler
 DLSS.
+
+Aby ustawić ją tylko dla jednego profilu, wpisz `env=PROTON_ENABLE_NVAPI=1` w `launch-env.ini` tego profilu (View -> INI editor, ostatnia karta). Karta Health też liczy ten wiersz.
 
 ## Generowanie klatek wymaga okna bez ramki
 

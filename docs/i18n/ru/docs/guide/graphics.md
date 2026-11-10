@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=1955cd62075925e7e97c47c7866e9ce2eceba1c2 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
 
 # Community Shaders, DLSS и генерация кадров
 
@@ -23,6 +23,8 @@ Valve, а Skyrim в нём нет. Без него CS не может иници
 Установка переменной ничего не стоит на машинах без NVIDIA, поэтому безопасный
 параметр запуска - просто строка выше. Сама генерация кадров - это FSR 3.1, и
 NVAPI ей не нужен; он нужен только апскейлеру DLSS.
+
+Чтобы задать её только для одного профиля, добавьте `env=PROTON_ENABLE_NVAPI=1` в `launch-env.ini` этого профиля (View -> INI editor, последняя вкладка). Карточка Health тоже учитывает эту строку.
 
 ## Генерация кадров требует окна без рамки
 

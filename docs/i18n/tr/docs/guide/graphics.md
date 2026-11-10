@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=1955cd62075925e7e97c47c7866e9ce2eceba1c2 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
 
 # Community Shaders, DLSS ve kare üretimi
 
@@ -23,6 +23,8 @@ sessizce FSR ölçeklemesine geri düşer; ekranda nedenini söyleyen hiçbir ş
 Değişkeni ayarlamak NVIDIA olmayan makinelerde hiçbir şeye mal olmaz, bu yüzden
 güvenli başlatma seçeneği yukarıdaki satırdır. Kare üretiminin kendisi FSR 3.1'dir
 ve NVAPI istemez; onu yalnızca DLSS ölçekleyici ister.
+
+Bunu yalnızca tek bir profil için ayarlamak istiyorsanız, `env=PROTON_ENABLE_NVAPI=1` satırını o profilin `launch-env.ini` dosyasına yazın (View -> INI editor, son sekme). Health kartı bu satırı da hesaba katar.
 
 ## Kare üretimi kenarlıksız pencere ister
 

@@ -8563,3 +8563,52 @@ fn move_mod_below_acts_by_name_and_ignores_a_stale_card() {
     assert_eq!(names(&app.mods), ["Other", "Master", "Patch"]);
     let _ = fs::remove_dir_all(root);
 }
+
+#[test]
+fn the_ini_editor_opens_launch_env_for_every_game_and_names_ignored_lines() {
+    let root = temp_portable("skyrimse");
+    let inst = Instance::portable(root.join("instance"));
+    inst.create().unwrap();
+    let mut app = app_for_game("skyrimse");
+    app.created = Some(inst);
+    let _ = update_inner(&mut app, Message::ShowIniEditor);
+    assert_eq!(
+        app.ini_editor
+            .as_ref()
+            .unwrap()
+            .files
+            .last()
+            .map(String::as_str),
+        Some("launch-env.ini")
+    );
+    let _ = update_inner(&mut app, Message::IniEditorPick("launch-env.ini".into()));
+    {
+        let ed = app.ini_editor.as_mut().unwrap();
+        assert_eq!(ed.current, "launch-env.ini");
+        ed.content =
+            iced::widget::text_editor::Content::with_text("env=DXVK_HUD=fps\nnot a line\n");
+        ed.dirty = true;
+    }
+    let _ = update_inner(&mut app, Message::IniEditorSave);
+    let prof = app.created.as_ref().unwrap().active();
+    assert_eq!(
+        fs::read_to_string(prof.dir().join("launch-env.ini")).unwrap(),
+        "env=DXVK_HUD=fps\nnot a line\n"
+    );
+    assert_eq!(
+        app.status.as_deref(),
+        Some(
+            tf(
+                "status_launch_env_ignored",
+                &[("file", &"launch-env.ini"), ("lines", &"2")]
+            )
+            .as_str()
+        )
+    );
+    // A game with no INI of its own still gets the file.
+    let mut app = app_for_game("stellarblade");
+    app.created = Some(Instance::portable(root.join("instance")));
+    let _ = update_inner(&mut app, Message::ShowIniEditor);
+    assert_eq!(app.ini_editor.as_ref().unwrap().files, ["launch-env.ini"]);
+    let _ = fs::remove_dir_all(root);
+}

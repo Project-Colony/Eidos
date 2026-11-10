@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=4a23f00af1300ab261cd09ad087d0f1826359112 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a8f80ad631af33e4aa35960ec9a2d9147ebc26e3 -->
 
 # 使用 Eidos
 
@@ -591,6 +591,23 @@ Eidos 会在这款游戏的实例上打开 - 你上次用的那一个,所以便�
 - 单独的 Legendary:当 `~/.config/legendary/config.ini` 在游戏的 `[<app>]` 段或 `[default]` 下有 `wrapper =` 加 `eidos-gui` 的绝对路径时,运行 `legendary launch <app>`。
 
 随后 Eidos 会在你上次用的实例上打开第二个窗口,你在那里点 Run。第一个窗口不跟踪这次运行,所以玩完后在它里面按 F5 重新载入列表。商店的设置缺失,或脚本扩展器的 loader 不在游戏可执行文件旁边时,Run 什么也不启动,并显示要在哪里设置什么,带上正在运行的二进制的真实路径。
+
+### 每个配置文件的变量和包装器
+
+配置文件可以在 `profiles/<名称>/launch-env.ini` 里带上自己的环境变量和包装器命令,每行一项:
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+它们对该配置文件的每次 `eidos play`(由 Steam 的 `%command%` 启动的游戏,或由商店打开的窗口里的 Run 启动的游戏)和每次工具运行生效。`eidos shell` 只得到变量,没有包装器。第一条 `wrapper=` 行在最外层。含有 `%command%` 的 `wrapper=` 行会把命令放在那个位置,和 Steam 的启动选项一样;不含的行把命令加在末尾。包装器在 Eidos 的私有命名空间里运行,所以能看到模组。
+
+这里的变量会替换 Eidos 为同名变量设置的值,而工具在 `tools.ini` 里自己的 `env=` 行会同时替换这两者。`WINEDLLOVERRIDES` 例外:它被追加在 Eidos 为 ENB、ReShade 和内置 DLL 设置的覆盖之后,所以两边都提到的 DLL 采用配置文件的设置,其余的保持原样。
+
+View -> INI editor 会把这个文件作为最后一个标签页打开,对每款游戏都是如此。保存时会列出 Eidos 忽略的行号:既不是 `env=名称=值` 也不是 `wrapper=命令` 的行。不带命令的 `eidos play <实例>` 会列出一次运行得到的变量和包装器。Diagnostics 里的 Copy report 会写出变量名和包装器程序名,不含它们的值。
 
 Bethesda 各作在 Steam 里的 `%command%` 通常指向 `<Game>Launcher.exe`。Eidos 从不运行
 它:那个 launcher 是一个独立的设置程序,它会重新扫描 `Data` 并重写 `plugins.txt`,把

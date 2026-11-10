@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=1955cd62075925e7e97c47c7866e9ce2eceba1c2 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
 
 # Community Shaders、DLSS 与帧生成
 
@@ -20,6 +20,8 @@ PROTON_ENABLE_NVAPI=1 eidos-gui %command%
 而 Skyrim 不在名单里。没有它,CS 无法初始化 DLSS,会悄悄退回 FSR 超分,屏幕上不会
 有任何提示说明原因。在非 NVIDIA 机器上设置这个变量毫无代价,所以放心用的启动选项就是
 上面那一行。帧生成本身是 FSR 3.1,不需要 NVAPI;只有 DLSS 超分需要。
+
+只想为一个配置文件设置时,把 `env=PROTON_ENABLE_NVAPI=1` 写进该配置文件的 `launch-env.ini`(View -> INI editor,最后一个标签页)。Health 卡片也会计入这一行。
 
 ## 帧生成要求无边框窗口
 

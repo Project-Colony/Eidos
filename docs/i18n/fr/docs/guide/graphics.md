@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=1955cd62075925e7e97c47c7866e9ce2eceba1c2 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
 
 # Community Shaders, DLSS et génération d'images
 
@@ -25,6 +25,8 @@ initialiser DLSS et se rabat sur la mise à l'échelle FSR - discrètement, sans
 NVIDIA, donc l'option de lancement sûre est simplement la ligne ci-dessus. La
 génération d'images elle-même est du FSR 3.1 et n'a pas besoin de NVAPI ; seul
 l'upscaler DLSS en a besoin.
+
+Pour le définir pour un seul profil, mettez `env=PROTON_ENABLE_NVAPI=1` dans le `launch-env.ini` de ce profil (View -> INI editor, dernier onglet). La carte Santé compte aussi cette ligne.
 
 ## La génération d'images exige le mode fenêtré sans bordure
 

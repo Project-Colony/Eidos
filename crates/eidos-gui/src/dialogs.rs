@@ -1391,6 +1391,8 @@ pub(crate) fn ini_editor_dialog<'a>(app: &App, state: &'a IniEditorState) -> Ele
     // exists yet, and that the game reads a deployed copy rather than this path.
     let note = if state.unreadable {
         tf("ini_unreadable", &[("file", &state.current)])
+    } else if state.current == eidos_instance::LAUNCH_ENV_FILE {
+        t("launch_env_note").to_string()
     } else if state.missing {
         // shortcut: root-mode Oblivion also shows this line, though its INI is seeded from the game folder itself
         let key = if state.files.first() == Some(&state.current) {

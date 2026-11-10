@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=1955cd62075925e7e97c47c7866e9ce2eceba1c2 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
 
 # Community Shaders, DLSS en frame generation
 
@@ -24,6 +24,8 @@ initialiseren en valt het terug op FSR-upscaling - stilletjes, zonder dat iets o
 het scherm zegt waarom. De variabele zetten kost niets op niet-NVIDIA-machines, dus
 de veilige opstartoptie is simpelweg de regel hierboven. Frame generation zelf is
 FSR 3.1 en heeft geen NVAPI nodig; alleen de DLSS-upscaler wel.
+
+Om hem voor één profiel in te stellen, zet je `env=PROTON_ENABLE_NVAPI=1` in de `launch-env.ini` van dat profiel (View -> INI editor, laatste tabblad). De Health-kaart telt die regel ook mee.
 
 ## Frame generation vereist een randloos venster
 

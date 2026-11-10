@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=1955cd62075925e7e97c47c7866e9ce2eceba1c2 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
 
 # Community Shaders, DLSS e geração de quadros
 
@@ -23,6 +23,8 @@ inicializar o DLSS e cai para o upscaling FSR - quietinho, sem nada na tela dize
 por quê. Definir a variável não custa nada em máquinas sem NVIDIA, então a opção de
 inicialização segura é simplesmente a linha acima. A geração de quadros em si é FSR
 3.1 e não precisa de NVAPI; só o upscaler DLSS precisa.
+
+Para defini-la só em um perfil, ponha `env=PROTON_ENABLE_NVAPI=1` no `launch-env.ini` desse perfil (View -> INI editor, última aba). O cartão de Saúde também conta essa linha.
 
 ## A geração de quadros exige janela sem borda
 
