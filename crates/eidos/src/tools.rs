@@ -119,8 +119,9 @@ fn game_entry_handoff(
 }
 
 /// `eidos tool <game-id> [list | add <title> <exe> [args...] | rm <title> |
-/// run <title> [--print] [--output-mod <mod>] [-- extra...]]` - manage and run tools (xEdit, FNIS,
-/// BodySlide) through the merged view, inside the game's Proton prefix.
+/// run <title>|--exe <path> [--print] [--output-mod <mod>] [--profile <name>] [-- extra...]]` -
+/// manage and run tools (xEdit, FNIS, BodySlide) through the merged view, inside the game's
+/// Proton prefix.
 /// A command uses the projected path, while existence and provenance use its
 /// real backing file. Root-only tools do not exist in the game directory yet.
 fn tool_executable(
