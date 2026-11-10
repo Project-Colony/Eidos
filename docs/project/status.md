@@ -1,16 +1,108 @@
 # Feature status and development ledger
 
 The full done/remaining ledger, kept as the project's development history. The
-README carries only the short version; this is the receipts.
+README has the short version.
 
 Releases 1.17 and 1.18 (September 2026) added replacement staging, exact
 collection ownership and Nexus file identity, bounded plugin/SKSE preflight
 checks, archive member conflicts, generated-output receipts, archive browsing,
 DDS and NIF previews, OMOD installs, trusted extensions and timestamp-ordered
 games. 1.18.3 and 1.18.4 (October 2026) fixed data-integrity and responsiveness
-defects found by a review of 1.18.2, and `main` has since moved every file
-Eidos keeps onto the Colony layout ([paths.md](../internals/paths.md)). See
+defects found by a review of 1.18.2. See
 [integrity.md](../internals/integrity.md) for behavior and verification limits.
+
+1.19 (October 2026) moved every file Eidos keeps onto the Colony layout
+([paths.md](../internals/paths.md)), adopted the Colony design system with its
+shared themes and fonts, added a French interface, and shipped `eidos-linux`,
+one signed file that is both the window and the CLI. 1.19.6 keeps the layer
+index alive between lookups and cuts FUSE round trips.
+
+1.20 added Crimson Desert, for ASI and ReShade mods. Each `.eidos` pack is
+checked with `7z t` before it gets its name, and carries PAR2 recovery data when
+par2cmdline is installed.
+
+1.21 writes a `ModOrganizer.ini` so PGPatcher and PGLite can run in their Mod
+Organizer 2 mode. 1.21.1 gives Pandora 5 the .NET 10 runtime.
+
+1.22 (November 2026) answers `FS_IOC_GETFLAGS` with the casefold flag, so Wine
+skips its case probes, shares one passthrough backing per inode, and caches a
+negative lookup whose spelling it records for an hour. Tools run on Heroic's
+GOG and Epic copies, `tools.ini` takes a per-tool `env=`, `runner=native` and
+`slr=1` (the Steam Linux Runtime container), and Synthesis gets the .NET 10
+SDK. The Plugins tab has a filter and shows the selected plugin's masters and
+source mod, an archive can be extracted into a new mod, and Health copies a
+redacted diagnostic report.
+
+1.23 added `eidos check`, the Health checks on the command line, with `--json`
+output. Health names a missing or mismatched script extender, a game update
+since the last clean launch, a Steam launch option that does not start Eidos
+with `%command%`, and the mods a crash log mentions. Run in a window no store
+opened hands the game to the store that owns the copy, a stuck run can be
+stopped, a broken Proton prefix can be moved aside so Steam rebuilds it, and
+MO2 executables can be imported as tools. Each mod is checked for updates on
+its own Nexus game domain and along its file's update chain, and
+`eidos nexus update --apply` installs the successor in place with the FOMOD
+answers replayed. Missing or disabled Nexus requirements show in Health, a free
+account is walked through a collection's missing files one Nexus page at a
+time, and a newer revision of an installed collection is reported with what
+changed. Every run leaves a session record that `eidos sessions` lists. Eidos
+also warns before a change that would break saves, can undo edits, and cleans
+and light-flags plugins on copies.
+
+1.24 adds test runs, which send every write of one game run to
+`<instance>/test-run/` until the user keeps or throws away each group of
+writes, and bisect, which runs each step as a test run on half of the remaining
+suspects and names the mod behind the problem. An instance can also run from a
+copy of the game folder instead of the store install (`eidos stock-game`). The
+ledger below has the details of both.
+
+1.24 Health checks cover `sTestFile` lines that disable `plugins.txt`, Starfield
+`.esp` and blueprint plugins, a patch whose loose files lose to the mod it
+patches, a mod whose loose Papyrus scripts win over the script extender's own,
+`vm.max_map_count` below 1048576, a hard open files limit below 524288, a game
+folder, prefix or instance on NTFS, exFAT or FAT, BodySlide's data paths,
+`Data` folders inside the Overwrite or a `Root/`, and an adopted list's
+`ModOrganizer.ini` whose `gamePath` names another game. A Display card in
+Diagnostics sets each profile's window size and mode.
+
+Each profile can get a desktop shortcut that starts the game through its store,
+and with the "Start the game at once when a store opens Eidos" preference on, a
+window the store opened starts the game without showing itself when Health is
+clear (`EIDOS_WINDOW=1` in the launch option always shows it). Each profile can
+carry its own launch variables and wrappers. `eidos shell` runs a shell or one
+command in the merged view, and the window runs winecfg, regedit, explorer and
+the uninstaller in the game's prefix. A long job that ends while the window is
+in the background sends a desktop notification.
+
+On Nexus, 1.24 tracks mods and syncs endorsements and tracked mods on each
+update check, browses and searches a game's published collections in the
+collection pane, lists in Health the order rules of an installed collection
+that the mod list no longer keeps (Restore collection order puts them back),
+and shows a mod's description and changelog in a Nexus page tab
+of the mod information dialog. After an update, Eidos shows which files the
+update added, removed or resized and which plugins and masters changed, and
+keeps that report in `<instance>/logs/updates/<mod>.json` for the mod
+information dialog. A finished download can install itself, and Eidos asks
+GitHub at most once a day whether a newer release is out.
+
+The mod list filters by Nexus state, notes, hidden files and content type,
+matching all or any. A plugin's author, description and header version show on
+hover. Pandora, Nemesis, FNIS, BodySlide, DynDOLOD, xLODGen and Synthesis are
+found with the runtime each needs and the mod their output goes to. An exe in the
+Data tab can be added as a tool or run once (`eidos tool <instance> run --exe
+<path>`), and the profile INIs get a restore point before each BethINI run.
+Saves another device left in the prefix can be imported without replacing the
+profile's saves, and the merged Data tree can be saved, redacted, with each
+file's source for a bug report.
+
+The 1.24 release bundle ships Microsoft's Visual C++ redistributable
+(`vcrun2022`, x86 and x64), the .NET Windows Desktop Runtime 8.0.12 and the
+.NET runtime 10.0.10 under `runtimes/`. `vcrun2022`, `dotnet8` and
+`dotnetdesktop8` run Microsoft's own installers from that copy, or from a
+pinned download, instead of winetricks. The .NET 10 SDK for Synthesis is still downloaded. The eight
+embedded DirectX DLLs are stored gzip-compressed (17,906,544 bytes down to
+7,889,812), about 10 MB less per binary, and release builds use fat LTO.
+
 The in-game claims below refer to the builds they describe; automated tests do
 not certify later releases in gameplay.
 
@@ -28,7 +120,10 @@ not certify later releases in gameplay.
       pristine; rename works (saves), and df reports real free space
 - [x] Supported-game catalog + Steam install detection (`eidos-games`) -
       live-verified: finds installed games across all libraries (incl. other
-      drives) with their data dir + Proton prefix
+      drives) with their data dir + Proton prefix. Detection also reads the
+      installed manifests of Heroic and Legendary, read-only, for GOG and Epic
+      copies. The catalog has 15 built-in games: the 11 Bethesda ones plus
+      Stellar Blade, Stardew Valley, 7 Days to Die and Crimson Desert
 - [x] Per-launch user+mount namespace wrapper (`eidos-launch`) - live-verified:
       runs a command through a private union view; the host sees no mount, the
       game install and mod sources stay pristine, writes land in Overwrite
@@ -46,7 +141,8 @@ not certify later releases in gameplay.
       Plugins / Conflicts / Overwrite / Saves / Downloads tabs with a Run button
 - [x] Per-mod `meta.ini`, byte-compatible with MO2 (`eidos-instance`) - existing
       MO2 instances round-trip unchanged (version / Nexus id / category /
-      endorsed), with an `update_available` check ready for a future Nexus crate
+      endorsed), with an `update_available` check that the GUI reads after
+      each `eidos-nexus` update check
 - [x] Self-describing instance manifest `eidos-instance.ini` (`eidos-instance`) -
       records game id + schema version, so portable instances need no path-guessing
 - [x] Profiles (`eidos-instance`) - per-profile enabled set + load order over one
@@ -80,14 +176,20 @@ not certify later releases in gameplay.
       which has to restore backups afterwards and leaves debris if it dies
 - [x] Nexus Mods integration (`eidos-nexus`) - sign in with OAuth (authorization
       code + PKCE S256, loopback listener, no personal API key anywhere: Nexus
-      requires them absent from a distributed client, so Eidos needs a registered
-      `client_id` and has no Nexus access without one), register the `nxm://`
-      handler (`eidos nxm --register`)
+      requires them absent from a distributed client, so Eidos ships the
+      `client_id` Nexus registered for it, `eidos`, and `EIDOS_NEXUS_CLIENT_ID`
+      overrides it), register the `nxm://` handler (`eidos nxm --register`)
       so the site's "Mod Manager Download" button downloads straight into the
       instance's `downloads/` (with MO2-format `.meta` sidecars), check installed
       mods for updates (`eidos nexus update`, MO2's rate-limit-friendly
       updated-this-month strategy), and install from the GUI Downloads tab in one
-      click (Simple or FOMOD wizard)
+      click (Simple or FOMOD wizard). Each mod is checked against its own Nexus
+      game domain and its file's update chain. `eidos nexus update --apply`
+      installs each successor file over its folder, with the FOMOD answers
+      replayed and the old folder kept as a backup (a free account gets the file
+      page to download from instead). It skips a mod folder that holds several
+      Nexus files, and refuses a FOMOD that offers a choice with no recorded
+      answer. Endorsements and tracked mods sync on each update check
 - [x] Tools through the VFS (`eidos tool`) - run xEdit/FNIS/BodySlide through the
       same merged view, inside the game's Proton prefix, with no Steam `%command%`:
       a protontricks-style Proton resolver (config.vdf `CompatToolMapping` ->
@@ -96,7 +198,15 @@ not certify later releases in gameplay.
       by default), and a run-target picker next to the GUI Run button. Tool output
       lands in Overwrite, so the next launch picks it up - the generate-then-play
       loop. (MO2 itself rebuilds its mapping per run, so per-launch mounts are
-      exact parity.)
+      exact parity.) Run from outside a store-started process, an entry that
+      starts the game (the script extender loader, the vanilla launcher or the
+      game binary) goes to the store that owns the copy (`steam -applaunch`,
+      `heroic://launch`, `legendary launch`), and `--print` shows that command.
+      Tools also run on Heroic's GOG and Epic copies, in Heroic's prefix.
+      `tools.ini` takes a per-tool `env=`, `runner=native` (no Proton) and
+      `slr=1`. `eidos tool <id> import-mo2` lists the custom executables of a
+      Mod Organizer 2 `ModOrganizer.ini` in the instance and `--write` adds
+      them, and `eidos tool <id> run --exe <path>` runs an exe once
 - [x] Per-game Bethesda features (`eidos-gamefeatures` + `eidos-gamedef`) - all
       keyed off one declarative `GameDef` row per game (MO2's `IPluginGame`
       schema): **BSA/archive invalidation** so loose mod files override the
@@ -108,11 +218,15 @@ not certify later releases in gameplay.
       primitive (MO2's single-`QSettings` idea), keeping MO2 `meta.ini`
       round-trips byte-for-byte
 - [x] Rootless perf tuning (1 MiB readahead / max_write, parallel dirops) and an
-      opt-in `FUSE_PASSTHROUGH` path. Passthrough is **off by default**: measured
-      on Skyrim SE it stops the game opening its own archives and plugins (152
-      `STATUS_ACCESS_VIOLATION` opens vs 0 without it), so the daemon serves
-      reads itself. `EIDOS_FUSE_PASSTHROUGH=1` re-enables it, and then the
-      `CAP_SYS_ADMIN` it needs in the initial user namespace becomes relevant
+      opt-in `FUSE_PASSTHROUGH` path. Passthrough is **off by default**, so the
+      daemon serves reads itself. With it on, the daemon before 1.22 stopped
+      Skyrim SE opening its own archives and plugins (152
+      `STATUS_ACCESS_VIOLATION` opens vs 0 without it, measured on Skyrim SE
+      1.6.1170 under proton-cachyos 11.0). 1.22 shares one backing id per inode
+      and keeps an inode's live opens all passthrough or all normal, which
+      removes the most likely cause, but no game run has measured it since.
+      `EIDOS_FUSE_PASSTHROUGH=1` re-enables it, and then the `CAP_SYS_ADMIN` it
+      needs in the initial user namespace becomes relevant
 - [x] Harden the daemon for real use - inode reference-counting + `forget`,
       offset-stable `readdir` (snapshot per directory handle), per-handle
       `pread`/`pwrite` (no re-resolve per syscall, lock released before I/O),
@@ -140,16 +254,31 @@ not certify later releases in gameplay.
       Eidos scans enabled mods' DLL import tables (the `object` crate) and, when one
       imports it, deploys the bundled genuine MS redistributable into the prefix's
       `system32`/`syswow64` and forces it native - unlinking Proton's builtin symlink
-      first, backing up any displaced file, idempotent and best-effort
+      first, backing up any displaced file, idempotent and best-effort. Since
+      1.24 the eight embedded DLLs (four, each in an i386 and an x86_64 build)
+      are stored gzip-compressed, and only the one being deployed is unpacked,
+      in memory
 - [x] Modding-tool prerequisites (`eidos prereqs`) - tools run in the game's shared
       Proton prefix through the merged view, so one prereq set covers them all.
-      Tier 1 (bundled, zero network): the DirectX helpers BodySlide / DynDOLOD / CAO
-      need (`d3dx9_43` / `d3dx11_43` / `d3dcompiler_43`), declared per-tool in
-      `tools.ini` and provisioned at launch. Tier 2 (consented download): the .NET /
-      vcrun verbs Synthesis / Pandora / FNIS need, installed via the system
-      winetricks pointed straight at Proton's own wine (bypassing the protontricks +
-      Proton-GE mismatch), behind an explicit `eidos prereqs <id> --install` / GUI
-      "Tool Setup" button, recorded in a per-instance sentinel
+      Tier 1 (bundled, zero network): the DirectX helpers, declared per-tool in
+      `tools.ini` and provisioned at launch. By default BodySlide gets `d3dx9_43`
+      and `d3dcompiler_47`, DynDOLOD / TexGen / xLODGen get `d3dcompiler_47`,
+      `d3dx9_43` and `d3dx11_43`, and CAO gets `d3dcompiler_47` and `d3dx11_43`.
+      `d3dcompiler_43` is still bundled, but no default uses it. Tier 2
+      (installers, behind an explicit `eidos prereqs <id> --install` / GUI
+      "Tool Setup" button): `dotnet48` for FNIS and `vcrun2022` for Synthesis,
+      CAO, Nemesis and LOOT. Since 1.24, `vcrun2022`, `dotnet8` and
+      `dotnetdesktop8` run Microsoft's own installers, the copy the release
+      bundle ships first, else a pinned download, each refused unless its
+      SHA-256 matches. The other verbs (`dotnet48` among them) go through the
+      system winetricks pointed straight at Proton's own wine (bypassing the
+      protontricks + Proton-GE mismatch). What was installed is recorded in a
+      per-instance receipt tied to that one prefix. Tier 3 (unpacked once into
+      a shared runtime folder, pinned SHA-256): `dotnet10` (runtime 10.0.10) for
+      DynDOLOD / TexGen / xLODGen and Pandora, which the release bundle ships,
+      and `dotnetsdk10` (the .NET SDK 10.0.403, about 300 MB) for Synthesis,
+      which is not shipped and is downloaded once. Synthesis and Pandora no
+      longer get .NET from winetricks
 - [x] GUI to MO2 daily-driver parity (`eidos-gui`) - a mod-list filter box,
       click-to-select, and a right-click action menu (enable/disable, send to
       top/bottom, open in explorer, visit on Nexus, reinstall, rename, remove,
@@ -158,9 +287,14 @@ not certify later releases in gameplay.
       editable notes); a Version column; and wired Nexus / Change Game / Settings /
       Tool Setup toolbar buttons
 - [x] LOOT-based plugin auto-sort (`eidos-loot`) - libloot's own graph sort behind
-      `eidos sort` and the GUI's Sort button, with the masterlist fetched and
-      cached per instance (refreshed on each sort, like MO2/LOOT) and a userlist
-      for local overrides. The post-sort report pops the way MO2's dialog does,
+      `eidos sort` and the GUI's Sort button. The masterlist and prelude are
+      cached per game in `~/.cache/Colony/Eidos/loot/<repo>/`, shared by every
+      instance. The Sort button refreshes them on each sort, like MO2/LOOT;
+      `eidos sort` downloads them when they are missing and refreshes them
+      with `--update-masterlist`. If a refresh fails and a cached copy exists,
+      the sort uses the cached copy. Only
+      `userlist.yaml`, for local overrides, stays in the instance. The
+      post-sort report pops the way MO2's dialog does,
       listing the plugin messages LOOT attached, with its advice links clickable.
       Games libloot cannot sort say so up front, in Diagnostics and on the tab
 - [x] Mod-list separators + categories - MO2 group dividers (create, colour,
@@ -197,8 +331,8 @@ not certify later releases in gameplay.
       and - on a free account - each member with the page URL to fetch it from,
       because Nexus does not mint download links for free accounts and no retry
       gets past that. The report separates "installed" from "installed, but not
-      the way the collection asks", which is the whole point: Vortex logs that
-      distinction at level "info" with the words "This is normal"
+      the way the collection asks"; Vortex logs that distinction at level
+      "info" with the words "This is normal"
 - [x] Whole-instance transfer (`eidos pack` / `eidos unpack`, `eidos-transfer`) -
       an entire instance in ONE `.eidos` file: mods, load order, every profile,
       the Overwrite with its saves, and the archives it was all installed from.
@@ -238,7 +372,14 @@ not certify later releases in gameplay.
       and never finds, a long positive entry/attr TTL, `FOPEN_CACHE_DIR` on
       `opendir`, `RLIMIT_NOFILE` raised at init, several event loops over
       `clone_fd`, and per-op counters under `EIDOS_FUSE_STATS` so a metadata storm
-      is measurable instead of guessed at
+      is measurable instead of guessed at. The first `OPENDIR` is answered
+      `ENOSYS` when the kernel offers `FUSE_NO_OPENDIR_SUPPORT`, so the kernel
+      serves directory opens itself (`EIDOS_FUSE_OPENDIR=1` restores the
+      handles). 1.22 added two more: `FS_IOC_GETFLAGS` returns `FS_CASEFOLD_FL`,
+      so Wine skips its `fstatfs` and `.ciopfs` probes, and a directory whose
+      names need Unicode case folding gets neither hint; a negative entry whose
+      spelling is recorded is cached for 3600 s, and only unrecorded spellings
+      keep 60 s
 - [x] MO2's remaining daily-driver features - hidden files (`.mohidden`, honoured
       by the resolver so a hidden file leaves the merged view *without claiming its
       name*, which is what lets the layer below win); a recursive Data tree with
@@ -283,13 +424,63 @@ not certify later releases in gameplay.
       path globally, so a GUI test rewrote the developer's own preferences on
       every run of the suite - which presented as "options revert after every
       rebuild"
-- [ ] Casing normalization at mod-import time
+- [x] Casing normalization at mod-import time, for collisions only (since
+      2026-06-17) - extraction collapses siblings whose names differ only in
+      case into one lower-cased entry. Two directories merge. Of two files, the
+      one with the oldest mtime stays. When a file and a directory collide, the
+      file keeps the name and the directory moves to `<name>_dir`. Names that do
+      not collide keep their casing, because the VFS already folds case
 - [x] Packaging and distribution - each release ships `eidos-linux`, the one
       file Colony installs, and a bundle that installs through the one tracked
       installer (`packaging/install.sh`: rootless by default, the capability
       only with `--cap`), both signed by the organisation's release key; and
-      `packaging/PKGBUILD` builds an Arch package from git. See
-      [packaging.md](../internals/packaging.md)
+      `packaging/PKGBUILD` builds an Arch package from git. Since 1.24 the
+      bundle carries the Microsoft runtimes listed in `packaging/runtimes.txt`
+      under `runtimes/`, which `install.sh` copies to
+      `~/.local/share/Colony/Eidos/runtimes`; `eidos-linux` alone has none and
+      downloads them when a tool needs one. Release builds use one codegen unit,
+      fat LTO and no symbol table. Fat LTO took 1,247,016 bytes (5.6%) off
+      `eidos` and 3,840,192 bytes (7.2%) off `eidos-gui` against thin LTO, for
+      37% more build time (334 s instead of 243 s, measured with rustc 1.99.1).
+      See [packaging.md](../internals/packaging.md)
+- [x] Run through the store that owns the copy (1.23) - Run in a window no
+      store opened does not start the game itself. It asks the store:
+      `steam -applaunch <appid>`, `xdg-open heroic://launch?appName=<app>&runner=<gog|legendary>`
+      or `legendary launch <app>`, and the store starts the game through its
+      Eidos setting (the Steam launch option, or a Heroic or Legendary wrapper).
+      When that setting does not start Eidos, the status line gives the exact
+      line or wrapper to set, and nothing runs. Eidos never writes a store's
+      configuration. A profile's desktop shortcut (1.24) runs `eidos tool
+      <instance> run <game entry> --profile <name>`, which makes that profile
+      active and hands the game to the store the same way
+- [x] Test runs and bisect (1.24) - a test run runs the game with the
+      profile's mods, with no mods, or with the selected mods, on a working copy
+      of the profile. Its saves, INIs, plugin list, Data and Root output and
+      logs land under `<instance>/test-run/` instead of the profile, the
+      Overwrite and the prefix, and the review keeps or throws away each of
+      those five groups as a whole. A test run never syncs to Steam Cloud, and
+      the session list leaves it out of the last good run. Bisect runs each
+      step as a test run on half of the remaining suspects, turns on the mod
+      that provides each master their plugins need, and asks whether the
+      problem showed (yes, no or unsure; an unsure answer rotates the split).
+      It needs about `ceil(log2(n))` steps for `n` suspects and ends on the mod
+      or mods left once no smaller split can run, or on none when every suspect
+      was cleared. It keeps its state in
+      `<instance>/bisect.json` between steps, and writes its log to
+      `<instance>/logs/bisect-<time>.txt` when it ends
+- [x] Game copies (1.24, `eidos stock-game <instance>`) - an instance can run
+      from a copy of the game folder kept in the instance, mounted in place of
+      the store install at the bottom of the root union; the game still starts
+      through its store. `freeze --yes` copies the install into
+      `<instance>/Stock Game`, sharing blocks where the filesystem supports
+      reflinks (without `--yes` it prints the plan: size, file count, copy kind
+      and free space). `use <folder>` picks an existing copy, such as the Stock
+      Game a Wabbajack list brought, `store` goes back to the install, and
+      `delete --yes` deletes only the folder the freeze recorded. Health, the
+      plugin list, LOOT, the Data views and tool detection read the copy.
+      Freezing refuses an instance that sits inside the game folder. Games that
+      keep their plugin list in the game folder (Morrowind, and Oblivion with
+      `bUseMyGamesDirectory=0`) cannot use a copy
 - [ ] Self-contained formats (AppImage, Flatpak): unimplemented and unverified.
       They are possible in principle since the launch capability became
       optional: Eidos runs rootless and only the opt-in passthrough path wants
@@ -312,30 +503,33 @@ off a declarative `GameDef`), and tools through the VFS
 (`eidos tool`), plus Nexus integration beyond it (`eidos-nexus`: nxm:// downloads,
 update checks, the GUI Downloads tab). Since then: the GUI brought up to MO2
 daily-driver parity (separators, categories, diagnostics, Overwrite-to-mod, MO2
-profile import), LOOT sorting, native DLL provisioning so Proton graphics mods
-(Community Shaders) and tools (BodySlide) just work, the `eidos prereqs`
-tool-prerequisite system, and a correctness-plus-caching pass over the daemon
+profile import), LOOT sorting, native DLL provisioning so Community Shaders and
+BodySlide load without manual DLL steps, the `eidos prereqs` tool-prerequisite
+system, and a correctness-plus-caching pass over the daemon
 itself.
 
 Since then, and all measured on a real 50-layer instance rather than a benchmark:
 
-- **The layer index** turned path resolution from a walk of every layer into a
+- The layer index turned path resolution from a walk of every layer into a
   hash lookup, and a save load from twenty seconds into six or seven.
-- **Zero-message `opendir`**: 516,301 directory opens per session became 1. Wine
+- Declining `opendir` cut directory opens from 516,301 per session to 1. Wine
   opens a directory to ask whether it folds case, on every path that fails to
   resolve, and the kernel can answer that itself.
-- **The merged-children map** did the same for `readdir`, the one handler the
-  path index could not help: 799 ms -> 105 ms across two sessions issuing the
-  same 2,063 listings.
-- **A layer spelling one directory two ways** no longer loses everything under
-  the second spelling - a bug that hid 74 files of one real mod with no error
-  anywhere, and which the index had been quietly working around while the
-  documented-as-never-wrong fallback was the half that was wrong.
-- **Tier 3 prerequisites**: Eidos fetches the .NET runtime DynDOLOD's LOD
-  generator needs, and the Executables dialog now says whether each prerequisite
-  is actually present instead of only what was typed.
+- The merged-children map did the same for `readdir`, the one handler the path
+  index could not help: 799 ms -> 105 ms across two sessions issuing the same
+  2,063 listings.
+- A layer that spells one directory two ways no longer loses everything under
+  the second spelling. The bug hid 74 files of one real mod with no error
+  anywhere. The index had been working around it, and the fallback documented as
+  never wrong was the half that was wrong.
+- Tier 3 prerequisites: Eidos provides `dotnet10` for DynDOLOD / TexGen /
+  xLODGen and Pandora (from the release bundle since 1.24, else downloaded) and
+  downloads `dotnetsdk10` for Synthesis, and the Executables dialog says whether
+  each prerequisite is present instead of only what was typed.
 
-Remaining validation includes more game families proven in-game and packaging.
+What remains to validate: in-game runs of the other game families, AppImage and
+Flatpak builds (unchecked above), and a new passthrough measurement that holds
+the capability in both runs and changes only the switch.
 The earlier `plugins.txt` launch investigation is historical; the current
 preflight checks and capture protections are documented in the usage guide and
 [integrity.md](../internals/integrity.md).
@@ -347,8 +541,8 @@ for defects, other readers try to refute them, and only what survives is fixed.
 Across the batches that is 154 confirmed findings, every one reproduced before
 being touched.
 
-Two results are worth keeping, because they are the argument for the method
-rather than for the count.
+Two of those findings are kept here because they show what a second reader
+catches.
 
 **A systemic defect hides behind a feature that works.** Adding sorting and
 grouping to the mod list changed which rows the list DRAWS. Nothing else was
@@ -362,5 +556,5 @@ everything asks.
 **A fix can look right and be unreachable.** The review of *that* fix found the
 drag guard sitting in a branch no user gesture reaches - a mod row's press emits
 `DragStart`, never `SelectMod` - and its test passed only because it sent a
-message no user can produce. A second pass is not caution; it is what catches the
-first pass being confidently wrong.
+message no user can produce. The second pass found that the first fix was
+unreachable.
