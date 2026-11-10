@@ -93,6 +93,12 @@ extern "C" fn on_sigterm(_: libc::c_int) {
     STOP.store(true, Ordering::SeqCst);
 }
 
+/// Whether a stop request (SIGTERM) arrived. A run that ends after one is not a
+/// clean launch, whatever its exit status.
+pub fn stop_requested() -> bool {
+    STOP.load(Ordering::SeqCst)
+}
+
 /// Turn SIGTERM into a stop request for the run instead of an instant death.
 ///
 /// Once it arrives, [`launch`] refuses to start anything, and a command already
@@ -1196,11 +1202,22 @@ mod tests {
             );
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
+        // Taken before the stop: once root is reaped, nothing has root as parent,
+        // so only these pids can show that a reparented process survived.
+        let pids = descendants(root);
         let started = std::time::Instant::now();
         terminate_descendants(root, std::time::Duration::from_millis(500));
         child.wait().unwrap();
         assert!(started.elapsed() < std::time::Duration::from_secs(5));
-        assert!(descendants(root).is_empty());
+        // SIGKILL is sent, not awaited: give the kernel a moment to end them.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        while pids.iter().any(|&p| alive(p)) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "a process of the tree outlived the stop"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
     }
 
     /// A spec that would run `/bin/true` over temp dirs, if `launch` got that far.
@@ -1228,7 +1245,9 @@ mod tests {
     fn a_stop_before_launch_starts_nothing() {
         STOP.store(true, Ordering::SeqCst);
         let err = launch(spec_with_temp_paths()).unwrap_err();
+        assert!(stop_requested());
         STOP.store(false, Ordering::SeqCst);
+        assert!(!stop_requested());
         assert_eq!(err.kind(), std::io::ErrorKind::Interrupted);
     }
 }

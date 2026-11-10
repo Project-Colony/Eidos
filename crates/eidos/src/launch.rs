@@ -624,8 +624,10 @@ pub(crate) fn run_through_view(
     }
     let result = launch(spec);
     // A crash under Proton can still exit 0; a crash log written since the start says otherwise.
+    // A stopped run is never clean: Steam's wrapper chain may turn the SIGTERM into exit 0.
     if game_run
         && matches!(&result, Ok(s) if s.success())
+        && !eidos_launch::stop_requested()
         && !crate::check::crash::crashed_since(game, &inst.overwrite_dir(), started)
     {
         if let Err(e) = inst.record_good_launch() {
