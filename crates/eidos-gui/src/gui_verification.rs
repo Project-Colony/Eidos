@@ -886,7 +886,7 @@ fn the_plugin_filter_keeps_full_list_indices_and_holds_the_drag() {
 
 /// The flags under a selected Executables entry stay on one line each at the
 /// dialog's 720 px cap, and an entry that starts the game offers no Desktop
-/// shortcut: the shortcut's `eidos tool run` refuses it outside the store.
+/// shortcut: from the desktop it would only hand the game to its store.
 #[test]
 fn executables_flags_fit_on_their_lines() {
     let _look = crate::test_support::look_lock();

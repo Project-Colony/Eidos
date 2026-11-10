@@ -7,6 +7,8 @@ use eidos_gamefeatures::RegistryOutcome;
 use eidos_games::{home, DetectedGame};
 use eidos_instance::{Instance, InstanceKind};
 
+use crate::check::launch_option::{launch_handoff, Handoff};
+
 use crate::*;
 
 /// Per-game default tools auto-detected in the game dir: the script extender, the
@@ -64,13 +66,50 @@ fn store_started_in(keys: impl IntoIterator<Item = String>) -> bool {
         .any(|k| STORE_MARKERS.contains(&k.as_str()))
 }
 
-/// A game entry run from a plain shell is refused: the game starts through the
-/// store that owns the copy. Inside a store-started process it runs as before.
-fn game_entry_refusal(runs_game: bool, store_started: bool) -> Option<&'static str> {
-    (runs_game && !store_started).then_some(
-        "eidos tool: this entry starts the game, which always starts through its store - \
-         use `eidos play` or launch the game from Steam/Heroic.",
-    )
+/// A game entry run from a plain shell (a desktop shortcut made with 1.22, say)
+/// goes to the store that owns the copy, as Run does in a window no store
+/// opened. Inside a store-started process it runs as before.
+fn hands_off_to_store(runs_game: bool, store_started: bool) -> bool {
+    runs_game && !store_started
+}
+
+/// What `tool run` does with [`launch_handoff`]'s answer: `Ok` holds the store
+/// command to spawn and the line to print, `Err` the line saying what to set.
+fn game_entry_handoff(
+    handoff: Handoff,
+    game: &str,
+    source: &str,
+) -> Result<(Vec<String>, String), String> {
+    match handoff {
+        Handoff::Start { store, argv } => Ok((
+            argv,
+            format!(
+                "eidos tool: {store} is starting {game} through its Eidos setting. If an \
+                 Eidos window opens, press Run there."
+            ),
+        )),
+        Handoff::SetSteamOption { line } => Err(format!(
+            "eidos tool: this entry starts {game}, which starts through Steam. Set the game's \
+             Steam launch option to:  {line}"
+        )),
+        Handoff::SetHeroicWrapper { exe, args } => Err(format!(
+            "eidos tool: Heroic does not start {game} through Eidos. In the game's settings in \
+             Heroic, add a wrapper with the executable {exe} and the arguments \"{args}\"."
+        )),
+        Handoff::SetLegendaryWrapper { file, app, wrapper } => Err(format!(
+            "eidos tool: Legendary does not start {game} through Eidos. Add this line under \
+             [{app}] in {}:  wrapper = {wrapper}",
+            file.display()
+        )),
+        Handoff::NoLoader { loader } => Err(format!(
+            "eidos tool: {loader} is not next to the game's executable in this instance, so \
+             {source} is not asked to start {game}. Install the script extender first."
+        )),
+        Handoff::ThroughStore => Err(format!(
+            "eidos tool: this entry starts {game}. Start it from {source}: Eidos cannot ask \
+             {source} to start this copy."
+        )),
+    }
 }
 
 /// `eidos tool <game-id> [list | add <title> <exe> [args...] | rm <title> |
@@ -330,9 +369,50 @@ pub(crate) fn cmd_tool(args: &[String]) {
             let runs_game = game_executables(&game).launches_the_game(&tool.exe);
             let store_started =
                 store_started_in(std::env::vars_os().filter_map(|(k, _)| k.into_string().ok()));
-            if let Some(msg) = game_entry_refusal(runs_game, store_started) {
-                eidos_log::info!("{msg}");
-                exit(1);
+            if hands_off_to_store(runs_game, store_started) {
+                let loader_found = game.def.script_extender.as_ref().is_none_or(|se| {
+                    eidos_instance::root_executable(
+                        &game.install_path,
+                        &inst.root_layers(),
+                        &inst.root_overwrite_dir(),
+                        se.loader,
+                    )
+                    .is_some()
+                });
+                let search_path: Vec<PathBuf> = std::env::var_os("PATH")
+                    .map(|p| std::env::split_paths(&p).collect())
+                    .unwrap_or_default();
+                let handoff = launch_handoff(
+                    &game,
+                    loader_found,
+                    &crate::this_exe().0,
+                    &home(),
+                    &search_path,
+                );
+                let source = game.source_name();
+                match game_entry_handoff(handoff, game.def.name, source) {
+                    Ok((argv, _)) if print_only => println!("{}", argv.join(" ")),
+                    Ok((argv, line)) => {
+                        if let Err(e) = std::process::Command::new(&argv[0])
+                            .args(&argv[1..])
+                            .spawn()
+                        {
+                            eidos_log::warn!(
+                                "eidos tool: could not run {} ({e}). Start {} from {source} \
+                                 yourself.",
+                                argv[0],
+                                game.def.name
+                            );
+                            exit(1);
+                        }
+                        println!("{line}");
+                    }
+                    Err(hint) => {
+                        eidos_log::info!("{hint}");
+                        exit(1);
+                    }
+                }
+                return;
             }
             // `runner=native` runs the executable itself: no Proton, no Steam
             // prefix, and none of the Proton-only steps below.
@@ -859,10 +939,54 @@ mod root_tool_tests {
     }
 
     #[test]
-    fn a_game_entry_from_a_plain_shell_is_refused() {
-        assert!(game_entry_refusal(true, false).is_some());
-        assert!(game_entry_refusal(true, true).is_none());
-        assert!(game_entry_refusal(false, false).is_none());
+    fn a_game_entry_from_a_plain_shell_goes_through_the_store() {
+        assert!(hands_off_to_store(true, false));
+        assert!(
+            !hands_off_to_store(true, true),
+            "the %command% path runs as before"
+        );
+        assert!(
+            !hands_off_to_store(false, false),
+            "a real tool is not handed off"
+        );
+        let argv = vec!["steam".to_string(), "-applaunch".into(), "489830".into()];
+        let start = Handoff::Start {
+            store: "Steam",
+            argv: argv.clone(),
+        };
+        let (spawn, line) = game_entry_handoff(start, "Skyrim Special Edition", "Steam").unwrap();
+        assert_eq!(spawn, argv);
+        assert!(
+            line.contains("Steam is starting Skyrim Special Edition"),
+            "{line}"
+        );
+        let set = Handoff::SetSteamOption {
+            line: "/opt/eidos play skyrimse -- %command%".into(),
+        };
+        let hint = game_entry_handoff(set, "Skyrim Special Edition", "Steam").unwrap_err();
+        assert!(
+            hint.ends_with(":  /opt/eidos play skyrimse -- %command%"),
+            "{hint}"
+        );
+        let others = [
+            Handoff::SetHeroicWrapper {
+                exe: "/opt/eidos".into(),
+                args: "play skyrimse --".into(),
+            },
+            Handoff::SetLegendaryWrapper {
+                file: "/h/.config/legendary/config.ini".into(),
+                app: "ac82db5035584c7f8a2c548d98c86b2c".into(),
+                wrapper: "/opt/eidos play skyrimse --".into(),
+            },
+            Handoff::NoLoader {
+                loader: "skse64_loader.exe",
+            },
+            Handoff::ThroughStore,
+        ];
+        for h in others {
+            let hint = game_entry_handoff(h, "Skyrim Special Edition", "GOG").unwrap_err();
+            assert!(!hint.contains('\n'), "one line: {hint}");
+        }
     }
 
     #[test]

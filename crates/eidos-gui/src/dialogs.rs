@@ -1182,8 +1182,8 @@ fn tool_flags_row<'a>(app: &App, state: &ExecutablesDialogState) -> Element<'a, 
     let sel = state.selected.and_then(|i| state.merged.get(i));
     let (hidden, pinned) = sel.map(|t| (t.hidden, t.pinned)).unwrap_or((false, false));
     let check = sel.is_some_and(|t| t.check_before_play);
-    // A shortcut runs `eidos tool run`, which refuses an entry that starts the
-    // game: from the desktop no store has started anything.
+    // From the desktop `eidos tool run` hands an entry that starts the game to
+    // its store, which the store's own game shortcut already does.
     let starts_game = sel.is_some_and(|t| {
         selected_game(app).is_some_and(|g| game_executables(g).launches_the_game(&t.exe))
     });

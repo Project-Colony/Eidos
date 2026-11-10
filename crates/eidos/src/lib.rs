@@ -333,7 +333,8 @@ pub const CLI_MARKER: &str = "--eidos-cli";
 
 /// Set by a window a store opened on the `eidos tool` child it starts. The bare
 /// `legendary` CLI exports no variable of its own, so without this a game entry
-/// run from a window Legendary opened looked like a plain shell and was refused.
+/// run from a window Legendary opened looked like a plain shell and was handed
+/// back to Legendary.
 pub const STORE_STARTED_VAR: &str = "EIDOS_STORE_STARTED";
 
 /// This executable, and whether running the CLI again through it needs
