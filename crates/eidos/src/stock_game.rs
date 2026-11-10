@@ -141,7 +141,8 @@ pub fn unfinished_path(inst: &Instance) -> PathBuf {
 /// The game files `inst` runs `game` from and the copies it holds. Reads only.
 pub fn facts(game: &DetectedGame, inst: &Instance) -> GameFilesFacts {
     let files = game_files(game, inst);
-    let frozen_copy = inst.read_manifest().and_then(|m| m.frozen_copy);
+    let frozen_copy =
+        (inst.read_manifest().and_then(|m| m.frozen_copy)).filter(|f| f == FROZEN_COPY);
     let list_folder =
         Instance::stock_game_folder(&inst.root).filter(|f| frozen_copy.as_ref() != Some(f));
     let frozen = frozen_copy.filter(|f| inst.root.join(f).is_dir());
@@ -580,7 +581,9 @@ pub fn delete_copy(inst: &Instance) -> Result<Vec<PathBuf>, String> {
         .map_err(|e| e.to_string())?;
     let (base, frozen) = inst
         .read_manifest()
-        .map(|m| (m.base_game, m.frozen_copy))
+        // Only freeze writes the key, always as FROZEN_COPY; a hand-edited
+        // `frozen_copy=mods` must never reach remove_dir_all.
+        .map(|m| (m.base_game, m.frozen_copy.filter(|f| f == FROZEN_COPY)))
         .unwrap_or_default();
     if let Some(f) = frozen.as_ref().filter(|f| base.as_ref() == Some(*f)) {
         return Err(format!(
@@ -1248,6 +1251,28 @@ mod tests {
         assert!(game.install_path.join("Data/Skyrim.esm").is_file());
         assert_eq!(inst.read_manifest().unwrap().frozen_copy, None);
         assert_eq!(delete_copy(&inst).unwrap(), Vec::<PathBuf>::new());
+        let _ = fs::remove_dir_all(t);
+    }
+
+    #[test]
+    fn a_hand_edited_frozen_copy_key_names_nothing_to_delete() {
+        let t = temp("delete-edited");
+        let inst = copy_instance(&t);
+        let game = game("skyrimse", t.join("game"));
+        for folder in ["mods", "Game Root"] {
+            fs::create_dir_all(inst.root.join(folder)).unwrap();
+            fs::write(inst.root.join(folder).join("SkyrimSE.exe"), b"x").unwrap();
+            inst.edit_manifest(|m| m.frozen_copy = Some(folder.into()))
+                .unwrap();
+            assert_eq!(facts(&game, &inst).frozen, None, "{folder}");
+            assert_eq!(delete_copy(&inst).unwrap(), Vec::<PathBuf>::new());
+            assert!(inst.root.join(folder).join("SkyrimSE.exe").is_file());
+        }
+        // A list folder named in the key is still the list's copy.
+        assert_eq!(
+            facts(&game, &inst).list_folder.as_deref(),
+            Some("Game Root")
+        );
         let _ = fs::remove_dir_all(t);
     }
 
