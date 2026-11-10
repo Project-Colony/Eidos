@@ -909,6 +909,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
                 return Task::none();
             };
+            // The Overwrite outranks every mod: a copy in a mod would never load.
+            if p.origin_mod == "overwrite" {
+                app.status = Some(tf("status_flag_light_in_overwrite", &[("plugin", &p.name)]));
+                return Task::none();
+            }
             // A save that loads it as full keeps its records at full-plugin ids.
             if let Some(save) = full_in_saves(&p.name, &newest_profile_saves(app)) {
                 let save = save

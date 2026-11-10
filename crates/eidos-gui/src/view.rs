@@ -1982,11 +1982,13 @@ pub(crate) fn plugin_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> 
             Message::CleanPlugins(vec![name]),
         ));
     }
-    let light_candidate = app
-        .loot_meta
-        .as_ref()
-        .and_then(|m| m.get(&p.name.to_ascii_lowercase()))
-        .is_some_and(|b| b.light_candidate);
+    // Not from the Overwrite: it outranks the new mod, so the flag would not load.
+    let light_candidate = p.origin_mod != "overwrite"
+        && app
+            .loot_meta
+            .as_ref()
+            .and_then(|m| m.get(&p.name.to_ascii_lowercase()))
+            .is_some_and(|b| b.light_candidate);
     if light_candidate {
         col = col.push(menu_item(
             t("plugin_menu_flag_light"),

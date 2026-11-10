@@ -513,6 +513,7 @@ pub(super) const STRINGS: &[(&str, &str)] = &[
     ("status_flag_light_refused_save", "Not flagged: the save {save} loads {plugin} as a full plugin, and that save would lose its records."),
     ("status_flag_light_exists", "The mod '{mod}' already exists. Remove it to flag {plugin} again."),
     ("status_flag_light_failed", "Could not flag {plugin}: {error}"),
+    ("status_flag_light_in_overwrite", "Not flagged: {plugin} is in the Overwrite, which loads above every mod. Turn the Overwrite into a mod first."),
     ("status_clean_failed", "QuickAutoClean left no log for {plugin}, so the clean did not run. The run log is in {log}. The plugins after it were not cleaned."),
     ("status_clean_not_captured", "QuickAutoClean saved {plugin}, but the copy did not reach 'Cleaned plugins'. The run log is in {log}. The plugins after it were not cleaned."),
     ("status_running_locked", "Running {title} - Eidos is locked until it exits (or click Unlock)."),

@@ -6613,6 +6613,35 @@ fn a_failed_light_copy_leaves_no_mod_behind() {
 }
 
 #[test]
+fn a_plugin_in_the_overwrite_is_not_flagged_as_light() {
+    // The Overwrite outranks every mod, so a light copy in a mod would never load.
+    let (mut app, root) = list_app(&["Base"]);
+    let ow = root.join("overwrite");
+    fs::create_dir_all(&ow).unwrap();
+    fs::write(ow.join("Synthesis.esp"), tes4_header(0x1)).unwrap();
+    let mut row = plugin_row("Synthesis.esp", "overwrite");
+    row.path = ow.join("Synthesis.esp");
+    app.plugins = Some(PluginList {
+        plugins: vec![row],
+        ..Default::default()
+    });
+    let _ = update(&mut app, Message::FlagPluginLight(0));
+    assert!(!root.join("mods/Synthesis.esp (light)").exists());
+    assert_eq!(app.mods.len(), 1);
+    assert_eq!(
+        app.status.as_deref(),
+        Some(
+            tf(
+                "status_flag_light_in_overwrite",
+                &[("plugin", &"Synthesis.esp")]
+            )
+            .as_str()
+        )
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn a_save_that_loads_the_plugin_as_full_is_named() {
     use eidos_gamefeatures::SaveInfo;
     let saves = vec![(
