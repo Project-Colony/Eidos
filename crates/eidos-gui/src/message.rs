@@ -577,6 +577,11 @@ pub(crate) enum Message {
     CopyHealthReport,
     /// Apply the fix a Health card offers, named by its finding code.
     HealthFix(&'static str),
+    /// The Display card's fields, and Apply.
+    DisplayWidth(String),
+    DisplayHeight(String),
+    DisplayMode(eidos::check::display::WindowMode),
+    DisplayApply,
     /// Put a crash log on the clipboard, home path and user name replaced.
     CopyCrashLog(PathBuf),
     /// Open the logs folder in a file manager.

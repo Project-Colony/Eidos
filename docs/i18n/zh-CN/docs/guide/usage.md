@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=cda9b5678bb47ad0246f2dfd09c9e2367886fe03 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=4a23f00af1300ab261cd09ad087d0f1826359112 -->
 
 # 使用 Eidos
 
@@ -570,6 +570,8 @@ MO2 自己的(`categories.dat` 和 `nexuscatmap.dat`),所以共享的实例保�
 它还会报告:自上次干净启动以来的游戏更新,缺失或与游戏版本不匹配的脚本扩展器(附扩展器的下载页面,以及安装你下载的档案的按钮),没有用 `%command%` 启动 Eidos 的 Steam 启动选项,DLSS 需要却仍关闭的 NVAPI,阻止帧生成的独占全屏,没有 `LinuxVersion=true` 的 ENB `enblocal.ini`,F4SE 和 SFSE 插件的声明,以及上次会话的崩溃日志和其中点名的模组。
 检查更新时还会读取每个 mod 在 Nexus 上的前置要求。Diagnostics 会列出缺失或已禁用的前置 mod,已通过其他方式满足的要求可用 Ignore 忽略。
 
+对于 Skyrim SE、Enderal SE 和 Fallout 4,Diagnostics 还有一张“显示”卡片。它显示配置档的 `SkyrimPrefs.ini`(`EnderalPrefs.ini`、`Fallout4Prefs.ini`)中设定的窗口大小和模式;配置档还没有这个文件时,则显示前缀里那份副本的设定。两者都没有设定大小时,输入框会取 `/sys/class/drm` 中列出的已连接的最大屏幕,所以 Steam Deck 上显示 1280x800。Apply 会把 `iSize W`、`iSize H`、`bFull Screen` 和 `bBorderless` 写进配置档的副本;配置档没有副本时,先接管前缀里的那份。SSE Display Tweaks 设定窗口时,Apply 还会把同样的大小和模式写进它在 Overwrite 中的副本;模组自己的文件不会被改动。
+
 要通过 GUI 启动游戏,把该游戏的 Steam 启动选项设成这个二进制的绝对路径(Steam 看不到
 PATH 上的 `~/.cargo/bin`):
 
@@ -580,7 +582,7 @@ PATH 上的 `~/.cargo/bin`):
 Eidos 会在这款游戏的实例上打开 - 你上次用的那一个,所以便携实例和全局实例一样能被重新
 找到;点 Run 让它穿过合并视图启动。
 
-打开 **Start the game at once when a store opens Eidos**(Preferences、General、Running a game)后,Eidos 会省掉这次点击:它先检查 Health,再不显示窗口直接启动游戏。Health 列出问题、模组列表需要处理,或设为在游戏前运行的工具输出已过期时,窗口照常打开。想在某一次启动时看到窗口,就在命令前加上 `EIDOS_WINDOW=1`:`EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`。
+打开 **Start the game at once when a store opens Eidos**(Preferences、General、Running a game)后,Eidos 会省掉这次点击:它先检查 Health,再不显示窗口直接启动游戏。Health 列出问题、模组列表需要处理、设为在游戏前运行的工具输出已过期,或 Skyrim SE、Enderal SE、Fallout 4 的配置档还没有窗口大小时,窗口照常打开(最后这种情况下窗口会停在 Diagnostics 标签页)。想在某一次启动时看到窗口,就在命令前加上 `EIDOS_WINDOW=1`:`EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`。
 
 在 Steam 之外,Run 不会自己用 Proton 或 Wine 启动游戏。它请拥有这份副本的商店来启动,再由商店启动 Eidos:
 

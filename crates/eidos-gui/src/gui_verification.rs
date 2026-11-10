@@ -952,6 +952,44 @@ fn the_dirty_plugin_card_keeps_one_height_with_xedit_without_it_and_while_cleani
     );
 }
 
+#[test]
+fn the_display_card_keeps_one_height_set_unset_and_with_display_tweaks() {
+    use eidos::check::display::{Display, DisplayFacts, WindowMode};
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    let mut below = |current, screen, tweaks, ini| {
+        let form = next_form(
+            None,
+            DisplayFacts {
+                ini,
+                current,
+                screen,
+                tweaks,
+            },
+        );
+        let col = Column::new()
+            .push(display_card(&form))
+            .push(text("below the card"));
+        label(col.into(), &mut renderer, "below the card", 0).y
+    };
+    let unset = below(None, None, false, "SkyrimPrefs.ini");
+    let set = Some(Display {
+        width: 3840,
+        height: 2160,
+        mode: WindowMode::Borderless,
+    });
+    assert_eq!(
+        below(set, Some((3840, 2160)), false, "Fallout4Prefs.ini"),
+        unset,
+        "a set size changed the height"
+    );
+    assert_eq!(
+        below(None, Some((1280, 800)), true, "EnderalPrefs.ini"),
+        unset,
+        "the Display Tweaks line changed the height"
+    );
+}
+
 /// The flags under a selected Executables entry stay on one line each at the
 /// dialog's 720 px cap, and an entry that starts the game offers no Desktop
 /// shortcut: from the desktop it would only hand the game to its store.

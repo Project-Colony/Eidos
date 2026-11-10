@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=1955cd62075925e7e97c47c7866e9ce2eceba1c2 -->
 
 # Community Shaders, DLSS, 프레임 생성
 
@@ -9,7 +9,7 @@ Community Shaders 1.4+는 자체 업스케일링(DLSS 4 / FSR 3.1 / XeSS, 별도
 **알아챌 수 없는** 세 가지가 있고, 각각이 기능을 조용히 아무 일도 하지 않게 만듭니다.
 이 페이지가 그 목록이며, 실제 환경에서 호되게 배운 것입니다.
 
-상태 탭은 이 중 세 가지를 대신 확인합니다. NVIDIA 드라이버와 Upscaling 패키지가 있고 게임의 Proton 빌드가 NVAPI를 기본으로 꺼 둔 경우의 NVAPI 변수(GE-Proton11-9와 Proton 11.0은 켭니다), 프로필 `SkyrimPrefs.ini`의 독점 전체 화면, 그리고 아래에 설명하는 ENB 줄입니다. 마지막 두 가지에는 수정 버튼이 있습니다.
+상태 탭은 이 중 세 가지를 대신 확인합니다. NVIDIA 드라이버와 Upscaling 패키지가 있고 게임의 Proton 빌드가 NVAPI를 기본으로 꺼 둔 경우의 NVAPI 변수(GE-Proton11-9와 Proton 11.0은 켭니다), 프로필 `SkyrimPrefs.ini`의 독점 전체 화면, 그리고 아래에 설명하는 ENB 줄입니다. 마지막 두 가지에는 수정 버튼이 있고, Diagnostics의 디스플레이 카드는 테두리 없는 창과 크기를 함께 설정합니다.
 
 ## DLSS에 필요한 실행 옵션
 

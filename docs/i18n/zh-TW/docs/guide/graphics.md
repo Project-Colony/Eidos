@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=1955cd62075925e7e97c47c7866e9ce2eceba1c2 -->
 
 # Community Shaders、DLSS 與影格生成
 
@@ -8,7 +8,7 @@ Community Shaders 1.4+ 自帶升頻(DLSS 4 / FSR 3.1 / XeSS,透過單獨的
 它們的 DLL —— 但有三件事在遊戲裡**看不出來**,而且每一件都會讓功能靜悄悄地什麼也
 不做。本頁就是這份清單,是在真實環境裡吃過苦頭換來的。
 
-「健康」分頁會替你檢查其中三項:存在 NVIDIA 驅動程式和 Upscaling 套件、而遊戲所用的 Proton 版本預設關閉 NVAPI 時的 NVAPI 變數(GE-Proton11-9 和 Proton 11.0 會開啟它),設定檔 `SkyrimPrefs.ini` 中的獨占全螢幕,以及下面介紹的 ENB 那一行。後兩項附有「修復」按鈕。
+「健康」分頁會替你檢查其中三項:存在 NVIDIA 驅動程式和 Upscaling 套件、而遊戲所用的 Proton 版本預設關閉 NVAPI 時的 NVAPI 變數(GE-Proton11-9 和 Proton 11.0 會開啟它),設定檔 `SkyrimPrefs.ini` 中的獨占全螢幕,以及下面介紹的 ENB 那一行。後兩項附有「修復」按鈕,Diagnostics 中的「顯示」卡片可以連同尺寸一起設為無邊框視窗。
 
 ## DLSS 需要的啟動選項
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=1955cd62075925e7e97c47c7866e9ce2eceba1c2 -->
 
 # Community Shaders, DLSS e geração de quadros
 
@@ -9,7 +9,7 @@ comuns e a união serve suas DLLs como qualquer outra coisa - mas três coisas *
 são descobríveis de dentro do jogo, e cada uma faz o recurso silenciosamente não
 fazer nada. Esta página é a lista delas, aprendida no osso numa instalação real.
 
-A aba Saúde verifica três deles por você: a variável NVAPI, quando há um driver NVIDIA e o pacote Upscaling e a versão do Proton do jogo deixa o NVAPI desligado por padrão (GE-Proton11-9 e Proton 11.0 o ligam), a tela cheia exclusiva no `SkyrimPrefs.ini` do perfil e a linha do ENB descrita mais abaixo. Os dois últimos têm um botão Corrigir.
+A aba Saúde verifica três deles por você: a variável NVAPI, quando há um driver NVIDIA e o pacote Upscaling e a versão do Proton do jogo deixa o NVAPI desligado por padrão (GE-Proton11-9 e Proton 11.0 o ligam), a tela cheia exclusiva no `SkyrimPrefs.ini` do perfil e a linha do ENB descrita mais abaixo. Os dois últimos têm um botão Corrigir, e o cartão Tela em Diagnostics define a janela sem bordas com um tamanho.
 
 ## A opção de inicialização de que o DLSS precisa
 

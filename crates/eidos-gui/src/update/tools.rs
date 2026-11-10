@@ -206,6 +206,77 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             });
             app.diag_dirty = true;
         }
+        Message::DisplayWidth(v) => {
+            if let Some(f) = &mut app.display {
+                f.width = v;
+                f.edited = true;
+            }
+        }
+        Message::DisplayHeight(v) => {
+            if let Some(f) = &mut app.display {
+                f.height = v;
+                f.edited = true;
+            }
+        }
+        Message::DisplayMode(mode) => {
+            if let Some(f) = &mut app.display {
+                f.mode = mode;
+                f.edited = true;
+            }
+        }
+        Message::DisplayApply => {
+            if let Some(r) = &app.running {
+                // A capture at the end of the run would overwrite a profile INI edit.
+                app.status = Some(tf("status_still_running", &[("title", &r.title)]));
+                return Task::none();
+            }
+            let (Some(inst), Some(game), Some(form)) = (
+                app.created.as_ref(),
+                selected_game(app),
+                app.display.as_ref(),
+            ) else {
+                return Task::none();
+            };
+            let Some((width, height)) =
+                eidos::check::display::parse_size(&form.width, &form.height)
+            else {
+                app.status = Some(t("status_display_invalid").to_string());
+                return Task::none();
+            };
+            let d = eidos::check::display::Display {
+                width,
+                height,
+                mode: form.mode,
+            };
+            let _lock = match inst.try_lock("the Eidos window") {
+                Ok(l) => l,
+                Err(e) => {
+                    app.status = Some(tf("status_not_saved", &[("error", &e)]));
+                    return Task::none();
+                }
+            };
+            let done = eidos::check::display::apply_display(
+                game,
+                inst,
+                &eidos::check::active_mods(inst),
+                d,
+            );
+            app.status = Some(match done {
+                Ok(written) => tf(
+                    "status_display_applied",
+                    &[
+                        ("size", &format!("{width}x{height}")),
+                        ("mode", &mode_label(d.mode)),
+                        ("path", &written[0].display()),
+                    ],
+                ),
+                Err(e) => tf("status_fix_failed", &[("error", &e)]),
+            });
+            if let Some(f) = &mut app.display {
+                f.edited = false;
+            }
+            app.diag_dirty = true;
+        }
         Message::LogCopy => {
             let Some(pane) = &app.log_pane else {
                 return Task::none();

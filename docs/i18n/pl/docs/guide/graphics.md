@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=1955cd62075925e7e97c47c7866e9ce2eceba1c2 -->
 
 # Community Shaders, DLSS i generowanie klatek
 
@@ -9,7 +9,7 @@ zwykłe mody, a unia podaje ich biblioteki DLL jak wszystko inne - ale trzech rz
 **nie da się** odkryć od wewnątrz gry, a każda z nich sprawia, że funkcja po cichu
 nic nie robi. Ta strona to ich lista, zdobyta boleśnie na prawdziwej instalacji.
 
-Karta Stan sprawdza za Ciebie trzy z nich: zmienną NVAPI, gdy jest sterownik NVIDIA i pakiet Upscaling, a build Protona gry domyślnie wyłącza NVAPI (GE-Proton11-9 i Proton 11.0 go włączają), pełny ekran wyłączny w `SkyrimPrefs.ini` profilu oraz opisaną niżej linię ENB. Przy ostatnich dwóch jest przycisk Napraw.
+Karta Stan sprawdza za Ciebie trzy z nich: zmienną NVAPI, gdy jest sterownik NVIDIA i pakiet Upscaling, a build Protona gry domyślnie wyłącza NVAPI (GE-Proton11-9 i Proton 11.0 go włączają), pełny ekran wyłączny w `SkyrimPrefs.ini` profilu oraz opisaną niżej linię ENB. Przy ostatnich dwóch jest przycisk Napraw, a karta Ekran w Diagnostics ustawia okno bez ramki razem z rozmiarem.
 
 ## Opcja uruchamiania, której potrzebuje DLSS
 

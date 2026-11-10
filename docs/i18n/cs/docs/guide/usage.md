@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=cda9b5678bb47ad0246f2dfd09c9e2367886fe03 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=4a23f00af1300ab261cd09ad087d0f1826359112 -->
 
 # Používání Eidosu
 
@@ -729,6 +729,8 @@ což z otázky „načetly se moje SKSE pluginy?" dělá místo dohadu důkaz.
 Hlásí také aktualizaci hry od posledního čistého spuštění, chybějící script extender nebo takový, který neodpovídá verzi hry (se stránkou ke stažení extenderu a tlačítkem, které nainstaluje stažený archiv), parametr spuštění ve Steamu, který nespouští Eidos s `%command%`, NVAPI vypnuté pro DLSS, exkluzivní celou obrazovku, která brání generování snímků, `enblocal.ini` od ENB bez `LinuxVersion=true`, deklarace pluginů F4SE a SFSE a crash log poslední relace s módy, které jmenuje.
 Kontrola aktualizací také načte požadavky každého modu na Nexusu. Diagnostics uvede požadovaný mod, který chybí nebo je vypnutý, a tlačítkem Ignore lze zahodit požadavek splněný jinak.
 
+U Skyrim SE, Enderal SE a Fallout 4 má Diagnostics také kartu Zobrazení. Ukazuje velikost a režim okna nastavené v `SkyrimPrefs.ini` profilu (`EnderalPrefs.ini`, `Fallout4Prefs.ini`), nebo v kopii v prefixu, pokud ji profil ještě nemá. Když velikost nenastavuje ani jedna z nich, pole se vyplní podle největší připojené obrazovky uvedené v `/sys/class/drm`, takže Steam Deck ukáže 1280x800. Apply zapíše `iSize W`, `iSize H`, `bFull Screen` a `bBorderless` do kopie profilu; pokud ji profil nemá, nejdřív převezme kopii z prefixu. Když okno nastavuje SSE Display Tweaks, Apply zapíše stejnou velikost a režim do jeho kopie v Overwrite; vlastní soubor modu se nemění.
+
 Chcete-li hru spouštět skrz GUI, nastavte parametr spuštění hry ve Steamu na
 absolutní cestu k binárce (Steam nevidí `~/.cargo/bin` v PATH):
 
@@ -740,7 +742,7 @@ Eidos se otevře na instanci té hry - té, kterou jste použili naposledy, tak�
 přenosná instance se najde znovu stejně jako globální; kliknutím na Run ji
 spustíte skrz sloučený pohled.
 
-Se zapnutou volbou **Start the game at once when a store opens Eidos** (Preferences, General, Running a game) Eidos toto kliknutí přeskočí: zkontroluje Health a spustí hru, aniž by ukázal své okno. Okno se otevře jako obvykle, když Health hlásí problém, když seznam modů vyžaduje pozornost nebo když nástroj nastavený ke spuštění před hraním má zastaralý výstup. Chcete-li okno pro jedno spuštění, dejte před příkaz `EIDOS_WINDOW=1`: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
+Se zapnutou volbou **Start the game at once when a store opens Eidos** (Preferences, General, Running a game) Eidos toto kliknutí přeskočí: zkontroluje Health a spustí hru, aniž by ukázal své okno. Okno se otevře jako obvykle, když Health hlásí problém, když seznam modů vyžaduje pozornost, když nástroj nastavený ke spuštění před hraním má zastaralý výstup nebo, u Skyrim SE, Enderal SE a Fallout 4, když profil ještě nemá velikost okna (okno se pak otevře na Diagnostics). Chcete-li okno pro jedno spuštění, dejte před příkaz `EIDOS_WINDOW=1`: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Mimo Steam Run nespouští hru sám přes Proton nebo Wine. Požádá obchod, kterému
 kopie patří, aby ji spustil, a obchod spustí Eidos:

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=cda9b5678bb47ad0246f2dfd09c9e2367886fe03 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=4a23f00af1300ab261cd09ad087d0f1826359112 -->
 
 # Eidos verwenden
 
@@ -821,6 +821,8 @@ Vermutung einen Beleg macht.
 Der Tab meldet außerdem ein Spiel-Update seit dem letzten sauberen Start, einen fehlenden Script Extender oder einen, der nicht zur Spielversion passt (mit der Download-Seite des Extenders und einer Schaltfläche, die das heruntergeladene Archiv installiert), eine Steam-Startoption, die Eidos nicht mit `%command%` startet, NVAPI, das für DLSS aus bleibt, exklusiven Vollbildmodus, der die Frame-Generierung verhindert, eine ENB-`enblocal.ini` ohne `LinuxVersion=true`, die Plugin-Deklarationen von F4SE- und SFSE-Plugins und das Crash-Log der letzten Sitzung mit den Mods, die es nennt.
 Die Update-Prüfung liest auch die Nexus-Voraussetzungen jeder Mod. Diagnostics listet eine benötigte Mod auf, die fehlt oder deaktiviert ist; mit Ignore lässt sich eine Voraussetzung ausblenden, die anders erfüllt ist.
 
+Für Skyrim SE, Enderal SE und Fallout 4 hat Diagnostics außerdem eine Karte Anzeige. Sie zeigt Fenstergröße und Fenstermodus aus der `SkyrimPrefs.ini` des Profils (`EnderalPrefs.ini`, `Fallout4Prefs.ini`) oder aus der Kopie im Präfix, solange das Profil noch keine hat. Legt keine der beiden eine Größe fest, übernehmen die Felder den größten angeschlossenen Bildschirm aus `/sys/class/drm`, ein Steam Deck zeigt also 1280x800. Apply schreibt `iSize W`, `iSize H`, `bFull Screen` und `bBorderless` in die Kopie des Profils und übernimmt vorher die Kopie aus dem Präfix, wenn das Profil keine hat. Legt SSE Display Tweaks das Fenster fest, schreibt Apply dieselbe Größe und denselben Modus in dessen Kopie im Overwrite; die Datei der Mod selbst bleibt unverändert.
+
 Um das Spiel durch die GUI zu starten, setzen Sie die Steam-Startoption des
 Spiels auf den absoluten Pfad der Binärdatei (Steam sieht `~/.cargo/bin` im PATH
 nicht):
@@ -833,7 +835,7 @@ Eidos öffnet sich auf der Instanz des Spiels - der zuletzt benutzten, sodass ei
 portable Instanz genauso wiedergefunden wird wie die globale; klicken Sie auf
 Run, um es durch den zusammengeführten Blick zu starten.
 
-Ist **Start the game at once when a store opens Eidos** eingeschaltet (Preferences, General, Running a game), spart Eidos diesen Klick: Es prüft Health und startet das Spiel, ohne sein Fenster zu zeigen. Das Fenster öffnet sich wie gewohnt, wenn Health ein Problem meldet, wenn die Modliste Aufmerksamkeit braucht oder wenn ein Werkzeug, das vor dem Spielen laufen soll, eine veraltete Ausgabe hat. Wenn Sie das Fenster für einen einzelnen Start möchten, setzen Sie `EIDOS_WINDOW=1` vor den Befehl: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
+Ist **Start the game at once when a store opens Eidos** eingeschaltet (Preferences, General, Running a game), spart Eidos diesen Klick: Es prüft Health und startet das Spiel, ohne sein Fenster zu zeigen. Das Fenster öffnet sich wie gewohnt, wenn Health ein Problem meldet, wenn die Modliste Aufmerksamkeit braucht, wenn ein Werkzeug, das vor dem Spielen laufen soll, eine veraltete Ausgabe hat, oder bei Skyrim SE, Enderal SE und Fallout 4, wenn das Profil noch keine Fenstergröße hat (das Fenster öffnet sich dann auf Diagnostics). Wenn Sie das Fenster für einen einzelnen Start möchten, setzen Sie `EIDOS_WINDOW=1` vor den Befehl: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Außerhalb von Steam startet Run das Spiel nicht selbst über Proton oder Wine. Es
 bittet den Store, dem die Kopie gehört, sie zu starten, und der Store startet

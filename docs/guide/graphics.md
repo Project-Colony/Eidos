@@ -8,7 +8,7 @@ NOT discoverable from inside the game, and each one makes the feature silently
 do nothing. This page is the list of them, learned the hard way on a real
 setup.
 
-The Health tab checks three of these for you: the NVAPI variable when an NVIDIA driver and the Upscaling package are both present and the game's Proton build leaves NVAPI off by default (GE-Proton11-9 and Proton 11.0 turn it on), exclusive fullscreen in the profile's `SkyrimPrefs.ini`, and the ENB line below. The last two have a Fix button.
+The Health tab checks three of these for you: the NVAPI variable when an NVIDIA driver and the Upscaling package are both present and the game's Proton build leaves NVAPI off by default (GE-Proton11-9 and Proton 11.0 turn it on), exclusive fullscreen in the profile's `SkyrimPrefs.ini`, and the ENB line below. The last two have a Fix button, and the Display card in Diagnostics sets borderless with a size.
 
 ## The launch option DLSS needs
 

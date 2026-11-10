@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=1955cd62075925e7e97c47c7866e9ce2eceba1c2 -->
 
 # Community Shaders, DLSS und Frame Generation
 
@@ -10,7 +10,7 @@ drei Dinge sind **nicht** aus dem Spiel heraus erkennbar, und jedes davon lässt
 Funktion stillschweigend nichts tun. Diese Seite ist die Liste davon, auf einem
 echten System auf die harte Tour gelernt.
 
-Der Tab Zustand prüft drei davon für Sie: die NVAPI-Variable, wenn ein NVIDIA-Treiber und das Upscaling-Paket vorhanden sind und der Proton-Build des Spiels NVAPI standardmäßig aus lässt (GE-Proton11-9 und Proton 11.0 schalten es ein), exklusiven Vollbildmodus in der `SkyrimPrefs.ini` des Profils und die ENB-Zeile weiter unten. Bei den letzten beiden gibt es eine Schaltfläche Beheben.
+Der Tab Zustand prüft drei davon für Sie: die NVAPI-Variable, wenn ein NVIDIA-Treiber und das Upscaling-Paket vorhanden sind und der Proton-Build des Spiels NVAPI standardmäßig aus lässt (GE-Proton11-9 und Proton 11.0 schalten es ein), exklusiven Vollbildmodus in der `SkyrimPrefs.ini` des Profils und die ENB-Zeile weiter unten. Bei den letzten beiden gibt es eine Schaltfläche Beheben, und die Karte Anzeige in Diagnostics stellt ein randloses Fenster mit einer Größe ein.
 
 ## Die Startoption, die DLSS braucht
 

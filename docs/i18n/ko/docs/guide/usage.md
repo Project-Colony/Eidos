@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=cda9b5678bb47ad0246f2dfd09c9e2367886fe03 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=4a23f00af1300ab261cd09ad087d0f1826359112 -->
 
 # Eidos 사용하기
 
@@ -686,6 +686,8 @@ FOMOD 모드를 다시 설치하거나 업데이트하면 마법사는 지난 �
 또한 마지막 정상 실행 이후의 게임 업데이트, 없거나 게임 버전과 맞지 않는 스크립트 익스텐더(익스텐더 다운로드 페이지와, 내려받은 아카이브를 설치하는 버튼 포함), Eidos를 `%command%`와 함께 시작하지 않는 Steam 실행 옵션, DLSS에 필요한데 꺼져 있는 NVAPI, 프레임 생성을 막는 전용 전체 화면, `LinuxVersion=true`가 없는 ENB `enblocal.ini`, F4SE와 SFSE 플러그인 선언, 그리고 지난 세션의 크래시 로그와 그 로그가 이름을 대는 모드도 보고합니다.
 업데이트 확인은 각 모드의 Nexus 요구 사항도 읽습니다. Diagnostics는 없거나 비활성화된 필수 모드를 나열하며, 다른 방법으로 충족한 요구 사항은 Ignore로 숨길 수 있습니다.
 
+Skyrim SE, Enderal SE, Fallout 4에서는 Diagnostics에 디스플레이 카드도 있습니다. 프로필의 `SkyrimPrefs.ini`(`EnderalPrefs.ini`, `Fallout4Prefs.ini`)에 설정된 창 크기와 모드를 보여 주며, 프로필에 아직 파일이 없으면 프리픽스 쪽 사본의 값을 보여 줍니다. 둘 다 크기를 정하지 않았으면 입력란은 `/sys/class/drm`에 나열된 연결된 화면 중 가장 큰 화면의 값으로 채워지므로 Steam Deck에서는 1280x800이 됩니다. Apply는 `iSize W`, `iSize H`, `bFull Screen`, `bBorderless`를 프로필 사본에 쓰며, 프로필에 사본이 없으면 먼저 프리픽스의 사본을 가져옵니다. SSE Display Tweaks가 창을 정하는 경우 Apply는 같은 크기와 모드를 Overwrite에 있는 그 사본에도 씁니다. 모드 자체의 파일은 바뀌지 않습니다.
+
 GUI를 통해 게임을 실행하려면 게임의 Steam 실행 옵션을 실행 파일의 절대 경로로
 설정하세요(Steam은 PATH의 `~/.cargo/bin`을 보지 못합니다):
 
@@ -697,7 +699,7 @@ Eidos는 그 게임의 인스턴스로 열립니다 - 마지막으로 쓴 것이
 전역 인스턴스와 똑같이 다시 찾아집니다. Run을 클릭하면 병합된 뷰를 통해
 실행됩니다.
 
-**Start the game at once when a store opens Eidos**를 켜 두면(Preferences, General, Running a game) Eidos는 그 클릭을 건너뜁니다. Health를 확인하고 창을 띄우지 않은 채 게임을 시작합니다. Health에 문제가 있을 때, 모드 목록에 확인이 필요할 때, 플레이 전에 실행하도록 설정한 도구의 출력이 오래되었을 때는 평소처럼 창이 열립니다. 한 번만 창을 보려면 명령 앞에 `EIDOS_WINDOW=1`을 붙이세요: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
+**Start the game at once when a store opens Eidos**를 켜 두면(Preferences, General, Running a game) Eidos는 그 클릭을 건너뜁니다. Health를 확인하고 창을 띄우지 않은 채 게임을 시작합니다. Health에 문제가 있을 때, 모드 목록에 확인이 필요할 때, 플레이 전에 실행하도록 설정한 도구의 출력이 오래되었을 때, Skyrim SE, Enderal SE, Fallout 4에서 프로필에 아직 창 크기가 없을 때는 평소처럼 창이 열립니다(마지막 경우에는 Diagnostics 탭으로 열립니다). 한 번만 창을 보려면 명령 앞에 `EIDOS_WINDOW=1`을 붙이세요: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Steam 밖에서 Run은 Proton이나 Wine으로 게임을 직접 시작하지 않습니다. 그 사본을 가진 스토어에 시작을 요청하고, 스토어가 Eidos를 시작합니다:
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=1955cd62075925e7e97c47c7866e9ce2eceba1c2 -->
 
 # Community Shaders, DLSS et génération d'images
 
@@ -10,7 +10,7 @@ quoi d'autre - mais trois choses ne sont **pas** découvrables depuis l'intérie
 jeu, et chacune fait que la fonctionnalité ne fait rien, en silence. Cette page en
 est la liste, apprise à la dure sur une installation réelle.
 
-L'onglet Santé vérifie trois d'entre eux pour vous : la variable NVAPI, quand un pilote NVIDIA et le paquet Upscaling sont présents et que la version de Proton du jeu laisse NVAPI désactivé par défaut (GE-Proton11-9 et Proton 11.0 l'activent), le plein écran exclusif dans le `SkyrimPrefs.ini` du profil, et la ligne ENB décrite plus bas. Les deux derniers ont un bouton Corriger.
+L'onglet Santé vérifie trois d'entre eux pour vous : la variable NVAPI, quand un pilote NVIDIA et le paquet Upscaling sont présents et que la version de Proton du jeu laisse NVAPI désactivé par défaut (GE-Proton11-9 et Proton 11.0 l'activent), le plein écran exclusif dans le `SkyrimPrefs.ini` du profil, et la ligne ENB décrite plus bas. Les deux derniers ont un bouton Corriger, et la carte Affichage de Diagnostics règle une fenêtre sans bordure avec une taille.
 
 ## L'option de lancement dont DLSS a besoin
 

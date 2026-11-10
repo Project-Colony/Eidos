@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=cda9b5678bb47ad0246f2dfd09c9e2367886fe03 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=4a23f00af1300ab261cd09ad087d0f1826359112 -->
 
 # Eidos の使い方
 
@@ -703,6 +703,8 @@ FOMOD の MOD を再インストールまたは更新すると、ウィザード
 さらに、前回の正常な起動以降のゲーム更新、スクリプトエクステンダの欠落やゲームのバージョンとの不一致(エクステンダのダウンロードページと、ダウンロードした書庫をインストールするボタン付き)、Eidos を `%command%` 付きで起動しない Steam の起動オプション、DLSS 用にオフのままの NVAPI、フレーム生成を止める排他的フルスクリーン、`LinuxVersion=true` のない ENB の `enblocal.ini`、F4SE と SFSE のプラグイン宣言、そして前回のセッションのクラッシュログとそこに名前の出る MOD も報告します。
 更新の確認では、各 mod の Nexus 上の要件も読み込みます。Diagnostics は、見つからない、または無効になっている必須 mod を一覧し、別の方法で満たしている要件は Ignore で非表示にできます。
 
+Skyrim SE、Enderal SE、Fallout 4 では、Diagnostics に「表示」カードもあります。プロファイルの `SkyrimPrefs.ini` (`EnderalPrefs.ini`、`Fallout4Prefs.ini`) に設定されたウィンドウのサイズとモードを表示し、プロファイルにまだファイルがない場合はプレフィックス側のコピーの値を表示します。どちらにもサイズがない場合、入力欄には `/sys/class/drm` に載っている接続中で最大の画面の値が入るので、Steam Deck では 1280x800 になります。Apply は `iSize W`、`iSize H`、`bFull Screen`、`bBorderless` をプロファイルのコピーに書き込みます。プロファイルにコピーがなければ、先にプレフィックスのコピーを取り込みます。SSE Display Tweaks がウィンドウを設定している場合、Apply は同じサイズとモードを Overwrite にあるそのコピーにも書き込みます。MOD 自体のファイルは変更されません。
+
 GUI からゲームを起動するには、そのゲームの Steam 起動オプションに実行ファイルの
 絶対パスを設定してください(Steam は PATH の `~/.cargo/bin` を見ません):
 
@@ -714,7 +716,7 @@ Eidos はそのゲームのインスタンスで開きます - 最後に使っ�
 インスタンスもグローバルと同じように見つかります。Run を押せば統合ビュー越しに
 起動します。
 
-**Start the game at once when a store opens Eidos** をオンにすると (Preferences、General、Running a game)、Eidos はこのクリックを省きます。Health を確認し、ウィンドウを表示せずにゲームを起動します。Health が問題を挙げたとき、MOD リストに対応が必要なとき、プレイ前に実行するよう設定したツールの出力が古いときは、いつもどおりウィンドウが開きます。1 回の起動だけウィンドウを出したい場合は、コマンドの前に `EIDOS_WINDOW=1` を付けます (`EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`)。
+**Start the game at once when a store opens Eidos** をオンにすると (Preferences、General、Running a game)、Eidos はこのクリックを省きます。Health を確認し、ウィンドウを表示せずにゲームを起動します。Health が問題を挙げたとき、MOD リストに対応が必要なとき、プレイ前に実行するよう設定したツールの出力が古いとき、Skyrim SE、Enderal SE、Fallout 4 でプロファイルにまだウィンドウサイズがないときは、いつもどおりウィンドウが開きます (最後の場合は Diagnostics タブで開きます)。1 回の起動だけウィンドウを出したい場合は、コマンドの前に `EIDOS_WINDOW=1` を付けます (`EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`)。
 
 Steam の外では、Run は Proton や Wine でゲームを自分で起動しません。そのコピーを持つストアに起動を頼み、ストアが Eidos を起動します。
 

@@ -4,6 +4,7 @@
 
 pub mod bodyslide;
 pub mod crash;
+pub mod display;
 pub mod extender;
 pub mod graphics;
 pub mod launch_option;

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=cda9b5678bb47ad0246f2dfd09c9e2367886fe03 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=4a23f00af1300ab261cd09ad087d0f1826359112 -->
 
 # Eidos kullanımı
 
@@ -761,6 +761,8 @@ eklentilerim yüklendi mi?" sorusunu bir çıkarımdan bir kanıta çevirir.
 Ayrıca son temiz başlatmadan bu yana bir oyun güncellemesini, eksik ya da oyun sürümüyle uyuşmayan bir script extender'ı (extender'ın indirme sayfası ve indirdiğiniz arşivi kuran bir düğmeyle), Eidos'u `%command%` ile başlatmayan bir Steam başlatma seçeneğini, DLSS için kapalı bırakılmış NVAPI'yi, kare üretimini durduran özel tam ekranı, `LinuxVersion=true` içermeyen bir ENB `enblocal.ini` dosyasını, F4SE ve SFSE eklenti bildirimlerini ve son oturumun çökme günlüğünü, adını verdiği modlarla birlikte bildirir.
 Güncelleme denetimi her modun Nexus gereksinimlerini de okur. Diagnostics, eksik veya devre dışı bir gerekli modu listeler; başka yoldan karşılanan bir gereksinim için Ignore vardır.
 
+Skyrim SE, Enderal SE ve Fallout 4 için Diagnostics'te bir de Ekran kartı vardır. Profilin `SkyrimPrefs.ini` dosyasında (`EnderalPrefs.ini`, `Fallout4Prefs.ini`) ayarlı pencere boyutunu ve kipini, profilde bu dosya henüz yoksa önekteki kopyadakini gösterir. İkisi de bir boyut belirtmiyorsa alanlar `/sys/class/drm` içinde listelenen en büyük bağlı ekranla dolar, yani Steam Deck 1280x800 gösterir. Apply `iSize W`, `iSize H`, `bFull Screen` ve `bBorderless` değerlerini profilin kopyasına yazar; profilde kopya yoksa önce önekteki kopyayı alır. Pencereyi SSE Display Tweaks belirliyorsa Apply aynı boyutu ve kipi onun Overwrite'taki kopyasına da yazar; modun kendi dosyası değiştirilmez.
+
 Oyunu GUI üzerinden başlatmak için oyunun Steam başlatma seçeneğini ikili
 dosyanın mutlak yoluna ayarlayın (Steam, PATH'te `~/.cargo/bin`'i görmez):
 
@@ -772,7 +774,7 @@ Eidos o oyunun örneğinde açılır - en son kullandığınızda, yani taşına
 örnek de global olan gibi yeniden bulunur; birleşik görünüm üzerinden başlatmak
 için Run'a tıklayın.
 
-**Start the game at once when a store opens Eidos** açıkken (Preferences, General, Running a game) Eidos bu tıklamayı atlar: Health'i denetler ve oyunu penceresini göstermeden başlatır. Health bir sorun bildirdiğinde, mod listesi ilgi gerektirdiğinde ya da oynamadan önce çalışacak şekilde ayarlanmış bir aracın çıktısı eskidiğinde pencere her zamanki gibi açılır. Pencereyi tek bir başlatma için isterseniz komutun önüne `EIDOS_WINDOW=1` ekleyin: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
+**Start the game at once when a store opens Eidos** açıkken (Preferences, General, Running a game) Eidos bu tıklamayı atlar: Health'i denetler ve oyunu penceresini göstermeden başlatır. Health bir sorun bildirdiğinde, mod listesi ilgi gerektirdiğinde, oynamadan önce çalışacak şekilde ayarlanmış bir aracın çıktısı eskidiğinde ya da Skyrim SE, Enderal SE ve Fallout 4'te profilin henüz bir pencere boyutu olmadığında pencere her zamanki gibi açılır (son durumda Diagnostics sekmesinde açılır). Pencereyi tek bir başlatma için isterseniz komutun önüne `EIDOS_WINDOW=1` ekleyin: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Steam dışında Run oyunu kendisi Proton ya da Wine ile başlatmaz. Kopyanın sahibi
 olan mağazadan onu başlatmasını ister, mağaza da Eidos'u başlatır:
