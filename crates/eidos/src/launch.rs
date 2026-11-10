@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::exit;
 
 use eidos_games::DetectedGame;
-use eidos_instance::{Instance, InstanceKind};
+use eidos_instance::{Instance, InstanceKind, ROOT_CONTROL_FILES};
 use eidos_launch::{launch, LaunchSpec};
 
 use crate::*;
@@ -479,12 +479,6 @@ pub(crate) fn run_through_view(
 
     // Recover the selected profile before any preparation can replace runtime
     // files from an interrupted session. Completed output moves are idempotent.
-    const ROOT_CONTROL_FILES: &[&str] = &[
-        "Morrowind.ini",
-        "Oblivion.ini",
-        "OblivionPrefs.ini",
-        "plugins.txt",
-    ];
     let recovery = prof
         .recover_ini_session()
         .and_then(|()| {

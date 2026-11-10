@@ -49,8 +49,8 @@ pub use mo2_ini::{mo2_executables, Mo2Executable, Mo2Ini, Mo2Skip};
 pub use mod_backup::{backup_mod, reserve_mod_backup};
 pub use profile::{
     cosave_siblings, format_stamp, instance_sync_keys, is_save_data, is_save_listing,
-    read_text_lossy, save_sync_key, untweak_ini, write_text, Backup, BackupKind, ListTrust,
-    Profile, SaveEntry, SavesImport, TweakedKey,
+    merge_output_tree, read_text_lossy, save_sync_key, untweak_ini, write_text, Backup, BackupKind,
+    ListTrust, Profile, SaveEntry, SavesImport, TweakedKey,
 };
 pub use provenance::{
     GeneratedInput, GeneratedOutput, GeneratedReceipt, GeneratedRun, ToolExecutable,
@@ -65,6 +65,16 @@ pub use tools::{
     root_executable, root_executable_source, tool_for_exe, tool_search_roots, write_tools,
     GameExecutables, Runner, Tool, PREFIX_TOOLS,
 };
+
+/// The files a root-mode game reads beside its executable that the profile owns:
+/// a Root capture leaves them in the profile's `runtime-root` instead of moving
+/// them to the shared Overwrite.
+pub const ROOT_CONTROL_FILES: &[&str] = &[
+    "Morrowind.ini",
+    "Oblivion.ini",
+    "OblivionPrefs.ini",
+    "plugins.txt",
+];
 
 /// Where an instance is stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
