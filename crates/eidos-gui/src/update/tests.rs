@@ -7980,6 +7980,34 @@ fn a_finished_download_installs_itself_when_the_option_is_on() {
     fs::remove_dir_all(root).unwrap();
 }
 
+/// Auto-install returns early from the tick, so the notification check must
+/// run before it: a download that installs itself still says it has ended.
+#[test]
+fn an_auto_installed_download_still_notifies_when_away() {
+    let (mut app, root, dl) = auto_install_app();
+    app.prefs.notify_when_away = true;
+    app.focused = false;
+    let _ = crate::notify::take_sent();
+    fs::write(dl.join("new.7z.unfinished"), b"x").unwrap();
+    fs::write(
+        dl.join("new.7z.meta"),
+        "[General]\ngameName=SkyrimSE\nmodID=77\nfileID=701\n",
+    )
+    .unwrap();
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(app.install_job.is_none(), "a partial was installed");
+    fs::rename(dl.join("new.7z.unfinished"), dl.join("new.7z")).unwrap();
+    let _ = update_inner(&mut app, Message::DownloadTick);
+    assert!(
+        app.install_job.is_some(),
+        "the download did not install itself"
+    );
+    let sent = crate::notify::take_sent();
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(sent[0].0, t("notify_downloads_done"));
+    fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn auto_install_leaves_older_archives_and_the_option_off_alone() {
     let (mut app, root, dl) = auto_install_app();
@@ -8082,6 +8110,11 @@ fn the_downloads_tick_runs_on_every_tab_only_with_the_option_and_an_instance() {
     app.tab = Tab::Plugins;
     assert!(!crate::subscription::watches_downloads(&app));
     app.prefs.auto_install_downloads = true;
+    assert!(crate::subscription::watches_downloads(&app));
+    app.prefs.auto_install_downloads = false;
+    app.prefs.notify_when_away = true;
+    assert!(!crate::subscription::watches_downloads(&app), "focused");
+    app.focused = false;
     assert!(crate::subscription::watches_downloads(&app));
     app.created = None;
     assert!(!crate::subscription::watches_downloads(&app));
