@@ -791,9 +791,14 @@ pub(crate) fn plugin_origin_row(app: &App, row: usize) -> Option<usize> {
 /// Read both lists' restore points for the Backups dialog, newest first.
 pub(crate) fn load_backups(app: &App) -> Option<BackupsDialogState> {
     let prof = app.created.as_ref()?.active();
+    let inis = selected_game(app)
+        .map(|g| g.def.ini_files)
+        .filter(|f| !f.is_empty())
+        .map(|f| (f, prof.backups(eidos_instance::BackupKind::Inis(f))));
     Some(BackupsDialogState {
         mods: prof.backups(eidos_instance::BackupKind::ModList),
         order: prof.backups(eidos_instance::BackupKind::LoadOrder),
+        inis,
     })
 }
 

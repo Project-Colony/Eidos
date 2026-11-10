@@ -1271,3 +1271,33 @@ fn exe_actions_keep_the_data_columns_aligned() {
         "the Size column does not move on an exe row"
     );
 }
+
+#[test]
+fn an_ini_restore_point_never_moves_the_other_columns() {
+    let _look = crate::test_support::look_lock();
+    let mut state = BackupsDialogState {
+        mods: Vec::new(),
+        order: Vec::new(),
+        inis: Some((&["Skyrim.ini"], Vec::new())),
+    };
+    let mut renderer = renderer();
+    let heading = label(
+        crate::dialogs::backups_dialog(&state),
+        &mut renderer,
+        t("backups_load_order"),
+        0,
+    );
+    state.inis.as_mut().unwrap().1.push(eidos_instance::Backup {
+        stamp: 1_787_580_000,
+        files: Vec::new(),
+    });
+    assert_eq!(
+        label(
+            crate::dialogs::backups_dialog(&state),
+            &mut renderer,
+            t("backups_load_order"),
+            0
+        ),
+        heading
+    );
+}

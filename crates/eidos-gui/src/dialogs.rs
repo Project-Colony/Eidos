@@ -61,7 +61,7 @@ pub(crate) fn backups_dialog<'a>(state: &BackupsDialogState) -> Element<'a, Mess
         col.width(Length::Fill).into()
     }
 
-    let body = Row::new()
+    let mut body = Row::new()
         .spacing(24)
         .push(column(
             t("backups_mod_list"),
@@ -75,6 +75,14 @@ pub(crate) fn backups_dialog<'a>(state: &BackupsDialogState) -> Element<'a, Mess
             BackupKind::LoadOrder,
             &state.order,
         ));
+    if let Some((files, list)) = &state.inis {
+        body = body.push(column(
+            t("backups_inis"),
+            t("backups_inis_desc"),
+            BackupKind::Inis(files),
+            list,
+        ));
+    }
 
     let card = Column::new()
         .spacing(12)
@@ -93,7 +101,11 @@ pub(crate) fn backups_dialog<'a>(state: &BackupsDialogState) -> Element<'a, Mess
         .push(text(t("backups_restore_note")).size(sz(11)));
 
     container(card)
-        .width(Length::Fixed(620.0))
+        .width(Length::Fixed(if state.inis.is_some() {
+            900.0
+        } else {
+            620.0
+        }))
         .padding(18)
         .style(card_style)
         .into()

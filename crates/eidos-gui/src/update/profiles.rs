@@ -227,8 +227,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     // them underneath every cache the window holds. No mod
                     // folder changed, so the file walks stay; the views derived
                     // from the list and the plugin order are recomputed.
-                    reload_mods(app);
-                    mod_views_changed(app);
+                    if !matches!(kind, eidos_instance::BackupKind::Inis(_)) {
+                        reload_mods(app);
+                        mod_views_changed(app);
+                    }
                 }
                 Err(e) => {
                     app.status = Some(tf(
@@ -248,5 +250,6 @@ fn backup_what(kind: eidos_instance::BackupKind) -> &'static str {
     match kind {
         eidos_instance::BackupKind::ModList => t("backup_what_mod_list"),
         eidos_instance::BackupKind::LoadOrder => t("backup_what_load_order"),
+        eidos_instance::BackupKind::Inis(_) => t("backup_what_inis"),
     }
 }

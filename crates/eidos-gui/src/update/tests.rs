@@ -5389,6 +5389,35 @@ fn opening_the_origin_of_a_vanilla_plugin_says_so_instead_of_doing_nothing() {
 }
 
 #[test]
+fn the_backups_dialog_offers_ini_restore_points_for_a_game_with_inis() {
+    use eidos_instance::BackupKind;
+    let (mut app, _root) = list_app(&["A"]);
+    let prof = app.created.as_ref().unwrap().active();
+    fs::create_dir_all(prof.dir()).unwrap();
+    fs::write(prof.ini_path("Skyrim.ini"), "a").unwrap();
+    let _ = update_inner(&mut app, Message::ShowBackupsDialog);
+    let (files, list) = app
+        .backups
+        .as_ref()
+        .unwrap()
+        .inis
+        .clone()
+        .expect("Skyrim SE has INIs");
+    assert!(list.is_empty());
+    let _ = update_inner(&mut app, Message::CreateBackup(BackupKind::Inis(files)));
+    let stamp = app.backups.as_ref().unwrap().inis.as_ref().unwrap().1[0].stamp;
+    fs::write(prof.ini_path("Skyrim.ini"), "b").unwrap();
+    let _ = update_inner(
+        &mut app,
+        Message::RestoreBackup(BackupKind::Inis(files), stamp),
+    );
+    assert_eq!(
+        fs::read_to_string(prof.ini_path("Skyrim.ini")).unwrap(),
+        "a"
+    );
+}
+
+#[test]
 fn the_backups_dialog_reads_both_lists_and_restores_through_the_instance() {
     use eidos_instance::BackupKind;
     let root = std::env::temp_dir().join(format!("eidos-gui-bk-{}", std::process::id()));
