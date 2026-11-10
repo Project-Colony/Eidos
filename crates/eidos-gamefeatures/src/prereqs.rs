@@ -287,9 +287,10 @@ fn installer_tmpdir(prefix: &Path) -> Option<PathBuf> {
 /// These installers do not follow the "0 means OK" convention: they report
 /// "success, restart required" and "a newer version is already installed" as
 /// distinct non-zero codes, and treating those as failures aborts a prefix setup
-/// that in fact completed.
+/// that in fact completed. Wine passes the code on modulo 256, so 1641 reads as
+/// 105, 1638 as 102 and 3010 as 194.
 fn installer_success(code: i32) -> bool {
-    matches!(code, 0 | 105 | 194 | 236 | 1638 | 3010)
+    matches!(code, 0 | 102 | 105 | 194 | 236 | 1638 | 3010)
 }
 
 /// A human explanation for an installer exit code, when there is one worth
@@ -301,7 +302,7 @@ fn describe_installer_exit(code: i32) -> Option<&'static str> {
         112 => "not enough disk space",
         194 => "installed, restart scheduled",
         236 => "a newer version is already installed",
-        1638 => "another version of this product is already installed",
+        102 | 1638 => "another version of this product is already installed",
         3010 => "installed, reboot required",
         _ => return None,
     })
@@ -816,7 +817,7 @@ mod tests {
         // These installers report "done, restart required" and "already newer"
         // as distinct non-zero codes; treating them as failures aborts a prefix
         // setup that in fact completed.
-        for ok in [0, 105, 194, 236, 1638, 3010] {
+        for ok in [0, 102, 105, 194, 236, 1638, 3010] {
             assert!(installer_success(ok), "{ok} should be success");
         }
         for bad in [1, 5, 112, 1603] {
@@ -1044,6 +1045,29 @@ mod tests {
                 "{dll}"
             );
         }
+    }
+
+    #[test]
+    fn an_already_installed_newer_vc_runtime_is_not_a_failure() {
+        // VC_redist exits 1638 when a newer 14.x is in the prefix (a game's own
+        // VS 2026 redist); Wine hands that on as 102.
+        let root = tmp();
+        let prefix = root.join("pfx");
+        fs::create_dir_all(&prefix).unwrap();
+        let log = root.join("argv.log");
+        run_redists(
+            "vcrun2022",
+            &[
+                root.join("VC_redist.x86.exe"),
+                root.join("VC_redist.x64.exe"),
+            ],
+            &prefix,
+            None,
+            fake(&log, 1638),
+            &env(),
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(&log).unwrap().lines().count(), 3);
     }
 
     #[test]
