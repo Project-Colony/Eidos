@@ -18,6 +18,7 @@ mod game_files;
 mod install;
 mod main_screen;
 mod nexus_files;
+mod nexus_page;
 mod plugins;
 mod saves;
 
@@ -30,6 +31,7 @@ pub(crate) use game_files::*;
 pub(crate) use install::*;
 pub(crate) use main_screen::*;
 pub(crate) use nexus_files::*;
+pub(crate) use nexus_page::*;
 pub(crate) use plugins::*;
 pub(crate) use saves::*;
 
@@ -48,10 +50,14 @@ pub(crate) fn info_tab_btn<'a>(label: &'a str, tab: InfoTab, mix: f32) -> Elemen
         .into()
 }
 
-pub(crate) fn info_kv<'a>(k: &'a str, v: String) -> Element<'a, Message> {
+pub(crate) fn info_kv<'a>(k: impl ToString, v: String) -> Element<'a, Message> {
     Row::new()
         .spacing(8)
-        .push(text(k).size(sz(12)).width(Length::Fixed(scaled(120.0))))
+        .push(
+            text(k.to_string())
+                .size(sz(12))
+                .width(Length::Fixed(scaled(120.0))),
+        )
         .push(text(v).size(sz(12)).width(Length::Fill))
         .into()
 }
@@ -192,18 +198,150 @@ pub(crate) fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> 
                 .on_press(Message::ModUrlSave),
         );
 
-    col.push(info_kv(
-        t("info_enabled"),
-        if m.enabled {
-            t("common_yes").into()
+    let col = col
+        .push(info_kv(
+            t("info_enabled"),
+            if m.enabled {
+                t("common_yes").into()
+            } else {
+                t("common_no").into()
+            },
+        ))
+        .push(info_kv(t("info_files"), files.to_string()))
+        .push(info_kv(t("common_folder"), m.path.display().to_string()))
+        .push(url_row);
+    update_rows(app, col).into()
+}
+
+/// Joins the first 20 entries with `; `, then says how many are left out.
+fn limited_list(items: Vec<String>) -> String {
+    let more = items.len().saturating_sub(20);
+    let mut s = items.into_iter().take(20).collect::<Vec<_>>().join("; ");
+    if more > 0 {
+        s.push_str(&tf("diag_and_n_more", &[("n", &more)]));
+    }
+    s
+}
+
+/// The "Last update" section that closes the General tab.
+fn update_rows<'a>(app: &App, mut col: Column<'a, Message>) -> Column<'a, Message> {
+    let Some((r, delta)) = &app.info_update else {
+        return col;
+    };
+    let date = format_mtime(std::time::UNIX_EPOCH + std::time::Duration::from_secs(r.when));
+    let version = |v: &str| {
+        if v.is_empty() {
+            "?".to_string()
         } else {
-            t("common_no").into()
-        },
-    ))
-    .push(info_kv(t("info_files"), files.to_string()))
-    .push(info_kv(t("common_folder"), m.path.display().to_string()))
-    .push(url_row)
-    .into()
+            v.to_string()
+        }
+    };
+    col = col.push(info_kv(
+        t("info_last_update"),
+        tf(
+            "info_last_update_value",
+            &[
+                ("date", &date),
+                ("old", &version(&r.old_version)),
+                ("new", &version(&r.new_version)),
+            ],
+        ),
+    ));
+    if r.is_empty() && delta == &ConflictDelta::default() {
+        return col.push(info_kv("", t("info_update_nothing").to_string()));
+    }
+    let kinds = r
+        .kinds_changed
+        .iter()
+        .map(|(p, b, a)| {
+            tf(
+                "info_update_kind",
+                &[("plugin", p), ("before", b), ("after", a)],
+            )
+        })
+        .collect();
+    let conflicts = |v: &[(String, usize)]| {
+        v.iter()
+            .map(|(name, n)| tf("info_update_conflict_with", &[("name", name), ("n", n)]))
+            .collect()
+    };
+    let rows: [(&str, Vec<String>); 10] = [
+        ("info_update_plugins_added", r.plugins_added.clone()),
+        ("info_update_plugins_removed", r.plugins_removed.clone()),
+        ("info_update_masters_added", r.masters_added.clone()),
+        ("info_update_masters_removed", r.masters_removed.clone()),
+        ("info_update_kinds", kinds),
+        ("info_update_conflicts_gained", conflicts(&delta.gained)),
+        ("info_update_conflicts_lost", conflicts(&delta.lost)),
+        ("info_update_files_added", r.added.clone()),
+        ("info_update_files_removed", r.removed.clone()),
+        ("info_update_files_resized", r.resized.clone()),
+    ];
+    for (key, items) in rows {
+        if !items.is_empty() {
+            col = col.push(info_kv(
+                tf(key, &[("n", &items.len())]),
+                limited_list(items),
+            ));
+        }
+    }
+    col
+}
+
+/// Mods an update started or stopped sharing files with, and how many files.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ConflictDelta {
+    pub(crate) gained: Vec<(String, usize)>,
+    pub(crate) lost: Vec<(String, usize)>,
+}
+
+pub(crate) fn conflict_delta(
+    report: &eidos_instance::UpdateReport,
+    map: &ConflictMap,
+    origin: eidos_conflicts::OriginId,
+) -> ConflictDelta {
+    use eidos_conflicts::BASE_ORIGIN;
+    let tally = |paths: &[String], needs_origin: bool| {
+        let mut counts: std::collections::HashMap<String, usize> = Default::default();
+        for path in paths {
+            let Some(node) = map.files.get(&path.to_lowercase()) else {
+                continue;
+            };
+            let providers = || std::iter::once(&node.winner).chain(&node.alternatives);
+            if needs_origin && !providers().any(|&o| o == origin) {
+                continue;
+            }
+            for &o in providers().filter(|&&o| o != origin && o != BASE_ORIGIN) {
+                *counts.entry(map.name(o).to_string()).or_default() += 1;
+            }
+        }
+        let mut v: Vec<_> = counts.into_iter().collect();
+        v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        v
+    };
+    ConflictDelta {
+        gained: tally(&report.added, true),
+        lost: tally(&report.removed, false),
+    }
+}
+
+/// The status suffix after a Replace, with its leading space.
+pub(crate) fn update_status(report: &eidos_instance::UpdateReport) -> String {
+    let mut s = tf(
+        "status_update_changes",
+        &[
+            ("added", &report.added.len()),
+            ("removed", &report.removed.len()),
+            ("resized", &report.resized.len()),
+        ],
+    );
+    if !report.masters_added.is_empty() {
+        s.push_str(&tf(
+            "status_update_new_masters",
+            &[("list", &report.masters_added.join(", "))],
+        ));
+    }
+    s
 }
 
 /// The "Requires" and "Required by" lines for one mod, built on dialog-open from
@@ -705,6 +843,11 @@ pub(crate) fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
             InfoTab::NexusFiles,
             info_mix(app, InfoTab::NexusFiles),
         ));
+        tabs = tabs.push(info_tab_btn(
+            t("info_tab_nexus_page"),
+            InfoTab::NexusPage,
+            info_mix(app, InfoTab::NexusPage),
+        ));
     }
 
     let content = match app.info_tab {
@@ -714,6 +857,7 @@ pub(crate) fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
         InfoTab::IniTweaks => info_ini_tweaks(app, i, m),
         InfoTab::Notes => info_notes(app),
         InfoTab::NexusFiles => info_nexus_files(app, i, m),
+        InfoTab::NexusPage => info_nexus_page(app, i, m),
     };
 
     let card = Column::new()

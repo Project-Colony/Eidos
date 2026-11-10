@@ -168,14 +168,16 @@ echo
 # Preserve the bundled attribution when users discard the unpacked package.
 notices="${XDG_DATA_HOME:-$HOME/.local/share}/licenses/eidos"
 (( system )) && notices=/usr/local/share/licenses/eidos
-if [[ -d "$here/licenses" ]]; then
-	sudo_if_needed "$notices" install -d -m755 "$notices"
-	sudo_if_needed "$notices" cp -R "$here/licenses/." "$notices/"
-elif [[ -d "$here/../crates/eidos-nif-preview" ]]; then
+# A source checkout first: its packaging/licenses/ holds only the Microsoft
+# runtime terms the release job stages, not the bundle's notices.
+if [[ -d "$here/../crates/eidos-nif-preview" ]]; then
 	for notice in UPSTREAM.md VENDORED-SHA256SUMS vendor/nifly/LICENSE vendor/nifly/README.md vendor/nifly/external/half.hpp vendor/nifly/external/Miniball.hpp; do
 		sudo_if_needed "$notices" install -Dm644 "$here/../crates/eidos-nif-preview/$notice" "$notices/nifly/$notice"
 	done
 	sudo_if_needed "$notices" install -Dm644 "$here/../crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md" "$notices/omod/UPSTREAM.md"
+elif [[ -d "$here/licenses" ]]; then
+	sudo_if_needed "$notices" install -d -m755 "$notices"
+	sudo_if_needed "$notices" cp -R "$here/licenses/." "$notices/"
 fi
 for license_file in "$here/LICENSE" "$here/../LICENSE"; do
 	if [[ -f "$license_file" ]]; then
@@ -183,6 +185,18 @@ for license_file in "$here/LICENSE" "$here/../LICENSE"; do
 		break
 	fi
 done
+
+# The Microsoft installers the release bundle ships: Eidos uses these before it
+# downloads anything. Per user, like the rest of Eidos's data.
+# shortcut: a --system install still puts them in the data dir of the user who runs it; give them a system path when a shared install asks for one.
+if [[ -d "$srcdir/runtimes" ]]; then
+	echo "runtimes"
+	runtimes="${XDG_DATA_HOME:-$HOME/.local/share}/Colony/Eidos/runtimes"
+	install -d -m755 "$runtimes"
+	install -m644 "$srcdir/runtimes/"* "$runtimes/"
+	say "$runtimes"
+	echo
+fi
 
 echo "capability"
 capped=0

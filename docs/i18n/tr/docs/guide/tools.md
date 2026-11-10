@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=7f872c8fb702f4417931831cc14a48ffb9d9e30b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=697ab61c73cce270d79a42be1a29c4800a6ee6d0 -->
 
 # Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -188,10 +188,26 @@ istege bagli olmadigi [asagisi](#pgpatcher-neden---ignore-mo2vfscheck-ister).
 `d3dcompiler_43`, `d3dx11_43`). Eidos onları birlikte getirir ve başlatmada
 öneke kopyalar. Yapılacak bir şey yok, ağ yok.
 
-**Kademe 2 - winetricks fiilleri** (`vcrun2022`, `dotnet8`, `dotnetdesktop8`,
-`dotnet48`, `xact`...). Bunlar registry anahtarlarını, GAC'yi ve CLR
-barındırıcılarını yazar, dolayısıyla dosya kopyalanarak halledilemezler.
-**Microsoft'tan indirirler**.
+**Kademe 2 - kurucular** (`vcrun2022`, `dotnet8`, `dotnetdesktop8`, `dotnet48`,
+`xact`...). Bunlar registry anahtarlarını, GAC'yi ve CLR barındırıcılarını
+yazar, dolayısıyla dosya kopyalanarak halledilemezler. Eidos bunlardan üçünü
+winetricks olmadan kurar: `vcrun2022`, Microsoft'un `VC_redist.x86.exe` ve
+`VC_redist.x64.exe` dosyalarını çalıştırır; `dotnet8` ve `dotnetdesktop8` ise
+.NET çalışma zamanını da içeren .NET 8.0.12 Desktop Runtime kurucusunu
+çalıştırır. Sürüm paketi (`eidos-linux-bundle.tar.gz`) bu kurucuları `runtimes/`
+klasöründe getirir ve `install.sh` onları
+`~/.local/share/Colony/Eidos/runtimes/` içine kopyalar. Bu kopya yoksa (tek
+dosya `eidos-linux`, kaynaktan derleme) Eidos onları aynı klasöre
+**Microsoft'tan indirir** (`download.visualstudio.microsoft.com`). Her iki
+durumda da SHA-256'sı Eidos'a gömülü olanla eşleşmeyen bir dosya reddedilir;
+dosya, oyunun araçlarını çalıştıran Proton ya da Wine sürümüyle oyunun önekinde
+sessiz kipte çalışır. winetricks'in yaptığı gibi `vcrun2022` önce önekin DLL
+geçersiz kılmalarında Visual C++ DLL'lerini `native,builtin` yapar. Ardından
+Eidos, önekin C++ çalışma zamanının yarısının Microsoft'tan, yarısının
+Proton'dan gelmediğini denetler; öyleyse kurulumu başarısız olarak bildirir.
+Yalnızca 64 bit .NET 8 kurulur; 32 bit bir .NET 8 aracı hâlâ
+`winetricks dotnetdesktop8` ister. Diğer fiiller sistemdeki `winetricks`
+üzerinden geçer.
 
 **Kademe 3 - çalışma zamanları** (`dotnet10`, `dotnetsdk10`). Modern bir .NET çalışma zamanı,
 kendi dizininde duran ve `DOTNET_ROOT` üzerinden bulunan 193 dosyadır: hiç
@@ -199,7 +215,9 @@ kaydedilmez, öneke hiçbir biçimde kurulmaz, dolayısıyla diğer iki kademede
 hiçbiri onu taşıyamaz. Eidos onu kendi indirir, ikili dosyaya gömülü bir sağlama
 toplamına karşı denetler ve `~/.local/share/Colony/Eidos/runtimes/` içinde
 önbelleğe alır - **herhangi bir örneğin dışında**, çünkü 78 MB ne oyun başınadır
-ne de profil başına.
+ne de profil başına. Sürüm paketi `dotnet10` çalışma zamanının zip dosyasını da
+`runtimes/` içinde getirir; Eidos bu kopyayı açar ve yalnızca kopya yoksa
+indirir. `dotnetsdk10` her zaman indirilir.
 
 `dotnetsdk10`, .NET 10 SDK'sıdır: indirmesi 301 MB, açıldığında 808 MB.
 Synthesis patcher'larını derlemek için buna ihtiyaç duyar ve onları derleyip
@@ -262,11 +280,11 @@ dokunmaz. `DOTNET_ROOT`'u bir .NET 10 çalışma zamanına yöneltin, çalışı
 `dotnet10`'un sağladığı budur ve Eidos, onu bildiren herhangi bir aracı
 başlatırken değişkeni ayarlar.
 
-Eidos, sistemdeki `winetricks`'i Proton'un kendi `wine`'ı ve oyun öneki üzerinde
-çalıştırır; bu da Steam'in pressure-vessel kabını ve protontricks + Proton-GE
-uyuşmazlığını atlar. Kurulmamış bir Kademe 2 fiili bildiren bir araç yine de
-başlar; fiili ve onu düzeltecek komutu anan bir uyarıyla - kullanıcıda başka bir
-yerden gelmiş olabilir.
+Diğer Kademe 2 fiilleri için Eidos, sistemdeki `winetricks`'i Proton'un kendi
+`wine`'ı ve oyun öneki üzerinde çalıştırır; bu da Steam'in pressure-vessel
+kabını ve protontricks + Proton-GE uyuşmazlığını atlar. Kurulmamış bir Kademe 2
+fiili bildiren bir araç yine de başlar; fiili ve onu düzeltecek komutu anan bir
+uyarıyla - kullanıcıda başka bir yerden gelmiş olabilir.
 
 ### PGPatcher neden `--ignore-mo2vfscheck` ister
 
@@ -472,21 +490,22 @@ Heroic ile kurulmuş bir GOG ya da Epic kopyasında, oyunun Heroic ayarları
 (`GamesConfig/<appName>.json`) bir Wine ya da Proton sürümü belirtiyorsa
 araçların böyle bir girdiye ihtiyacı yoktur: Eidos onları bu sürümle oyunun
 Heroic önekinde çalıştırır ve `eidos prereqs <instance> --install` bu sürümü
-winetricks'e verir. Yalnızca Legendary ile kurulmuş bir kopyanın Heroic
-ayarları yoktur.
+kurucular ve winetricks için kullanır. Yalnızca Legendary ile kurulmuş bir
+kopyanın Heroic ayarları yoktur.
 
 `slr=1`, aracı ve ondan önceki kayıt defteri aktarımını, aracın Proton sürümünün
 belirttiği Steam Linux Runtime kapsayıcısı içinde başlatır (`toolmanifest.vdf`
 dosyasındaki `require_tool_appid`); Steam oyunu da böyle başlatır. Bu çalışma
 zamanı bir Steam kitaplığında kurulu olmalıdır; değilse çalıştırma durur ve
-kurulması gereken Steam uygulamasını söyler. `eidos prereqs` winetricks'i yine
-ana makinede çalıştırır ve `runner=native` olan bir araç bu anahtarı yok sayar.
-Kapsayıcı ev klasörünüzü ve oyunun Steam kitaplığını görür. Başka bir yerdeki,
-örneğin başka bir sürücüdeki bir araç, mod ya da çalışma zamanı için
-`env=STEAM_COMPAT_MOUNTS=/o/yol` gerekir (birden çok yol `:` ile ayrılır).
-`/usr/share/steam/compatibilitytools.d` altına kurulmuş bir Proton, kapsayıcı
-içindeki `/usr` çalışma zamanına ait olduğundan, büyük olasılıkla `slr=1` ile
-kullanılamaz. Kapsayıcı içinde bir araç çalıştırması henüz denenmedi.
+kurulması gereken Steam uygulamasını söyler. `eidos prereqs` kurucularını ve
+winetricks'i yine ana makinede çalıştırır ve `runner=native` olan bir araç bu
+anahtarı yok sayar. Kapsayıcı ev klasörünüzü ve oyunun Steam kitaplığını görür.
+Başka bir yerdeki, örneğin başka bir sürücüdeki bir araç, mod ya da çalışma
+zamanı için `env=STEAM_COMPAT_MOUNTS=/o/yol` gerekir (birden çok yol `:` ile
+ayrılır). `/usr/share/steam/compatibilitytools.d` altına kurulmuş bir Proton,
+kapsayıcı içindeki `/usr` çalışma zamanına ait olduğundan, büyük olasılıkla
+`slr=1` ile kullanılamaz. Kapsayıcı içinde bir araç çalıştırması henüz
+denenmedi.
 
 `eidos tool <instance> run <title> --print`, son komutu ve çalıştırmanın
 devralınan ortamın üzerine ayarladığı her değişkeni, bu satırlar dahil, gösterir.

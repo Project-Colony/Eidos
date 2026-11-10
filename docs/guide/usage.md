@@ -187,6 +187,20 @@ into the profile and never replaces a profile save.
 
 Every run through `eidos play` or `eidos tool run`, started from the window, a terminal or Steam, writes a record to `<instance>/logs/sessions/`: the profile, each enabled mod with its version and Nexus file ids, the plugin order, a checksum of each profile INI, the game executable's version, the Eidos version, the exit code and the saves the run created. The 50 newest are kept, and `logs/` stays out of a packed instance. `eidos sessions <instance> diff` compares the newest game run that exited with code 0 against the current state; `diff <id>` picks another record from the list. Eidos does not detect crashes here yet, and a game that crashed under Proton can still exit with code 0: if the run it picks was one of those, name an earlier one with `diff <id>`.
 
+### Test runs
+
+The Test run button next to Run starts the game the way Run does, but everything the game writes goes to `<instance>/test-run/` instead of your profile, the Overwrite and the prefix: new and changed saves, INI changes, `plugins.txt`, files written into Data or the game folder, and the logs in `Documents/My Games/<game>`. You can test with the profile's mods, without any mod, or with only the mods selected in the list plus the mods whose plugins they need as masters.
+
+When the game exits, Eidos lists those files in five groups (saves, INI changes, plugin state, Overwrite output, logs) and asks you to keep or throw away each one. Keeping saves never deletes a save from the profile, even one the game deleted during the run. Throwing anything away takes a second press. If Eidos or the computer stops during a test run, the files stay in `test-run/` and the list opens the next time you open the instance or press F5.
+
+When the window was not started by the game's store, Test run hands the game to that store (Steam, Heroic or Legendary), as Run does, and the run the store starts is the test run. A test run only covers the folders listed above: other writes of the game, such as the Wine registry, go where they always go. Saves from a test run reach Steam Cloud only after you keep them and play a normal run.
+
+### Finding the mod behind a problem
+
+The Find the mod behind a problem button in Diagnostics looks for the mod that causes a problem you can reproduce, such as a crash at a given place. Each step is a test run with half of the remaining suspects, the masters they need and the mods you keep always on (the mods selected in the list when you start, and the mod that provides the script extender). After each run you answer whether the problem happened; Not sure splits the suspects differently, and Run it again repeats the step. Answering, or pressing Run it again, throws away the files the step wrote, after a second press. To keep some of them, press See the files first: it opens the same list as after a test run. When the game crashed and a crash logger wrote a log, or the game exited with an error code, Eidos marks Yes as the likely answer. 200 suspects take about 8 runs.
+
+The search is saved in `<instance>/bisect.json`, so you can close Eidos between steps. Stop the search drops it after a second press. The result names the mod, or the set of mods that need each other's masters, and is kept in `<instance>/logs/bisect-<time>.txt`. Generated mods (a Nemesis or DynDOLOD output, a Bashed Patch) are built for the full list and can fail with half of it: keep them always on, or leave them off for the whole search.
+
 ### No privileged step required
 
 Eidos runs fully rootless. It mounts in a private user + mount namespace, so no
@@ -696,6 +710,29 @@ the mod was installed with, then the prompt offers Replace with "Keep a backup o
 the existing mod" ticked, whatever you chose at the last prompt. Replace keeps
 the mod's priority and enabled state.
 
+The **Nexus page** tab beside it shows the mod's description and, newest first,
+the changelog of each file version on its page. Eidos reads both from Nexus's
+GraphQL API, which does not count against the hourly request budget, the first
+time you open the tab, and keeps them until Eidos closes or you press
+**Refresh**. They are shown as plain text: BBCode and HTML formatting is
+removed, a link's address is written after its text, and images and videos are
+left out. **Endorse** and **Track** above the text do what the mod's right-click
+menu does. The page of an adult mod stays hidden unless your Nexus account shows
+adult content, and a page with no rating stays hidden in every case.
+
+Before a Replace swaps a mod's folder, Eidos compares the old folder with the
+new one by file name and size and reads the headers of the plugins in both. This
+covers Update, a collection update, and Replace picked at the install prompt.
+The status line then counts the files added, removed and changed in size, and
+names every master the new version needs that the old one did not. The
+**General** tab of "Information..." ends with a **Last update** section listing
+the versions, the plugins added or removed, the masters added or removed, the
+plugins whose ESM, ESL or ESH flag changed, the mods this one now shares files
+with or no longer does, and the files. A file rewritten at the same size is not
+listed. The report is kept in `logs/updates/<mod>.json` in the instance, which
+`eidos pack` leaves out; a fresh install or a Merge into the folder removes it.
+`eidos install --replace` prints the same counts on a `changes:` line.
+
 A folder that holds several Nexus files, such as a main file with an optional
 file merged into it, is refused: replacing it with the new main file would drop
 the others. Update those by hand.
@@ -720,12 +757,16 @@ becomes the report when it finishes. Everything above about what is applied and
 what is only named applies here word for word: the window and `eidos collection`
 are one engine with two front ends.
 
+With no link, **File -> Open a Nexus collection...** opens on the **Browse** tab. It lists the collections published for the open instance's game, 20 at a time, by most downloads, latest update or newest, and the search box narrows the list to collections whose name or text matches. Each row gives the author, the latest revision, the number of mods, the downloads and a date. **View** opens that collection's latest revision on the **Link** tab, the same as pasting its link. Collections marked adult are left out unless your Nexus account shows adult content, collections with no rating are always left out, and the line under the list counts both. Browsing needs a signed-in Nexus account, like the rest of the pane.
+
 A collection can only be read against **its own game**. Open a Skyrim collection
 with a Fallout 4 instance loaded and it refuses by name rather than joining the
 members against the wrong mod list, where every "installed" and every "missing"
 would be noise wearing the shape of an answer.
 
 When you run Check for updates, Eidos also asks Nexus for the latest revision of each collection installed in this instance. A line above the mod list names every collection with a newer revision and counts the mods added (+), updated (~) and dropped (-); hover it for their names. The counts are missing when the installed revision's recipe is no longer cached. **Update** opens the newer revision in the collection pane, where *Install this collection* runs it. The list is rebuilt on every check and is not saved.
+
+Eidos keeps each installed collection's rules after the install. When a later drag puts two of its mods against a before or after rule, the **Diagnostics** tab shows one card for that collection, naming the first such pair and counting the rules that no longer hold. Only mods enabled in the current profile count, and rules caught in a loop are skipped, because no order can keep them. **Restore collection order** moves the collection's mods back into an order that keeps every rule, keeps your own order wherever the rules allow, and leaves the mods that are not in the collection where they are. Ctrl+Z undoes it. `eidos check` lists the same finding as `collection_order_broken`. The check needs the revision's recipe in `collections/`, so a collection whose cached recipe was removed is not checked.
 
 ### Offline mode
 
@@ -750,6 +791,8 @@ game's official category list from Nexus. Both catalog files are MO2's own
 rather than the one buried in the Proton prefix that is overwritten at every
 launch. **View -> Log** reads the session logs. **View -> Extensions** lists
 your own add-ons; see [extensions.md](extensions.md).
+
+When a launch finds the game's main INI (`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini`...) neither in the profile nor in the prefix, Eidos first copies the game folder's default (`Skyrim_Default.ini`, `Fallout4_Default.ini`...) into the profile, as MO2 does. The prefix and the game folder are not changed.
 
 Installing accepts everything: the Simple and FOMOD paths, plus Wrye Bash
 **BAIN** packages (tick the sub-packages, which merge in order) and a **manual**
@@ -776,6 +819,8 @@ the plugin declarations of F4SE and SFSE plugins, and the crash log of the last
 session with the mods it names.
 Check for updates also reads each mod's Nexus requirements. Diagnostics lists a required mod that is missing or disabled, with Ignore for a requirement met another way.
 
+For Skyrim SE, Enderal SE and Fallout 4, Diagnostics also has a Display card. It shows the window size and mode set in the profile's `SkyrimPrefs.ini` (`EnderalPrefs.ini`, `Fallout4Prefs.ini`), or in the prefix's copy when the profile has none yet. When neither sets a size, its fields start from the largest connected screen listed in `/sys/class/drm`, so a Steam Deck reads 1280x800. Apply writes `iSize W`, `iSize H`, `bFull Screen` and `bBorderless` into the profile's copy, after adopting the prefix's copy if the profile does not have one. When SSE Display Tweaks sets the window, Apply writes the same size and mode into its copy in the Overwrite; the mod's own file is not changed.
+
 To launch the game through the GUI, set the game's Steam launch option to the
 binary's absolute path (Steam doesn't see `~/.cargo/bin` on PATH):
 
@@ -790,8 +835,10 @@ through the merged view.
 With **Start the game at once when a store opens Eidos** on (Preferences,
 General, Running a game), Eidos skips that click: it checks Health and starts
 the game without showing its window. The window opens as usual when Health
-lists a problem, when the mod list needs attention, or when a tool set to run
-before playing has an out-of-date output. To get the window for one launch, put
+lists a problem, when the mod list needs attention, when a tool set to run
+before playing has an out-of-date output, or, for Skyrim SE, Enderal SE and
+Fallout 4, when the profile has no window size yet (the window then opens on
+Diagnostics). To get the window for one launch, put
 `EIDOS_WINDOW=1` before the command:
 `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
@@ -813,6 +860,23 @@ Run there. The first window does not follow that run, so press F5 in it after
 playing to reload its lists. When the store's setting is missing, or the script
 extender's loader is not next to the game's executable, Run starts nothing and
 shows what to set and where, with the running binary's real path.
+
+### Variables and wrappers per profile
+
+A profile can carry its own environment variables and wrapper commands in `profiles/<name>/launch-env.ini`, one entry per line:
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+They apply to every `eidos play` of that profile (the game started by Steam's `%command%`, or by Run in a window a store opened) and to every tool run. `eidos shell` gets the variables and no wrapper. The first `wrapper=` line is the outermost. A `wrapper=` line that holds `%command%` gets the command in that place, as in Steam's launch options; a line without it gets the command at the end. Wrappers run inside Eidos's private namespace, so they see the mods.
+
+A variable here replaces the value Eidos sets for the same name, and a tool's own `env=` line in `tools.ini` replaces both. `WINEDLLOVERRIDES` is added after the overrides Eidos sets for ENB, ReShade and the bundled DLLs instead, so a DLL named in both takes the profile's setting and the others keep theirs.
+
+View -> INI editor opens the file as its last tab, for every game. Saving lists the line numbers Eidos ignores: lines that are neither `env=NAME=value` nor `wrapper=command`. `eidos play <instance>` without a command lists the variables a run gets and the wrappers. Copy report in Diagnostics names the variables and the wrapper programs, without their values.
 
 Steam's `%command%` for the Bethesda titles usually points at
 `<Game>Launcher.exe`. Eidos never runs it: the launcher is a separate settings

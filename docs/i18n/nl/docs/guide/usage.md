@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=507d35472d3f92ae0cc2794d3bc9d399565fd8ea -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=aaff8588275e2b036c2a1c344c01509a4c9d0f00 -->
 
 # Eidos gebruiken
 
@@ -185,6 +185,20 @@ naar het profiel en vervangt nooit een save van het profiel.
 ### Wat er veranderd is sinds de laatste goede run
 
 Elke run via `eidos play` of `eidos tool run`, gestart vanuit het venster, een terminal of Steam, schrijft een record naar `<instance>/logs/sessions/`: het profiel, elke ingeschakelde mod met versie en Nexus-bestands-id's, de pluginvolgorde, een checksum van elke profiel-INI, de versie van het spelprogramma, de Eidos-versie, de exitcode en de saves die de run aanmaakte. De 50 nieuwste blijven bewaard, en `logs/` zit niet in een ingepakte instantie. `eidos sessions <instance> diff` vergelijkt de nieuwste spelrun met exitcode 0 met de huidige stand; `diff <id>` kiest een ander record uit de lijst. Eidos herkent hier nog geen crashes, en een spel dat onder Proton crashte kan toch met code 0 eindigen: hoort de gekozen run daarbij, noem dan met `diff <id>` een eerdere.
+
+### Testruns
+
+De knop Test run naast Run start het spel zoals Run dat doet, maar alles wat het spel schrijft gaat naar `<instance>/test-run/` in plaats van naar je profiel, de Overwrite en het prefix: nieuwe en gewijzigde saves, INI-wijzigingen, `plugins.txt`, bestanden die in Data of de spelmap worden geschreven, en de logs in `Documents/My Games/<game>`. Je kunt testen met de mods van het profiel, zonder enige mod, of alleen met de mods die in de lijst geselecteerd zijn plus de mods waarvan ze de plugins als master nodig hebben.
+
+Als het spel stopt, toont Eidos die bestanden in vijf groepen (saves, INI-wijzigingen, pluginstatus, Overwrite-uitvoer, logs) en vraagt per groep of je die houdt of weggooit. Saves houden verwijdert nooit een save uit het profiel, ook niet een die het spel tijdens de run verwijderde. Iets weggooien vraagt een tweede klik. Stopt Eidos of de computer tijdens een testrun, dan blijven de bestanden in `test-run/` en opent de lijst de volgende keer dat je de instantie opent of op F5 drukt.
+
+Is het venster niet door de winkel van het spel gestart, dan geeft Test run het spel door aan die winkel (Steam, Heroic of Legendary), zoals Run doet, en de run die de winkel start is de testrun. Een testrun dekt alleen de mappen hierboven: andere schrijfacties van het spel, zoals in het Wine-register, gaan waar ze altijd heen gaan. Saves uit een testrun komen pas in Steam Cloud nadat je ze houdt en een normale run speelt.
+
+### De mod achter een probleem vinden
+
+De knop Find the mod behind a problem in Diagnostics zoekt de mod die een probleem veroorzaakt dat je kunt reproduceren, zoals een crash op een bepaalde plek. Elke stap is een testrun met de helft van de overgebleven verdachten, de masters die ze nodig hebben en de mods die je altijd aan houdt (de mods die bij de start in de lijst geselecteerd zijn, en de mod die de script extender levert). Na elke run antwoord je of het probleem optrad; Not sure verdeelt de verdachten anders en Run it again herhaalt de stap. Een antwoord, of Run it again, gooit de bestanden die de stap schreef weg na een tweede klik. Wil je er een paar houden, druk dan eerst op See the files: dat opent dezelfde lijst als na een testrun. Crashte het spel en schreef een crash logger een log, of eindigde het spel met een foutcode, dan markeert Eidos Yes als waarschijnlijk antwoord. 200 verdachten kosten ongeveer 8 runs.
+
+De zoektocht wordt bewaard in `<instance>/bisect.json`, dus je kunt Eidos tussen de stappen sluiten. Stop the search laat hem vallen na een tweede klik. Het resultaat noemt de mod, of de groep mods die elkaars masters nodig hebben, en wordt bewaard in `<instance>/logs/bisect-<time>.txt`. Gegenereerde mods (uitvoer van Nemesis of DynDOLOD, een Bashed Patch) zijn gebouwd voor de volledige lijst en kunnen met de helft ervan mislukken: houd ze altijd aan, of laat ze de hele zoektocht uit.
 
 ### Geen bevoorrechte stap nodig
 
@@ -717,6 +731,32 @@ waarmee de mod geïnstalleerd werd, daarna biedt de vraag Replace aan met "Keep 
 backup of the existing mod" aangevinkt, wat je bij de vorige vraag ook koos.
 Replace behoudt de prioriteit van de mod en of hij aanstaat.
 
+Het tabblad **Nexus page** ernaast toont de beschrijving van de mod en, nieuwste
+eerst, de changelog van elke bestandsversie op de pagina. Eidos leest beide uit
+de GraphQL-API van Nexus, die niet meetelt voor het verzoekenbudget per uur, de
+eerste keer dat je het tabblad opent, en bewaart ze tot Eidos sluit of je op
+**Refresh** drukt. Ze worden getoond als platte tekst: BBCode- en HTML-opmaak
+wordt verwijderd, het adres van een link staat achter de tekst ervan, en
+afbeeldingen en video's worden weggelaten. **Endorse** en **Track** boven de
+tekst doen wat het rechtermuismenu van de mod doet. De pagina van een mod voor
+volwassenen blijft verborgen tenzij je Nexus-account inhoud voor volwassenen
+toont, en een pagina zonder classificatie blijft altijd verborgen.
+
+Voordat een Replace de map van een mod verwisselt, vergelijkt Eidos de oude map
+met de nieuwe op bestandsnaam en grootte en leest het de headers van de plugins
+in beide. Dit geldt voor Update, voor een collectie-update en voor Replace
+gekozen in de installatievraag. De statusregel telt daarna de toegevoegde,
+verwijderde en in grootte gewijzigde bestanden en noemt elke master die de
+nieuwe versie nodig heeft en de oude niet. Het tabblad **General** van
+"Information..." eindigt met een sectie **Last update** met de versies, de
+toegevoegde of verwijderde plugins, de toegevoegde of vervallen masters, de
+plugins waarvan de ESM-, ESL- of ESH-vlag veranderde, de mods waarmee deze nu
+bestanden deelt of niet meer deelt, en de bestanden. Een bestand dat met
+dezelfde grootte is herschreven, staat er niet in. Het rapport staat in
+`logs/updates/<mod>.json` in de instantie, die `eidos pack` weglaat; een verse
+installatie of een Merge in de map verwijdert het. `eidos install --replace`
+toont dezelfde aantallen op een regel `changes:`.
+
 Een map met meerdere Nexus-bestanden, zoals een hoofdbestand met een optioneel
 bestand erin samengevoegd, wordt geweigerd: hem vervangen door het nieuwe
 hoofdbestand zou de andere kwijtraken. Werk die met de hand bij.
@@ -743,12 +783,16 @@ en de balk wordt het verslag zodra de run klaar is. Alles hierboven over wat er
 toegepast wordt en wat er alleen benoemd wordt, geldt hier woord voor woord: het
 venster en `eidos collection` zijn één motor met twee front-ends.
 
+Zonder link opent **File -> Open a Nexus collection...** op het tabblad **Browse**. Dat toont de collecties die voor het spel van de geopende instantie zijn gepubliceerd, 20 tegelijk, op meeste downloads, laatste update of nieuwste, en het zoekveld beperkt de lijst tot collecties waarvan de naam of tekst overeenkomt. Elke rij geeft de auteur, de nieuwste revisie, het aantal mods, de downloads en een datum. **View** opent de nieuwste revisie van die collectie op het tabblad **Link**, net als het plakken van haar link. Collecties die als inhoud voor volwassenen zijn gemarkeerd, worden weggelaten tenzij uw Nexus-account inhoud voor volwassenen toont, collecties zonder classificatie worden altijd weggelaten, en de regel onder de lijst telt beide. Bladeren vereist een aangemeld Nexus-account, net als de rest van het paneel.
+
 Een collectie kan alleen tegen **haar eigen spel** gelezen worden. Open een
 Skyrim-collectie met een Fallout 4-instantie geladen en het weigert met naam en
 toenaam in plaats van de leden aan de verkeerde modlijst te koppelen, waar elke
 "installed" en elke "missing" ruis zou zijn in de vorm van een antwoord.
 
 Als u op updates controleert, vraagt Eidos Nexus ook om de nieuwste revisie van elke collectie die in deze instantie is geïnstalleerd. Een regel boven de modlijst noemt elke collectie met een nieuwere revisie en telt de toegevoegde (+), bijgewerkte (~) en vervallen (-) mods; houd de muis erboven voor de namen. De aantallen ontbreken als het recept van de geïnstalleerde revisie niet meer in de cache staat. **Bijwerken** opent de nieuwere revisie in het collectiepaneel, waar *Install this collection* hem uitvoert. De lijst wordt bij elke controle opnieuw opgebouwd en niet bewaard.
+
+Eidos bewaart de regels van elke geïnstalleerde collectie na de installatie. Als een latere sleepactie twee van haar mods tegen een volgorderegel (voor of na) in plaatst, toont het tabblad **Diagnostics** één kaart voor die collectie, die het eerste zulke paar noemt en de regels telt die niet meer kloppen. Alleen mods die in het huidige profiel zijn ingeschakeld tellen mee, en regels die in een lus zitten worden overgeslagen, omdat geen volgorde ze kan naleven. **Restore collection order** zet de mods van de collectie terug in een volgorde die elke regel naleeft, houdt uw eigen volgorde aan waar de regels dat toelaten en laat de mods die niet bij de collectie horen op hun plaats. Ctrl+Z maakt het ongedaan. `eidos check` meldt dezelfde bevinding als `collection_order_broken`. De controle heeft het recept van de revisie in `collections/` nodig, dus een collectie waarvan het recept uit de cache is verwijderd, wordt niet gecontroleerd.
 
 ### Offlinemodus
 
@@ -776,6 +820,8 @@ blijft bestaan, niet die begraven in het Proton-prefix die bij elke start
 overschreven wordt. **View -> Log** leest de sessielogs. **View -> Extensions**
 toont je eigen add-ons; zie [extensions.md](extensions.md).
 
+Vindt een start de hoofd-INI van het spel (`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini`...) niet in het profiel en niet in het prefix, dan kopieert Eidos eerst de standaardversie uit de spelmap (`Skyrim_Default.ini`, `Fallout4_Default.ini`...) naar het profiel, zoals MO2 doet. Het prefix en de spelmap blijven ongewijzigd.
+
 Installeren aanvaardt alles: de Simple- en FOMOD-paden, plus Wrye
 Bash-**BAIN**-pakketten (vink de subpakketten aan, die op volgorde samenvloeien)
 en een **handmatige** kiezer die de archiefboom toont en je op de dataroot laat
@@ -799,6 +845,8 @@ gevolgtrekking in bewijs verandert.
 Het meldt ook een game-update sinds de laatste schone start, een ontbrekende script extender of een die niet bij de spelversie past (met de downloadpagina van de extender en een knop die het gedownloade archief installeert), een Steam-startoptie die Eidos niet met `%command%` start, NVAPI dat voor DLSS uit blijft, exclusief volledig scherm dat framegeneratie tegenhoudt, een ENB-`enblocal.ini` zonder `LinuxVersion=true`, de plugindeclaraties van F4SE- en SFSE-plugins, en het crashlog van de laatste sessie met de mods die het noemt.
 Op updates controleren leest ook de Nexus-vereisten van elke mod. Diagnostics toont een vereiste mod die ontbreekt of is uitgeschakeld, met Ignore voor een vereiste die op een andere manier is vervuld.
 
+Voor Skyrim SE, Enderal SE en Fallout 4 heeft Diagnostics ook een kaart Weergave. Die toont de venstergrootte en de venstermodus uit de `SkyrimPrefs.ini` van het profiel (`EnderalPrefs.ini`, `Fallout4Prefs.ini`), of uit de kopie in het prefix zolang het profiel er nog geen heeft. Stelt geen van beide een grootte in, dan beginnen de velden bij het grootste aangesloten scherm in `/sys/class/drm`, zodat een Steam Deck 1280x800 toont. Apply schrijft `iSize W`, `iSize H`, `bFull Screen` en `bBorderless` in de kopie van het profiel, nadat het de kopie uit het prefix heeft overgenomen als het profiel er geen heeft. Stelt SSE Display Tweaks het venster in, dan schrijft Apply dezelfde grootte en modus in de kopie daarvan in de Overwrite; het bestand van de mod zelf verandert niet.
+
 Om het spel via de GUI te starten, zet je de Steam-opstartoptie van het spel op
 het absolute pad van het binaire bestand (Steam ziet `~/.cargo/bin` niet in
 PATH):
@@ -811,7 +859,7 @@ Eidos opent op de instantie van dat spel - de laatst gebruikte, dus een draagbar
 instantie wordt net zo goed teruggevonden als de globale; klik op Run om het door
 de samengevoegde weergave te starten.
 
-Met **Start the game at once when a store opens Eidos** aan (Preferences, General, Running a game) slaat Eidos die klik over: het controleert Health en start het spel zonder zijn venster te tonen. Het venster opent zoals gewoonlijk wanneer Health een probleem meldt, wanneer de modlijst aandacht nodig heeft of wanneer een tool die vóór het spelen moet draaien een verouderde uitvoer heeft. Wil je het venster voor één start, zet dan `EIDOS_WINDOW=1` voor het commando: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
+Met **Start the game at once when a store opens Eidos** aan (Preferences, General, Running a game) slaat Eidos die klik over: het controleert Health en start het spel zonder zijn venster te tonen. Het venster opent zoals gewoonlijk wanneer Health een probleem meldt, wanneer de modlijst aandacht nodig heeft, wanneer een tool die vóór het spelen moet draaien een verouderde uitvoer heeft of, bij Skyrim SE, Enderal SE en Fallout 4, wanneer het profiel nog geen venstergrootte heeft (het venster opent dan op Diagnostics). Wil je het venster voor één start, zet dan `EIDOS_WINDOW=1` voor het commando: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Buiten Steam start Run het spel niet zelf via Proton of Wine. Het vraagt de
 winkel die de kopie bezit om het te starten, en de winkel start Eidos:
@@ -832,6 +880,23 @@ daarin na het spelen op F5 om zijn lijsten opnieuw te laden. Ontbreekt de
 instelling in de winkel, of staat de loader van de script extender niet naast
 het uitvoerbare bestand van het spel, dan start Run niets en toont het wat je
 waar moet instellen, met het echte pad van het draaiende binaire bestand.
+
+### Variabelen en wrappers per profiel
+
+Een profiel kan eigen omgevingsvariabelen en wrapper-commando's bevatten in `profiles/<naam>/launch-env.ini`, één regel per item:
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+Ze gelden voor elke `eidos play` van dat profiel (het spel dat door Steams `%command%` wordt gestart, of door Run in een venster dat een store opende) en voor elke tool-start. `eidos shell` krijgt de variabelen en geen wrapper. De eerste `wrapper=`-regel is de buitenste. Een `wrapper=`-regel met `%command%` krijgt het commando op die plek, zoals in Steams startopties; een regel zonder krijgt het commando aan het eind. Wrappers draaien in de private namespace van Eidos, dus ze zien de mods.
+
+Een variabele hier vervangt de waarde die Eidos voor dezelfde naam instelt, en de eigen `env=`-regel van een tool in `tools.ini` vervangt beide. `WINEDLLOVERRIDES` wordt juist toegevoegd na de overrides die Eidos instelt voor ENB, ReShade en de meegeleverde DLL's: een DLL die in beide staat krijgt de instelling van het profiel, de overige houden hun eigen.
+
+View -> INI editor opent het bestand als laatste tabblad, voor elk spel. Bij het opslaan noemt Eidos de regelnummers die het negeert: regels die noch `env=NAAM=waarde` noch `wrapper=commando` zijn. `eidos play <instantie>` zonder commando toont de variabelen die een run krijgt en de wrappers. Copy report in Diagnostics noemt de variabelen en de wrapper-programma's, zonder hun waarden.
 
 De `%command%` van Steam wijst bij de Bethesda-titels meestal naar
 `<Game>Launcher.exe`. Eidos draait die nooit: de launcher is een aparte

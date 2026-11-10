@@ -24,6 +24,24 @@ pub(crate) fn text<'a>(
     iced::widget::text(content).font(colony_ui::ui_font())
 }
 
+/// The height [`text`] of `content` at `size` takes when it wraps at `width`.
+pub(crate) fn text_height(content: &str, size: f32, width: f32) -> f32 {
+    use iced::advanced::text::{self, Paragraph as _};
+    <iced::Renderer as text::Renderer>::Paragraph::with_text(text::Text {
+        content,
+        bounds: iced::Size::new(width, f32::INFINITY),
+        size: size.into(),
+        line_height: text::LineHeight::default(),
+        font: colony_ui::ui_font(),
+        align_x: text::Alignment::Default,
+        align_y: iced::alignment::Vertical::Top,
+        shaping: text::Shaping::default(),
+        wrapping: text::Wrapping::default(),
+    })
+    .min_bounds()
+    .height
+}
+
 /// A fixed width or height that holds text, grown and shrunk with the text
 /// size (Appearance and Accessibility multiply, 0.7225x to 1.68x) so a column
 /// or a row keeps fitting what it holds.

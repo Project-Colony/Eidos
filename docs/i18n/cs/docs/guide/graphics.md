@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
 
 # Community Shaders, DLSS a generování snímků
 
@@ -9,7 +9,7 @@ módy a sjednocení podává jejich DLL jako cokoli jiného - ale tři věci **n
 odhalit zevnitř hry a každá z nich způsobí, že funkce tiše nedělá nic. Tato stránka
 je jejich seznam, získaný natvrdo na skutečné sestavě.
 
-Karta Stav kontroluje tři z těchto věcí za vás: proměnnou NVAPI, když je načtený ovladač NVIDIA i balíček Upscaling a Proton sestavení hry nechává NVAPI ve výchozím stavu vypnuté (GE-Proton11-9 a Proton 11.0 ho zapínají), exkluzivní celou obrazovku v `SkyrimPrefs.ini` profilu a řádek ENB popsaný níže. U posledních dvou je tlačítko Opravit.
+Karta Stav kontroluje tři z těchto věcí za vás: proměnnou NVAPI, když je načtený ovladač NVIDIA i balíček Upscaling a Proton sestavení hry nechává NVAPI ve výchozím stavu vypnuté (GE-Proton11-9 a Proton 11.0 ho zapínají), exkluzivní celou obrazovku v `SkyrimPrefs.ini` profilu a řádek ENB popsaný níže. U posledních dvou je tlačítko Opravit a karta Zobrazení v Diagnostics nastaví okno bez okraje i s velikostí.
 
 ## Parametr spuštění, který DLSS potřebuje
 
@@ -23,6 +23,8 @@ spadne zpět na škálování FSR - potichu, aniž by cokoli na obrazovce řeklo
 Nastavit proměnnou nic nestojí na strojích bez NVIDIE, takže bezpečným parametrem
 spuštění je prostě řádek výše. Samotné generování snímků je FSR 3.1 a NVAPI
 nepotřebuje; potřebuje ho jen upscaler DLSS.
+
+Chcete-li ji nastavit jen pro jeden profil, vložte `env=PROTON_ENABLE_NVAPI=1` do `launch-env.ini` tohoto profilu (View -> INI editor, poslední karta). Karta Health tento řádek také započítá.
 
 ## Generování snímků vyžaduje okno bez okrajů
 

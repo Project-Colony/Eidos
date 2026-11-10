@@ -561,6 +561,40 @@ fn the_default_diff_target_is_the_newest_game_run_that_exited_zero() {
 }
 
 #[test]
+fn a_test_run_record_names_the_real_profile_and_is_never_the_diff_target() {
+    let (_t, game, inst) = session_fixture("session-test-run");
+    inst.request_test_run(&eidos_instance::TestRun {
+        profile: "Default".into(),
+        game: "skyrimse".into(),
+        ..Default::default()
+    })
+    .unwrap();
+    inst.begin_test_run(&inst.active(), "skyrimse", &[], None, false, 200)
+        .unwrap()
+        .unwrap();
+    let r = sessions::capture(&game, &inst, &inst.test_run_profile(), None);
+    assert!(r.test);
+    assert_eq!(r.profile, "Default");
+    assert!(r.mods.iter().any(|m| m.name == "A"));
+    assert!(!sessions::capture(&game, &inst, &inst.active(), None).test);
+    let rec = |started, test| {
+        (
+            PathBuf::from(format!("{started}")),
+            eidos_instance::SessionRecord {
+                started,
+                exit: Some(0),
+                test,
+                ..Default::default()
+            },
+        )
+    };
+    let records = [rec(3, true), rec(2, false)];
+    assert_eq!(sessions::default_target(&records).unwrap().1.started, 2);
+    assert!(sessions::list_line(&records[0].0, &records[0].1).contains("  test  exit 0"));
+    assert!(sessions::list_line(&records[1].0, &records[1].1).contains("  game  exit 0"));
+}
+
+#[test]
 fn a_stopped_run_is_never_recorded_as_exit_zero() {
     assert_eq!(sessions::recorded_exit(0, true), 143);
     assert_eq!(sessions::recorded_exit(143, true), 143);

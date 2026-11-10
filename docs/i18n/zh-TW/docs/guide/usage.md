@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=507d35472d3f92ae0cc2794d3bc9d399565fd8ea -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=aaff8588275e2b036c2a1c344c01509a4c9d0f00 -->
 
 # 使用 Eidos
 
@@ -143,6 +143,20 @@ Steam Cloud 下載、一次沒有透過 Eidos 的啟動 - 在設定檔的存檔�
 ### 自上次正常執行以來的變化
 
 無論從視窗、終端機還是 Steam 啟動，每次透過 `eidos play` 或 `eidos tool run` 的執行都會在 `<instance>/logs/sessions/` 寫入一筆記錄：設定檔、每個啟用的 mod 及其版本和 Nexus 檔案 ID、外掛順序、每個設定檔 INI 的檢查碼、遊戲執行檔的版本、Eidos 版本、結束碼，以及這次執行建立的存檔。保留最新的 50 筆，`logs/` 不會進入打包的執行個體。`eidos sessions <instance> diff` 會把最近一次以結束碼 0 結束的遊戲執行與目前狀態比較；`diff <id>` 從清單中選另一筆記錄。Eidos 目前不偵測當機，在 Proton 下當機的遊戲仍可能以結束碼 0 結束：若選中的執行屬於這種情況，請用 `diff <id>` 指定更早的一筆。
+
+### 測試執行
+
+Run 旁邊的 Test run 按鈕會像 Run 一樣啟動遊戲，但遊戲寫下的一切都會進入 `<instance>/test-run/`，而不是你的設定檔、Overwrite 和前綴：新的和改過的存檔、INI 變更、`plugins.txt`、寫進 Data 或遊戲資料夾的檔案，以及 `Documents/My Games/<game>` 裡的日誌。你可以用設定檔的模組測試，也可以不帶任何模組，或者只用清單裡選取的模組，加上提供它們外掛所需 master 的模組。
+
+遊戲結束後，Eidos 會把這些檔案分成五組列出（存檔、INI 變更、外掛狀態、Overwrite 輸出、日誌），並逐組問你要保留還是丟棄。保留存檔絕不會從設定檔刪掉任何存檔，即使是遊戲在執行中刪掉的那個。丟棄任何東西都要再按一次。如果 Eidos 或電腦在測試執行期間停下，檔案會留在 `test-run/` 裡，下次你開啟這個實例或按 F5 時清單就會開啟。
+
+如果視窗不是由遊戲的商店啟動的，Test run 會像 Run 一樣把遊戲交給那個商店（Steam、Heroic 或 Legendary），商店啟動的那次執行就是測試執行。測試執行只涵蓋上面列出的資料夾：遊戲的其他寫入，例如 Wine 登錄檔，照常寫到原處。測試執行的存檔要等你保留它們、再玩一次一般執行之後，才會進入 Steam Cloud。
+
+### 找出造成問題的模組
+
+Diagnostics 裡的 Find the mod behind a problem 按鈕會尋找造成某個可重現問題的模組，例如在某個地點當機。每一步都是一次測試執行，帶上剩下嫌疑模組的一半、它們需要的 master，以及你一直開著的模組（開始時在清單中選取的模組，和提供 script extender 的模組）。每次執行後，你回答問題是否出現；Not sure 會換一種方式分割嫌疑模組，Run it again 會重做這一步。回答或按 Run it again 會在再按一次後丟棄這一步寫下的檔案。想保留其中一部分，先按 See the files：它會開啟與測試執行之後相同的清單。如果遊戲當機且某個 crash logger 寫了日誌，或者遊戲以錯誤碼結束，Eidos 會把 Yes 標為可能的回答。200 個嫌疑模組大約需要 8 次執行。
+
+搜尋保存在 `<instance>/bisect.json` 裡，所以你可以在兩步之間關閉 Eidos。Stop the search 在再按一次後放棄這次搜尋。結果會指出那個模組，或一組彼此需要對方 master 的模組，並保存在 `<instance>/logs/bisect-<time>.txt`。產生的模組（Nemesis 或 DynDOLOD 的輸出、Bashed Patch）是為完整清單建置的，只用一半時可能出錯：讓它們一直開著，或在整個搜尋期間都關著。
 
 ### 不需要任何特權步驟
 
@@ -542,6 +556,10 @@ Eidos 自己下載檔案。免費帳號則開啟檔案頁面,在那裡 Mod Manag
 開啟,接著的詢問提供 Replace,並勾選「Keep a backup of the existing mod」,不論你上次
 詢問時選了什麼。Replace 會保留模組的優先順序與啟用狀態。
 
+它旁邊的 **Nexus page** 分頁顯示模組的描述，以及頁面上每個檔案版本的更新日誌，最新的在前。第一次開啟該分頁時，Eidos 會從 Nexus 的 GraphQL API 讀取這兩項內容，這個 API 不計入每小時的請求額度；讀取的內容會保留到 Eidos 關閉或你按下 **Refresh** 為止。內容以純文字顯示：BBCode 與 HTML 格式會被移除，連結的位址寫在連結文字之後，圖片與影片不顯示。文字上方的 **Endorse** 與 **Track** 與模組右鍵選單的作用相同。成人模組的頁面會保持隱藏，除非你的 Nexus 帳號設定為顯示成人內容；沒有分級的頁面在任何情況下都會保持隱藏。
+
+Replace 取代模組資料夾之前，Eidos 會依檔名與大小比較舊資料夾和新資料夾，並讀取兩邊外掛的標頭。Update、合集更新，以及在安裝詢問中選擇的 Replace 都適用。接著狀態列會統計新增、刪除與大小改變的檔案數，並列出新版本需要而舊版本不需要的每個 master。「Information...」的 **General** 分頁末尾有一個 **Last update** 區塊，列出版本、新增或移除的外掛、新增或不再需要的 master、ESM、ESL 或 ESH 旗標改變的外掛、此模組現在共用或不再共用檔案的模組，以及檔案。以相同大小重寫的檔案不會列出。報告存放在實例的 `logs/updates/<mod>.json`，`eidos pack` 不會打包它；全新安裝或對該資料夾 Merge 會將其刪除。`eidos install --replace` 會在 `changes:` 行輸出相同的數字。
+
 含有多個 Nexus 檔案的資料夾(例如混入了選用檔案的主檔案)會被拒絕:用新的主檔案取代它
 會丟掉其他檔案。這些請手動更新。
 
@@ -560,11 +578,15 @@ Eidos 自己下載檔案。免費帳號則開啟檔案頁面,在那裡 Mod Manag
 變成報告。上面關於什麼會被套用、什麼只會被指名的一切,在這裡一字不差地同樣成立:
 這個視窗和 `eidos collection` 是同一具引擎的兩個前端。
 
+沒有連結時，**File -> Open a Nexus collection...** 會開在 **Browse** 分頁上。它列出為目前開啟實例的遊戲所發布的合集，每次 20 個，依下載最多、最近更新或最新排序，搜尋框會把清單縮小到名稱或內文相符的合集。每一列列出作者、最新修訂版、模組數、下載次數和一個日期。**View** 會在 **Link** 分頁上開啟該合集的最新修訂版，和貼上它的連結一樣。標記為成人內容的合集會被略過，除非您的 Nexus 帳戶顯示成人內容；沒有分級的合集一律略過，清單下方那一行會把兩者都計入。瀏覽需要已登入的 Nexus 帳戶，和這個面板的其他部分一樣。
+
 一份合集只能對照**它自己的遊戲**來讀取。載入 Fallout 4 實例時開啟一份 Skyrim 合集,
 它會指名拒絕,而不是把成員和錯誤的模組清單對照 - 在那份清單上,每一個「已安裝」和
 每一個「缺少」都只是披著答案外形的雜訊。
 
 檢查更新時，Eidos 還會向 Nexus 詢問此執行個體中每個已安裝合集的最新修訂版。模組清單上方的一行會列出有較新修訂版的合集，並統計新增 (+)、更新 (~) 和移除 (-) 的模組數量，把滑鼠移上去可看到名稱。如果已安裝修訂版的配方不再快取，則沒有數量。點選**更新**會在合集面板中開啟較新的修訂版，由 *Install this collection* 執行安裝。該清單在每次檢查時重建，不會儲存。
+
+安裝完成後，Eidos 仍會保留每個已安裝合集的規則。如果之後的拖曳讓其中兩個模組違反了一條前後順序規則，**Diagnostics** 分頁會為該合集顯示一張卡片，列出第一對這樣的模組，並統計不再成立的規則數量。只計算目前設定檔中啟用的模組；陷入循環的規則會被略過，因為沒有任何順序能滿足它們。**Restore collection order** 會把該合集的模組移回滿足每條規則的順序，在規則允許的地方保留你自己的順序，不屬於該合集的模組則留在原位。Ctrl+Z 可復原此操作。`eidos check` 會以 `collection_order_broken` 列出同一項發現。此檢查需要 `collections/` 中該修訂版的配方，因此快取配方已被刪除的合集不會被檢查。
 
 ### 離線模式
 
@@ -586,6 +608,8 @@ MO2 自己的(`categories.dat` 與 `nexuscatmap.dat`),所以共用的實例只�
 **View -> Extensions** 列出你自己的附加元件;見
 [extensions.md](extensions.md)。
 
+啟動時如果在設定檔和前綴裡都找不到遊戲的主 INI(`Skyrim.ini`、`Fallout4.ini`、`Oblivion.ini` 等),Eidos 會像 MO2 一樣,先把遊戲資料夾裡的預設檔(`Skyrim_Default.ini`、`Fallout4_Default.ini` 等)複製到設定檔。前綴和遊戲資料夾不會被改動。
+
 安裝什麼都接受:Simple 與 FOMOD 兩條路徑,加上 Wrye Bash 的 **BAIN** 套件(勾選子
 套件,它們會依序合併),以及一個**手動**選擇器,會顯示壓縮檔的樹狀結構,讓你在沒有
 任何啟發法認得出版面時自己指出資料根目錄。沒有任何壓縮檔會被拒絕。
@@ -602,6 +626,8 @@ MO2 自己的(`categories.dat` 與 `nexuscatmap.dat`),所以共用的實例只�
 它也會回報:自上次乾淨啟動以來的遊戲更新,缺少或與遊戲版本不符的 script extender(附 extender 的下載頁面,以及安裝你下載的封裝檔的按鈕),沒有用 `%command%` 啟動 Eidos 的 Steam 啟動選項,DLSS 需要卻仍關閉的 NVAPI,阻擋畫格生成的獨佔全螢幕,沒有 `LinuxVersion=true` 的 ENB `enblocal.ini`,F4SE 與 SFSE 外掛的宣告,以及上次工作階段的當機日誌和其中點名的模組。
 檢查更新時也會讀取每個 mod 在 Nexus 上的前置需求。Diagnostics 會列出缺少或已停用的前置 mod,已用其他方式滿足的需求可用 Ignore 忽略。
 
+對於 Skyrim SE、Enderal SE 和 Fallout 4,Diagnostics 還有一張「顯示」卡片。它顯示設定檔的 `SkyrimPrefs.ini`(`EnderalPrefs.ini`、`Fallout4Prefs.ini`)中設定的視窗大小和模式;設定檔還沒有這個檔案時,則顯示前綴裡那份副本的設定。兩者都沒有設定大小時,輸入欄會取 `/sys/class/drm` 中列出的已連接的最大螢幕,所以 Steam Deck 上顯示 1280x800。Apply 會把 `iSize W`、`iSize H`、`bFull Screen` 和 `bBorderless` 寫進設定檔的副本;設定檔沒有副本時,先接管前綴裡的那份。SSE Display Tweaks 設定視窗時,Apply 還會把同樣的大小和模式寫進它在 Overwrite 中的副本;模組本身的檔案不會被改動。
+
 要透過 GUI 啟動遊戲,把該遊戲的 Steam 啟動選項設成執行檔的絕對路徑(Steam 看不到
 PATH 上的 `~/.cargo/bin`):
 
@@ -612,7 +638,7 @@ PATH 上的 `~/.cargo/bin`):
 Eidos 會在該遊戲的實例上開啟 - 你上次用的那一個,所以可攜實例和全域實例一樣會被再
 找到;點 Run 就會穿過合併檢視啟動它。
 
-開啟 **Start the game at once when a store opens Eidos**(Preferences、General、Running a game)後,Eidos 會省掉這次點擊:它先檢查 Health,再不顯示視窗直接啟動遊戲。Health 列出問題、模組清單需要處理,或設為在遊戲前執行的工具輸出已過期時,視窗照常開啟。想在某一次啟動時看到視窗,就在命令前加上 `EIDOS_WINDOW=1`:`EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`。
+開啟 **Start the game at once when a store opens Eidos**(Preferences、General、Running a game)後,Eidos 會省掉這次點擊:它先檢查 Health,再不顯示視窗直接啟動遊戲。Health 列出問題、模組清單需要處理、設為在遊戲前執行的工具輸出已過期,或 Skyrim SE、Enderal SE、Fallout 4 的設定檔還沒有視窗大小時,視窗照常開啟(最後這種情況下視窗會停在 Diagnostics 分頁)。想在某一次啟動時看到視窗,就在命令前加上 `EIDOS_WINDOW=1`:`EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`。
 
 在 Steam 之外,Run 不會自己用 Proton 或 Wine 啟動遊戲。它請擁有這份副本的商店來啟動,再由商店啟動 Eidos:
 
@@ -621,6 +647,23 @@ Eidos 會在該遊戲的實例上開啟 - 你上次用的那一個,所以可攜�
 - 單獨的 Legendary:當 `~/.config/legendary/config.ini` 在遊戲的 `[<app>]` 區段或 `[default]` 下有 `wrapper =` 加上 `eidos-gui` 的絕對路徑時,執行 `legendary launch <app>`。
 
 接著 Eidos 會在你上次用的實例上開啟第二個視窗,你在那裡點 Run。第一個視窗不會追蹤這次執行,所以玩完後在它裡面按 F5 重新載入清單。商店的設定缺少,或 script extender 的 loader 不在遊戲執行檔旁邊時,Run 什麼也不啟動,並顯示要在哪裡設定什麼,帶著執行中執行檔的真實路徑。
+
+### 每個設定檔的變數與包裝器
+
+設定檔可以在 `profiles/<名稱>/launch-env.ini` 裡帶上自己的環境變數與包裝器指令,每行一項:
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+它們對該設定檔的每次 `eidos play`(由 Steam 的 `%command%` 啟動的遊戲,或由商店開啟的視窗裡的 Run 啟動的遊戲)與每次工具執行生效。`eidos shell` 只會得到變數,沒有包裝器。第一條 `wrapper=` 行在最外層。含有 `%command%` 的 `wrapper=` 行會把指令放在那個位置,和 Steam 的啟動選項一樣;不含的行把指令加在最後。包裝器在 Eidos 的私有命名空間裡執行,所以看得到模組。
+
+這裡的變數會取代 Eidos 為同名變數設定的值,而工具在 `tools.ini` 裡自己的 `env=` 行會同時取代這兩者。`WINEDLLOVERRIDES` 例外:它會附加在 Eidos 為 ENB、ReShade 與內建 DLL 設定的覆寫之後,所以兩邊都提到的 DLL 採用設定檔的設定,其餘維持原樣。
+
+View -> INI editor 會把這個檔案當作最後一個分頁開啟,每款遊戲都一樣。儲存時會列出 Eidos 忽略的行號:既不是 `env=名稱=值` 也不是 `wrapper=指令` 的行。不帶指令的 `eidos play <實例>` 會列出一次執行得到的變數與包裝器。Diagnostics 裡的 Copy report 會寫出變數名稱與包裝器程式名稱,不含它們的值。
 
 Bethesda 那幾款作品的 Steam `%command%` 通常指向 `<Game>Launcher.exe`。Eidos 從不
 執行它:那個啟動器是一支獨立的設定程式,它會重新掃描 `Data` 並改寫 `plugins.txt`,

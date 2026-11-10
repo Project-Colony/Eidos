@@ -1,18 +1,23 @@
-//! Tier-2 prerequisite installation: winetricks verbs (vcrun2022, dotnet8, ...)
-//! that write registry / GAC / CLR-host and so cannot be file-copied like the
-//! Tier-1 DLLs in [`native_dll`].
+//! Tier-2 prerequisite installation: installers (vcrun2022, dotnet8, ...) that
+//! write registry / GAC / CLR-host and so cannot be file-copied like the Tier-1
+//! DLLs in [`native_dll`].
 //!
-//! We run the system `winetricks` pointed straight at Proton's own `wine` plus the
-//! game prefix (the approach NaK/Jackify use), which bypasses Steam's
-//! pressure-vessel container - and therefore the protontricks + Proton-GE
-//! `bwrap`/`ntdll.so` mismatch. These verbs DOWNLOAD their payloads from Microsoft,
-//! so this is only ever run on an explicit, user-consented action (`eidos prereqs
+//! Two paths. `vcrun2022`, `dotnet8` and `dotnetdesktop8` run Microsoft's own
+//! installers ([`install_redist_verb`]): the copy the release bundle ships, else
+//! a pinned download from Microsoft, each refused unless its SHA-256 matches.
+//! The other verbs run the system `winetricks` pointed straight at Proton's own
+//! `wine` plus the game prefix (the approach NaK/Jackify use), which bypasses
+//! Steam's pressure-vessel container - and therefore the protontricks +
+//! Proton-GE `bwrap`/`ntdll.so` mismatch. Both may DOWNLOAD from Microsoft, so
+//! this is only ever run on an explicit, user-consented action (`eidos prereqs
 //! --install`), never silently at launch.
 
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use crate::runtime::{self, RuntimeError};
 
 /// The Tier-2 installer verbs Eidos knows how to request (vs the Tier-1 bundled
 /// DLLs in [`crate::is_tier1_dll`]). A verb in neither set is unknown.
@@ -140,7 +145,7 @@ pub fn record_prereqs(
     result
 }
 
-/// Whether `verb` is a Tier-2 installer verb (runs winetricks, downloads).
+/// Whether `verb` is a Tier-2 installer verb (runs an installer in the prefix).
 pub fn is_tier2_verb(verb: &str) -> bool {
     TIER2_VERBS.contains(&verb)
 }
@@ -226,22 +231,8 @@ pub fn install_tier2_verb(
         .arg(verb)
         .env("WINEPREFIX", prefix)
         .env("WINE", &wine)
-        .env("WINESERVER", &wineserver)
-        // Suppress only the Gecko/MSHTML download prompt for an unattended run; let
-        // winetricks manage mono/mscoree itself (forcing mscoree=d breaks dotnet48).
-        .env("WINEDLLOVERRIDES", "mshtml=d")
-        .env("WINEDEBUG", "-all")
-        // Xalia draws an accessibility overlay over Proton windows. It has nothing
-        // to do here and gets in the way of an unattended install.
-        .env("PROTON_USE_XALIA", "0");
-    // Large Microsoft installers (the .NET runtimes above all) unpack into TMPDIR,
-    // and on most systems /tmp and XDG_RUNTIME_DIR are small tmpfs mounts - which
-    // makes them report ERROR_DISK_FULL while the prefix itself has plenty of
-    // room. Point them at a directory on the same real filesystem as the prefix,
-    // which Eidos owns and can clean up.
-    if let Some(tmp) = installer_tmpdir(prefix) {
-        cmd.env("TMPDIR", &tmp).env("TMP", &tmp).env("TEMP", &tmp);
-    }
+        .env("WINESERVER", &wineserver);
+    unattended(&mut cmd, prefix);
     // Parity with a real Proton launch: the STEAM_COMPAT_* vars Proton sets.
     for (k, v) in steam_env {
         cmd.env(k, v);
@@ -262,6 +253,26 @@ pub fn install_tier2_verb(
     }
 }
 
+/// The environment every unattended installer run in `prefix` gets, winetricks
+/// or a Microsoft installer alike.
+fn unattended(cmd: &mut Command, prefix: &Path) {
+    // Suppress only the Gecko/MSHTML download prompt for an unattended run; let
+    // winetricks manage mono/mscoree itself (forcing mscoree=d breaks dotnet48).
+    cmd.env("WINEDLLOVERRIDES", "mshtml=d")
+        .env("WINEDEBUG", "-all")
+        // Xalia draws an accessibility overlay over Proton windows. It has nothing
+        // to do here and gets in the way of an unattended install.
+        .env("PROTON_USE_XALIA", "0");
+    // Large Microsoft installers (the .NET runtimes above all) unpack into TMPDIR,
+    // and on most systems /tmp and XDG_RUNTIME_DIR are small tmpfs mounts - which
+    // makes them report ERROR_DISK_FULL while the prefix itself has plenty of
+    // room. Point them at a directory on the same real filesystem as the prefix,
+    // which Eidos owns and can clean up.
+    if let Some(tmp) = installer_tmpdir(prefix) {
+        cmd.env("TMPDIR", &tmp).env("TMP", &tmp).env("TEMP", &tmp);
+    }
+}
+
 /// A scratch directory for installers, beside the prefix so it is on the same
 /// real filesystem (never a small tmpfs). Created on demand; `None` if it cannot
 /// be, in which case the caller simply leaves TMPDIR alone.
@@ -276,9 +287,10 @@ fn installer_tmpdir(prefix: &Path) -> Option<PathBuf> {
 /// These installers do not follow the "0 means OK" convention: they report
 /// "success, restart required" and "a newer version is already installed" as
 /// distinct non-zero codes, and treating those as failures aborts a prefix setup
-/// that in fact completed.
+/// that in fact completed. Wine passes the code on modulo 256, so 1641 reads as
+/// 105, 1638 as 102 and 3010 as 194.
 fn installer_success(code: i32) -> bool {
-    matches!(code, 0 | 105 | 194 | 236 | 1638 | 3010)
+    matches!(code, 0 | 102 | 105 | 194 | 236 | 1638 | 3010)
 }
 
 /// A human explanation for an installer exit code, when there is one worth
@@ -290,10 +302,247 @@ fn describe_installer_exit(code: i32) -> Option<&'static str> {
         112 => "not enough disk space",
         194 => "installed, restart scheduled",
         236 => "a newer version is already installed",
-        1638 => "another version of this product is already installed",
+        102 | 1638 => "another version of this product is already installed",
         3010 => "installed, reboot required",
         _ => return None,
     })
+}
+
+/// One Microsoft installer Eidos runs itself, pinned like a [`crate::Runtime`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Redist {
+    /// The file name, as the release bundle's `runtimes/` folder carries it.
+    pub file: &'static str,
+    pub url: &'static str,
+    /// SHA-256 of the file, lowercase.
+    pub sha256: &'static str,
+}
+
+// aka.ms/vs/17/release/vc_redist.x86.exe redirects here (checked 2026-11-10); the hash equals winetricks 20260125's.
+const VC_X86: Redist = Redist {
+    file: "VC_redist.x86.exe",
+    url: "https://download.visualstudio.microsoft.com/download/pr/990c720a-46ce-4dc7-87b9-c2eb615d34b9/0C09F2611660441084CE0DF425C51C11E147E6447963C3690F97E0B25C55ED64/VC_redist.x86.exe",
+    sha256: "0c09f2611660441084ce0df425c51c11e147e6447963c3690f97e0b25c55ed64",
+};
+
+// aka.ms/vs/17/release/vc_redist.x64.exe redirects here (checked 2026-11-10); the hash equals winetricks 20260125's.
+const VC_X64: Redist = Redist {
+    file: "VC_redist.x64.exe",
+    url: "https://download.visualstudio.microsoft.com/download/pr/990c720a-46ce-4dc7-87b9-c2eb615d34b9/CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe",
+    sha256: "cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b",
+};
+
+// URL and hash from winetricks 20260125 `load_dotnetdesktop8` (the URL does not carry the hash).
+const DESKTOP8_X64: Redist = Redist {
+    file: "windowsdesktop-runtime-8.0.12-win-x64.exe",
+    url: "https://download.visualstudio.microsoft.com/download/pr/f1e7ffc8-c278-4339-b460-517420724524/f36bb75b2e86a52338c4d3a90f8dac9b/windowsdesktop-runtime-8.0.12-win-x64.exe",
+    sha256: "cb51b559f343cb56e23cad2e5af8c4d1701e221a0a2a4116193a2a9375568814",
+};
+
+/// The DLLs winetricks sets to `native,builtin` for vcrun2022. Without the
+/// override Wine loads its builtin over the native DLL in `system32`.
+const VCRUN2022_OVERRIDES: &[&str] = &[
+    "concrt140",
+    "msvcp140",
+    "msvcp140_1",
+    "msvcp140_2",
+    "msvcp140_atomic_wait",
+    "msvcp140_codecvt_ids",
+    "vcamp140",
+    "vccorlib140",
+    "vcomp140",
+    "vcruntime140",
+    "vcruntime140_1",
+];
+
+/// The Microsoft installers Eidos runs itself for `verb`, in order. Empty for a
+/// verb left to winetricks.
+pub fn redists_for(verb: &str) -> &'static [Redist] {
+    match verb {
+        // x86 first, as winetricks does.
+        "vcrun2022" => &[VC_X86, VC_X64],
+        // The Desktop Runtime installer carries Microsoft.NETCore.App too.
+        // shortcut: no 32-bit .NET 8, add the x86 installer when a 32-bit tool needs it
+        "dotnet8" | "dotnetdesktop8" => &[DESKTOP8_X64],
+        _ => &[],
+    }
+}
+
+/// Install `verb` into `prefix` with Microsoft's own installers
+/// ([`redists_for`]): each file is the copy shipped with Eidos, or else a
+/// download from Microsoft, and is used only when it matches its pin. They run
+/// silently through `run_argv` (`ProtonRun::run_in_prefix`: the tool path,
+/// never the game) with `run_env`. For `vcrun2022`, a split C++ runtime against
+/// `reference_windows` (the Proton build's `default_pfx`) afterwards is a
+/// failure. The download needs the user's consent, like
+/// [`install_tier2_verb`].
+pub fn install_redist_verb(
+    verb: &str,
+    prefix: &Path,
+    reference_windows: Option<&Path>,
+    run_argv: impl Fn(&Path, &[String]) -> Vec<String>,
+    run_env: &[(String, String)],
+    progress: impl FnMut(&str),
+) -> io::Result<()> {
+    // Proton creates user.reg on first run, and an install before that races
+    // its bootstrap. Checked before anything is downloaded.
+    if !prefix.join("user.reg").is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!(
+                "the Wine prefix {} has not been created yet: start the game once through its \
+                 store, then install again",
+                prefix.display()
+            ),
+        ));
+    }
+    let installers = fetch_redists(
+        redists_for(verb),
+        &runtime::embedded_dirs(),
+        runtime::download,
+        progress,
+    )
+    .map_err(|e| io::Error::other(e.to_string()))?;
+    run_redists(
+        verb,
+        &installers,
+        prefix,
+        reference_windows,
+        run_argv,
+        run_env,
+    )
+}
+
+/// Each of `redists` as a checked file: the first copy in `dirs` that matches
+/// its pin, used where it is, or else a download into `dirs[0]` that is kept
+/// only when it matches.
+fn fetch_redists(
+    redists: &[Redist],
+    dirs: &[PathBuf],
+    download: impl Fn(&str, &Path) -> Result<(), RuntimeError>,
+    mut progress: impl FnMut(&str),
+) -> Result<Vec<PathBuf>, RuntimeError> {
+    let cache = &dirs[0];
+    fs::create_dir_all(cache)?;
+    // The lock `runtime::install_into` holds: instances share this folder.
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(cache.join(".install.lock"))?;
+    lock.lock()?;
+    let mut out = Vec::new();
+    for r in redists {
+        if let Some(found) = runtime::find_embedded(r.file, r.sha256, dirs) {
+            progress(&format!("using {}", found.display()));
+            out.push(found);
+            continue;
+        }
+        progress(&format!("downloading {} from Microsoft", r.file));
+        let incoming = cache.join(format!("{}.incoming", r.file));
+        let checked = download(r.url, &incoming).and_then(|()| runtime::sha256_file(&incoming));
+        match checked {
+            Ok(got) if got.eq_ignore_ascii_case(r.sha256) => {}
+            // A truncated transfer or a captive-portal page is never kept.
+            Ok(got) => {
+                let _ = fs::remove_file(&incoming);
+                return Err(RuntimeError::Hash {
+                    expected: r.sha256.to_string(),
+                    got,
+                });
+            }
+            Err(e) => {
+                let _ = fs::remove_file(&incoming);
+                return Err(e);
+            }
+        }
+        let dest = cache.join(r.file);
+        fs::rename(&incoming, &dest)?;
+        out.push(dest);
+    }
+    Ok(out)
+}
+
+/// Run `installers` for `verb` in `prefix`, one at a time, stopping at the
+/// first failure. `vcrun2022` imports winetricks's DLL overrides first and
+/// checks for a split C++ runtime last.
+fn run_redists(
+    verb: &str,
+    installers: &[PathBuf],
+    prefix: &Path,
+    reference_windows: Option<&Path>,
+    run_argv: impl Fn(&Path, &[String]) -> Vec<String>,
+    run_env: &[(String, String)],
+) -> io::Result<()> {
+    let run = |exe: &Path, args: &[String]| {
+        let argv = run_argv(exe, args);
+        let Some((program, args)) = argv.split_first() else {
+            return Err(io::Error::other("empty Proton command"));
+        };
+        let mut cmd = Command::new(program);
+        cmd.args(args);
+        unattended(&mut cmd, prefix);
+        cmd.envs(run_env.iter().map(|(k, v)| (k, v)));
+        cmd.status()
+    };
+    let vcrun = verb == "vcrun2022";
+    if vcrun {
+        let reg = installer_tmpdir(prefix)
+            .ok_or_else(|| {
+                io::Error::other(format!(
+                    "could not create a scratch folder beside {}",
+                    prefix.display()
+                ))
+            })?
+            .join("vcrun2022.reg");
+        let mut text =
+            String::from("REGEDIT4\n\n[HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides]\n");
+        for dll in VCRUN2022_OVERRIDES {
+            text.push_str(&format!("\"*{dll}\"=\"native,builtin\"\n"));
+        }
+        fs::write(&reg, text)?;
+        let status = run(Path::new("regedit"), &[reg.to_string_lossy().into_owned()])?;
+        if !status.success() {
+            return Err(io::Error::other(format!(
+                "regedit could not import the Visual C++ DLL overrides: {status}"
+            )));
+        }
+    }
+    let quiet = ["/install", "/quiet", "/norestart"].map(String::from);
+    for exe in installers {
+        let file = exe
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        match run(exe, &quiet)?.code() {
+            Some(c) if installer_success(c) => {}
+            Some(c) => {
+                return Err(io::Error::other(format!(
+                    "{file} exited with {c}{}",
+                    describe_installer_exit(c)
+                        .map(|d| format!(" ({d})"))
+                        .unwrap_or_default()
+                )))
+            }
+            None => return Err(io::Error::other(format!("{file} was killed by a signal"))),
+        }
+    }
+    if let (true, Some(reference)) = (vcrun, reference_windows) {
+        let splits = crate::crt::check(&prefix.join("drive_c/windows"), reference).splits;
+        if !splits.is_empty() {
+            let pairs: Vec<String> = splits
+                .iter()
+                .map(|s| format!("{} and {} in {}", s.consumer, s.provider, s.arch))
+                .collect();
+            return Err(io::Error::other(format!(
+                "after Microsoft's installer, {} come from different builds (Proton kept one \
+                 of each pair); install vcrun2022 with winetricks instead, which replaces \
+                 msvcp140.dll itself",
+                pairs.join(", ")
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Processes currently holding this Wine prefix, as `(pid, cmdline)`.
@@ -568,7 +817,7 @@ mod tests {
         // These installers report "done, restart required" and "already newer"
         // as distinct non-zero codes; treating them as failures aborts a prefix
         // setup that in fact completed.
-        for ok in [0, 105, 194, 236, 1638, 3010] {
+        for ok in [0, 102, 105, 194, 236, 1638, 3010] {
             assert!(installer_success(ok), "{ok} should be success");
         }
         for bad in [1, 5, 112, 1603] {
@@ -602,6 +851,325 @@ mod tests {
         let r = install_tier2_verb(&fake_proton, Path::new("/tmp/pfx"), &[], "vcrun2022");
         assert!(r.is_err(), "must refuse when Proton's wine is absent");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn tmp() -> PathBuf {
+        static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let d = std::env::temp_dir().join(format!(
+            "eidos-redist-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    const A: Redist = Redist {
+        file: "a.exe",
+        url: "https://example.invalid/a.exe",
+        // sha256("A")
+        sha256: "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+    };
+
+    /// argv that logs "$*" and exits `code`, except regedit, which exits 0. Fails
+    /// with 9 when the run env did not reach it.
+    fn fake(log: &Path, code: i32) -> impl Fn(&Path, &[String]) -> Vec<String> {
+        let script = format!(
+            "[ \"$SteamAppId\" = 489830 ] || exit 9; printf '%s\\n' \"$*\" >> '{}'; \
+             case \"$1\" in regedit) exit 0;; esac; exit {code}",
+            log.display()
+        );
+        move |exe, args| {
+            let mut v = vec![
+                "sh".into(),
+                "-c".into(),
+                script.clone(),
+                "sh".into(),
+                exe.display().to_string(),
+            ];
+            v.extend(args.iter().cloned());
+            v
+        }
+    }
+
+    fn env() -> Vec<(String, String)> {
+        vec![("SteamAppId".into(), "489830".into())]
+    }
+
+    #[test]
+    fn the_pinned_redists_are_microsofts_own_files() {
+        for verb in ["vcrun2022", "dotnet8", "dotnetdesktop8"] {
+            assert!(!redists_for(verb).is_empty(), "{verb}");
+            for r in redists_for(verb) {
+                assert!(
+                    r.url
+                        .starts_with("https://download.visualstudio.microsoft.com/download/pr/"),
+                    "{}",
+                    r.url
+                );
+                assert!(r.url.ends_with(&format!("/{}", r.file)), "{}", r.url);
+                assert!(
+                    r.sha256.len() == 64
+                        && r.sha256.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f'))
+                );
+            }
+        }
+        // Microsoft names a VC_redist download by its SHA-256, so a typo in either fails here.
+        for r in redists_for("vcrun2022") {
+            assert!(r.url.to_ascii_lowercase().contains(r.sha256), "{}", r.file);
+        }
+        let files: Vec<_> = redists_for("vcrun2022").iter().map(|r| r.file).collect();
+        assert_eq!(files, ["VC_redist.x86.exe", "VC_redist.x64.exe"]);
+        assert_eq!(redists_for("dotnet8"), redists_for("dotnetdesktop8"));
+        for verb in [
+            "dotnet48",
+            "xact",
+            "xact_x64",
+            "dotnet6",
+            "dotnet7",
+            "dotnetdesktop6",
+            "d3dx9_43",
+        ] {
+            assert!(redists_for(verb).is_empty(), "{verb}");
+        }
+    }
+
+    #[test]
+    fn a_redist_that_does_not_match_its_pin_is_never_kept() {
+        let cache = tmp();
+        let err = fetch_redists(
+            &[A],
+            std::slice::from_ref(&cache),
+            |_, dest| {
+                fs::write(dest, b"B").unwrap();
+                Ok(())
+            },
+            |_| {},
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("checksum"), "{err}");
+        let left: Vec<_> = fs::read_dir(&cache)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with("a.exe"))
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
+    }
+
+    #[test]
+    fn a_cached_installer_is_checked_then_reused() {
+        let cache = tmp();
+        let calls = std::cell::Cell::new(0);
+        let dl = |_: &str, dest: &Path| {
+            calls.set(calls.get() + 1);
+            fs::write(dest, b"A").unwrap();
+            Ok(())
+        };
+        assert_eq!(
+            fetch_redists(&[A], std::slice::from_ref(&cache), dl, |_| {}).unwrap(),
+            [cache.join("a.exe")]
+        );
+        fetch_redists(&[A], std::slice::from_ref(&cache), dl, |_| {}).unwrap();
+        assert_eq!(calls.get(), 1);
+        fs::write(cache.join("a.exe"), b"tampered").unwrap();
+        fetch_redists(&[A], std::slice::from_ref(&cache), dl, |_| {}).unwrap();
+        assert_eq!(
+            (calls.get(), fs::read(cache.join("a.exe")).unwrap()),
+            (2, b"A".to_vec())
+        );
+    }
+
+    #[test]
+    fn a_shipped_installer_is_used_before_any_download() {
+        let (data, beside) = (tmp(), tmp());
+        fs::write(beside.join("a.exe"), b"A").unwrap();
+        let no_download =
+            |_: &str, _: &Path| -> Result<(), RuntimeError> { panic!("downloaded a shipped file") };
+        let got =
+            fetch_redists(&[A], &[data.clone(), beside.clone()], no_download, |_| {}).unwrap();
+        assert_eq!(got, [beside.join("a.exe")]);
+        assert!(
+            !data.join("a.exe").exists(),
+            "a shipped file is used where it is"
+        );
+    }
+
+    #[test]
+    fn vcrun2022_sets_winetricks_overrides_then_runs_both_installers_quietly() {
+        let root = tmp();
+        let prefix = root.join("pfx");
+        fs::create_dir_all(prefix.join("drive_c/windows/system32")).unwrap();
+        let (log, x86, x64) = (
+            root.join("argv.log"),
+            root.join("VC_redist.x86.exe"),
+            root.join("VC_redist.x64.exe"),
+        );
+        run_redists(
+            "vcrun2022",
+            &[x86.clone(), x64.clone()],
+            &prefix,
+            None,
+            fake(&log, 3010),
+            &env(),
+        )
+        .unwrap();
+        let reg = root.join("eidos-installer-tmp/vcrun2022.reg");
+        assert_eq!(
+            fs::read_to_string(&log)
+                .unwrap()
+                .lines()
+                .collect::<Vec<_>>(),
+            [
+                format!("regedit {}", reg.display()),
+                format!("{} /install /quiet /norestart", x86.display()),
+                format!("{} /install /quiet /norestart", x64.display()),
+            ]
+        );
+        let text = fs::read_to_string(&reg).unwrap();
+        assert!(
+            text.starts_with("REGEDIT4\n\n[HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides]\n"),
+            "{text}"
+        );
+        for dll in [
+            "concrt140",
+            "msvcp140",
+            "msvcp140_atomic_wait",
+            "vcomp140",
+            "vcruntime140",
+            "vcruntime140_1",
+        ] {
+            assert!(
+                text.contains(&format!("\"*{dll}\"=\"native,builtin\"\n")),
+                "{dll}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_already_installed_newer_vc_runtime_is_not_a_failure() {
+        // VC_redist exits 1638 when a newer 14.x is in the prefix (a game's own
+        // VS 2026 redist); Wine hands that on as 102.
+        let root = tmp();
+        let prefix = root.join("pfx");
+        fs::create_dir_all(&prefix).unwrap();
+        let log = root.join("argv.log");
+        run_redists(
+            "vcrun2022",
+            &[
+                root.join("VC_redist.x86.exe"),
+                root.join("VC_redist.x64.exe"),
+            ],
+            &prefix,
+            None,
+            fake(&log, 1638),
+            &env(),
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(&log).unwrap().lines().count(), 3);
+    }
+
+    #[test]
+    fn an_installer_failure_names_its_exit_code() {
+        let root = tmp();
+        let prefix = root.join("pfx");
+        fs::create_dir_all(&prefix).unwrap();
+        let log = root.join("argv.log");
+        let err = run_redists(
+            "vcrun2022",
+            &[
+                root.join("VC_redist.x86.exe"),
+                root.join("VC_redist.x64.exe"),
+            ],
+            &prefix,
+            None,
+            // An exit status is 8 bits: `exit 1603` reads as 67, here and from Wine.
+            fake(&log, 112),
+            &env(),
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("VC_redist.x86.exe exited with 112 (not enough disk space)"),
+            "{err}"
+        );
+        assert_eq!(
+            fs::read_to_string(&log).unwrap().lines().count(),
+            2,
+            "x64 must not run after x86 failed"
+        );
+    }
+
+    #[test]
+    fn a_split_runtime_after_vcrun2022_is_a_failure() {
+        let root = tmp();
+        let (prefix, reference) = (root.join("pfx"), root.join("ref/windows"));
+        for (dir, aw) in [
+            (reference.join("system32"), "wine aw"),
+            (prefix.join("drive_c/windows/system32"), "microsoft aw"),
+        ] {
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("msvcp140.dll"), "wine p").unwrap();
+            fs::write(dir.join("msvcp140_atomic_wait.dll"), aw).unwrap();
+        }
+        let err = run_redists(
+            "vcrun2022",
+            &[root.join("VC_redist.x86.exe")],
+            &prefix,
+            Some(&reference),
+            fake(&root.join("argv.log"), 0),
+            &env(),
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("msvcp140_atomic_wait.dll")
+                && msg.contains("msvcp140.dll")
+                && msg.contains("winetricks"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn dotnet8_runs_the_desktop_runtime_without_overrides() {
+        let root = tmp();
+        let prefix = root.join("pfx");
+        fs::create_dir_all(&prefix).unwrap();
+        let (log, exe) = (
+            root.join("argv.log"),
+            root.join("windowsdesktop-runtime-8.0.12-win-x64.exe"),
+        );
+        run_redists(
+            "dotnet8",
+            std::slice::from_ref(&exe),
+            &prefix,
+            None,
+            fake(&log, 0),
+            &env(),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(&log).unwrap(),
+            format!("{} /install /quiet /norestart\n", exe.display())
+        );
+        assert!(!root.join("eidos-installer-tmp/vcrun2022.reg").exists());
+    }
+
+    #[test]
+    fn an_uninitialised_prefix_downloads_and_runs_nothing() {
+        let prefix = tmp(); // no user.reg
+        let err = install_redist_verb(
+            "vcrun2022",
+            &prefix,
+            None,
+            |_: &Path, _: &[String]| -> Vec<String> { panic!("an installer ran") },
+            &[],
+            |_| {},
+        )
+        .unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::NotFound);
+        assert!(err.to_string().contains("start the game once"), "{err}");
     }
 }
 

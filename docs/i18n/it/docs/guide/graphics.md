@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
 
 # Community Shaders, DLSS e generazione di fotogrammi
 
@@ -10,7 +10,7 @@ qualsiasi altra cosa - ma tre cose **non** sono scopribili da dentro il gioco, e
 ciascuna fa sì che la funzione non faccia nulla, in silenzio. Questa pagina è
 l'elenco, imparato a caro prezzo su un'installazione reale.
 
-La scheda Salute ne controlla tre per voi: la variabile NVAPI, quando sono presenti un driver NVIDIA e il pacchetto Upscaling e la build di Proton del gioco lascia NVAPI disattivato per impostazione predefinita (GE-Proton11-9 e Proton 11.0 lo attivano), lo schermo intero esclusivo nel `SkyrimPrefs.ini` del profilo e la riga ENB descritta più sotto. Gli ultimi due hanno un pulsante Correggi.
+La scheda Salute ne controlla tre per voi: la variabile NVAPI, quando sono presenti un driver NVIDIA e il pacchetto Upscaling e la build di Proton del gioco lascia NVAPI disattivato per impostazione predefinita (GE-Proton11-9 e Proton 11.0 lo attivano), lo schermo intero esclusivo nel `SkyrimPrefs.ini` del profilo e la riga ENB descritta più sotto. Gli ultimi due hanno un pulsante Correggi, e la scheda Schermo di Diagnostics imposta la finestra senza bordi con una dimensione.
 
 ## L'opzione di avvio di cui DLSS ha bisogno
 
@@ -24,6 +24,8 @@ inizializzare DLSS e ripiega sull'upscaling FSR - in sordina, senza nulla a sche
 che dica perché. Impostare la variabile non costa nulla su macchine non NVIDIA,
 quindi l'opzione di avvio sicura è semplicemente la riga qui sopra. La generazione
 di fotogrammi in sé è FSR 3.1 e non richiede NVAPI; serve solo all'upscaler DLSS.
+
+Per impostarla solo per un profilo, metti `env=PROTON_ENABLE_NVAPI=1` nel `launch-env.ini` di quel profilo (View -> INI editor, ultima scheda). Anche la scheda Salute conta quella riga.
 
 ## La generazione di fotogrammi richiede la finestra senza bordi
 

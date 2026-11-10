@@ -11,8 +11,11 @@ name: Release
 #                               also runs the eidos CLI (see startup.rs). This is
 #                               what Colony installs.
 #   eidos-linux-bundle.tar.gz   eidos, eidos-gui, the NIF preview helper, the
-#                               installer, icons and licence notices, for a
-#                               user-wide or system install with ./install.sh.
+#                               installer, icons, licence notices and, under
+#                               runtimes/, the Microsoft runtimes listed in
+#                               packaging/runtimes.txt (vcrun2022, .NET 8,
+#                               .NET 10), for a user-wide or system install
+#                               with ./install.sh.
 #
 # The build job only builds, tests and uploads artifacts; it never sees a key.
 # The ed25519 signatures (.sig, .meta, .meta.sig), the final verification and
@@ -206,6 +209,18 @@ jobs:
           # executable first, so the extracted directory works when run in place.
           b=eidos-linux-bundle
           mkdir "$b"
+          # A license file still holding its placeholder must never ship.
+          ! grep -l 'TODO(owner)' packaging/licenses/microsoft-runtimes/* || { echo '::error::Microsoft runtime license text missing'; exit 1; }
+          # The Microsoft installers and runtime Eidos installs into a prefix
+          # (vcrun2022, .NET 8, .NET 10), checked against the pins the code
+          # carries (runtime.rs: the_shipped_runtimes_match_the_manifest_and_provenance).
+          mkdir "$b/runtimes"
+          while read -r file sha url; do
+            case "$file" in ''|'#'*) continue ;; esac
+            curl -fsSL --retry 3 -o "$b/runtimes/$file" "$url"
+            echo "$sha  $b/runtimes/$file" | sha256sum -c -
+          done < packaging/runtimes.txt
+          install -Dm644 -t "$b/licenses/microsoft-runtimes" packaging/licenses/microsoft-runtimes/*
           cp target/release/eidos target/release/eidos-gui target/nif-preview/eidos-nif-preview "$b/"
           install -m 0755 packaging/install.sh "$b/install.sh"
           cp README.md LICENSE SECURITY.md "$b/"
@@ -246,6 +261,10 @@ jobs:
           check "$d/eidos-linux-bundle/eidos" --version
           check "$d/eidos-linux-bundle/eidos-gui" --version
           test -x "$d/eidos-linux-bundle/eidos-nif-preview"
+          while read -r file _; do
+            case "$file" in ''|'#'*) continue ;; esac
+            test -s "$d/eidos-linux-bundle/runtimes/$file"
+          done < packaging/runtimes.txt
           rm -rf "$d"
 
       # A manifest can PARSE perfectly and still leave the program listed in

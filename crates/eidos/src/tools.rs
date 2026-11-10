@@ -797,6 +797,14 @@ pub(crate) fn cmd_tool(args: &[String]) {
             };
             if print_only {
                 let env = crate::launch::run_env(&game, &inst, opts, env, false);
+                let command = if crate::launch::applies_wrappers(&opts) {
+                    crate::launch::with_wrappers(
+                        &inst.active().launch_env().wrappers,
+                        command.clone(),
+                    )
+                } else {
+                    command.clone()
+                };
                 print!(
                     "{}",
                     print_plan(

@@ -174,6 +174,15 @@ pub(crate) fn finding_actions(f: &eidos::check::Finding) -> Vec<(String, Message
                 ),
             ]
         }
+        "collection_order_broken" => {
+            let Some(slug) = f.arg("slug") else {
+                return Vec::new();
+            };
+            vec![(
+                t("diag_action_restore_collection_order").to_string(),
+                Message::RestoreCollectionOrder(slug.to_string()),
+            )]
+        }
         "overwrite_root_data" => {
             let Some(path) = f.arg("path") else {
                 return Vec::new();

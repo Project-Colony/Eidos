@@ -29,6 +29,15 @@ pub struct LaunchSpec {
     pub layers: Vec<PathBuf>,
     /// Writable Overwrite layer.
     pub overwrite: PathBuf,
+    /// An inherited Overwrite read-only below [`Self::overwrite`], for a test
+    /// run. Its whiteouts and opacity markers still hide lower files; every
+    /// session write goes to [`Self::overwrite`].
+    pub readonly_overwrite: Option<PathBuf>,
+    /// `(lower, upper, view)`: mount a one-layer union of `lower` with the
+    /// writable `upper` at `view`, before [`Self::binds`], so a bind can put
+    /// `view` over `lower` (a test run's saves and My Games folder). The union
+    /// reads `lower` through a stash beside `view`, as [`Self::base_bind`] does.
+    pub union_views: Vec<(PathBuf, PathBuf, PathBuf)>,
     /// Where to mount the union. For a real game this is the game's Data dir.
     pub mountpoint: PathBuf,
     /// Command + args to run inside the namespace.
@@ -651,6 +660,22 @@ pub fn launch(mut spec: LaunchSpec) -> std::io::Result<ExitStatus> {
         layers.push(stash.clone()); // lowest priority: the pristine game files
     }
 
+    // A test run binds each view back over its own lower (the My Games folder).
+    // The layer stack opens layers by path, so a union whose layer is the path it
+    // is bound over would send the daemon into its own mount and hang: read the
+    // lower through a stash, as `base_bind` does for Data.
+    let mut views = Vec::new();
+    let mut view_stashes = Vec::new();
+    for (lower, upper, view) in &spec.union_views {
+        let stash = view.with_extension("lower");
+        for dir in [lower, upper, view, &stash] {
+            std::fs::create_dir_all(dir)?;
+        }
+        bind_mount(lower, &stash)?;
+        view_stashes.push(stash.clone());
+        views.push(Eidos::new(vec![stash], upper.clone()).spawn(view)?);
+    }
+
     // Extra redirects: the active profile's saves and plugin state over the
     // prefix's dirs. FAIL CLOSED: these binds are what makes the session's writes
     // land in the profile, and a run that continues without one silently forks
@@ -714,6 +739,15 @@ pub fn launch(mut spec: LaunchSpec) -> std::io::Result<ExitStatus> {
                 "eidos: WARNING - could not unmount {} after the run ({e}); \
                  post-run steps may read the profile through it instead of the prefix",
                 dst.display()
+            );
+        }
+    }
+    drop(views);
+    for stash in view_stashes {
+        if let Err(e) = unmount_detach(&stash) {
+            eprintln!(
+                "eidos: WARNING - could not unmount {} after the run ({e})",
+                stash.display()
             );
         }
     }
@@ -805,7 +839,14 @@ fn launch_mounted(spec: &LaunchSpec, layers: Vec<PathBuf>) -> std::io::Result<Ex
 
     std::fs::create_dir_all(&spec.mountpoint)?;
     let started = std::time::Instant::now();
-    let mut filesystem = Eidos::new(layers, spec.overwrite.clone()).hiding_mod_metadata();
+    // shortcut: a test run hides the inherited Overwrite's top-level Root/ and metadata names from Data; treat the read-only Overwrite like the writable one in LayerStack if a tool run ever needs them.
+    let mut filesystem = Eidos::new_with_readonly_overwrite(
+        layers,
+        spec.overwrite.clone(),
+        None,
+        spec.readonly_overwrite.clone(),
+    )
+    .hiding_mod_metadata();
     log_index_build("data", &filesystem, started);
     if let Some(projection) = &spec.plugin_timestamps {
         if projection.state_path.starts_with(&spec.mountpoint)
@@ -1269,6 +1310,8 @@ mod tests {
             root_layers: Vec::new(),
             root_overwrite: None,
             root_readonly_overwrite: None,
+            readonly_overwrite: None,
+            union_views: vec![],
             root_base_bind: None,
             root_base: None,
         }

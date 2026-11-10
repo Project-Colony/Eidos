@@ -1631,3 +1631,40 @@ fn root_capture_rejects_case_collisions_without_losing_any_variant() {
         fs::remove_dir_all(root).unwrap();
     }
 }
+
+#[test]
+fn the_default_ini_seeds_only_a_profile_without_its_main_ini() {
+    let root = inst_with_mods(&[]);
+    let p = prof(&root, "Default");
+    let install = root.join("game");
+    fs::create_dir_all(&install).unwrap();
+    fs::write(
+        install.join("SKYRIM_default.INI"),
+        "[General]\nsLanguage=ENGLISH\n",
+    )
+    .unwrap();
+    assert_eq!(
+        p.seed_default_ini(&install, "Skyrim.ini").unwrap(),
+        Some(install.join("SKYRIM_default.INI"))
+    );
+    assert_eq!(
+        fs::read_to_string(p.ini_path("Skyrim.ini")).unwrap(),
+        "[General]\nsLanguage=ENGLISH\n"
+    );
+    fs::write(p.ini_path("Skyrim.ini"), "mine").unwrap();
+    assert_eq!(p.seed_default_ini(&install, "Skyrim.ini").unwrap(), None);
+    assert_eq!(
+        fs::read_to_string(p.ini_path("Skyrim.ini")).unwrap(),
+        "mine"
+    );
+    assert_eq!(
+        p.seed_default_ini(&install, "SkyrimPrefs.ini").unwrap(),
+        None
+    );
+    assert_eq!(
+        p.seed_default_ini(&root.join("no-such-game"), "Fallout.ini")
+            .unwrap(),
+        None
+    );
+    let _ = fs::remove_dir_all(&root);
+}

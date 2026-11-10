@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=507d35472d3f92ae0cc2794d3bc9d399565fd8ea -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=aaff8588275e2b036c2a1c344c01509a4c9d0f00 -->
 
 # Utiliser Eidos
 
@@ -195,6 +195,20 @@ remplace jamais une sauvegarde du profil.
 ### Ce qui a changé depuis le dernier bon lancement
 
 Chaque lancement par `eidos play` ou `eidos tool run`, depuis la fenêtre, un terminal ou Steam, écrit un enregistrement dans `<instance>/logs/sessions/` : le profil, chaque mod activé avec sa version et ses identifiants de fichier Nexus, l'ordre des plugins, une somme de contrôle de chaque INI du profil, la version de l'exécutable du jeu, la version d'Eidos, le code de sortie et les sauvegardes créées pendant le lancement. Les 50 plus récents sont conservés, et `logs/` n'entre pas dans une instance empaquetée. `eidos sessions <instance> diff` compare le dernier lancement du jeu terminé avec le code 0 à l'état actuel ; `diff <id>` choisit un autre enregistrement de la liste. Eidos ne détecte pas encore les plantages ici, et un jeu planté sous Proton peut quand même sortir avec le code 0 : si le lancement choisi en fait partie, indiquez-en un plus ancien avec `diff <id>`.
+
+### Parties test
+
+Le bouton Partie test, à côté de Lancer, démarre le jeu comme Lancer, mais tout ce que le jeu écrit va dans `<instance>/test-run/` au lieu de votre profil, de l'Overwrite et du préfixe : les sauvegardes nouvelles ou modifiées, les changements d'INI, `plugins.txt`, les fichiers écrits dans Data ou dans le dossier du jeu, et les journaux de `Documents/My Games/<game>`. Vous pouvez tester avec les mods du profil, sans aucun mod, ou seulement avec les mods sélectionnés dans la liste, plus les mods dont les plugins leur servent de maîtres.
+
+Quand le jeu se ferme, Eidos range ces fichiers en cinq groupes (sauvegardes, changements d'INI, état des plugins, sortie de l'Overwrite, journaux) et vous demande de garder ou de jeter chacun d'eux. Garder les sauvegardes ne supprime jamais une sauvegarde du profil, même si le jeu l'a supprimée pendant la partie. Jeter quoi que ce soit demande un second appui. Si Eidos ou l'ordinateur s'arrête pendant une partie test, les fichiers restent dans `test-run/` et la liste s'ouvre la prochaine fois que vous ouvrez l'instance ou appuyez sur F5.
+
+Quand la fenêtre n'a pas été démarrée par la boutique du jeu, Partie test confie le jeu à cette boutique (Steam, Heroic ou Legendary), comme Lancer, et la partie que lance la boutique est la partie test. Une partie test ne couvre que les dossiers cités plus haut : les autres écritures du jeu, comme le registre Wine, vont là où elles vont toujours. Les sauvegardes d'une partie test n'arrivent dans Steam Cloud qu'une fois que vous les avez gardées puis avez joué une partie normale.
+
+### Trouver le mod à l'origine d'un problème
+
+Le bouton Trouver le mod à l'origine d'un problème, dans Diagnostics, cherche le mod qui cause un problème que vous savez reproduire, par exemple un plantage à un endroit précis. Chaque étape est une partie test avec la moitié des suspects restants, les maîtres dont ils ont besoin et les mods que vous gardez toujours actifs (les mods sélectionnés dans la liste au moment de commencer, et le mod qui fournit le script extender). Après chaque partie, vous indiquez si le problème s'est produit ; « Je ne sais pas » répartit les suspects autrement, et Relancer refait l'étape. Répondre, ou appuyer sur Relancer, jette les fichiers que l'étape a écrits, après un second appui. Pour en garder certains, appuyez d'abord sur Voir les fichiers : la même liste qu'après une partie test s'ouvre. Quand le jeu a planté et qu'un crash logger a écrit un journal, ou que le jeu est sorti avec un code d'erreur, Eidos met en avant le bouton « Oui, il s'est produit » comme réponse probable. 200 suspects demandent environ 8 parties.
+
+La recherche est enregistrée dans `<instance>/bisect.json`, vous pouvez donc fermer Eidos entre deux étapes. Le bouton Arrêter la recherche l'abandonne après un second appui. Le résultat nomme le mod, ou l'ensemble de mods qui ont besoin des maîtres les uns des autres, et il est conservé dans `<instance>/logs/bisect-<time>.txt`. Les mods générés (une sortie de Nemesis ou de DynDOLOD, un Bashed Patch) sont construits pour la liste complète et peuvent échouer avec la moitié : gardez-les toujours actifs, ou laissez-les désactivés pendant toute la recherche.
 
 ### Aucune étape privilégiée n'est nécessaire
 
@@ -753,6 +767,33 @@ mod a été installé, puis la fenêtre propose Replace avec « Keep a backup of
 existing mod » coché, quel que soit votre choix à la fenêtre précédente. Replace
 garde la priorité du mod et son état activé ou non.
 
+L'onglet **Page Nexus**, à côté, affiche la description du mod et, du plus
+récent au plus ancien, le journal des modifications de chaque version de fichier
+de sa page. Eidos les lit dans l'API GraphQL de Nexus, qui ne compte pas dans le
+quota horaire de requêtes, la première fois que vous ouvrez l'onglet, et les
+garde jusqu'à la fermeture d'Eidos ou jusqu'à ce que vous appuyiez sur
+**Actualiser**. Ils s'affichent en texte brut : la mise en forme BBCode et HTML
+est retirée, l'adresse d'un lien est écrite après son texte, et les images et
+les vidéos sont laissées de côté. **Recommander** et **Suivre**, au-dessus du
+texte, font ce que fait le menu du clic droit du mod. La page d'un mod pour
+adultes reste masquée tant que votre compte Nexus n'affiche pas le contenu pour
+adultes, et une page sans classification reste masquée dans tous les cas.
+
+Avant qu'un Replace ne remplace le dossier d'un mod, Eidos compare l'ancien
+dossier au nouveau par nom et taille de fichier, et lit les en-têtes des plugins
+des deux. Cela couvre Update, une mise à jour de collection et Replace choisi à
+la fenêtre d'installation. La ligne d'état compte ensuite les fichiers ajoutés,
+supprimés et de taille modifiée, et nomme chaque master dont la nouvelle version
+a besoin et pas l'ancienne. L'onglet **Général** de « Information... » se
+termine par une section **Dernière mise à jour** qui liste les versions, les
+plugins ajoutés ou supprimés, les masters ajoutés ou abandonnés, les plugins
+dont l'indicateur ESM, ESL ou ESH a changé, les mods avec lesquels celui-ci
+partage désormais des fichiers ou n'en partage plus, et les fichiers. Un fichier
+réécrit à la même taille n'est pas listé. Le rapport est gardé dans
+`logs/updates/<mod>.json` de l'instance, que `eidos pack` laisse de côté ; une
+nouvelle installation ou un Merge dans le dossier le supprime. `eidos install
+--replace` affiche les mêmes totaux sur une ligne `changes:`.
+
 Un dossier qui contient plusieurs fichiers Nexus, par exemple un fichier
 principal avec un fichier optionnel fusionné dedans, est refusé : le remplacer
 par le nouveau fichier principal ferait perdre les autres. Mettez-les à jour à
@@ -781,12 +822,16 @@ Tout ce qui est dit plus haut sur ce qui est appliqué et ce qui est seulement
 nommé vaut ici mot pour mot : la fenêtre et `eidos collection` sont un seul
 moteur avec deux façades.
 
+Sans lien, **Fichier -> Ouvrir une collection Nexus...** s'ouvre sur l'onglet **Parcourir**. Il liste les collections publiées pour le jeu de l'instance ouverte, 20 à la fois, par nombre de téléchargements, dernière mise à jour ou date de création, et le champ de recherche réduit la liste aux collections dont le nom ou le texte correspond. Chaque ligne donne l'auteur, la dernière révision, le nombre de mods, les téléchargements et une date. **Voir** ouvre la dernière révision de cette collection dans l'onglet **Lien**, comme si vous colliez son lien. Les collections marquées adultes sont écartées sauf si votre compte Nexus affiche le contenu adulte, les collections sans note le sont toujours, et la ligne sous la liste compte les deux. L'onglet **Parcourir** demande un compte Nexus connecté, comme le reste du volet.
+
 Une collection ne peut être lue que contre **son propre jeu**. Ouvrez une
 collection Skyrim avec une instance Fallout 4 chargée et il refuse en nommant le
 jeu plutôt que de rapprocher les membres de la mauvaise liste de mods, où chaque
 « installé » et chaque « manquant » serait du bruit déguisé en réponse.
 
 Quand vous lancez la recherche de mises à jour, Eidos demande aussi à Nexus la dernière révision de chaque collection installée dans cette instance. Une ligne au-dessus de la liste des mods nomme chaque collection dont une révision plus récente existe et compte les mods ajoutés (+), mis à jour (~) et retirés (-) ; survolez-la pour voir leurs noms. Les comptes manquent quand la recette de la révision installée n'est plus en cache. **Mettre à jour** ouvre la révision récente dans le volet des collections, où *Install this collection* l'exécute. La liste est refaite à chaque vérification et n'est pas enregistrée.
+
+Eidos garde les règles de chaque collection installée après l'installation. Quand un glisser-déposer ultérieur place deux de ses mods à l'encontre d'une règle d'ordre (avant ou après), l'onglet **Diagnostics** affiche une carte pour cette collection, qui nomme la première paire concernée et compte les règles qui ne sont plus respectées. Seuls les mods activés dans le profil actuel comptent, et les règles prises dans une boucle sont ignorées, car aucun ordre ne peut les respecter. **Restaurer l'ordre de la collection** remet les mods de la collection dans un ordre qui respecte chaque règle, garde votre propre ordre partout où les règles le permettent et laisse à leur place les mods qui ne font pas partie de la collection. Ctrl+Z annule l'opération. `eidos check` signale le même constat sous le code `collection_order_broken`. Le contrôle a besoin de la recette de la révision dans `collections/` : une collection dont la recette en cache a été supprimée n'est pas contrôlée.
 
 ### Mode hors ligne
 
@@ -815,6 +860,8 @@ plutôt que celle enfouie dans le préfixe Proton qui est écrasée à chaque
 lancement. **View -> Log** lit les logs de session. **View -> Extensions** liste
 vos propres add-ons ; voir [extensions.fr.md](extensions.md).
 
+Quand un lancement ne trouve l'INI principal du jeu (`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini`...) ni dans le profil ni dans le préfixe, Eidos copie d'abord dans le profil celui par défaut du dossier du jeu (`Skyrim_Default.ini`, `Fallout4_Default.ini`...), comme MO2. Le préfixe et le dossier du jeu ne sont pas modifiés.
+
 L'installation accepte tout : les chemins Simple et FOMOD, plus les paquets
 **BAIN** de Wrye Bash (cochez les sous-paquets, qui fusionnent dans l'ordre) et
 un sélecteur **manuel** qui montre l'arborescence de l'archive et vous laisse
@@ -837,6 +884,8 @@ du script extender lui-même sur chacune de ses DLL de plugins, ce qui fait pass
 Il signale aussi une mise à jour du jeu depuis le dernier lancement propre, un script extender absent ou qui ne correspond pas à la version du jeu (avec la page de téléchargement de l'extender et un bouton qui installe l'archive que vous téléchargez), une option de lancement Steam qui ne démarre pas Eidos avec `%command%`, NVAPI laissé désactivé pour DLSS, un plein écran exclusif qui empêche la génération d'images, un `enblocal.ini` d'ENB sans `LinuxVersion=true`, les déclarations des plugins F4SE et SFSE, et le log de crash de la dernière session avec les mods qu'il nomme.
 La recherche de mises à jour lit aussi les prérequis Nexus de chaque mod. Diagnostics liste un mod requis absent ou désactivé, avec Ignore pour un prérequis rempli autrement.
 
+Pour Skyrim SE, Enderal SE et Fallout 4, Diagnostics a aussi une carte Affichage. Elle montre la taille et le mode de la fenêtre réglés dans le `SkyrimPrefs.ini` du profil (`EnderalPrefs.ini`, `Fallout4Prefs.ini`), ou dans la copie du préfixe quand le profil n'en a pas encore. Quand aucune des deux ne fixe de taille, ses champs partent du plus grand écran connecté listé dans `/sys/class/drm` : un Steam Deck affiche 1280x800. Apply écrit `iSize W`, `iSize H`, `bFull Screen` et `bBorderless` dans la copie du profil, après avoir adopté celle du préfixe si le profil n'en a pas. Quand SSE Display Tweaks règle la fenêtre, Apply écrit la même taille et le même mode dans sa copie dans Overwrite ; le fichier du mod lui-même n'est pas modifié.
+
 Pour lancer le jeu depuis la GUI, réglez l'option de lancement Steam du jeu sur
 le chemin absolu du binaire (Steam ne voit pas `~/.cargo/bin` dans le PATH) :
 
@@ -848,7 +897,7 @@ Eidos s'ouvre sur l'instance de ce jeu - celle que vous avez utilisée en dernie
 si bien qu'une instance portable est retrouvée tout comme la globale ; cliquez
 sur Run pour le lancer à travers la vue fusionnée.
 
-Avec **Start the game at once when a store opens Eidos** activé (Preferences, General, Running a game), Eidos se passe de ce clic : il vérifie Health et lance le jeu sans afficher sa fenêtre. La fenêtre s'ouvre comme d'habitude quand Health signale un problème, quand la liste des mods demande votre attention ou quand un outil réglé pour passer avant le jeu a une sortie périmée. Pour avoir la fenêtre le temps d'un lancement, placez `EIDOS_WINDOW=1` devant la commande : `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
+Avec **Start the game at once when a store opens Eidos** activé (Preferences, General, Running a game), Eidos se passe de ce clic : il vérifie Health et lance le jeu sans afficher sa fenêtre. La fenêtre s'ouvre comme d'habitude quand Health signale un problème, quand la liste des mods demande votre attention, quand un outil réglé pour passer avant le jeu a une sortie périmée ou, pour Skyrim SE, Enderal SE et Fallout 4, quand le profil n'a pas encore de taille de fenêtre (la fenêtre s'ouvre alors sur Diagnostics). Pour avoir la fenêtre le temps d'un lancement, placez `EIDOS_WINDOW=1` devant la commande : `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Hors de Steam, Run ne démarre pas le jeu lui-même avec Proton ou Wine. Il
 demande à la boutique qui possède la copie de le démarrer, et la boutique
@@ -870,6 +919,23 @@ partie : appuyez sur F5 dans celle-ci après avoir joué pour recharger ses
 listes. Quand le réglage de la boutique manque, ou que le loader de l'extenseur
 de scripts n'est pas à côté de l'exécutable du jeu, Run ne démarre rien et
 indique quoi régler et où, avec le vrai chemin du binaire en cours d'exécution.
+
+### Variables et wrappers par profil
+
+Un profil peut porter ses propres variables d'environnement et commandes wrapper dans `profiles/<nom>/launch-env.ini`, une entrée par ligne :
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+Elles s'appliquent à chaque `eidos play` de ce profil (le jeu lancé par le `%command%` de Steam, ou par Run dans une fenêtre qu'une boutique a ouverte) et à chaque lancement d'outil. `eidos shell` reçoit les variables, sans wrapper. La première ligne `wrapper=` est la plus extérieure. Une ligne `wrapper=` qui contient `%command%` reçoit la commande à cet endroit, comme dans les options de lancement de Steam ; une ligne sans `%command%` reçoit la commande à la fin. Les wrappers tournent dans l'espace de noms privé d'Eidos, ils voient donc les mods.
+
+Une variable placée ici remplace la valeur qu'Eidos définit pour le même nom, et la ligne `env=` propre à un outil dans `tools.ini` remplace les deux. `WINEDLLOVERRIDES` fait exception : elle est ajoutée après les overrides qu'Eidos définit pour ENB, ReShade et les DLL embarquées, si bien qu'une DLL citée dans les deux prend le réglage du profil et que les autres gardent le leur.
+
+View -> INI editor ouvre le fichier comme dernier onglet, pour tous les jeux. À l'enregistrement, la liste des numéros de ligne qu'Eidos ignore apparaît : les lignes qui ne sont ni `env=NOM=valeur` ni `wrapper=commande`. `eidos play <instance>` sans commande liste les variables que reçoit un lancement et les wrappers. Copy report dans Diagnostics nomme les variables et les programmes wrapper, sans leurs valeurs.
 
 Le `%command%` de Steam pour les titres Bethesda pointe le plus souvent sur
 `<Game>Launcher.exe`. Eidos ne l'exécute jamais : le launcher est une application

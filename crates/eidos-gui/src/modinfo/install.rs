@@ -250,6 +250,11 @@ pub(crate) fn after_install_report(
             &[("path", &backup.display())],
         ));
     }
+    if let Some(changes) = &report.changes {
+        app.status
+            .get_or_insert_with(String::new)
+            .push_str(&update_status(changes));
+    }
 }
 
 /// On a worker for the same reason as the picker: Merge copies every file, and

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=7f872c8fb702f4417931831cc14a48ffb9d9e30b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=697ab61c73cce270d79a42be1a29c4800a6ee6d0 -->
 
 # Narzędzia: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -188,9 +188,25 @@ dlaczego nie jest opcjonalny - [ponizej](#dlaczego-pgpatcher-potrzebuje---ignore
 `d3dx11_43`). Eidos je dostarcza i kopiuje do prefiksu przy uruchomieniu. Nic do
 zrobienia, żadnej sieci.
 
-**Poziom 2 - czasowniki winetricks** (`vcrun2022`, `dotnet8`, `dotnetdesktop8`,
+**Poziom 2 - instalatory** (`vcrun2022`, `dotnet8`, `dotnetdesktop8`,
 `dotnet48`, `xact`...). Zapisują klucze rejestru, GAC i hosty CLR, więc nie da
-się ich skopiować jako plików. **Pobierają się od Microsoftu**.
+się ich skopiować jako plików. Trzy z nich Eidos instaluje bez winetricks:
+`vcrun2022` uruchamia `VC_redist.x86.exe` i `VC_redist.x64.exe` Microsoftu, a
+`dotnet8` i `dotnetdesktop8` uruchamiają instalator .NET 8.0.12 Desktop Runtime,
+który zawiera też runtime .NET. Paczka wydania (`eidos-linux-bundle.tar.gz`)
+dostarcza te instalatory w swoim folderze `runtimes/`, a `install.sh` kopiuje je
+do `~/.local/share/Colony/Eidos/runtimes/`. Bez tej kopii (pojedynczy plik
+`eidos-linux`, kompilacja ze źródeł) Eidos **pobiera je od Microsoftu**
+(`download.visualstudio.microsoft.com`) do tego samego folderu. W obu
+przypadkach plik jest odrzucany, jeśli jego SHA-256 nie zgadza się z wbudowanym
+w Eidosa, i uruchamia się w trybie cichym w prefiksie gry, z buildem Protona lub
+Wine, który uruchamia narzędzia gry. Tak jak winetricks, `vcrun2022` najpierw
+ustawia biblioteki DLL Visual C++ na `native,builtin` w nadpisaniach DLL
+prefiksu. Potem Eidos sprawdza, czy runtime C++ w prefiksie nie jest w połowie
+od Microsoftu, a w połowie od Protona, i w takim przypadku zgłasza instalację
+jako nieudaną. Instalowany jest tylko 64-bitowy .NET 8; 32-bitowe narzędzie .NET
+8 nadal potrzebuje `winetricks dotnetdesktop8`. Pozostałe czasowniki idą przez
+systemowy `winetricks`.
 
 **Poziom 3 - runtime'y** (`dotnet10`, `dotnetsdk10`). Nowoczesny runtime .NET to 193 pliki,
 które leżą we własnym katalogu i są odnajdywane przez `DOTNET_ROOT`: nigdy
@@ -198,7 +214,9 @@ nierejestrowane, nigdy w ogóle nieinstalowane do prefiksu, więc żaden z
 pozostałych poziomów nie może go przenieść. Eidos pobiera go sam, sprawdza z sumą
 kontrolną wbudowaną w plik wykonywalny i buforuje w
 `~/.local/share/Colony/Eidos/runtimes/` - **poza jakąkolwiek instancją**, bo
-78 MB nie jest per gra ani per profil.
+78 MB nie jest per gra ani per profil. Paczka wydania dostarcza też zip
+runtime'u `dotnet10` w `runtimes/`, więc Eidos rozpakowuje tę kopię i pobiera go
+tylko wtedy, gdy jej brak; `dotnetsdk10` jest zawsze pobierany.
 
 `dotnetsdk10` to .NET 10 SDK: 301 MB do pobrania, 808 MB po rozpakowaniu.
 Synthesis potrzebuje go do kompilowania swoich patcherów, a do ich budowania i
@@ -260,11 +278,12 @@ nigdy niedotykająca `mscoree`. Wskaż `DOTNET_ROOT` na runtime .NET 10, a
 zadziała. To właśnie przygotowuje `dotnet10`, a Eidos ustawia tę zmienną przy
 uruchamianiu każdego narzędzia, które ją deklaruje.
 
-Eidos uruchamia systemowy `winetricks` przeciwko własnemu `wine` Protona i
-prefiksowi gry, co omija kontener pressure-vessel Steama oraz niezgodność
-protontricks + Proton-GE. Narzędzie deklarujące niezainstalowany czasownik
-Poziomu 2 i tak się uruchamia, z ostrzeżeniem wymieniającym czasownik i polecenie
-naprawcze - użytkownik może go mieć skądinąd.
+Dla pozostałych czasowników Poziomu 2 Eidos uruchamia systemowy `winetricks`
+przeciwko własnemu `wine` Protona i prefiksowi gry, co omija kontener
+pressure-vessel Steama oraz niezgodność protontricks + Proton-GE. Narzędzie
+deklarujące niezainstalowany czasownik Poziomu 2 i tak się uruchamia, z
+ostrzeżeniem wymieniającym czasownik i polecenie naprawcze - użytkownik może go
+mieć skądinąd.
 
 ### Dlaczego PGPatcher potrzebuje `--ignore-mo2vfscheck`
 
@@ -464,21 +483,22 @@ shaderów Steama, puste katalogi główne .NET i usunięcie nakładki Steama z
 W kopii z GOG lub Epic zainstalowanej przez Heroic narzędzia nie potrzebują
 takiego wpisu, jeśli ustawienia gry w Heroic (`GamesConfig/<appName>.json`)
 wskazują build Wine lub Protona: Eidos uruchamia je tym buildem w prefiksie
-Heroic tej gry, a `eidos prereqs <instance> --install` przekazuje go do
-winetricks. Kopia zainstalowana samym Legendary nie ma ustawień Heroic.
+Heroic tej gry, a `eidos prereqs <instance> --install` używa go do instalatorów
+i do winetricks. Kopia zainstalowana samym Legendary nie ma ustawień Heroic.
 
 `slr=1` uruchamia narzędzie, a także poprzedzający je import do rejestru,
 wewnątrz kontenera Steam Linux Runtime, który wskazuje Proton narzędzia
 (`require_tool_appid` w jego `toolmanifest.vdf`), tak jak Steam uruchamia grę.
 Ten runtime musi być zainstalowany w którejś bibliotece Steam; jeśli nie jest,
-uruchomienie się zatrzymuje i podaje aplikację Steam do zainstalowania. `eidos
-prereqs` nadal uruchamia winetricks na hoście, a narzędzie z `runner=native`
-ignoruje ten klucz. Kontener widzi twój folder domowy i bibliotekę Steam z grą.
-Narzędzie, mod lub runtime w innym miejscu, na przykład na innym dysku, wymaga
-`env=STEAM_COMPAT_MOUNTS=/ta/ścieżka` (kilka ścieżek oddziel `:`). Proton
-zainstalowany w `/usr/share/steam/compatibilitytools.d` prawdopodobnie nie
-zadziała z `slr=1`, bo `/usr` w kontenerze należy do runtime'u. Uruchomienie
-narzędzia w kontenerze nie było jeszcze testowane.
+uruchomienie się zatrzymuje i podaje aplikację Steam do zainstalowania.
+`eidos prereqs` nadal uruchamia swoje instalatory i winetricks na hoście, a
+narzędzie z `runner=native` ignoruje ten klucz. Kontener widzi twój folder
+domowy i bibliotekę Steam z grą. Narzędzie, mod lub runtime w innym miejscu, na
+przykład na innym dysku, wymaga `env=STEAM_COMPAT_MOUNTS=/ta/ścieżka` (kilka
+ścieżek oddziel `:`). Proton zainstalowany w
+`/usr/share/steam/compatibilitytools.d` prawdopodobnie nie zadziała z `slr=1`,
+bo `/usr` w kontenerze należy do runtime'u. Uruchomienie narzędzia w kontenerze
+nie było jeszcze testowane.
 
 `eidos tool <instance> run <title> --print` pokazuje końcowe polecenie i każdą
 zmienną, którą uruchomienie ustawia ponad odziedziczonym środowiskiem, łącznie

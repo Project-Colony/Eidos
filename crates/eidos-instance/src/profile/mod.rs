@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 mod backup;
 mod inis;
+mod launch_env;
 mod modlist;
 mod plugins;
 mod saves;
@@ -20,6 +21,7 @@ mod tests;
 
 pub use backup::*;
 pub use inis::*;
+pub use launch_env::*;
 pub use modlist::*;
 use plugins::*;
 pub use saves::*;
@@ -45,8 +47,12 @@ pub struct SaveEntry {
 }
 
 impl Profile {
-    /// `<instance>/profiles/<name>/`.
+    /// `<instance>/profiles/<name>/`, or `<instance>/test-run/profile/` for a
+    /// test run's working copy.
     pub fn dir(&self) -> PathBuf {
+        if self.name == crate::TEST_RUN_PROFILE {
+            return self.instance_root.join(crate::TEST_RUN_PROFILE);
+        }
         self.instance_root.join("profiles").join(&self.name)
     }
 

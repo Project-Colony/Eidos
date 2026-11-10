@@ -986,6 +986,44 @@ fn the_game_files_card_keeps_one_height_in_every_state() {
     }
 }
 
+#[test]
+fn the_display_card_keeps_one_height_set_unset_and_with_display_tweaks() {
+    use eidos::check::display::{Display, DisplayFacts, WindowMode};
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    let mut below = |current, screen, tweaks, ini| {
+        let form = next_form(
+            None,
+            DisplayFacts {
+                ini,
+                current,
+                screen,
+                tweaks,
+            },
+        );
+        let col = Column::new()
+            .push(display_card(&form))
+            .push(text("below the card"));
+        label(col.into(), &mut renderer, "below the card", 0).y
+    };
+    let unset = below(None, None, false, "SkyrimPrefs.ini");
+    let set = Some(Display {
+        width: 3840,
+        height: 2160,
+        mode: WindowMode::Borderless,
+    });
+    assert_eq!(
+        below(set, Some((3840, 2160)), false, "Fallout4Prefs.ini"),
+        unset,
+        "a set size changed the height"
+    );
+    assert_eq!(
+        below(None, Some((1280, 800)), true, "EnderalPrefs.ini"),
+        unset,
+        "the Display Tweaks line changed the height"
+    );
+}
+
 /// The flags under a selected Executables entry stay on one line each at the
 /// dialog's 720 px cap, and an entry that starts the game offers no Desktop
 /// shortcut: from the desktop it would only hand the game to its store.
@@ -1043,18 +1081,50 @@ fn executables_flags_fit_on_their_lines() {
     let _ = fs::remove_dir_all(root);
 }
 
-/// The Nexus files tab of the 660 px mod info card: every file keeps its Open
-/// button, the successor its Update button, each whole on one line and inside
-/// the card. Fixed columns used to take 560 px before the buttons, which iced
-/// then squeezed or cut off.
+/// The Last update section closes the General tab: every row the tab had keeps
+/// its place when a report exists.
 #[test]
-fn nexus_file_buttons_fit_inside_the_mod_info_card() {
+fn the_last_update_section_closes_the_general_tab() {
     let _look = crate::test_support::look_lock();
     let (_dir, mut app, _archive) = installers::tests::fixture();
     let folder = app.created.as_ref().unwrap().mods_dir().join("Sky UI");
     fs::create_dir_all(&folder).unwrap();
+    app.mods = vec![ModEntry {
+        name: "Sky UI".into(),
+        enabled: true,
+        path: folder,
+        unmanaged: false,
+    }];
+    app.info_mod = Some(0);
+    app.info_tab = InfoTab::General;
+    let mut renderer = renderer();
+    let before = positions(crate::modinfo::mod_info_dialog(&app, 0), &mut renderer).labels;
+    app.info_update = Some((
+        eidos_instance::UpdateReport {
+            added: vec!["a.esp".into(), "b.dds".into()],
+            ..Default::default()
+        },
+        Default::default(),
+    ));
+    let after = positions(crate::modinfo::mod_info_dialog(&app, 0), &mut renderer).labels;
+    for (text, bounds) in &before {
+        assert!(
+            after.iter().any(|(t, b)| t == text && b.y == bounds.y),
+            "{text} moved"
+        );
+    }
+    let added = tf("info_update_files_added", &[("n", &2)]);
+    assert!(after.iter().any(|(t, _)| *t == added), "{after:?}");
+}
+
+/// The fixture's only mod: `Sky UI`, Nexus mod 3863 on the fixture's game.
+/// Returns its `meta.ini`.
+fn sky_ui_mod(app: &mut App) -> PathBuf {
+    let folder = app.created.as_ref().unwrap().mods_dir().join("Sky UI");
+    fs::create_dir_all(&folder).unwrap();
+    let meta = folder.join("meta.ini");
     fs::write(
-        folder.join("meta.ini"),
+        &meta,
         "[General]\nmodid=3863\nversion=5.1\n[installedFiles]\n1\\modid=3863\n1\\fileid=101\nsize=1\n",
     )
     .unwrap();
@@ -1064,6 +1134,18 @@ fn nexus_file_buttons_fit_inside_the_mod_info_card() {
         path: folder,
         unmanaged: false,
     }];
+    meta
+}
+
+/// The Nexus files tab of the 660 px mod info card: every file keeps its Open
+/// button, the successor its Update button, each whole on one line and inside
+/// the card. Fixed columns used to take 560 px before the buttons, which iced
+/// then squeezed or cut off.
+#[test]
+fn nexus_file_buttons_fit_inside_the_mod_info_card() {
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    sky_ui_mod(&mut app);
     let file = |file_id, category_id, name: &str, version: &str| eidos_nexus::NexusFile {
         file_id,
         name: name.into(),
@@ -1109,6 +1191,143 @@ fn nexus_file_buttons_fit_inside_the_mod_info_card() {
         assert!(b.x + b.width <= 660.0 - 16.0, "past the card: {b:?}");
         assert!(b.height < line * 1.5, "wrapped: {b:?}");
     }
+}
+
+/// The Track and Refresh slots keep their place whether the mod is endorsed
+/// or tracked, in English and French, and every label fits its slot.
+#[test]
+fn the_nexus_page_buttons_keep_their_places_in_english_and_french() {
+    use colony_ui::i18n::Locale;
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    let meta = sky_ui_mod(&mut app);
+    let key = crate::modinfo::nexus_files_target(&app, 0).unwrap();
+    app.nexus_pages.insert(
+        key,
+        Ok(eidos_nexus::ModPage {
+            description: "Text".into(),
+            ..Default::default()
+        }),
+    );
+    app.info_mod = Some(0);
+    app.info_tab = InfoTab::NexusPage;
+    let mut renderer = renderer();
+    for locale in [Locale::En, Locale::Fr] {
+        // A slot clips its label, so the label drawn there never reports more
+        // than the slot: measure it alone and add the button's 6 px padding.
+        for (keys, width) in [
+            (
+                &["nexus_page_endorse", "nexus_page_abstain"][..],
+                PAGE_ENDORSE_W,
+            ),
+            (&["nexus_page_track", "nexus_page_untrack"], PAGE_TRACK_W),
+            (&["nexus_page_refresh"], PAGE_REFRESH_W),
+        ] {
+            for key in keys {
+                let alone = positions(
+                    crate::theme::text(crate::i18n::t_in(locale, key))
+                        .size(colony_ui::sz(12))
+                        .into(),
+                    &mut renderer,
+                )
+                .labels[0]
+                    .1
+                    .width;
+                assert!(
+                    alone + 12.0 <= crate::theme::scaled(width),
+                    "{locale:?} {key}: {alone} px"
+                );
+            }
+        }
+        let mut slots = Vec::new();
+        for flags in ["endorsed=0\ntracked=0\n", "endorsed=1\ntracked=1\n"] {
+            fs::write(&meta, format!("[General]\nmodid=3863\n{flags}")).unwrap();
+            let labels = crate::i18n::with_locale(locale, || {
+                positions(crate::modinfo::mod_info_dialog(&app, 0), &mut renderer).labels
+            });
+            let at = |key: &str| {
+                let s = crate::i18n::t_in(locale, key);
+                labels.iter().find(|(t, _)| t == s).map(|(_, b)| *b)
+            };
+            let track = at("nexus_page_track")
+                .or_else(|| at("nexus_page_untrack"))
+                .unwrap();
+            let refresh = at("nexus_page_refresh").unwrap();
+            slots.push((track.x, refresh.x));
+        }
+        assert_eq!(
+            slots[0], slots[1],
+            "{locale:?}: a flag change moved a button"
+        );
+    }
+}
+
+/// Seven tabs, Nexus page last, fit the 660 px card in English and French,
+/// each at the width of its label drawn alone.
+#[test]
+fn every_mod_info_tab_fits_the_card_in_english_and_french() {
+    use colony_ui::i18n::Locale;
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    sky_ui_mod(&mut app);
+    app.info_mod = Some(0);
+    let mut renderer = renderer();
+    for locale in [Locale::En, Locale::Fr] {
+        let labels = crate::i18n::with_locale(locale, || {
+            positions(crate::modinfo::mod_info_dialog(&app, 0), &mut renderer).labels
+        });
+        for key in [
+            "info_tab_general",
+            "info_tab_conflicts",
+            "info_tab_filetree",
+            "info_tab_ini_tweaks",
+            "info_tab_notes",
+            "info_tab_nexus_files",
+            "info_tab_nexus_page",
+        ] {
+            let s = crate::i18n::t_in(locale, key);
+            let tab = labels
+                .iter()
+                .find(|(t, _)| t == s)
+                .unwrap_or_else(|| panic!("{locale:?}: no {key} tab in {labels:?}"))
+                .1;
+            // The row squeezes a tab that does not fit, and its label wraps
+            // or is cut inside the card: it is then narrower than alone.
+            let alone = positions(
+                crate::theme::text(s).size(colony_ui::sz(12)).into(),
+                &mut renderer,
+            )
+            .labels[0]
+                .1
+                .width;
+            assert!(
+                (tab.width - alone).abs() < 0.5 && tab.x + tab.width <= 660.0 - 16.0,
+                "{locale:?} {key}: {tab:?}, {alone} px alone"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_withheld_nexus_page_shows_the_reason_only() {
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    sky_ui_mod(&mut app);
+    let key = crate::modinfo::nexus_files_target(&app, 0).unwrap();
+    app.nexus_pages.insert(
+        key,
+        Ok(eidos_nexus::ModPage {
+            hidden: Some(eidos_nexus::HiddenReason::AdultDenied),
+            ..Default::default()
+        }),
+    );
+    app.info_mod = Some(0);
+    app.info_tab = InfoTab::NexusPage;
+    let labels = positions(crate::modinfo::mod_info_dialog(&app, 0), &mut renderer()).labels;
+    assert!(labels
+        .iter()
+        .any(|(s, _)| s == eidos_nexus::HiddenReason::AdultDenied.message()));
+    assert!(!labels.iter().any(|(s, _)| s == t("nexus_page_description")));
 }
 
 /// Collection notices arrive seconds after Check for updates, maybe while the
@@ -1600,4 +1819,592 @@ fn the_prefix_rows_keep_their_place_without_a_prefix() {
     }
     let _ = fs::remove_dir_all(root_with);
     let _ = fs::remove_dir_all(root_without);
+}
+
+/// The Browse list area and its footer keep one height whatever they hold,
+/// so the explainer under them never moves while results load or fail.
+#[test]
+fn the_browse_results_keep_one_height_while_loading_failing_and_listing() {
+    use eidos_nexus::collections::CollectionSearch;
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    let mut state = CollectionState {
+        pane: CollectionPane::Browse,
+        ..Default::default()
+    };
+    let mut y = |s: &CollectionState| {
+        label(
+            collection_dialog(s, false),
+            &mut renderer,
+            t("collection_explainer"),
+            0,
+        )
+        .y
+    };
+    state.browse.loading = true;
+    let loading = y(&state);
+    state.browse.loading = false;
+    state.browse.result = Some(Err("Nexus answered 500".into()));
+    assert_eq!(y(&state), loading, "error");
+    state.browse.result = Some(Ok(CollectionSearch::default()));
+    assert_eq!(y(&state), loading, "empty");
+    let tiles = (0..20)
+        .map(|i| crate::test_support::browse_tile(&format!("s{i:05}")))
+        .collect();
+    state.browse.result = Some(Ok(CollectionSearch {
+        tiles,
+        total: 4933,
+        hidden: 3,
+    }));
+    assert_eq!(y(&state), loading, "twenty tiles and a hidden count");
+}
+
+/// The Browse footer with a hidden count fits its two-line slot at every text
+/// size, in English and French. The slot clips, so the text is measured alone
+/// at the card's inner width: 720 px less 18 px padding on each side.
+#[test]
+fn the_browse_footer_and_its_hidden_count_fit_two_lines_at_every_text_size() {
+    use colony_ui::i18n::Locale;
+    use colony_ui::typography::{FontSize, TextSize};
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    for (font, size) in [
+        (FontSize::Default, TextSize::Default),
+        (FontSize::Small, TextSize::Small),
+        (FontSize::Small, TextSize::Default),
+        (FontSize::Large, TextSize::XLarge),
+    ] {
+        let mut look = crate::preferences::UiPreferences::default();
+        look.standard.font_size = font;
+        look.standard.text_size_a11y = size;
+        look.standard.apply();
+        for locale in [Locale::En, Locale::Fr] {
+            let footer = crate::i18n::with_locale(locale, || {
+                tf(
+                    "collection_browse_footer",
+                    &[("shown", &20), ("total", &99999)],
+                ) + &tf("collection_browse_hidden", &[("n", &999)])
+            });
+            let drawn = positions_in(
+                iced::widget::container(crate::theme::text(footer).size(colony_ui::sz(10)))
+                    .width(iced::Length::Fill)
+                    .into(),
+                &mut renderer,
+                Size::new(720.0 - 2.0 * 18.0, 800.0),
+            )
+            .labels[0]
+                .1;
+            assert!(
+                drawn.height <= crate::theme::scaled(BROWSE_FOOT_H),
+                "{font:?} x {size:?} {locale:?}: {drawn:?}"
+            );
+        }
+    }
+}
+
+/// A Browse error is drawn in the words the handler gave it, so a missing
+/// account never reads as an answer Nexus failed to send.
+#[test]
+fn a_browse_guard_is_drawn_in_its_own_words() {
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    let mut state = CollectionState {
+        pane: CollectionPane::Browse,
+        ..Default::default()
+    };
+    let guard = t("status_connect_nexus_first_short");
+    state.browse.result = Some(Err(guard.into()));
+    let _ = label(collection_dialog(&state, false), &mut renderer, guard, 0);
+}
+
+/// Browse and Link differ in height by hundreds of pixels, and a revision adds
+/// more. The overlay hangs the card from a fixed top, so the pane buttons stay
+/// under the pointer when either is pressed and when a revision arrives.
+#[test]
+fn the_collection_pane_buttons_stay_put_across_panes_and_a_loaded_revision() {
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    let mut y = |s: &CollectionState| {
+        label(
+            collection_overlay(s, false),
+            &mut renderer,
+            t("collection_pane_link"),
+            0,
+        )
+        .y
+    };
+    let browse = y(&CollectionState {
+        pane: CollectionPane::Browse,
+        ..Default::default()
+    });
+    let mut link = CollectionState::default();
+    assert_eq!(y(&link), browse, "empty Link pane");
+    link.revision = Some(crate::test_support::captured_revision());
+    assert_eq!(y(&link), browse, "Link pane with a revision");
+}
+
+/// The note under the INI editor sits in one slot, so the Save row stays put
+/// on the Prefs tab, on the launch-env tab, on a fresh profile's main INI
+/// (`ini_missing_main`, the longest note) and on an unreadable file, in English
+/// and in French, at every text size, in the interface font and in the
+/// dyslexia font (OpenDyslexic, wider). The slot also holds each note whole.
+#[test]
+fn the_ini_editor_keeps_its_save_row_in_place_on_the_launch_env_tab() {
+    use colony_ui::i18n::Locale;
+    use colony_ui::typography::{FontSize, TextSize};
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    // The window loads the Colony fonts at start; a test has only the system's.
+    // BYTES[3] is OpenDyslexic (colony_ui::fonts::BYTES lists the order).
+    iced::advanced::graphics::text::font_system()
+        .write()
+        .unwrap()
+        .load_font(std::borrow::Cow::Borrowed(colony_ui::fonts::BYTES[3]));
+    let mut width = |dyslexia| {
+        colony_ui::set_dyslexia_font(dyslexia);
+        let w = positions(text("Variables and wrappers").into(), &mut renderer).labels[0]
+            .1
+            .width;
+        colony_ui::set_dyslexia_font(false);
+        w
+    };
+    assert_ne!(width(true), width(false), "OpenDyslexic did not load");
+    let app = crate::test_support::app_for_game("skyrimse");
+    let state = |current: &str, missing| IniEditorState {
+        files: vec![
+            "Skyrim.ini".into(),
+            "SkyrimPrefs.ini".into(),
+            "launch-env.ini".into(),
+        ],
+        current: current.into(),
+        content: iced::widget::text_editor::Content::with_text(""),
+        cp1252: false,
+        dirty: false,
+        original: String::new(),
+        missing,
+        unreadable: false,
+        on_disk: 0,
+    };
+    let states = [
+        (state("SkyrimPrefs.ini", false), "ini_note"),
+        (state("launch-env.ini", true), "launch_env_note"),
+        (state("Skyrim.ini", true), "ini_missing_main"),
+        (
+            IniEditorState {
+                unreadable: true,
+                ..state("Skyrim.ini", false)
+            },
+            "ini_unreadable",
+        ),
+    ];
+    for dyslexia in [false, true] {
+        for (font, size) in FontSize::ALL
+            .into_iter()
+            .flat_map(|f| TextSize::ALL.into_iter().map(move |s| (f, s)))
+        {
+            let mut look = crate::preferences::UiPreferences::default();
+            look.standard.font_size = font;
+            look.standard.text_size_a11y = size;
+            look.standard.dyslexia_font = dyslexia;
+            look.standard.apply();
+            for locale in [Locale::En, Locale::Fr] {
+                let save = crate::i18n::t_in(locale, "common_save");
+                let mut save_ys = Vec::new();
+                for (s, key) in &states {
+                    let (dialog, note) = crate::i18n::with_locale(locale, || {
+                        (
+                            crate::dialogs::ini_editor_dialog(&app, s),
+                            crate::i18n::tf(key, &[("file", &s.current)]),
+                        )
+                    });
+                    let drawn = positions(dialog, &mut renderer).labels;
+                    let find = |name: &str| {
+                        drawn
+                            .iter()
+                            .find(|(t, _)| t == name)
+                            .unwrap_or_else(|| panic!("no {name}: {drawn:?}"))
+                            .1
+                    };
+                    save_ys.push(find(save).y);
+                    // The same text alone, as wide as the card less its padding.
+                    let whole = positions(
+                        container(text(note.clone()).size(sz(10)))
+                            .width(Length::Fixed(760.0 - 2.0 * 18.0))
+                            .into(),
+                        &mut renderer,
+                    )
+                    .labels[0]
+                        .1
+                        .height;
+                    assert_eq!(
+                        find(&note).height,
+                        whole,
+                        "dyslexia {dyslexia} {font:?}/{size:?} {locale:?}: the slot cuts {key}"
+                    );
+                }
+                assert!(
+                    save_ys.iter().all(|y| *y == save_ys[0]),
+                    "dyslexia {dyslexia} {font:?}/{size:?} {locale:?}: a note moved the Save row: {save_ys:?}"
+                );
+            }
+        }
+    }
+}
+
+/// The Test run button sits between the spacer and Run with a label that never
+/// changes, so neither a tool pick (which disables it) nor a waiting request
+/// moves Run.
+#[test]
+fn the_run_button_does_not_move_with_the_test_run_slot() {
+    let _look = crate::test_support::look_lock();
+    let (mut app, root) = crate::test_support::list_app(&["Keep"]);
+    let mut renderer = renderer();
+    let at = |app: &App, r: &mut iced::Renderer| label(crate::view(app), r, t("main_run"), 0);
+    let plain = at(&app, &mut renderer);
+    app.tool_choice = Some("Some tool".into());
+    assert_eq!(
+        at(&app, &mut renderer),
+        plain,
+        "a tool pick disabled the slot and moved Run"
+    );
+    app.tool_choice = None;
+    app.created
+        .as_ref()
+        .unwrap()
+        .request_test_run(&eidos_instance::TestRun {
+            profile: "Default".into(),
+            game: "skyrimse".into(),
+            requested: 1,
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(
+        at(&app, &mut renderer),
+        plain,
+        "a waiting request moved Run"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// The choices, a selection and the Steam Cloud note never change the dialog's
+/// height: the note has a fixed slot that stays empty without it.
+#[test]
+fn the_test_dialog_keeps_one_height_across_choices_and_the_cloud_note() {
+    let _look = crate::test_support::look_lock();
+    let (mut app, root) = crate::test_support::list_app(&["Keep"]);
+    let mut renderer = renderer();
+    let mut below = |app: &App, choice: TestChoice| {
+        let col = Column::new()
+            .push(test_dialog(app, choice))
+            .push(text("below the dialog"));
+        label(col.into(), &mut renderer, "below the dialog", 0).y
+    };
+    let base = below(&app, TestChoice::Profile);
+    for choice in [TestChoice::Vanilla, TestChoice::Selected] {
+        assert_eq!(below(&app, choice), base, "{choice:?} changed the height");
+    }
+    // Enables "only selected", whose label carries {n}.
+    app.selected_mods = [0].into_iter().collect();
+    assert_eq!(
+        below(&app, TestChoice::Selected),
+        base,
+        "a selection changed the height"
+    );
+    // A Steam copy with a saves path: the cloud note shows.
+    app.games[0].compatdata = Some(root.join("compat"));
+    assert_eq!(
+        below(&app, TestChoice::Profile),
+        base,
+        "the cloud note changed the height"
+    );
+    // Panics when the note is missing from the slot.
+    let _ = label(
+        test_dialog(&app, TestChoice::Profile),
+        &mut renderer,
+        t("test_cloud_note"),
+        0,
+    );
+    // The French note, the longer one, fits the slot at the dialog's inner
+    // width (its 560 px cap less 2 x 20 px padding).
+    let fr = crate::i18n::t_in(colony_ui::i18n::Locale::Fr, "test_cloud_note");
+    let note = positions(
+        container(text(fr).size(sz(11))).width(520.0).into(),
+        &mut renderer,
+    )
+    .labels[0]
+        .1
+        .height;
+    assert!(
+        note <= crate::theme::scaled(30.0),
+        "the French note is {note} px tall"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// Files, notes, the crash line, an unfinished run's header and the armed line
+/// never change the review's height: each has a fixed slot.
+#[test]
+fn the_review_keeps_one_height() {
+    use eidos_instance::TestRunWrites;
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    let run = eidos_instance::TestRun {
+        exit: Some(0),
+        ..Default::default()
+    };
+    let mut below = |review: &TestReview| {
+        let col = Column::new()
+            .push(review_dialog(review))
+            .push(text("below the review"));
+        label(col.into(), &mut renderer, "below the review", 0).y
+    };
+    let empty = TestReview::new(TestRunWrites::default(), run.clone(), None);
+    let base = below(&empty);
+    let many = TestRunWrites {
+        saves: (0..300).map(|i| format!("Save{i}.ess")).collect(),
+        saves_replacing: 3,
+        saves_deleted: 2,
+        plugins: vec!["plugins.txt".into()],
+        plugins_offered: true,
+        output: vec!["Data/x".into()],
+        output_deleted: 4,
+        logs: vec!["SKSE/a.log".into()],
+        ..Default::default()
+    };
+    let mut full = TestReview::new(
+        many,
+        eidos_instance::TestRun {
+            exit: None,
+            mods: Some(vec![]),
+            cloud: true,
+            ..run.clone()
+        },
+        Some("/very/long/path/to/a/crash/log/that/would/wrap/crash-2026-11-10-12-00-00.log".into()),
+    );
+    assert_eq!(
+        below(&full),
+        base,
+        "files, notes and the crash line changed the height"
+    );
+    full.armed = true;
+    full.line = Some(tf("review_armed_line", &[("n", &300)]));
+    assert_eq!(below(&full), base, "the armed line changed the height");
+    // The French header of an unfinished run, the longest, fits its slot at the
+    // dialog's inner width (its 560 px cap less 2 x 20 px padding).
+    let fr = crate::i18n::t_in(colony_ui::i18n::Locale::Fr, "review_interrupted");
+    let header = positions(
+        container(text(fr).size(sz(12))).width(520.0).into(),
+        &mut renderer,
+    )
+    .labels[0]
+        .1
+        .height;
+    assert!(
+        header <= crate::theme::scaled(REVIEW_HEADER_H),
+        "the French header is {header} px tall"
+    );
+}
+
+/// Setup, Ready, Running, Answer and Result fill one fixed stage area, so the
+/// bottom row (Hide) never moves.
+#[test]
+fn the_bisect_panel_keeps_its_bottom_row_in_place() {
+    use eidos_instance::{Answer, Bisect, TestRun};
+    let _look = crate::test_support::look_lock();
+    let names = ["A", "B", "C", "D", "E", "F", "G", "H"];
+    let (mut app, root) = crate::test_support::list_app(&names);
+    let inst = app.created.clone().unwrap();
+    let mut renderer = renderer();
+    let mut hide_y = |app: &App| label(bisect_panel(app), &mut renderer, t("bisect_hide"), 0).y;
+    app.bisect_open = true;
+    app.bisect_universe = bisect_universe(&app);
+    let setup = hide_y(&app); // Setup: no search yet
+    assert_eq!(bisect_stage(&app), BisectStage::Setup);
+    app.bisect_pinned = (0..60)
+        .map(|i| format!("A selected mod with a long name {i}"))
+        .collect();
+    assert_eq!(
+        hide_y(&app),
+        setup,
+        "a long always-on list moved the bottom row"
+    );
+    let mut b = Bisect::new("Default", vec![], names.map(String::from).to_vec(), 1);
+    app.bisect = Some(b.clone());
+    assert_eq!(bisect_stage(&app), BisectStage::Ready);
+    assert_eq!(hide_y(&app), setup, "Ready moved the bottom row");
+    b.begin_step(vec!["A".into(), "B".into(), "C".into(), "D".into()]);
+    app.bisect = Some(b.clone());
+    inst.request_test_run(&TestRun {
+        profile: "Default".into(),
+        game: "skyrimse".into(),
+        mods: Some(vec!["A".into()]),
+        bisect: true,
+        requested: 1,
+        ..Default::default()
+    })
+    .unwrap();
+    load_test_state(&mut app, false);
+    assert_eq!(bisect_stage(&app), BisectStage::Running);
+    assert_eq!(hide_y(&app), setup, "Running moved the bottom row");
+    inst.begin_test_run(&inst.profile("Default"), "skyrimse", &[], None, false, 2)
+        .unwrap();
+    inst.end_test_run(Some(1), 3).unwrap();
+    load_test_state(&mut app, false);
+    assert_eq!(bisect_stage(&app), BisectStage::Answer);
+    assert_eq!(app.bisect_step, (Some(BisectHint::Exit(1)), 0));
+    assert_eq!(hide_y(&app), setup, "Answer moved the bottom row");
+    // A crash log with a path of over 200 characters, so the run wrote a file.
+    let skse = inst.test_docs_upper().join("SKSE");
+    std::fs::create_dir_all(&skse).unwrap();
+    let crash = skse.join(format!("crash-{}.log", "x".repeat(200)));
+    std::fs::write(&crash, "crash").unwrap();
+    load_test_state(&mut app, false);
+    assert_eq!(app.bisect_step, (Some(BisectHint::Crash(crash)), 1));
+    assert_eq!(hide_y(&app), setup, "the crash line moved the bottom row");
+    app.bisect_armed = Some(BisectArm::Answer(Answer::Bad));
+    assert_eq!(hide_y(&app), setup, "the confirm line moved the bottom row");
+    app.bisect_armed = Some(BisectArm::Stop);
+    assert_eq!(hide_y(&app), setup, "the armed Stop moved the bottom row");
+    app.bisect_armed = None;
+    app.bisect_line = Some(tf("review_failed", &[("error", &"x".repeat(300))]));
+    assert_eq!(hide_y(&app), setup, "a failure line moved the bottom row");
+    app.bisect_line = None;
+    for _ in 0..3 {
+        b.answer(Answer::Bad);
+        b.begin_step(vec!["A".into()]);
+    }
+    b.answer(Answer::Bad);
+    app.bisect = Some(b.clone());
+    assert_eq!(bisect_stage(&app), BisectStage::Result);
+    assert_eq!(hide_y(&app), setup, "Result moved the bottom row");
+    b.profile = "Other".into();
+    app.bisect = Some(b);
+    assert_eq!(bisect_stage(&app), BisectStage::OtherProfile);
+    assert_eq!(
+        hide_y(&app),
+        setup,
+        "another profile's search moved the bottom row"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// The French Setup (with a long always-on list) and Ready stages keep their
+/// action button inside the fixed stage area, at the default and the largest
+/// text size: the area clips, so a button below it could not be pressed.
+#[test]
+fn the_french_bisect_actions_fit_the_stage_area() {
+    use colony_ui::i18n::Locale;
+    use colony_ui::typography::{FontSize, TextSize};
+    let _look = crate::test_support::look_lock();
+    let (mut app, root) = crate::test_support::list_app(&["A", "B", "C"]);
+    app.bisect_universe = bisect_universe(&app);
+    app.bisect_pinned = (0..60).map(|i| format!("A selected mod {i}")).collect();
+    let mut renderer = renderer();
+    let fr = |key| crate::i18n::t_in(Locale::Fr, key);
+    let ready = eidos_instance::Bisect::new("Default", vec![], app.bisect_universe.0.clone(), 0);
+    let mut asking = ready.clone();
+    asking.begin_step(vec!["A".into(), "B".into()]);
+    for (font, text) in [
+        (FontSize::Default, TextSize::Default),
+        (FontSize::Large, TextSize::XLarge),
+    ] {
+        let mut look = crate::preferences::UiPreferences::default();
+        look.standard.font_size = font;
+        look.standard.text_size_a11y = text;
+        look.standard.apply();
+        for (search, action) in [
+            (None, fr("bisect_start").to_string()),
+            (
+                Some(ready.clone()),
+                fr("bisect_run_step").replace("{n}", "1"),
+            ),
+        ] {
+            app.bisect = search;
+            let panel = crate::i18n::with_locale(Locale::Fr, || bisect_panel(&app));
+            let drawn = positions(panel, &mut renderer).labels;
+            let at = |s: &str| drawn.iter().find(|(l, _)| l == s).unwrap().1;
+            let (button, hide) = (at(&action), at(fr("bisect_hide")));
+            // Hide's own padding (6), the card spacing (10) and the status slot lie between them.
+            assert!(
+                button.y + button.height + 6.0
+                    <= hide.y - 26.0 - crate::theme::scaled(BISECT_SLOT_H),
+                "{font:?} x {text:?}: {action} at {button:?}, Hide at {hide:?}"
+            );
+        }
+        // The Answer stage, with a crash hint and files to throw away: every
+        // button sits inside the stage area on one line (none squeezed), none
+        // on top of another.
+        app.bisect = Some(asking.clone());
+        app.test_state = Some((
+            eidos_instance::TestRun {
+                bisect: true,
+                ended: Some(3),
+                ..Default::default()
+            },
+            eidos_instance::TestState::Ended,
+        ));
+        app.bisect_step = (Some(BisectHint::Crash("/c/".repeat(70).into())), 12);
+        assert_eq!(bisect_stage(&app), BisectStage::Answer);
+        let panel = crate::i18n::with_locale(Locale::Fr, || bisect_panel(&app));
+        let drawn = positions(panel, &mut renderer).labels;
+        let at = |s: &str| drawn.iter().find(|(l, _)| l == s).unwrap().1;
+        let hide = at(fr("bisect_hide"));
+        let buttons = [
+            "bisect_good",
+            "bisect_bad",
+            "bisect_unsure",
+            "bisect_repeat",
+            "bisect_review",
+        ]
+        .map(|k| at(fr(k)));
+        for (i, b) in buttons.iter().enumerate() {
+            assert!(
+                b.y + b.height + 6.0 <= hide.y - 26.0 - crate::theme::scaled(BISECT_SLOT_H)
+                    && b.x + b.width <= 540.0
+                    && b.height <= hide.height,
+                "{font:?} x {text:?}: answer button {i} at {b:?}, Hide at {hide:?}"
+            );
+            for c in &buttons[i + 1..] {
+                let apart = b.x + b.width <= c.x
+                    || c.x + c.width <= b.x
+                    || b.y + b.height <= c.y
+                    || c.y + c.height <= b.y;
+                assert!(apart, "{font:?} x {text:?}: {b:?} overlaps {c:?}");
+            }
+        }
+        let written = drawn
+            .iter()
+            .find(|(l, _)| l == &fr("bisect_writes").replace("{n}", "12"))
+            .unwrap()
+            .1;
+        // The slot's fixed height caps the measured text: a line that does
+        // not fit reports exactly the slot's height.
+        assert!(
+            written.height < crate::theme::scaled(BISECT_FILES_H),
+            "{font:?} x {text:?}: the files line is {} px tall",
+            written.height
+        );
+        // The longest French lines of the status slot fit it.
+        for line in [
+            fr("bisect_stop_line").replace("{n}", "12"),
+            fr("bisect_confirm_answer").replace("{n}", "1200"),
+            fr("review_armed_line").replace("{n}", "1200"),
+        ] {
+            let h = positions(
+                container(crate::theme::text(line.clone()).size(sz(12)))
+                    .width(520.0)
+                    .into(),
+                &mut renderer,
+            )
+            .labels[0]
+                .1
+                .height;
+            assert!(
+                h <= crate::theme::scaled(BISECT_SLOT_H),
+                "{font:?} x {text:?}: {line} is {h} px tall"
+            );
+        }
+        app.test_state = None;
+    }
+    let _ = std::fs::remove_dir_all(root);
 }

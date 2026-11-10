@@ -65,6 +65,8 @@ fn mount_boundaries(root: &Path) {
         let status = launch(LaunchSpec {
         readonly_data_binds: vec![],
         root_readonly_overwrite: None,
+        readonly_overwrite: None,
+        union_views: vec![],
             plugin_timestamps: None, layers: vec![data_layer], overwrite: overwrite.clone(),
             mountpoint: data.clone(),
             command: vec!["python3".into(), "-c".into(), r#"
@@ -149,6 +151,8 @@ fn readonly_data_projection(root: &Path) {
         let result = launch(LaunchSpec {
             readonly_data_binds: mappings,
             root_readonly_overwrite: None,
+            readonly_overwrite: None,
+            union_views: vec![],
             plugin_timestamps: None,
             layers: vec![],
             overwrite: overwrite.clone(),
@@ -242,6 +246,8 @@ fn morrowind_root_saves(root: &Path) {
         let result = launch(LaunchSpec {
             readonly_data_binds: vec![],
             root_readonly_overwrite: None,
+            readonly_overwrite: None,
+            union_views: vec![],
             plugin_timestamps: None,
             layers: vec![],
             overwrite: overwrite.clone(),
@@ -353,6 +359,8 @@ fn composed_shader_sessions(root: &Path) {
         let result = launch(LaunchSpec {
             readonly_data_binds: session.mappings().to_vec(),
             root_readonly_overwrite: None,
+            readonly_overwrite: None,
+            union_views: vec![],
             plugin_timestamps: None,
             layers: selected,
             overwrite: overwrite.clone(),
@@ -427,6 +435,8 @@ fn userdata_mods_leave_install_mods_visible(root: &Path) {
     let result = launch(LaunchSpec {
         readonly_data_binds: vec![],
         root_readonly_overwrite: None,
+        readonly_overwrite: None,
+        union_views: vec![],
         plugin_timestamps: None,
         layers: vec![high, low],
         overwrite: overwrite.clone(),
@@ -484,6 +494,8 @@ fn game_copy_replaces_the_install(root: &Path) {
     let status = launch(LaunchSpec {
         readonly_data_binds: vec![],
         root_readonly_overwrite: None,
+        readonly_overwrite: None,
+        union_views: vec![],
         plugin_timestamps: None,
         layers: vec![],
         overwrite: overwrite.clone(),
@@ -517,10 +529,95 @@ fn game_copy_replaces_the_install(root: &Path) {
     detach(&root_stash);
 }
 
+/// A test run: the inherited Overwrite sits read-only under a session upper,
+/// and the My Games folder and the profile saves are one-layer unions bound
+/// over the real folders, so every write lands in an upper.
+fn test_run_uppers(root: &Path) {
+    let fixture = root.join("test-run-uppers");
+    let game = fixture.join("game");
+    let ow = fixture.join("ow");
+    let upper = fixture.join("upper");
+    let docs = fixture.join("docs");
+    let docs_upper = fixture.join("docs-upper");
+    let prof_saves = fixture.join("prof-saves");
+    let saves_upper = fixture.join("saves-upper");
+    let views = fixture.join("views");
+    let data_stash = fixture.join("data-stash");
+    let root_stash = fixture.join("root-stash");
+    put(&game, "Data/base.esm", b"master");
+    put(&game, "Data/hidden.esm", b"hidden");
+    put(&ow, "shared.txt", b"shared");
+    put(&ow, ".eidoswh.hidden.esm", b"");
+    fs::create_dir_all(&upper).unwrap();
+    put(&docs, "Skyrim.ini", b"real");
+    put(&prof_saves, "a.ess", b"a");
+    let status = launch(LaunchSpec {
+        readonly_data_binds: vec![],
+        root_readonly_overwrite: None,
+        readonly_overwrite: Some(ow.clone()),
+        union_views: vec![
+            (docs.clone(), docs_upper.clone(), views.join("docs")),
+            (prof_saves.clone(), saves_upper.clone(), views.join("saves")),
+        ],
+        plugin_timestamps: None,
+        layers: vec![],
+        overwrite: upper.clone(),
+        mountpoint: game.join("Data"),
+        command: vec![
+            "/bin/sh".into(),
+            "-ec".into(),
+            r#"
+test "$(cat Data/shared.txt)" = shared; test ! -e Data/hidden.esm; test "$(cat Data/base.esm)" = master
+printf new > Data/shared.txt; printf out > Data/new.txt
+test "$(cat "$DOCS/Skyrim.ini")" = real; printf changed > "$DOCS/Skyrim.ini"
+mkdir -p "$DOCS/SKSE"; printf log > "$DOCS/SKSE/skse64.log"
+test "$(cat "$DOCS/Saves/a.ess")" = a; printf b > "$DOCS/Saves/b.ess"; rm "$DOCS/Saves/a.ess"
+"#
+            .into(),
+        ],
+        env: vec![("DOCS".into(), docs.display().to_string())],
+        base_bind: Some((game.join("Data"), data_stash.clone())),
+        binds: vec![
+            (views.join("docs"), docs.clone()),
+            (views.join("saves"), docs.join("Saves")),
+        ],
+        cwd: Some(game.clone()),
+        root_layers: vec![],
+        root_overwrite: Some(fixture.join("root-upper")),
+        root_base_bind: Some((game.clone(), root_stash.clone())),
+        root_base: None,
+    })
+    .expect("isolated test-run launch");
+    assert!(status.success(), "test-run uppers");
+    assert_eq!(fs::read(ow.join("shared.txt")).unwrap(), b"shared");
+    assert!(!ow.join("new.txt").exists());
+    assert_eq!(fs::read(upper.join("shared.txt")).unwrap(), b"new");
+    assert_eq!(fs::read(upper.join("new.txt")).unwrap(), b"out");
+    assert_eq!(fs::read(docs.join("Skyrim.ini")).unwrap(), b"real");
+    assert_eq!(fs::read(docs_upper.join("Skyrim.ini")).unwrap(), b"changed");
+    assert!(docs_upper.join("SKSE/skse64.log").is_file() && !docs.join("SKSE").exists());
+    assert!(!docs.join("Saves").exists());
+    assert_eq!(fs::read(prof_saves.join("a.ess")).unwrap(), b"a");
+    assert!(!prof_saves.join("b.ess").exists());
+    assert_eq!(fs::read(saves_upper.join("b.ess")).unwrap(), b"b");
+    assert!(saves_upper.join(".eidoswh.a.ess").exists());
+    // The views and their stashes are gone once launch returns.
+    assert!(!fs::read_to_string("/proc/self/mountinfo")
+        .unwrap()
+        .lines()
+        .any(|line| line
+            .split_whitespace()
+            .nth(4)
+            .is_some_and(|at| Path::new(at).starts_with(&views))));
+    detach(&data_stash);
+    detach(&root_stash);
+}
+
 fn main() {
     let root = std::env::temp_dir().join(format!("eidos-root-overwrite-{}", std::process::id()));
     fs::create_dir_all(&root).unwrap();
     game_copy_replaces_the_install(&root);
+    test_run_uppers(&root);
     userdata_mods_leave_install_mods_visible(&root);
     composed_shader_sessions(&root);
     morrowind_root_saves(&root);
@@ -538,6 +635,8 @@ fn main() {
     let status = launch(LaunchSpec {
         readonly_data_binds: vec![],
         root_readonly_overwrite: None,
+        readonly_overwrite: None,
+        union_views: vec![],
         plugin_timestamps: None,
         layers: vec![],
         overwrite: overwrite.clone(),
@@ -617,6 +716,8 @@ fn main() {
         let status = launch(LaunchSpec {
             readonly_data_binds: vec![],
             root_readonly_overwrite: Some(root_overwrite.clone()),
+            readonly_overwrite: None,
+            union_views: vec![],
             plugin_timestamps: Some(eidos_launch::PluginTimestamps {
                 times: std::collections::BTreeMap::from([("base.esm".into(), projected)]),
                 state_path: receipt.clone(),

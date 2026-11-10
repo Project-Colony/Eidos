@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
 
 # Community Shaders, DLSS en frame generation
 
@@ -10,7 +10,7 @@ en de samenvoeging serveert hun DLL's als al het andere - maar drie dingen zijn
 stilzwijgend niets doet. Deze pagina is die lijst, op een echte opstelling met
 schade en schande geleerd.
 
-Het tabblad Status controleert er drie van voor u: de NVAPI-variabele, wanneer er een NVIDIA-stuurprogramma en het Upscaling-pakket aanwezig zijn en de Proton-build van het spel NVAPI standaard uit laat (GE-Proton11-9 en Proton 11.0 zetten het aan), exclusief volledig scherm in de `SkyrimPrefs.ini` van het profiel, en de ENB-regel hieronder. Bij de laatste twee zit een knop Herstellen.
+Het tabblad Status controleert er drie van voor u: de NVAPI-variabele, wanneer er een NVIDIA-stuurprogramma en het Upscaling-pakket aanwezig zijn en de Proton-build van het spel NVAPI standaard uit laat (GE-Proton11-9 en Proton 11.0 zetten het aan), exclusief volledig scherm in de `SkyrimPrefs.ini` van het profiel, en de ENB-regel hieronder. Bij de laatste twee zit een knop Herstellen, en de kaart Weergave in Diagnostics stelt een randloos venster met een grootte in.
 
 ## De opstartoptie die DLSS nodig heeft
 
@@ -24,6 +24,8 @@ initialiseren en valt het terug op FSR-upscaling - stilletjes, zonder dat iets o
 het scherm zegt waarom. De variabele zetten kost niets op niet-NVIDIA-machines, dus
 de veilige opstartoptie is simpelweg de regel hierboven. Frame generation zelf is
 FSR 3.1 en heeft geen NVAPI nodig; alleen de DLSS-upscaler wel.
+
+Om hem voor één profiel in te stellen, zet je `env=PROTON_ENABLE_NVAPI=1` in de `launch-env.ini` van dat profiel (View -> INI editor, laatste tabblad). De Health-kaart telt die regel ook mee.
 
 ## Frame generation vereist een randloos venster
 

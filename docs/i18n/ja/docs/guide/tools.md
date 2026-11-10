@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=7f872c8fb702f4417931831cc14a48ffb9d9e30b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=697ab61c73cce270d79a42be1a29c4800a6ee6d0 -->
 
 # ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -167,9 +167,16 @@ Executables ダイアログの `Prereqs` 欄は編集できます - この検出
 同梱しており、起動時にプレフィックスへコピーします。やることは無く、ネット
 ワークも要りません。
 
-**Tier 2 - winetricks の verb**(`vcrun2022`、`dotnet8`、`dotnetdesktop8`、
-`dotnet48`、`xact` など)。これらはレジストリキー、GAC、CLR ホストを書くので、
-ファイルのコピーでは済みません。**Microsoft からダウンロード**します。
+**Tier 2 - インストーラ**(`vcrun2022`、`dotnet8`、`dotnetdesktop8`、`dotnet48`、`xact` など)。
+これらはレジストリキー、GAC、CLR ホストを書くので、ファイルのコピーでは済みません。
+Eidos はそのうち 3 つを winetricks なしでインストールします。`vcrun2022` は Microsoft の `VC_redist.x86.exe` と `VC_redist.x64.exe` を実行し、`dotnet8` と `dotnetdesktop8` は .NET 8.0.12 Desktop Runtime のインストーラを実行します。このインストーラには .NET ランタイムも入っています。
+リリースバンドル (`eidos-linux-bundle.tar.gz`) はこれらのインストーラを `runtimes/` フォルダーに同梱しており、`install.sh` がそれを `~/.local/share/Colony/Eidos/runtimes/` にコピーします。
+このコピーがない場合 (単体の `eidos-linux` ファイル、ソースからのビルド)、Eidos は同じフォルダーに **Microsoft からダウンロード**します (`download.visualstudio.microsoft.com`)。
+どちらの場合も、SHA-256 が Eidos に組み込まれた値と一致しないファイルは拒否されます。ファイルは、ゲームのツールを実行する Proton または Wine のビルドで、ゲームのプレフィックスの中でサイレント実行されます。
+winetricks と同じく、`vcrun2022` はまずプレフィックスの DLL オーバーライドで Visual C++ の DLL を `native,builtin` にします。
+その後 Eidos は、プレフィックスの C++ ランタイムが半分 Microsoft、半分 Proton のものになっていないかを確認し、そうなっていればインストール失敗として報告します。
+インストールされるのは 64 ビットの .NET 8 だけです。32 ビットの .NET 8 ツールには、引き続き `winetricks dotnetdesktop8` が必要です。
+それ以外の verb はシステムの `winetricks` を通ります。
 
 **Tier 3 - ランタイム**(`dotnet10`, `dotnetsdk10`)。現代の .NET ランタイムは 193 個の
 ファイルで、専用のディレクトリに置かれ、`DOTNET_ROOT` を通して見つけられます。
@@ -178,6 +185,7 @@ Executables ダイアログの `Prereqs` 欄は編集できます - この検出
 検証して、`~/.local/share/Colony/Eidos/runtimes/` にキャッシュします -
 **どのインスタンスの外側**でもあります。78 MB はゲームごとでもプロファイル
 ごとでもないからです。
+リリースバンドルは `dotnet10` ランタイムの zip も `runtimes/` に同梱しているので、Eidos はそのコピーを展開し、コピーがないときだけダウンロードします。`dotnetsdk10` は常にダウンロードされます。
 
 `dotnetsdk10` は .NET 10 SDK で、ダウンロードは 301 MB、展開すると 808 MB です。
 Synthesis はパッチャーのコンパイルにこれを必要とし、ビルドと実行にはパスなしの `dotnet` を呼び出します。
@@ -222,7 +230,7 @@ Wine の Mono へ回されます - その `System.Uri` の初期化子は、Mono
 `dotnet10` が用意するのはそれで、Eidos はそれを宣言したツールを起動するときに
 この変数を設定します。
 
-Eidos はシステムの `winetricks` を、Proton 自身の `wine` とゲームのプレフィックス
+それ以外の Tier 2 の verb では、Eidos はシステムの `winetricks` を、Proton 自身の `wine` とゲームのプレフィックス
 に対して実行します。これで Steam の pressure-vessel コンテナと、
 protontricks + Proton-GE の食い違いを回避します。未インストールの Tier 2 の
 verb を宣言したツールも起動はします。その verb と、直すためのコマンドを挙げた
@@ -424,12 +432,12 @@ Heroic でインストールした GOG または Epic のコピーでは、ゲ�
 (`GamesConfig/<appName>.json`) に Wine か Proton のビルドが記録されていれば、
 ツールにこのエントリは要りません。Eidos はツールをそのビルドで、ゲームの
 Heroic プレフィックスの中で実行し、`eidos prereqs <instance> --install` も
-winetricks にそのビルドを使わせます。Legendary だけでインストールしたコピーには
+そのビルドをインストーラと winetricks に使います。Legendary だけでインストールしたコピーには
 Heroic の設定がありません。
 
 `slr=1` を書くと、ツールとその前のレジストリのインポートを、ツールの Proton ビルドが指定する Steam Linux Runtime のコンテナ内で起動します (`toolmanifest.vdf` の `require_tool_appid`)。Steam がゲームを起動するのと同じ方法です。
 そのランタイムはいずれかの Steam ライブラリにインストールされている必要があり、ない場合は実行を止めて、インストールすべき Steam アプリを示します。
-`eidos prereqs` は引き続きホスト上で winetricks を実行し、`runner=native` のツールはこのキーを無視します。
+`eidos prereqs` は引き続きホスト上でインストーラと winetricks を実行し、`runner=native` のツールはこのキーを無視します。
 コンテナから見えるのはホームフォルダーとゲームの Steam ライブラリです。
 それ以外の場所、たとえば別のドライブにあるツール、MOD、ランタイムには `env=STEAM_COMPAT_MOUNTS=/その/パス` が必要です (複数のパスは `:` で区切ります)。
 `/usr/share/steam/compatibilitytools.d` にインストールした Proton は、コンテナ内の `/usr` がランタイムのものなので、`slr=1` ではおそらく使えません。

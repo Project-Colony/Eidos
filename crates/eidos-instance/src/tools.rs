@@ -74,7 +74,7 @@ pub enum Runner {
 }
 
 /// A variable name a shell could export: `[A-Za-z_][A-Za-z0-9_]*`.
-fn is_env_name(name: &str) -> bool {
+pub(crate) fn is_env_name(name: &str) -> bool {
     name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
         && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }

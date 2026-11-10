@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=7f872c8fb702f4417931831cc14a48ffb9d9e30b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=697ab61c73cce270d79a42be1a29c4800a6ee6d0 -->
 
 # Ferramentas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -191,9 +191,25 @@ que nao e opcional, [abaixo](#por-que-o-pgpatcher-precisa-de---ignore-mo2vfschec
 `d3dx11_43`). O Eidos as traz junto e as copia para dentro do prefixo no início. Nada a fazer, sem
 rede.
 
-**Tier 2 - verbos do winetricks** (`vcrun2022`, `dotnet8`, `dotnetdesktop8`,
-`dotnet48`, `xact`...). Esses escrevem chaves de registro, o GAC e hosts do CLR,
-então não podem ser copiados como arquivos. Eles **baixam da Microsoft**.
+**Tier 2 - instaladores** (`vcrun2022`, `dotnet8`, `dotnetdesktop8`, `dotnet48`,
+`xact`...). Esses escrevem chaves de registro, o GAC e hosts do CLR, então não
+podem ser copiados como arquivos. O Eidos instala três deles sem winetricks:
+`vcrun2022` roda o `VC_redist.x86.exe` e o `VC_redist.x64.exe` da Microsoft, e
+`dotnet8` e `dotnetdesktop8` rodam o instalador do .NET 8.0.12 Desktop Runtime,
+que também traz o runtime .NET. O pacote de release
+(`eidos-linux-bundle.tar.gz`) traz esses instaladores na pasta `runtimes/`, e o
+`install.sh` os copia para `~/.local/share/Colony/Eidos/runtimes/`. Sem essa
+cópia (o arquivo único `eidos-linux`, um build a partir do código-fonte) o Eidos
+**os baixa da Microsoft** (`download.visualstudio.microsoft.com`) para a mesma
+pasta. Em qualquer caso, um arquivo é recusado a menos que o SHA-256 bata com o
+embutido no Eidos, e ele roda em modo silencioso no prefixo do jogo, com a
+versão de Proton ou Wine que roda as ferramentas do jogo. Assim como o
+winetricks, `vcrun2022` primeiro coloca as DLLs do Visual C++ como
+`native,builtin` nos overrides de DLL do prefixo. Depois o Eidos confere se o
+runtime C++ do prefixo não ficou metade da Microsoft e metade do Proton, e marca
+a instalação como falha se ficou. Só o .NET 8 de 64 bits é instalado; uma
+ferramenta .NET 8 de 32 bits ainda precisa de `winetricks dotnetdesktop8`. Os
+outros verbos passam pelo `winetricks` do sistema.
 
 **Tier 3 - runtimes** (`dotnet10`, `dotnetsdk10`). Um runtime .NET moderno são 193 arquivos que
 vivem no próprio diretório e são encontrados através de `DOTNET_ROOT`: nunca
@@ -201,7 +217,9 @@ registrados, nunca instalados no prefixo de jeito nenhum, então nenhum dos
 outros dois tiers dá conta dele. O Eidos o baixa sozinho, confere contra um
 checksum embutido no binário, e o guarda em cache em
 `~/.local/share/Colony/Eidos/runtimes/` - **fora de qualquer instância**, porque
-78 MB não é por jogo nem por perfil.
+78 MB não é por jogo nem por perfil. O pacote de release também traz o zip do
+runtime `dotnet10` em `runtimes/`, então o Eidos descompacta essa cópia e só o
+baixa quando ela não existe; `dotnetsdk10` é sempre baixado.
 
 `dotnetsdk10` é o SDK do .NET 10, um download de 301 MB que ocupa 808 MB
 descompactado. O Synthesis precisa dele para compilar os seus patchers, e chama
@@ -263,11 +281,12 @@ toca em `mscoree`. Aponte `DOTNET_ROOT` para um runtime .NET 10 e ela roda. É
 isso que o `dotnet10` provisiona, e o Eidos define a variável ao iniciar
 qualquer ferramenta que o declare.
 
-O Eidos roda o `winetricks` do sistema contra o `wine` do próprio Proton e o
-prefixo do jogo, o que contorna o contêiner pressure-vessel do Steam e o
-descasamento entre protontricks e Proton-GE. Uma ferramenta que declara um verbo
-Tier-2 não instalado ainda assim inicia, com um aviso nomeando o verbo e o
-comando para consertar - o usuário pode tê-lo de outro lugar.
+Para os outros verbos Tier-2, o Eidos roda o `winetricks` do sistema contra o
+`wine` do próprio Proton e o prefixo do jogo, o que contorna o contêiner
+pressure-vessel do Steam e o descasamento entre protontricks e Proton-GE. Uma
+ferramenta que declara um verbo Tier-2 não instalado ainda assim inicia, com um
+aviso nomeando o verbo e o comando para consertar - o usuário pode tê-lo de
+outro lugar.
 
 ### Por que o PGPatcher precisa de `--ignore-mo2vfscheck`
 
@@ -468,23 +487,23 @@ do overlay do Steam de `LD_PRELOAD`.
 Numa cópia GOG ou Epic instalada pelo Heroic, as ferramentas não precisam dessa
 entrada quando as configurações do jogo no Heroic (`GamesConfig/<appName>.json`)
 indicam uma versão de Wine ou Proton: o Eidos as roda com essa versão no prefixo
-Heroic do jogo, e `eidos prereqs <instance> --install` a passa para o
-winetricks. Uma cópia instalada só com o Legendary não tem configurações do
-Heroic.
+Heroic do jogo, e `eidos prereqs <instance> --install` a usa para os
+instaladores e para o winetricks. Uma cópia instalada só com o Legendary não tem
+configurações do Heroic.
 
 `slr=1` inicia a ferramenta, e a importação no registro que vem antes dela,
 dentro do contêiner do Steam Linux Runtime que o Proton da ferramenta indica
 (`require_tool_appid` no seu `toolmanifest.vdf`), do jeito que o Steam inicia o
 jogo. Esse runtime precisa estar instalado em uma biblioteca do Steam; se não
 estiver, a execução para e indica o app do Steam a instalar. `eidos prereqs`
-continua rodando o winetricks no host, e uma ferramenta com `runner=native`
-ignora a chave. O contêiner enxerga sua pasta pessoal e a biblioteca do Steam do
-jogo. Uma ferramenta, um mod ou um runtime em outro lugar, em outro disco por
-exemplo, precisa de `env=STEAM_COMPAT_MOUNTS=/esse/caminho` (vários caminhos
-separados por `:`). Um Proton instalado em
-`/usr/share/steam/compatibilitytools.d` provavelmente não funciona com `slr=1`,
-porque o `/usr` dentro do contêiner é o do runtime. Nenhuma execução de
-ferramenta dentro do contêiner foi testada ainda.
+continua rodando seus instaladores e o winetricks no host, e uma ferramenta com
+`runner=native` ignora a chave. O contêiner enxerga sua pasta pessoal e a
+biblioteca do Steam do jogo. Uma ferramenta, um mod ou um runtime em outro
+lugar, em outro disco por exemplo, precisa de
+`env=STEAM_COMPAT_MOUNTS=/esse/caminho` (vários caminhos separados por `:`). Um
+Proton instalado em `/usr/share/steam/compatibilitytools.d` provavelmente não
+funciona com `slr=1`, porque o `/usr` dentro do contêiner é o do runtime.
+Nenhuma execução de ferramenta dentro do contêiner foi testada ainda.
 
 `eidos tool <instance> run <title> --print` mostra o comando final e cada
 variável que a execução define por cima do ambiente herdado, incluindo essas

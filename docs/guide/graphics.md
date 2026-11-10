@@ -8,7 +8,7 @@ NOT discoverable from inside the game, and each one makes the feature silently
 do nothing. This page is the list of them, learned the hard way on a real
 setup.
 
-The Health tab checks three of these for you: the NVAPI variable when an NVIDIA driver and the Upscaling package are both present and the game's Proton build leaves NVAPI off by default (GE-Proton11-9 and Proton 11.0 turn it on), exclusive fullscreen in the profile's `SkyrimPrefs.ini`, and the ENB line below. The last two have a Fix button.
+The Health tab checks three of these for you: the NVAPI variable when an NVIDIA driver and the Upscaling package are both present and the game's Proton build leaves NVAPI off by default (GE-Proton11-9 and Proton 11.0 turn it on), exclusive fullscreen in the profile's `SkyrimPrefs.ini`, and the ENB line below. The last two have a Fix button, and the Display card in Diagnostics sets borderless with a size.
 
 ## The launch option DLSS needs
 
@@ -22,6 +22,8 @@ falls back to FSR upscaling - quietly, with nothing on screen saying why.
 Setting the variable costs nothing on non-NVIDIA machines, so the guide-safe
 launch option is simply the line above. Frame generation itself is FSR 3.1 and
 does not need NVAPI; only the DLSS upscaler does.
+
+To set it for one profile only, put `env=PROTON_ENABLE_NVAPI=1` in that profile's `launch-env.ini` (View -> INI editor, last tab). The Health card counts that line too.
 
 ## Frame generation requires borderless windowed
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=7f872c8fb702f4417931831cc14a48ffb9d9e30b -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=697ab61c73cce270d79a42be1a29c4800a6ee6d0 -->
 
 # Strumenti: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -189,9 +189,26 @@ ne richiede uno che nessuno potrebbe indovinare: un titolo che contiene
 **Livello 1 - DLL incluse** (`d3dx9_43`, `d3dcompiler_47`, `d3dcompiler_43`,
 `d3dx11_43`). Eidos le distribuisce e le copia nel prefisso all'avvio. Niente da fare, niente rete.
 
-**Livello 2 - verbi winetricks** (`vcrun2022`, `dotnet8`, `dotnetdesktop8`,
+**Livello 2 - installatori** (`vcrun2022`, `dotnet8`, `dotnetdesktop8`,
 `dotnet48`, `xact`...). Scrivono chiavi di registro, la GAC e gli host CLR,
-quindi non possono essere copiati come file. **Scaricano da Microsoft**.
+quindi non possono essere copiati come file. Eidos ne installa tre senza
+winetricks: `vcrun2022` esegue `VC_redist.x86.exe` e `VC_redist.x64.exe` di
+Microsoft, e `dotnet8` e `dotnetdesktop8` eseguono l'installatore di .NET 8.0.12
+Desktop Runtime, che contiene anche il runtime .NET. Il pacchetto di rilascio
+(`eidos-linux-bundle.tar.gz`) include questi installatori nella sua cartella
+`runtimes/`, e `install.sh` li copia in `~/.local/share/Colony/Eidos/runtimes/`.
+Senza quella copia (il file singolo `eidos-linux`, una build dai sorgenti) Eidos
+**li scarica da Microsoft** (`download.visualstudio.microsoft.com`) nella stessa
+cartella. In entrambi i casi un file viene rifiutato se il suo SHA-256 non
+corrisponde a quello integrato in Eidos, e viene eseguito in modalità silenziosa
+nel prefisso del gioco con la build di Proton o Wine che avvia gli strumenti del
+gioco. Come fa winetricks, `vcrun2022` imposta prima le DLL di Visual C++ su
+`native,builtin` negli override DLL del prefisso. Dopo, Eidos controlla che il
+runtime C++ del prefisso non sia per metà di Microsoft e per metà di Proton, e
+in quel caso segnala l'installazione come fallita. Viene installato solo il .NET
+8 a 64 bit; uno strumento .NET 8 a 32 bit richiede ancora
+`winetricks dotnetdesktop8`. Gli altri verbi passano per il `winetricks` di
+sistema.
 
 **Livello 3 - runtime** (`dotnet10`, `dotnetsdk10`). Un runtime .NET moderno è fatto di 193 file
 che vivono in una directory propria e vengono trovati attraverso `DOTNET_ROOT`:
@@ -199,7 +216,9 @@ mai registrati, mai installati nel prefisso, quindi nessuno degli altri due
 livelli può trasportarlo. Eidos lo scarica da sé, lo verifica contro un checksum
 incorporato nel binario, e lo mette in cache in
 `~/.local/share/Colony/Eidos/runtimes/` - **fuori da ogni istanza**, perché 78 MB
-non sono per gioco né per profilo.
+non sono per gioco né per profilo. Il pacchetto di rilascio include anche lo zip
+del runtime `dotnet10` in `runtimes/`, quindi Eidos decomprime quella copia e lo
+scarica solo se manca; `dotnetsdk10` viene sempre scaricato.
 
 `dotnetsdk10` è l'SDK di .NET 10: 301 MB da scaricare, 808 MB una volta
 estratto. Synthesis ne ha bisogno per compilare i suoi patcher, e per costruirli
@@ -262,11 +281,12 @@ mai `mscoree`. Punta `DOTNET_ROOT` a un runtime .NET 10 e gira. È quello che
 `dotnet10` predispone, ed Eidos imposta la variabile quando avvia qualsiasi
 strumento che lo dichiari.
 
-Eidos esegue il `winetricks` di sistema contro il `wine` di Proton e il prefisso
-del gioco, il che aggira il contenitore pressure-vessel di Steam e la discordanza
-protontricks + Proton-GE. Uno strumento che dichiara un verbo di Livello 2 non
-installato parte comunque, con un avviso che nomina il verbo e il comando per
-rimediare - l'utente potrebbe averlo da altrove.
+Per gli altri verbi di Livello 2, Eidos esegue il `winetricks` di sistema contro
+il `wine` di Proton e il prefisso del gioco, il che aggira il contenitore
+pressure-vessel di Steam e la discordanza protontricks + Proton-GE. Uno
+strumento che dichiara un verbo di Livello 2 non installato parte comunque, con
+un avviso che nomina il verbo e il comando per rimediare - l'utente potrebbe
+averlo da altrove.
 
 ### Perche PGPatcher ha bisogno di `--ignore-mo2vfscheck`
 
@@ -470,9 +490,10 @@ chiave di registro descritta sopra, la cache degli shader di Steam, le radici
 .NET vuote e la rimozione dell'overlay di Steam da `LD_PRELOAD`.
 
 Su una copia GOG o Epic installata con Heroic, gli strumenti non hanno bisogno
-di questa voce se le impostazioni Heroic del gioco (`GamesConfig/<appName>.json`)
-indicano una build di Wine o Proton: Eidos li avvia con quella build nel
-prefisso Heroic del gioco, e `eidos prereqs <instance> --install` la passa a
+di questa voce se le impostazioni Heroic del gioco
+(`GamesConfig/<appName>.json`) indicano una build di Wine o Proton: Eidos li
+avvia con quella build nel prefisso Heroic del gioco, e
+`eidos prereqs <instance> --install` la usa per gli installatori e per
 winetricks. Una copia installata solo con Legendary non ha impostazioni Heroic.
 
 `slr=1` avvia lo strumento, e l'importazione nel registro che lo precede, dentro
@@ -480,11 +501,11 @@ il contenitore Steam Linux Runtime indicato dal Proton dello strumento
 (`require_tool_appid` nel suo `toolmanifest.vdf`), come Steam avvia il gioco.
 Quel runtime deve essere installato in una libreria di Steam; altrimenti
 l'esecuzione si ferma e indica l'app di Steam da installare. `eidos prereqs`
-continua a eseguire winetricks sull'host, e uno strumento con `runner=native`
-ignora la chiave. Il contenitore vede la tua cartella home e la libreria di
-Steam del gioco. Uno strumento, una mod o un runtime altrove, per esempio su un
-altro disco, richiede `env=STEAM_COMPAT_MOUNTS=/quel/percorso` (più percorsi
-separati da `:`). Un Proton installato in
+continua a eseguire i suoi installatori e winetricks sull'host, e uno strumento
+con `runner=native` ignora la chiave. Il contenitore vede la tua cartella home e
+la libreria di Steam del gioco. Uno strumento, una mod o un runtime altrove, per
+esempio su un altro disco, richiede `env=STEAM_COMPAT_MOUNTS=/quel/percorso`
+(più percorsi separati da `:`). Un Proton installato in
 `/usr/share/steam/compatibilitytools.d` probabilmente non è utilizzabile con
 `slr=1`, perché `/usr` dentro il contenitore è quello del runtime. Nessuna
 esecuzione di uno strumento nel contenitore è stata ancora provata.

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
 
 # Community Shaders, DLSS et génération d'images
 
@@ -10,7 +10,7 @@ quoi d'autre - mais trois choses ne sont **pas** découvrables depuis l'intérie
 jeu, et chacune fait que la fonctionnalité ne fait rien, en silence. Cette page en
 est la liste, apprise à la dure sur une installation réelle.
 
-L'onglet Santé vérifie trois d'entre eux pour vous : la variable NVAPI, quand un pilote NVIDIA et le paquet Upscaling sont présents et que la version de Proton du jeu laisse NVAPI désactivé par défaut (GE-Proton11-9 et Proton 11.0 l'activent), le plein écran exclusif dans le `SkyrimPrefs.ini` du profil, et la ligne ENB décrite plus bas. Les deux derniers ont un bouton Corriger.
+L'onglet Santé vérifie trois d'entre eux pour vous : la variable NVAPI, quand un pilote NVIDIA et le paquet Upscaling sont présents et que la version de Proton du jeu laisse NVAPI désactivé par défaut (GE-Proton11-9 et Proton 11.0 l'activent), le plein écran exclusif dans le `SkyrimPrefs.ini` du profil, et la ligne ENB décrite plus bas. Les deux derniers ont un bouton Corriger, et la carte Affichage de Diagnostics règle une fenêtre sans bordure avec une taille.
 
 ## L'option de lancement dont DLSS a besoin
 
@@ -25,6 +25,8 @@ initialiser DLSS et se rabat sur la mise à l'échelle FSR - discrètement, sans
 NVIDIA, donc l'option de lancement sûre est simplement la ligne ci-dessus. La
 génération d'images elle-même est du FSR 3.1 et n'a pas besoin de NVAPI ; seul
 l'upscaler DLSS en a besoin.
+
+Pour le définir pour un seul profil, mettez `env=PROTON_ENABLE_NVAPI=1` dans le `launch-env.ini` de ce profil (View -> INI editor, dernier onglet). La carte Santé compte aussi cette ligne.
 
 ## La génération d'images exige le mode fenêtré sans bordure
 

@@ -590,6 +590,9 @@ pub(crate) fn cmd_install(args: &[String]) {
             if let Some(backup) = report.backup {
                 println!("  backup: {}", backup.display());
             }
+            if let Some(c) = &report.changes {
+                println!("  changes: {}", c.summary());
+            }
             for missing in report.missing {
                 eidos_log::warn!("Installer expected missing archive file: {missing}");
             }

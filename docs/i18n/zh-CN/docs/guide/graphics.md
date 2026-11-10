@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=6d02f2cb51d9b1fdfcbd2a9369714a5c4062f3b6 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=444791ab81e0f8bdaf91f5afdd30368fb1e166e8 -->
 
 # Community Shaders、DLSS 与帧生成
 
@@ -8,7 +8,7 @@ Eidos 工作 —— CS 及其附加包按普通模组安装,合并视图像对�
 DLL —— 但有三件事在游戏里**看不出来**,而且每一件都会让功能静悄悄地什么也不做。
 本页就是这份清单,是在真实环境里吃过苦头换来的。
 
-“健康”标签页会替你检查其中三项:存在 NVIDIA 驱动和 Upscaling 包、而游戏所用的 Proton 版本默认关闭 NVAPI 时的 NVAPI 变量(GE-Proton11-9 和 Proton 11.0 会开启它),配置文件 `SkyrimPrefs.ini` 中的独占全屏,以及下面介绍的 ENB 那一行。后两项带有“修复”按钮。
+“健康”标签页会替你检查其中三项:存在 NVIDIA 驱动和 Upscaling 包、而游戏所用的 Proton 版本默认关闭 NVAPI 时的 NVAPI 变量(GE-Proton11-9 和 Proton 11.0 会开启它),配置文件 `SkyrimPrefs.ini` 中的独占全屏,以及下面介绍的 ENB 那一行。后两项带有“修复”按钮,Diagnostics 中的“显示”卡片可以连同尺寸一起设为无边框窗口。
 
 ## DLSS 需要的启动选项
 
@@ -20,6 +20,8 @@ PROTON_ENABLE_NVAPI=1 eidos-gui %command%
 而 Skyrim 不在名单里。没有它,CS 无法初始化 DLSS,会悄悄退回 FSR 超分,屏幕上不会
 有任何提示说明原因。在非 NVIDIA 机器上设置这个变量毫无代价,所以放心用的启动选项就是
 上面那一行。帧生成本身是 FSR 3.1,不需要 NVAPI;只有 DLSS 超分需要。
+
+只想为一个配置文件设置时,把 `env=PROTON_ENABLE_NVAPI=1` 写进该配置文件的 `launch-env.ini`(View -> INI editor,最后一个标签页)。Health 卡片也会计入这一行。
 
 ## 帧生成要求无边框窗口
 

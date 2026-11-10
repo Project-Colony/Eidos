@@ -156,6 +156,31 @@ pub(crate) enum Message {
     /// Play although a flagged generator's output is out of date; close the prompt.
     PlayAnyway,
     ClosePlayPrompt,
+    /// The Test run dialog: open it, pick which mods, ask for the run (then Run),
+    /// drop the waiting request, close it.
+    OpenTestRun,
+    TestChoose(TestChoice),
+    TestStart,
+    TestCancelRequest,
+    CloseTestDialog,
+    /// The test run review: keep or throw away a group, apply, or close it
+    /// and decide later.
+    ReviewChoose(eidos_instance::TestGroup, bool),
+    ReviewApply,
+    ReviewLater,
+    /// The bisect panel (A37): open it, start a search, run the next step as a
+    /// test run, hide it (nothing changes on disk).
+    OpenBisect,
+    BisectStart,
+    BisectRunStep,
+    BisectHide,
+    /// Answer the step, run it again, review what it wrote, stop the search,
+    /// or close the result.
+    BisectAnswer(eidos_instance::Answer),
+    BisectRepeat,
+    BisectReview,
+    BisectStop,
+    BisectClose,
     ExecTogglePinned,
     ExecMakeShortcut,
     /// Executables dialog: list the entries of a foreign `ModOrganizer.ini`,
@@ -453,6 +478,14 @@ pub(crate) enum Message {
         mod_id: u64,
         result: Result<eidos_nexus::ModFiles, String>,
     },
+    /// A mod's Nexus page arrived (or failed), keyed like `NexusFilesFetched`.
+    NexusPageFetched {
+        domain: String,
+        mod_id: u64,
+        result: Result<eidos_nexus::ModPage, String>,
+    },
+    /// Ask Nexus again for the open mod's page.
+    NexusPageRefresh,
     /// Replace a mod's folder with the file that succeeds its installed one.
     NexusUpdate {
         folder: String,
@@ -577,6 +610,11 @@ pub(crate) enum Message {
     CopyHealthReport,
     /// Apply the fix a Health card offers, named by its finding code.
     HealthFix(&'static str),
+    /// The Display card's fields, and Apply.
+    DisplayWidth(String),
+    DisplayHeight(String),
+    DisplayMode(eidos::check::display::WindowMode),
+    DisplayApply,
     /// Put a crash log on the clipboard, home path and user name replaced.
     CopyCrashLog(PathBuf),
     /// Open the logs folder in a file manager.
@@ -849,6 +887,26 @@ pub(crate) enum Message {
     /// Move to the next member without waiting for this one.
     CollectionWalkSkip,
     CollectionWalkStop,
+    /// Show the Browse or the Link half of the collection pane.
+    CollectionPaneSelected(CollectionPane),
+    /// The Browse search box.
+    CollectionBrowseQueryChanged(String),
+    /// A sort button; searches again.
+    CollectionBrowseSortChanged(eidos_nexus::collections::CollectionSort),
+    /// Ask Nexus for one page of the open game's collections.
+    CollectionBrowseSearch,
+    /// The page came back, tagged with what it was asked for.
+    CollectionBrowseFetched {
+        instance: PathBuf,
+        query: String,
+        sort: eidos_nexus::collections::CollectionSort,
+        result: Result<eidos_nexus::collections::CollectionSearch, String>,
+    },
+    /// View a listed collection: its latest revision on the Link pane.
+    CollectionBrowsePick(usize),
+    /// Put the members of the installed collection with this slug back into an
+    /// order that keeps its before/after rules.
+    RestoreCollectionOrder(String),
     // ---- Instance manager (MO2's Manage Instances) ----
     ShowInstanceManager,
     CloseInstanceManager,

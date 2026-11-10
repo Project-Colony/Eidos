@@ -55,6 +55,8 @@ pub(crate) enum InfoTab {
     Notes,
     /// The mod's file list on Nexus, fetched on first open.
     NexusFiles,
+    /// The mod's Nexus description and changelog, fetched on first open.
+    NexusPage,
 }
 
 /// A keyboard navigation intent, independent of which list will answer it.
@@ -180,6 +182,12 @@ pub(crate) struct PlayPrompt {
     pub(crate) key: (String, u64),
 }
 
+/// `orders_stamp` of the instance, and the rules read at that stamp.
+pub(crate) type CollectionOrdersCache = (
+    Vec<(PathBuf, Option<std::time::SystemTime>)>,
+    std::rc::Rc<Vec<eidos::check::collections::CollectionOrder>>,
+);
+
 pub(crate) struct App {
     pub(crate) installer: Option<installers::Wizard>,
     pub(crate) mod_picker: u64,
@@ -230,6 +238,9 @@ pub(crate) struct App {
     pub(crate) diag_dirty: bool,
     /// The `&App`-reachable half of the same flag, so `bump_views` can set it.
     pub(crate) diag_stale: std::cell::Cell<bool>,
+    /// The Display card's form, refreshed with the health checks; `None` for a
+    /// game without the card.
+    pub(crate) display: Option<DisplayForm>,
     pub(crate) tab: Tab,
     pub(crate) status: Option<String>,
     /// Two-click guard for the destructive "Clear Overwrite" action.
@@ -239,6 +250,30 @@ pub(crate) struct App {
     /// Run is waiting on "Run first / Play anyway": a flagged generator's output
     /// is out of date.
     pub(crate) play_prompt: Option<PlayPrompt>,
+    /// The open Test run dialog and the choice it shows.
+    pub(crate) test_dialog: Option<TestChoice>,
+    /// The instance's test run as the last press read it. The view reads this,
+    /// never `test_run_state`, whose lock probe can sleep for 100 ms.
+    pub(crate) test_state: Option<(eidos_instance::TestRun, eidos_instance::TestState)>,
+    /// The open review of an ended test run.
+    pub(crate) test_review: Option<TestReview>,
+    /// The bisect search (A37) as `bisect.json` held it when the window last
+    /// read it, and whether its panel is showing.
+    pub(crate) bisect: Option<eidos_instance::Bisect>,
+    pub(crate) bisect_open: bool,
+    /// The enabled managed mods and the plugin rows, read when the panel opens
+    /// and after each step, so the view never walks plugin headers.
+    pub(crate) bisect_universe: (Vec<String>, Vec<eidos_plugins::Plugin>),
+    /// The mods Setup shows as always on and Start pins, read when the panel
+    /// opens: finding the extender's mod reads every mod's `Root` folder.
+    pub(crate) bisect_pinned: Vec<String>,
+    /// The first press of an answer, Run it again or Stop; the second acts.
+    pub(crate) bisect_armed: Option<BisectArm>,
+    /// The ended step's hint and how many files an answer throws away, read
+    /// with the test state so the view walks no folder.
+    pub(crate) bisect_step: (Option<BisectHint>, usize),
+    /// The panel's status slot when nothing is armed: why the last press failed.
+    pub(crate) bisect_line: Option<String>,
     /// Drift states the user chose to play with, for this window only:
     /// `(receipt id, hash of the inputs)`. Never saved.
     pub(crate) play_anyway: Vec<(String, u64)>,
@@ -294,6 +329,9 @@ pub(crate) struct App {
     pub(crate) info_provenance: String,
     /// Mods this one requires, and mods that require it, read once on open.
     pub(crate) info_requirements: (Vec<String>, Vec<String>),
+    /// What the last Replace changed in this mod, and the conflict partners it
+    /// gained or lost, read once on open.
+    pub(crate) info_update: Option<(eidos_instance::UpdateReport, crate::modinfo::ConflictDelta)>,
     pub(crate) info_tab: InfoTab,
     pub(crate) notes_edit: String,
     /// Collapsed separators, keyed by display name (MO2 keys by display name too).
@@ -497,6 +535,10 @@ pub(crate) struct App {
     /// Nexus file lists asked for this session, by `(domain, mod id)`.
     pub(crate) nexus_files: HashMap<(String, u64), Result<eidos_nexus::ModFiles, String>>,
     pub(crate) nexus_files_loading: Option<(String, u64)>,
+    /// Nexus pages (description and changelog) asked for this session, by
+    /// `(domain, mod id)`.
+    pub(crate) nexus_pages: HashMap<(String, u64), Result<eidos_nexus::ModPage, String>>,
+    pub(crate) nexus_page_loading: Option<(String, u64)>,
     /// Enabled mods that are endorsed (recomputed in `mods_changed`).
     pub(crate) endorsed_count: usize,
     /// Enabled mods with a Nexus update available (recomputed in `mods_changed`).
@@ -761,6 +803,12 @@ pub(crate) struct App {
     /// `view_generation`: the archive worker swaps the map without bumping it.
     pub(crate) contested_cache:
         std::cell::RefCell<Option<(u64, u32, std::rc::Rc<crate::modinfo::Contested>)>>,
+    /// The open instance's collection rules, keyed by `orders_stamp`.
+    ///
+    /// The Diagnostics refresh after every toggle and drag checks them, and
+    /// reading and resolving the recipe of a 2000-mod collection took 4.3 s in
+    /// a debug build: they are read again only when a file they come from changes.
+    pub(crate) collection_orders: std::cell::RefCell<Option<CollectionOrdersCache>>,
     /// The union the Data tab reads, built once per view generation.
     ///
     /// The SAME `LayerStack` the mount serves from, rather than a hand-rolled

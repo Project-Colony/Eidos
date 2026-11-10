@@ -30,8 +30,38 @@ pub(crate) struct CollectionTarget {
     pub(crate) installation: String,
 }
 
+/// Which half of the collection pane is showing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum CollectionPane {
+    /// Search the open game's published collections.
+    Browse,
+    /// Paste a link, and the collection it names.
+    #[default]
+    Link,
+}
+
+/// The Browse pane: one search page of the open game's collections.
+#[derive(Default)]
+pub(crate) struct CollectionBrowse {
+    pub(crate) query: String,
+    pub(crate) sort: eidos_nexus::collections::CollectionSort,
+    /// True while the one GraphQL request is in flight.
+    pub(crate) loading: bool,
+    /// An error is the line drawn as it is: a local guard, or Nexus's failure
+    /// already worded as `collection_browse_failed`.
+    pub(crate) result: Option<Result<eidos_nexus::collections::CollectionSearch, String>>,
+}
+
+/// The link of a collection's latest revision, what View hands to the Link pane.
+pub(crate) fn browse_link(domain: &str, slug: &str) -> String {
+    format!("nxm://{domain}/collections/{slug}/revisions/latest")
+}
+
 /// The collection browser.
+#[derive(Default)]
 pub(crate) struct CollectionState {
+    pub(crate) pane: CollectionPane,
+    pub(crate) browse: CollectionBrowse,
     pub(crate) install_check: Option<u64>,
     pub(crate) runtime: Option<(CollectionTarget, eidos_collections::recipe::RuntimeCheck)>,
     /// What the user pasted, kept so the field survives a failed fetch.

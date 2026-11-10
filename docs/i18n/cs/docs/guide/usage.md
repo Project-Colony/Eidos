@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=507d35472d3f92ae0cc2794d3bc9d399565fd8ea -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=aaff8588275e2b036c2a1c344c01509a4c9d0f00 -->
 
 # Používání Eidosu
 
@@ -175,6 +175,20 @@ co-savem do profilu a žádný sav profilu nenahradí.
 ### Co se změnilo od posledního úspěšného spuštění
 
 Každé spuštění přes `eidos play` nebo `eidos tool run`, z okna, terminálu nebo Steamu, zapíše záznam do `<instance>/logs/sessions/`: profil, každý zapnutý mod s verzí a ID souborů z Nexusu, pořadí pluginů, kontrolní součet každého INI profilu, verzi spustitelného souboru hry, verzi Eidos, návratový kód a uložené hry, které spuštění vytvořilo. Uchovává se 50 nejnovějších a `logs/` se do zabalené instance nedostane. `eidos sessions <instance> diff` porovná poslední spuštění hry s kódem 0 se současným stavem; `diff <id>` vybere jiný záznam ze seznamu. Eidos tu zatím pády nepozná a hra, která spadla pod Protonem, může skončit kódem 0 i tak: pokud vybrané spuštění patří mezi ně, zadejte dřívější přes `diff <id>`.
+
+### Testovací spuštění
+
+Tlačítko Test run vedle Run spustí hru stejně jako Run, ale vše, co hra zapíše, jde do `<instance>/test-run/` místo do vašeho profilu, do Overwrite a do prefixu: nové a změněné savy, změny INI, `plugins.txt`, soubory zapsané do Data nebo do složky hry a logy v `Documents/My Games/<game>`. Testovat můžete s mody profilu, úplně bez modů, nebo jen s mody vybranými v seznamu a s mody, jejichž pluginy potřebují jako mastery.
+
+Když hra skončí, Eidos ty soubory ukáže v pěti skupinách (savy, změny INI, stav pluginů, výstup do Overwrite, logy) a u každé se zeptá, zda ji ponechat, nebo zahodit. Ponechání savů nikdy nesmaže sav z profilu, ani ten, který hra během běhu smazala. Zahození čehokoli vyžaduje druhé stisknutí. Pokud se Eidos nebo počítač během testovacího spuštění zastaví, soubory zůstanou v `test-run/` a seznam se otevře, až příště otevřete instanci nebo stisknete F5.
+
+Když okno nespustil obchod hry, Test run předá hru tomuto obchodu (Steam, Heroic nebo Legendary), stejně jako Run, a spuštění, které provede obchod, je testovací spuštění. Testovací spuštění pokrývá jen výše uvedené složky: ostatní zápisy hry, například do registru Wine, jdou tam, kam vždy. Savy z testovacího spuštění se do Steam Cloud dostanou až poté, co je ponecháte a zahrajete si normální spuštění.
+
+### Jak najít mod, který způsobuje problém
+
+Tlačítko Find the mod behind a problem v Diagnostics hledá mod, který způsobuje problém, jenž umíte zopakovat, například pád na určitém místě. Každý krok je testovací spuštění s polovinou zbývajících podezřelých, mastery, které potřebují, a mody, které necháváte vždy zapnuté (mody vybrané v seznamu při startu hledání a mod, který dodává script extender). Po každém spuštění odpovíte, zda se problém objevil; Not sure rozdělí podezřelé jinak a Run it again krok zopakuje. Odpověď nebo Run it again zahodí soubory, které krok zapsal, po druhém stisknutí. Chcete-li některé z nich ponechat, stiskněte nejdřív See the files: otevře se stejný seznam jako po testovacím spuštění. Když hra spadla a crash logger zapsal log, nebo hra skončila chybovým kódem, Eidos označí Yes jako pravděpodobnou odpověď. 200 podezřelých zabere asi 8 spuštění.
+
+Hledání se ukládá do `<instance>/bisect.json`, takže mezi kroky můžete Eidos zavřít. Stop the search ho po druhém stisknutí zahodí. Výsledek jmenuje mod, nebo sadu modů, které potřebují mastery jedna druhé, a uchová se v `<instance>/logs/bisect-<time>.txt`. Generované mody (výstup Nemesis nebo DynDOLOD, Bashed Patch) jsou sestavené pro celý seznam a s jeho polovinou mohou selhat: nechte je vždy zapnuté, nebo je nechte vypnuté po celé hledání.
 
 ### Žádný privilegovaný krok
 
@@ -668,6 +682,29 @@ nainstalován, a potom dotaz nabídne Replace se zaškrtnutým „Keep a backup 
 existing mod", ať jste při minulém dotazu zvolili cokoli. Replace zachová
 prioritu módu i to, zda je zapnutý.
 
+Karta **Nexus page** vedle ní ukazuje popis módu a, od nejnovější, seznam změn
+každé verze souboru na jeho stránce. Eidos obojí načte z GraphQL API Nexusu,
+které se nezapočítává do hodinového limitu požadavků, při prvním otevření karty
+a ponechá si to, dokud Eidos nezavřete nebo nestisknete **Refresh**. Obojí se
+zobrazuje jako prostý text: formátování BBCode a HTML je odstraněno, adresa
+odkazu je napsána za jeho textem a obrázky a videa jsou vynechány. **Endorse** a
+**Track** nad textem dělají totéž co nabídka pravého tlačítka módu. Stránka módu
+pro dospělé zůstane skrytá, pokud váš účet na Nexusu nezobrazuje obsah pro
+dospělé, a stránka bez hodnocení zůstane skrytá vždy.
+
+Než Replace vymění složku módu, Eidos porovná starou složku s novou podle názvů
+a velikostí souborů a přečte hlavičky pluginů v obou. Týká se to Update,
+aktualizace kolekce i Replace zvoleného v dotazu při instalaci. Stavový řádek
+pak spočítá přidané, odebrané a ve velikosti změněné soubory a jmenuje každý
+master, který nová verze potřebuje a stará ne. Karta **General** v
+„Information..." končí sekcí **Last update**, která uvádí verze, přidané nebo
+odebrané pluginy, přidané nebo zrušené mastery, pluginy se změněným příznakem
+ESM, ESL nebo ESH, módy, s nimiž tento mód nově sdílí soubory nebo je už
+nesdílí, a soubory. Soubor přepsaný se stejnou velikostí se neuvádí. Hlášení je
+uloženo v `logs/updates/<mod>.json` v instanci, kterou `eidos pack` vynechává;
+čerstvá instalace nebo Merge do složky ho smaže. `eidos install --replace`
+vypíše stejné počty na řádku `changes:`.
+
 Složka, která obsahuje několik souborů z Nexusu, třeba hlavní soubor s
 přimíchaným volitelným souborem, je odmítnuta: nahrazení novým hlavním souborem
 by ostatní ztratilo. Aktualizujte je ručně.
@@ -693,12 +730,16 @@ se po dokončení stane zpráva. Všechno výše o tom, co se použije a co se j
 pojmenuje, platí i tady slovo od slova: okno a `eidos collection` jsou jeden
 motor se dvěma rozhraními.
 
+Bez odkazu se **File -> Open a Nexus collection...** otevře na kartě **Browse**. Ta vypíše kolekce zveřejněné pro hru otevřené instance, po 20, seřazené podle počtu stažení, poslední aktualizace nebo od nejnovějších, a vyhledávací pole zúží seznam na kolekce, jejichž název nebo text odpovídá. Každý řádek uvádí autora, nejnovější revizi, počet modů, počet stažení a datum. **View** otevře nejnovější revizi dané kolekce na kartě **Link**, stejně jako vložení jejího odkazu. Kolekce označené jako obsah pro dospělé se vynechají, pokud váš účet Nexus obsah pro dospělé nezobrazuje, kolekce bez hodnocení se vynechají vždy a řádek pod seznamem počítá obojí. Procházení vyžaduje přihlášený účet Nexus, stejně jako zbytek panelu.
+
 Kolekci lze číst jen proti **její vlastní hře**. Otevřete kolekci pro Skyrim
 s načtenou instancí Fallout 4 a Eidos ji jmenovitě odmítne, místo aby členy
 spároval s nesprávným seznamem módů, kde by každé „nainstalovaný" a každé
 „chybějící" byl šum ve tvaru odpovědi.
 
 Když spustíte Zkontrolovat aktualizace, Eidos se také zeptá Nexusu na nejnovější revizi každé kolekce nainstalované v této instanci. Řádek nad seznamem modů uvádí každou kolekci s novější revizí a počty přidaných (+), aktualizovaných (~) a vyřazených (-) modů; jejich jména se zobrazí po najetí myší. Počty chybí, když recept nainstalované revize už není v mezipaměti. **Aktualizovat** otevře novější revizi v panelu kolekce, kde ji spustí *Install this collection*. Seznam se při každé kontrole sestaví znovu a neukládá se.
+
+Eidos si pravidla každé nainstalované kolekce ponechává i po instalaci. Když pozdější přetažení postaví dva její mody proti pravidlu pořadí (před nebo po), karta **Diagnostics** ukáže pro tuto kolekci jednu kartu, která uvede první takovou dvojici a spočítá pravidla, která už neplatí. Počítají se jen mody zapnuté v aktuálním profilu a pravidla zachycená ve smyčce se přeskakují, protože je žádné pořadí nemůže splnit. **Restore collection order** vrátí mody kolekce do pořadí, které splňuje každé pravidlo, zachová vaše vlastní pořadí všude, kde to pravidla dovolí, a mody, které do kolekce nepatří, nechá na místě. Ctrl+Z to vrátí zpět. `eidos check` hlásí totéž zjištění jako `collection_order_broken`. Kontrola potřebuje recept revize v `collections/`, takže kolekce, jejíž recept byl z mezipaměti odstraněn, se nekontroluje.
 
 ### Režim offline
 
@@ -725,6 +766,8 @@ přetrvá, ne tu zahrabanou v prefixu Protonu, která se při každém spuštěn
 přepíše. **View -> Log** čte logy relací. **View -> Extensions** vypisuje vaše
 vlastní doplňky; viz [extensions.cs.md](extensions.md).
 
+Když start nenajde hlavní INI hry (`Skyrim.ini`, `Fallout4.ini`, `Oblivion.ini`...) ani v profilu, ani v prefixu, Eidos nejdřív zkopíruje do profilu výchozí soubor ze složky hry (`Skyrim_Default.ini`, `Fallout4_Default.ini`...), stejně jako MO2. Prefix a složka hry se nemění.
+
 Instalace přijme všechno: cesty Simple a FOMOD, plus balíčky **BAIN** z Wrye
 Bash (zaškrtnete podbalíčky, které se slučují v pořadí) a **ruční** výběr, který
 ukáže strom archivu a nechá vás ukázat na kořen dat, když rozvržení nerozpozná
@@ -744,6 +787,8 @@ což z otázky „načetly se moje SKSE pluginy?" dělá místo dohadu důkaz.
 Hlásí také aktualizaci hry od posledního čistého spuštění, chybějící script extender nebo takový, který neodpovídá verzi hry (se stránkou ke stažení extenderu a tlačítkem, které nainstaluje stažený archiv), parametr spuštění ve Steamu, který nespouští Eidos s `%command%`, NVAPI vypnuté pro DLSS, exkluzivní celou obrazovku, která brání generování snímků, `enblocal.ini` od ENB bez `LinuxVersion=true`, deklarace pluginů F4SE a SFSE a crash log poslední relace s módy, které jmenuje.
 Kontrola aktualizací také načte požadavky každého modu na Nexusu. Diagnostics uvede požadovaný mod, který chybí nebo je vypnutý, a tlačítkem Ignore lze zahodit požadavek splněný jinak.
 
+U Skyrim SE, Enderal SE a Fallout 4 má Diagnostics také kartu Zobrazení. Ukazuje velikost a režim okna nastavené v `SkyrimPrefs.ini` profilu (`EnderalPrefs.ini`, `Fallout4Prefs.ini`), nebo v kopii v prefixu, pokud ji profil ještě nemá. Když velikost nenastavuje ani jedna z nich, pole se vyplní podle největší připojené obrazovky uvedené v `/sys/class/drm`, takže Steam Deck ukáže 1280x800. Apply zapíše `iSize W`, `iSize H`, `bFull Screen` a `bBorderless` do kopie profilu; pokud ji profil nemá, nejdřív převezme kopii z prefixu. Když okno nastavuje SSE Display Tweaks, Apply zapíše stejnou velikost a režim do jeho kopie v Overwrite; vlastní soubor modu se nemění.
+
 Chcete-li hru spouštět skrz GUI, nastavte parametr spuštění hry ve Steamu na
 absolutní cestu k binárce (Steam nevidí `~/.cargo/bin` v PATH):
 
@@ -755,7 +800,7 @@ Eidos se otevře na instanci té hry - té, kterou jste použili naposledy, tak�
 přenosná instance se najde znovu stejně jako globální; kliknutím na Run ji
 spustíte skrz sloučený pohled.
 
-Se zapnutou volbou **Start the game at once when a store opens Eidos** (Preferences, General, Running a game) Eidos toto kliknutí přeskočí: zkontroluje Health a spustí hru, aniž by ukázal své okno. Okno se otevře jako obvykle, když Health hlásí problém, když seznam modů vyžaduje pozornost nebo když nástroj nastavený ke spuštění před hraním má zastaralý výstup. Chcete-li okno pro jedno spuštění, dejte před příkaz `EIDOS_WINDOW=1`: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
+Se zapnutou volbou **Start the game at once when a store opens Eidos** (Preferences, General, Running a game) Eidos toto kliknutí přeskočí: zkontroluje Health a spustí hru, aniž by ukázal své okno. Okno se otevře jako obvykle, když Health hlásí problém, když seznam modů vyžaduje pozornost, když nástroj nastavený ke spuštění před hraním má zastaralý výstup nebo, u Skyrim SE, Enderal SE a Fallout 4, když profil ještě nemá velikost okna (okno se pak otevře na Diagnostics). Chcete-li okno pro jedno spuštění, dejte před příkaz `EIDOS_WINDOW=1`: `EIDOS_WINDOW=1 ~/.cargo/bin/eidos-gui %command%`.
 
 Mimo Steam Run nespouští hru sám přes Proton nebo Wine. Požádá obchod, kterému
 kopie patří, aby ji spustil, a obchod spustí Eidos:
@@ -775,6 +820,23 @@ kliknete na Run. První okno tento běh nesleduje, proto v něm po hraní stiskn
 F5, aby se znovu načetly jeho seznamy. Když nastavení v obchodě chybí nebo
 loader script extenderu neleží vedle spustitelného souboru hry, Run nic nespustí
 a ukáže, co a kde nastavit, se skutečnou cestou ke spuštěné binárce.
+
+### Proměnné a wrappery pro profil
+
+Profil může mít vlastní proměnné prostředí a příkazy wrapperů v `profiles/<název>/launch-env.ini`, jeden záznam na řádek:
+
+```ini
+env=PROTON_ENABLE_NVAPI=1
+env=DXVK_HUD=fps
+wrapper=gamemoderun
+wrapper=gamescope -W 1280 -H 800 -f -- %command%
+```
+
+Platí pro každé `eidos play` tohoto profilu (hra spuštěná přes `%command%` ve Steamu nebo přes Run v okně, které otevřel obchod) i pro každé spuštění nástroje. `eidos shell` dostane proměnné a žádný wrapper. První řádek `wrapper=` je nejvnější. U řádku `wrapper=`, který obsahuje `%command%`, se příkaz vloží na toto místo, jako v parametrech spuštění Steamu; u řádku bez něj se příkaz přidá na konec. Wrappery běží v soukromém jmenném prostoru Eidos, takže vidí módy.
+
+Proměnná zde nahradí hodnotu, kterou Eidos nastavuje pro stejný název, a vlastní řádek `env=` nástroje v `tools.ini` nahradí obojí. `WINEDLLOVERRIDES` se naopak přidá za overridy, které Eidos nastavuje pro ENB, ReShade a přibalené DLL: DLL uvedená v obou dostane nastavení profilu, ostatní si ponechají své.
+
+View -> INI editor otevře soubor jako poslední kartu, pro každou hru. Při uložení Eidos vypíše čísla řádků, které ignoruje: řádků, které nejsou ani `env=NÁZEV=hodnota`, ani `wrapper=příkaz`. `eidos play <instance>` bez příkazu vypíše proměnné, které spuštění dostane, a wrappery. Copy report v Diagnostics uvádí názvy proměnných a programů wrapperů, bez jejich hodnot.
 
 `%command%` ze Steamu u titulů Bethesdy obvykle ukazuje na
 `<Game>Launcher.exe`. Eidos jej nikdy nespouští: launcher je samostatná

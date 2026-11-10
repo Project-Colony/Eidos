@@ -1,6 +1,7 @@
 //! The Health tab: every check Eidos runs on the open setup, and its panel.
 
 use super::*;
+use eidos::check::display::WindowMode;
 
 /// How serious a diagnostic is: `Problem` needs action (it will break or lose
 /// something), `Advice` is worth knowing, `Ok` is a passing check.
@@ -712,7 +713,45 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         });
     }
 
+    // Last, so the card leaving after Restore moves nothing below it.
+    if app.created.is_some() {
+        let mods = app
+            .mods
+            .iter()
+            .rev()
+            .filter(|m| m.is_active() && !m.is_unmanaged())
+            .map(|m| (m.name.clone(), m.path.clone()))
+            .collect::<Vec<_>>();
+        out.extend(
+            eidos::check::collections::order_findings(&collection_orders(app), &mods)
+                .iter()
+                .map(crate::health::finding_card),
+        );
+    }
+
     out
+}
+
+/// The open instance's collection rules, read again only when one of the files
+/// they come from changed (see `App::collection_orders`).
+pub(crate) fn collection_orders(
+    app: &App,
+) -> std::rc::Rc<Vec<eidos::check::collections::CollectionOrder>> {
+    let Some(inst) = app.created.as_ref() else {
+        return Default::default();
+    };
+    // Stamped before the read: a file that changes during it changes the
+    // stamp again, and the next refresh reads it.
+    let stamp = eidos::check::collections::orders_stamp(&inst.root);
+    let mut cache = app.collection_orders.borrow_mut();
+    match cache.as_ref() {
+        Some((at, orders)) if *at == stamp => orders.clone(),
+        _ => {
+            let orders = std::rc::Rc::new(eidos::check::collections::collection_orders(&inst.root));
+            *cache = Some((stamp, orders.clone()));
+            orders
+        }
+    }
 }
 
 /// `shown` joined with ", ", then "and n more" when `total` is larger.
@@ -1250,7 +1289,12 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
         .spacing(8)
         .push(text(t("diag_tab")).size(sz(13)))
         .push(text(summary).size(sz(12)))
-        .push(tool_btn(t("diag_copy_report"), Message::CopyHealthReport));
+        .push(
+            Row::new()
+                .spacing(6)
+                .push(tool_btn(t("diag_copy_report"), Message::CopyHealthReport))
+                .push(tool_btn(t("diag_bisect"), Message::OpenBisect)),
+        );
     if let Some(f) = &app.game_files_facts {
         let game = selected_game(app).map_or("", |g| g.def.name);
         col = col.push(game_files_card_view(&game_files_card(f, game)));
@@ -1258,6 +1302,9 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
     // Built from App state at each view, so its slot follows a clean as it runs.
     if let Some(card) = dirty_card(app) {
         col = col.push(dirty_plugins_card(&card));
+    }
+    if let Some(form) = &app.display {
+        col = col.push(display_card(form));
     }
     for d in checks {
         let foot = (!d.actions.is_empty()).then(|| {
@@ -1433,6 +1480,161 @@ pub(crate) fn dirty_plugins_card<'a>(card: &DirtyCard) -> Element<'a, Message> {
                 .into(),
         ),
     )
+}
+
+/// The Display card's fields, over the facts the last health run read.
+#[derive(Debug, Clone)]
+pub(crate) struct DisplayForm {
+    pub(crate) facts: eidos::check::display::DisplayFacts,
+    pub(crate) width: String,
+    pub(crate) height: String,
+    pub(crate) mode: WindowMode,
+    /// The user typed or picked since the last Apply: a refresh keeps the fields.
+    pub(crate) edited: bool,
+}
+
+/// A window mode in the Display card's pick list, shown by its label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ModeChoice(pub(crate) WindowMode);
+
+impl std::fmt::Display for ModeChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(mode_label(self.0))
+    }
+}
+
+pub(crate) fn mode_label(mode: WindowMode) -> &'static str {
+    t(match mode {
+        WindowMode::Fullscreen => "display_mode_fullscreen",
+        WindowMode::Borderless => "display_mode_borderless",
+        WindowMode::Windowed => "display_mode_windowed",
+    })
+}
+
+/// The form for fresh facts: typed values survive a refresh of the same INI;
+/// otherwise the fields show what the INI sets, else the screen, borderless.
+pub(crate) fn next_form(
+    prev: Option<&DisplayForm>,
+    facts: eidos::check::display::DisplayFacts,
+) -> DisplayForm {
+    if let Some(p) = prev.filter(|p| p.edited && p.facts.ini == facts.ini) {
+        return DisplayForm { facts, ..p.clone() };
+    }
+    let (size, mode) = match facts.current {
+        Some(d) => (Some((d.width, d.height)), d.mode),
+        None => (facts.screen, WindowMode::Borderless),
+    };
+    let (width, height) =
+        size.map_or_else(Default::default, |(w, h)| (w.to_string(), h.to_string()));
+    DisplayForm {
+        facts,
+        width,
+        height,
+        mode,
+        edited: false,
+    }
+}
+
+/// The laid-out height of the Display card's controls row at scale 1.
+const DISPLAY_ROW_H: f32 = 30.0;
+
+/// The Display card: one title line, one detail line and the controls row at a
+/// fixed height, so nothing below it moves when the size is set or typed.
+pub(crate) fn display_card<'a>(form: &DisplayForm) -> Element<'a, Message> {
+    let f = &form.facts;
+    let one_line = |s: String, size: u16| {
+        text(s)
+            .size(sz(size))
+            .wrapping(iced::widget::text::Wrapping::None)
+    };
+    let (tag, color, title) = if f.current.is_none() && !f.tweaks {
+        (
+            t("diag_tag_advice"),
+            pal().warning,
+            t("diag_display_unset").to_string(),
+        )
+    } else {
+        // SSE Display Tweaks with no size in the INI: what Apply would write.
+        let (size, mode) = f.current.map_or_else(
+            || (format!("{}x{}", form.width, form.height), form.mode),
+            |d| (format!("{}x{}", d.width, d.height), d.mode),
+        );
+        (
+            t("diag_tag_ok"),
+            pal().success,
+            tf(
+                "diag_display_set",
+                &[("size", &size), ("mode", &mode_label(mode))],
+            ),
+        )
+    };
+    let screen = f.screen.map_or_else(
+        || t("display_screen_unknown").to_string(),
+        |(w, h)| format!("{w}x{h}"),
+    );
+    let detail = tf(
+        if f.tweaks {
+            "diag_display_detail_tweaks"
+        } else {
+            "diag_display_detail"
+        },
+        &[("ini", &f.ini), ("screen", &screen)],
+    );
+    let field = |value: &str, on_input: fn(String) -> Message| {
+        text_input("", value)
+            .on_input(on_input)
+            .padding(4)
+            .size(sz(11))
+            .width(Length::Fixed(scaled(64.0)))
+    };
+    let modes = [
+        WindowMode::Fullscreen,
+        WindowMode::Borderless,
+        WindowMode::Windowed,
+    ]
+    .map(ModeChoice);
+    let controls = Row::new()
+        .spacing(6)
+        .align_y(iced::Alignment::Center)
+        .push(field(&form.width, Message::DisplayWidth))
+        .push(text("x").size(sz(11)))
+        .push(field(&form.height, Message::DisplayHeight))
+        .push(
+            pick_list(modes, Some(ModeChoice(form.mode)), |c| {
+                Message::DisplayMode(c.0)
+            })
+            .text_size(sz(11))
+            .padding(4)
+            .width(Length::Fixed(scaled(150.0))),
+        )
+        .push(tool_btn(t("display_apply"), Message::DisplayApply));
+    let card = Column::new()
+        .spacing(2)
+        .push(
+            Row::new()
+                .spacing(6)
+                .align_y(iced::Alignment::Center)
+                .push(
+                    text(tag)
+                        .size(sz(9))
+                        .color(color)
+                        .width(Length::Fixed(scaled(58.0))),
+                )
+                .push(one_line(title, 12).width(Length::Fill)),
+        )
+        .push(one_line(detail, 10).color(text_muted()))
+        .push(
+            container(controls)
+                .height(Length::Fixed(scaled(DISPLAY_ROW_H)))
+                .align_y(iced::Alignment::Center)
+                .clip(true),
+        );
+    container(card)
+        .padding([4, 6])
+        .width(Length::Fill)
+        .clip(true)
+        .style(card_style)
+        .into()
 }
 
 /// Whether this process is talking Wayland rather than X11.

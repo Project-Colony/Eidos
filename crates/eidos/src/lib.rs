@@ -28,6 +28,7 @@ mod resolve;
 mod sessions;
 mod sort;
 pub mod stock_game;
+mod test_run;
 #[cfg(test)]
 mod tests;
 mod tools;

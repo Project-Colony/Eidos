@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=24a826cf58aaf1ab0e91bef4d7acfb7ebb818ed3 -->
+<!-- eidos-i18n: source=README.md sha=65fb26275cd8e0b8dbf88b169fd66887cd7dd420 -->
 
 <div align="center">
 
@@ -353,7 +353,7 @@ o Nexus.
 | Downloads do Nexus | enviado | Os arquivos que você pede, do servidor da CDN do Nexus indicado no link de download, salvos na pasta de downloads da instância com um `.meta` no formato do MO2 ao lado de cada um. |
 | Links `nxm://` | guardado | `eidos nxm --register`, que o `install.sh` roda para você, escreve `~/.local/share/applications/eidos-nxm.desktop` e o torna o manipulador de `nxm://` via `xdg-mime`, para que o botão Mod Manager Download do site entregue o link ao Eidos. O pacote do Arch instala a mesma entrada para todo o sistema. |
 | Masterlists do LOOT | enviado | `raw.githubusercontent.com/loot/...`, na primeira ordenação do LOOT de um jogo e sempre que você pede uma atualização. Nada seu é enviado. [Declaração de privacidade do GitHub](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement) |
-| Runtimes de ferramentas | enviado | Só quando você instala um pré-requisito de ferramenta ou um mod precisa de um: o runtime .NET de `builds.dotnet.microsoft.com`, recusado a menos que bata com o SHA-256 embutido no Eidos, e o `winetricks`, que baixa o que instala no prefixo Proton do jogo (redistribuíveis do Visual C++ e do .NET) da Microsoft e dos outros servidores que o winetricks usa. [Declaração de privacidade da Microsoft](https://www.microsoft.com/en-us/privacy/privacystatement) |
+| Runtimes de ferramentas | enviado | Só quando você instala um pré-requisito de ferramenta ou um mod precisa de um, e só para o que o pacote de release não trouxe (o arquivo único `eidos-linux` e um build a partir do código-fonte não trazem nada): o runtime .NET 10 de `builds.dotnet.microsoft.com` e os instaladores do Visual C++ e do .NET 8 de `download.visualstudio.microsoft.com`, cada um recusado a menos que bata com o SHA-256 embutido no Eidos; o SDK do .NET 10, sempre de `builds.dotnet.microsoft.com`; e o `winetricks` para os outros pré-requisitos (.NET Framework 4.8, XAudio), que baixa o que instala da Microsoft e dos outros servidores que o winetricks usa. [Declaração de privacidade da Microsoft](https://www.microsoft.com/en-us/privacy/privacystatement) |
 | Logs de sessão | guardado | `~/.local/share/Colony/Eidos/logs/`, modo 0600: dez sessões por instância, apagadas depois de 30 dias. Sua pasta pessoal é escrita como `~` e seu nome de usuário como `<user>`, então um log pode ser colado numa issue do jeito que está. Eles nunca saem da sua máquina a menos que você os envie. |
 | Atalhos | guardado | O `install.sh` escreve `eidos.desktop` e os ícones dele em `~/.local/share`; um atalho de ferramenta que você cria vai para `~/.local/share/applications`. |
 | Links que você abre | nenhum dos dois | Páginas de mods e outros links abrem no seu próprio navegador via `xdg-open`. |
