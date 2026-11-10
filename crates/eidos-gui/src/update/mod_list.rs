@@ -67,14 +67,21 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             } else {
                 app.history.borrow_mut().redo()
             };
-            let Some(crate::history::Step::Mods(state)) = step else {
-                let key = if undo {
-                    "status_nothing_to_undo"
-                } else {
-                    "status_nothing_to_redo"
-                };
-                app.status = Some(t(key).to_string());
-                return Task::none();
+            let state = match step {
+                Some(crate::history::Step::Mods(state)) => state,
+                Some(crate::history::Step::Plugins(state)) => {
+                    apply_plugins_step(app, state, undo);
+                    return Task::none();
+                }
+                None => {
+                    let key = if undo {
+                        "status_nothing_to_undo"
+                    } else {
+                        "status_nothing_to_redo"
+                    };
+                    app.status = Some(t(key).to_string());
+                    return Task::none();
+                }
             };
             apply_mods_step(app, state, undo);
         }
@@ -1831,6 +1838,62 @@ fn apply_mods_step(app: &mut App, state: crate::history::ModsState, undo: bool) 
         };
         app.status = Some(t(key).to_string());
     }
+}
+
+/// Put the load order back to `state`. Refused, with the history cleared, when
+/// the set of plugins is not the one the step was taken on.
+fn apply_plugins_step(app: &mut App, state: crate::history::PluginsState, undo: bool) {
+    let fresh = app.plugins.is_none();
+    if fresh {
+        app.plugins = compute_plugins(app);
+    }
+    let spec = selected_game(app).and_then(|g| g.plugin_spec());
+    let (Some(spec), Some(list)) = (spec, app.plugins.as_mut()) else {
+        app.history.borrow_mut().clear();
+        return;
+    };
+    let names = |it: Vec<&str>| {
+        let mut v: Vec<String> = it.iter().map(|n| n.to_ascii_lowercase()).collect();
+        v.sort_unstable();
+        v
+    };
+    if names(list.plugins.iter().map(|p| p.name.as_str()).collect())
+        != names(state.0.iter().map(|(n, _)| n.as_str()).collect())
+    {
+        // `step` moved the baseline to the stale state; the list shown is the truth.
+        let mut h = app.history.borrow_mut();
+        h.seen_plugins(crate::history::plugins_state(list));
+        h.clear();
+        app.status = Some(t("status_undo_plugins_changed").to_string());
+        return;
+    }
+    if fresh {
+        // `compute_plugins` just recorded the disk state as the baseline.
+        app.history.borrow_mut().seen_plugins(state.clone());
+    }
+    let mut pool = std::mem::take(&mut list.plugins);
+    let (order, locked) = state;
+    list.plugins = order
+        .into_iter()
+        .filter_map(|(name, enabled)| {
+            let at = pool
+                .iter()
+                .position(|p| p.name.eq_ignore_ascii_case(&name))?;
+            let mut p = pool.swap_remove(at);
+            p.enabled = enabled;
+            Some(p)
+        })
+        .collect();
+    list.locked = locked;
+    list.refresh(&spec);
+    let key = if undo {
+        "status_undone_plugins"
+    } else {
+        "status_redone_plugins"
+    };
+    // A refused write replaces this with its own message.
+    app.status = Some(t(key).to_string());
+    commit_plugin_order(app, &spec);
 }
 
 /// Hold back a disable of `targets` when the newest `saves` use their plugins:

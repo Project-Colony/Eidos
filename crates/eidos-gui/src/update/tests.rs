@@ -6527,3 +6527,58 @@ fn ctrl_z_in_a_text_field_does_not_touch_the_list() {
     let _ = update(&mut app, Message::Undo);
     assert!(!app.mods[0].enabled);
 }
+
+/// A 24-byte TES4 record: flags at bytes 8..12, form version 44 at 20..22, no
+/// subrecords.
+fn tes4_header(flags: u32) -> Vec<u8> {
+    let mut b = vec![0u8; 24];
+    b[..4].copy_from_slice(b"TES4");
+    b[8..12].copy_from_slice(&flags.to_le_bytes());
+    b[20..22].copy_from_slice(&44u16.to_le_bytes());
+    b
+}
+
+fn plugin_history_app() -> (App, PathBuf, usize) {
+    let (mut app, root) = history_app(&["A"]);
+    fs::write(root.join("mods/A/A.esp"), tes4_header(0)).unwrap();
+    app.tab = Tab::Plugins;
+    app.plugins = compute_plugins(&app); // records the plugins baseline
+    let i = app
+        .plugins
+        .as_ref()
+        .unwrap()
+        .plugins
+        .iter()
+        .position(|p| p.name == "A.esp")
+        .unwrap();
+    (app, root, i)
+}
+
+#[test]
+fn ctrl_z_undoes_a_plugin_toggle() {
+    let (mut app, _root, i) = plugin_history_app();
+    let before = app.plugins.as_ref().unwrap().plugins[i].enabled;
+    let _ = update(&mut app, Message::TogglePlugin(i));
+    assert_ne!(app.plugins.as_ref().unwrap().plugins[i].enabled, before);
+    let _ = update(&mut app, Message::Undo);
+    assert_eq!(app.plugins.as_ref().unwrap().plugins[i].enabled, before);
+    assert!(app.status.as_deref().unwrap().contains("load order"));
+    let _ = update(&mut app, Message::Redo);
+    assert_ne!(app.plugins.as_ref().unwrap().plugins[i].enabled, before);
+}
+
+#[test]
+fn a_plugin_undo_after_the_plugin_set_changed_is_refused() {
+    let (mut app, _root, i) = plugin_history_app();
+    let _ = update(&mut app, Message::TogglePlugin(i));
+    app.plugins.as_mut().unwrap().plugins.remove(i); // the set changed, nothing saved
+    let _ = update(&mut app, Message::Undo);
+    assert!(app.status.as_deref().unwrap().contains("Cannot undo"));
+    assert!(app
+        .plugins
+        .as_ref()
+        .unwrap()
+        .plugins
+        .iter()
+        .all(|p| p.name != "A.esp"));
+}

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c0100062e76e111f3a67e3c11f9ad58412e6b15d -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=aad8b7a5aeb97c7e2dbf0df01ff33a1c759ff0e9 -->
 
 # Używanie Eidos
 
@@ -514,8 +514,8 @@ przeciągania zatrzymanie się nad zwiniętą grupą otwiera ją, więc mod da s
 upuścić w środku bez porzucania przeciągania - zatrzymanie się, nie przemknięcie
 obok.
 
-Ctrl+Z cofa ostatnią zmianę listy modów: zaznaczenie, przesunięcie, zbiorcze
-wyłączenie. Ctrl+Shift+Z ją przywraca. Okno pamięta 50 kroków i zapomina je po
+Ctrl+Z cofa ostatnią zmianę listy modów lub kolejności ładowania: zaznaczenie,
+przesunięcie, zbiorcze wyłączenie, sortowanie LOOT. Ctrl+Shift+Z ją przywraca. Okno pamięta 50 kroków i zapomina je po
 F5, po zakończeniu uruchomienia gry lub narzędzia, po zmianie profilu i gdy inny
 proces Eidos zmieni listę. Instalacja, zmiana nazwy lub usunięcie moda zmienia
 foldery na dysku, więc cofnięcie poza taki krok zostaje odrzucone.

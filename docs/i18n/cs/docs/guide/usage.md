@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c0100062e76e111f3a67e3c11f9ad58412e6b15d -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=aad8b7a5aeb97c7e2dbf0df01ff33a1c759ff0e9 -->
 
 # Používání Eidosu
 
@@ -487,7 +487,7 @@ jste se nedívali.
 Během tažení se zastavením nad sbalenou skupinou skupina otevře, takže mód lze
 pustit dovnitř, aniž byste tažení nejdřív opustili - zastavením, ne přejetím.
 
-Ctrl+Z vrátí poslední změnu seznamu modů: zaškrtnutí, přesun, hromadné vypnutí.
+Ctrl+Z vrátí poslední změnu seznamu modů nebo pořadí načítání: zaškrtnutí, přesun, hromadné vypnutí, řazení pomocí LOOT.
 Ctrl+Shift+Z ji provede znovu. Okno si pamatuje 50 kroků a zapomene je po F5, na
 konci běhu hry nebo nástroje, při přepnutí profilu a když seznam změní jiný
 proces Eidos. Instalace, přejmenování nebo odebrání modu mění složky na disku,

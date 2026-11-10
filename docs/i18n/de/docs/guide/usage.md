@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c0100062e76e111f3a67e3c11f9ad58412e6b15d -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=aad8b7a5aeb97c7e2dbf0df01ff33a1c759ff0e9 -->
 
 # Eidos verwenden
 
@@ -551,8 +551,8 @@ Während eines Ziehens öffnet das Verweilen auf einer zugeklappten Gruppe sie,
 sodass eine Mod hineingelegt werden kann, ohne das Ziehen vorher abzubrechen -
 Verweilen, nicht Vorbeistreifen.
 
-Strg+Z macht die letzte Änderung an der Mod-Liste rückgängig: ein Häkchen, ein
-Verschieben, ein Sammel-Deaktivieren. Strg+Umschalt+Z stellt sie wieder her. Das
+Strg+Z macht die letzte Änderung an der Mod-Liste oder der Ladereihenfolge rückgängig:
+ein Häkchen, ein Verschieben, ein Sammel-Deaktivieren, eine LOOT-Sortierung. Strg+Umschalt+Z stellt sie wieder her. Das
 Fenster behält 50 Schritte und vergisst sie bei F5, am Ende eines Spiel- oder
 Tool-Laufs, beim Profilwechsel und wenn ein anderer Eidos-Prozess die Liste
 ändert. Installieren, Umbenennen oder Entfernen einer Mod ändert die Ordner auf

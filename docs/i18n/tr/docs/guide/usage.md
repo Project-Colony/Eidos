@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c0100062e76e111f3a67e3c11f9ad58412e6b15d -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=aad8b7a5aeb97c7e2dbf0df01ff33a1c759ff0e9 -->
 
 # Eidos kullanımı
 
@@ -508,8 +508,8 @@ sürükleme sırasında katlanmış bir grubun üzerinde beklemek onu açar, bö
 mod önce sürüklemeyi bırakmadan içine bırakılabilir - beklemek, üzerinden geçip
 gitmek değil.
 
-Ctrl+Z mod listesindeki son değişikliği geri alır: bir işaret, bir taşıma, toplu
-bir devre dışı bırakma. Ctrl+Shift+Z onu yeniden yapar. Pencere 50 adım tutar ve
+Ctrl+Z mod listesindeki ya da yükleme sırasındaki son değişikliği geri alır: bir işaret,
+bir taşıma, toplu bir devre dışı bırakma, bir LOOT sıralaması. Ctrl+Shift+Z onu yeniden yapar. Pencere 50 adım tutar ve
 bunları F5'te, bir oyun ya da araç çalıştırmasının sonunda, profil değişiminde ve
 başka bir Eidos süreci listeyi değiştirdiğinde unutur. Bir modu kurmak, yeniden
 adlandırmak ya da kaldırmak diskteki klasörleri değiştirir, bu yüzden bunlardan

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c0100062e76e111f3a67e3c11f9ad58412e6b15d -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=aad8b7a5aeb97c7e2dbf0df01ff33a1c759ff0e9 -->
 
 # Usare Eidos
 
@@ -539,8 +539,8 @@ Durante un trascinamento, fermarsi su un gruppo ripiegato lo apre, così una mod
 può esservi rilasciata dentro senza abbandonare prima il trascinamento -
 fermarsi, non passarci sopra di sfuggita.
 
-Ctrl+Z annulla l'ultima modifica alla lista dei mod: una spunta, uno
-spostamento, una disattivazione in blocco. Ctrl+Shift+Z la ripristina. La
+Ctrl+Z annulla l'ultima modifica alla lista dei mod o all'ordine di caricamento: una
+spunta, uno spostamento, una disattivazione in blocco, un ordinamento LOOT. Ctrl+Shift+Z la ripristina. La
 finestra conserva 50 passi e li dimentica con F5, alla fine di un'esecuzione del
 gioco o di uno strumento, al cambio di profilo e quando un altro processo Eidos
 modifica la lista. Installare, rinominare o rimuovere un mod cambia le cartelle

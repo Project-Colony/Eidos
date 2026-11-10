@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c0100062e76e111f3a67e3c11f9ad58412e6b15d -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=aad8b7a5aeb97c7e2dbf0df01ff33a1c759ff0e9 -->
 
 # Usar o Eidos
 
@@ -513,8 +513,8 @@ alterna um mod que você não estava olhando.
 Durante um arrasto, parar sobre um grupo dobrado o abre, então um mod pode ser
 solto lá dentro sem abandonar o arrasto antes - parar, não passar de raspão.
 
-Ctrl+Z desfaz a última alteração na lista de mods: uma marcação, uma
-movimentação, uma desativação em lote. Ctrl+Shift+Z refaz. A janela guarda 50
+Ctrl+Z desfaz a última alteração na lista de mods ou na ordem de carregamento: uma
+marcação, uma movimentação, uma desativação em lote, uma ordenação do LOOT. Ctrl+Shift+Z refaz. A janela guarda 50
 passos e os esquece no F5, ao fim de uma execução do jogo ou de uma ferramenta,
 na troca de perfil e quando outro processo do Eidos altera a lista. Instalar,
 renomear ou remover um mod altera as pastas no disco, então um desfazer que passe

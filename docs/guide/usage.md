@@ -481,7 +481,8 @@ you cannot see is how the next Space toggles a mod you were not looking at.
 drag, resting on a folded group opens it, so a mod can be dropped inside without
 abandoning the drag first - resting, not brushing past.
 
-Ctrl+Z undoes the last change to the mod list: a tick, a move, a batch disable.
+Ctrl+Z undoes the last change to the mod list or the load order: a tick, a move, a
+batch disable, a LOOT sort.
 Ctrl+Shift+Z redoes it. The window keeps 50 steps and forgets them on F5, at the
 end of a game or tool run, on a profile switch and when another Eidos process
 changes the list. Installing, renaming or removing a mod changes the folders on

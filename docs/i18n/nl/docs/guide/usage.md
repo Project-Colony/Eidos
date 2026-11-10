@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c0100062e76e111f3a67e3c11f9ad58412e6b15d -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=aad8b7a5aeb97c7e2dbf0df01ff33a1c759ff0e9 -->
 
 # Eidos gebruiken
 
@@ -523,8 +523,8 @@ ene. Tijdens een sleep opent een ingeklapte groep als je erop blijft rusten,
 zodat een mod erin gelaten kan worden zonder de sleep eerst op te geven - rusten,
 niet er even langs strijken.
 
-Ctrl+Z maakt de laatste wijziging in de modlijst ongedaan: een vinkje, een
-verplaatsing, een batchgewijze uitschakeling. Ctrl+Shift+Z voert die opnieuw uit.
+Ctrl+Z maakt de laatste wijziging in de modlijst of de laadvolgorde ongedaan: een
+vinkje, een verplaatsing, een batchgewijze uitschakeling, een LOOT-sortering. Ctrl+Shift+Z voert die opnieuw uit.
 Het venster bewaart 50 stappen en vergeet ze bij F5, aan het eind van een spel- of
 toolrun, bij een profielwissel en wanneer een ander Eidos-proces de lijst wijzigt.
 Een mod installeren, hernoemen of verwijderen verandert de mappen op schijf, dus

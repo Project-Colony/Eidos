@@ -77,6 +77,9 @@ pub(crate) fn compute_plugins(app: &App) -> Option<PluginList> {
         list.locked = inst.active().read_locked_order();
     }
     list.refresh(&spec);
+    app.history
+        .borrow_mut()
+        .seen_plugins(crate::history::plugins_state(&list));
     Some(list)
 }
 
@@ -187,6 +190,7 @@ pub(crate) fn write_plugin_state(
             .get()
             .is_none_or(|seen| seen == plugin_state_fingerprint(&prof, spec));
         if !unchanged {
+            app.history.borrow_mut().clear();
             return Err(std::io::Error::other(t("plugin_order_changed_elsewhere")));
         }
         // Adopt the game's state first, as launch and sort do, failing closed.
@@ -208,6 +212,9 @@ pub(crate) fn write_plugin_state(
         }
         app.plugins_seen
             .set(Some(plugin_state_fingerprint(&prof, spec)));
+        app.history
+            .borrow_mut()
+            .saved_plugins(crate::history::plugins_state(list));
     }
     if spec.mechanism != eidos_plugins::LoadOrderMechanism::Timestamp {
         if let Some(dir) = selected_game(app).and_then(|g| g.plugin_state_dir()) {
