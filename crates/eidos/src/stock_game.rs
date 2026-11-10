@@ -23,17 +23,22 @@ pub fn supported(game: &DetectedGame, root: &Path) -> bool {
     })
 }
 
-/// Whether `root` holds the game's executable, in any case.
+/// Whether `root` holds the game's executable, in any case, also in a
+/// subfolder (`bin64/CrimsonDesert.exe`).
 pub fn has_game_binary(game: &DetectedGame, root: &Path) -> bool {
     let binary = game.def.game_binary;
     binary.is_empty()
-        || std::fs::read_dir(root).is_ok_and(|dir| {
-            dir.flatten().any(|e| {
-                e.file_name()
-                    .to_str()
-                    .is_some_and(|n| n.eq_ignore_ascii_case(binary))
+        || binary
+            .split('/')
+            .try_fold(root.to_path_buf(), |dir, part| {
+                std::fs::read_dir(dir).ok()?.flatten().find_map(|e| {
+                    let n = e.file_name();
+                    n.to_str()
+                        .is_some_and(|n| n.eq_ignore_ascii_case(part))
+                        .then(|| e.path())
+                })
             })
-        })
+            .is_some()
 }
 
 /// The folder of a Wabbajack list's game copy in `root` that `game` can run
@@ -107,6 +112,18 @@ mod tests {
             inst.read_manifest().unwrap().base_game.as_deref(),
             Some("Stock Game")
         );
+        let _ = fs::remove_dir_all(t);
+    }
+
+    #[test]
+    fn the_game_binary_is_found_in_a_subfolder_in_any_case() {
+        let t = temp("subfolder");
+        let game = game("crimsondesert", t.join("game"));
+        let copy = t.join("Stock Game");
+        fs::create_dir_all(copy.join("BIN64")).unwrap();
+        assert!(!has_game_binary(&game, &copy));
+        fs::write(copy.join("BIN64/crimsondesert.exe"), b"x").unwrap();
+        assert!(has_game_binary(&game, &copy));
         let _ = fs::remove_dir_all(t);
     }
 
