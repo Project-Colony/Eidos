@@ -9,7 +9,7 @@ sub-directories Eidos uses inside them, and no other crate builds a path from
 | Root | Path | What lives there |
 |---|---|---|
 | config | `~/.config/Colony/Eidos/` | `settings.ini`, `preferences.json` (the window's theme, fonts and language), `nexus.ini` (the Nexus session, mode 0600), `instances.ini`, `games/*.toml`, `addons/*.toml` |
-| data | `~/.local/share/Colony/Eidos/` | `instances/<game>/` (global instances), `runtimes/` (downloaded tool runtimes), `logs/` (session logs) |
+| data | `~/.local/share/Colony/Eidos/` | `instances/<game>/` (global instances), `runtimes/` (the Microsoft installers and runtimes a prefix gets: the release bundle's copies, which `install.sh` puts here, the files Eidos downloaded, and each .NET runtime unpacked under `<verb>-<version>/`), `logs/` (session logs) |
 | cache | `~/.cache/Colony/Eidos/` | `loot/<repo>/` (LOOT masterlist and prelude, fetched again when missing) |
 
 A relative `$XDG_*_HOME` is ignored, as the XDG specification requires, and so
@@ -23,12 +23,45 @@ folder first and plant definitions in it.
 Two things stay outside the Colony tree on purpose:
 
 - **Portable instances** live wherever the user put them. They are never moved.
-- **`.desktop` launchers** (tool shortcuts and the `nxm://` handler) go to
-  `~/.local/share/applications/`, where the desktop looks for them
-  (`eidos_paths::desktop_entries_dir`).
+- **`.desktop` launchers** (tool shortcuts, per-profile shortcuts and the
+  `nxm://` handler) go to `~/.local/share/applications/`, where the desktop
+  looks for them (`eidos_paths::desktop_entries_dir`). A per-profile shortcut
+  gets its own `eidos-<game>-<title>-<hash>.desktop` file.
 
 Inside an instance, `loot/` keeps only what belongs to that instance: the
-user's `userlist.yaml` and the case bridge built from its mods.
+user's `userlist.yaml` and the case bridge built from its mods. `logs/` holds
+what belongs to this machine:
+
+- `run-<stamp>.log`: stdout and stderr of each run the window starts.
+- `sessions/<started>-<pid>.json`: the session records, the newest 50 kept
+  ([architecture.md](architecture.md#session-records-and-stopping-a-run)).
+  They are separate from the session logs under the data root.
+- `launch.ini`: the game build at the last launch, and at the last launch that
+  exited without an error.
+- `updates/<mod>.json`: what the last Replace or update changed in that mod
+  ([integrity.md](integrity.md#updating-a-mod-in-place)).
+- `bisect-<time>.txt`: the log of a finished bisect search.
+- `qac-<stamp>/`: the scratch folder of an xEdit QuickAutoClean run.
+
+Each profile folder, `profiles/<name>/`, also holds `launch-env.ini` (the
+profile's launch variables and wrappers) and `backups/` (restore points of the
+mod list, the load order and the INIs, 10 of each).
+
+Three more names can appear at the instance root:
+
+- `test-run/`: a test run's request (`test-run.json`), the working copy of the
+  profile and every write of the run until the review keeps or throws it away
+  ([architecture.md](architecture.md#test-runs-and-bisect)).
+- `bisect.json`: a bisect search between two steps.
+- A game copy folder, `Stock Game` for a freeze or a Wabbajack list, named by
+  `base_game=` in `eidos-instance.ini`. `frozen_copy=` names the copy a freeze
+  made, the only one Eidos deletes, and a freeze in progress is
+  `Stock Game.eidos-tmp` ([architecture.md](architecture.md#game-copies)).
+
+`eidos pack` leaves `logs/`, `test-run/` and `bisect.json` out. A game copy is
+packed with the rest of the instance. `.base` and `.base-root` are the
+mountpoints a run binds the real Data directory and game root (or the game
+copy's) onto, not data, and `eidos pack` skips them too.
 
 ## Moving off the old layout
 
