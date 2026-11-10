@@ -615,23 +615,11 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 actions: Vec::new(),
             });
         }
-        // A Flatpak-Steam Proton runs from the host here, which can fail to resolve
-        // its sandbox libraries. Eidos will not re-launch through `flatpak run`:
-        // that would put the game in Flatpak's sandbox, blind to the FUSE union in
-        // our private namespace, and it would silently play vanilla.
-        if let Some(cd) = game.compatdata.as_ref() {
-            let flatpak =
-                eidos_games::proton_command(&home(), game.def.steam_app_id, cd, &game.install_path)
-                    .is_some_and(|r| r.flatpak);
-            if flatpak {
-                out.push(Diagnostic {
-                    level: DiagLevel::Problem,
-                    title: t("diag_flatpak_proton").to_string(),
-                    detail: t("diag_flatpak_proton_detail").to_string(),
-                    actions: Vec::new(),
-                });
-            }
-        }
+        out.extend(
+            crate::health::proton_facts(game, &home())
+                .map(|f| crate::health::proton_checks(&f))
+                .unwrap_or_default(),
+        );
         if !game.is_steam() {
             out.push(Diagnostic {
                 level: DiagLevel::Advice,
