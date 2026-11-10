@@ -952,6 +952,40 @@ fn the_dirty_plugin_card_keeps_one_height_with_xedit_without_it_and_while_cleani
     );
 }
 
+/// The Game files card's detail and slot are one line each, so nothing below
+/// it moves when a switch, a freeze or a long install path changes what it says.
+#[test]
+fn the_game_files_card_keeps_one_height_in_every_state() {
+    use crate::modinfo::tests::{copy_facts, long_path_facts, store_facts};
+    use eidos::stock_game::GameFilesFacts;
+    let _look = crate::test_support::look_lock();
+    let mut renderer = renderer();
+    let mut below = |f: &GameFilesFacts| {
+        let col = Column::new()
+            .push(game_files_card_view(&game_files_card(
+                f,
+                "Skyrim Special Edition",
+            )))
+            .push(text("below the card"));
+        label(col.into(), &mut renderer, "below the card", 0).y
+    };
+    let one = below(&store_facts());
+    for f in [
+        copy_facts(),
+        GameFilesFacts {
+            frozen: Some("Stock Game".into()),
+            ..store_facts()
+        },
+        GameFilesFacts {
+            supported: false,
+            ..store_facts()
+        },
+        long_path_facts(),
+    ] {
+        assert_eq!(below(&f), one, "the Game files card changed height");
+    }
+}
+
 /// The flags under a selected Executables entry stay on one line each at the
 /// dialog's 720 px cap, and an entry that starts the game offers no Desktop
 /// shortcut: from the desktop it would only hand the game to its store.

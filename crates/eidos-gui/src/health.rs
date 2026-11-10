@@ -39,7 +39,7 @@ use eidos::nxm_handler::NxmHandler;
 use eidos_gamefeatures::RegistryStatus;
 use eidos_games::DetectedGame;
 
-use crate::message::Message;
+use crate::message::{GameFilesAction, Message};
 use crate::modinfo::{DiagLevel, Diagnostic};
 use crate::{t, tf};
 
@@ -198,6 +198,10 @@ pub(crate) fn finding_actions(f: &eidos::check::Finding) -> Vec<(String, Message
                 ),
             ]
         }
+        "game_files_missing" | "game_files_not_a_copy" | "game_files_root_mode" => vec![(
+            t("game_files_use_store").to_string(),
+            Message::GameFiles(GameFilesAction::Store),
+        )],
         _ => Vec::new(),
     }
 }

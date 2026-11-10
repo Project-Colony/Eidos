@@ -318,6 +318,8 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         play_prompt: None,
         play_anyway: Vec::new(),
         confirm_rebuild_prefix: false,
+        game_files_facts: None,
+        confirm_game_files: None,
         overwrite_to_mod: None,
         send_priority: None,
         send_separator: None,
@@ -1224,6 +1226,7 @@ pub(crate) fn reload_mods(app: &mut App) {
         return;
     };
     let game = selected_game(app).cloned();
+    app.game_files_facts = game.as_ref().map(|g| eidos::stock_game::facts(g, &inst));
     // This replaces the list the selection indexes into, so it is carried
     // across by name; anything that disappeared is dropped rather than silently
     // re-pointed at whatever took its place.

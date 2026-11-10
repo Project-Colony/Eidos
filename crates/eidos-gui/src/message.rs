@@ -761,6 +761,8 @@ pub(crate) enum Message {
     /// Rebuild prefix on the Proton card: the first press arms it, the second
     /// renames the game's `compatdata/<appid>` aside so Steam makes a new one.
     RebuildPrefix,
+    /// The Game files card: run a copy, or the store install after an arming press.
+    GameFiles(GameFilesAction),
     /// Dismiss the transient status-bar message (the small x next to it).
     ClearStatus,
     // ---- MO2's targeted "Send to" actions (the day-to-day way load orders get
@@ -932,4 +934,15 @@ pub(crate) enum Message {
     // ---- manual plugin reorder (MO2 lets the load order be dragged by hand) ----
     /// Move the plugin at this index one slot earlier / later in the load order.
     Noop,
+}
+
+/// What a Game files button asks for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum GameFilesAction {
+    /// Run the copy in this folder of the instance.
+    Use(String),
+    /// Run the store install again; the copy stays on disk.
+    Store,
+    Freeze,
+    Delete,
 }

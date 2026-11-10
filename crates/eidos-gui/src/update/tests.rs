@@ -8501,3 +8501,92 @@ fn move_mod_below_acts_by_name_and_ignores_a_stale_card() {
     assert_eq!(names(&app.mods), ["Other", "Master", "Patch"]);
     let _ = fs::remove_dir_all(root);
 }
+
+/// The `base_game` the manifest records now.
+fn base_game(app: &App) -> Option<String> {
+    app.created
+        .as_ref()
+        .unwrap()
+        .read_manifest()
+        .unwrap()
+        .base_game
+}
+
+/// A list instance holding `Stock Game/SkyrimSE.exe`, its game installed in a temp dir.
+fn stock_game_app() -> (App, PathBuf) {
+    let (mut app, root) = list_app(&["Keep"]);
+    fs::create_dir_all(root.join("Stock Game")).unwrap();
+    fs::write(root.join("Stock Game/SkyrimSE.exe"), b"x").unwrap();
+    let install = root.join("game");
+    fs::create_dir_all(install.join("Data")).unwrap();
+    app.games[0].data_path = install.join("Data");
+    app.games[0].install_path = install;
+    (app, root)
+}
+
+#[test]
+fn use_takes_one_press_and_return_to_the_store_takes_two() {
+    let (mut app, inst_root) = stock_game_app();
+    let _ = update_inner(
+        &mut app,
+        Message::GameFiles(GameFilesAction::Use("Stock Game".into())),
+    );
+    assert_eq!(base_game(&app).as_deref(), Some("Stock Game"));
+    assert_eq!(
+        app.status.as_deref(),
+        Some(tf("status_game_files_use_copy", &[("folder", &"Stock Game")]).as_str())
+    );
+    assert_eq!(
+        app.game_files_facts
+            .as_ref()
+            .and_then(|f| f.files.copy.as_deref()),
+        Some("Stock Game"),
+        "the card reads the new game files"
+    );
+    let _ = update_inner(&mut app, Message::GameFiles(GameFilesAction::Store));
+    assert_eq!(
+        (base_game(&app).as_deref(), app.confirm_game_files.clone()),
+        (Some("Stock Game"), Some(GameFilesAction::Store))
+    );
+    let _ = update_inner(&mut app, Message::GameFiles(GameFilesAction::Store));
+    assert_eq!(base_game(&app), None);
+    assert_eq!(
+        app.status.as_deref(),
+        Some(tf("status_game_files_use_store", &[("folder", &"Stock Game")]).as_str())
+    );
+    assert!(
+        inst_root.join("Stock Game/SkyrimSE.exe").is_file(),
+        "returning keeps the copy"
+    );
+    let _ = fs::remove_dir_all(inst_root);
+}
+
+#[test]
+fn game_files_actions_wait_for_a_tracked_run_and_any_other_action_disarms() {
+    let (mut app, root) = stock_game_app();
+    let _ = update_inner(
+        &mut app,
+        Message::GameFiles(GameFilesAction::Use("Stock Game".into())),
+    );
+    let _ = update_inner(&mut app, Message::GameFiles(GameFilesAction::Store));
+    let _ = update_inner(&mut app, Message::SelectTab(Tab::Data));
+    assert_eq!(app.confirm_game_files, None);
+    let mut cmd = std::process::Command::new("sleep");
+    cmd.arg("30");
+    start_run(&mut app, "Game".into(), cmd);
+    let _ = update_inner(&mut app, Message::GameFiles(GameFilesAction::Store));
+    let _ = update_inner(&mut app, Message::GameFiles(GameFilesAction::Store));
+    assert_eq!(
+        app.status.as_deref(),
+        Some(tf("status_game_files_wait_run", &[("title", &"Game")]).as_str())
+    );
+    assert_eq!(
+        (base_game(&app).as_deref(), app.confirm_game_files.clone()),
+        (Some("Stock Game"), None),
+        "a tracked run blocks the switch"
+    );
+    let pid = app.running.as_ref().unwrap().pid as libc::pid_t;
+    assert_eq!(unsafe { libc::kill(pid, libc::SIGKILL) }, 0);
+    finish_tracked_run(&mut app);
+    let _ = fs::remove_dir_all(root);
+}

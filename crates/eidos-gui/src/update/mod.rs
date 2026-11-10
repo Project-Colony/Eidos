@@ -12,6 +12,7 @@ use crate::*;
 mod categories;
 mod downloads;
 mod files;
+mod game_files;
 mod install;
 mod instances;
 mod launch;
@@ -1220,6 +1221,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         if !matches!(message, Message::RebuildPrefix) {
             app.confirm_rebuild_prefix = false;
         }
+        if !matches!(message, Message::GameFiles(_)) {
+            app.confirm_game_files = None;
+        }
         if !matches!(
             message,
             Message::DeleteSave(_) | Message::ConfirmDeleteSave(_)
@@ -1472,6 +1476,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::ChangeGame
         | Message::OpenNexusGame
         | Message::SetupPrereqs) => launch::handle(app, m),
+        Message::GameFiles(action) => game_files::handle(app, action),
         m @ (Message::OverwriteToModStart
         | Message::ToolOutputModChanged(..)
         | Message::OverwriteToModName(..)

@@ -14,6 +14,7 @@ mod conflicts;
 mod diagnostics;
 mod downloads;
 mod files;
+mod game_files;
 mod install;
 mod main_screen;
 mod nexus_files;
@@ -25,6 +26,7 @@ pub(crate) use conflicts::*;
 pub(crate) use diagnostics::*;
 pub(crate) use downloads::*;
 pub(crate) use files::*;
+pub(crate) use game_files::*;
 pub(crate) use install::*;
 pub(crate) use main_screen::*;
 pub(crate) use nexus_files::*;
@@ -747,4 +749,4 @@ fn info_mix(app: &App, this: InfoTab) -> f32 {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

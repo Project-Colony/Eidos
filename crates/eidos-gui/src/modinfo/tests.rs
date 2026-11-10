@@ -1,5 +1,6 @@
 use super::*;
 use crate::test_support::*;
+use eidos::stock_game::GameFilesFacts;
 
 #[test]
 fn archive_activation_rejects_sse_arbitrary_suffix_and_merges_ini_keys() {
@@ -1434,4 +1435,96 @@ fn sources_and_the_extenders_own_winning_scripts_say_nothing() {
         (0, "[skyrimse]", &[]),
     ]);
     assert!(extender_script_checks(&map, "skse64_loader.exe", "SKSE", false).is_empty());
+}
+
+/// An instance that runs the Skyrim SE store install, 1.6.1170.0, with no copy beside it.
+pub(crate) fn store_facts() -> GameFilesFacts {
+    let root = PathBuf::from("/games/Skyrim Special Edition");
+    GameFilesFacts {
+        files: eidos_instance::GameFiles {
+            data: root.join("Data"),
+            root,
+            copy: None,
+        },
+        list_folder: None,
+        frozen: None,
+        unfinished: false,
+        store_version: Some("1.6.1170.0".into()),
+        copy_version: None,
+        supported: true,
+    }
+}
+
+/// An instance that runs its frozen copy, 1.6.640.0.
+pub(crate) fn copy_facts() -> GameFilesFacts {
+    let root = PathBuf::from("/instances/skyrim/Stock Game");
+    GameFilesFacts {
+        files: eidos_instance::GameFiles {
+            data: root.join("Data"),
+            root,
+            copy: Some("Stock Game".into()),
+        },
+        frozen: Some("Stock Game".into()),
+        copy_version: Some("1.6.640.0".into()),
+        ..store_facts()
+    }
+}
+
+/// A 300-character install path in the detail and the hint in the slot.
+pub(crate) fn long_path_facts() -> GameFilesFacts {
+    let root = PathBuf::from(format!("/{}", "a".repeat(299)));
+    GameFilesFacts {
+        files: eidos_instance::GameFiles {
+            data: root.join("Data"),
+            root,
+            copy: None,
+        },
+        supported: false,
+        ..store_facts()
+    }
+}
+
+#[test]
+fn the_game_files_slot_follows_the_state() {
+    let labels = |f: &GameFilesFacts| match game_files_card(f, "Skyrim Special Edition").slot {
+        GameFilesSlot::Actions(a) => a.into_iter().map(|(l, _)| l).collect::<Vec<_>>(),
+        GameFilesSlot::Hint(h) => vec![h],
+    };
+    let base = store_facts();
+    assert_eq!(labels(&base), [t("game_files_freeze")]);
+    assert_eq!(
+        labels(&GameFilesFacts {
+            list_folder: Some("Game Root".into()),
+            ..base.clone()
+        }),
+        [tf("game_files_use_folder", &[("folder", &"Game Root")])]
+    );
+    let frozen = GameFilesFacts {
+        frozen: Some("Stock Game".into()),
+        ..base.clone()
+    };
+    assert_eq!(
+        labels(&frozen),
+        [t("game_files_use_frozen"), t("game_files_delete_copy")]
+    );
+    assert!(matches!(
+        &game_files_card(&frozen, "Skyrim Special Edition").slot,
+        GameFilesSlot::Actions(a) if matches!(&a[0].1, Message::GameFiles(GameFilesAction::Use(f)) if f == "Stock Game")
+    ));
+    assert_eq!(
+        labels(&GameFilesFacts {
+            unfinished: true,
+            ..base.clone()
+        }),
+        [t("game_files_delete_unfinished")]
+    );
+    assert_eq!(labels(&copy_facts()), [t("game_files_use_store")]);
+    assert_eq!(
+        labels(&GameFilesFacts {
+            supported: false,
+            ..base
+        })
+        .len(),
+        1
+    ); // the hint
 }

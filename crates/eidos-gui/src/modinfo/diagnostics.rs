@@ -1252,6 +1252,10 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
         .push(text(t("diag_tab")).size(sz(13)))
         .push(text(summary).size(sz(12)))
         .push(tool_btn(t("diag_copy_report"), Message::CopyHealthReport));
+    if let Some(f) = &app.game_files_facts {
+        let game = selected_game(app).map_or("", |g| g.def.name);
+        col = col.push(game_files_card_view(&game_files_card(f, game)));
+    }
     // Built from App state at each view, so its slot follows a clean as it runs.
     if let Some(card) = dirty_card(app) {
         col = col.push(dirty_plugins_card(&card));
@@ -1270,8 +1274,9 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
     scrollable(col).height(Length::Fill).into()
 }
 
-/// One Health card: the level tag, the title, the detail, and what goes under it.
-fn diag_card<'a>(
+/// One Health card: the level tag, the title, the detail (left out when empty),
+/// and what goes under it.
+pub(crate) fn diag_card<'a>(
     level: DiagLevel,
     title: String,
     detail: String,
@@ -1296,7 +1301,7 @@ fn diag_card<'a>(
                 )
                 .push(text(title).size(sz(12)).width(Length::Fill)),
         )
-        .push(text(detail).size(sz(10)).color(text_muted()))
+        .extend((!detail.is_empty()).then(|| text(detail).size(sz(10)).color(text_muted()).into()))
         .extend(foot);
     container(card)
         .padding([4, 6])
