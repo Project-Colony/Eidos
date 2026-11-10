@@ -6444,3 +6444,80 @@ fn the_missing_masters_card_enables_the_mod_that_holds_the_master() {
             .contains("+Provider")
     );
 }
+
+fn history_app(names: &[&str]) -> (App, PathBuf) {
+    let (mut app, root) = list_app(names);
+    app.created
+        .as_ref()
+        .unwrap()
+        .save_modlist(&app.mods)
+        .unwrap();
+    reload_mods(&mut app);
+    (app, root)
+}
+
+#[test]
+fn ctrl_z_undoes_a_mod_toggle_and_ctrl_shift_z_redoes_it() {
+    let (mut app, root) = history_app(&["A", "B"]);
+    let _ = update(&mut app, Message::ToggleMod(0));
+    assert!(!app.mods[0].enabled);
+    let _ = update(&mut app, Message::Undo);
+    assert!(app.mods[0].enabled);
+    assert!(
+        fs::read_to_string(root.join("profiles/Default/modlist.txt"))
+            .unwrap()
+            .contains("+A")
+    );
+    let _ = update(&mut app, Message::Redo);
+    assert!(!app.mods[0].enabled);
+}
+
+#[test]
+fn undo_refuses_after_mods_were_added_removed_or_renamed() {
+    let (mut app, root) = history_app(&["A"]);
+    let _ = update(&mut app, Message::ToggleMod(0));
+    fs::create_dir_all(root.join("mods/New")).unwrap();
+    app.mods.push(ModEntry {
+        name: "New".into(),
+        enabled: true,
+        path: root.join("mods/New"),
+        unmanaged: false,
+    });
+    mods_changed(&mut app);
+    let _ = update(&mut app, Message::Undo);
+    assert_eq!(app.mods.len(), 2);
+    assert!(app.status.as_deref().unwrap().contains("Cannot undo"));
+    let _ = update(&mut app, Message::Undo);
+    assert!(app.status.as_deref().unwrap().contains("Nothing to undo"));
+}
+
+#[test]
+fn undo_after_an_outside_edit_is_refused_and_clears_history() {
+    let (mut app, root) = history_app(&["A"]);
+    let _ = update(&mut app, Message::ToggleMod(0));
+    // Another process; bytes unlike the window's own "-A\n", or the
+    // fingerprint would not see the change.
+    fs::write(
+        root.join("profiles/Default/modlist.txt"),
+        "# elsewhere\n-A\n",
+    )
+    .unwrap();
+    let _ = update(&mut app, Message::Undo);
+    assert!(app
+        .status
+        .as_deref()
+        .unwrap()
+        .contains("another Eidos process"));
+    assert!(!app.mods[0].enabled, "the list on disk wins");
+    let _ = update(&mut app, Message::Undo);
+    assert!(app.status.as_deref().unwrap().contains("Nothing to undo"));
+}
+
+#[test]
+fn ctrl_z_in_a_text_field_does_not_touch_the_list() {
+    let (mut app, _root) = history_app(&["A"]);
+    let _ = update(&mut app, Message::ToggleMod(0));
+    app.typing = true;
+    let _ = update(&mut app, Message::Undo);
+    assert!(!app.mods[0].enabled);
+}

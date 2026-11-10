@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c754761ce9acdcd37539c930a19c9a429336c0e7 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c0100062e76e111f3a67e3c11f9ad58412e6b15d -->
 
 # Utiliser Eidos
 
@@ -549,6 +549,13 @@ suivant active un mod que vous ne regardiez pas.
 celui-là. Pendant un glisser-déposer, s'arrêter sur un groupe replié l'ouvre, si
 bien qu'un mod peut être déposé dedans sans abandonner le glissement d'abord -
 s'arrêter, pas passer dessus.
+
+Ctrl+Z annule la dernière modification de la liste des mods : une case cochée,
+un déplacement, une désactivation groupée. Ctrl+Shift+Z la rétablit. La fenêtre
+garde 50 étapes et les oublie sur F5, à la fin d'un lancement de jeu ou d'outil,
+au changement de profil et quand un autre processus Eidos modifie la liste.
+Installer, renommer ou supprimer un mod change les dossiers sur le disque : une
+annulation qui remonte avant l'une de ces opérations est refusée.
 
 ### Ce que la liste vous dit d'un mod
 

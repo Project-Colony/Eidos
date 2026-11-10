@@ -56,6 +56,28 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::CancelDisable => app.disable_confirm = None,
+        Message::Undo | Message::Redo => {
+            // A text field has Ctrl+Z for itself.
+            if app.typing {
+                return Task::none();
+            }
+            let undo = matches!(message, Message::Undo);
+            let step = if undo {
+                app.history.borrow_mut().undo()
+            } else {
+                app.history.borrow_mut().redo()
+            };
+            let Some(crate::history::Step::Mods(state)) = step else {
+                let key = if undo {
+                    "status_nothing_to_undo"
+                } else {
+                    "status_nothing_to_redo"
+                };
+                app.status = Some(t(key).to_string());
+                return Task::none();
+            };
+            apply_mods_step(app, state, undo);
+        }
         Message::SendToFirstConflict(i) | Message::SendToLastConflict(i) => {
             let first = matches!(message, Message::SendToFirstConflict(_));
             app.menu_mod = None;
@@ -1765,6 +1787,47 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         _ => unreachable!("routed by update_inner"),
     }
     Task::none()
+}
+
+/// Put the mod list back to `state`, an undo or redo step. Only order and
+/// enabled flags are restored: a step taken before a mod was added, removed or
+/// renamed no longer matches the folders on disk, so it is refused and the
+/// history dropped.
+fn apply_mods_step(app: &mut App, state: crate::history::ModsState, undo: bool) {
+    let mut want: Vec<&str> = state.iter().map(|(n, _)| n.as_str()).collect();
+    let mut have: Vec<&str> = app.mods.iter().map(|m| m.name.as_str()).collect();
+    want.sort_unstable();
+    have.sort_unstable();
+    if want != have {
+        app.history.borrow_mut().clear();
+        app.status = Some(t("status_undo_list_changed").to_string());
+        return;
+    }
+    let mut pool: Vec<Option<ModEntry>> = std::mem::take(&mut app.mods)
+        .into_iter()
+        .map(Some)
+        .collect();
+    app.mods = state
+        .into_iter()
+        .filter_map(|(name, enabled)| {
+            let entry = pool
+                .iter_mut()
+                .find(|e| e.as_ref().is_some_and(|e| e.name == name))?
+                .take()?;
+            Some(ModEntry { enabled, ..entry })
+        })
+        .collect();
+    // Rows may have moved under the selected indices.
+    put_mod_selection(app, HeldSelection::default());
+    // A refused save already said so, and its reload cleared the history.
+    if mods_changed(app) {
+        let key = if undo {
+            "status_undone_mods"
+        } else {
+            "status_redone_mods"
+        };
+        app.status = Some(t(key).to_string());
+    }
 }
 
 /// Hold back a disable of `targets` when the newest `saves` use their plugins:

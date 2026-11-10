@@ -685,6 +685,10 @@ pub(crate) enum Message {
     CycleFocus,
     /// Select every row of the focused list (Ctrl+A).
     SelectAllInFocus,
+    /// Put back the mod list as it was before the last saved change (Ctrl+Z).
+    Undo,
+    /// Reapply the change the last undo took back (Ctrl+Shift+Z).
+    Redo,
     // ---- keyboard tracking (drives Ctrl/Shift multi-select + shortcuts) ----
     /// The held keyboard modifiers changed (from key press/release subscriptions).
     ModifiersChanged(iced::keyboard::Modifiers),

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c754761ce9acdcd37539c930a19c9a429336c0e7 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c0100062e76e111f3a67e3c11f9ad58412e6b15d -->
 
 # Eidos gebruiken
 
@@ -522,6 +522,13 @@ spatie een mod omschakelt waar je niet naar keek.
 ene. Tijdens een sleep opent een ingeklapte groep als je erop blijft rusten,
 zodat een mod erin gelaten kan worden zonder de sleep eerst op te geven - rusten,
 niet er even langs strijken.
+
+Ctrl+Z maakt de laatste wijziging in de modlijst ongedaan: een vinkje, een
+verplaatsing, een batchgewijze uitschakeling. Ctrl+Shift+Z voert die opnieuw uit.
+Het venster bewaart 50 stappen en vergeet ze bij F5, aan het eind van een spel- of
+toolrun, bij een profielwissel en wanneer een ander Eidos-proces de lijst wijzigt.
+Een mod installeren, hernoemen of verwijderen verandert de mappen op schijf, dus
+ongedaan maken voorbij zo'n stap wordt geweigerd.
 
 ### Wat de lijst je over een mod vertelt
 

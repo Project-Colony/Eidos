@@ -181,6 +181,9 @@ pub(crate) struct App {
     /// while this window shows its old copy, and saving that copy would erase
     /// what it wrote, so `save_mods` refuses when the file no longer matches.
     pub(crate) modlist_seen: std::cell::Cell<Option<u64>>,
+    /// Undo and redo for the mod list. A `RefCell` because the plugin-state
+    /// writers that also record into it take `&App`.
+    pub(crate) history: std::cell::RefCell<crate::history::History>,
     /// Cached ESP/ESM load order for the Plugins tab (recomputed on demand).
     pub(crate) plugins: Option<PluginList>,
     /// The same guard for `plugins`: a hash of the profile's plugin state files

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c754761ce9acdcd37539c930a19c9a429336c0e7 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c0100062e76e111f3a67e3c11f9ad58412e6b15d -->
 
 # Eidos verwenden
 
@@ -550,6 +550,14 @@ gar nicht ansahen.
 Während eines Ziehens öffnet das Verweilen auf einer zugeklappten Gruppe sie,
 sodass eine Mod hineingelegt werden kann, ohne das Ziehen vorher abzubrechen -
 Verweilen, nicht Vorbeistreifen.
+
+Strg+Z macht die letzte Änderung an der Mod-Liste rückgängig: ein Häkchen, ein
+Verschieben, ein Sammel-Deaktivieren. Strg+Umschalt+Z stellt sie wieder her. Das
+Fenster behält 50 Schritte und vergisst sie bei F5, am Ende eines Spiel- oder
+Tool-Laufs, beim Profilwechsel und wenn ein anderer Eidos-Prozess die Liste
+ändert. Installieren, Umbenennen oder Entfernen einer Mod ändert die Ordner auf
+der Festplatte, daher wird ein Rückgängigmachen über einen solchen Schritt hinaus
+abgelehnt.
 
 ### Was die Liste Ihnen über eine Mod sagt
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c754761ce9acdcd37539c930a19c9a429336c0e7 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c0100062e76e111f3a67e3c11f9ad58412e6b15d -->
 
 # Eidos kullanımı
 
@@ -507,6 +507,13 @@ Bir ayracın menüsündeki "Collapse others", o grup dışındaki her grubu katl
 sürükleme sırasında katlanmış bir grubun üzerinde beklemek onu açar, böylece bir
 mod önce sürüklemeyi bırakmadan içine bırakılabilir - beklemek, üzerinden geçip
 gitmek değil.
+
+Ctrl+Z mod listesindeki son değişikliği geri alır: bir işaret, bir taşıma, toplu
+bir devre dışı bırakma. Ctrl+Shift+Z onu yeniden yapar. Pencere 50 adım tutar ve
+bunları F5'te, bir oyun ya da araç çalıştırmasının sonunda, profil değişiminde ve
+başka bir Eidos süreci listeyi değiştirdiğinde unutur. Bir modu kurmak, yeniden
+adlandırmak ya da kaldırmak diskteki klasörleri değiştirir, bu yüzden bunlardan
+birinin ötesine geçen bir geri alma reddedilir.
 
 ### Listenin bir mod hakkında söyledikleri
 

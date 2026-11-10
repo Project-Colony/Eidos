@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c754761ce9acdcd37539c930a19c9a429336c0e7 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c0100062e76e111f3a67e3c11f9ad58412e6b15d -->
 
 # Používání Eidosu
 
@@ -486,6 +486,12 @@ jste se nedívali.
 „Collapse others" v nabídce oddělovače sbalí všechny skupiny kromě té jedné.
 Během tažení se zastavením nad sbalenou skupinou skupina otevře, takže mód lze
 pustit dovnitř, aniž byste tažení nejdřív opustili - zastavením, ne přejetím.
+
+Ctrl+Z vrátí poslední změnu seznamu modů: zaškrtnutí, přesun, hromadné vypnutí.
+Ctrl+Shift+Z ji provede znovu. Okno si pamatuje 50 kroků a zapomene je po F5, na
+konci běhu hry nebo nástroje, při přepnutí profilu a když seznam změní jiný
+proces Eidos. Instalace, přejmenování nebo odebrání modu mění složky na disku,
+takže vrácení za takový krok je odmítnuto.
 
 ### Co vám seznam o módu řekne
 

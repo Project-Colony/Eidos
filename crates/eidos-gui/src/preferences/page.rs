@@ -515,6 +515,8 @@ impl Sections<'_> {
                     t("settings_key_reorder"),
                     t("settings_key_reorder_how").to_string(),
                 ),
+                self.info(t("settings_key_undo"), "Ctrl+Z".to_string()),
+                self.info(t("settings_key_redo"), "Ctrl+Shift+Z".to_string()),
             ],
         )
     }

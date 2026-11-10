@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c754761ce9acdcd37539c930a19c9a429336c0e7 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c0100062e76e111f3a67e3c11f9ad58412e6b15d -->
 
 # Usar Eidos
 
@@ -529,6 +529,13 @@ activando un mod que no estabas mirando.
 Durante un arrastre, detenerse sobre un grupo plegado lo abre, de modo que se
 puede soltar un mod dentro sin abandonar antes el arrastre - detenerse, no pasar
 rozando.
+
+Ctrl+Z deshace el último cambio en la lista de mods: una casilla, un movimiento,
+una desactivación en lote. Ctrl+Shift+Z lo rehace. La ventana guarda 50 pasos y
+los olvida con F5, al terminar una ejecución del juego o de una herramienta, al
+cambiar de perfil y cuando otro proceso de Eidos cambia la lista. Instalar,
+renombrar o quitar un mod cambia las carpetas en disco, así que se rechaza un
+deshacer que vaya más atrás de una de esas acciones.
 
 ### Lo que la lista te dice de un mod
 

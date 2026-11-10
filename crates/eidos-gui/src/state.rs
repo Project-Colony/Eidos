@@ -299,6 +299,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         error: None,
         mods: Vec::new(),
         modlist_seen: std::cell::Cell::new(None),
+        history: Default::default(),
         plugins: None,
         plugins_seen: std::cell::Cell::new(None),
         conflicts: None,
@@ -942,6 +943,10 @@ pub(crate) fn reload_mods(app: &mut App) {
     // stale the moment a member is installed. Recomputed here rather than in the
     // view, which runs every frame and this reads every mod's meta.ini.
     crate::update::recompute_collection_states(app);
+    // What was undoable described the list before this read.
+    app.history
+        .borrow_mut()
+        .reset(crate::history::mods_state(&app.mods));
 }
 
 /// Find the `eidos` CLI that drives the namespaced launch. The GUI is
@@ -2908,6 +2913,10 @@ pub(crate) fn mods_changed(app: &mut App) -> bool {
         // evaporates when they close the window. Disk is the truth; resync the
         // view to it.
         reload_mods(app);
+    } else {
+        app.history
+            .borrow_mut()
+            .saved_mods(crate::history::mods_state(&app.mods));
     }
     mod_views_changed(app);
     refused.is_none()
