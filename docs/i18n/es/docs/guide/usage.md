@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=28cada8f5976ca2734f3bcdf3e7f48913c15e05b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a52fda783776900495152e3b3a35c98d83d96d42 -->
 
 # Usar Eidos
 
@@ -21,6 +21,7 @@ eidos play skyrimse               # mostrar qué se montaría
 eidos play skyrimse -- <command>  # ejecutar <command> con los mods montados sobre el juego
 eidos check skyrimse              # comprobaciones de salud sin la ventana (--json para scripts)
 eidos collection skyrimse <link>  # instalar una colección de Nexus tal como la construyó su autor
+eidos nexus update skyrimse --apply  # instalar los archivos de Nexus que reemplazaron a los tuyos
 eidos pack skyrimse backup.eidos  # toda la instancia en un solo fichero, para llevarla a otro sitio
 eidos unpack backup.eidos <folder>   # devolverla a su sitio en la otra máquina
 ```
@@ -256,6 +257,16 @@ para que lo obtengas tú. Ésa es una regla de negocio de Nexus, y no hay reinte
 que valga para saltársela. Consíguelos con el botón del sitio y vuelve a ejecutar
 la orden: esos miembros se buscan en `downloads/` en cada ejecución, así que la
 colección se termina a medida que tú la vas surtiendo.
+
+En la ventana, una cuenta gratuita recibe en el panel de la colección
+*Fetch the N missing required files, one by one* en lugar de la descarga por
+lotes. Abre en Nexus la página del primer fichero obligatorio que falta, espera
+a que ese fichero llegue a `downloads/` y luego abre el siguiente. El botón de
+descarga de la página lo sigues pulsando tú en cada fichero. El panel muestra
+por dónde va (*3 of 12*), con *Skip* y *Stop*. Si en su lugar llega otro
+fichero del mismo mod, el panel nombra los dos id de fichero y sigue esperando
+el que fija la colección. Los miembros opcionales quedan fuera y conservan su
+propio botón *Open*.
 
 Todavía no se aplican, y se nombran en el informe en vez de pasarse por alto: los
 **parches binarios**, las **sobrescrituras de ficheros** y los miembros cuyos
@@ -609,6 +620,41 @@ installed» borra los archivos de los mods que ya has instalado, en dos clics, y
 sólo los que están **en pantalla**: el filtro es tu forma de decir a cuáles te
 referías.
 
+### Actualizaciones de mods
+
+El botón de actualización del extremo derecho de la barra de herramientas
+compara cada archivo instalado con el archivo que lo reemplazó en Nexus. Los
+autores marcan una nueva subida como sucesora de otra anterior, y Eidos sigue
+esa cadena desde el identificador de archivo que registra el `meta.ini` del mod.
+Cuando la cadena no nombra ningún sucesor, se compara en su lugar la versión de
+la página del mod.
+
+La pestaña **Nexus files** de «Information...» lista los archivos del mod en
+Nexus, del más reciente al más antiguo, y marca el instalado aquí y el que lo
+reemplaza. Esa segunda fila tiene un botón **Update**. Con una cuenta premium,
+Eidos descarga el archivo por sí mismo. Con una cuenta gratuita, abre la página
+del archivo, donde Mod Manager Download lo devuelve, y la instalación empieza
+cuando el comprimido llega a `downloads/`. A partir de ahí es la instalación de
+siempre: un FOMOD se abre con las respuestas con las que se instaló el mod, y
+luego el aviso ofrece Replace con «Keep a backup of the existing mod» marcado,
+elijas lo que elijas en el aviso anterior. Replace conserva la prioridad del mod
+y si está activado.
+
+Una carpeta que contiene varios archivos de Nexus, como un archivo principal con
+uno opcional fusionado dentro, se rechaza: reemplazarla por el nuevo archivo
+principal haría perder los demás. Actualízalos a mano.
+
+`eidos nexus update skyrimse --apply` hace la misma comprobación y, con una
+cuenta premium, descarga cada archivo nuevo y lo instala sobre su carpeta con
+`--replace --backup`. Con una cuenta gratuita imprime en cambio `OPEN <url>`
+para cada página de archivo. Las carpetas que fusionan varios archivos se omiten
+con el motivo. Un mod FOMOD sin respuestas guardadas, como uno instalado antes
+de que Eidos las conservara, no se reinstala con los valores predeterminados del
+instalador: esa actualización falla con un mensaje que pide actualizar el mod
+una vez desde la ventana, que guarda las respuestas. Un FOMOD cuyo instalador no
+ofrece nada que elegir se instala como siempre. La orden termina con 1 si alguna
+actualización falló.
+
 ### Colecciones de Nexus
 
 Pega un enlace de colección - o haz clic en uno en el sitio - y Eidos lista los
@@ -624,6 +670,8 @@ Una colección sólo se puede leer contra **su propio juego**. Abre una colecci�
 Skyrim con una instancia de Fallout 4 cargada y se rechaza por nombre en vez de
 cruzar los miembros con la lista de mods equivocada, donde cada «instalado» y cada
 «ausente» serían ruido con forma de respuesta.
+
+Al comprobar actualizaciones, Eidos también pregunta a Nexus por la última revisión de cada colección instalada en esta instancia. Una línea sobre la lista de mods nombra cada colección con una revisión más nueva y cuenta los mods añadidos (+), actualizados (~) y retirados (-); pase el ratón por encima para ver sus nombres. Los recuentos faltan si la receta de la revisión instalada ya no está en la caché. **Actualizar** abre la revisión nueva en el panel de colecciones, donde *Install this collection* la ejecuta. La lista se rehace en cada comprobación y no se guarda.
 
 ### Modo sin conexión
 
@@ -644,7 +692,7 @@ descarga se hace igual, desde el nodo que Nexus ofreciera primero.
 selección, edita el propio catálogo desde el mismo diálogo, y trae de Nexus la
 lista oficial de categorías del juego. Los dos archivos de catálogo son los
 propios de MO2 (`categories.dat` y `nexuscatmap.dat`), así que una instancia
-compartida mantiene un solo catálogo.
+compartida mantiene un solo catálogo. Un mod descargado de Nexus se categoriza al instalarlo, una vez que Obtener de Nexus ha asignado el catálogo.
 
 **View -> INI editor** edita los INI del juego del perfil - la copia que persiste,
 no la enterrada en el prefijo de Proton que se sobrescribe en cada lanzamiento.
@@ -656,6 +704,13 @@ Wrye Bash (marca los subpaquetes, que se fusionan por orden) y un selector
 **manual** que muestra el árbol del archivo y te deja señalar la raíz de datos
 cuando ninguna heurística reconoce la disposición. No se rechaza ningún archivo.
 
+Reinstalar o actualizar un mod FOMOD abre el asistente con las respuestas de su
+última instalación marcadas, en el primer paso cuyas opciones cambiaron desde
+entonces, con la lista de cambios. **Reinstall with new choices** parte en
+cambio de los valores predeterminados del instalador. `eidos install --replace`
+o `--merge` reutiliza las respuestas guardadas y se niega a instalar, con la
+lista de cambios, cuando ya no encajan.
+
 **Diagnostics** ejecuta comprobaciones de salud en vivo: la capacidad de
 lanzamiento ante todo, los masters ausentes (el predictor de fallos más fiable que
 existe), los archivos que ningún plugin activo cargará, si la lista de mods sigue
@@ -663,6 +718,7 @@ coincidiendo con la carpeta de mods y - tras una ejecución - qué dice el propi
 registro del script extender sobre cada una de sus DLL de plugin, lo que convierte
 «¿se cargaron mis plugins de SKSE?» de una inferencia en una evidencia.
 También informa de una actualización del juego desde el último lanzamiento limpio, un script extender ausente o que no coincide con la versión del juego (con la página de descarga del extender y un botón que instala el archivo que descargues), una opción de lanzamiento de Steam que no inicia Eidos con `%command%`, NVAPI desactivado para DLSS, una pantalla completa exclusiva que impide la generación de fotogramas, un `enblocal.ini` de ENB sin `LinuxVersion=true`, las declaraciones de plugins de F4SE y SFSE, y el registro de fallos de la última sesión con los mods que nombra.
+Buscar actualizaciones también lee los requisitos de cada mod en Nexus. Diagnostics lista el mod requerido que falta o está desactivado, con Ignore para un requisito cubierto de otra forma.
 
 Para lanzar el juego a través de la interfaz gráfica, pon la opción de lanzamiento
 de Steam del juego con la ruta absoluta del binario (Steam no ve `~/.cargo/bin` en

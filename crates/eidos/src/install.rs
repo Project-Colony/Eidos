@@ -16,11 +16,14 @@ struct InstallOptions {
     save_answers: Option<std::path::PathBuf>,
     apply_profile_effects: bool,
     allow_incomplete: bool,
+    /// Refuse a FOMOD install that offers a choice and has no recorded
+    /// answers to replay.
+    no_fomod_defaults: bool,
 }
 impl InstallOptions {
     fn parse(args: &[String]) -> Result<Self, String> {
         if args.len() < 2 || args[..2].iter().any(|s| s.starts_with("--")) {
-            return Err("usage: eidos install <game-id-or-instance-path> <archive> [name] [--replace|--merge] [--backup] [--answers FILE] [--save-answers FILE] [--apply-profile-effects] [--allow-incomplete]".into());
+            return Err("usage: eidos install <game-id-or-instance-path> <archive> [name] [--replace|--merge] [--backup] [--answers FILE] [--save-answers FILE] [--apply-profile-effects] [--allow-incomplete] [--no-fomod-defaults]".into());
         }
         let mut out = Self {
             target: args[0].clone(),
@@ -38,6 +41,7 @@ impl InstallOptions {
                     out.apply_profile_effects = true
                 }
                 "--allow-incomplete" if !out.allow_incomplete => out.allow_incomplete = true,
+                "--no-fomod-defaults" if !out.no_fomod_defaults => out.no_fomod_defaults = true,
                 "--answers" | "--save-answers" => {
                     let slot = if args[i] == "--answers" {
                         &mut out.answers
@@ -176,6 +180,59 @@ fn retry_request(args: &[String]) -> Result<Option<(&str, &str)>, String> {
         );
     }
     Ok(Some((&args[0], &args[2])))
+}
+
+/// The FOMOD answers a CLI install uses: the stored ones when they still fit
+/// the installer, the installer's defaults when there are none and either
+/// `defaults_ok` or the installer asks nothing. A replay that no longer fits is
+/// refused rather than finished with a guess.
+fn fomod_selection(
+    config: &eidos_fomod::ModuleConfig,
+    ctx: &eidos_fomod::Context,
+    stored: Option<&str>,
+    defaults_ok: bool,
+) -> Result<eidos_fomod::Selection, String> {
+    let Some(replay) = stored.and_then(|json| eidos_install::replay_stored(config, ctx, json))
+    else {
+        if !defaults_ok && fomod_has_choice(config) {
+            return Err("No FOMOD answers are recorded for this mod, so its installer's defaults would replace the options it was installed with. Update it once from the window, which records them.".into());
+        }
+        return Ok(eidos_fomod::default_selection(config, ctx));
+    };
+    if !replay.is_faithful() {
+        return Err(format!(
+            "The installer's options changed since the last install: {}. Reinstall from the window to choose again.",
+            replay.unmatched.join("; ")
+        ));
+    }
+    Ok(replay.selection)
+}
+
+/// Whether the installer lets the user change anything. When it does not, its
+/// defaults are the only install it can make, so no recorded answers are
+/// needed. A group asks nothing when it is empty, takes all its options, has a
+/// single option it must take, or holds only options fixed as Required or Not
+/// Usable with no condition that could change that.
+fn fomod_has_choice(config: &eidos_fomod::ModuleConfig) -> bool {
+    use eidos_fomod::{GroupType, PluginType};
+    let fixed = |p: &eidos_fomod::Plugin| {
+        p.type_descriptor.patterns.is_empty()
+            && matches!(
+                p.type_descriptor.default_type,
+                PluginType::Required | PluginType::NotUsable
+            )
+    };
+    config
+        .steps
+        .iter()
+        .flat_map(|s| &s.groups)
+        .any(|g| match g.group_type {
+            GroupType::SelectAll => false,
+            GroupType::SelectExactlyOne | GroupType::SelectAtLeastOne if g.plugins.len() == 1 => {
+                false
+            }
+            _ => !g.plugins.iter().all(fixed),
+        })
 }
 
 pub(crate) fn cmd_install(args: &[String]) {
@@ -454,7 +511,19 @@ pub(crate) fn cmd_install(args: &[String]) {
                             &target.game_id,
                             fallback.as_deref(),
                         );
-                        let selection = eidos_fomod::default_selection(&session.config, &fomod);
+                        // The answers the folder being replaced was installed
+                        // with. Fail never replaces: the collision check above
+                        // already refused an existing folder.
+                        let stored = (options.policy != eidos_install::OverwritePolicy::Fail)
+                            .then(|| eidos_install::collision_name(&inst.mods_dir(), &name))
+                            .flatten()
+                            .and_then(|folder| inst.mod_meta(&folder).fomod_choices());
+                        let selection = fomod_selection(
+                            &session.config,
+                            &fomod,
+                            stored.as_deref(),
+                            !options.no_fomod_defaults,
+                        )?;
                         eidos_install::finish_fomod(
                             *session,
                             &selection,
@@ -621,6 +690,7 @@ mod installer_option_tests {
             "new choices.json",
             "--apply-profile-effects",
             "--allow-incomplete",
+            "--no-fomod-defaults",
         ])
         .unwrap();
         assert_eq!(got.name.as_deref(), Some("My Mod"));
@@ -636,7 +706,7 @@ mod installer_option_tests {
             got.policy,
             eidos_install::OverwritePolicy::ReplaceWithBackup
         );
-        assert!(got.apply_profile_effects && got.allow_incomplete);
+        assert!(got.apply_profile_effects && got.allow_incomplete && got.no_fomod_defaults);
         assert!(
             parse(&["oblivion", "mod.omod", "--answers", "choices.json"])
                 .unwrap()
@@ -656,6 +726,7 @@ mod installer_option_tests {
             &["--answers", "a", "--answers", "b"],
             &["--replace", "--replace"],
             &["--apply-profile-effects", "--apply-profile-effects"],
+            &["--no-fomod-defaults", "--no-fomod-defaults"],
         ] {
             let args: [Vec<&str>; 2] = [vec!["oblivion", "mod.omod"], tail.to_vec()];
             assert!(parse(&args.concat()).is_err(), "{tail:?}");
@@ -716,5 +787,103 @@ mod installer_option_tests {
         assert!(read_answers(&path).is_err());
         assert_eq!(std::fs::read(&archive).unwrap(), b"source");
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn replay_config(snow: &str) -> eidos_fomod::ModuleConfig {
+        eidos_fomod::ModuleConfig::parse(&format!(
+            r#"<config><installSteps order="Explicit">
+<installStep name="Main"><optionalFileGroups order="Explicit"><group name="Textures" type="SelectExactlyOne"><plugins order="Explicit">
+<plugin name="SD"><typeDescriptor><type name="Recommended"/></typeDescriptor></plugin>
+<plugin name="HD"><typeDescriptor><type name="Optional"/></typeDescriptor></plugin>
+</plugins></group></optionalFileGroups></installStep>
+<installStep name="Extras"><optionalFileGroups><group name="Patches" type="SelectAny"><plugins>
+<plugin name="{snow}"><typeDescriptor><type name="Optional"/></typeDescriptor></plugin>
+</plugins></group></optionalFileGroups></installStep>
+</installSteps></config>"#
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn cli_fomod_selection_refuses_an_unfaithful_replay() {
+        let ctx = eidos_fomod::Context::default();
+        let config = replay_config("Snow");
+        let picked: eidos_fomod::Selection = vec![vec![vec![false, true]], vec![vec![true]]];
+        let stored_same =
+            eidos_install::fomod_choices_json(&eidos_fomod::to_recorded(&config, &picked, &ctx));
+        assert_eq!(
+            fomod_selection(&config, &ctx, Some(&stored_same), true).unwrap(),
+            picked
+        );
+        let err = fomod_selection(
+            &replay_config("Snow (Cathedral)"),
+            &ctx,
+            Some(&stored_same),
+            true,
+        )
+        .unwrap_err();
+        assert!(err.contains("Reinstall from the window"), "{err}");
+        assert!(err.contains("\"Snow\""), "{err}");
+        assert_eq!(
+            fomod_selection(&config, &ctx, None, true).unwrap(),
+            eidos_fomod::default_selection(&config, &ctx)
+        );
+        // `nexus update --apply` installs unattended: no recorded answers, or
+        // unreadable ones, is a refusal there, never the defaults.
+        for stored in [None, Some("{")] {
+            let err = fomod_selection(&config, &ctx, stored, false).unwrap_err();
+            assert!(err.contains("Update it once from the window"), "{err}");
+        }
+        assert_eq!(
+            fomod_selection(&config, &ctx, Some(&stored_same), false).unwrap(),
+            picked
+        );
+    }
+
+    #[test]
+    fn unattended_fomod_defaults_are_kept_when_the_installer_asks_nothing() {
+        let ctx = eidos_fomod::Context::default();
+        let parse = |groups: &str| {
+            eidos_fomod::ModuleConfig::parse(&format!(
+                r#"<config><requiredInstallFiles><file source="a.esp"/></requiredInstallFiles><installSteps order="Explicit"><installStep name="Main"><optionalFileGroups order="Explicit">{groups}</optionalFileGroups></installStep></installSteps></config>"#
+            ))
+            .unwrap()
+        };
+        let group = |kind: &str, plugins: &[&str]| {
+            let plugins: String = plugins
+                .iter()
+                .enumerate()
+                .map(|(i, t)| {
+                    format!(r#"<plugin name="P{i}"><typeDescriptor><type name="{t}"/></typeDescriptor></plugin>"#)
+                })
+                .collect();
+            format!(
+                r#"<group name="G" type="{kind}"><plugins order="Explicit">{plugins}</plugins></group>"#
+            )
+        };
+        let nothing_to_choose = [
+            eidos_fomod::ModuleConfig::parse(
+                r#"<config><requiredInstallFiles><file source="a.esp"/></requiredInstallFiles></config>"#,
+            )
+            .unwrap(),
+            parse(""),
+            parse(&group("SelectAny", &["Required", "NotUsable"])),
+            parse(&group("SelectAll", &["Optional", "Optional"])),
+            parse(&group("SelectExactlyOne", &["Optional"])),
+        ];
+        for config in &nothing_to_choose {
+            assert_eq!(
+                fomod_selection(config, &ctx, None, false).unwrap(),
+                eidos_fomod::default_selection(config, &ctx),
+                "{config:?}"
+            );
+        }
+        for kind in ["SelectAny", "SelectAtMostOne"] {
+            let config = parse(&group(kind, &["Optional"]));
+            let err = fomod_selection(&config, &ctx, None, false).unwrap_err();
+            assert!(err.contains("Update it once from the window"), "{err}");
+        }
+        let config = parse(&group("SelectExactlyOne", &["Recommended", "Optional"]));
+        assert!(fomod_selection(&config, &ctx, None, false).is_err());
     }
 }

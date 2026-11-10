@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=28cada8f5976ca2734f3bcdf3e7f48913c15e05b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a52fda783776900495152e3b3a35c98d83d96d42 -->
 
 # Używanie Eidos
 
@@ -20,6 +20,7 @@ eidos play skyrimse               # pokazać, co zostałoby zamontowane
 eidos play skyrimse -- <command>  # uruchomić <command> z modami zamontowanymi nad grą
 eidos check skyrimse              # kontrole kondycji bez okna (--json dla skryptów)
 eidos collection skyrimse <link>  # zainstalować kolekcję Nexusa tak, jak zbudował ją jej autor
+eidos nexus update skyrimse --apply  # zainstalować pliki z Nexusa, które zastąpiły twoje
 eidos pack skyrimse backup.eidos  # cała instancja w jednym pliku, żeby przenieść ją gdzie indziej
 eidos unpack backup.eidos <folder>   # odtworzyć ją na drugiej maszynie
 ```
@@ -252,6 +253,16 @@ pobrał go sam. To reguła biznesowa Nexusa i żadna liczba ponowień jej nie
 obejdzie. Pobierz ich przyciskiem w serwisie i uruchom polecenie ponownie: tych
 członków szuka się w `downloads/` przy każdym uruchomieniu, więc kolekcja domyka
 się w miarę, jak ich dostarczasz.
+
+W oknie darmowe konto dostaje w panelu kolekcji przycisk
+*Fetch the N missing required files, one by one* zamiast pobierania partiami.
+Otwiera on na Nexusie stronę pierwszego brakującego wymaganego pliku, czeka, aż
+ten plik trafi do `downloads/`, a potem otwiera następny. Przycisk pobierania
+na stronie nadal naciskasz sam, przy każdym pliku. Panel pokazuje postęp
+(*3 of 12*) oraz *Skip* i *Stop*. Jeśli zamiast niego przyjdzie inny plik tego
+samego moda, panel podaje oba identyfikatory plików i dalej czeka na ten, który
+wskazuje kolekcja. Członkowie opcjonalni nie biorą w tym udziału i zachowują
+własny przycisk *Open*.
 
 Jeszcze niestosowane, a wymienione z nazwy w raporcie zamiast pominięte:
 **poprawki binarne**, **nadpisania plików** oraz członkowie, których pliki
@@ -591,6 +602,39 @@ je, a ten sam przycisk odkrywa. „Remove N installed" usuwa archiwa modów, kt�
 już zainstalowałeś, w dwóch kliknięciach, i tylko te **na ekranie**: filtrem
 powiedziałeś, o które ci chodziło.
 
+### Aktualizacje modów
+
+Przycisk aktualizacji na prawym końcu paska narzędzi porównuje każdy
+zainstalowany plik z plikiem, który zastąpił go na Nexusie. Autorzy oznaczają
+nowy upload jako następcę starszego, a Eidos idzie tym łańcuchem od
+identyfikatora pliku zapisanego w `meta.ini` moda. Gdy łańcuch nie wskazuje
+żadnego następcy, porównywana jest zamiast tego wersja ze strony moda.
+
+Karta **Nexus files** w „Information..." wypisuje pliki moda na Nexusie, od
+najnowszego, i oznacza ten zainstalowany tutaj oraz ten, który go zastępuje. Ten
+drugi wiersz ma przycisk **Update**. Z kontem premium Eidos sam pobiera plik. Z
+darmowym kontem otwiera stronę pliku, skąd Mod Manager Download odsyła plik, a
+instalacja rusza, gdy archiwum trafi do `downloads/`. Dalej to zwykła
+instalacja: FOMOD otwiera się z odpowiedziami, z którymi mod był instalowany, a
+potem okno proponuje Replace z zaznaczonym „Keep a backup of the existing mod",
+niezależnie od wyboru w poprzednim oknie. Replace zachowuje priorytet moda i to,
+czy jest włączony.
+
+Folder, który zawiera kilka plików z Nexusa, na przykład plik główny z
+wmieszanym w niego plikiem opcjonalnym, jest odrzucany: zastąpienie go nowym
+plikiem głównym zgubiłoby pozostałe. Zaktualizuj je ręcznie.
+
+`eidos nexus update skyrimse --apply` robi to samo sprawdzenie, a potem na
+koncie premium pobiera każdy nowy plik i instaluje go na jego folderze z
+`--replace --backup`. Na darmowym koncie wypisuje zamiast tego `OPEN <url>` dla
+każdej strony pliku. Foldery łączące kilka plików są pomijane z podaniem powodu.
+Mod FOMOD bez zapisanych odpowiedzi, na przykład zainstalowany, zanim Eidos
+zaczął je przechowywać, nie jest instalowany ponownie z domyślnymi ustawieniami
+instalatora: ta aktualizacja kończy się błędem z prośbą, by raz zaktualizować
+moda z okna, które zapisze odpowiedzi. FOMOD, którego instalator nie daje nic do
+wyboru, instaluje się normalnie. Polecenie kończy się kodem 1, jeśli któraś
+aktualizacja się nie powiodła.
+
 ### Kolekcje Nexusa
 
 Wklej odnośnik do kolekcji - albo kliknij taki na stronie - a Eidos wypisze
@@ -605,6 +649,8 @@ Kolekcję da się odczytać tylko wobec **jej własnej gry**. Otwórz kolekcję 
 Skyrima przy wczytanej instancji Fallouta 4, a odmówi z nazwy, zamiast zestawiać
 członków z niewłaściwą listą modów, gdzie każde „zainstalowany" i każde
 „brakujący" byłoby szumem w kształcie odpowiedzi.
+
+Gdy sprawdzasz aktualizacje, Eidos pyta też Nexusa o najnowszą rewizję każdej kolekcji zainstalowanej w tej instancji. Wiersz nad listą modów podaje każdą kolekcję z nowszą rewizją i liczbę modów dodanych (+), zaktualizowanych (~) i usuniętych (-); po najechaniu kursorem widać ich nazwy. Liczb brakuje, gdy przepis zainstalowanej rewizji nie jest już w pamięci podręcznej. **Aktualizuj** otwiera nowszą rewizję w panelu kolekcji, gdzie uruchamia ją *Install this collection*. Lista jest budowana od nowa przy każdym sprawdzeniu i nie jest zapisywana.
 
 ### Tryb offline
 
@@ -625,7 +671,7 @@ pierwszy.
 albo do całego zaznaczenia, edytuj sam katalog z tego samego okna i ściągnij
 oficjalną listę kategorii gry z Nexusa. Oba pliki katalogu są własnymi plikami
 MO2 (`categories.dat` i `nexuscatmap.dat`), więc współdzielona instancja trzyma
-jeden katalog.
+jeden katalog. Mod pobrany z Nexusa dostaje kategorię przy instalacji, gdy Pobierz z Nexusa zmapuje katalog.
 
 **View -> INI editor** edytuje pliki INI gry z profilu - tę kopię, która
 przetrwa, a nie tę zakopaną w prefiksie Protona, nadpisywaną przy każdym
@@ -637,6 +683,13 @@ Wrye Bash (zaznaczasz podpaczki, które scalają się po kolei) i **ręczny** wy
 który pokazuje drzewo archiwum i pozwala wskazać katalog danych, gdy żadna
 heurystyka nie rozpoznaje układu. Żadne archiwum nie jest odrzucane.
 
+Ponowna instalacja lub aktualizacja moda FOMOD otwiera kreator z zaznaczonymi
+odpowiedziami z ostatniej instalacji, na pierwszym kroku, którego opcje od
+tamtej pory się zmieniły, z listą zmian. **Reinstall with new choices** zaczyna
+za to od domyślnych ustawień instalatora. `eidos install --replace` lub
+`--merge` używa zapisanych odpowiedzi ponownie, a gdy już nie pasują, odmawia
+instalacji i wypisuje zmiany.
+
 **Diagnostics** przeprowadza kontrole kondycji na żywo: przede wszystkim zdolność
 do uruchomienia, brakujące pliki master (najbardziej niezawodny pojedynczy
 zwiastun crasha), archiwa, których żadna aktywna wtyczka nie wczyta, czy lista
@@ -644,6 +697,7 @@ modów wciąż zgadza się z folderem modów i - po przebiegu - co własny log s
 extendera mówi o każdej z jego wtyczek DLL, co zamienia „czy moje wtyczki SKSE
 się wczytały?" z domysłu w dowód.
 Zgłasza też aktualizację gry od ostatniego czystego uruchomienia, brak script extendera albo taki, który nie pasuje do wersji gry (ze stroną pobierania extendera i przyciskiem instalującym pobrane archiwum), opcję uruchamiania Steama, która nie uruchamia Eidos z `%command%`, NVAPI wyłączone dla DLSS, wyłączny tryb pełnoekranowy blokujący generowanie klatek, `enblocal.ini` ENB bez `LinuxVersion=true`, deklaracje wtyczek F4SE i SFSE oraz log crasha z ostatniej sesji wraz z modami, które wymienia.
+Sprawdzanie aktualizacji odczytuje też wymagania każdego moda z Nexusa. Diagnostics wymienia wymagany mod, którego brakuje lub który jest wyłączony; przyciskiem Ignore można ukryć wymaganie spełnione w inny sposób.
 
 Żeby uruchomić grę przez GUI, ustaw opcję uruchamiania gry w Steamie na ścieżkę
 bezwzględną pliku wykonywalnego (Steam nie widzi `~/.cargo/bin` w PATH):

@@ -351,14 +351,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::ModVisitNexus(i) => {
             app.menu_mod = None;
+            let row = app.mods.get(i).and_then(|m| app.meta_cache.get(&m.name));
             let domain = selected_game(app)
-                .map(|g| g.def.nexus_game)
-                .filter(|s| !s.is_empty());
-            let mod_id = app
-                .mods
-                .get(i)
-                .and_then(|m| app.meta_cache.get(&m.name))
-                .and_then(|r| r.mod_id);
+                .zip(row)
+                .and_then(|(g, r)| g.def.nexus_domain_for(r.game_name.as_deref()));
+            let mod_id = row.and_then(|r| r.mod_id);
             match (domain, mod_id) {
                 (Some(domain), Some(id)) => {
                     let url = format!("https://www.nexusmods.com/{domain}/mods/{id}");
@@ -1000,12 +997,14 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(t("status_export_no_columns").to_string());
                 return Task::none();
             }
-            let domain = selected_game(app).map(|g| g.def.nexus_game).unwrap_or("");
+            let def = selected_game(app).map(|g| g.def);
             // What the WINDOW is showing, not what the file says: the list in
             // `app.mods` carries unsaved reordering, and exporting a different
             // order from the one on screen would be its own small betrayal.
             let (csv, count) =
-                eidos_instance::mod_list_csv(&inst, &app.mods, d.scope, &d.picked(), domain);
+                eidos_instance::mod_list_csv(&inst, &app.mods, d.scope, &d.picked(), &|name| {
+                    def.and_then(|def| def.nexus_domain_for(name))
+                });
             match std::fs::write(&path, csv) {
                 Ok(()) => {
                     app.status = Some(tf(

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=28cada8f5976ca2734f3bcdf3e7f48913c15e05b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a52fda783776900495152e3b3a35c98d83d96d42 -->
 
 # Používání Eidosu
 
@@ -20,6 +20,7 @@ eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
 eidos check skyrimse              # kontroly zdraví bez okna (--json pro skripty)
 eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
+eidos nexus update skyrimse --apply  # install the Nexus files that replaced yours
 eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
 eidos unpack backup.eidos <folder>   # put it back on the other machine
 ```
@@ -239,6 +240,15 @@ nahlásí přesná URL jeho stránky, abyste si jej stáhli sami. To je obchodn�
 pravidlo Nexusu a žádné množství opakovaných pokusů se přes ně nedostane.
 Stáhněte je tlačítkem na webu a spusťte příkaz znovu: tito členové se při každém
 běhu hledají v `downloads/`, takže se kolekce dokončuje tak, jak ji dodáváte.
+
+V okně dostane bezplatný účet v panelu kolekce místo hromadného stažení
+tlačítko *Fetch the N missing required files, one by one*. Otevře stránku
+prvního chybějícího povinného souboru na Nexusu, počká, až soubor dorazí do
+`downloads/`, a pak otevře další. Tlačítko ke stažení na stránce u každého
+souboru stisknete pořád vy. Panel ukazuje, kde právě je (*3 of 12*), a nabízí
+*Skip* a *Stop*. Když místo něj dorazí jiný soubor téhož módu, panel uvede obě
+id souborů a dál čeká na ten předepsaný. Volitelní členové do toho nepatří a
+ponechávají si vlastní tlačítko *Open*.
 
 Zatím se nepoužijí a ve zprávě se jmenují, místo aby se mlčky přešly: **binární
 patche**, **přepisy souborů** a členové, jejichž soubory cestují uvnitř archivu
@@ -562,6 +572,39 @@ vrátí a totéž tlačítko skrytí zruší. „Remove N installed" smaže arch
 které jste už nainstalovali, na dvě kliknutí, a jen ty **na obrazovce**: filtrem
 jste řekli, které jste mysleli.
 
+### Aktualizace módů
+
+Tlačítko aktualizace na pravém konci panelu nástrojů porovná každý nainstalovaný
+soubor se souborem, který ho na Nexusu nahradil. Autoři označují nové nahrání
+jako nástupce staršího a Eidos jde po tomto řetězci od ID souboru, které
+zaznamenává `meta.ini` módu. Když řetězec žádného nástupce neuvádí, porovná se
+místo toho verze ze stránky módu.
+
+Karta **Nexus files** v „Information..." vypíše soubory módu na Nexusu,
+nejnovější první, a označí ten, který je nainstalovaný tady, a ten, který ho
+nahrazuje. Tento druhý řádek má tlačítko **Update**. S prémiovým účtem Eidos
+stáhne soubor sám. S bezplatným účtem otevře stránku souboru, kde ho Mod Manager
+Download pošle zpět, a instalace začne, jakmile archiv dorazí do `downloads/`.
+Odtud jde o obvyklou instalaci: FOMOD se otevře s odpověďmi, se kterými byl mód
+nainstalován, a potom dotaz nabídne Replace se zaškrtnutým „Keep a backup of the
+existing mod", ať jste při minulém dotazu zvolili cokoli. Replace zachová
+prioritu módu i to, zda je zapnutý.
+
+Složka, která obsahuje několik souborů z Nexusu, třeba hlavní soubor s
+přimíchaným volitelným souborem, je odmítnuta: nahrazení novým hlavním souborem
+by ostatní ztratilo. Aktualizujte je ručně.
+
+`eidos nexus update skyrimse --apply` provede stejnou kontrolu a pak s prémiovým
+účtem stáhne každý nový soubor a nainstaluje ho přes jeho složku s
+`--replace --backup`. S bezplatným účtem místo toho vypíše `OPEN <url>` pro
+každou stránku souboru. Složky, které slučují několik souborů, přeskočí i s
+důvodem. FOMOD mod bez uložených odpovědí, například nainstalovaný dřív, než je
+Eidos začal ukládat, se znovu neinstaluje s výchozími volbami instalátoru:
+taková aktualizace selže se zprávou, abyste mod jednou aktualizovali z okna,
+které odpovědi uloží. FOMOD, jehož instalátor nenabízí žádnou volbu, se
+nainstaluje jako obvykle. Příkaz skončí kódem 1, pokud některá aktualizace
+selhala.
+
 ### Kolekce z Nexusu
 
 Vložte odkaz na kolekci - nebo na něj klikněte na webu - a Eidos vypíše členy
@@ -576,6 +619,8 @@ Kolekci lze číst jen proti **její vlastní hře**. Otevřete kolekci pro Skyr
 s načtenou instancí Fallout 4 a Eidos ji jmenovitě odmítne, místo aby členy
 spároval s nesprávným seznamem módů, kde by každé „nainstalovaný" a každé
 „chybějící" byl šum ve tvaru odpovědi.
+
+Když spustíte Zkontrolovat aktualizace, Eidos se také zeptá Nexusu na nejnovější revizi každé kolekce nainstalované v této instanci. Řádek nad seznamem modů uvádí každou kolekci s novější revizí a počty přidaných (+), aktualizovaných (~) a vyřazených (-) modů; jejich jména se zobrazí po najetí myší. Počty chybí, když recept nainstalované revize už není v mezipaměti. **Aktualizovat** otevře novější revizi v panelu kolekce, kde ji spustí *Install this collection*. Seznam se při každé kontrole sestaví znovu a neukládá se.
 
 ### Režim offline
 
@@ -595,7 +640,7 @@ z uzlu, který Nexus nabídl jako první.
 nebo celému výběru, upravte z téhož dialogu i samotný katalog a stáhněte
 oficiální seznam kategorií hry z Nexusu. Oba soubory katalogu jsou vlastní
 soubory MO2 (`categories.dat` a `nexuscatmap.dat`), takže sdílená instance drží
-jeden katalog.
+jeden katalog. Mod stažený z Nexusu se při instalaci zařadí do kategorie, jakmile Načíst z Nexusu namapuje katalog.
 
 **View -> INI editor** upravuje herní INI soubory profilu - tu kopii, která
 přetrvá, ne tu zahrabanou v prefixu Protonu, která se při každém spuštění
@@ -607,12 +652,19 @@ Bash (zaškrtnete podbalíčky, které se slučují v pořadí) a **ruční** v�
 ukáže strom archivu a nechá vás ukázat na kořen dat, když rozvržení nerozpozná
 žádná heuristika. Žádný archiv není odmítnut.
 
+Přeinstalace nebo aktualizace FOMOD modu otevře průvodce se zaškrtnutými
+odpověďmi z poslední instalace, a to na prvním kroku, jehož možnosti se od té
+doby změnily, se seznamem změn. **Reinstall with new choices** místo toho začne
+od výchozích voleb instalátoru. `eidos install --replace` nebo `--merge` použije
+uložené odpovědi znovu, a když už nesedí, odmítne instalaci a vypíše změny.
+
 **Diagnostics** provádí živé kontroly zdraví: především schopnost spustit hru,
 chybějící mastery (nejspolehlivější jediný předpovídač pádů), archivy, které
 nenačte žádný aktivní plugin, jestli seznam módů pořád odpovídá složce mods, a -
 po běhu - co vlastní log script extenderu říká o každé z jeho pluginových DLL,
 což z otázky „načetly se moje SKSE pluginy?" dělá místo dohadu důkaz.
 Hlásí také aktualizaci hry od posledního čistého spuštění, chybějící script extender nebo takový, který neodpovídá verzi hry (se stránkou ke stažení extenderu a tlačítkem, které nainstaluje stažený archiv), parametr spuštění ve Steamu, který nespouští Eidos s `%command%`, NVAPI vypnuté pro DLSS, exkluzivní celou obrazovku, která brání generování snímků, `enblocal.ini` od ENB bez `LinuxVersion=true`, deklarace pluginů F4SE a SFSE a crash log poslední relace s módy, které jmenuje.
+Kontrola aktualizací také načte požadavky každého modu na Nexusu. Diagnostics uvede požadovaný mod, který chybí nebo je vypnutý, a tlačítkem Ignore lze zahodit požadavek splněný jinak.
 
 Chcete-li hru spouštět skrz GUI, nastavte parametr spuštění hry ve Steamu na
 absolutní cestu k binárce (Steam nevidí `~/.cargo/bin` v PATH):

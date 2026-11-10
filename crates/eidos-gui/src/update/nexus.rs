@@ -2,6 +2,64 @@
 
 use super::*;
 
+/// Installed collections whose latest visible revision is newer than the one
+/// installed. Errors are logged and yield nothing.
+fn collection_notices(root: &Path) -> Vec<CollectionNotice> {
+    let states = eidos_collections::state::installed(root);
+    if states.is_empty() {
+        return Vec::new();
+    }
+    let nexus = match eidos_nexus::Nexus::connect() {
+        Ok(n) => n,
+        Err(e) => {
+            eidos_log::warn!("Collection revisions not checked: {e}");
+            return Vec::new();
+        }
+    };
+    let mut out = Vec::new();
+    for s in states {
+        let want = eidos_nexus::NxmCollection {
+            game: s.game_domain.clone(),
+            slug: s.slug.clone(),
+            revision: None,
+        };
+        match nexus.collection_revision(&want) {
+            Ok(rev) if rev.visible() && rev.revision_number > s.revision => {
+                let diff = eidos_collections::driver::cached_collection(root, &s.slug, s.revision)
+                    .map(|old| eidos_collections::state::revision_diff(&old, &s.game_domain, &rev));
+                out.push(CollectionNotice {
+                    slug: s.slug,
+                    domain: s.game_domain,
+                    name: rev.name,
+                    have: s.revision,
+                    latest: rev.revision_number,
+                    diff,
+                });
+            }
+            Ok(_) => {}
+            Err(e) => eidos_log::warn!("Collection {} not checked: {e}", s.slug),
+        }
+    }
+    out
+}
+
+/// What the requirements refresh that follows an update check of the instance
+/// at `root` should run on, or `None` to start nothing: the check failed to sign
+/// in (`connected` false, so a second sign-in would only repeat its error),
+/// another instance is open now, or no mod of this one has a Nexus id to look
+/// up. Reads the row cache only, so tests ask it rather than send the message
+/// that would sign in to Nexus with the real `nexus.ini`.
+pub(super) fn requirements_refresh_target(
+    app: &App,
+    root: &Path,
+    connected: bool,
+) -> Option<(Instance, &'static eidos_gamedef::GameDef)> {
+    let inst = app.created.as_ref().filter(|i| i.root == root)?;
+    let def = selected_game(app)?.def;
+    let any_nexus_mod = app.meta_cache.values().any(|m| m.mod_id.is_some());
+    (connected && any_nexus_mod).then(|| (inst.clone(), def))
+}
+
 /// The `update` arms for this group. [`update_inner`] routes only these
 /// messages here.
 pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
@@ -86,24 +144,44 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(t("status_connect_nexus_first").to_string());
                 return Task::none();
             }
-            let domain = selected_game(app).map(|g| g.def.nexus_game.to_string());
+            let def = selected_game(app).map(|g| g.def);
             let folder = app.mods.get(i).map(|m| m.name.clone()).unwrap_or_default();
+            // The mod's own domain, from the game its meta.ini names: a Skyrim SE
+            // mod in an Enderal SE instance is endorsed on Skyrim SE's page.
             let info = app
                 .created
                 .as_ref()
                 .zip(app.mods.get(i))
                 .filter(|(_, m)| !m.is_separator())
-                .map(|(inst, m)| {
+                .zip(def)
+                .map(|((inst, m), def)| {
                     let meta = inst.mod_meta(&m.name);
+                    let game = meta.game_name().filter(|g| !g.is_empty());
                     (
                         meta.mod_id(),
+                        def.nexus_domain_for(game.as_deref())
+                            .ok_or((m.display_name(), game)),
                         meta.version().unwrap_or_default(),
                         meta.endorsed(),
                     )
                 });
-            let (Some(domain), Some((Some(mod_id), version, endorsed))) = (domain, info) else {
+            let Some((Some(mod_id), domain, version, endorsed)) = info else {
                 app.status = Some(t("status_no_nexus_id_endorse").to_string());
                 return Task::none();
+            };
+            let domain = match domain {
+                Ok(domain) => domain.to_string(),
+                Err((name, Some(game))) => {
+                    app.status = Some(tf(
+                        "status_unknown_nexus_game",
+                        &[("name", &name), ("game", &game)],
+                    ));
+                    return Task::none();
+                }
+                Err((_, None)) => {
+                    app.status = Some(t("status_no_nexus_id_endorse").to_string());
+                    return Task::none();
+                }
             };
             // Toggle: endorse when not yet endorsed, abstain when already endorsed.
             let Some(instance) = app.created.as_ref().map(|i| i.root.clone()) else {
@@ -122,6 +200,79 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 }),
                 move |r| Message::ModEndorsed(instance.clone(), folder.clone(), mod_id, r),
             );
+        }
+        Message::NexusFilesFetched {
+            domain,
+            mod_id,
+            result,
+        } => {
+            let key = (domain, mod_id);
+            // Only the answer to the request this window is waiting for.
+            if app.nexus_files_loading.as_ref() == Some(&key) {
+                app.nexus_files_loading = None;
+                app.nexus_files.insert(key, result);
+            }
+        }
+        Message::NexusUpdate {
+            folder,
+            domain,
+            mod_id,
+            file_id,
+        } => {
+            // One update waits at a time: a second one would silently drop the
+            // install the first promised.
+            if let Some(p) = app.pending_update.as_ref().filter(|p| p.folder != folder) {
+                app.status = Some(tf("status_update_still_waiting", &[("folder", &p.folder)]));
+                return Task::none();
+            }
+            let Some(inst) = app.created.as_ref() else {
+                return Task::none();
+            };
+            if inst.mod_meta(&folder).installed_files().len() > 1 {
+                app.status = Some(tf("nexus_update_merged_refused", &[("folder", &folder)]));
+                return Task::none();
+            }
+            let root = inst.root.clone();
+            let Some(premium) = app.nexus_account.as_ref().map(|a| a.is_premium) else {
+                app.status = Some(t("status_connect_nexus_first").to_string());
+                return Task::none();
+            };
+            let task = if premium {
+                // The keyless link, as Fetch missing sends it: a premium
+                // account can mint the download from the ids alone.
+                let link = format!("nxm://{domain}/mods/{mod_id}/files/{file_id}");
+                if let Err(e) = eidos_command()
+                    .arg("nxm")
+                    .arg(&link)
+                    .env("EIDOS_INSTANCE", &root)
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()
+                {
+                    app.status = Some(tf(
+                        "status_start_failed",
+                        &[("name", &"eidos nxm"), ("error", &e)],
+                    ));
+                    return Task::none();
+                }
+                app.status = Some(tf("status_update_started", &[("folder", &folder)]));
+                Task::none()
+            } else {
+                // A free account downloads through the page's own button.
+                let task = update(
+                    app,
+                    Message::OpenUrl(eidos_nexus::file_page_url(&domain, mod_id, file_id)),
+                );
+                app.status = Some(t("status_update_waiting_download").to_string());
+                task
+            };
+            app.pending_update = Some(PendingUpdate {
+                folder,
+                mod_id,
+                file_id,
+            });
+            return task;
         }
         Message::ModEndorsed(instance, folder, mod_id, result) => {
             if app.created.as_ref().is_none_or(|i| i.root != instance) {
@@ -185,7 +336,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(t("status_connect_nexus_first").to_string());
                 return Task::none();
             }
-            let Some(domain) = selected_game(app).map(|g| g.def.nexus_game.to_string()) else {
+            let Some(def) = selected_game(app).map(|g| g.def) else {
                 return Task::none();
             };
             let Some(inst) = app.created.clone() else {
@@ -194,19 +345,138 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             app.update_in_progress = true;
             app.status = Some(t("status_checking_nexus_updates").to_string());
+            let root = inst.root.clone();
+            let notices_root = inst.root.clone();
+            let notices_reply = inst.root.clone();
+            return Task::batch([
+                Task::perform(
+                    // One `mod_info` request per stale mod, one after another:
+                    // tens of seconds on a freshly rebuilt list, so on the blocking
+                    // pool, never on the executor that runs the timers.
+                    smol::unblock(move || match eidos_nexus::Nexus::connect() {
+                        Ok(nexus) => (true, eidos_nexus::check_updates(&nexus, &inst, def)),
+                        Err(e) => (false, Err(e)),
+                    }),
+                    move |(connected, result)| Message::UpdatesChecked {
+                        root: root.clone(),
+                        connected,
+                        result,
+                    },
+                ),
+                // One GraphQL request per installed collection.
+                Task::perform(
+                    smol::unblock(move || collection_notices(&notices_root)),
+                    move |n| Message::CollectionRevisionsChecked(notices_reply.clone(), n),
+                ),
+            ]);
+        }
+        Message::CollectionRevisionsChecked(root, notices) => {
+            if app.created.as_ref().is_none_or(|i| i.root != root) {
+                return Task::none();
+            }
+            app.collection_notices = notices;
+        }
+        Message::RequirementsRefreshed(root, result) => {
+            // The last step of Check for updates (see UpdatesChecked).
+            app.update_in_progress = false;
+            if app.created.as_ref().is_none_or(|i| i.root != root) {
+                return Task::none();
+            }
+            match result {
+                Ok(_) => {
+                    app.meta_cache.clear();
+                    refresh_meta_cache(app);
+                    app.diag_dirty = true;
+                }
+                Err(e) => {
+                    // After the update check's summary, not over it.
+                    let failed = tf("health_requirements_failed", &[("error", &e)]);
+                    app.status = Some(match app.status.take() {
+                        Some(s) => format!("{s} {failed}"),
+                        None => failed,
+                    });
+                }
+            }
+        }
+        Message::IgnoreRequirement { folder, key } => {
+            let Some(inst) = app.created.as_ref() else {
+                return Task::none();
+            };
+            let saved = edit_mod_meta(inst, &folder, |meta| {
+                let mut keys = meta.ignored_requirements();
+                if !keys.contains(&key) {
+                    keys.push(key);
+                    meta.set_ignored_requirements(&keys);
+                }
+            });
+            if let Err(e) = saved {
+                app.status = Some(tf("status_meta_save_failed", &[("error", &e)]));
+                return Task::none();
+            }
+            invalidate_meta(app, &folder);
+            refresh_meta_cache(app);
+            app.diag_dirty = true;
+        }
+        Message::RequirementDownload { domain, mod_id } => {
+            let d = domain.clone();
             return Task::perform(
-                // One `mod_info` request per stale mod, one after another:
-                // tens of seconds on a freshly rebuilt list, so on the blocking
-                // pool, never on the executor that runs the timers.
                 smol::unblock(move || {
                     let nexus = eidos_nexus::Nexus::connect()?;
-                    eidos_nexus::check_updates(&nexus, &inst, &domain)
+                    let info = nexus.mod_info(&d, mod_id)?;
+                    nexus
+                        .mod_files(&info.gate, &d, mod_id)
+                        .map(|f| main_file_id(&f))
                 }),
-                Message::UpdatesChecked,
+                move |r| Message::RequirementFilePicked {
+                    domain: domain.clone(),
+                    mod_id,
+                    // A failed lookup falls back to the files page like a
+                    // mod with no single main file.
+                    file_id: r.ok().flatten(),
+                },
             );
         }
-        Message::UpdatesChecked(result) => {
-            app.update_in_progress = false;
+        Message::RequirementFilePicked {
+            domain,
+            mod_id,
+            file_id,
+        } => {
+            let Some(file_id) = file_id else {
+                return update(
+                    app,
+                    Message::OpenUrl(format!(
+                        "https://www.nexusmods.com/{domain}/mods/{mod_id}?tab=files"
+                    )),
+                );
+            };
+            let Some(root) = app.created.as_ref().map(|i| i.root.clone()) else {
+                return Task::none();
+            };
+            // The keyless link, as Fetch missing sends it.
+            let link = format!("nxm://{domain}/mods/{mod_id}/files/{file_id}");
+            match eidos_command()
+                .arg("nxm")
+                .arg(&link)
+                .env("EIDOS_INSTANCE", &root)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+            {
+                Ok(_) => app.status = Some(t("status_requirement_download_started").to_string()),
+                Err(e) => {
+                    app.status = Some(tf(
+                        "status_start_failed",
+                        &[("name", &"eidos nxm"), ("error", &e)],
+                    ));
+                }
+            }
+        }
+        Message::UpdatesChecked {
+            root,
+            connected,
+            result,
+        } => {
             match result {
                 Ok(r) => {
                     // The check rewrote a version line in an unknown number of
@@ -265,6 +535,21 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     app.status = Some(tf("status_update_check_failed", &[("error", &e)]));
                 }
             }
+            // Health reads these; GraphQL, so outside the v1 budget. Started
+            // only now, and the button stays off until it answers: both write
+            // meta.ini under the instance lock, which a second thread of this
+            // process gets refused, not queued for.
+            let Some((inst, def)) = requirements_refresh_target(app, &root, connected) else {
+                app.update_in_progress = false;
+                return Task::none();
+            };
+            return Task::perform(
+                smol::unblock(move || {
+                    let nexus = eidos_nexus::Nexus::connect()?;
+                    eidos_nexus::refresh_requirements(&nexus, &inst, def)
+                }),
+                move |r| Message::RequirementsRefreshed(root.clone(), r),
+            );
         }
         // ---- Nexus collections ------------------------------------------------
         Message::ShowCollection(link) => {
@@ -279,6 +564,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 error: None,
                 confirm_fetch: false,
                 asked: std::collections::HashSet::new(),
+                walk: None,
             });
             if app
                 .collection
@@ -349,6 +635,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // A different revision is a different member list; what the previous
             // one asked for says nothing about this one.
             c.asked.clear();
+            c.walk = None;
             let request_link = c.link.clone();
             let Some(instance) = app.created.as_ref().map(|i| i.root.clone()) else {
                 return Task::none();
@@ -398,11 +685,48 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // Mod Manager Download button there fires the nxm:// link that the
             // registered handler already knows how to service, so the existing
             // download, sidecar and install pipeline runs unchanged.
-            let url = format!(
-                "https://www.nexusmods.com/{}/mods/{}?tab=files&file_id={}",
-                m.domain, m.mod_id, m.file_id
-            );
+            let url = eidos_nexus::file_page_url(&m.domain, m.mod_id, m.file_id);
             return update(app, Message::OpenUrl(url));
+        }
+        Message::CollectionWalkStart => {
+            let (Some(inst), Some(c)) = (app.created.as_ref(), app.collection.as_mut()) else {
+                return Task::none();
+            };
+            let Some(rev) = c.revision.as_ref() else {
+                return Task::none();
+            };
+            // Read from the directory, not the listed rows: a filtered list would
+            // let an old archive pass for a new arrival.
+            let seen = fs::read_dir(inst.downloads_dir())
+                .into_iter()
+                .flatten()
+                .flatten()
+                .filter_map(|e| e.file_name().into_string().ok())
+                .collect();
+            let mut walk = CollectionWalk {
+                queue: walk_queue(rev, &c.states),
+                at: 0,
+                seen,
+            };
+            let step = walk_next(&mut walk, &c.states);
+            c.walk = Some(walk);
+            return walk_apply(app, step);
+        }
+        Message::CollectionWalkSkip => {
+            let Some(c) = app.collection.as_mut() else {
+                return Task::none();
+            };
+            let Some(walk) = c.walk.as_mut() else {
+                return Task::none();
+            };
+            walk.at += 1;
+            let step = walk_next(walk, &c.states);
+            return walk_apply(app, step);
+        }
+        Message::CollectionWalkStop => {
+            if let Some(c) = app.collection.as_mut() {
+                c.walk = None;
+            }
         }
         Message::CollectionFetchMissing => {
             let Some(c) = app.collection.as_ref() else {
@@ -566,4 +890,103 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         _ => unreachable!("routed by update_inner"),
     }
     Task::none()
+}
+
+/// One look at `downloads/` for the walk, from `DownloadTick`.
+pub(super) fn walk_tick(app: &mut App) -> Task<Message> {
+    if app.collection.as_ref().is_none_or(|c| c.walk.is_none()) {
+        return Task::none();
+    }
+    recompute_collection_states(app);
+    let Some(c) = app.collection.as_mut() else {
+        return Task::none();
+    };
+    let (Some(walk), Some(rev)) = (c.walk.as_mut(), c.revision.as_ref()) else {
+        return Task::none();
+    };
+    // shortcut: read from the listed rows, so a Downloads filter hiding a wrong
+    // file keeps it from being named; scan the directory if that bites.
+    let fresh: Vec<&DownloadRow> = app
+        .downloads
+        .iter()
+        .filter(|r| {
+            !walk.seen.contains(&r.name)
+                && !matches!(
+                    r.state,
+                    DownloadState::Downloading | DownloadState::Stalled | DownloadState::Paused
+                )
+        })
+        .collect();
+    let arrived: Vec<(u64, u64)> = fresh
+        .iter()
+        .filter_map(|r| Some((r.mod_id?, r.file_id?)))
+        .collect();
+    // Each arrival is judged once: the next member can be another file of the
+    // same mod, and the file that landed for this one must not count against it.
+    walk.seen.extend(fresh.iter().map(|r| r.name.clone()));
+    let step = walk_step(walk, rev, &c.states, &arrived);
+    walk_apply(app, step)
+}
+
+/// What a walk step does to the window.
+fn walk_apply(app: &mut App, step: WalkStep) -> Task<Message> {
+    match step {
+        WalkStep::Wait => Task::none(),
+        WalkStep::Open(i) => update(app, Message::CollectionOpenMod(i)),
+        WalkStep::Wrong { want, got } => {
+            app.status = Some(tf(
+                "collection_walk_wrong",
+                &[("want", &want), ("got", &got)],
+            ));
+            Task::none()
+        }
+        WalkStep::Done => {
+            let Some(c) = app.collection.as_mut() else {
+                return Task::none();
+            };
+            // Skipped members are not counted: they are not in downloads.
+            let n = c.walk.take().map_or(0, |w| {
+                w.queue
+                    .iter()
+                    .filter(|&&i| c.states.get(i) != Some(&MemberState::Missing))
+                    .count()
+            });
+            app.status = Some(tf("collection_walk_done", &[("n", &n)]));
+            Task::none()
+        }
+    }
+}
+
+/// The mod's one main file, when Nexus lists exactly one (category 1).
+pub(crate) fn main_file_id(files: &eidos_nexus::ModFiles) -> Option<u64> {
+    match files
+        .files
+        .iter()
+        .filter(|f| f.category_id == 1)
+        .collect::<Vec<_>>()[..]
+    {
+        [f] => Some(f.file_id),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_one_main_file_is_fetched_without_asking() {
+        let f = |id, cat| eidos_nexus::NexusFile {
+            file_id: id,
+            category_id: cat,
+            ..Default::default()
+        };
+        let files = |v| eidos_nexus::ModFiles {
+            files: v,
+            updates: vec![],
+        };
+        assert_eq!(main_file_id(&files(vec![f(5, 1), f(6, 3)])), Some(5));
+        assert_eq!(main_file_id(&files(vec![f(5, 1), f(6, 1)])), None);
+        assert_eq!(main_file_id(&files(vec![f(6, 3)])), None);
+    }
 }

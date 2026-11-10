@@ -883,3 +883,132 @@ fn the_plugin_filter_keeps_full_list_indices_and_holds_the_drag() {
         "{messages:?}"
     );
 }
+
+/// The Nexus files tab of the 660 px mod info card: every file keeps its Open
+/// button, the successor its Update button, each whole on one line and inside
+/// the card. Fixed columns used to take 560 px before the buttons, which iced
+/// then squeezed or cut off.
+#[test]
+fn nexus_file_buttons_fit_inside_the_mod_info_card() {
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    let folder = app.created.as_ref().unwrap().mods_dir().join("Sky UI");
+    fs::create_dir_all(&folder).unwrap();
+    fs::write(
+        folder.join("meta.ini"),
+        "[General]\nmodid=3863\nversion=5.1\n[installedFiles]\n1\\modid=3863\n1\\fileid=101\nsize=1\n",
+    )
+    .unwrap();
+    app.mods = vec![ModEntry {
+        name: "Sky UI".into(),
+        enabled: true,
+        path: folder,
+        unmanaged: false,
+    }];
+    let file = |file_id, category_id, name: &str, version: &str| eidos_nexus::NexusFile {
+        file_id,
+        name: name.into(),
+        file_name: format!("{name}.7z"),
+        version: version.into(),
+        category_id,
+        size_in_bytes: 123_456_789,
+        uploaded_timestamp: 1_760_000_000 + file_id,
+    };
+    let name = "SkyUI main file with a long descriptive name";
+    app.nexus_files.insert(
+        ("oblivion".into(), 3863),
+        Ok(eidos_nexus::ModFiles {
+            files: vec![file(101, 4, name, "5.1"), file(102, 1, name, "5.2")],
+            updates: vec![(101, 102)],
+        }),
+    );
+    app.info_mod = Some(0);
+    app.info_tab = InfoTab::NexusFiles;
+    let mut renderer = renderer();
+    frame(
+        crate::view(&app),
+        &mut renderer,
+        Cache::new(),
+        &[],
+        Point::ORIGIN,
+        Some("nexus-files-tab"),
+    );
+    // The card alone, laid out from the left edge: 660 px wide, 16 px padding.
+    let labels = positions(crate::modinfo::mod_info_dialog(&app, 0), &mut renderer).labels;
+    let line = labels
+        .iter()
+        .find(|(s, _)| s == t("nexus_file_installed"))
+        .map(|(_, b)| b.height)
+        .unwrap();
+    let buttons: Vec<Rectangle> = labels
+        .iter()
+        .filter(|(s, _)| s == t("nexus_file_open") || s == t("nexus_file_update"))
+        .map(|(_, b)| *b)
+        .collect();
+    assert_eq!(buttons.len(), 3, "two Open and one Update: {labels:?}");
+    for b in buttons {
+        assert!(b.x + b.width <= 660.0 - 16.0, "past the card: {b:?}");
+        assert!(b.height < line * 1.5, "wrapped: {b:?}");
+    }
+}
+
+/// Collection notices arrive seconds after Check for updates, maybe while the
+/// pointer is on a row. They go under the list, so no row moves when they do.
+#[test]
+fn collection_notices_never_move_the_mod_rows() {
+    let _look = crate::test_support::look_lock();
+    let (_dir, mut app, _archive) = installers::tests::fixture();
+    let mods_dir = app.created.as_ref().unwrap().mods_dir();
+    app.mods = ["Alpha", "Beta"]
+        .into_iter()
+        .map(|name| ModEntry {
+            name: name.into(),
+            enabled: true,
+            path: mods_dir.join(name),
+            unmanaged: false,
+        })
+        .collect();
+    let mut renderer = renderer();
+    let before = label(crate::view(&app), &mut renderer, "Beta", 0);
+    let notice = CollectionNotice {
+        slug: "abc".into(),
+        domain: "oblivion".into(),
+        name: "Some list".into(),
+        have: 1,
+        latest: 2,
+        diff: None,
+    };
+    app.collection_notices = vec![notice.clone(), notice];
+    frame(
+        crate::view(&app),
+        &mut renderer,
+        Cache::new(),
+        &[],
+        Point::ORIGIN,
+        Some("collection-notices"),
+    );
+    assert_eq!(label(crate::view(&app), &mut renderer, "Beta", 0), before);
+    let drawn = positions(crate::view(&app), &mut renderer).labels;
+    assert!(
+        drawn.iter().any(|(s, _)| s.contains("Some list")),
+        "the notice is drawn: {drawn:?}"
+    );
+}
+
+/// The nxm status line is empty until the first read answers and changes after
+/// every Register, so the button must not move with it.
+#[test]
+fn the_nxm_register_button_stays_put_when_the_status_line_changes() {
+    let _look = crate::test_support::look_lock();
+    let mut app = crate::test_support::nav_app(&[]);
+    app.settings_open = true;
+    app.settings_tab = SettingsTab::Nexus;
+    app.settings_expanded.insert("downloads".into());
+    let mut renderer = renderer();
+    let register = t("settings_nxm_register");
+    let before = label(crate::view(&app), &mut renderer, register, 0);
+    app.nxm_handler = Some(eidos::nxm_handler::NxmHandler::Eidos {
+        exec: "/home/someone/Applications/eidos-portable/bin/eidos-gui".into(),
+    });
+    assert_eq!(label(crate::view(&app), &mut renderer, register, 0), before);
+}

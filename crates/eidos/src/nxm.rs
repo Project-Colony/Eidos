@@ -78,6 +78,20 @@ fn pick_instance<'a>(candidates: &[&'a DetectedGame]) -> (&'a DetectedGame, Inst
     (first, Instance::global(first.def.id))
 }
 
+/// The detected games a mod link from Nexus domain `domain` may land in: the
+/// games whose own domain it is first, then those that only accept it
+/// (Enderal SE for `skyrimspecialedition`). [`pick_instance`] breaks ties in
+/// this order, so a Skyrim SE link reaches Enderal SE only when that instance
+/// is pinned, last used, or the only one detected.
+fn mod_link_candidates<'a>(games: &'a [DetectedGame], domain: &str) -> Vec<&'a DetectedGame> {
+    let (mut primary, sources): (Vec<_>, Vec<_>) = games
+        .iter()
+        .filter(|g| g.def.accepts_domain(domain))
+        .partition(|g| g.def.nexus_game.eq_ignore_ascii_case(domain));
+    primary.extend(sources);
+    primary
+}
+
 /// `eidos nxm <url>` - download a "Mod Manager Download" link into the game's
 /// downloads dir (with its MO2-format .meta). `--register` installs the
 /// x-scheme-handler so the site's button opens Eidos.
@@ -90,33 +104,16 @@ pub(crate) fn cmd_nxm(args: &[String]) {
             };
             resume(&archive);
         }
-        Some("--register") => {
-            let (exe, needs_marker) = crate::this_exe();
-            let marker = if needs_marker {
-                format!(" {}", crate::CLI_MARKER)
-            } else {
-                String::new()
-            };
-            let apps = eidos_paths::desktop_entries_dir();
-            let _ = std::fs::create_dir_all(&apps);
-            let desktop = apps.join("eidos-nxm.desktop");
-            let body = format!(
-                "[Desktop Entry]\nType=Application\nName=Eidos (Nexus nxm handler)\n\
-                 Exec={}{marker} nxm %u\nMimeType=x-scheme-handler/nxm;\nNoDisplay=true\nTerminal=false\n",
-                exe.display()
-            );
-            if let Err(e) = std::fs::write(&desktop, body) {
-                eidos_log::warn!("could not write {}: {e}", desktop.display());
-                exit(1);
-            }
-            let _ = std::process::Command::new("xdg-mime")
-                .args(["default", "eidos-nxm.desktop", "x-scheme-handler/nxm"])
-                .status();
-            println!(
+        Some("--register") => match crate::nxm_handler::register() {
+            Ok(desktop) => println!(
                 "Registered {} for nxm:// links.\nThe site's \"Mod Manager Download\" button now downloads through Eidos.",
                 desktop.display()
-            );
-        }
+            ),
+            Err(e) => {
+                eidos_log::warn!("could not register the nxm handler: {e}");
+                exit(1);
+            }
+        },
         Some(url) => {
             let nxm = match eidos_nexus::NxmLink::parse(url) {
                 Ok(eidos_nexus::NxmLink::Mod(n)) => n,
@@ -167,12 +164,9 @@ pub(crate) fn cmd_nxm(args: &[String]) {
                 }
             };
             // Which detected game does this link belong to? (VR editions share
-            // their parent's Nexus.)
+            // their parent's Nexus; Enderal SE also takes Skyrim SE mods.)
             let games = detect(&home());
-            let candidates: Vec<&DetectedGame> = games
-                .iter()
-                .filter(|g| g.def.nexus_game.eq_ignore_ascii_case(&nxm.game))
-                .collect();
+            let candidates = mod_link_candidates(&games, &nxm.game);
             if candidates.is_empty() {
                 eidos_log::info!("No detected game matches the Nexus domain '{}'.", nxm.game);
                 exit(1);
@@ -289,7 +283,7 @@ pub(crate) fn cmd_nxm(args: &[String]) {
             // already resumes it with a Range request.
             let _ = eidos_nexus::write_download_meta(
                 &dest,
-                game.def.short_name,
+                game.def.game_name_for_domain(&nxm.game),
                 &nxm,
                 &link,
                 &file,
@@ -379,10 +373,8 @@ fn resume(archive: &std::path::Path) {
         exit(1);
     };
     // The sidecar stores the game by SHORT name; the API wants the domain.
-    let domain = eidos_games::catalog()
-        .iter()
-        .find(|d| d.short_name.eq_ignore_ascii_case(&game))
-        .map(|d| d.nexus_game.to_string())
+    let domain = eidos_games::nexus_domain_of(&game)
+        .map(str::to_string)
         .unwrap_or(game);
     let nexus = match eidos_nexus::Nexus::connect() {
         Ok(n) => n,
@@ -453,5 +445,35 @@ fn show_collection_in_gui(link: &str, inst: &Instance) {
         Err(e) => {
             eidos_log::warn!("could not open the Eidos window ({e}); the link was {link}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn detected(id: &str) -> DetectedGame {
+        DetectedGame {
+            source: Default::default(),
+            def: eidos_games::GameDef::for_id(id).unwrap(),
+            install_path: "/nowhere".into(),
+            data_path: "/nowhere/Data".into(),
+            compatdata: None,
+            steam_name: id.into(),
+        }
+    }
+
+    #[test]
+    fn mod_link_candidates_put_the_primary_domain_first() {
+        let games = [detected("enderalse"), detected("skyrimse")];
+        let ids = |d: &str| {
+            mod_link_candidates(&games, d)
+                .iter()
+                .map(|g| g.def.id)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ids("skyrimspecialedition"), ["skyrimse", "enderalse"]);
+        assert_eq!(ids("enderalspecialedition"), ["enderalse"]);
+        assert!(ids("fallout4").is_empty());
     }
 }

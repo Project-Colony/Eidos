@@ -80,7 +80,11 @@ fn api_url(link: &str) -> Option<String> {
 }
 
 pub mod collections;
+mod files;
 pub mod oauth;
+mod requirements;
+pub use files::*;
+pub use requirements::{Requirement, Requirements};
 
 /// A parsed `nxm://` mod-file link (MO2's `NXMUrl`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1430,6 +1434,25 @@ impl Nexus {
         collections::from_payload(&v, &c.slug, self.adult)
     }
 
+    /// What the Nexus pages of `ids` (all on `domain`) require, 50 mods per
+    /// request (Nexus GraphQL v2). Outside the v1 budget, like
+    /// [`Self::collection_revision`]. The query needs no token; the session's is
+    /// sent anyway, as everywhere else. Mods Nexus does not know are absent from
+    /// the result.
+    pub fn mod_requirements(
+        &self,
+        domain: &str,
+        ids: &[u64],
+    ) -> Result<Vec<(u64, Requirements)>, String> {
+        let Credential::Bearer(token) = &self.credential;
+        let mut out = Vec::new();
+        for chunk in ids.chunks(50) {
+            let v = oauth::graphql(Some(token), &requirements::query_body(domain, chunk))?;
+            out.extend(requirements::from_payload(&v, self.adult)?);
+        }
+        Ok(out)
+    }
+
     /// Where to download a collection revision's ARCHIVE from.
     ///
     /// This is the whole feature's foundation. Everything that makes a
@@ -1655,8 +1678,11 @@ pub struct ModUpdate {
     pub name: String,
     /// The installed version recorded in `meta.ini` (may be empty).
     pub installed: String,
-    /// The newest version reported by Nexus.
+    /// The newest version reported by Nexus (the installed file's successor when
+    /// the update chain names one, else the mod page's version).
     pub latest: String,
+    /// The successor file, when the update chain named one.
+    pub file_id: Option<u64>,
 }
 
 /// The outcome of an update check shared by the CLI and GUI.
@@ -1687,10 +1713,11 @@ pub struct UpdateCheckResult {
 }
 
 /// Run the shared CLI/GUI Nexus update check across every mod in `inst`.
-/// `nexus_game` is the game's Nexus domain
-/// (`GameDef::nexus_game`, e.g. `skyrimspecialedition`).
+/// Each mod is looked up on the domain its own `gameName` names
+/// ([`GameDef::nexus_domain_for`](eidos_gamedef::GameDef::nexus_domain_for)),
+/// so an Enderal SE instance checks its Skyrim SE mods on `skyrimspecialedition`.
 ///
-/// MO2's strategy: one `updated?period=1m` bulk query, then an individual
+/// MO2's strategy: one `updated?period=1m` bulk query per domain, then an individual
 /// `mod_info` only for mods in that window's intersection OR never/long-ago
 /// checked (so an update published over a month ago is not missed on a fresh
 /// instance). Each queried mod has `newestVersion` and `lastNexusUpdate` written
@@ -1704,23 +1731,12 @@ pub struct UpdateCheckResult {
 pub fn check_updates(
     nexus: &Nexus,
     inst: &eidos_instance::Instance,
-    nexus_game: &str,
+    game: &eidos_gamedef::GameDef,
 ) -> Result<UpdateCheckResult, String> {
-    // One "updated this month" query, then only fetch the intersection - stays
-    // inside the API rate limits (MO2's approach).
-    let updated = match nexus.updated_mod_ids(nexus_game, "1m") {
-        Ok(v) => v,
-        // An exhausted budget is a state to report, not a failure: the caller
-        // shows "the budget is spent" rather than an error toast, and nothing
-        // about the mod list is wrong - it just could not be refreshed.
-        Err(e) if is_rate_limited(&e) => {
-            return Ok(UpdateCheckResult {
-                rate_limited: true,
-                ..Default::default()
-            });
-        }
-        Err(e) => return Err(e),
-    };
+    // One "updated this month" query per domain, asked the first time a mod on
+    // that domain needs it, then only fetch the intersection - stays inside the
+    // API rate limits (MO2's approach).
+    let mut updated: std::collections::HashMap<&str, Vec<u64>> = Default::default();
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1728,13 +1744,29 @@ pub fn check_updates(
         .unwrap_or(0);
     const MONTH: u64 = 30 * 24 * 3600;
 
+    // One file list per (domain, mod id): two folders of one mod cost one
+    // request. `None` is a failed fetch, not retried in the same run.
+    let mut files: std::collections::HashMap<(&'static str, u64), Option<ModFiles>> =
+        Default::default();
+
     let mut result = UpdateCheckResult::default();
-    for m in inst.modlist() {
+    'mods: for m in inst.modlist() {
         let meta = inst.mod_meta(&m.name);
         let Some(mod_id) = meta.mod_id() else {
             continue;
         };
         result.checked += 1;
+        let game_name = meta.game_name().filter(|n| !n.is_empty());
+        let Some(domain) = game.nexus_domain_for(game_name.as_deref()) else {
+            let why = match game_name {
+                Some(n) => format!(
+                    "its gameName '{n}' names no game Eidos knows, so its Nexus page cannot be found"
+                ),
+                None => format!("{} has no Nexus site Eidos knows", game.name),
+            };
+            result.failures.push((m.name.clone(), why));
+            continue;
+        };
 
         // The `updated?period=1m` list is only trustworthy for mods checked within
         // that window. A mod never checked - or checked over a month ago - gets an
@@ -1744,8 +1776,26 @@ pub fn check_updates(
             .last_nexus_update()
             .map(|t| now.saturating_sub(t) > MONTH)
             .unwrap_or(true);
-        if !stale && !updated.contains(&mod_id) {
-            continue;
+        if !stale {
+            if !updated.contains_key(domain) {
+                match nexus.updated_mod_ids(domain, "1m") {
+                    Ok(ids) => {
+                        updated.insert(domain, ids);
+                    }
+                    // An exhausted budget is a state to report, not a failure: the
+                    // caller shows "the budget is spent" rather than an error
+                    // toast, and nothing about the mod list is wrong - it just
+                    // could not be refreshed.
+                    Err(e) if is_rate_limited(&e) => {
+                        result.rate_limited = true;
+                        break;
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+            if !updated[domain].contains(&mod_id) {
+                continue;
+            }
         }
         // Stop before building the request, not after it is refused. The choke
         // point in `get` would reject it anyway; checking here is what makes the
@@ -1756,12 +1806,40 @@ pub fn check_updates(
         }
         result.queried += 1;
 
-        match nexus.mod_info(nexus_game, mod_id) {
+        match nexus.mod_info(domain, mod_id) {
             Ok(remote) => {
+                let wanted = file_ids_to_resolve(&meta, mod_id, &remote.version);
+                let mut verdict = None;
+                if !wanted.is_empty() && remote.available && remote.gate.visible() {
+                    let key = (domain, mod_id);
+                    if let std::collections::hash_map::Entry::Vacant(slot) = files.entry(key) {
+                        if nexus.would_block() {
+                            result.rate_limited = true;
+                            break 'mods;
+                        }
+                        match nexus.mod_files(&remote.gate, domain, mod_id) {
+                            Ok(f) => {
+                                slot.insert(Some(f));
+                            }
+                            Err(e) if is_rate_limited(&e) => {
+                                result.rate_limited = true;
+                                break 'mods;
+                            }
+                            // The page version still answers; the next check retries.
+                            Err(_) => {
+                                slot.insert(None);
+                            }
+                        }
+                    }
+                    if let Some(Some(f)) = files.get(&key) {
+                        verdict = Some(decide_update(&remote.version, f, &wanted));
+                    }
+                }
                 let Some(meta) =
-                    apply_mod_update(inst, &m.name, &meta, &remote, now).map_err(|error| {
-                        format!("Could not save update metadata for '{}': {error}", m.name)
-                    })?
+                    apply_mod_update(inst, &m.name, &meta, &remote, verdict.as_ref(), now)
+                        .map_err(|error| {
+                            format!("Could not save update metadata for '{}': {error}", m.name)
+                        })?
                 else {
                     continue;
                 };
@@ -1772,7 +1850,10 @@ pub fn check_updates(
                     result.updates.push(ModUpdate {
                         name: m.name.clone(),
                         installed: meta.version().unwrap_or_default(),
-                        latest: remote.version,
+                        latest: verdict
+                            .as_ref()
+                            .map_or(remote.version, |v| v.newest.clone()),
+                        file_id: verdict.and_then(|v| v.successor),
                     });
                 }
             }
@@ -1798,11 +1879,98 @@ pub fn check_updates(
     Ok(result)
 }
 
+/// Fetch the Nexus requirements of every mod in `inst` that has a Nexus id and a
+/// known domain, and cache each answer in its `meta.ini`. Returns how many mods
+/// were looked up. A domain's answers are written once all its requests came
+/// back; a failed request or write stops the refresh, and what was written
+/// before it stays. Each write takes the instance lock and fails while another
+/// thread of this process holds it, so never run this beside [`check_updates`].
+pub fn refresh_requirements(
+    nexus: &Nexus,
+    inst: &eidos_instance::Instance,
+    game: &eidos_gamedef::GameDef,
+) -> Result<usize, String> {
+    // domain -> mod id -> (folder, metadata read before the request)
+    type Folders = Vec<(String, eidos_instance::ModMeta)>;
+    let mut wanted: std::collections::BTreeMap<&str, std::collections::BTreeMap<u64, Folders>> =
+        Default::default();
+    for m in inst.modlist() {
+        let meta = inst.mod_meta(&m.name);
+        let Some(mod_id) = meta.mod_id() else {
+            continue;
+        };
+        let game_name = meta.game_name().filter(|n| !n.is_empty());
+        let Some(domain) = game.nexus_domain_for(game_name.as_deref()) else {
+            continue;
+        };
+        wanted
+            .entry(domain)
+            .or_default()
+            .entry(mod_id)
+            .or_default()
+            .push((m.name.clone(), meta));
+    }
+    let mut written = 0;
+    for (domain, by_id) in wanted {
+        let ids: Vec<u64> = by_id.keys().copied().collect();
+        for (id, reqs) in nexus.mod_requirements(domain, &ids)? {
+            for (name, snapshot) in by_id.get(&id).into_iter().flatten() {
+                apply_requirements(inst, name, snapshot, &reqs)
+                    .map_err(|e| format!("Could not save requirements for '{name}': {e}"))?;
+                written += 1;
+            }
+        }
+    }
+    Ok(written)
+}
+
+/// Store `reqs` in the mod's `meta.ini` under the instance lock, on a fresh
+/// copy, and only if the folder still identifies the same Nexus mod. A replaced
+/// folder is left alone. Ignores the user set meanwhile are untouched.
+fn apply_requirements(
+    inst: &eidos_instance::Instance,
+    name: &str,
+    snapshot: &eidos_instance::ModMeta,
+    reqs: &Requirements,
+) -> io::Result<()> {
+    let _lock = inst.try_lock("saving Nexus requirements")?;
+    let mut meta = eidos_instance::ModMeta::read_checked(&inst.meta_path(name))?;
+    if meta.mod_id() != snapshot.mod_id() || meta.game_name() != snapshot.game_name() {
+        return Ok(());
+    }
+    meta.set_nexus_requirements(&serde_json::to_string(reqs).expect("requirements serialize"));
+    meta.write(&inst.meta_path(name))
+}
+
+/// The folder's Nexus file ids for `mod_id`, when its installed version differs
+/// from the page's: only then is the mod's file list worth a request.
+pub(crate) fn file_ids_to_resolve(
+    meta: &eidos_instance::ModMeta,
+    mod_id: u64,
+    page_version: &str,
+) -> Vec<u64> {
+    if eidos_instance::same_version(&meta.version().unwrap_or_default(), page_version) {
+        return Vec::new();
+    }
+    let ids: Vec<u64> = meta
+        .installed_files()
+        .into_iter()
+        .filter(|&(m, f)| m == mod_id && f != 0)
+        .map(|(_, f)| f)
+        .collect();
+    if ids.is_empty() {
+        meta.file_id().into_iter().collect()
+    } else {
+        ids
+    }
+}
+
 fn apply_mod_update(
     inst: &eidos_instance::Instance,
     name: &str,
     snapshot: &eidos_instance::ModMeta,
     remote: &RemoteMod,
+    verdict: Option<&FileVerdict>,
     now: u64,
 ) -> io::Result<Option<eidos_instance::ModMeta>> {
     // Network requests run without the instance lock. Only apply their fields
@@ -1812,7 +1980,10 @@ fn apply_mod_update(
     if meta.mod_id() != snapshot.mod_id() || meta.game_name() != snapshot.game_name() {
         return Ok(None);
     }
-    meta.set_newest_version(&remote.version);
+    meta.set_newest_version(verdict.map_or(remote.version.as_str(), |v| v.newest.as_str()));
+    if let Some(v) = verdict {
+        meta.set("nexusFileStatus", &v.status.to_string());
+    }
     meta.set_last_nexus_update(now);
     meta.set_nexus_available(remote.available);
     if !remote.author.is_empty() {
@@ -1927,6 +2098,26 @@ pub fn mark_installed(archive: &Path) -> io::Result<()> {
 /// The `.meta` sidecar beside a download.
 pub fn meta_path_for(archive: &Path) -> PathBuf {
     PathBuf::from(format!("{}.meta", archive.display()))
+}
+
+/// A whole archive in `dir` (nothing still arriving beside it) whose `.meta`
+/// names this Nexus mod and file.
+pub fn find_download(dir: &Path, mod_id: u64, file_id: u64) -> Option<PathBuf> {
+    fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| {
+            p.is_file()
+                && !p
+                    .extension()
+                    .is_some_and(|x| x == "meta" || x == "unfinished")
+                && !unfinished_path(p).exists()
+                && {
+                    let meta = eidos_instance::ModMeta::read(&meta_path_for(p));
+                    meta.mod_id() == Some(mod_id) && meta.file_id() == Some(file_id)
+                }
+        })
 }
 
 /// Set (or add) one key in a download's `.meta`, leaving every other line as it
@@ -2450,6 +2641,26 @@ mod tests {
         assert!(a.is_file());
         assert!(meta_path_for(&a).is_file());
         let _ = fs::remove_dir_all(a.parent().unwrap());
+    }
+
+    #[test]
+    fn find_download_ignores_partials_and_other_files() {
+        let dir = std::env::temp_dir().join(format!("eidos-dl-find-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let meta = |file_id: u64| format!("[General]\nmodID=42\nfileID={file_id}\n");
+        for (name, file_id) in [("a.7z", 103), ("b.7z", 104)] {
+            fs::write(dir.join(name), b"x").unwrap();
+            fs::write(meta_path_for(&dir.join(name)), meta(file_id)).unwrap();
+        }
+        // b.7z is still arriving; c.7z has a sidecar and no archive yet.
+        fs::write(unfinished_path(&dir.join("b.7z")), b"x").unwrap();
+        fs::write(meta_path_for(&dir.join("c.7z")), meta(105)).unwrap();
+        assert_eq!(find_download(&dir, 42, 103), Some(dir.join("a.7z")));
+        assert_eq!(find_download(&dir, 42, 104), None);
+        assert_eq!(find_download(&dir, 42, 105), None);
+        assert_eq!(find_download(&dir, 43, 103), None);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -3575,6 +3786,37 @@ mod update_metadata_integrity_tests {
     use super::*;
 
     #[test]
+    fn refreshing_requirements_keeps_the_users_ignores() {
+        let root = std::env::temp_dir().join(format!("eidos-req-meta-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let inst = eidos_instance::Instance::portable(root.clone());
+        inst.create().unwrap();
+        fs::create_dir_all(inst.mods_dir().join("M")).unwrap();
+        let path = inst.meta_path("M");
+        fs::write(
+            &path,
+            "[General]\nmodid=42\neidosIgnoredRequirements=\"[\\\"skyrimspecialedition:12604\\\"]\"\n",
+        )
+        .unwrap();
+        let snapshot = inst.mod_meta("M");
+        let reqs = Requirements::default();
+        apply_requirements(&inst, "M", &snapshot, &reqs).unwrap();
+        assert_eq!(
+            inst.mod_meta("M").ignored_requirements(),
+            ["skyrimspecialedition:12604"]
+        );
+        assert_eq!(
+            inst.mod_meta("M").nexus_requirements().as_deref(),
+            Some(r#"{"mods":[],"dlc":[]}"#)
+        );
+        // A folder replaced by another mod is left alone.
+        fs::write(&path, "[General]\nmodid=43\n").unwrap();
+        apply_requirements(&inst, "M", &snapshot, &reqs).unwrap();
+        assert!(inst.mod_meta("M").nexus_requirements().is_none());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn a_network_reply_preserves_newer_edits_and_refuses_a_replaced_mod() {
         let root = std::env::temp_dir().join(format!("eidos-update-meta-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
@@ -3593,7 +3835,7 @@ mod update_metadata_integrity_tests {
         current.set_notes("edited during download");
         current.set_ini_tweaks(&["personal.ini".into()]);
         current.write(&path).unwrap();
-        apply_mod_update(&inst, "Personal", &snapshot, &remote, 123)
+        apply_mod_update(&inst, "Personal", &snapshot, &remote, None, 123)
             .unwrap()
             .unwrap();
         let saved = inst.mod_meta("Personal");
@@ -3603,7 +3845,9 @@ mod update_metadata_integrity_tests {
         let lock = inst.try_lock("synthetic metadata editor").unwrap();
         std::thread::scope(|scope| {
             let error = scope
-                .spawn(|| apply_mod_update(&inst, "Personal", &snapshot, &remote, 124).unwrap_err())
+                .spawn(|| {
+                    apply_mod_update(&inst, "Personal", &snapshot, &remote, None, 124).unwrap_err()
+                })
                 .join()
                 .unwrap();
             assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
@@ -3611,13 +3855,134 @@ mod update_metadata_integrity_tests {
         drop(lock);
         let replacement = "[General]\nmodid=99\nversion=3.0\nnotes=replacement\n";
         fs::write(&path, replacement).unwrap();
-        assert!(apply_mod_update(&inst, "Personal", &snapshot, &remote, 124)
-            .unwrap()
-            .is_none());
+        assert!(
+            apply_mod_update(&inst, "Personal", &snapshot, &remote, None, 124)
+                .unwrap()
+                .is_none()
+        );
         assert_eq!(fs::read_to_string(&path).unwrap(), replacement);
         fs::write(&path, [0xff, 0xfe]).unwrap();
-        assert!(apply_mod_update(&inst, "Personal", &snapshot, &remote, 125).is_err());
+        assert!(apply_mod_update(&inst, "Personal", &snapshot, &remote, None, 125).is_err());
         assert_eq!(fs::read(&path).unwrap(), [0xff, 0xfe]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    fn meta(text: &str) -> eidos_instance::ModMeta {
+        let dir = std::env::temp_dir().join(format!(
+            "eidos-file-ids-{}-{}",
+            std::process::id(),
+            text.len()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("meta.ini");
+        fs::write(&path, text).unwrap();
+        let m = eidos_instance::ModMeta::read(&path);
+        fs::remove_dir_all(dir).unwrap();
+        m
+    }
+
+    #[test]
+    fn the_file_list_is_fetched_only_for_a_version_mismatch_with_known_files() {
+        assert!(file_ids_to_resolve(
+            &meta("[General]\nmodid=42\nversion=1.0\nfileID=101\n"),
+            42,
+            "1.0"
+        )
+        .is_empty());
+        assert_eq!(
+            file_ids_to_resolve(
+                &meta("[General]\nmodid=42\nversion=1.0\nfileID=101\n"),
+                42,
+                "1.2"
+            ),
+            [101]
+        );
+        assert!(
+            file_ids_to_resolve(&meta("[General]\nmodid=42\nversion=1.0\n"), 42, "1.2").is_empty()
+        );
+        let merged = "[General]\nmodid=42\nversion=0.9\n[installedFiles]\n1\\modid=42\n1\\fileid=201\n2\\modid=77\n2\\fileid=5\nsize=2\n";
+        assert_eq!(file_ids_to_resolve(&meta(merged), 42, "1.2"), [201]);
+    }
+
+    #[test]
+    fn a_file_verdict_sets_newest_version_and_file_status() {
+        let root =
+            std::env::temp_dir().join(format!("eidos-update-verdict-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let inst = eidos_instance::Instance::portable(root.clone());
+        inst.create().unwrap();
+        fs::create_dir_all(inst.mods_dir().join("Personal")).unwrap();
+        let path = inst.meta_path("Personal");
+        fs::write(&path, "[General]\nmodid=42\nversion=0.9\n").unwrap();
+        let snapshot = inst.mod_meta("Personal");
+        let remote = RemoteMod::from_payload(
+            &serde_json::json!({"mod_id":42,"version":"1.2","available":true,"contains_adult_content":false}),
+            AdultPolicy::Unknown,
+        );
+        let verdict = FileVerdict {
+            newest: "0.9".into(),
+            status: 3,
+            successor: None,
+        };
+        apply_mod_update(&inst, "Personal", &snapshot, &remote, Some(&verdict), 1)
+            .unwrap()
+            .unwrap();
+        let saved = inst.mod_meta("Personal");
+        assert_eq!(saved.newest_version().as_deref(), Some("0.9"));
+        assert!(!saved.update_available());
+        assert!(fs::read_to_string(&path)
+            .unwrap()
+            .contains("nexusFileStatus=3"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn each_mod_is_checked_on_its_own_domain_and_an_unknown_game_costs_no_request() {
+        let root = std::env::temp_dir().join(format!("eidos-update-domain-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let inst = eidos_instance::Instance::portable(root.clone());
+        inst.create().unwrap();
+        let add = |name: &str, meta: &str| {
+            fs::create_dir_all(inst.mods_dir().join(name)).unwrap();
+            fs::write(inst.meta_path(name), meta).unwrap();
+            inst.register_installed_mod(name).unwrap();
+        };
+        // Checked a moment ago, so only the "updated this month" list can send it.
+        let now = oauth::now_unix();
+        add(
+            "Nehrim Mod",
+            &format!("[General]\ngameName=Nehrim\nmodid=5\nlastNexusUpdate={now}\n"),
+        );
+        // A spent budget refuses any request before it is sent: nothing here
+        // can reach the network.
+        let nexus = Nexus::with_bearer("synthetic");
+        nexus.limits.set(RateLimits {
+            hourly_remaining: Some(0),
+            hourly_reset: Some(next_hour_utc(now)),
+            ..Default::default()
+        });
+        let enderal = eidos_gamedef::GameDef::for_id("enderalse").unwrap();
+
+        let r = check_updates(&nexus, &inst, enderal).unwrap();
+        assert_eq!(
+            r.failures,
+            [(
+                "Nehrim Mod".to_string(),
+                "its gameName 'Nehrim' names no game Eidos knows, so its Nexus page cannot be found"
+                    .to_string()
+            )]
+        );
+        assert!(
+            !r.rate_limited,
+            "no domain list was needed, so none was asked for"
+        );
+
+        add(
+            "Sse Mod",
+            &format!("[General]\ngameName=SkyrimSE\nmodid=6\nlastNexusUpdate={now}\n"),
+        );
+        let r = check_updates(&nexus, &inst, enderal).unwrap();
+        assert!(r.rate_limited, "the SkyrimSE mod needed its domain's list");
         fs::remove_dir_all(root).unwrap();
     }
 }

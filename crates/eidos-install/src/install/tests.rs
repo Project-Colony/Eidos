@@ -1,7 +1,7 @@
 use std::sync::atomic::Ordering;
 use std::time::SystemTime;
 
-use eidos_instance::ModMeta;
+use eidos_instance::{CategoryFactory, ModMeta};
 
 use super::*;
 use eidos_fomod::FileItem;
@@ -161,6 +161,62 @@ fn meta_ini_records_the_game_the_way_mo2_spells_it() {
     assert_eq!(
         ModMeta::read(&dest.join("meta.ini")).game_name().as_deref(),
         Some("Fallout4")
+    );
+}
+
+/// Archive with a Nexus category 37 sidecar, and an instance root that maps 37
+/// to local category 2 when `mapped`.
+fn category_case(tag: &str, mapped: bool) -> (TempDir, PathBuf, PathBuf) {
+    let t = TempDir::new(tag);
+    let archive = t.path().join("MyMod-1234.7z");
+    fs::write(&archive, b"x").unwrap();
+    fs::write(
+        t.path().join("MyMod-1234.7z.meta"),
+        b"[General]\ncategory=37\n",
+    )
+    .unwrap();
+    let root = t.path().join("root");
+    fs::create_dir_all(&root).unwrap();
+    if mapped {
+        fs::write(root.join("nexuscatmap.dat"), "2|Armour|37\n").unwrap();
+    }
+    let dest = t.path().join("MyMod");
+    fs::create_dir_all(&dest).unwrap();
+    (t, archive, dest)
+}
+
+#[test]
+fn install_maps_the_nexus_category_through_the_instance_catalog() {
+    let (t, archive, dest) = category_case("catmap", true);
+    let cats = CategoryFactory::load(&t.path().join("root"));
+    write_meta_preserving(&archive, &dest, "skyrimse", None, None, false, &cats).unwrap();
+    assert_eq!(
+        ModMeta::read(&dest.join("meta.ini")).category().as_deref(),
+        Some("2,")
+    );
+}
+
+#[test]
+fn an_unmapped_nexus_category_stays_uncategorised() {
+    let (t, archive, dest) = category_case("catunmapped", false);
+    let cats = CategoryFactory::load(&t.path().join("root"));
+    write_meta_preserving(&archive, &dest, "skyrimse", None, None, false, &cats).unwrap();
+    assert_eq!(
+        ModMeta::read(&dest.join("meta.ini")).category().as_deref(),
+        Some("-1,")
+    );
+}
+
+#[test]
+fn a_reinstall_keeps_the_users_category() {
+    let (t, archive, dest) = category_case("catkeep", true);
+    let cats = CategoryFactory::load(&t.path().join("root"));
+    let mut kept = ModMeta::default();
+    kept.set_categories(Some(42), &[]);
+    write_meta_preserving(&archive, &dest, "skyrimse", None, Some(kept), false, &cats).unwrap();
+    assert_eq!(
+        ModMeta::read(&dest.join("meta.ini")).category().as_deref(),
+        Some("42,")
     );
 }
 
@@ -1869,6 +1925,93 @@ fn public_archive_entry_points_apply_the_same_fomod_plan() {
         );
         assert!(!report.dest.join("two.esp").exists());
     }
+}
+
+#[test]
+fn fomod_choices_json_uses_the_collection_shape() {
+    use eidos_fomod::{RecordedGroup, RecordedOption, RecordedStep};
+    let steps = vec![RecordedStep {
+        name: "Main".into(),
+        groups: vec![RecordedGroup {
+            name: "Textures".into(),
+            selected: vec![RecordedOption {
+                name: "2K".into(),
+                idx: 1,
+            }],
+        }],
+    }];
+    let json = fomod_choices_json(&steps);
+    assert_eq!(
+        json,
+        r#"[{"name":"Main","groups":[{"name":"Textures","choices":[{"name":"2K","idx":1}]}]}]"#
+    );
+    assert_eq!(fomod_choices_from_json(&json), Some(steps));
+    assert_eq!(fomod_choices_from_json("not json"), None);
+}
+
+#[test]
+fn replay_stored_returns_none_for_unreadable_json() {
+    let config = eidos_fomod::ModuleConfig::parse(r#"<config><installSteps><installStep name="Main"><optionalFileGroups><group name="Textures" type="SelectAny"><plugins><plugin name="2K"><typeDescriptor><type name="Optional"/></typeDescriptor></plugin></plugins></group></optionalFileGroups></installStep></installSteps></config>"#).unwrap();
+    let ctx = eidos_fomod::Context::default();
+    assert!(replay_stored(&config, &ctx, "{").is_none());
+    let stored =
+        r#"[{"name":"Main","groups":[{"name":"Textures","choices":[{"name":"2K","idx":0}]}]}]"#;
+    let replay = replay_stored(&config, &ctx, stored).unwrap();
+    assert!(replay.is_faithful(), "{:?}", replay.unmatched);
+    assert_eq!(replay.selection, vec![vec![vec![true]]]);
+}
+
+#[test]
+fn finish_fomod_stores_the_choices_it_installed() {
+    use eidos_fomod::{RecordedGroup, RecordedOption, RecordedStep};
+    let Some(bin) = eidos_sevenzip::find_7z() else {
+        return;
+    };
+    let t = TempDir::new("fomod-choices");
+    let src = t.path().join("source");
+    write_at(&src, "2k.esp", b"two");
+    write_at(&src, "fomod/ModuleConfig.xml", br#"<config><moduleName>Test</moduleName><installSteps order="Explicit"><installStep name="Main"><optionalFileGroups order="Explicit"><group name="Textures" type="SelectAny"><plugins order="Explicit"><plugin name="2K"><files><file source="2k.esp" destination="2k.esp"/></files><typeDescriptor><type name="Optional"/></typeDescriptor></plugin></plugins></group></optionalFileGroups></installStep></installSteps></config>"#);
+    let archive = t.path().join("archive.zip");
+    let output = std::process::Command::new(bin)
+        .args(["a", "-tzip"])
+        .arg(&archive)
+        .arg(".")
+        .current_dir(&src)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let mods = t.path().join("mods");
+    let ctx = Default::default();
+    let Opened::Fomod(session) = open_archive(&archive, &mods, "Chosen", "skyrimse").unwrap()
+    else {
+        panic!("FOMOD must take priority")
+    };
+    let report = finish_fomod(
+        *session,
+        &vec![vec![vec![true]]],
+        &mods,
+        "skyrimse",
+        &ctx,
+        OverwritePolicy::Fail,
+    )
+    .unwrap();
+    let stored = ModMeta::read(&report.dest.join("meta.ini"))
+        .fomod_choices()
+        .unwrap();
+    assert!(stored.contains("\"choices\""), "{stored}");
+    assert_eq!(
+        fomod_choices_from_json(&stored),
+        Some(vec![RecordedStep {
+            name: "Main".into(),
+            groups: vec![RecordedGroup {
+                name: "Textures".into(),
+                selected: vec![RecordedOption {
+                    name: "2K".into(),
+                    idx: 0,
+                }],
+            }],
+        }])
+    );
 }
 
 #[test]

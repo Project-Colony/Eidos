@@ -16,6 +16,7 @@ mod downloads;
 mod files;
 mod install;
 mod main_screen;
+mod nexus_files;
 mod plugins;
 mod saves;
 
@@ -26,6 +27,7 @@ pub(crate) use downloads::*;
 pub(crate) use files::*;
 pub(crate) use install::*;
 pub(crate) use main_screen::*;
+pub(crate) use nexus_files::*;
 pub(crate) use plugins::*;
 pub(crate) use saves::*;
 
@@ -86,6 +88,30 @@ pub(crate) fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> 
                     .collect::<Vec<_>>()
                     .join("; "),
             ));
+        }
+        if let Some(steps) = meta
+            .fomod_choices()
+            .and_then(|json| eidos_install::fomod_choices_from_json(&json))
+        {
+            let choices: Vec<String> = steps
+                .iter()
+                .flat_map(|s| s.groups.iter().map(move |g| (s, g)))
+                .filter(|(_, g)| !g.selected.is_empty())
+                .map(|(s, g)| {
+                    let options: Vec<&str> = g.selected.iter().map(|o| o.name.as_str()).collect();
+                    tf(
+                        "info_fomod_choice",
+                        &[
+                            ("step", &s.name),
+                            ("group", &g.name),
+                            ("options", &options.join(", ")),
+                        ],
+                    )
+                })
+                .collect();
+            if !choices.is_empty() {
+                col = col.push(info_kv(t("info_fomod_choices"), choices.join("; ")));
+            }
         }
         if let Some(warning) = meta.install_warning() {
             col = col.push(info_kv(t("info_install_warning"), warning));
@@ -606,7 +632,7 @@ pub(crate) fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
                 .style(button::secondary),
         );
 
-    let tabs = Row::new()
+    let mut tabs = Row::new()
         .spacing(4)
         .push(info_tab_btn(
             t("info_tab_general"),
@@ -633,6 +659,13 @@ pub(crate) fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
             InfoTab::Notes,
             info_mix(app, InfoTab::Notes),
         ));
+    if nexus_files_target(app, i).is_some() {
+        tabs = tabs.push(info_tab_btn(
+            t("info_tab_nexus_files"),
+            InfoTab::NexusFiles,
+            info_mix(app, InfoTab::NexusFiles),
+        ));
+    }
 
     let content = match app.info_tab {
         InfoTab::General => info_general(app, m),
@@ -640,6 +673,7 @@ pub(crate) fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
         InfoTab::Filetree => info_filetree(app, i, m),
         InfoTab::IniTweaks => info_ini_tweaks(app, i, m),
         InfoTab::Notes => info_notes(app),
+        InfoTab::NexusFiles => info_nexus_files(app, i, m),
     };
 
     let card = Column::new()

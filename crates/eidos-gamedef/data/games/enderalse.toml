@@ -2,6 +2,8 @@ id = "enderalse"
 name = "Enderal: Special Edition"
 short_name = "EnderalSE"
 nexus_game = "enderalspecialedition"
+# Enderal SE runs Skyrim SE mods from the SSE Nexus.
+nexus_sources = ["skyrimspecialedition"]
 steam_app_id = 976620
 data_dir = "Data"
 documents_dir = "Enderal Special Edition"

@@ -339,3 +339,25 @@ fn http_wrappers_are_in_the_shipped_shadow_list() {
         assert!(crate::launch::SHIPPED_SHADOWS.contains(&dll), "{dll}");
     }
 }
+
+#[test]
+fn nexus_update_accepts_apply() {
+    let strings = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    assert_eq!(
+        update_args(&strings(&["update", "skyrimse", "--apply"])).unwrap(),
+        ("skyrimse".into(), true)
+    );
+    assert_eq!(
+        update_args(&strings(&["update", "skyrimse"])).unwrap(),
+        ("skyrimse".into(), false)
+    );
+    for bad in [
+        &["update", "skyrimse", "--bogus"][..],
+        &["update"],
+        &["update", "--apply"],
+        &["update", "skyrimse", "--apply", "--apply"],
+        &["update", "skyrimse", "fallout4"],
+    ] {
+        assert!(update_args(&strings(bad)).is_err(), "{bad:?}");
+    }
+}

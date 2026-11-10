@@ -359,9 +359,7 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
             // since the download started; nothing offered it.
             if let (Some(id), Some(domain)) = (
                 row.mod_id,
-                selected_game(app)
-                    .map(|g| g.def.nexus_game)
-                    .filter(|d| !d.is_empty()),
+                selected_game(app).and_then(|g| g.def.nexus_domain_for(row.game_name.as_deref())),
             ) {
                 actions = actions.push(
                     button(text("Nexus").size(sz(11)))
@@ -553,6 +551,8 @@ pub(crate) fn load_downloads(app: &mut App) {
                 version: meta.version().unwrap_or_default(),
                 mod_name: meta.mod_name(),
                 mod_id: meta.mod_id(),
+                game_name: meta.game_name().filter(|g| !g.is_empty()),
+                file_id: meta.file_id(),
                 state,
                 downloaded: md.len(),
                 total,

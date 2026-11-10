@@ -67,7 +67,7 @@ use app::*;
 use archive_conflicts::*;
 use dialogs::*;
 use file_preview::{Preview, PREVIEW_TEXT_CAP};
-use fomod::{fomod_ink_faint, fomod_ink_soft, fomod_wizard_view, FomodWizard};
+use fomod::{fomod_ink_faint, fomod_ink_soft, fomod_wizard_view, wizard_start, FomodWizard};
 use i18n::{t, tf};
 use message::Message;
 use modinfo::*;

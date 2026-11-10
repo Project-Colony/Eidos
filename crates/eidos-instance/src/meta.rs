@@ -310,6 +310,73 @@ impl ModMeta {
         );
     }
 
+    /// The FOMOD answers the last install of this mod used, as the JSON
+    /// `eidos_install::fomod_choices_json` writes. `None` when absent or cleared.
+    pub fn fomod_choices(&self) -> Option<String> {
+        match &qt_items(self.raw("eidosFomodChoices")?)[..] {
+            [json] if !json.is_empty() => Some(json.clone()),
+            _ => None,
+        }
+    }
+
+    /// Record (or, with an empty string, clear) the FOMOD answers. Quoted the
+    /// way QSettings writes it back unchanged (see collection_owner).
+    pub fn set_fomod_choices(&mut self, json: &str) {
+        self.set(
+            "eidosFomodChoices",
+            &if json.is_empty() {
+                String::new()
+            } else {
+                qt_quote(json)
+            },
+        );
+    }
+
+    /// The Nexus requirements last fetched for this mod, as the JSON of
+    /// `eidos_nexus::Requirements`. `{"mods":[],"dlc":[]}` means checked and none
+    /// found; `None` means never checked.
+    pub fn nexus_requirements(&self) -> Option<String> {
+        match &qt_items(self.raw("eidosNexusRequirements")?)[..] {
+            [json] if !json.is_empty() => Some(json.clone()),
+            _ => None,
+        }
+    }
+
+    /// Quoted the way QSettings writes it back unchanged (see collection_owner).
+    pub fn set_nexus_requirements(&mut self, json: &str) {
+        self.set(
+            "eidosNexusRequirements",
+            &if json.is_empty() {
+                String::new()
+            } else {
+                qt_quote(json)
+            },
+        );
+    }
+
+    /// Requirements the user chose to ignore, as `"<domain>:<mod_id>"`.
+    pub fn ignored_requirements(&self) -> Vec<String> {
+        let Some(raw) = self.raw("eidosIgnoredRequirements") else {
+            return Vec::new();
+        };
+        serde_json::from_str(&json_list_value(raw)).unwrap_or_default()
+    }
+
+    /// An empty list removes the key, so a mod with no ignores carries nothing.
+    pub fn set_ignored_requirements(&mut self, keys: &[String]) {
+        if keys.is_empty() {
+            let before = self.general.len();
+            self.general
+                .retain(|(k, _)| !k.eq_ignore_ascii_case("eidosIgnoredRequirements"));
+            self.dirty |= self.general.len() != before;
+            return;
+        }
+        self.set(
+            "eidosIgnoredRequirements",
+            &qt_quote(&serde_json::to_string(keys).expect("strings serialize")),
+        );
+    }
+
     /// A `[General]` string value, unquoted and with empty treated as absent.
     fn string(&self, key: &str) -> Option<String> {
         self.raw(key).map(unquote).filter(|s| !s.is_empty())
@@ -778,7 +845,7 @@ fn parse_bain_options(tail: &str) -> Vec<String> {
 /// trailing zero segments are insignificant ("1.5" == "1.5.0" == "v1.5"). If
 /// either side has a non-numeric segment, falls back to a trimmed
 /// case-insensitive string compare (e.g. "1.5SE" style tags).
-fn same_version(a: &str, b: &str) -> bool {
+pub fn same_version(a: &str, b: &str) -> bool {
     fn segments(s: &str) -> Option<Vec<u64>> {
         let t = s.trim().trim_start_matches(['v', 'V']);
         let mut out = Vec::new();
@@ -1446,6 +1513,28 @@ mod tests {
         let _ = fs::remove_file(&p);
     }
 
+    #[test]
+    fn requirement_cache_and_ignores_round_trip() {
+        let p = tmp_ini("[General]\nmodid=1\n");
+        let mut m = ModMeta::default();
+        m.set_nexus_requirements(r#"{"mods":[],"dlc":[]}"#);
+        m.set_ignored_requirements(&["skyrimspecialedition:12604".to_string()]);
+        m.write(&p).unwrap();
+        let mut back = ModMeta::read(&p);
+        assert_eq!(
+            back.nexus_requirements().as_deref(),
+            Some(r#"{"mods":[],"dlc":[]}"#)
+        );
+        assert_eq!(back.ignored_requirements(), ["skyrimspecialedition:12604"]);
+        back.set_ignored_requirements(&[]);
+        back.write(&p).unwrap();
+        assert!(ModMeta::read(&p).ignored_requirements().is_empty());
+        assert!(!fs::read_to_string(&p)
+            .unwrap()
+            .contains("eidosIgnoredRequirements"));
+        assert_eq!(ModMeta::default().nexus_requirements(), None);
+    }
+
     /// The owner marker and the fragment record read the same before and after
     /// MO2's QSettings saved the file, in every shape Eidos has written.
     #[test]
@@ -1542,6 +1631,21 @@ mod tests {
             ModMeta::read(&p).notes().as_deref(),
             Some("merge with USSEP, keep my patch on top")
         );
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn fomod_choices_survive_commas_quotes_and_non_ascii() {
+        let p = tmp_ini(SAMPLE);
+        let mut m = ModMeta::read(&p);
+        let json = r#"[{"name":"Étape, 1","groups":[{"name":"Textures \"HD\"","choices":[{"name":"C:\\x, 2K","idx":1}]}]}]"#;
+        m.set_fomod_choices(json);
+        m.write(&p).unwrap();
+        assert_eq!(ModMeta::read(&p).fomod_choices().as_deref(), Some(json));
+        let mut m = ModMeta::read(&p);
+        m.set_fomod_choices("");
+        m.write(&p).unwrap();
+        assert_eq!(ModMeta::read(&p).fomod_choices(), None);
         let _ = fs::remove_file(&p);
     }
 

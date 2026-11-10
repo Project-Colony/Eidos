@@ -23,7 +23,9 @@
 
 use std::collections::HashMap;
 
-use crate::engine::{default_group_selection, effective_type, eval, Context, Selection};
+use crate::engine::{
+    default_group_selection, effective_type, eval, visible_steps, Context, Selection,
+};
 use crate::model::{GroupType, ModuleConfig, PluginType};
 
 /// One option the author selected.
@@ -60,6 +62,10 @@ pub struct Replay {
     /// selection already applied and let the user finish it - which is what
     /// Vortex does for the same situation - not to install and call it done.
     pub unmatched: Vec<String>,
+    /// Index into `config.steps` of the step that produced the first entry of
+    /// `unmatched`, so a wizard can open there. `None` when nothing was
+    /// reported, or only recorded steps this installer no longer has.
+    pub first_changed_step: Option<usize>,
 }
 
 impl Replay {
@@ -107,7 +113,9 @@ pub fn replay(config: &ModuleConfig, ctx: &Context, recorded: &[RecordedStep]) -
     // Whether this collection recorded any answer at all for this member.
     let answered_something = recorded.iter().any(|s| !s.groups.is_empty());
 
-    for step in &config.steps {
+    let mut first_changed_step = None;
+
+    for (si, step) in config.steps.iter().enumerate() {
         let visible = step
             .visible
             .as_ref()
@@ -279,6 +287,9 @@ pub fn replay(config: &ModuleConfig, ctx: &Context, recorded: &[RecordedStep]) -
                 }
             }
         }
+        if first_changed_step.is_none() && !unmatched.is_empty() {
+            first_changed_step = Some(si);
+        }
         selection.push(step_sel);
     }
 
@@ -293,7 +304,55 @@ pub fn replay(config: &ModuleConfig, ctx: &Context, recorded: &[RecordedStep]) -
     Replay {
         selection,
         unmatched,
+        first_changed_step,
     }
+}
+
+/// The answers `selection` gives, in the shape [`replay`] reads back: every
+/// step the selection shows, every group of it, and the ticked options by name
+/// and position. A group answered with nothing is listed with no options, so a
+/// replay does not take it for a question the installer gained since.
+pub fn to_recorded(
+    config: &ModuleConfig,
+    selection: &Selection,
+    ctx: &Context,
+) -> Vec<RecordedStep> {
+    let visible = visible_steps(config, selection, ctx);
+    let ticked = |si: usize, gi: usize, pi: usize| {
+        selection
+            .get(si)
+            .and_then(|s| s.get(gi))
+            .and_then(|g| g.get(pi))
+            .copied()
+            .unwrap_or(false)
+    };
+    config
+        .steps
+        .iter()
+        .enumerate()
+        .filter(|(si, _)| visible[*si])
+        .map(|(si, step)| RecordedStep {
+            name: step.name.clone(),
+            groups: step
+                .groups
+                .iter()
+                .enumerate()
+                .map(|(gi, group)| RecordedGroup {
+                    name: group.name.clone(),
+                    selected: group
+                        .plugins
+                        .iter()
+                        .enumerate()
+                        .filter(|(pi, _)| ticked(si, gi, *pi))
+                        .map(|(pi, p)| RecordedOption {
+                            name: p.name.clone(),
+                            idx: pi,
+                        })
+                        .collect(),
+                })
+                .collect(),
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -744,6 +803,83 @@ mod tests {
         let r = replay(&config, &ctx(), &[]);
         assert_eq!(r.selection[0][0], vec![true, false]);
         assert!(r.unmatched.is_empty(), "{:?}", r.unmatched);
+    }
+
+    /// "Textures" sets `hd` on its non-default option, which shows "HD Extras".
+    fn hd_config(snow: &str) -> ModuleConfig {
+        ModuleConfig {
+            steps: vec![
+                step(
+                    "Main",
+                    None,
+                    vec![
+                        group(
+                            "Textures",
+                            GroupType::SelectExactlyOne,
+                            vec![
+                                plugin("SD", PluginType::Recommended, &[]),
+                                plugin("HD", PluginType::Optional, &[("hd", "on")]),
+                            ],
+                        ),
+                        group(
+                            "Patches",
+                            GroupType::SelectAny,
+                            vec![plugin("USSEP", PluginType::Optional, &[])],
+                        ),
+                    ],
+                ),
+                step(
+                    "HD Extras",
+                    Some(Condition::Flag {
+                        flag: "hd".into(),
+                        value: "on".into(),
+                    }),
+                    vec![group(
+                        "Extras",
+                        GroupType::SelectAny,
+                        vec![
+                            plugin("Parallax", PluginType::Optional, &[]),
+                            plugin(snow, PluginType::Optional, &[]),
+                        ],
+                    )],
+                ),
+            ],
+            ..ModuleConfig::default()
+        }
+    }
+
+    #[test]
+    fn recorded_choices_replay_to_the_same_selection() {
+        let config = hd_config("Snow");
+        // HD instead of the recommended SD, nothing in "Patches", Snow in the
+        // step that HD shows.
+        let picked: Selection = vec![
+            vec![vec![false, true], vec![false]],
+            vec![vec![false, true]],
+        ];
+        let rec = to_recorded(&config, &picked, &ctx());
+        assert_eq!(rec.len(), 2);
+        assert_eq!(rec[0].groups[1].selected, Vec::new(), "listed, unanswered");
+        let r = replay(&config, &ctx(), &rec);
+        assert!(r.is_faithful(), "{:?}", r.unmatched);
+        assert_eq!(r.selection, picked);
+        assert_eq!(r.first_changed_step, None);
+
+        // The defaults leave "HD Extras" hidden, so it is not recorded at all.
+        let defaults = crate::default_selection(&config, &ctx());
+        assert_eq!(to_recorded(&config, &defaults, &ctx()).len(), 1);
+    }
+
+    #[test]
+    fn a_renamed_option_reports_its_step_as_first_changed() {
+        let picked: Selection = vec![
+            vec![vec![false, true], vec![false]],
+            vec![vec![false, true]],
+        ];
+        let rec = to_recorded(&hd_config("Snow"), &picked, &ctx());
+        let r = replay(&hd_config("Snow (Cathedral)"), &ctx(), &rec);
+        assert!(!r.is_faithful());
+        assert_eq!(r.first_changed_step, Some(1));
     }
 
     #[test]

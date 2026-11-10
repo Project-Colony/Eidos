@@ -282,6 +282,10 @@ pub(crate) enum Message {
     NexusSignInStart,
     /// The sign-in finished: the account on success, else an error.
     NexusSignInResult(Result<eidos_nexus::Account, String>),
+    /// Which program the desktop hands `nxm://` links to (read on a worker).
+    NxmHandlerRead(eidos::nxm_handler::NxmHandler),
+    RegisterNxm,
+    NxmRegistered(Result<(), String>),
     /// Forget the stored Nexus session.
     NexusSignOut,
     /// A change from the shared Colony preferences: theme, accent, text sizes,
@@ -405,6 +409,20 @@ pub(crate) enum Message {
     // ---- Endorse / per-mod flags (MO2 endorseMod) ----
     /// Toggle endorse <-> abstain for a mod, based on its current state.
     ModEndorse(usize),
+    /// A mod's Nexus file list arrived (or failed). Keyed by domain and mod id
+    /// so an answer for another mod is cached, not shown.
+    NexusFilesFetched {
+        domain: String,
+        mod_id: u64,
+        result: Result<eidos_nexus::ModFiles, String>,
+    },
+    /// Replace a mod's folder with the file that succeeds its installed one.
+    NexusUpdate {
+        folder: String,
+        domain: String,
+        mod_id: u64,
+        file_id: u64,
+    },
     /// The endorse/abstain finished: the new endorsed state, or an error.
     /// Endorse round-trip done. Carries the mod's FOLDER NAME (not an index): the
     /// list can shift while the network call is in flight, and writing the result
@@ -438,8 +456,36 @@ pub(crate) enum Message {
     // ---- Mod update check (MO2 "Check for updates") ----
     /// Run a Nexus update check across the instance's mods (toolbar + Tools menu).
     CheckUpdates,
-    /// The update check finished: the summary, or an error.
-    UpdatesChecked(Result<eidos_nexus::UpdateCheckResult, String>),
+    /// The update check finished for the instance at `root`: the summary, or an
+    /// error. `connected` is false when the error came from signing in to Nexus
+    /// (offline, expired session), before any mod was checked.
+    UpdatesChecked {
+        root: PathBuf,
+        connected: bool,
+        result: Result<eidos_nexus::UpdateCheckResult, String>,
+    },
+    /// The requirements refresh that rides on an update check finished for the
+    /// instance at this root: how many mods it looked up, or the error.
+    RequirementsRefreshed(PathBuf, Result<usize, String>),
+    /// The collection revision check that rides on an update check finished
+    /// for the instance at this root.
+    CollectionRevisionsChecked(PathBuf, Vec<CollectionNotice>),
+    /// Health: stop listing this requirement (`key`) of the mod in `folder`.
+    IgnoreRequirement {
+        folder: String,
+        key: String,
+    },
+    /// Health: find the required mod's main file and fetch it.
+    RequirementDownload {
+        domain: String,
+        mod_id: u64,
+    },
+    /// The answer: the one main file, or `None` when Nexus lists none or several.
+    RequirementFilePicked {
+        domain: String,
+        mod_id: u64,
+        file_id: Option<u64>,
+    },
     // ---- menu bar wiring ----
     /// Show / hide the About box (Help menu).
     ShowAbout,
@@ -721,6 +767,12 @@ pub(crate) enum Message {
     CollectionOpenMod(usize),
     /// Ask the nxm handler to fetch every missing member, one at a time.
     CollectionFetchMissing,
+    /// A free account: open each missing required member's page in turn and
+    /// wait for its file in `downloads/`.
+    CollectionWalkStart,
+    /// Move to the next member without waiting for this one.
+    CollectionWalkSkip,
+    CollectionWalkStop,
     // ---- Instance manager (MO2's Manage Instances) ----
     ShowInstanceManager,
     CloseInstanceManager,

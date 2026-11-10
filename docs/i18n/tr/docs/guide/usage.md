@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=28cada8f5976ca2734f3bcdf3e7f48913c15e05b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=a52fda783776900495152e3b3a35c98d83d96d42 -->
 
 # Eidos kullanımı
 
@@ -20,6 +20,7 @@ eidos play skyrimse               # neyin bağlanacağını göster
 eidos play skyrimse -- <command>  # <command>'ı modlar oyunun üzerine bağlanmış halde çalıştır
 eidos check skyrimse              # pencere olmadan sağlık denetimleri (betikler için --json)
 eidos collection skyrimse <link>  # bir Nexus koleksiyonunu yazarının kurduğu gibi kur
+eidos nexus update skyrimse --apply  # sizinkilerin yerini alan Nexus dosyalarını kur
 eidos pack skyrimse backup.eidos  # bütün örnek tek bir dosyada, başka yere taşımak için
 eidos unpack backup.eidos <folder>   # öteki makinede geri koy
 ```
@@ -250,6 +251,16 @@ getirmeniz için tam sayfa URL'siyle birlikte raporlanır. Bu bir Nexus iş
 kuralıdır ve ne kadar yeniden denerseniz deneyin aşılmaz. Onları sitenin
 düğmesiyle getirin ve komutu yeniden çalıştırın: o üyeler her koşuda
 `downloads/` içinde aranır, yani koleksiyon siz sağladıkça tamamlanır.
+
+Pencerede ücretsiz bir hesap, koleksiyon panelinde toplu getirme yerine
+*Fetch the N missing required files, one by one* düğmesini görür. Bu düğme
+eksik zorunlu dosyaların ilkinin Nexus sayfasını açar, o dosyanın `downloads/`
+içine gelmesini bekler, sonra bir sonrakini açar. Her dosya için sayfanın
+indirme düğmesine yine siz basarsınız. Panel ne kadar ilerlendiğini (*3 of 12*)
+*Skip* ve *Stop* ile birlikte gösterir. Onun yerine aynı modun başka bir
+dosyası gelirse panel iki dosya kimliğini de yazar ve koleksiyonun belirlediği
+dosyayı beklemeyi sürdürür. İsteğe bağlı üyeler buna dahil değildir ve kendi
+*Open* düğmelerini korur.
 
 Henüz uygulanmayan ve göz ardı edilmek yerine raporda adı geçenler: **ikili
 yamalar**, **dosya geçersiz kılmaları** ve dosyaları koleksiyon arşivinin içinde
@@ -586,6 +597,39 @@ getirir, aynı düğme gizlemeyi de kaldırır. "Remove N installed", zaten kurd
 modların arşivlerini iki tıkla siler, hem de yalnızca **ekranda olanları**:
 süzgeç, hangilerini kastettiğinizi söyleme biçiminizdir.
 
+### Mod güncellemeleri
+
+Araç çubuğunun sağ ucundaki güncelleme düğmesi kurulu her dosyayı Nexus'ta onun
+yerini alan dosyayla karşılaştırır. Yazarlar yeni bir yüklemeyi daha eskisinin
+ardılı olarak işaretler; Eidos bu zinciri, modun `meta.ini` dosyasının
+kaydettiği dosya kimliğinden başlayarak izler. Zincir hiçbir ardıl göstermiyorsa
+bunun yerine mod sayfasındaki sürüm karşılaştırılır.
+
+"Information..." içindeki **Nexus files** sekmesi modun Nexus'taki dosyalarını
+en yeniden başlayarak listeler; burada kurulu olanı ve onun yerini alanı
+işaretler. Bu ikinci satırda bir **Update** düğmesi vardır. Premium bir hesapla
+Eidos dosyayı kendisi indirir. Ücretsiz bir hesapla dosyanın sayfasını açar;
+orada Mod Manager Download dosyayı geri gönderir ve arşiv `downloads/` klasörüne
+vardığında kurulum başlar. Oradan sonrası alışılmış kurulumdur: bir FOMOD, modun
+kurulduğu cevaplarla açılır, ardından soru penceresi "Keep a backup of the
+existing mod" işaretli olarak Replace seçeneğini sunar; bir önceki pencerede ne
+seçmiş olursanız olun. Replace, modun önceliğini ve etkin olup olmadığını korur.
+
+Birkaç Nexus dosyası barındıran bir klasör, örneğin içine isteğe bağlı bir dosya
+karıştırılmış bir ana dosya, reddedilir: onu yeni ana dosyayla değiştirmek
+ötekileri kaybettirir. Bunları elle güncelleyin.
+
+`eidos nexus update skyrimse --apply` aynı denetimi yapar, ardından premium bir
+hesapta her yeni dosyayı indirip `--replace --backup` ile klasörünün üzerine
+kurar. Ücretsiz bir hesapta bunun yerine her dosya sayfası için `OPEN <url>`
+yazdırır. Birkaç dosyayı birleştiren klasörler gerekçesiyle atlanır. Kayıtlı
+cevabı olmayan bir FOMOD modu, örneğin Eidos cevapları saklamaya başlamadan önce
+kurulmuş olan, yükleyicinin varsayılanlarıyla yeniden kurulmaz: o güncelleme,
+modu bir kez pencereden güncellemenizi isteyen bir mesajla başarısız olur;
+pencere cevapları kaydeder. Yükleyicisinde seçilecek bir şey olmayan bir FOMOD
+modu her zamanki gibi kurulur. Bir güncelleme başarısız olduysa komut 1 ile
+çıkar.
+
 ### Nexus koleksiyonları
 
 Bir koleksiyon bağlantısı yapıştırın - ya da sitede birine tıklayın - Eidos o
@@ -601,6 +645,8 @@ Bir koleksiyon yalnızca **kendi oyununa** karşı okunabilir. Yüklü bir Fallo
 örneğiyle bir Skyrim koleksiyonu açın; üyeleri yanlış mod listesiyle
 eşleştirmektense adını vererek reddeder - o listede her "kurulu" ve her "eksik",
 yanıt kılığına girmiş gürültü olurdu.
+
+Güncellemeleri denetlediğinizde Eidos, Nexus'a bu örnekte kurulu her koleksiyonun en son revizyonunu da sorar. Mod listesinin üstündeki bir satır, daha yeni revizyonu olan her koleksiyonu adıyla verir ve eklenen (+), güncellenen (~) ve çıkarılan (-) mod sayısını gösterir; adlar için üzerine gelin. Kurulu revizyonun tarifi artık önbellekte değilse sayılar görünmez. **Güncelle**, yeni revizyonu koleksiyon panelinde açar; orada *Install this collection* onu çalıştırır. Liste her denetimde yeniden kurulur ve kaydedilmez.
 
 ### Çevrimdışı kip
 
@@ -621,7 +667,7 @@ düğümden.
 bütün bir seçime atayın, katalogun kendisini aynı iletişim kutusundan düzenleyin
 ve oyunun resmî kategori listesini Nexus'tan çekin. İki katalog dosyası da
 MO2'nin kendisidir (`categories.dat` ve `nexuscatmap.dat`), yani paylaşılan bir
-örnek tek bir katalog tutar.
+örnek tek bir katalog tutar. Nexus'tan indirilen bir mod, Nexus'tan getir kataloğu eşleştirdikten sonra kurulum sırasında kategorilenir.
 
 **View -> INI editor**, profilin oyun INI'lerini düzenler - her başlatmada
 üzerine yazılan, Proton önekine gömülü olanı değil, kalıcı olan kopyayı.
@@ -633,6 +679,13 @@ paketleri (sırayla katılan alt paketleri işaretleyin) ve hiçbir sezgisel yö
 yerleşimi tanımadığında arşiv ağacını gösterip veri kökünü işaret etmenizi
 sağlayan **elle** bir seçici. Hiçbir arşiv reddedilmez.
 
+Bir FOMOD modunu yeniden kurmak ya da güncellemek, sihirbazı son kurulumun
+cevapları işaretli olarak, o zamandan beri seçenekleri değişen ilk adımda ve
+değişikliklerin listesiyle açar. **Reinstall with new choices** bunun yerine
+yükleyicinin varsayılanlarından başlar. `eidos install --replace` ya da
+`--merge` kayıtlı cevapları yeniden kullanır; cevaplar artık uymuyorsa
+değişiklikleri listeleyip kurmayı reddeder.
+
 **Diagnostics** canlı sağlık denetimleri çalıştırır: her şeyden önce başlatma
 yeteneği, eksik master'lar (tek başına en güvenilir çökme belirtisi), etkin
 hiçbir eklentinin yüklemeyeceği arşivler, mod listesinin hâlâ mods klasörüyle
@@ -640,6 +693,7 @@ eşleşip eşleşmediği ve - bir çalıştırmadan sonra - script extender'ın 
 günlüğünün, eklenti DLL'lerinin her biri hakkında ne söylediği; bu da "SKSE
 eklentilerim yüklendi mi?" sorusunu bir çıkarımdan bir kanıta çevirir.
 Ayrıca son temiz başlatmadan bu yana bir oyun güncellemesini, eksik ya da oyun sürümüyle uyuşmayan bir script extender'ı (extender'ın indirme sayfası ve indirdiğiniz arşivi kuran bir düğmeyle), Eidos'u `%command%` ile başlatmayan bir Steam başlatma seçeneğini, DLSS için kapalı bırakılmış NVAPI'yi, kare üretimini durduran özel tam ekranı, `LinuxVersion=true` içermeyen bir ENB `enblocal.ini` dosyasını, F4SE ve SFSE eklenti bildirimlerini ve son oturumun çökme günlüğünü, adını verdiği modlarla birlikte bildirir.
+Güncelleme denetimi her modun Nexus gereksinimlerini de okur. Diagnostics, eksik veya devre dışı bir gerekli modu listeler; başka yoldan karşılanan bir gereksinim için Ignore vardır.
 
 Oyunu GUI üzerinden başlatmak için oyunun Steam başlatma seçeneğini ikili
 dosyanın mutlak yoluna ayarlayın (Steam, PATH'te `~/.cargo/bin`'i görmez):

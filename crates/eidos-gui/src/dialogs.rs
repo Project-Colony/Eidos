@@ -1959,7 +1959,9 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
         .into()
 }
 
-pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Message> {
+/// `free`: a signed-in account without premium, which Nexus lets download only
+/// through each file page's own button.
+pub(crate) fn collection_dialog<'a>(state: &CollectionState, free: bool) -> Element<'a, Message> {
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
@@ -2089,7 +2091,39 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
             .style(button::primary)
             .on_press_maybe((!state.loading).then_some(Message::CollectionInstall)),
         );
-        if missing > 0 {
+        if let Some(walk) = &state.walk {
+            let total = walk.queue.len();
+            summary = summary
+                .push(
+                    text(tf(
+                        "collection_walk_progress",
+                        &[("n", &(walk.at + 1).min(total)), ("total", &total)],
+                    ))
+                    .size(sz(11)),
+                )
+                .push(
+                    button(text(t("collection_walk_skip")).size(sz(11)))
+                        .padding([3, 10])
+                        .style(button::secondary)
+                        .on_press(Message::CollectionWalkSkip),
+                )
+                .push(
+                    button(text(t("collection_walk_stop")).size(sz(11)))
+                        .padding([3, 10])
+                        .style(button::secondary)
+                        .on_press(Message::CollectionWalkStop),
+                );
+        } else if free {
+            let n = walk_queue(rev, &state.states).len();
+            if n > 0 {
+                summary = summary.push(
+                    button(text(tf("collection_walk_start", &[("n", &n)])).size(sz(11)))
+                        .padding([3, 10])
+                        .style(button::secondary)
+                        .on_press(Message::CollectionWalkStart),
+                );
+            }
+        } else if missing > 0 {
             let label = if state.confirm_fetch {
                 t("collection_fetch_confirm").to_string()
             } else {

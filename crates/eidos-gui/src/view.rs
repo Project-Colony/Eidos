@@ -78,7 +78,8 @@ pub(crate) fn view(app: &App) -> Element<'_, Message> {
     if let Some(state) = &app.collection {
         let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
             .on_press(Message::CloseCollection);
-        let dialog = container(collection_dialog(state)).center(Length::Fill);
+        let free = app.nexus_account.as_ref().is_some_and(|a| !a.is_premium);
+        let dialog = container(collection_dialog(state, free)).center(Length::Fill);
         return Stack::new().push(base).push(scrim).push(dialog).into();
     }
     // And unpacking, for the same reason and more sharply. A backup is restored
@@ -1798,14 +1799,19 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
             .height(Length::Fixed(20.0))
             .align_y(iced::alignment::Vertical::Center);
 
-    let inner = Column::new()
+    let mut inner = Column::new()
         .spacing(6)
         .push(profile)
         .push(search)
         .push(legend)
         .push(header)
-        .push(list_area)
-        .push(overwrite);
+        .push(list_area);
+    // Under the list, not above it: they arrive seconds after Check for
+    // updates, and above the list each one pushed every row down a line.
+    for n in &app.collection_notices {
+        inner = inner.push(collection_notice_row(n));
+    }
+    let inner = inner.push(overwrite);
 
     // The two panes share the width by a ratio the user drags, not by a constant.
     // A thousandth of the window is finer than a pixel on any screen this runs on.
@@ -1815,6 +1821,53 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         .height(Length::Fill)
         .padding(8)
         .style(panel_style)
+        .into()
+}
+
+/// One line under the mod list: an installed collection has a newer revision.
+fn collection_notice_row<'a>(n: &CollectionNotice) -> Element<'a, Message> {
+    let mut label = tf(
+        "collection_revision_available",
+        &[("name", &n.name), ("latest", &n.latest), ("have", &n.have)],
+    );
+    let mut hover = String::new();
+    if let Some(d) = &n.diff {
+        label.push_str(&format!(
+            "  +{} ~{} -{}",
+            d.added.len(),
+            d.updated.len(),
+            d.dropped.len()
+        ));
+        for (sign, names) in [("+", &d.added), ("~", &d.updated), ("-", &d.dropped)] {
+            for name in names {
+                hover.push_str(&format!("{sign} {name}\n"));
+            }
+        }
+    }
+    let line = text(label).size(sz(12));
+    let line: Element<'a, Message> = if hover.is_empty() {
+        line.into()
+    } else {
+        tooltip(
+            line,
+            text(hover.trim_end().to_string()).size(sz(12)),
+            tooltip::Position::Top,
+        )
+        .style(container::bordered_box)
+        .into()
+    };
+    Row::new()
+        .spacing(6)
+        .align_y(iced::alignment::Vertical::Center)
+        .push(line)
+        .push(Space::new().width(Length::Fill))
+        .push(tool_btn(
+            t("collection_revision_update"),
+            Message::ShowCollection(format!(
+                "nxm://{}/collections/{}/revisions/latest",
+                n.domain, n.slug
+            )),
+        ))
         .into()
 }
 

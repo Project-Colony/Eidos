@@ -505,7 +505,17 @@ pub(super) fn install_destination_ready(
         let installed = (|| -> Result<_, InstallError> {
             let (stripped, fomod, missing) = place(&target, merging)?;
             let (_, guessed_id) = guess_mod_name_and_id(&archive.to_string_lossy());
-            write_meta_preserving(archive, &target, game_id, guessed_id, preserved, merging)?;
+            let categories =
+                eidos_instance::CategoryFactory::load(mods_dir.parent().unwrap_or(mods_dir));
+            write_meta_preserving(
+                archive,
+                &target,
+                game_id,
+                guessed_id,
+                preserved,
+                merging,
+                &categories,
+            )?;
             let meta_path = target.join("meta.ini");
             let mut meta = ModMeta::read(&meta_path);
             for (key, value) in archive_facts {

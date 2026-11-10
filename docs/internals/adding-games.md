@@ -42,6 +42,7 @@ game overrides that built-in; any other `id` is added.
 | `epic_ids` | no | `[]` | Epic/Legendary app names accepted from installed manifests |
 | `short_name` | no | `""` | MO2-style short name (e.g. `SkyrimSE`) |
 | `nexus_game` | no | `""` | Nexus domain (for downloads/updates) |
+| `nexus_sources` | no | `[]` | Other Nexus domains whose mods this game accepts (nxm links, the "another game" flag) |
 | `documents_dir` | no | `""` | `My Games/<dir>` folder, if the game keeps per-profile INIs there |
 | `ini_files` | no | `[]` | Per-profile INIs; the first carries the `[Archive]` section |
 | `load_order` | no | `"None"` | `Asterisk`, `PlainList`, `FileTime`, or `None` |

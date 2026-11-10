@@ -29,8 +29,6 @@ pub(crate) fn cmd_export(args: &[String]) {
     };
     let inst = target.inst;
     let _ = inst.ensure_profiles();
-    let domain = game.def.nexus_game;
-
     let (csv, count) = eidos_instance::mod_list_csv(
         &inst,
         &inst.modlist(),
@@ -40,7 +38,7 @@ pub(crate) fn cmd_export(args: &[String]) {
             eidos_instance::ExportScope::All
         },
         eidos_instance::Column::ALL,
-        domain,
+        &|name| game.def.nexus_domain_for(name),
     );
 
     match out_path {

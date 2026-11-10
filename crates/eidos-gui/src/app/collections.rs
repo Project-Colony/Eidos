@@ -51,4 +51,32 @@ pub(crate) struct CollectionState {
     /// restarting the same few - a member stays `missing` for as long as its
     /// download runs, so the state alone cannot tell the two apart.
     pub(crate) asked: std::collections::HashSet<u64>,
+    /// A free account's walk through the missing files, while one runs.
+    pub(crate) walk: Option<CollectionWalk>,
+}
+
+/// A free account fetching a collection's missing files one page at a time.
+/// Nexus wants one click per file there, so Eidos opens each page and watches
+/// `downloads/` for the file to land.
+pub(crate) struct CollectionWalk {
+    /// Member indices still to fetch, in collection order.
+    pub(crate) queue: Vec<usize>,
+    /// Position in `queue`.
+    pub(crate) at: usize,
+    /// Download names already there, so only a new arrival can be a wrong file.
+    pub(crate) seen: std::collections::HashSet<String>,
+}
+
+/// What the walk does after a look at `downloads/`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WalkStep {
+    Wait,
+    /// Open this member's file page.
+    Open(usize),
+    /// Another file of the awaited member's mod arrived.
+    Wrong {
+        want: u64,
+        got: u64,
+    },
+    Done,
 }

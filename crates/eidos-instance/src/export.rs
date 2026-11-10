@@ -163,12 +163,15 @@ pub fn fmt_mtime(path: &Path) -> String {
 /// and 0002 in an enabled-only export of the same list, and neither would match
 /// the "#" column on screen. Holes are the correct output - they are what says a
 /// row was skipped.
+///
+/// `nexus_domain` maps a mod's `gameName` (`None` when it records none) to the
+/// Nexus domain its page lives on; `None` leaves the URL cell empty.
 pub fn mod_list_csv(
     inst: &Instance,
     rows: &[ModEntry],
     scope: ExportScope,
     columns: &[Column],
-    nexus_domain: &str,
+    nexus_domain: &dyn Fn(Option<&str>) -> Option<&'static str>,
 ) -> (String, usize) {
     let factory = inst.category_factory();
     let mut csv: String = columns
@@ -198,10 +201,11 @@ pub fn mod_list_csv(
             .unwrap_or_default()
             .to_string();
         let nexus_id = meta.mod_id().unwrap_or(0);
-        let nexus_url = if nexus_id > 0 && !nexus_domain.is_empty() {
-            format!("https://www.nexusmods.com/{nexus_domain}/mods/{nexus_id}")
-        } else {
-            String::new()
+        let nexus_url = match nexus_domain(meta.game_name().as_deref()) {
+            Some(domain) if nexus_id > 0 => {
+                format!("https://www.nexusmods.com/{domain}/mods/{nexus_id}")
+            }
+            _ => String::new(),
         };
 
         let cells: Vec<String> = columns
@@ -277,13 +281,9 @@ mod tests {
     fn the_full_export_is_mo2s_own_shape() {
         let (inst, root) = fixture();
         let rows = vec![row("Alpha", true, &root), row("Bravo", false, &root)];
-        let (csv, n) = mod_list_csv(
-            &inst,
-            &rows,
-            ExportScope::All,
-            Column::ALL,
-            "skyrimspecialedition",
-        );
+        let (csv, n) = mod_list_csv(&inst, &rows, ExportScope::All, Column::ALL, &|_| {
+            Some("skyrimspecialedition")
+        });
         assert_eq!(n, 2);
         // CRLF, and the header MO2 writes verbatim.
         assert!(
@@ -309,7 +309,7 @@ mod tests {
             row("On1", true, &root),
             row("On2", true, &root),
         ];
-        let (csv, n) = mod_list_csv(&inst, &rows, ExportScope::Active, Column::ALL, "");
+        let (csv, n) = mod_list_csv(&inst, &rows, ExportScope::Active, Column::ALL, &|_| None);
         assert_eq!(n, 2);
         // 0001 and 0002 - the positions they hold in the list. A priority that
         // renumbers itself when the scope changes is not a priority: the same
@@ -326,7 +326,7 @@ mod tests {
         let rows = vec![row("Alpha", true, &root)];
         // Deliberately passed out of order: the writer must emit MO2's order.
         let picked = [Column::Name, Column::Priority];
-        let (csv, _) = mod_list_csv(&inst, &rows, ExportScope::All, &picked, "");
+        let (csv, _) = mod_list_csv(&inst, &rows, ExportScope::All, &picked, &|_| None);
         assert_eq!(csv.lines().next().unwrap(), "#Mod_Name,#Mod_Priority");
         assert_eq!(csv.lines().nth(1).unwrap(), "\"Alpha\",\"0000\"");
         let _ = std::fs::remove_dir_all(&root);
@@ -339,9 +339,30 @@ mod tests {
             row("Gear_separator", true, &root),
             row("Alpha", true, &root),
         ];
-        let (csv, n) = mod_list_csv(&inst, &rows, ExportScope::All, Column::ALL, "");
+        let (csv, n) = mod_list_csv(&inst, &rows, ExportScope::All, Column::ALL, &|_| None);
         assert_eq!(n, 1);
         assert!(!csv.contains("Gear"), "{csv}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn export_urls_use_each_mods_own_domain() {
+        let (inst, root) = fixture();
+        let rows = vec![row("FromSse", true, &root), row("Silent", true, &root)];
+        std::fs::write(
+            inst.meta_path("FromSse"),
+            "[General]\ngameName=SkyrimSE\nmodid=7\n",
+        )
+        .unwrap();
+        std::fs::write(inst.meta_path("Silent"), "[General]\nmodid=9\n").unwrap();
+        let domain = |name: Option<&str>| match name {
+            None => Some("enderalspecialedition"),
+            Some("SkyrimSE") => Some("skyrimspecialedition"),
+            Some(_) => None,
+        };
+        let (csv, _) = mod_list_csv(&inst, &rows, ExportScope::All, Column::ALL, &domain);
+        assert!(csv.contains("https://www.nexusmods.com/skyrimspecialedition/mods/7"));
+        assert!(csv.contains("https://www.nexusmods.com/enderalspecialedition/mods/9"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
