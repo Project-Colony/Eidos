@@ -7029,6 +7029,30 @@ mod cleaning {
     }
 
     #[test]
+    fn a_refused_clean_keeps_the_cli_reason() {
+        let (mut app, root) = list_app(&[]);
+        app.tools = vec![qac()];
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args([
+            "-c",
+            "echo 'WARN  eidos: refusing to launch: /x is in use by eidos play' >&2; exit 1",
+        ]);
+        start_run(&mut app, "SSEEdit QuickAutoClean".into(), cmd);
+        app.cleaning = Some(Cleaning {
+            plugin: "Dirty.esp".into(),
+            scratch: root.join("logs/qac-6"),
+            source: None,
+        });
+        super::finish_tracked_run(&mut app);
+        let status = app.status.clone().unwrap();
+        assert!(
+            status.contains("Dirty.esp")
+                && status.contains("refusing to launch: /x is in use by eidos play"),
+            "{status}"
+        );
+    }
+
+    #[test]
     fn a_saved_clean_whose_copy_never_reached_the_mod_stops_the_queue() {
         let (mut app, root) = list_app(&[]);
         let scratch = root.join("logs/qac-3");

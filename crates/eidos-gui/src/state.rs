@@ -960,10 +960,19 @@ pub(crate) fn finish_clean(app: &mut App, done: Cleaning) -> bool {
         .ok()
         .and_then(|text| eidos_gamefeatures::parse_qac_log(&text));
     let Some(log) = log else {
-        app.status = Some(tf(
+        let mut status = tf(
             "status_clean_failed",
             &[("plugin", &done.plugin), ("log", &run_log.display())],
-        ));
+        );
+        // The CLI's own refusal (instance in use, a list it cannot trust) is the why.
+        if let Some(reason) = std::fs::read(&run_log)
+            .ok()
+            .and_then(|b| refusal_line(&String::from_utf8_lossy(&b)))
+        {
+            status.push(' ');
+            status.push_str(&reason);
+        }
+        app.status = Some(status);
         return false;
     };
     if !log.saved {
