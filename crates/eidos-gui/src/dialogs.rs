@@ -261,7 +261,7 @@ pub(crate) fn executables_dialog<'a>(
                 &state.app_id,
                 Message::ExecAppIdChanged,
             ))
-            .push(tool_flags_row(state))
+            .push(tool_flags_row(app, state))
             .into()
     } else if state.selected.is_some() {
         // A default cannot be edited, but hiding and pinning are about the
@@ -271,7 +271,7 @@ pub(crate) fn executables_dialog<'a>(
             .spacing(8)
             .push(text(t("exe_default_readonly")).size(sz(12)))
             .push(text(t("exe_default_override")).size(sz(10)))
-            .push(tool_flags_row(state))
+            .push(tool_flags_row(app, state))
             .into()
     } else {
         Column::new()
@@ -1178,11 +1178,16 @@ impl std::fmt::Display for CategoryChoice {
 /// Hide, pin, and the desktop shortcut - three things about how a tool is
 /// REACHED rather than what it runs, which is why they sit together and apply to
 /// per-game defaults as well as to the user's own entries.
-fn tool_flags_row<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
+fn tool_flags_row<'a>(app: &App, state: &ExecutablesDialogState) -> Element<'a, Message> {
     let sel = state.selected.and_then(|i| state.merged.get(i));
     let (hidden, pinned) = sel.map(|t| (t.hidden, t.pinned)).unwrap_or((false, false));
     let check = sel.is_some_and(|t| t.check_before_play);
-    let row = Row::new()
+    // A shortcut runs `eidos tool run`, which refuses an entry that starts the
+    // game: from the desktop no store has started anything.
+    let starts_game = sel.is_some_and(|t| {
+        selected_game(app).is_some_and(|g| game_executables(g).launches_the_game(&t.exe))
+    });
+    let mut row = Row::new()
         .spacing(8)
         .align_y(iced::Alignment::Center)
         .push(
@@ -1211,13 +1216,15 @@ fn tool_flags_row<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
                 button::secondary
             })
             .on_press(Message::ExecToggleHidden),
-        )
-        .push(
+        );
+    if !starts_game {
+        row = row.push(
             button(text(t("exe_desktop_shortcut")).size(sz(11)))
                 .padding([4, 10])
                 .style(button::secondary)
                 .on_press(Message::ExecMakeShortcut),
         );
+    }
     // The check on its own line: beside the buttons its label overflowed the
     // pane. The buttons wrap, since French "Afficher dans le sélecteur" is long.
     Column::new()
