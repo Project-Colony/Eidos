@@ -125,19 +125,28 @@ impl Bisect {
     }
 
     /// `(mods to enable, tested candidates)` for the next step, in `universe`
-    /// order; `None` once [`Bisect::result`] has one.
+    /// order, then any pinned mod outside `universe`; `None` once
+    /// [`Bisect::result`] has one.
     pub fn next_run(
         &self,
         universe: &[String],
         plugins: &[Plugin],
     ) -> Option<(Vec<String>, Vec<String>)> {
-        let closure = self.usable_closure(universe, plugins)?;
-        let tested = closure
+        let mut on = self.usable_closure(universe, plugins)?;
+        let tested = on
             .iter()
             .filter(|m| self.candidates.contains(m))
             .cloned()
             .collect();
-        Some((closure, tested))
+        // `with_masters` keeps only `universe`, so a pinned mod the profile has off
+        // is not in the closure; it is still on in every step.
+        on.extend(
+            self.pinned
+                .iter()
+                .filter(|p| !universe.contains(p))
+                .cloned(),
+        );
+        Some((on, tested))
     }
 
     pub fn begin_step(&mut self, tested: Vec<String>) {
@@ -358,25 +367,36 @@ mod tests {
 
     #[test]
     fn a_pinned_mods_masters_stay_on_in_every_step() {
-        // Pinned "Patch" needs "Base", a suspect: a step without Base would fail on
-        // a missing master and read as Bad, so Base is on (and tested) in each step.
-        let universe: Vec<String> = ["Base", "A", "B", "Patch"].map(String::from).to_vec();
+        // Pinned "Patch" needs "Base", a suspect. Closing only the half would test
+        // [A, B] and run Patch without Base: the game fails on the missing master,
+        // the step reads Bad and the search ends on A or B. "Off" is pinned but off
+        // in the profile, so it is not in `universe`.
+        let universe: Vec<String> = ["A", "B", "Base", "Patch"].map(String::from).to_vec();
         let plugins = [
-            plugin("Base.esm", "Base", &[]),
             plugin("A.esp", "A", &[]),
             plugin("B.esp", "B", &[]),
+            plugin("Base.esm", "Base", &[]),
             plugin("Patch.esp", "Patch", &["Base.esm"]),
         ];
-        let mut b = Bisect::new("Default", vec!["Patch".into()], universe.clone(), 0);
-        assert_eq!(b.candidates, ["Base", "A", "B"]);
+        let pinned = vec!["Patch".into(), "Off".into()];
+        let mut b = Bisect::new("Default", pinned, universe.clone(), 0);
+        assert_eq!(b.candidates, ["A", "B", "Base"]);
         let (on, tested) = b.next_run(&universe, &plugins).unwrap();
-        assert_eq!(on, ["Base", "A", "Patch"]);
-        assert_eq!(tested, ["Base", "A"]);
+        assert_eq!(on, ["Base", "Patch", "Off"]);
+        assert_eq!(
+            tested,
+            ["Base"],
+            "[A, B] would pull Base in and leave nothing out"
+        );
         b.begin_step(tested);
-        b.answer(Answer::Bad);
+        b.answer(Answer::Good);
         let (on, tested) = b.next_run(&universe, &plugins).unwrap();
-        assert!(on.contains(&"Base".to_string()), "{on:?}");
-        assert_eq!(tested, ["Base"]);
+        assert_eq!(
+            on,
+            ["A", "Base", "Patch", "Off"],
+            "Base is cleared but Patch needs it"
+        );
+        assert_eq!(tested, ["A"]);
     }
 
     #[test]
