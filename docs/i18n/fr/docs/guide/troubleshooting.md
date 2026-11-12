@@ -3,7 +3,7 @@
 # Dépannage et diagnostics
 
 Les interrupteurs d'environnement, la lecture des compteurs d'opérations, les
-cartes Health de l'onglet Diagnostics, comment trouver le mod derrière un
+cartes de diagnostic de l'onglet Diagnostics, comment trouver le mod derrière un
 plantage, quoi joindre à un rapport de bug, et les problèmes connus avec leur
 histoire.
 
@@ -196,8 +196,8 @@ Pour trouver quel changement a cassé le jeu :
 - Partie test, à côté de Lancer, joue avec les mods du profil, sans mods, ou avec les mods
   sélectionnés et les masters dont ils ont besoin, et envoie tout ce que le jeu écrit
   dans `<instance>/test-run/`. Après l'exécution, vous gardez ou jetez chaque groupe
-  de fichiers : sauvegardes, modifications d'INI, état des plugins, production
-  d'Overwrite et journaux ([usage.md](usage.md#parties-test)).
+  de fichiers : sauvegardes, changements d'INI, état des plugins, sortie de
+  l'Overwrite et journaux ([usage.md](usage.md#parties-test)).
 - Trouver le mod à l'origine d'un problème, dans l'onglet Diagnostics, lance des parties test avec
   la moitié des suspects restants à chaque fois et demande si le problème s'est
   produit. 200 suspects demandent environ 8 exécutions, et la recherche survit à la
@@ -207,9 +207,9 @@ Pour trouver quel changement a cassé le jeu :
 Une exécution arrêtée ne pré-remplit jamais la réponse « Oui, il s'est produit » dans cette recherche, parce
 qu'elle est enregistrée avec le code de sortie 143 (voir ci-dessus).
 
-## Cartes Health
+## Cartes de diagnostic
 
-L'onglet Diagnostics montre une carte Health pour chaque problème qu'il trouve, avec
+L'onglet Diagnostics montre une carte de diagnostic pour chaque problème qu'il trouve, avec
 sa cause et, pour certaines, un bouton qui le corrige. Les cartes de l'option de
 lancement sont décrites dans [install.md](install.md), les cartes NVAPI, plein
 écran et ENB dans [graphics.md](graphics.md), et les cartes Proton et préfixe dans la
@@ -425,8 +425,8 @@ dossier vous-même quand vous n'en voulez plus.
   de Proton, si Steam est le Flatpak, l'état du passthrough, le type de session, la
   distribution, le noyau, `vm.max_map_count`, la limite de fichiers ouverts, si
   `/dev/fuse` et `fusermount3` sont là, les noms des variables de lancement et des
-  programmes wrapper du profil, et chaque carte Health. Votre dossier personnel
-  apparaît comme `~` et votre nom de connexion comme `<user>`.
+  programmes wrapper du profil, et chaque carte de diagnostic. Votre dossier
+  personnel apparaît comme `~` et votre nom de connexion comme `<user>`.
   `eidos check <instance>` affiche le même en-tête dans un terminal, et `--json` le
   donne en JSON.
 - Le journal de l'exécution, `<instance>/logs/run-*.log`, commence par la commande
@@ -449,7 +449,7 @@ périmé. La liste complète est dans [graphics.md](graphics.md).
 
 Dans une fenêtre qu'aucune boutique n'a ouverte, Lancer demande à Steam de démarrer le
 jeu en exécutant `steam -applaunch <appid>`. Le Steam Flatpak ne met aucun `steam`
-dans le `PATH` de l'hôte, donc la ligne d'état dit « Could not start Steam » avec
+dans le `PATH` de l'hôte, donc la ligne d'état dit « Impossible de démarrer Steam » avec
 l'erreur. Appuyez plutôt sur Jouer dans Steam.
 
 ### Une sauvegarde venue d'un autre appareil n'apparaît pas
@@ -591,9 +591,10 @@ l'Overwrite une copie vide qui cacherait le fichier du mod.
 
 ### Le bouton Mod Manager Download ne fait rien
 
-Preferences, Nexus, Downloads montre quel programme reçoit les liens `nxm://`. Une
-carte Health apparaît quand ce programme n'est pas Eidos, qu'il est absent, ou
-qu'aucun n'est défini. Le bouton Register écrit `eidos-nxm.desktop` et en fait le
+Préférences, Nexus, Téléchargements montre quel programme reçoit les liens `nxm://`.
+Une carte de diagnostic apparaît quand ce programme n'est pas Eidos, qu'il est
+absent, ou qu'aucun n'est défini. Le bouton Enregistrer Eidos pour les liens nxm écrit
+`eidos-nxm.desktop` et en fait le
 gestionnaire par défaut de `x-scheme-handler/nxm`. Depuis un terminal,
 `eidos nxm --register` fait la même chose.
 

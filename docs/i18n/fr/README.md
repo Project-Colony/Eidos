@@ -67,8 +67,8 @@ d'avant la session remet l'ancien ordre. Une capture qui effacerait votre ordre 
 chargement est refusée, avec la raison.
 
 Partie test démarre le jeu avec les mods du profil, sans mods, ou avec seulement les
-mods sélectionnés et leurs masters. Les sauvegardes, les modifications d'INI,
-l'état des plugins, la production d'Overwrite et les autres fichiers de My Games
+mods sélectionnés et leurs masters. Les sauvegardes, les changements d'INI,
+l'état des plugins, la sortie de l'Overwrite et les autres fichiers de My Games
 de cette exécution, journaux compris, vont dans `<instance>/test-run/`. Quand le
 jeu se termine, Eidos liste ces cinq groupes et vous gardez ou jetez chacun.
 Les autres écritures, comme le registre de Wine, vont là où elles vont

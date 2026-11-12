@@ -636,7 +636,7 @@ tout `eidos tool ... run` et sélectionne le profil avant que l'outil démarre ;
 
 Le Creation Kit est une application Steam distincte et veut son propre AppID ; quelques
 autres outils de modding distribués via Steam sont dans le même cas. Définissez
-**Steam AppID** sur l'entrée et Eidos le lance sous cet identifiant plutôt que sous
+**AppID Steam** sur l'entrée et Eidos le lance sous cet identifiant plutôt que sous
 celui du jeu.
 
 Sous Windows cela veut dire un launcher différent. Ici, ce sont deux variables

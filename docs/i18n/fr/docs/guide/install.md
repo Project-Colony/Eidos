@@ -174,20 +174,21 @@ pour le dossier qu'il a utilisé :
 | Colony | `~/.local/share/Colony/apps/Eidos/eidos-linux %command%` |
 
 Appuyez sur Jouer. Eidos s'ouvre sur l'instance de ce jeu ; installez des mods,
-triez avec LOOT, cliquez sur Run. En quittant, le montage disparaît avec lui et
+triez avec LOOT, cliquez sur Lancer. En quittant, le montage disparaît avec lui et
 votre installation est exactement dans l'état où vous l'aviez laissée.
 
 Le jeu démarre toujours par sa boutique. Dans une fenêtre que vous avez ouverte
-vous-même, Run exécute `steam -applaunch <appid>`, Steam démarre Eidos par l'option
-de lancement, et une seconde fenêtre d'Eidos s'ouvre où vous appuyez sur Run. Tant
-que l'option de lancement ne démarre pas Eidos, Run ne démarre rien et la ligne
-d'état montre la ligne à définir. Avec Start the game at once when a store opens
-Eidos (Preferences, General, Running a game ; désactivé par défaut), Jouer dans
-Steam démarre le jeu sans la fenêtre quand Health ne liste aucun problème. Heroic et
+vous-même, Lancer exécute `steam -applaunch <appid>`, Steam démarre Eidos par
+l'option de lancement, et une seconde fenêtre d'Eidos s'ouvre où vous appuyez sur
+Lancer. Tant que l'option de lancement ne démarre pas Eidos, Lancer ne démarre rien
+et la ligne d'état montre la ligne à définir. Avec Lancer le jeu directement quand
+une boutique ouvre Eidos (Préférences, Général, Pendant le jeu ; désactivé par
+défaut), Jouer dans Steam démarre le jeu sans la fenêtre quand le diagnostic ne
+signale aucun problème. Heroic et
 Legendary fonctionnent de la même façon par leur réglage de wrapper ;
 [usage.md](usage.md#lancer-le-jeu) donne les détails.
 
-L'onglet Diagnostics vérifie la ligne. Une carte Health montre la ligne à définir
+L'onglet Diagnostics vérifie la ligne. Une carte de diagnostic montre la ligne à définir
 quand l'option de lancement est vide, ne nomme aucun binaire d'Eidos, pointe vers un
 fichier qui n'existe pas, n'a pas de `%command%` après Eidos, ou démarre une autre
 copie d'Eidos que celle qui tourne.
@@ -198,7 +199,7 @@ copie d'Eidos que celle qui tourne.
 eidos init skyrimse               # créer une instance (ajoutez un dossier pour la rendre portable)
 eidos install skyrimse mod.7z     # mods Simple / FOMOD / BAIN / root
 eidos sort skyrimse               # trier l'ordre de chargement avec LOOT
-eidos check skyrimse              # les vérifications Health qui n'ont pas besoin de fenêtre
+eidos check skyrimse              # les vérifications du diagnostic qui n'ont pas besoin de fenêtre
 eidos play skyrimse -- %command%  # exécuter n'importe quoi à travers la vue fusionnée
 eidos shell skyrimse              # un shell dans la vue fusionnée, les écritures vont dans Overwrite
 ```
@@ -214,8 +215,8 @@ le `install.sh` du nouveau paquet ; pour le paquet Arch, relancez `makepkg -si` 
 pour une compilation depuis les sources, faites un pull et lancez `just install`. La
 fenêtre demande à GitHub la dernière version au démarrage, au plus une fois par jour,
 et quand une plus récente existe elle affiche un lien vers ses notes de version après
-Help dans la barre de menus. Elle ne télécharge ni ne remplace jamais rien
-elle-même. Preferences, About, Version désactive la vérification, le mode hors ligne
+Aide dans la barre de menus. Elle ne télécharge ni ne remplace jamais rien
+elle-même. Préférences, À propos, Version désactive la vérification, le mode hors ligne
 l'ignore, et une copie installée sous `/usr` (le paquet Arch) ne la demande jamais,
 parce que le gestionnaire de paquets la met à jour.
 
@@ -244,5 +245,6 @@ mesures et la cause sont dans [troubleshooting.md](troubleshooting.md).
 ## Quelque chose ne va déjà pas ?
 
 [troubleshooting.md](troubleshooting.md) couvre les interrupteurs d'environnement,
-la lecture des compteurs d'opérations, les cartes Health, et tous les problèmes qui
+la lecture des compteurs d'opérations, les cartes de diagnostic, et tous les problèmes
+qui
 ont mordu quelqu'un jusqu'ici.

@@ -15,7 +15,7 @@ jeu qui a un préfixe Wine (le préfixe Proton de Steam, ou celui qu'Heroic a cr
 Le plafond de Reflex n'est pas vérifié. Quand l'instance exécute le jeu depuis une
 copie comme `Stock Game`, les vérifications lisent les fichiers de la copie, pas
 ceux de l'installation de la boutique. `eidos check <instance>` affiche les mêmes
-cartes dans un terminal, sans les boutons Fix.
+cartes dans un terminal, sans les boutons Corriger.
 
 - La carte NVAPI apparaît pour une copie Steam de Skyrim SE ou d'Enderal SE quand un
   pilote NVIDIA est chargé (`/proc/driver/nvidia/version` existe), que le `Data`
@@ -26,12 +26,12 @@ cartes dans un terminal, sans les boutons Fix.
 - La carte du plein écran exclusif n'apparaît qu'avec le paquet Upscaling installé,
   quand le `SkyrimPrefs.ini` du profil a `bFull Screen=1` et que
   `SKSE/Plugins/SSEDisplayTweaks.ini` ne définit pas à la fois `Fullscreen=false` et
-  `Borderless=true`. Son bouton Fix écrit `bFull Screen=0` et `bBorderless=1` dans le
+  `Borderless=true`. Son bouton Corriger écrit `bFull Screen=0` et `bBorderless=1` dans le
   `SkyrimPrefs.ini` du profil. La vérification lit aussi `SkyrimPrefs.ini` pour
   Enderal SE, alors qu'un profil Enderal SE contient `EnderalPrefs.ini` : sur
-  Enderal SE, utilisez plutôt la carte Display plus bas.
+  Enderal SE, utilisez plutôt la carte de la fenêtre plus bas.
 - La carte ENB apparaît pour tout jeu dont l'`enblocal.ini` gagnant dans la vue root
-  n'a pas `LinuxVersion=true` dans `[GLOBAL]`. Elle a aussi un bouton Fix.
+  n'a pas `LinuxVersion=true` dans `[GLOBAL]`. Elle a aussi un bouton Corriger.
 
 ## L'option de lancement dont DLSS a besoin
 
@@ -55,7 +55,7 @@ une machine non NVIDIA. La génération d'images elle-même est du FSR 3.1 et n'
 besoin de NVAPI ; seul l'upscaler DLSS en a besoin.
 
 Pour la définir pour un seul profil, mettez `env=PROTON_ENABLE_NVAPI=1` dans le
-`launch-env.ini` de ce profil (View -> INI editor, dernier onglet).
+`launch-env.ini` de ce profil (Affichage -> Éditeur d'INI, dernier onglet).
 
 ## La génération d'images exige le mode fenêtré sans bordure
 
@@ -74,16 +74,17 @@ Borderless=true
 La fenêtre a exactement le même aspect (sans bordure, à la résolution native).
 Seul le mode que le moteur annonce change, et c'est ce mode que CS vérifie.
 
-La carte Display de Diagnostics règle la taille et le mode en une étape, pour
+La carte de la fenêtre, dans Diagnostics, règle la taille et le mode en une étape, pour
 Skyrim SE, Enderal SE et Fallout 4. Elle montre la taille de l'écran connecté le
-plus grand. Avec Borderless window sélectionné, Apply écrit `iSize W`, `iSize H`,
+plus grand. Avec « Fenêtre sans bordure » sélectionné, Appliquer écrit
+`iSize W`, `iSize H`,
 `bFull Screen=0` et `bBorderless=1` dans le `SkyrimPrefs.ini` du profil
 (`EnderalPrefs.ini` pour Enderal SE, `Fallout4Prefs.ini` pour Fallout 4). Quand SSE
-Display Tweaks règle la fenêtre, Apply écrit aussi `Resolution`, `Fullscreen=false`
+Display Tweaks règle la fenêtre, Appliquer écrit aussi `Resolution`, `Fullscreen=false`
 et `Borderless=true` dans une copie de son INI dans l'Overwrite
 (`SKSE/Plugins/SSEDisplayTweaks.ini`), et le fichier du mod reste tel quel. Avec
-**Start the game at once when a store opens Eidos** activé (Preferences, General,
-Running a game), la fenêtre s'ouvre quand même si le profil n'a pas encore de
+**Lancer le jeu directement quand une boutique ouvre Eidos** activé (Préférences,
+Général, Pendant le jeu), la fenêtre s'ouvre quand même si le profil n'a pas encore de
 taille de fenêtre et que SSE Display Tweaks ne règle pas la fenêtre, pour que la
 taille puisse être réglée avant le premier démarrage.
 
@@ -152,7 +153,7 @@ le réécrire et Eidos s'attend à ce que les mods activés ne changent pas tant
 la vue est montée. Activez-le ensuite avec une priorité haute : il est fait pour
 gagner.
 
-Ne donnez pas à l'entrée de PGPatcher un mod dans **Capture output into** pour
+Ne donnez pas à l'entrée de PGPatcher un mod dans **Capturer la sortie dans** pour
 ensuite utiliser ce mod comme Output location. Eidos déplace les dossiers `cfg/` et `log/` propres à PGPatcher dans ce mod
 après chaque exécution, et PGPatcher s'arrête alors avec le message
 « Output directory has non-PGPatcher related files ».
@@ -161,8 +162,9 @@ après chaque exécution, et PGPatcher s'arrête alors avec le message
 
 Jackify écrit `LinuxVersion=true` dans la section `[GLOBAL]` de `enblocal.ini` pour
 chaque ENB qu'il installe sous Proton. La documentation d'ENB ne décrit pas cette
-clé. Une carte Health de l'onglet Diagnostics signale un `enblocal.ini` sans cette
-ligne, et son bouton Fix écrit dans `overwrite/Root/` une copie de l'`enblocal.ini`
+clé. Une carte de diagnostic de l'onglet Diagnostics signale un `enblocal.ini` sans cette
+ligne, et son bouton Corriger écrit dans
+`overwrite/Root/` une copie de l'`enblocal.ini`
 gagnant avec la ligne définie, de sorte que le mod ENB garde son fichier.
 
 Une autre carte signale un ENB présent dans le dossier du jeu (un `enblocal.ini`,
