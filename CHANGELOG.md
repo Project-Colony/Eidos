@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.24.1](https://github.com/Project-Colony/Eidos/compare/v1.24.0...v1.24.1) (2026-11-12)
+
+
+### Documentation
+
+* bring the README, guide, internals and translations up to 1.24 ([#142](https://github.com/Project-Colony/Eidos/issues/142)) ([1156e7c](https://github.com/Project-Colony/Eidos/commit/1156e7c016835067f540445aa09d6ceeb76f3ee3))
+* finish the 1.24 review follow-ups and fix a flaky plugin test ([#144](https://github.com/Project-Colony/Eidos/issues/144)) ([26094ca](https://github.com/Project-Colony/Eidos/commit/26094ca96149b5f136b0c06839d2df06205afd27))
+
 ## [1.24.0](https://github.com/Project-Colony/Eidos/compare/v1.23.0...v1.24.0) (2026-11-10)
 
 
