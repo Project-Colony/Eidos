@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=15b7f6e81560a7045c8b62dd59dde35c8e45d32c -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6459b22b0401855f4cacc644cb35eade2e2a023d -->
 
 # Utiliser Eidos
 
@@ -89,7 +89,7 @@ eidos sort skyrimse [--dry-run]            # trier l'ordre de chargement avec LO
 eidos play skyrimse                        # montrer ce qui serait monté
 eidos play skyrimse -- <command>           # exécuter <command> avec les mods montés sur le jeu
 eidos shell skyrimse                       # un shell dans la vue fusionnée ; les écritures vont dans Overwrite
-eidos check skyrimse [--json]              # contrôles Health sans la fenêtre
+eidos check skyrimse [--json]              # contrôles du diagnostic sans la fenêtre
 eidos sessions skyrimse                    # les exécutions de jeu et d'outil enregistrées, la plus récente d'abord
 eidos sessions skyrimse diff [<id>]        # ce qui a changé depuis la dernière exécution terminée avec le code 0
 eidos stock-game skyrimse                  # quels fichiers du jeu l'instance exécute ; figer une copie ou basculer
@@ -149,7 +149,7 @@ shell, comme d'habitude ; tapez `exit` pour terminer l'exécution.
 
 ### Contrôles de santé depuis le terminal
 
-`eidos check <instance>` lance les contrôles Health qui n'ont pas besoin de fenêtre,
+`eidos check <instance>` lance les contrôles du diagnostic qui n'ont pas besoin de fenêtre,
 si bien qu'ils peuvent tourner par SSH ou en Game Mode et aller dans un rapport de
 bug :
 
@@ -269,12 +269,12 @@ ou avec seulement les mods sélectionnés qui sont activés, plus les mods dont 
 plugins ont besoin comme masters.
 
 Quand le jeu se termine, Eidos liste ces fichiers en cinq groupes (sauvegardes,
-modifications d'INI, état des plugins, production d'Overwrite, journaux) et vous demande
+changements d'INI, état des plugins, sortie de l'Overwrite, journaux) et vous demande
 de garder ou de jeter chacun. Appliquer attend que chaque groupe qui contient des fichiers
 ait une réponse. L'état des plugins n'est pas proposé quand l'exécution a utilisé un
 autre ensemble de mods que celui du profil. Garder les sauvegardes ne supprime jamais
 une sauvegarde du profil, même une que le jeu a supprimée pendant l'exécution. Garder
-la production d'Overwrite retire aussi de l'Overwrite les fichiers que le jeu a
+la sortie de l'Overwrite retire aussi de l'Overwrite les fichiers que le jeu a
 supprimés, et la liste les compte d'abord. Jeter quoi que ce soit demande un second
 appui. Décider plus tard ferme la liste et laisse les fichiers dans `test-run/`, et la liste
 se rouvre la prochaine fois que vous ouvrez l'instance ou appuyez sur F5. Si Eidos ou
@@ -300,7 +300,7 @@ liste au moment du départ, et le mod qui fournit le script extender. Après cha
 exécution, vous répondez si le problème s'est produit. « Je ne sais pas » répartit les suspects
 autrement, et Relancer répète l'étape. Répondre, ou appuyer sur Relancer, jette
 les fichiers que l'étape a écrits, après un second appui. Pour en garder, appuyez
-d'abord sur Voir les fichiers : cela ouvre la même liste qu'après une partie test. Quand le jeu
+sur Voir les fichiers avant de répondre : cela ouvre la même liste qu'après une partie test. Quand le jeu
 a planté et qu'un enregistreur de plantages a écrit un journal, ou que le jeu s'est
 terminé avec un code d'erreur, Eidos marque « Oui, il s'est produit » comme la réponse probable. 200 suspects
 demandent environ 8 exécutions.
@@ -371,7 +371,7 @@ propose de supprimer ; il n'est jamais utilisé.
 
 Une copie masque chaque fichier que la boutique ajoute, change ou retire dans le dossier
 du jeu après la copie : nouveaux fichiers Creation Club, nouvel exécutable, nouvelles
-DLL. Le jeu, la liste des plugins, LOOT et les contrôles Health lisent tous la copie.
+DLL. Le jeu, la liste des plugins, LOOT et les contrôles du diagnostic lisent tous la copie.
 Elle ne masque pas ce qui se passe hors du dossier du jeu : une mise à jour peut encore
 installer des runtimes dans le préfixe Proton au lancement suivant, et Steam peut faire
 passer le jeu à un autre Proton.
@@ -1155,7 +1155,7 @@ autres cartes signalent un préfixe jamais préparé ou dont le registre est pé
 autre qu'Eidos qui reçoit les liens Mod Manager Download (Enregistrer Eidos pour les liens nxm le corrige), une sortie
 d'outil plus ancienne que ses entrées (avec un bouton qui relance l'outil), et une copie
 nettoyée ou légère d'un plugin dont l'original a changé depuis. Chaque carte est expliquée dans
-[troubleshooting.md](troubleshooting.md#cartes-health). **Copier le rapport** met sur le presse-papiers
+[troubleshooting.md](troubleshooting.md#cartes-de-diagnostic). **Copier le rapport** met sur le presse-papiers
 un rapport du système et de chaque constat, votre dossier personnel et votre nom de connexion
 masqués, pour un rapport de bug.
 
@@ -1189,8 +1189,8 @@ l'instance du jeu, celle que vous avez utilisée en dernier, si bien qu'une inst
 retrouvée comme l'est la globale ; cliquez sur Lancer pour le lancer à travers la vue fusionnée.
 
 Avec **Lancer le jeu directement quand une boutique ouvre Eidos** activé (Préférences, Général, Pendant le
-jeu ; désactivé par défaut), Eidos saute ce clic : il vérifie Health et démarre le jeu sans
-montrer sa fenêtre. La fenêtre s'ouvre comme d'habitude quand Health liste un problème, quand la
+jeu ; désactivé par défaut), Eidos saute ce clic : il vérifie le diagnostic et démarre le jeu sans
+montrer sa fenêtre. La fenêtre s'ouvre comme d'habitude quand le diagnostic signale un problème, quand la
 liste de mods demande de l'attention, quand un outil réglé pour s'exécuter avant de jouer a une
 sortie périmée, ou, pour Skyrim SE, Enderal SE et Fallout 4, quand le profil n'a pas encore de
 taille de fenêtre (la fenêtre s'ouvre alors sur Diagnostics). Pour avoir la fenêtre pour un

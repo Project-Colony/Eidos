@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=af0c14c5192ccae592dd1c1661fd02d5242ecd5a -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=c365b34dbc69a832b1c9305498c94eb223b567a1 -->
 
 # 排查与诊断
 
@@ -153,7 +153,7 @@ Eidos 从不自己通过 Proton 启动游戏。对一个会启动游戏的条目
 - `eidos sessions <instance> diff` 列出自上一次以退出码 0 结束的游戏运行以来改变的内容:
   模组、版本、插件顺序、INI 和游戏可执行文件
   ([usage.md](usage.md#自上次正常运行以来改变了什么))。
-- Run 旁边的 Test run,用配置档的模组、不带模组,或只带选中的模组及其所需的主文件
+- Run 旁边的 Test run,用配置档的模组、不带模组,或只带选中且已启用的模组及其所需的主文件
   来玩,并把游戏写下的一切送到 `<instance>/test-run/`。运行之后,你对每一组文件决定
   保留还是丢弃:存档、INI 改动、插件状态、Overwrite 输出和日志
   ([usage.md](usage.md#测试运行))。

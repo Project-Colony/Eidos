@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=af0c14c5192ccae592dd1c1661fd02d5242ecd5a -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=c365b34dbc69a832b1c9305498c94eb223b567a1 -->
 
 # 疑難排解與診斷
 
@@ -155,7 +155,7 @@ Eidos 從不自己透過 Proton 啟動遊戲。對於會啟動遊戲的項目(sc
 - `eidos sessions <instance> diff` 列出自上一次以結束碼 0 結束的遊戲執行以來變了什麼:
   模組、版本、外掛順序、INI 和遊戲執行檔
   ([usage.md](usage.md#自上次正常執行以來的變化))。
-- Run 旁邊的 Test run 可以用設定檔的模組、不帶模組,或只帶選中的模組及它們所需的 master
+- Run 旁邊的 Test run 可以用設定檔的模組、不帶模組,或只帶選中且已啟用的模組及它們所需的 master
   來玩,並把遊戲寫入的一切送到 `<instance>/test-run/`。執行之後,你對每一組檔案決定保留
   還是丟棄:存檔、INI 變更、外掛狀態、Overwrite 輸出和日誌
   ([usage.md](usage.md#測試執行))。

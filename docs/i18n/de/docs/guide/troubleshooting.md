@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=af0c14c5192ccae592dd1c1661fd02d5242ecd5a -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=c365b34dbc69a832b1c9305498c94eb223b567a1 -->
 
 # Fehlersuche und Diagnose
 
@@ -190,7 +190,7 @@ Um herauszufinden, welche Änderung das Spiel kaputtgemacht hat:
   Plugin-Reihenfolge, INIs und die ausführbare Datei des Spiels
   ([usage.md](usage.md#was-sich-seit-dem-letzten-guten-lauf-geändert-hat)).
 - Test run, neben Run, spielt mit den Mods des Profils, ohne Mods oder mit den
-  ausgewählten Mods und den Mastern, die sie brauchen, und leitet alles, was das
+  ausgewählten Mods, die eingeschaltet sind, und den Mastern, die sie brauchen, und leitet alles, was das
   Spiel schreibt, nach `<instance>/test-run/`. Nach dem Lauf behalten oder
   verwerfen Sie jede Gruppe von Dateien: Spielstände, INI-Änderungen,
   Plugin-Zustand, Overwrite-Ausgabe und Logs ([usage.md](usage.md#testläufe)).

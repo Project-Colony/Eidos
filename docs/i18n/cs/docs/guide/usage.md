@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=15b7f6e81560a7045c8b62dd59dde35c8e45d32c -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6459b22b0401855f4cacc644cb35eade2e2a023d -->
 
 # Používání Eidosu
 
@@ -268,7 +268,7 @@ polovinou zbývajících podezřelých, jejich mastery a módy, které ponechát
 zapnuté: zapnuté módy vybrané v seznamu při zahájení a mód, který dodává script
 extender. Po každém běhu odpovíte, zda se problém objevil. Not sure rozdělí podezřelé
 jinak a Run it again krok zopakuje. Odpověď nebo Run it again zahodí soubory, které krok
-zapsal, po druhém stisknutí. Chcete-li některé ponechat, stiskněte nejdřív See the files:
+zapsal, po druhém stisknutí. Chcete-li některé ponechat, stiskněte před odpovědí See the files:
 otevře stejný seznam jako po testovacím běhu. Když hra spadla a záznamník pádů zapsal
 log, nebo hra skončila s chybovým kódem, Eidos označí Yes jako pravděpodobnou
 odpověď. 200 podezřelých zabere asi 8 běhů.

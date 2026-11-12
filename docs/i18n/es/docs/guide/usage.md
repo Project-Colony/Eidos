@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=15b7f6e81560a7045c8b62dd59dde35c8e45d32c -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6459b22b0401855f4cacc644cb35eade2e2a023d -->
 
 # Usar Eidos
 
@@ -247,7 +247,7 @@ Cuando la ventana no la inició la tienda del juego, Test run pasa el juego a es
 
 ### Encontrar el mod detrás de un problema
 
-Find the mod behind a problem, en la pestaña Diagnostics, busca el mod que causa un problema que puedes reproducir, como un cierre inesperado en un lugar concreto. Cada paso es una ejecución de prueba con la mitad de los sospechosos que quedan, los masters que necesitan y los mods que mantienes siempre activos: los mods activados seleccionados en la lista al empezar, y el mod que aporta el script extender. Tras cada ejecución respondes si el problema ocurrió. Not sure reparte los sospechosos de otra forma, y Run it again repite el paso. Responder, o pulsar Run it again, descarta los archivos que escribió el paso, tras una segunda pulsación. Para conservar algunos, pulsa antes See the files: abre la misma lista que tras una ejecución de prueba. Si el juego se cerró de golpe y un registrador de cierres escribió un registro, o si el juego terminó con un código de error, Eidos marca Yes como la respuesta probable. 200 sospechosos llevan unas 8 ejecuciones.
+Find the mod behind a problem, en la pestaña Diagnostics, busca el mod que causa un problema que puedes reproducir, como un cierre inesperado en un lugar concreto. Cada paso es una ejecución de prueba con la mitad de los sospechosos que quedan, los masters que necesitan y los mods que mantienes siempre activos: los mods activados seleccionados en la lista al empezar, y el mod que aporta el script extender. Tras cada ejecución respondes si el problema ocurrió. Not sure reparte los sospechosos de otra forma, y Run it again repite el paso. Responder, o pulsar Run it again, descarta los archivos que escribió el paso, tras una segunda pulsación. Para conservar algunos, pulsa See the files antes de responder: abre la misma lista que tras una ejecución de prueba. Si el juego se cerró de golpe y un registrador de cierres escribió un registro, o si el juego terminó con un código de error, Eidos marca Yes como la respuesta probable. 200 sospechosos llevan unas 8 ejecuciones.
 
 La búsqueda se guarda en `<instance>/bisect.json`, así que puedes cerrar Eidos entre pasos, y pertenece al perfil en el que empezó. Stop the search la descarta tras una segunda pulsación. El resultado nombra el mod, o el conjunto de mods que necesitan los masters unos de otros, y se guarda en `<instance>/logs/bisect-<time>.txt`. Los mods generados (una salida de Nemesis o DynDOLOD, un Bashed Patch) se construyen para la lista completa y pueden fallar con la mitad: mantenlos siempre activos o déjalos desactivados durante toda la búsqueda.
 

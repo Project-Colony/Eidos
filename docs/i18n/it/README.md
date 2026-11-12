@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=37e97bafbd2cf43f2101a28b23c1464420a5f9ec -->
+<!-- eidos-i18n: source=README.md sha=31c66f68ad4e47e896eeb2256fd8f89c68cfdbef -->
 
 <div align="center">
 
@@ -61,7 +61,7 @@ pre-session order rimette il vecchio ordine. Una cattura che cancellerebbe il tu
 ordine di caricamento viene rifiutata, con il motivo.
 
 Test run avvia il gioco con le mod del profilo, senza mod, oppure solo con le mod
-selezionate e i loro master. I salvataggi, le modifiche agli INI, lo stato dei
+selezionate che sono attive, più i loro master. I salvataggi, le modifiche agli INI, lo stato dei
 plugin, l'output dell'Overwrite e gli altri file di My Games di quell'esecuzione, log
 compresi, vanno in `<instance>/test-run/`. Solo questi vanno lì: altre scritture, come
 il registro di Wine, vanno dove vanno sempre. Quando il gioco esce, Eidos elenca quei
@@ -69,10 +69,10 @@ cinque gruppi e tieni o butti ciascuno. Find the mod behind a problem, in Diagno
 esegue prove con metà delle mod sospette alla volta più i master di cui hanno bisogno.
 Dopo ogni esecuzione rispondi se il problema si è presentato, ed Eidos restringe i
 sospetti finché non nomina la mod, o le mod che hanno bisogno dei master l'una
-dell'altra; 200 sospetti richiedono circa 8 esecuzioni. Le mod selezionate nell'elenco
+dell'altra; 200 sospetti richiedono circa 8 esecuzioni. Le mod attive selezionate nell'elenco
 prima di cominciare restano attive a ogni passo. Dettagli in
-[usage.md](docs/guide/usage.md#esecuzioni-di-prova) e
-[usage.md](docs/guide/usage.md#trovare-la-mod-dietro-un-problema).
+[Esecuzioni di prova](docs/guide/usage.md#esecuzioni-di-prova) e
+[Trovare la mod dietro un problema](docs/guide/usage.md#trovare-la-mod-dietro-un-problema).
 
 ### Come si confronta
 
@@ -493,7 +493,7 @@ una traduzione è in disaccordo con esso, ha ragione il file inglese.
 
 Tutto il resto è in inglese. `docs/internals/` e `docs/project/` vengono letti da persone
 che stanno leggendo anche il Rust, `CHANGELOG.md` è generato e nemmeno `SECURITY.md` è
-tradotto. Tradurre i primi due aggiungerebbe più di 19.000 parole da tenere
+tradotto. Tradurre i primi due aggiungerebbe più di 28.000 parole da tenere
 sincronizzate per lettori che non ne hanno bisogno.
 
 Ogni traduzione porta l'hash del file inglese da cui è stata fatta, e la CI fallisce

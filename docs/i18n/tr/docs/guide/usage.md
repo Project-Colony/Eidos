@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=15b7f6e81560a7045c8b62dd59dde35c8e45d32c -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6459b22b0401855f4cacc644cb35eade2e2a023d -->
 
 # Eidos kullanımı
 
@@ -234,7 +234,7 @@ Pencere oyunun mağazası tarafından başlatılmadıysa Test run, Run'ın yapt�
 
 ### Bir sorunun arkasındaki modu bulmak
 
-Diagnostics'teki Find the mod behind a problem düğmesi, yeniden üretebildiğiniz bir sorunun, örneğin belirli bir yerdeki bir çökmenin nedeni olan modu arar. Her adım, kalan şüphelilerin yarısı, bunların gerektirdiği master'lar ve her zaman açık tuttuğunuz modlarla yapılan bir test çalıştırmasıdır: başlarken listede seçili olan açık modlar ve script extender'ı sağlayan mod. Her çalıştırmadan sonra sorunun olup olmadığını yanıtlarsınız. Not sure şüphelileri başka türlü böler, Run it again adımı yineler. Yanıtlamak ya da Run it again'e basmak, ikinci bir basıştan sonra adımın yazdığı dosyaları atar. Bazılarını tutmak için önce See the files'a basın: bir test çalıştırmasından sonraki listenin aynısını açar. Oyun çöktüyse ve bir crash logger günlük yazdıysa ya da oyun bir hata koduyla çıktıysa Eidos, Yes'i olası yanıt olarak işaretler. 200 şüpheli yaklaşık 8 çalıştırma sürer.
+Diagnostics'teki Find the mod behind a problem düğmesi, yeniden üretebildiğiniz bir sorunun, örneğin belirli bir yerdeki bir çökmenin nedeni olan modu arar. Her adım, kalan şüphelilerin yarısı, bunların gerektirdiği master'lar ve her zaman açık tuttuğunuz modlarla yapılan bir test çalıştırmasıdır: başlarken listede seçili olan açık modlar ve script extender'ı sağlayan mod. Her çalıştırmadan sonra sorunun olup olmadığını yanıtlarsınız. Not sure şüphelileri başka türlü böler, Run it again adımı yineler. Yanıtlamak ya da Run it again'e basmak, ikinci bir basıştan sonra adımın yazdığı dosyaları atar. Bazılarını tutmak için yanıtlamadan önce See the files'a basın: bir test çalıştırmasından sonraki listenin aynısını açar. Oyun çöktüyse ve bir crash logger günlük yazdıysa ya da oyun bir hata koduyla çıktıysa Eidos, Yes'i olası yanıt olarak işaretler. 200 şüpheli yaklaşık 8 çalıştırma sürer.
 
 Arama `<instance>/bisect.json` içinde saklanır, bu yüzden adımlar arasında Eidos'u kapatabilirsiniz ve arama başladığı profile aittir. Stop the search ikinci bir basıştan sonra aramayı bırakır. Sonuç, modu ya da birbirinin master'larına ihtiyaç duyan mod kümesini adlandırır ve `<instance>/logs/bisect-<time>.txt` içinde saklanır. Üretilmiş modlar (bir Nemesis ya da DynDOLOD çıktısı, bir Bashed Patch) tam liste için oluşturulur ve listenin yarısıyla bozulabilir: onları her zaman açık tutun ya da tüm arama boyunca kapalı bırakın.
 

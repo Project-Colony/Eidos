@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=37e97bafbd2cf43f2101a28b23c1464420a5f9ec -->
+<!-- eidos-i18n: source=README.md sha=31c66f68ad4e47e896eeb2256fd8f89c68cfdbef -->
 
 <div align="center">
 
@@ -57,7 +57,7 @@ Před každým během Eidos uchová snímek seznamu pluginů. Když pád seznam 
 Diagnostics ho se snímkem porovná a Restore the pre-session order vrátí staré pořadí.
 Zachycení, které by smazalo vaše pořadí načítání, se odmítne, s uvedením důvodu.
 
-Test run spustí hru s módy profilu, bez módů, nebo jen s vybranými módy a jejich
+Test run spustí hru s módy profilu, bez módů, nebo jen s vybranými módy, které jsou zapnuté, a jejich
 mastery. Uložené pozice, změny INI, stav pluginů, výstup do Overwrite a další soubory
 My Games z toho běhu, včetně logů, jdou do `<instance>/test-run/`. Když hra skončí,
 Eidos vypíše těchto pět skupin a každou ponecháte nebo zahodíte. Ostatní zápisy,
@@ -65,9 +65,9 @@ například registr Wine, jdou tam, kam vždy. Find the mod behind a problem v D
 spouští testovací běhy vždy s polovinou podezřelých módů plus mastery, které potřebují.
 Po každém běhu odpovíte, zda se problém objevil, a Eidos zužuje podezřelé, dokud
 nepojmenuje mód, nebo módy, které potřebují mastery jedna druhé; 200 podezřelých
-zabere asi 8 běhů. Módy vybrané v seznamu před začátkem zůstávají zapnuté v každém
-kroku. Podrobnosti v [usage.md](docs/guide/usage.md#testovací-běhy) a
-[usage.md](docs/guide/usage.md#hledání-módu-za-problémem).
+zabere asi 8 běhů. Zapnuté módy vybrané v seznamu před začátkem zůstávají zapnuté v každém
+kroku. Podrobnosti v [Testovací běhy](docs/guide/usage.md#testovací-běhy) a
+[Hledání módu za problémem](docs/guide/usage.md#hledání-módu-za-problémem).
 
 ### Jak si stojí ve srovnání
 
@@ -461,7 +461,7 @@ nesouhlasí, pravdu má anglický soubor.
 
 Všechno ostatní je anglicky. `docs/internals/` a `docs/project/` čtou lidé, kteří zároveň
 čtou Rust, `CHANGELOG.md` se generuje a `SECURITY.md` se také nepřekládá. Překlad prvních
-dvou by přidal víc než 19 000 slov, které je třeba udržovat, pro čtenáře, kteří je
+dvou by přidal víc než 28 000 slov, které je třeba udržovat, pro čtenáře, kteří je
 nepotřebují.
 
 Každý překlad nese hash anglického souboru, ze kterého vznikl, a CI selže, dokud tento hash

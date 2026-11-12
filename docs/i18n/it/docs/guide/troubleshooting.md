@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=af0c14c5192ccae592dd1c1661fd02d5242ecd5a -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=c365b34dbc69a832b1c9305498c94eb223b567a1 -->
 
 # Risoluzione dei problemi e diagnostica
 
@@ -189,7 +189,7 @@ Per trovare quale modifica ha rotto il gioco:
   l'eseguibile del gioco
   ([usage.md](usage.md#cosa-è-cambiato-dallultima-esecuzione-riuscita)).
 - Test run, accanto a Run, gioca con le mod del profilo, senza mod, oppure con le
-  mod selezionate e i master di cui hanno bisogno, e manda tutto ciò che il gioco
+  mod selezionate che sono attive, più i master di cui hanno bisogno, e manda tutto ciò che il gioco
   scrive in `<instance>/test-run/`. Dopo l'esecuzione tieni o butti ogni gruppo di
   file: salvataggi, modifiche agli INI, stato dei plugin, output dell'Overwrite e
   log ([usage.md](usage.md#esecuzioni-di-prova)).

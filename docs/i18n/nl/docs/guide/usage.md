@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=15b7f6e81560a7045c8b62dd59dde35c8e45d32c -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6459b22b0401855f4cacc644cb35eade2e2a023d -->
 
 # Eidos gebruiken
 
@@ -222,7 +222,7 @@ Is het venster niet door de winkel van het spel gestart, dan geeft Test run het 
 
 ### De mod achter een probleem vinden
 
-De knop Find the mod behind a problem in Diagnostics zoekt de mod die een probleem veroorzaakt dat je kunt reproduceren, zoals een crash op een bepaalde plek. Elke stap is een testrun met de helft van de overgebleven verdachten, de masters die ze nodig hebben en de mods die je altijd aan houdt: de ingeschakelde mods die bij de start in de lijst geselecteerd zijn, en de mod die de script extender levert. Na elke run antwoord je of het probleem optrad. Not sure verdeelt de verdachten anders en Run it again herhaalt de stap. Een antwoord, of Run it again, gooit de bestanden die de stap schreef weg na een tweede klik. Wil je er een paar houden, druk dan eerst op See the files: dat opent dezelfde lijst als na een testrun. Crashte het spel en schreef een crash logger een log, of eindigde het spel met een foutcode, dan markeert Eidos Yes als waarschijnlijk antwoord. 200 verdachten kosten ongeveer 8 runs.
+De knop Find the mod behind a problem in Diagnostics zoekt de mod die een probleem veroorzaakt dat je kunt reproduceren, zoals een crash op een bepaalde plek. Elke stap is een testrun met de helft van de overgebleven verdachten, de masters die ze nodig hebben en de mods die je altijd aan houdt: de ingeschakelde mods die bij de start in de lijst geselecteerd zijn, en de mod die de script extender levert. Na elke run antwoord je of het probleem optrad. Not sure verdeelt de verdachten anders en Run it again herhaalt de stap. Een antwoord, of Run it again, gooit de bestanden die de stap schreef weg na een tweede klik. Wil je er een paar houden, druk dan op See the files voordat je antwoordt: dat opent dezelfde lijst als na een testrun. Crashte het spel en schreef een crash logger een log, of eindigde het spel met een foutcode, dan markeert Eidos Yes als waarschijnlijk antwoord. 200 verdachten kosten ongeveer 8 runs.
 
 De zoektocht wordt bewaard in `<instance>/bisect.json`, dus je kunt Eidos tussen de stappen sluiten, en ze hoort bij het profiel waarin ze begon. Stop the search laat hem vallen na een tweede klik. Het resultaat noemt de mod, of de groep mods die elkaars masters nodig hebben, en wordt bewaard in `<instance>/logs/bisect-<time>.txt`. Gegenereerde mods (uitvoer van Nemesis of DynDOLOD, een Bashed Patch) zijn gebouwd voor de volledige lijst en kunnen met de helft ervan mislukken: houd ze altijd aan, of laat ze de hele zoektocht uit.
 

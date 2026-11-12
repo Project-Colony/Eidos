@@ -8,13 +8,17 @@ a translation that correctly rewrote `usage.md` to `usage.de.md` and correctly
 left `#why-passthrough-is-off-by-default` alone, producing a link that lands on
 the right page at the wrong place, or nowhere at all. Twenty-nine of those
 shipped in one batch before this existed.
+
+Same-page links (`#anchor`) are checked against the page's own headings, and
+a target that is not a `.md` file is checked when it carries an anchor: that
+is how 25 Japanese links to `None#...` once passed.
 """
 import glob
 import os
 import re
 import sys
 
-ANCHOR = re.compile(r"\]\(([^)\s#]*\.md)(?:#([^)\s]+))?\)")
+ANCHOR = re.compile(r"\]\(([^)\s#]*)(?:#([^)\s]+))?\)")
 
 
 def slug(heading: str) -> str:
@@ -40,14 +44,15 @@ def main() -> int:
             text = fh.read()
         for m in ANCHOR.finditer(text):
             target, anchor = m.group(1), m.group(2)
-            if target.startswith("http"):
+            # Other targets without an anchor (images, folders, GitHub paths) stay unchecked.
+            if target.startswith(("http", "mailto:")) or not (target.endswith(".md") or anchor):
                 continue
-            p = os.path.normpath(os.path.join(d, target))
+            p = os.path.normpath(os.path.join(d, target)) if target else f
             if not os.path.exists(p):
-                print(f"MISSING FILE   {f}\n               -> {target}")
+                print(f"MISSING FILE   {f}\n               -> {target}{'#' + anchor if anchor else ''}")
                 bad += 1
                 continue
-            if anchor and anchor not in headings(p):
+            if anchor and p.endswith(".md") and anchor not in headings(p):
                 print(f"MISSING ANCHOR {f}\n               -> {target}#{anchor}")
                 bad += 1
     print(f"\n{len(files)} markdown file(s) checked", end="")

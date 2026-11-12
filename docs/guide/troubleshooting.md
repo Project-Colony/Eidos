@@ -180,10 +180,10 @@ To find which change broke the game:
   that exited with code 0: mods, versions, plugin order, INIs and the game
   executable ([usage.md](usage.md#what-changed-since-the-last-good-run)).
 - Test run, next to Run, plays with the profile's mods, without mods, or with
-  the selected mods and the masters they need, and sends everything the game
-  writes to `<instance>/test-run/`. After the run you keep or throw away each
-  group of files: saves, INI changes, plugin state, Overwrite output and logs
-  ([usage.md](usage.md#test-runs)).
+  the selected mods that are switched on, plus the masters they need, and sends
+  everything the game writes to `<instance>/test-run/`. After the run you keep
+  or throw away each group of files: saves, INI changes, plugin state, Overwrite
+  output and logs ([usage.md](usage.md#test-runs)).
 - Find the mod behind a problem, on the Diagnostics tab, runs test runs with
   half of the remaining suspects each time and asks whether the problem
   happened. 200 suspects take about 8 runs, and the search survives closing

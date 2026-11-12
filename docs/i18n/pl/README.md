@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=37e97bafbd2cf43f2101a28b23c1464420a5f9ec -->
+<!-- eidos-i18n: source=README.md sha=31c66f68ad4e47e896eeb2256fd8f89c68cfdbef -->
 
 <div align="center">
 
@@ -62,7 +62,7 @@ order przywraca starą kolejność. Przechwycenie, które wymazałoby twoją kol
 wczytywania, jest odrzucane, z podaniem powodu.
 
 Test run uruchamia grę z modami profilu, bez modów albo tylko z zaznaczonymi
-modami i ich masterami. Zapisy, zmiany INI, stan wtyczek, wynik w Overwrite i
+modami, które są włączone, plus ich masterami. Zapisy, zmiany INI, stan wtyczek, wynik w Overwrite i
 inne pliki My Games z tego uruchomienia, razem z logami, trafiają do
 `<instance>/test-run/`. Gdy gra się kończy, Eidos wypisuje te pięć grup, a ty
 zachowujesz lub wyrzucasz każdą z nich. Inne zapisy, na przykład rejestr Wine,
@@ -70,10 +70,10 @@ idą tam, gdzie zawsze. Find the mod behind a problem w Diagnostics uruchamia
 testowe uruchomienia z połową podejrzanych modów naraz plus potrzebnymi im
 masterami. Po każdym uruchomieniu odpowiadasz, czy problem wystąpił, a Eidos
 zawęża podejrzanych, aż wskaże moda albo mody, które potrzebują nawzajem swoich
-masterów; 200 podejrzanych to około 8 uruchomień. Mody zaznaczone na liście przed
+masterów; 200 podejrzanych to około 8 uruchomień. Włączone mody zaznaczone na liście przed
 startem zostają włączone w każdym kroku. Szczegóły w
-[usage.md](docs/guide/usage.md#uruchomienia-testowe) i
-[usage.md](docs/guide/usage.md#szukanie-moda-stojącego-za-problemem).
+[Uruchomienia testowe](docs/guide/usage.md#uruchomienia-testowe) i
+[Szukanie moda stojącego za problemem](docs/guide/usage.md#szukanie-moda-stojącego-za-problemem).
 
 ### Jak wypada na tle innych
 
@@ -496,7 +496,7 @@ wzorcową: gdy tłumaczenie się z nim nie zgadza, rację ma plik angielski.
 
 Cała reszta jest po angielsku. `docs/internals/` i `docs/project/` czytają ludzie,
 którzy czytają też Rusta, `CHANGELOG.md` jest generowany, a `SECURITY.md` też nie
-jest tłumaczony. Tłumaczenie dwóch pierwszych dodałoby ponad 19 000 słów do
+jest tłumaczony. Tłumaczenie dwóch pierwszych dodałoby ponad 28 000 słów do
 utrzymania w zgodzie z prawdą dla czytelników, którzy ich nie potrzebują.
 
 Każde tłumaczenie niesie skrót pliku angielskiego, z którego powstało, a CI

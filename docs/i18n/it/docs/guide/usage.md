@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=15b7f6e81560a7045c8b62dd59dde35c8e45d32c -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6459b22b0401855f4cacc644cb35eade2e2a023d -->
 
 # Usare Eidos
 
@@ -297,7 +297,7 @@ le mod che tieni sempre attive: le mod selezionate nell'elenco e attive quando
 inizi, e la mod che fornisce lo script extender. Dopo ogni esecuzione rispondi se il
 problema si è presentato. Not sure divide diversamente i sospetti, e Run it again
 ripete il passo. Rispondere, o premere Run it again, butta i file che il passo ha
-scritto, dopo una seconda pressione. Per tenerne alcuni, premi prima See the files:
+scritto, dopo una seconda pressione. Per tenerne alcuni, premi See the files prima di rispondere:
 apre lo stesso elenco che compare dopo un'esecuzione di prova. Quando il gioco è
 andato in crash e un crash logger ha scritto un log, o il gioco è uscito con un
 codice di errore, Eidos segna Yes come risposta probabile. 200 sospetti richiedono

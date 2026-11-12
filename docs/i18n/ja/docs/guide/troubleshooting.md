@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=af0c14c5192ccae592dd1c1661fd02d5242ecd5a -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=c365b34dbc69a832b1c9305498c94eb223b567a1 -->
 
 # トラブルシューティングと診断
 
@@ -180,7 +180,7 @@ INI とプラグインの変更はプロファイルに戻り、ツールの出�
 - `eidos sessions <instance> diff` は、終了コード 0 で終わった直近のゲーム実行以降に
   何が変わったかを一覧します。MOD、バージョン、プラグインの順序、INI、ゲームの
   実行ファイルです([usage.md](usage.md#前回の正常な実行から何が変わったか))。
-- Run の隣の Test run は、プロファイルの MOD ありで、MOD なしで、または選択した MOD と
+- Run の隣の Test run は、プロファイルの MOD ありで、MOD なしで、または選択した MOD のうち有効なものと
   それに必要なマスターだけでプレイし、ゲームが書くものすべてを
   `<instance>/test-run/` に送ります。実行後、ファイルの各グループ(セーブ、INI の
   変更、プラグインの状態、Overwrite の出力、ログ)を残すか捨てるかを選びます

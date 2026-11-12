@@ -6,15 +6,15 @@ Une extension ajoute une entrée à Eidos sans faire partie d'Eidos. C'est un
 manifeste TOML nommant un programme, plus, tout au plus, ce programme.
 
 Les manifestes vivent dans `~/.config/Colony/Eidos/addons/`, un `.toml` par
-extension. Ouvrez le dossier depuis View -> Extensions -> Open folder, puis
-appuyez sur Reload - pas de redémarrage.
+extension. Ouvrez le dossier depuis Affichage -> Extensions -> Ouvrir le dossier,
+puis appuyez sur Recharger - pas de redémarrage.
 
 `id`, `kind` et `exec` sont obligatoires ; `name` vaut l'identifiant par défaut.
 `exec` nomme le programme. Un nom sans `/` est cherché dans le `PATH`. Quand le
-programme manque, Eidos ignore l'extension, et sa ligne dans View -> Extensions
+programme manque, Eidos ignore l'extension, et sa ligne dans Affichage -> Extensions
 dit pourquoi (`<exec> is not on PATH` ou `<exec> is not there`). `games` limite
 l'extension à ces identifiants de jeu ; sans lui, l'extension s'applique à tous les
-jeux, et sur un autre jeu sa ligne indique « not for this game ».
+jeux, et sur un autre jeu sa ligne indique « pas pour ce jeu ».
 
 Un manifeste qu'Eidos refuse est listé en premier, avec la raison : un fichier
 illisible, un TOML invalide ou un champ obligatoire absent, un `id` vide ou
@@ -50,7 +50,7 @@ author = "you"
 version = "1.0"
 ```
 
-Elle apparaît dans View -> Extensions avec un bouton Run, et démarre détachée
+Elle apparaît dans Affichage -> Extensions avec un bouton Lancer, et démarre détachée
 - Eidos ne l'attend pas, et la ligne d'état donne son pid. Sa sortie est jetée.
 Sans `workdir`, elle démarre dans le dossier d'où Eidos lui-même a été lancé.
 
@@ -76,7 +76,7 @@ sans titre est abandonnée. Tout ce qui ne commence pas par un niveau connu est
 ignoré, si bien qu'une sortie de progression ou un avertissement égaré ne peuvent
 pas produire une ligne qui ressemble à un contrôle d'Eidos lui-même. Les constats
 apparaissent dans l'onglet Diagnostics sous la forme `<name> - <title>`, après les
-cartes du préfixe et de Nexus et avant les autres cartes Health.
+cartes du préfixe et de Nexus et avant les autres cartes de diagnostic.
 
 Un contrôle dispose de trois secondes. Celui qui déborde est arrêté et signalé
 comme un problème contre lui-même - il s'exécute au même rafraîchissement qui suit
@@ -86,8 +86,9 @@ processus fils en arrière-plan qui les garde ouverts compte donc dans les trois
 secondes. Un contrôle qui se termine en erreur sans rien écrire est signalé de la
 même façon, avec la première ligne de sa sortie d'erreur, de même que celui qui
 écrit plus de 1 Mio sur l'un ou l'autre flux. Dans les deux cas Eidos ne le relance
-pas avant que vous appuyiez sur Reload, et sa ligne dit « It will not be retried
-until you press Reload. » Un contrôle ne lit rien sur son entrée standard.
+pas avant que vous appuyiez sur Recharger, et sa ligne dit « Elle ne sera pas
+relancée avant que vous appuyiez sur Recharger. » Un contrôle ne lit
+rien sur son entrée standard.
 
 ## Substitutions
 

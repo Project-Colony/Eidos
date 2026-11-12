@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=af0c14c5192ccae592dd1c1661fd02d5242ecd5a -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=c365b34dbc69a832b1c9305498c94eb223b567a1 -->
 
 # Rozwiązywanie problemów i diagnostyka
 
@@ -186,8 +186,8 @@ Aby znaleźć zmianę, która zepsuła grę:
   uruchomienia gry, które zakończyło się kodem 0: mody, wersje, kolejność
   wtyczek, INI i plik wykonywalny gry
   ([usage.md](usage.md#co-zmieniło-się-od-ostatniego-dobrego-uruchomienia)).
-- Test run, obok Run, gra z modami profilu, bez modów albo z zaznaczonymi modami
-  i potrzebnymi im masterami, a wszystko, co gra zapisuje, kieruje do
+- Test run, obok Run, gra z modami profilu, bez modów albo z zaznaczonymi modami,
+  które są włączone, plus potrzebnymi im masterami, a wszystko, co gra zapisuje, kieruje do
   `<instance>/test-run/`. Po uruchomieniu zachowujesz lub wyrzucasz każdą grupę
   plików: zapisy, zmiany INI, stan wtyczek, wynik w Overwrite i logi
   ([usage.md](usage.md#uruchomienia-testowe)).

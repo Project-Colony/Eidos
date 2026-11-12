@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=37e97bafbd2cf43f2101a28b23c1464420a5f9ec -->
+<!-- eidos-i18n: source=README.md sha=31c66f68ad4e47e896eeb2256fd8f89c68cfdbef -->
 
 <div align="center">
 
@@ -51,15 +51,15 @@ Eidos 不需要 setuid 輔助程式、不需要系統常駐程式、不用 `sudo
 它和那份快照比對,Restore the pre-session order 會把舊的順序放回去。一次會抹掉你載入順序
 的擷取會被拒絕,並說明原因。
 
-Test run 會用設定檔的模組、不帶模組,或只帶選取的模組及其 master 來啟動遊戲。那次執行的
+Test run 會用設定檔的模組、不帶模組,或只帶選取且已啟用的模組及其 master 來啟動遊戲。那次執行的
 存檔、INI 變更、外掛狀態、Overwrite 輸出,以及其他 My Games 檔案(包括日誌),都進入
 `<instance>/test-run/`。遊戲結束時,Eidos 列出這五組檔案,你逐組決定保留或丟棄。其他寫入,
 例如 Wine 登錄檔,照常寫到原處。Diagnostics 裡的 Find the mod behind a problem 每次用
 一半的嫌疑模組加上它們需要的 master 進行測試執行。每次執行之後你回答問題是否出現,Eidos
 就縮小嫌疑範圍,直到點出那個模組,或一組彼此需要對方 master 的模組;200 個嫌疑對象大約要
-8 次執行。開始之前在清單裡選取的模組,在每一步都保持開啟。細節見
-[usage.md](docs/guide/usage.md#測試執行)和
-[usage.md](docs/guide/usage.md#找出造成問題的模組)。
+8 次執行。開始之前在清單裡選取且已啟用的模組,在每一步都保持開啟。細節見
+[測試執行](docs/guide/usage.md#測試執行)和
+[找出造成問題的模組](docs/guide/usage.md#找出造成問題的模組)。
 
 ### 它和其他方案的比較
 
@@ -410,7 +410,7 @@ Eidos 內部如何運作,以及它為什麼存在。安全政策以及如何回�
 
 其餘的一切是英文。`docs/internals/` 與 `docs/project/` 的讀者同時也在讀 Rust 程式碼,
 `CHANGELOG.md` 是產生出來的,`SECURITY.md` 也沒有翻譯。翻譯前兩者會為一群並不需要它們的
-讀者,多出超過 19,000 個字要維持同步。
+讀者,多出超過 28,000 個字要維持同步。
 
 每一份翻譯都帶著它所依據的英文檔案的雜湊值,而當這個雜湊值和英文不再相符時 CI 會失敗,見
 [`scripts/i18n-check.sh`](../../../scripts/i18n-check.sh)。接著翻譯會被更新,並用

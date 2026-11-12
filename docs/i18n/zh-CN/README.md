@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=37e97bafbd2cf43f2101a28b23c1464420a5f9ec -->
+<!-- eidos-i18n: source=README.md sha=31c66f68ad4e47e896eeb2256fd8f89c68cfdbef -->
 
 <div align="center">
 
@@ -51,14 +51,14 @@ Eidos 不需要 setuid 辅助程序,不需要系统守护进程,不用 `sudo set
 快照比较,Restore the pre-session order 会把旧顺序放回去。会抹掉你加载顺序的捕获会被拒绝,并说明
 原因。
 
-Test run 用配置档案的模组、不带模组,或只带选中的模组及其 master 来启动游戏。这次运行的存档、INI
+Test run 用配置档案的模组、不带模组,或只带选中且已启用的模组及其 master 来启动游戏。这次运行的存档、INI
 改动、插件状态、Overwrite 输出,以及其他 My Games 文件(包括日志),都进入 `<instance>/test-run/`。
 游戏退出时,Eidos 列出这五组,你对每一组决定保留还是丢弃。其他写入(例如 Wine 注册表)去它们一贯去的
 地方。Diagnostics 里的 Find the mod behind a problem 每次用一半的嫌疑模组外加它们所需的 master 做
 测试运行。每次运行之后你回答问题是否出现,Eidos 逐步缩小嫌疑范围,直到点出那个模组,或者彼此的
-master 互相需要的那些模组;200 个嫌疑对象大约需要 8 次运行。开始之前在列表里选中的模组在每一步都
-保持开启。细节见 [usage.md](docs/guide/usage.md#测试运行) 和
-[usage.md](docs/guide/usage.md#找出问题背后的模组)。
+master 互相需要的那些模组;200 个嫌疑对象大约需要 8 次运行。开始之前在列表里选中且已启用的模组在每一步都
+保持开启。细节见 [测试运行](docs/guide/usage.md#测试运行) 和
+[找出问题背后的模组](docs/guide/usage.md#找出问题背后的模组)。
 
 ### 它与其他方案的对比
 
@@ -375,7 +375,7 @@ xEdit 和 DynDOLOD 等工具、图形、故障排查)、Eidos 内部如何工作
 - **Nederlands** - [README](../nl/README.md) · [index](../nl/docs/README.md) · [install](../nl/docs/guide/install.md) · [usage](../nl/docs/guide/usage.md) · [tools](../nl/docs/guide/tools.md) · [fallout4](../nl/docs/guide/fallout4.md) · [graphics](../nl/docs/guide/graphics.md) · [troubleshooting](../nl/docs/guide/troubleshooting.md) · [extensions](../nl/docs/guide/extensions.md)
 
 其余的一切是英文。`docs/internals/` 和 `docs/project/` 是给那些同时也在读 Rust 的人看的,`CHANGELOG.md` 是生成的,
-`SECURITY.md` 也不翻译。翻译前两者会为并不需要它们的读者,增加超过 19,000 个词要保持同步。
+`SECURITY.md` 也不翻译。翻译前两者会为并不需要它们的读者,增加超过 28,000 个词要保持同步。
 
 每份译文都带着它所依据的英文文件的哈希,当这个哈希不再与英文一致时,CI 就会失败,见
 [`scripts/i18n-check.sh`](../../../scripts/i18n-check.sh)。随后译文被更新,并用 `scripts/i18n-check.sh --fix` 重新

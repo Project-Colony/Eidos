@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=15b7f6e81560a7045c8b62dd59dde35c8e45d32c -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6459b22b0401855f4cacc644cb35eade2e2a023d -->
 
 # 使用 Eidos
 
@@ -194,7 +194,7 @@ Run 旁边的 Test run 按钮像 Run 一样启动游戏,但游戏写下的一切
 
 ### 找出问题背后的模组
 
-Diagnostics 标签页上的 Find the mod behind a problem,用来找出导致某个你能复现的问题(例如在某处崩溃)的模组。每一步都是一次测试运行,带上剩余嫌疑对象的一半、它们所需的 master,以及你保持始终开启的模组:开始时在列表里选中且已启用的模组,和提供 script extender 的模组。每次运行之后,你回答问题是否出现。Not sure 会用不同方式拆分嫌疑对象,Run it again 重复这一步。回答或按 Run it again 时,会在第二次按下后丢弃这一步写下的文件。想保留其中一些,请先按 See the files:它打开与测试运行之后相同的列表。当游戏崩溃且崩溃记录器写了日志,或游戏以错误码退出时,Eidos 会把 Yes 标为可能的答案。200 个嫌疑对象大约需要 8 次运行。
+Diagnostics 标签页上的 Find the mod behind a problem,用来找出导致某个你能复现的问题(例如在某处崩溃)的模组。每一步都是一次测试运行,带上剩余嫌疑对象的一半、它们所需的 master,以及你保持始终开启的模组:开始时在列表里选中且已启用的模组,和提供 script extender 的模组。每次运行之后,你回答问题是否出现。Not sure 会用不同方式拆分嫌疑对象,Run it again 重复这一步。回答或按 Run it again 时,会在第二次按下后丢弃这一步写下的文件。想保留其中一些,请在回答之前按 See the files:它打开与测试运行之后相同的列表。当游戏崩溃且崩溃记录器写了日志,或游戏以错误码退出时,Eidos 会把 Yes 标为可能的答案。200 个嫌疑对象大约需要 8 次运行。
 
 这次搜索保存在 `<instance>/bisect.json` 里,所以你可以在两步之间关闭 Eidos,而且它属于开始时所在的配置档。Stop the search 在第二次按下后丢弃它。结果会点出那个模组,或者彼此的 master 互相需要的一组模组,并保存在 `<instance>/logs/bisect-<time>.txt` 里。生成的模组(Nemesis 或 DynDOLOD 的输出、Bashed Patch)是为完整列表构建的,只带一半时可能失败:要么让它们始终开启,要么在整个搜索期间保持关闭。
 
