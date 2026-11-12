@@ -19,7 +19,7 @@ Steam 為 Fallout 4 設定的啟動目標是 `Fallout4Launcher.exe`,從來不是
 bash -c 'exec "${@/Fallout4Launcher.exe/f4se_loader.exe}"' -- %command%
 ```
 
-或者把 `f4se_loader.exe` 覆蓋到 `Fallout4Launcher.exe` 上 —— 而 Steam 會在每次遊戲
+或者把 `f4se_loader.exe` 覆蓋到 `Fallout4Launcher.exe` 上,而 Steam 會在每次遊戲
 更新時還原它,此後你就在沒有 F4SE 的情況下遊玩,卻沒有任何提示。
 
 Eidos 自己完成這次替換,依據是遊戲描述符。視窗啟動遊戲時,如果載入器在遊戲資料夾、某個
@@ -45,7 +45,7 @@ Steam 再透過上面的啟動選項啟動 Eidos。如果實例中遊戲執行�
 | 封裝檔失效 | `Fallout4Custom.ini` 會被寫入 `[Archive]` `bInvalidateOlderFiles=1` 和空的 `sResourceDataDirsFinal=`,這兩個鍵讓 `Data` 之外的散裝檔案根本能被看見。寫進設定檔,而不是遊戲目錄。 |
 | INI | `Fallout4.ini`、`Fallout4Prefs.ini` 和 `Fallout4Custom.ini` 屬於設定檔。透過 Eidos 執行的 BethINI Pie 編輯的是設定檔中的副本,Backups -> INIs 會放回 Eidos 在每次執行前保留的那份副本([tools.md](tools.md#bethini-pie))。 |
 | 載入順序 | `plugins.txt` 採用 Fallout 4 使用的星號格式(`*` 表示啟用),並遵循 `Fallout4.ccc` 處理隱含的 Creation Club 外掛 |
-| LOOT | 排序方式與 Skyrim 相同 —— `eidos sort <instance>` 會取 `fallout4` 的 masterlist |
+| LOOT | 排序方式與 Skyrim 相同:`eidos sort <instance>` 會取 `fallout4` 的 masterlist |
 | 存檔 | `.fos` 存檔及其 `.f4se` 協同存檔會被列出、複製並按設定檔保存;詳情面板會讀取存檔自身的外掛表,所以一個需要你已停用外掛的存檔會在讀取前就說出來。停用或移除某個外掛被設定檔三個最新存檔用到的模組時,會先詢問。 |
 | Root 模組 | 模組隨執行檔一同提供的東西(F4SE 本身、ENB、`dxvk.conf`)都透過 Skyrim 同樣的 `Root/` 機制落到那裡 |
 
@@ -63,10 +63,10 @@ Fallout 4 不再是 2019 到 2024 年間那個凍結的遊戲。截至 2026 年 
 在搭建模組清單之前值得知道的兩個後果:
 
 - 遊戲根目錄裡有 `Creations/` 和 `Mods/` 資料夾,說明你在 1.11.x 這條線上。Eidos 裡
-  存檔的詳情面板也會顯示寫下它的建置版本 —— Fallout 會把它寫進存檔,Eidos 以
+  存檔的詳情面板也會顯示寫下它的建置版本:Fallout 會把它寫進存檔,Eidos 以
   「Game build」呈現。
-- F4SE 通常在 Bethesda 更新後一兩天內跟上,但 *Address Library for F4SE Plugins* ——
-  大多數 DLL 模組靠它解析偏移 —— 按自己的節奏走。在這兩者之間,DLL 模組無法載入。
+- F4SE 通常在 Bethesda 更新後一兩天內跟上,但 *Address Library for F4SE Plugins*
+  (大多數 DLL 模組靠它解析偏移)按自己的節奏走。在這兩者之間,DLL 模組無法載入。
   不含 DLL 的模組(貼圖、模型、外掛)不受影響,所以剛打完修補程式不是開始搭建模組
   清單的好時機。
 
@@ -85,7 +85,7 @@ Fallout 4 不再是 2019 到 2024 年間那個凍結的遊戲。截至 2026 年 
 ## 硬體提示:NVIDIA 上的武器碎片當機
 
 Fallout 4 的武器碎片效果基於 NVIDIA FleX,那是 NVIDIA 在 Pascal 之後停止支援的 PhysX
-衍生物。在任何 Turing 及更新的顯示卡上 —— GTX 16、RTX 20 直到 RTX 50 —— 它都會讓遊戲
+衍生物。在任何 Turing 及更新的顯示卡上(GTX 16、RTX 20 直到 RTX 50),它都會讓遊戲
 當掉。這是遊戲本身的缺陷,與 Linux、Proton 或 Eidos 無關。
 
 兩個辦法,任選其一:在遊戲設定裡關閉「Weapon Debris」,或安裝
@@ -133,7 +133,7 @@ grep '# command:' <instance>/logs/run-*.log | tail -1
 ```
 
 如果它寫的是 `f4se_loader.exe`,替換成功了。如果寫的是 `Fallout4.exe`,說明
-F4SE 沒裝在 Eidos 找得到的地方 —— 它該待在遊戲執行檔旁邊,對於用模組管理器的設定
+F4SE 沒裝在 Eidos 找得到的地方:它該待在遊戲執行檔旁邊,對於用模組管理器的設定
 來說,那就是某個模組的 `Root/` 目錄(或者手動裝進遊戲資料夾本身)。如果寫的是
 `Fallout4Launcher.exe`,說明 Eidos 在 root 檢視裡既沒找到載入器也沒找到
 `Fallout4.exe`。

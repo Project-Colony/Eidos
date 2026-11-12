@@ -16,7 +16,7 @@ soubory kopie, ne instalace z obchodu. `eidos check <instance>` vypíše stejné
 v terminálu, bez tlačítek Fix.
 
 - Karta NVAPI se objeví u kopie Skyrimu SE nebo Enderalu SE ze Steamu, když je
-  načtený ovladač NVIDIA, sloučený `Data` obsahuje něco v `Shaders/Upscaling`,
+  načtený ovladač NVIDIA (existuje `/proc/driver/nvidia/version`), sloučený `Data` obsahuje něco v `Shaders/Upscaling`,
   sestavení Protonu hry nechává NVAPI ve výchozím stavu vypnuté a proměnnou
   `PROTON_ENABLE_NVAPI=1` nenastavuje ani parametr spuštění Steamu, ani vlastní
   prostředí Eidosu, ani `launch-env.ini` profilu.
