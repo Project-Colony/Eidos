@@ -184,6 +184,14 @@ fn a_plugin_edit_in_a_stale_window_does_not_revert_another_process_sort() {
     for name in ["A.esp", "B.esp"] {
         fs::write(game.data_path.join(name), []).unwrap();
     }
+    // Morrowind discovery orders by mtime. Written a clock tick apart, A came
+    // out first, which is already the order `sorted` holds below.
+    fs::File::options()
+        .write(true)
+        .open(game.data_path.join("B.esp"))
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(60))
+        .unwrap();
     let ini = "[General]\r\n[Game Files]\r\nGameFile0=A.esp\r\nGameFile1=B.esp\r\n";
     fs::write(game.install_path.join("Morrowind.ini"), ini).unwrap();
     app.created = Some(inst.clone());
