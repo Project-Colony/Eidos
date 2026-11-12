@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=37e97bafbd2cf43f2101a28b23c1464420a5f9ec -->
+<!-- eidos-i18n: source=README.md sha=31c66f68ad4e47e896eeb2256fd8f89c68cfdbef -->
 
 <div align="center">
 
@@ -63,7 +63,7 @@ Restore the pre-session order devuelve el orden anterior. Una captura que borrar
 tu orden de carga se rechaza, con el motivo.
 
 Test run inicia el juego con los mods del perfil, sin mods, o solo con los mods
-seleccionados y sus masters. Las partidas, los cambios de INI, el estado de los
+seleccionados que están activados, más sus masters. Las partidas, los cambios de INI, el estado de los
 plugins, la salida del Overwrite y los demás archivos de My Games de esa ejecución,
 registros incluidos, van a `<instance>/test-run/`. Cuando el juego termina, Eidos
 lista esos cinco grupos y conservas o descartas cada uno. Las demás escrituras,
@@ -72,10 +72,10 @@ en Diagnostics, ejecuta ejecuciones de prueba con la mitad de los mods sospechos
 cada vez, más los masters que necesitan. Después de cada ejecución respondes si el
 problema ocurrió, y Eidos va reduciendo los sospechosos hasta nombrar el mod, o los
 mods que necesitan los masters unos de otros; 200 sospechosos llevan unas 8
-ejecuciones. Los mods seleccionados en la lista antes de empezar siguen activos en
+ejecuciones. Los mods activados que seleccionas en la lista antes de empezar siguen activos en
 cada paso. Detalles en
-[usage.md](docs/guide/usage.md#ejecuciones-de-prueba) y
-[usage.md](docs/guide/usage.md#encontrar-el-mod-detrás-de-un-problema).
+[Ejecuciones de prueba](docs/guide/usage.md#ejecuciones-de-prueba) y
+[Encontrar el mod detrás de un problema](docs/guide/usage.md#encontrar-el-mod-detrás-de-un-problema).
 
 ### Cómo se compara
 
@@ -509,7 +509,7 @@ razón.
 
 Todo lo demás está en inglés. `docs/internals/` y `docs/project/` los leen personas
 que además leen el Rust, `CHANGELOG.md` se genera, y `SECURITY.md` tampoco está
-traducido. Traducir los dos primeros añadiría más de 19.000 palabras que mantener
+traducido. Traducir los dos primeros añadiría más de 28.000 palabras que mantener
 al día para lectores que no las necesitan.
 
 Cada traducción lleva el hash del archivo en inglés del que se hizo, y CI falla

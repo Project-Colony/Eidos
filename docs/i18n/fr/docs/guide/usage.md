@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=15b7f6e81560a7045c8b62dd59dde35c8e45d32c -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6459b22b0401855f4cacc644cb35eade2e2a023d -->
 
 # Utiliser Eidos
 
@@ -300,7 +300,7 @@ liste au moment du départ, et le mod qui fournit le script extender. Après cha
 exécution, vous répondez si le problème s'est produit. « Je ne sais pas » répartit les suspects
 autrement, et Relancer répète l'étape. Répondre, ou appuyer sur Relancer, jette
 les fichiers que l'étape a écrits, après un second appui. Pour en garder, appuyez
-d'abord sur Voir les fichiers : cela ouvre la même liste qu'après une partie test. Quand le jeu
+sur Voir les fichiers avant de répondre : cela ouvre la même liste qu'après une partie test. Quand le jeu
 a planté et qu'un enregistreur de plantages a écrit un journal, ou que le jeu s'est
 terminé avec un code d'erreur, Eidos marque « Oui, il s'est produit » comme la réponse probable. 200 suspects
 demandent environ 8 exécutions.

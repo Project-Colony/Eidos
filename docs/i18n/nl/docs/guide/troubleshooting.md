@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=af0c14c5192ccae592dd1c1661fd02d5242ecd5a -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=c365b34dbc69a832b1c9305498c94eb223b567a1 -->
 
 # Probleemoplossing en diagnostiek
 
@@ -185,7 +185,7 @@ Om te vinden welke wijziging het spel kapot maakte:
   uitvoerbare bestand van het spel
   ([usage.md](usage.md#wat-er-veranderd-is-sinds-de-laatste-goede-run)).
 - Test run, naast Run, speelt met de mods van het profiel, zonder mods, of met de
-  geselecteerde mods en de masters die ze nodig hebben, en stuurt alles wat het spel
+  geselecteerde mods die aanstaan, plus de masters die ze nodig hebben, en stuurt alles wat het spel
   schrijft naar `<instance>/test-run/`. Na de run bewaar je elke groep bestanden of
   gooi je haar weg: saves, INI-wijzigingen, pluginstatus, Overwrite-uitvoer en logs
   ([usage.md](usage.md#testruns)).

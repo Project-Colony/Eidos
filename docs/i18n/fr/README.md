@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=37e97bafbd2cf43f2101a28b23c1464420a5f9ec -->
+<!-- eidos-i18n: source=README.md sha=31c66f68ad4e47e896eeb2256fd8f89c68cfdbef -->
 
 <div align="center">
 
@@ -67,7 +67,7 @@ d'avant la session remet l'ancien ordre. Une capture qui effacerait votre ordre 
 chargement est refusée, avec la raison.
 
 Partie test démarre le jeu avec les mods du profil, sans mods, ou avec seulement les
-mods sélectionnés et leurs masters. Les sauvegardes, les changements d'INI,
+mods sélectionnés qui sont activés, plus leurs masters. Les sauvegardes, les changements d'INI,
 l'état des plugins, la sortie de l'Overwrite et les autres fichiers de My Games
 de cette exécution, journaux compris, vont dans `<instance>/test-run/`. Quand le
 jeu se termine, Eidos liste ces cinq groupes et vous gardez ou jetez chacun.
@@ -77,9 +77,9 @@ avec la moitié des mods suspects à la fois, plus les masters dont ils ont
 besoin. Après chaque exécution, vous répondez si le problème s'est produit, et
 Eidos réduit les suspects jusqu'à nommer le mod, ou les mods qui ont besoin des
 masters les uns des autres ; 200 suspects demandent environ 8 exécutions. Les
-mods sélectionnés dans la liste avant de commencer restent activés à chaque
-étape. Détails dans [usage.md](docs/guide/usage.md#parties-test) et
-[usage.md](docs/guide/usage.md#trouver-le-mod-à-lorigine-dun-problème).
+mods activés sélectionnés dans la liste avant de commencer restent activés à chaque
+étape. Détails dans [Parties test](docs/guide/usage.md#parties-test) et
+[Trouver le mod à l'origine d'un problème](docs/guide/usage.md#trouver-le-mod-à-lorigine-dun-problème).
 
 ### Comment il se compare
 
@@ -521,7 +521,7 @@ traduction le contredit, c'est le fichier anglais qui a raison.
 
 Tout le reste est en anglais. `docs/internals/` et `docs/project/` sont lus par
 des gens qui lisent aussi le Rust, `CHANGELOG.md` est généré, et `SECURITY.md`
-n'est pas traduit non plus. Traduire les deux premiers ferait plus de 19 000 mots
+n'est pas traduit non plus. Traduire les deux premiers ferait plus de 28 000 mots
 de plus à tenir à jour pour des lecteurs qui n'en ont pas besoin.
 
 Chaque traduction porte l'empreinte du fichier anglais dont elle est issue, et la

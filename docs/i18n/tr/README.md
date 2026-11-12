@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=37e97bafbd2cf43f2101a28b23c1464420a5f9ec -->
+<!-- eidos-i18n: source=README.md sha=31c66f68ad4e47e896eeb2256fd8f89c68cfdbef -->
 
 <div align="center">
 
@@ -62,7 +62,7 @@ Eidos her çalıştırmadan önce eklenti listesinin bir anlık görüntüsünü
 the pre-session order eski sırayı geri koyar. Yükleme sıranızı silecek bir yakalama
 nedeniyle birlikte reddedilir.
 
-Test run oyunu profilin modlarıyla, modsuz ya da yalnızca seçili modlar ve onların
+Test run oyunu profilin modlarıyla, modsuz ya da yalnızca seçili ve açık modlar ve onların
 master'larıyla başlatır. O çalıştırmanın kayıtları, INI değişiklikleri, eklenti
 durumu, Overwrite çıktısı ve günlükler dahil diğer My Games dosyaları
 `<instance>/test-run/` içine gider. Wine kayıt defteri gibi diğer yazmalar her
@@ -72,9 +72,9 @@ tutar ya da atarsınız. Diagnostics'teki Find the mod behind a problem, her sef
 yapar. Her çalıştırmadan sonra sorunun olup olmadığını yanıtlarsınız ve Eidos modu
 ya da birbirinin master'larına ihtiyaç duyan modları adlandırana kadar şüphelileri
 daraltır; 200 şüpheli yaklaşık 8 çalıştırma sürer. Başlamadan önce listede seçili
-modlar her adımda açık kalır. Ayrıntılar
-[usage.md](docs/guide/usage.md#test-çalıştırmaları) ve
-[usage.md](docs/guide/usage.md#bir-sorunun-arkasındaki-modu-bulmak) içinde.
+olan açık modlar her adımda açık kalır. Ayrıntılar
+[Test çalıştırmaları](docs/guide/usage.md#test-çalıştırmaları) ve
+[Bir sorunun arkasındaki modu bulmak](docs/guide/usage.md#bir-sorunun-arkasındaki-modu-bulmak) içinde.
 
 ### Nasıl kıyaslanıyor
 
@@ -491,7 +491,7 @@ onunla uyuşmadığında doğru olan İngilizce dosyadır.
 Geri kalan her şey İngilizcedir. `docs/internals/` ve `docs/project/` aynı zamanda
 Rust'ı da okuyan kişilerce okunur, `CHANGELOG.md` üretilir ve `SECURITY.md` de
 çevrilmez. İlk ikisini çevirmek, buna ihtiyacı olmayan okurlar için eşgüdümlü
-tutulacak 19.000'den fazla kelime daha demek olurdu.
+tutulacak 28.000'den fazla kelime daha demek olurdu.
 
 Her çeviri, yapıldığı İngilizce dosyanın hash'ini taşır ve bu hash İngilizceyle
 artık eşleşmediği sürece CI başarısız olur; bkz.

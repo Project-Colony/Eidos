@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=15b7f6e81560a7045c8b62dd59dde35c8e45d32c -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6459b22b0401855f4cacc644cb35eade2e2a023d -->
 
 # Używanie Eidos
 
@@ -288,8 +288,8 @@ modami, które zostawiasz zawsze włączone: włączonymi modami zaznaczonymi na
 w chwili startu oraz modem dostarczającym script extender. Po każdym uruchomieniu
 odpowiadasz, czy problem wystąpił. Not sure dzieli podejrzanych inaczej, a Run it
 again powtarza krok. Odpowiedź albo Run it again wyrzuca pliki zapisane przez krok,
-po drugim naciśnięciu. Żeby zachować część z nich, naciśnij najpierw See the
-files: otwiera tę samą listę co po uruchomieniu testowym. Gdy gra się wywaliła, a
+po drugim naciśnięciu. Żeby zachować część z nich, naciśnij See the files przed
+odpowiedzią: otwiera tę samą listę co po uruchomieniu testowym. Gdy gra się wywaliła, a
 program rejestrujący awarie zapisał log, albo gra zakończyła się kodem błędu, Eidos
 oznacza Yes jako prawdopodobną odpowiedź. 200 podejrzanych to około 8 uruchomień.
 

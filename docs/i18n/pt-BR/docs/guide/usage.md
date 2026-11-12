@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=15b7f6e81560a7045c8b62dd59dde35c8e45d32c -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6459b22b0401855f4cacc644cb35eade2e2a023d -->
 
 # Usar o Eidos
 
@@ -272,7 +272,7 @@ ativados: os mods ativados selecionados na lista quando você começa e o mod qu
 extender. Depois de cada execução você responde se o problema aconteceu. Not sure divide os
 suspeitos de outro jeito, e Run it again repete o passo. Responder, ou clicar em Run it again,
 descarta os arquivos que o passo gravou, depois de um segundo clique. Para manter alguns, clique
-antes em See the files: ele abre a mesma lista que aparece depois de uma execução de teste. Quando
+em See the files antes de responder: ele abre a mesma lista que aparece depois de uma execução de teste. Quando
 o jogo travou e um registrador de falhas gravou um log, ou o jogo saiu com um código de erro, o
 Eidos marca Yes como a resposta provável. 200 suspeitos levam cerca de 8 execuções.
 

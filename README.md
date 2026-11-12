@@ -57,18 +57,19 @@ the list, Diagnostics compares it with that snapshot, and Restore the
 pre-session order puts the old order back. A capture that would wipe your load
 order is refused, with the reason.
 
-Test run starts the game with the profile's mods, without mods, or with only
-the selected mods and their masters. The saves, INI changes, plugin state,
-Overwrite output and other My Games files of that run, logs included, go to
-`<instance>/test-run/`. When the game exits, Eidos lists those five groups and
-you keep or throw away each one. Other writes, such as the Wine registry, go
-where they always go. Find the mod behind a problem, in Diagnostics, runs test
-runs with half of the suspect mods at a time plus the masters they need. After
-each run you answer whether the problem happened, and Eidos narrows the suspects
-until it names the mod, or the mods that need each other's masters; 200 suspects
-take about 8 runs. Mods selected in the list before you start stay on in every
-step. Details in [usage.md](docs/guide/usage.md#test-runs) and
-[usage.md](docs/guide/usage.md#finding-the-mod-behind-a-problem).
+Test run starts the game with the profile's mods, without mods, or with only the
+selected mods that are switched on, plus their masters. The saves, INI changes,
+plugin state, Overwrite output and other My Games files of that run, logs
+included, go to `<instance>/test-run/`. When the game exits, Eidos lists those
+five groups and you keep or throw away each one. Other writes, such as the Wine
+registry, go where they always go. Find the mod behind a problem, in
+Diagnostics, runs test runs with half of the suspect mods at a time plus the
+masters they need. After each run you answer whether the problem happened, and
+Eidos narrows the suspects until it names the mod, or the mods that need each
+other's masters; 200 suspects take about 8 runs. Switched-on mods selected in
+the list before you start stay on in every step. Details in
+[Test runs](docs/guide/usage.md#test-runs) and
+[Finding the mod behind a problem](docs/guide/usage.md#finding-the-mod-behind-a-problem).
 
 ### How it compares
 
@@ -481,7 +482,7 @@ translation disagrees with it, the English file is right.
 Everything else is English. `docs/internals/` and `docs/project/` are read by
 people who are also reading the Rust, `CHANGELOG.md` is generated, and
 `SECURITY.md` is not translated either. Translating the first two would add
-more than 19,000 words to keep in sync for readers who do not need them.
+more than 28,000 words to keep in sync for readers who do not need them.
 
 Each translation carries the hash of the English file it was made from, and CI
 fails while that hash no longer matches the English; see

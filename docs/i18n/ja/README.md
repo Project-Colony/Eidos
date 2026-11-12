@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=37e97bafbd2cf43f2101a28b23c1464420a5f9ec -->
+<!-- eidos-i18n: source=README.md sha=31c66f68ad4e47e896eeb2256fd8f89c68cfdbef -->
 
 <div align="center">
 
@@ -59,7 +59,7 @@ Steam の起動オプションも一つです。
 order で元の順序に戻せます。ロード順を消してしまう取り込みは、理由を添えて
 拒否されます。
 
-Test run は、プロファイルの MOD ありで、MOD なしで、または選択した MOD とそのマスター
+Test run は、プロファイルの MOD ありで、MOD なしで、または選択した MOD のうち有効なものとそのマスター
 だけでゲームを起動します。その実行のセーブ、INI の変更、プラグインの状態、
 Overwrite の出力、そのほかの My Games のファイル(ログを含む)は
 `<instance>/test-run/` に入ります。ゲームが終了すると、Eidos はこの 5 つのグループを
@@ -67,9 +67,9 @@ Overwrite の出力、そのほかの My Games のファイル(ログを含む)�
 いつもの場所に行きます。Diagnostics の Find the mod behind a problem は、疑わしい MOD
 の半分とそれに必要なマスターを足して Test run を繰り返します。毎回、問題が起きたかを
 答えると、Eidos は容疑者を絞り込み、MOD か、互いのマスターを必要とする MOD の組を
-特定します。容疑者が 200 個なら、実行は約 8 回です。始める前に一覧で選んだ MOD は、
-どの段階でもオンのままです。詳細は [usage.md](docs/guide/usage.md#テスト実行) と
-[usage.md](docs/guide/usage.md#問題の原因になっている-mod-を見つける) に。
+特定します。容疑者が 200 個なら、実行は約 8 回です。始める前に一覧で選んだ有効な MOD は、
+どの段階でもオンのままです。詳細は [テスト実行](docs/guide/usage.md#テスト実行) と
+[問題の原因になっている MOD を見つける](docs/guide/usage.md#問題の原因になっている-mod-を見つける) に。
 
 ### 他との比較
 
@@ -480,7 +480,7 @@ Eidos の内部の仕組み、そしてなぜ存在するのか、です。セ�
 
 それ以外は英語です。`docs/internals/` と `docs/project/` を読む人は Rust も読んで
 いますし、`CHANGELOG.md` は生成物で、`SECURITY.md` も翻訳しません。前の 2 つを
-翻訳すれば、それを必要としない読者のために同期を保ち続ける語が 19,000 語以上
+翻訳すれば、それを必要としない読者のために同期を保ち続ける語が 28,000 語以上
 増えます。
 
 各翻訳は、元にした英語ファイルのハッシュを持っています。英語が先に進むと CI が

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=af0c14c5192ccae592dd1c1661fd02d5242ecd5a -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=c365b34dbc69a832b1c9305498c94eb223b567a1 -->
 
 # Sorun giderme ve tanılama
 
@@ -181,7 +181,7 @@ Oyunu hangi değişikliğin bozduğunu bulmak için:
   neyin değiştiğini listeler: modlar, sürümler, eklenti sırası, INI'ler ve oyunun
   çalıştırılabilir dosyası
   ([usage.md](usage.md#son-iyi-çalıştırmadan-beri-neyin-değiştiği)).
-- Run'ın yanındaki Test run, profilin modlarıyla, modsuz ya da seçili modlarla ve
+- Run'ın yanındaki Test run, profilin modlarıyla, modsuz ya da seçili ve açık modlarla ve
   onların gereksindiği master'larla oynar ve oyunun yazdığı her şeyi
   `<instance>/test-run/` içine gönderir. Çalıştırmadan sonra her dosya grubunu
   tutar ya da atarsınız: kayıtlar, INI değişiklikleri, eklenti durumu, Overwrite

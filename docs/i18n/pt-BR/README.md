@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=37e97bafbd2cf43f2101a28b23c1464420a5f9ec -->
+<!-- eidos-i18n: source=README.md sha=31c66f68ad4e47e896eeb2256fd8f89c68cfdbef -->
 
 <div align="center">
 
@@ -62,7 +62,7 @@ the pre-session order devolve a ordem antiga. Uma captura que apagaria a sua
 ordem de carga é recusada, com o motivo.
 
 Test run inicia o jogo com os mods do perfil, sem mods, ou só com os mods
-selecionados e seus masters. Os saves, as mudanças de INI, o estado dos plugins, a
+selecionados que estão ativados, mais seus masters. Os saves, as mudanças de INI, o estado dos plugins, a
 saída do Overwrite e os outros arquivos de My Games dessa execução, logs
 inclusive, vão para `<instance>/test-run/`. Quando o jogo sai, o Eidos lista esses
 cinco grupos e você guarda ou joga fora cada um. As outras escritas, como o
@@ -71,9 +71,9 @@ Diagnostics, executa execuções de teste com metade dos mods suspeitos por vez 
 os masters de que eles precisam. Depois de cada execução você responde se o
 problema aconteceu, e o Eidos reduz os suspeitos até nomear o mod, ou os mods que
 precisam dos masters uns dos outros; 200 suspeitos levam cerca de 8 execuções. Os
-mods selecionados na lista antes de você começar continuam ativados em todos os
-passos. Detalhes em [usage.md](docs/guide/usage.md#execuções-de-teste) e
-[usage.md](docs/guide/usage.md#encontrar-o-mod-por-trás-de-um-problema).
+mods ativados selecionados na lista antes de você começar continuam ativados em todos os
+passos. Detalhes em [Execuções de teste](docs/guide/usage.md#execuções-de-teste) e
+[Encontrar o mod por trás de um problema](docs/guide/usage.md#encontrar-o-mod-por-trás-de-um-problema).
 
 ### Como ele se compara
 
@@ -490,7 +490,7 @@ tradução discorda dele, o arquivo em inglês está certo.
 
 Todo o resto está em inglês. `docs/internals/` e `docs/project/` são lidos por gente que
 também está lendo o Rust, o `CHANGELOG.md` é gerado, e o `SECURITY.md` também não é
-traduzido. Traduzir os dois primeiros acrescentaria mais de 19.000 palavras para manter
+traduzido. Traduzir os dois primeiros acrescentaria mais de 28.000 palavras para manter
 em dia para leitores que não precisam delas.
 
 Cada tradução carrega o hash do arquivo em inglês do qual foi feita, e a CI falha enquanto

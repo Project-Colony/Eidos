@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=af0c14c5192ccae592dd1c1661fd02d5242ecd5a -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=c365b34dbc69a832b1c9305498c94eb223b567a1 -->
 
 # 문제 해결과 진단
 
@@ -172,7 +172,7 @@ diff`는 그것을 마지막 정상 실행으로 보지 않습니다. Unlock은 
 - `eidos sessions <instance> diff`는 종료 코드 0으로 끝난 마지막 게임 실행 이후 바뀐
   것을 나열합니다. 모드, 버전, 플러그인 순서, INI, 게임 실행 파일입니다
   ([usage.md](usage.md#마지막-정상-실행-이후-바뀐-내용)).
-- Run 옆의 Test run은 프로필의 모드로, 모드 없이, 또는 선택한 모드와 그것이 필요로 하는
+- Run 옆의 Test run은 프로필의 모드로, 모드 없이, 또는 선택한 모드 중 켜진 것과 그것이 필요로 하는
   마스터만으로 플레이하고, 게임이 쓰는 모든 것을 `<instance>/test-run/`으로 보냅니다.
   실행 뒤에 세이브, INI 변경, 플러그인 상태, Overwrite 출력, 로그의 각 묶음을 남기거나
   버립니다([usage.md](usage.md#테스트-실행)).

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=af0c14c5192ccae592dd1c1661fd02d5242ecd5a -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=c365b34dbc69a832b1c9305498c94eb223b567a1 -->
 
 # Dépannage et diagnostics
 
@@ -194,7 +194,7 @@ Pour trouver quel changement a cassé le jeu :
   et exécutable du jeu
   ([usage.md](usage.md#ce-qui-a-changé-depuis-le-dernier-bon-lancement)).
 - Partie test, à côté de Lancer, joue avec les mods du profil, sans mods, ou avec les mods
-  sélectionnés et les masters dont ils ont besoin, et envoie tout ce que le jeu écrit
+  sélectionnés qui sont activés, plus les masters dont ils ont besoin, et envoie tout ce que le jeu écrit
   dans `<instance>/test-run/`. Après l'exécution, vous gardez ou jetez chaque groupe
   de fichiers : sauvegardes, changements d'INI, état des plugins, sortie de
   l'Overwrite et journaux ([usage.md](usage.md#parties-test)).

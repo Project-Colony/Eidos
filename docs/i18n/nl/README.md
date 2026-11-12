@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=37e97bafbd2cf43f2101a28b23c1464420a5f9ec -->
+<!-- eidos-i18n: source=README.md sha=31c66f68ad4e47e896eeb2256fd8f89c68cfdbef -->
 
 <div align="center">
 
@@ -56,15 +56,15 @@ dan vergelijkt Diagnostics haar met die momentopname, en Restore the pre-session
 oude volgorde terug. Een capture die je laadvolgorde zou wissen wordt geweigerd, met de reden.
 
 Test run start het spel met de mods van het profiel, zonder mods, of alleen met de geselecteerde
-mods en hun masters. De saves, INI-wijzigingen, pluginstatus, Overwrite-uitvoer en andere
+mods die aanstaan, plus hun masters. De saves, INI-wijzigingen, pluginstatus, Overwrite-uitvoer en andere
 My Games-bestanden van die run, logs inbegrepen, gaan naar `<instance>/test-run/`. Het Wine-register
 hoort daar niet bij en gaat waar het altijd heen gaat. Als het spel stopt, toont Eidos die vijf groepen
 en bewaar of gooi je elke groep weg. Find the mod behind a problem, in Diagnostics, draait testruns
 met telkens de helft van de verdachte mods plus de masters die ze nodig hebben. Na elke run antwoord
 je of het probleem optrad, en Eidos versmalt de verdachten tot het de mod noemt, of de mods die elkaars
-masters nodig hebben; 200 verdachten kosten ongeveer 8 runs. Mods die je vóór de start in de lijst
-selecteerde blijven bij elke stap aan. Details in [usage.md](docs/guide/usage.md#testruns) en
-[usage.md](docs/guide/usage.md#de-mod-achter-een-probleem-vinden).
+masters nodig hebben; 200 verdachten kosten ongeveer 8 runs. Ingeschakelde mods die je vóór de start in de lijst
+selecteerde blijven bij elke stap aan. Details in [Testruns](docs/guide/usage.md#testruns) en
+[De mod achter een probleem vinden](docs/guide/usage.md#de-mod-achter-een-probleem-vinden).
 
 ### Hoe het zich verhoudt
 
@@ -400,7 +400,7 @@ De pagina's die een speler nodig heeft zijn vertaald. Het Engels is de referenti
 - **Nederlands** - [README](README.md) · [index](docs/README.md) · [install](docs/guide/install.md) · [usage](docs/guide/usage.md) · [tools](docs/guide/tools.md) · [fallout4](docs/guide/fallout4.md) · [graphics](docs/guide/graphics.md) · [troubleshooting](docs/guide/troubleshooting.md) · [extensions](docs/guide/extensions.md)
 
 Al het andere is Engels. `docs/internals/` en `docs/project/` worden gelezen door mensen die ook de Rust lezen, `CHANGELOG.md` wordt gegenereerd, en `SECURITY.md` is ook niet
-vertaald. De eerste twee vertalen zou meer dan 19.000 woorden toevoegen om synchroon te houden voor lezers die ze niet nodig hebben.
+vertaald. De eerste twee vertalen zou meer dan 28.000 woorden toevoegen om synchroon te houden voor lezers die ze niet nodig hebben.
 
 Elke vertaling draagt de hash van het Engelse bestand waaruit ze gemaakt is, en de CI faalt zolang die hash niet meer met het Engels overeenkomt; zie
 [`scripts/i18n-check.sh`](../../../scripts/i18n-check.sh). De vertaling wordt dan bijgewerkt en opnieuw gestempeld met `scripts/i18n-check.sh --fix`. Een verouderde vertaling

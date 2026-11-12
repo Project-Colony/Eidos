@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=37e97bafbd2cf43f2101a28b23c1464420a5f9ec -->
+<!-- eidos-i18n: source=README.md sha=31c66f68ad4e47e896eeb2256fd8f89c68cfdbef -->
 
 <div align="center">
 
@@ -64,7 +64,7 @@ Restore the pre-session order stellt die alte Reihenfolge wieder her. Eine
 des Grundes.
 
 Test run startet das Spiel mit den Mods des Profils, ohne Mods oder nur mit den
-ausgewählten Mods und deren Mastern. Die Spielstände, INI-Änderungen,
+ausgewählten Mods, die eingeschaltet sind, und deren Mastern. Die Spielstände, INI-Änderungen,
 Plugin-Zustände, die Overwrite-Ausgabe und die übrigen My-Games-Dateien dieses
 Laufs, Logs eingeschlossen, gehen nach `<instance>/test-run/`. Wenn das Spiel
 endet, listet Eidos diese fünf Gruppen auf, und Sie behalten oder verwerfen jede
@@ -73,10 +73,10 @@ sie immer hingehen. Find the mod behind a problem in Diagnostics führt Testläu
 mit jeweils der Hälfte der verdächtigen Mods plus den Mastern aus, die sie
 brauchen. Nach jedem Lauf beantworten Sie, ob das Problem aufgetreten ist, und
 Eidos grenzt die Verdächtigen ein, bis es die Mod nennt, oder die Mods, die
-gegenseitig ihre Master brauchen; 200 Verdächtige brauchen etwa 8 Läufe. Mods,
+gegenseitig ihre Master brauchen; 200 Verdächtige brauchen etwa 8 Läufe. Eingeschaltete Mods,
 die Sie vor dem Start in der Liste auswählen, bleiben in jedem Schritt
-eingeschaltet. Einzelheiten in [usage.md](docs/guide/usage.md#testläufe) und
-[usage.md](docs/guide/usage.md#die-mod-hinter-einem-problem-finden).
+eingeschaltet. Einzelheiten in [Testläufe](docs/guide/usage.md#testläufe) und
+[Die Mod hinter einem Problem finden](docs/guide/usage.md#die-mod-hinter-einem-problem-finden).
 
 ### Wie es sich vergleicht
 
@@ -520,7 +520,7 @@ Wenn eine Übersetzung ihm widerspricht, hat die englische Datei recht.
 Alles andere ist auf Englisch. `docs/internals/` und `docs/project/` werden von
 Leuten gelesen, die auch den Rust-Code lesen, `CHANGELOG.md` wird generiert, und
 auch `SECURITY.md` ist nicht übersetzt. Die ersten beiden zu übersetzen, würde
-mehr als 19.000 Wörter hinzufügen, die synchron gehalten werden müssten, für
+mehr als 28.000 Wörter hinzufügen, die synchron gehalten werden müssten, für
 Leser, die sie nicht brauchen.
 
 Jede Übersetzung trägt den Hash der englischen Datei, aus der sie gemacht wurde,

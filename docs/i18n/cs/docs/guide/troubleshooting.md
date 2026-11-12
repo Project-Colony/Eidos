@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=af0c14c5192ccae592dd1c1661fd02d5242ecd5a -->
+<!-- eidos-i18n: source=docs/guide/troubleshooting.md sha=c365b34dbc69a832b1c9305498c94eb223b567a1 -->
 
 # Řešení potíží a diagnostika
 
@@ -175,8 +175,8 @@ Chcete-li zjistit, která změna hru rozbila:
 - `eidos sessions <instance> diff` vypíše, co se změnilo od posledního běhu hry,
   který skončil kódem 0: módy, verze, pořadí pluginů, INI a spustitelný soubor hry
   ([usage.md](usage.md#co-se-změnilo-od-posledního-dobrého-běhu)).
-- Test run vedle Run hraje s módy profilu, bez módů, nebo s vybranými módy a
-  mastery, které potřebují, a vše, co hra zapíše, posílá do `<instance>/test-run/`.
+- Test run vedle Run hraje s módy profilu, bez módů, nebo s vybranými módy, které jsou
+  zapnuté, a mastery, které potřebují, a vše, co hra zapíše, posílá do `<instance>/test-run/`.
   Po běhu si každou skupinu souborů ponecháte nebo zahodíte: uložené pozice, změny
   INI, stav pluginů, výstup do Overwrite a logy ([usage.md](usage.md#testovací-běhy)).
 - Find the mod behind a problem v záložce Diagnostics spouští testovací běhy vždy

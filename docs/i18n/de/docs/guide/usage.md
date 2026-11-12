@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=15b7f6e81560a7045c8b62dd59dde35c8e45d32c -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=6459b22b0401855f4cacc644cb35eade2e2a023d -->
 
 # Eidos verwenden
 
@@ -237,7 +237,7 @@ Wurde das Fenster nicht vom Store des Spiels gestartet, übergibt Test run das S
 
 ### Die Mod hinter einem Problem finden
 
-Find the mod behind a problem im Tab Diagnostics sucht die Mod, die ein Problem verursacht, das Sie nachstellen können, etwa einen Absturz an einer bestimmten Stelle. Jeder Schritt ist ein Testlauf mit der Hälfte der verbleibenden Verdächtigen, den Mastern, die sie brauchen, und den Mods, die Sie immer aktiv lassen: den in der Liste ausgewählten, aktivierten Mods beim Start und der Mod, die den Script Extender liefert. Nach jedem Lauf beantworten Sie, ob das Problem aufgetreten ist. Not sure teilt die Verdächtigen anders auf, und Run it again wiederholt den Schritt. Eine Antwort oder Run it again verwirft die Dateien, die der Schritt geschrieben hat, nach einem zweiten Klick. Um einige davon zu behalten, drücken Sie zuerst See the files: Es öffnet dieselbe Liste wie nach einem Testlauf. Ist das Spiel abgestürzt und hat ein Crash-Logger ein Log geschrieben, oder endete das Spiel mit einem Fehlercode, markiert Eidos Yes als wahrscheinliche Antwort. 200 Verdächtige brauchen etwa 8 Läufe.
+Find the mod behind a problem im Tab Diagnostics sucht die Mod, die ein Problem verursacht, das Sie nachstellen können, etwa einen Absturz an einer bestimmten Stelle. Jeder Schritt ist ein Testlauf mit der Hälfte der verbleibenden Verdächtigen, den Mastern, die sie brauchen, und den Mods, die Sie immer aktiv lassen: den in der Liste ausgewählten, aktivierten Mods beim Start und der Mod, die den Script Extender liefert. Nach jedem Lauf beantworten Sie, ob das Problem aufgetreten ist. Not sure teilt die Verdächtigen anders auf, und Run it again wiederholt den Schritt. Eine Antwort oder Run it again verwirft die Dateien, die der Schritt geschrieben hat, nach einem zweiten Klick. Um einige davon zu behalten, drücken Sie vor der Antwort See the files: Es öffnet dieselbe Liste wie nach einem Testlauf. Ist das Spiel abgestürzt und hat ein Crash-Logger ein Log geschrieben, oder endete das Spiel mit einem Fehlercode, markiert Eidos Yes als wahrscheinliche Antwort. 200 Verdächtige brauchen etwa 8 Läufe.
 
 Die Suche wird in `<instance>/bisect.json` gespeichert, Sie können Eidos also zwischen den Schritten schließen, und sie gehört zu dem Profil, in dem sie begonnen hat. Stop the search verwirft sie nach einem zweiten Klick. Das Ergebnis nennt die Mod oder die Gruppe von Mods, die gegenseitig ihre Master brauchen, und wird in `<instance>/logs/bisect-<time>.txt` aufbewahrt. Generierte Mods (eine Nemesis- oder DynDOLOD-Ausgabe, ein Bashed Patch) sind für die vollständige Liste gebaut und können mit der Hälfte davon scheitern: Lassen Sie sie immer aktiv oder während der ganzen Suche aus.
 
