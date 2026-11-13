@@ -332,7 +332,7 @@ jobs:
     permissions:
       actions: read
       contents: write
-    uses: Project-Colony/Project-Colony-Resources/.github/workflows/sign-and-publish.yml@1973616f4deb2182855decf446d8e2d78ad7aa29 # organisation pin
+    uses: Project-Colony/Project-Colony-Resources/.github/workflows/sign-and-publish.yml@73ff1f78612456586b190ae091a22dce2ba00f7f # organisation pin
     with:
       tag: ${{ needs.release-please.outputs.tag_name || inputs.tag }}
       assets: "eidos-linux eidos-linux-bundle.tar.gz"
