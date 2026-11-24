@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=d0e9082b618de5fbbdfa07c791a94bf2559b81d2 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b5b3ce1d8dac5c588db6490d40fb6489e1b73e02 -->
 
 # 安装 Eidos
 
@@ -114,7 +114,7 @@ just build
 just install
 ```
 
-从源码构建需要 Rust 1.92 或更新版本、`just`、CMake 3.20 或更高版本、C++17 编译器,以及用于原生辅助程序测试的 Python 3。`just build` 构建整个工作区,所以 `eidos-fuse` 和 `eidos-launch` 也会被构建,`just install` 对构建输出运行 `packaging/install.sh`,把它们和其余文件一起复制。不使用 `just` 时,请参阅[原生辅助程序说明](../../../../../crates/eidos-nif-preview/README.md),使用 `cargo build --release --locked` 构建 Rust 程序,将辅助程序复制到 `target/release`,然后运行 `packaging/install.sh --from target/release`。源码构建同样没有 `runtimes/` 文件夹,所以工具需要 Microsoft 运行库时会下载。
+从源码构建需要 Rust 1.100 或更新版本、`just`、CMake 3.20 或更高版本、C++17 编译器,以及用于原生辅助程序测试的 Python 3。`just build` 构建整个工作区,所以 `eidos-fuse` 和 `eidos-launch` 也会被构建,`just install` 对构建输出运行 `packaging/install.sh`,把它们和其余文件一起复制。不使用 `just` 时,请参阅[原生辅助程序说明](../../../../../crates/eidos-nif-preview/README.md),使用 `cargo build --release --locked` 构建 Rust 程序,将辅助程序复制到 `target/release`,然后运行 `packaging/install.sh --from target/release`。源码构建同样没有 `runtimes/` 文件夹,所以工具需要 Microsoft 运行库时会下载。
 
 release 配置使用一个代码生成单元、fat LTO 和去除符号。用 rustc 1.99.1 和 3 个构建任务,
 `eidos` 与 `eidos-gui` 的冷构建用了 334 秒(thin LTO 为 243 秒),得到 20.9 MB 的

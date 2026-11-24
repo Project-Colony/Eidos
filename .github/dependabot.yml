@@ -14,9 +14,11 @@ updates:
     # The shared signing workflow stays at the organisation pin, which moves
     # for every program at once: design/releases.md in
     # Project-Colony-Resources, "The pin". A Dependabot PR would move one
-    # repository alone.
+    # repository alone. Dependabot names that dependency after the workflow
+    # path (Project-Colony/Project-Colony-Resources/.github/workflows/...), so
+    # the rule needs the trailing wildcard to match it.
     ignore:
-      - dependency-name: Project-Colony/Project-Colony-Resources
+      - dependency-name: "Project-Colony/Project-Colony-Resources*"
     groups:
       actions:
         patterns: ["*"]

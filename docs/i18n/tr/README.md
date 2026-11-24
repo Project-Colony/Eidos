@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=31c66f68ad4e47e896eeb2256fd8f89c68cfdbef -->
+<!-- eidos-i18n: source=README.md sha=8ba0ea0b59cd78f1daad087b34ac73ba4779f717 -->
 
 <div align="center">
 
@@ -394,8 +394,8 @@ just build
 just install
 ```
 
-Rust 1.92 ya da daha yenisi (CI'nin denetlediği `rust-version`; CI ve sürümler
-1.99.1 ile derlenir), ayrıca NIF önizleme yardımcısı için `just`, CMake 3.20+ ve
+Rust 1.100 ya da daha yenisi (CI'nin denetlediği `rust-version`; CI ve sürümler
+1.100.0 ile derlenir), ayrıca NIF önizleme yardımcısı için `just`, CMake 3.20+ ve
 bir C++17 derleyicisi gerekir. `just build` release profilini kullanır: tek bir
 codegen unit ve fat LTO. `eidos` ile `eidos-gui` için 3 derleme işiyle soğuk bir
 derleme böyle 334 saniye, thin LTO ile 243 saniye sürdü ve fat LTO `eidos`'u 1,2

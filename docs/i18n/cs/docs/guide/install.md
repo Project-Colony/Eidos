@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=d0e9082b618de5fbbdfa07c791a94bf2559b81d2 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b5b3ce1d8dac5c588db6490d40fb6489e1b73e02 -->
 
 # Instalace Eidosu
 
@@ -128,7 +128,7 @@ just build
 just install
 ```
 
-Sestavení ze zdrojů vyžaduje Rust 1.92 nebo novější, `just`, CMake 3.20+, překladač
+Sestavení ze zdrojů vyžaduje Rust 1.100 nebo novější, `just`, CMake 3.20+, překladač
 C++17 a Python 3 pro testy nativního pomocného programu. `just build` sestaví celý
 workspace, takže se sestaví i `eidos-fuse` a `eidos-launch`, a `just install` spustí
 `packaging/install.sh` na výstupu sestavení, který je zkopíruje s ostatními.

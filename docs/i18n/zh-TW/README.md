@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=31c66f68ad4e47e896eeb2256fd8f89c68cfdbef -->
+<!-- eidos-i18n: source=README.md sha=8ba0ea0b59cd78f1daad087b34ac73ba4779f717 -->
 
 <div align="center">
 
@@ -323,7 +323,7 @@ just build
 just install
 ```
 
-需要 Rust 1.92 或更新版本(CI 檢查的 `rust-version`;CI 與發行版以 1.99.1 建置),
+需要 Rust 1.100 或更新版本(CI 檢查的 `rust-version`;CI 與發行版以 1.100.0 建置),
 另加 `just`、CMake 3.20 或更新版本,以及供 NIF 預覽輔助程式使用的 C++17 編譯器。
 `just build` 使用 release 設定檔:一個 codegen unit 和 fat LTO。用 3 個建置工作,
 `eidos` 與 `eidos-gui` 的冷建置這樣花了 334 秒,thin LTO 則是 243 秒,而 fat LTO 讓

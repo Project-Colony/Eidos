@@ -126,7 +126,7 @@ just build
 just install
 ```
 
-Source builds require Rust 1.92 or newer, `just`, CMake 3.20+, a C++17 compiler and Python 3
+Source builds require Rust 1.100 or newer, `just`, CMake 3.20+, a C++17 compiler and Python 3
 for the native helper's tests. `just build` builds the whole workspace, so
 `eidos-fuse` and `eidos-launch` are built too, and `just install` runs
 `packaging/install.sh` on the build output, which copies them with the rest.

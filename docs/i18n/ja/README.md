@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=31c66f68ad4e47e896eeb2256fd8f89c68cfdbef -->
+<!-- eidos-i18n: source=README.md sha=8ba0ea0b59cd78f1daad087b34ac73ba4779f717 -->
 
 <div align="center">
 
@@ -386,7 +386,7 @@ just build
 just install
 ```
 
-Rust 1.92 以降(CI が確認する `rust-version`。CI とリリースは 1.99.1 でビルドします)、
+Rust 1.100 以降(CI が確認する `rust-version`。CI とリリースは 1.100.0 でビルドします)、
 それに `just`、CMake 3.20 以降、NIF プレビューのヘルパー用の C++17 コンパイラが
 必要です。`just build` はリリースプロファイル(codegen unit 1 と fat LTO)を使います。
 ビルドジョブ 3 での `eidos` と `eidos-gui` のクリーンビルドは、この設定で 334 秒、

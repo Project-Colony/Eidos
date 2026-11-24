@@ -384,8 +384,8 @@ just build
 just install
 ```
 
-Requires Rust 1.92 or newer (the `rust-version` CI checks; CI and releases
-build with 1.99.1), plus `just`, CMake 3.20+ and a C++17 compiler for the NIF
+Requires Rust 1.100 or newer (the `rust-version` CI checks; CI and releases
+build with 1.100.0), plus `just`, CMake 3.20+ and a C++17 compiler for the NIF
 preview helper. `just build` uses the release profile: one codegen unit and fat
 LTO. A cold build of `eidos` and `eidos-gui` with 3 build jobs took 334 seconds
 that way and 243 seconds with thin LTO, and fat LTO makes `eidos` 1.2 MB and
