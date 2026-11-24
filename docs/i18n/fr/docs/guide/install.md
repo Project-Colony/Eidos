@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=d0e9082b618de5fbbdfa07c791a94bf2559b81d2 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b5b3ce1d8dac5c588db6490d40fb6489e1b73e02 -->
 
 # Installer Eidos
 
@@ -133,7 +133,7 @@ just build
 just install
 ```
 
-La compilation depuis les sources exige Rust 1.92 ou plus récent, `just`, CMake
+La compilation depuis les sources exige Rust 1.100 ou plus récent, `just`, CMake
 3.20+, un compilateur C++17 et Python 3 pour les tests de l'utilitaire natif. `just
 build` compile tout l'espace de travail, donc `eidos-fuse` et `eidos-launch` sont
 compilés aussi, et `just install` lance `packaging/install.sh` sur le résultat, qui

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=d0e9082b618de5fbbdfa07c791a94bf2559b81d2 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b5b3ce1d8dac5c588db6490d40fb6489e1b73e02 -->
 
 # Eidos 설치
 
@@ -122,7 +122,7 @@ just build
 just install
 ```
 
-소스 빌드에는 Rust 1.92 이상, `just`, CMake 3.20 이상, C++17 컴파일러, 네이티브 도우미 테스트용 Python 3이 필요합니다. `just build`는 워크스페이스 전체를 빌드하므로 `eidos-fuse`와 `eidos-launch`도 함께 빌드되고, `just install`은 빌드 결과에 `packaging/install.sh`를 실행해 나머지와 함께 복사합니다. `just` 없이 실행할 명령은 [네이티브 도우미 안내](../../../../../crates/eidos-nif-preview/README.md)를 참고하세요. `cargo build --release --locked`로 Rust를 빌드하고 도우미를 `target/release`에 복사한 다음 `packaging/install.sh --from target/release`를 실행하세요. 소스 빌드에도 `runtimes/` 폴더가 없으므로 도구가 필요로 할 때 Microsoft 런타임을 내려받습니다.
+소스 빌드에는 Rust 1.100 이상, `just`, CMake 3.20 이상, C++17 컴파일러, 네이티브 도우미 테스트용 Python 3이 필요합니다. `just build`는 워크스페이스 전체를 빌드하므로 `eidos-fuse`와 `eidos-launch`도 함께 빌드되고, `just install`은 빌드 결과에 `packaging/install.sh`를 실행해 나머지와 함께 복사합니다. `just` 없이 실행할 명령은 [네이티브 도우미 안내](../../../../../crates/eidos-nif-preview/README.md)를 참고하세요. `cargo build --release --locked`로 Rust를 빌드하고 도우미를 `target/release`에 복사한 다음 `packaging/install.sh --from target/release`를 실행하세요. 소스 빌드에도 `runtimes/` 폴더가 없으므로 도구가 필요로 할 때 Microsoft 런타임을 내려받습니다.
 
 릴리스 프로필은 코드 생성 단위 하나, fat LTO, 심볼 제거를 씁니다. rustc 1.99.1과
 빌드 작업 3개로 `eidos`와 `eidos-gui`를 처음부터 빌드하니 334초가 걸렸고(thin LTO는

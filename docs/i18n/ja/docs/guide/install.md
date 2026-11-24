@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=d0e9082b618de5fbbdfa07c791a94bf2559b81d2 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b5b3ce1d8dac5c588db6490d40fb6489e1b73e02 -->
 
 # Eidos のインストール
 
@@ -129,7 +129,7 @@ just build
 just install
 ```
 
-ソースからのビルドには Rust 1.92 以降、`just`、CMake 3.20 以降、C++17 コンパイラ、
+ソースからのビルドには Rust 1.100 以降、`just`、CMake 3.20 以降、C++17 コンパイラ、
 およびネイティブヘルパーのテスト用に Python 3 が必要です。`just build` は
 ワークスペース全体をビルドするので `eidos-fuse` と `eidos-launch` も作られ、
 `just install` はビルド出力に対して `packaging/install.sh` を実行し、残りと一緒に

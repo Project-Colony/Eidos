@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=31c66f68ad4e47e896eeb2256fd8f89c68cfdbef -->
+<!-- eidos-i18n: source=README.md sha=8ba0ea0b59cd78f1daad087b34ac73ba4779f717 -->
 
 <div align="center">
 
@@ -297,7 +297,7 @@ just build
 just install
 ```
 
-需要 Rust 1.92 或更新版本(即 CI 检查的 `rust-version`;CI 和发行版用 1.99.1 构建),外加 `just`、CMake 3.20 或更高
+需要 Rust 1.100 或更新版本(即 CI 检查的 `rust-version`;CI 和发行版用 1.100.0 构建),外加 `just`、CMake 3.20 或更高
 版本,以及用于 NIF 预览辅助程序的 C++17 编译器。`just build` 使用 release 配置:一个代码生成单元和 fat LTO。用 3 个
 构建任务对 `eidos` 和 `eidos-gui` 做一次冷构建,这样用了 334 秒,用 thin LTO 则是 243 秒,而 fat LTO 让 `eidos`
 小 1.2 MB、`eidos-gui` 小 3.8 MB(测量数据在 `Cargo.toml` 里)。`just profile=dev build` 编译更快。Arch 软件包由

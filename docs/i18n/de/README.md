@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=31c66f68ad4e47e896eeb2256fd8f89c68cfdbef -->
+<!-- eidos-i18n: source=README.md sha=8ba0ea0b59cd78f1daad087b34ac73ba4779f717 -->
 
 <div align="center">
 
@@ -421,8 +421,8 @@ just build
 just install
 ```
 
-Benötigt Rust 1.92 oder neuer (die `rust-version`, die die CI prüft; CI und
-Releases bauen mit 1.99.1), dazu `just`, CMake 3.20+ und einen C++17-Compiler
+Benötigt Rust 1.100 oder neuer (die `rust-version`, die die CI prüft; CI und
+Releases bauen mit 1.100.0), dazu `just`, CMake 3.20+ und einen C++17-Compiler
 für das NIF-Vorschau-Hilfsprogramm. `just build` nutzt das Release-Profil: eine
 Codegen-Einheit und Fat LTO. Ein Kaltbau von `eidos` und `eidos-gui` mit 3
 Build-Jobs dauerte so 334 Sekunden und mit Thin LTO 243 Sekunden, und Fat LTO

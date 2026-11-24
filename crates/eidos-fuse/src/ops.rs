@@ -15,9 +15,9 @@ use std::time::SystemTime;
 
 use fuser::{
     BsdFileFlags, Errno, FileHandle, Filesystem, FopenFlags, Generation, INodeNo, InitFlags,
-    IoctlFlags, KernelConfig, LockOwner, OpenFlags, RenameFlags, ReplyAttr, ReplyCreate, ReplyData,
-    ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyIoctl, ReplyOpen, ReplyStatfs, ReplyWrite,
-    ReplyXattr, Request, TimeOrNow, WriteFlags,
+    IoctlFlags, KernelConfig, LockOwner, OpenFlags, Owner, RenameFlags, ReplyAttr, ReplyCreate,
+    ReplyData, ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyIoctl, ReplyOpen, ReplyStatfs,
+    ReplyWrite, ReplyXattr, Request, TimeOrNow, WriteFlags,
 };
 
 use crate::*;
@@ -198,7 +198,14 @@ impl Filesystem for Eidos {
         }
     }
 
-    fn open(&self, _req: &Request, ino: INodeNo, flags: OpenFlags, reply: ReplyOpen) {
+    fn open(
+        &self,
+        _req: &Request,
+        ino: INodeNo,
+        flags: OpenFlags,
+        _kill_suid_gid: bool,
+        reply: ReplyOpen,
+    ) {
         Stats::bump(&self.stats.open);
         let _t = Timed::start(&self.stats.ns_open);
         let vpath = match self.inodes.lock_recover().path(ino.0) {
@@ -741,6 +748,8 @@ impl Filesystem for Eidos {
         _mode: u32,
         _umask: u32,
         _flags: i32,
+        _kill_suid_gid: bool,
+        _owner: Owner,
         reply: ReplyCreate,
     ) {
         let _t = self.stats.create.start();
@@ -880,6 +889,7 @@ impl Filesystem for Eidos {
         name: &OsStr,
         _mode: u32,
         _umask: u32,
+        _owner: Owner,
         reply: ReplyEntry,
     ) {
         let _t = self.stats.mkdir.start();
@@ -906,6 +916,7 @@ impl Filesystem for Eidos {
         parent: INodeNo,
         link_name: &OsStr,
         target: &Path,
+        _owner: Owner,
         reply: ReplyEntry,
     ) {
         let _t = self.stats.symlink.start();
@@ -946,6 +957,7 @@ impl Filesystem for Eidos {
         _chgtime: Option<SystemTime>,
         _bkuptime: Option<SystemTime>,
         _flags: Option<BsdFileFlags>,
+        _kill_suid_gid: bool,
         reply: ReplyAttr,
     ) {
         let _t = self.stats.setattr.start();
@@ -1133,6 +1145,7 @@ impl Filesystem for Eidos {
         newparent: INodeNo,
         newname: &OsStr,
         flags: RenameFlags,
+        _owner: Option<Owner>,
         reply: ReplyEmpty,
     ) {
         let _t = self.stats.rename.start();

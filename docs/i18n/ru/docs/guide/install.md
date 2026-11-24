@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=d0e9082b618de5fbbdfa07c791a94bf2559b81d2 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b5b3ce1d8dac5c588db6490d40fb6489e1b73e02 -->
 
 # Установка Eidos
 
@@ -130,7 +130,7 @@ just build
 just install
 ```
 
-Для сборки из исходников нужны Rust 1.92 или новее, `just`, CMake 3.20+,
+Для сборки из исходников нужны Rust 1.100 или новее, `just`, CMake 3.20+,
 компилятор C++17 и Python 3 для тестов нативной вспомогательной программы.
 `just build` собирает весь workspace, так что `eidos-fuse` и `eidos-launch`
 собираются тоже, а `just install` запускает `packaging/install.sh` на результате

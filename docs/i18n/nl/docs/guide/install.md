@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=d0e9082b618de5fbbdfa07c791a94bf2559b81d2 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b5b3ce1d8dac5c588db6490d40fb6489e1b73e02 -->
 
 # Eidos installeren
 
@@ -124,7 +124,7 @@ just build
 just install
 ```
 
-Bouwen vanuit broncode vereist Rust 1.92 of nieuwer, `just`, CMake 3.20+, een C++17-compiler en Python 3 voor de tests van het native hulpprogramma. `just build` bouwt de hele workspace, dus `eidos-fuse` en `eidos-launch` worden ook gebouwd, en `just install` draait `packaging/install.sh` op de uitvoer van de build, dat ze met de rest kopieert. Zie de [instructies voor het native hulpprogramma](../../../../../crates/eidos-nif-preview/README.md) voor opdrachten zonder `just`, bouw Rust met `cargo build --release --locked`, kopieer het hulpprogramma naar `target/release` en voer daarna `packaging/install.sh --from target/release` uit. Ook een build vanuit de broncode heeft geen map `runtimes/`, dus de Microsoft-runtimes worden gedownload wanneer een tool ze nodig heeft.
+Bouwen vanuit broncode vereist Rust 1.100 of nieuwer, `just`, CMake 3.20+, een C++17-compiler en Python 3 voor de tests van het native hulpprogramma. `just build` bouwt de hele workspace, dus `eidos-fuse` en `eidos-launch` worden ook gebouwd, en `just install` draait `packaging/install.sh` op de uitvoer van de build, dat ze met de rest kopieert. Zie de [instructies voor het native hulpprogramma](../../../../../crates/eidos-nif-preview/README.md) voor opdrachten zonder `just`, bouw Rust met `cargo build --release --locked`, kopieer het hulpprogramma naar `target/release` en voer daarna `packaging/install.sh --from target/release` uit. Ook een build vanuit de broncode heeft geen map `runtimes/`, dus de Microsoft-runtimes worden gedownload wanneer een tool ze nodig heeft.
 
 Het releaseprofiel gebruikt één codegenerator-eenheid, fat LTO en gestripte symbolen. Met
 rustc 1.99.1 en 3 buildtaken duurde een koude build van `eidos` en `eidos-gui` 334 s,

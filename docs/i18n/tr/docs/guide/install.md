@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=d0e9082b618de5fbbdfa07c791a94bf2559b81d2 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b5b3ce1d8dac5c588db6490d40fb6489e1b73e02 -->
 
 # Eidos kurulumu
 
@@ -132,7 +132,7 @@ just build
 just install
 ```
 
-Kaynaktan derleme için Rust 1.92 ya da daha yenisi, `just`, CMake 3.20+, bir C++17
+Kaynaktan derleme için Rust 1.100 ya da daha yenisi, `just`, CMake 3.20+, bir C++17
 derleyicisi ve yerel yardımcının testleri için Python 3 gerekir. `just build` tüm
 çalışma alanını derler, yani `eidos-fuse` ve `eidos-launch` de derlenir; `just
 install` derleme çıktısı üzerinde `packaging/install.sh` çalıştırır ve onları

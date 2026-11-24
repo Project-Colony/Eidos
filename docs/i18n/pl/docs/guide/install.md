@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=d0e9082b618de5fbbdfa07c791a94bf2559b81d2 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=b5b3ce1d8dac5c588db6490d40fb6489e1b73e02 -->
 
 # Instalacja Eidos
 
@@ -131,7 +131,7 @@ just build
 just install
 ```
 
-Budowanie ze źródeł wymaga Rusta 1.92 lub nowszego, `just`, CMake 3.20+, kompilatora C++17 oraz Python 3 do testów natywnego programu pomocniczego. `just build` buduje cały workspace, więc `eidos-fuse` i `eidos-launch` też są budowane, a `just install` uruchamia `packaging/install.sh` na wyniku budowania, który kopiuje je razem z resztą. Polecenia bez `just` znajdziesz w [instrukcji natywnego programu pomocniczego](../../../../../crates/eidos-nif-preview/README.md). Zbuduj Rust poleceniem `cargo build --release --locked`, skopiuj program pomocniczy do `target/release`, a następnie uruchom `packaging/install.sh --from target/release`. Kompilacja ze źródeł też nie ma folderu `runtimes/`, więc runtime'y Microsoftu są pobierane, gdy narzędzie ich potrzebuje.
+Budowanie ze źródeł wymaga Rusta 1.100 lub nowszego, `just`, CMake 3.20+, kompilatora C++17 oraz Python 3 do testów natywnego programu pomocniczego. `just build` buduje cały workspace, więc `eidos-fuse` i `eidos-launch` też są budowane, a `just install` uruchamia `packaging/install.sh` na wyniku budowania, który kopiuje je razem z resztą. Polecenia bez `just` znajdziesz w [instrukcji natywnego programu pomocniczego](../../../../../crates/eidos-nif-preview/README.md). Zbuduj Rust poleceniem `cargo build --release --locked`, skopiuj program pomocniczy do `target/release`, a następnie uruchom `packaging/install.sh --from target/release`. Kompilacja ze źródeł też nie ma folderu `runtimes/`, więc runtime'y Microsoftu są pobierane, gdy narzędzie ich potrzebuje.
 
 Profil release używa jednej jednostki generowania kodu, pełnego LTO i usuwa symbole. Z rustc 1.99.1 i 3 zadaniami budowania zimna kompilacja `eidos` i `eidos-gui` trwała 334 s, wobec 243 s z cienkim LTO, i dała `eidos` o rozmiarze 20,9 MB oraz `eidos-gui` o rozmiarze 49,7 MB. Każdy plik wykonywalny osadza osiem bibliotek DLL DirectX przechowywanych skompresowane gzipem: 7,9 MB zamiast 17,9 MB. `just profile=dev build` buduje bez optymalizacji.
 

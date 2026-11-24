@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=31c66f68ad4e47e896eeb2256fd8f89c68cfdbef -->
+<!-- eidos-i18n: source=README.md sha=8ba0ea0b59cd78f1daad087b34ac73ba4779f717 -->
 
 <div align="center">
 
@@ -325,7 +325,7 @@ just build
 just install
 ```
 
-Vereist Rust 1.92 of nieuwer (de `rust-version` die de CI controleert; CI en releases bouwen met 1.99.1), plus `just`, CMake 3.20+ en een C++17-compiler voor het
+Vereist Rust 1.100 of nieuwer (de `rust-version` die de CI controleert; CI en releases bouwen met 1.100.0), plus `just`, CMake 3.20+ en een C++17-compiler voor het
 hulpprogramma voor NIF-voorvertoningen. `just build` gebruikt het releaseprofiel: één codegenerator-eenheid en fat LTO. Een koude build van `eidos` en `eidos-gui` met 3 buildtaken
 duurde zo 334 seconden en 243 seconden met thin LTO, en fat LTO maakt `eidos` 1,2 MB en `eidos-gui` 3,8 MB kleiner (metingen in `Cargo.toml`).
 `just profile=dev build` compileert sneller. Een Arch-pakket wordt gebouwd vanuit `packaging/PKGBUILD`. Vereisten en de opdrachten zonder `just`:
