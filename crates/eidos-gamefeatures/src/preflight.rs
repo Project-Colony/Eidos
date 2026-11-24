@@ -632,13 +632,19 @@ fn read_rva<'a>(
 }
 
 fn inspect<Pe: object::read::pe::ImageNtHeaders>(read: Limited<'_>) -> Result<PeInfo, String> {
-    use object::read::pe::{ExportTable, ExportTarget, PeFile, ResourceDirectory};
+    use object::read::pe::{ExportTable, ExportTarget, ResourceDirectory};
     use object::LittleEndian as LE;
-    let file: PeFile<'_, Pe, _> = PeFile::parse(read).map_err(|e| e.to_string())?;
-    let sections = file.section_table();
+    // PeFile::parse minus the COFF symbol table: object 0.41 reads its whole
+    // string table, which would spend the metadata budget on names we never use.
+    let dos_header = object::pe::ImageDosHeader::parse(read).map_err(|e| e.to_string())?;
+    let mut offset = dos_header.nt_headers_offset().into();
+    let (nt_headers, directories) = Pe::parse(read, &mut offset).map_err(|e| e.to_string())?;
+    let sections = nt_headers
+        .sections(read, offset)
+        .map_err(|e| e.to_string())?;
     let mut declaration = None;
     let mut xse = None;
-    if let Some(dir) = file.data_directory(object::pe::IMAGE_DIRECTORY_ENTRY_EXPORT) {
+    if let Some(dir) = directories.get(object::pe::IMAGE_DIRECTORY_ENTRY_EXPORT) {
         let rva = dir.virtual_address.get(LE);
         let bytes = read_rva(read, sections, rva, dir.size.get(LE))?;
         let table = ExportTable::parse(bytes, rva).map_err(|e| e.to_string())?;
@@ -674,7 +680,7 @@ fn inspect<Pe: object::read::pe::ImageNtHeaders>(read: Limited<'_>) -> Result<Pe
         }
     }
     let mut version = None;
-    if let Some(dir) = file.data_directory(object::pe::IMAGE_DIRECTORY_ENTRY_RESOURCE) {
+    if let Some(dir) = directories.get(object::pe::IMAGE_DIRECTORY_ENTRY_RESOURCE) {
         let resource = ResourceDirectory::new(read_rva(
             read,
             sections,
@@ -725,8 +731,8 @@ fn inspect<Pe: object::read::pe::ImageNtHeaders>(read: Limited<'_>) -> Result<Pe
         }
     }
     Ok(PeInfo {
-        machine: file.nt_headers().file_header().machine.get(LE).0,
-        timestamp: file.nt_headers().file_header().time_date_stamp.get(LE),
+        machine: nt_headers.file_header().machine.get(LE).0,
+        timestamp: nt_headers.file_header().time_date_stamp.get(LE),
         file_version: version,
         skse_version: declaration,
         xse_version: xse,
@@ -1632,6 +1638,25 @@ mod tests {
             info.skse_version.unwrap().compatible_versions,
             [Version([1, 7, 104, 0])]
         );
+    }
+    #[test]
+    fn coff_string_table_leaves_the_metadata_budget_alone() {
+        // An unstripped MinGW DLL keeps a COFF string table. This one fits the
+        // budget on its own but leaves too little for the export and resource reads.
+        let mut b = fixture();
+        let start = b.len() as u32;
+        u32at(&mut b, 0x8c, start); // PointerToSymbolTable, zero symbols
+        let table = MAX_METADATA_BYTES as u32 - 0x400;
+        b.extend_from_slice(&table.to_le_bytes());
+        let f = Tmp::new(&b);
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&f.0)
+            .unwrap()
+            .set_len(u64::from(start + table))
+            .unwrap();
+        let info = inspect_pe(&f.0).unwrap();
+        assert_eq!(info.file_version, Some(Version([1, 7, 104, 0])));
     }
     #[test]
     fn explicit_runtime_mismatch_has_mod_origin() {
